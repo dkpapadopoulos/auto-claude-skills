@@ -34,8 +34,12 @@ If **no SAST binary and no trivy** is installed, fall back to LLM-only code revi
 
 If a SAST binary is available, scan for code vulnerabilities. The `$SAST_BIN` var from Step 1 transparently uses opengrep when present, semgrep otherwise — flags and JSON shape are compatible.
 
+**Important:** Each Bash invocation is a fresh shell. Resolve `SAST_BIN` at the top of every code block below — do not assume Step 1's resolution persists.
+
 **Fast scan (changed files in current branch — prefer this for inner-loop reviews):**
 ```bash
+SAST_BIN="$(command -v opengrep || command -v semgrep || true)"
+[ -z "$SAST_BIN" ] && { echo "no SAST binary installed"; exit 0; }
 git diff --name-only -z "$(git merge-base HEAD main)..HEAD" | xargs -0 "$SAST_BIN" scan --json --config auto --severity WARNING 2>/dev/null | jq '{count: (.results | length), results: [.results[] | {rule: .check_id, severity: .extra.severity, file: .path, line: .start.line, message: .extra.message}]}'
 ```
 
@@ -43,11 +47,15 @@ Note: If `merge-base` fails (no main branch), fall back to `git diff --name-only
 
 **Full project scan (use for thorough reviews or when explicitly asked):**
 ```bash
+SAST_BIN="$(command -v opengrep || command -v semgrep || true)"
+[ -z "$SAST_BIN" ] && { echo "no SAST binary installed"; exit 0; }
 "$SAST_BIN" scan --json --config auto --severity WARNING . 2>/dev/null | jq '{count: (.results | length), results: [.results[] | {rule: .check_id, severity: .extra.severity, file: .path, line: .start.line, message: .extra.message}]}'
 ```
 
 **If output is large (count > 20), filter by severity first:**
 ```bash
+SAST_BIN="$(command -v opengrep || command -v semgrep || true)"
+[ -z "$SAST_BIN" ] && { echo "no SAST binary installed"; exit 0; }
 "$SAST_BIN" scan --json --config auto --severity ERROR . 2>/dev/null | jq '.results[:20]'
 ```
 
@@ -113,6 +121,6 @@ After fixing, present a final summary:
 ## Ignore Files
 
 If false positives are found, help the user configure:
-- `.semgrepignore` for Semgrep exclusions
+- `.semgrepignore` for Semgrep/Opengrep exclusions (both binaries honor the same filename)
 - `.trivyignore` for Trivy exclusions
 - `.gitleaksignore` for Gitleaks exclusions
