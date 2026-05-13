@@ -1140,11 +1140,14 @@ if [ -n "${_OPENSPEC_LINE}" ]; then
 ${_OPENSPEC_LINE}"
 fi
 
-# Append security scanner capabilities (with setup hint if any are missing)
+# Append security scanner capabilities (with setup hint if any are missing).
+# Hint if no SAST (semgrep+opengrep interchangeable) or if trivy/gitleaks is missing.
 _SEC_HINT=""
-case "${SECURITY_CAPS}" in
-    *"=false"*) _SEC_HINT=" — run /setup to install missing tools" ;;
-esac
+if [ "${_SEMGREP}" = "false" ] && [ "${_OPENGREP}" = "false" ]; then
+    _SEC_HINT=" — run /setup to install missing tools"
+elif [ "${_TRIVY}" = "false" ] || [ "${_GITLEAKS}" = "false" ]; then
+    _SEC_HINT=" — run /setup to install missing tools"
+fi
 CONTEXT="${CONTEXT}
 Security tools: ${SECURITY_CAPS}${_SEC_HINT}"
 _OBS_HINT=""
