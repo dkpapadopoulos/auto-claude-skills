@@ -97,16 +97,30 @@ rm -rf ~/.claude/skills/security-scanner
 For best results, install the CLI tools the skill orchestrates. Check which are missing:
 
 ```bash
+command -v opengrep && echo "opengrep: installed" || echo "opengrep: MISSING"
 command -v semgrep && echo "semgrep: installed" || echo "semgrep: MISSING"
 command -v trivy && echo "trivy: installed" || echo "trivy: MISSING"
 command -v gitleaks && echo "gitleaks: installed" || echo "gitleaks: MISSING"
 ```
 
+The security-scanner skill prefers `opengrep` and falls back to `semgrep` — only one SAST binary needs to be installed. Skip the SAST install step if either is already present.
+
 For each missing tool, **ask the user:** "The security-scanner skill works best with [tool]. Would you like to install it?"
 
 If the user agrees, install and initialize each missing tool:
 
-**Semgrep** (SAST — code vulnerability scanning):
+**SAST (Opengrep preferred, Semgrep as fallback)** — code vulnerability scanning. Install one of the two:
+
+Opengrep (recommended — LGPL 2.1 fork, signed binary, no Python dependency, returns real fingerprint/lines fields that Semgrep gates behind a login):
+```bash
+curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh | bash
+```
+Then verify and warm the registry (~30s):
+```bash
+opengrep --version && opengrep scan --config auto --test . 2>/dev/null; echo "Opengrep ready"
+```
+
+Or Semgrep (fallback):
 ```bash
 brew install semgrep
 ```
@@ -133,7 +147,7 @@ Then verify:
 gitleaks version && echo "Gitleaks ready"
 ```
 
-If the user declines any tool, note that the corresponding scan type will be unavailable and the skill will skip it gracefully. Semgrep is the highest-value tool — recommend it first.
+If the user declines any tool, note that the corresponding scan type will be unavailable and the skill will skip it gracefully. The SAST binary (Opengrep or Semgrep) is the highest-value tool — recommend it first.
 
 ### 5. Prerequisites (uv package manager)
 
