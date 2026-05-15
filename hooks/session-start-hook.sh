@@ -1102,7 +1102,7 @@ fi
 # Emit Serena usage hint when available
 if printf '%s' "${CONTEXT_CAPS}" | jq -e '.serena == true' >/dev/null 2>&1; then
     CONTEXT="${CONTEXT}
-Serena: When navigating code, prefer mcp__serena__ tools (find_symbol, find_referencing_symbols, get_symbols_overview) over Grep/Read for symbol lookups and dependency mapping. When spawning subagents via the Task tool for code work, include 'Serena available — prefer find_symbol over Grep for symbol lookups' in their prompt so they inherit this guidance."
+Serena: When navigating code, prefer mcp__serena__ tools (find_symbol, find_declaration, find_implementations, find_referencing_symbols, get_symbols_overview) over Grep/Read for symbol lookups and dependency mapping."
 fi
 
 # Emit LSP usage hint when available (complementary to Serena — LSP for diagnostics, Serena for symbol nav)
