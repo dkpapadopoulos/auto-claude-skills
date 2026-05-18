@@ -806,7 +806,10 @@ fi
 # (off by default — registration remains the routing gate). Fail-open: any
 # error leaves serena_connected=false.
 if [ "${SERENA_CONNECTION_CHECK:-0}" = "1" ] && command -v claude >/dev/null 2>&1; then
-    if claude mcp list 2>/dev/null | grep -qE '^serena: .*✓ Connected'; then
+    # Use grep -F for the literal Unicode ✓ to avoid locale-collation issues
+    # under C/POSIX locale (where multi-byte regex matching may silently fail).
+    # Filter to the serena entry first via a literal grep, then check the marker.
+    if claude mcp list 2>/dev/null | grep '^serena: ' | grep -qF '✓ Connected'; then
         CONTEXT_CAPS="$(printf '%s' "${CONTEXT_CAPS}" | jq '.serena_connected = true' 2>/dev/null || printf '%s' "${CONTEXT_CAPS}")"
     fi
 fi
