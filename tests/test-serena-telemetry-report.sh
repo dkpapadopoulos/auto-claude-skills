@@ -50,6 +50,29 @@ assert_contains "read_large_source shows 25% follow-through" "25%" "${out}"
 assert_contains "report includes glob_definition_hunt class" "glob_definition_hunt" "${out}"
 assert_contains "glob_definition_hunt shows 0% follow-through" "0%" "${out}"
 
+# --- v1.3.0 adoption section ---
+# The synthetic dataset above contains 5 followups whose tool is find_symbol
+# (legacy) and 1 followup whose tool is get_symbols_overview (legacy), with
+# no v1.3.0 tool followups, so the v1.3.0 share is 0% and legacy total is 6.
+assert_contains "report includes v1.3.0 adoption section heading" "v1.3.0 adoption" "${out}"
+assert_contains "report lists find_declaration counter" "find_declaration:" "${out}"
+assert_contains "report lists find_implementations counter" "find_implementations:" "${out}"
+assert_contains "report lists get_diagnostics_for_file counter" "get_diagnostics_for_file:" "${out}"
+assert_contains "report lists get_diagnostics_for_symbol counter" "get_diagnostics_for_symbol:" "${out}"
+assert_contains "report emits v1.3.0 share metric" "v1.3.0 share:" "${out}"
+assert_contains "report emits legacy total metric" "legacy total:" "${out}"
+
+# Append v1.3.0-named followups to verify the share computes correctly.
+# Three v1.3.0 followups (2 find_declaration + 1 find_implementations) vs
+# the existing 6 legacy followups → share = 3 / (3 + 6) = 33%.
+printf '%d\ttok-V\t300\tfollowup\tcamelcase\tfind_declaration\n' "$((NOW - 50))" >>"${TELEM}"
+printf '%d\ttok-V\t301\tfollowup\tcamelcase\tfind_declaration\n' "$((NOW - 49))" >>"${TELEM}"
+printf '%d\ttok-V\t302\tfollowup\tword_boundary\tfind_implementations\n' "$((NOW - 48))" >>"${TELEM}"
+out_v13="$(bash "${TOOL}" 14 2>/dev/null)"
+assert_contains "v1.3.0 share computes correctly with mixed v1.3.0 + legacy followups" "v1.3.0 share:               33%" "${out_v13}"
+# The per-turn dedup section below already wipes & re-seeds telemetry, so
+# leave the v1.3.0 appended rows in place — they'll be cleared there.
+
 # --- Per-turn dedup: two nudges in the same turn count once ---
 # Matches followthrough's (turn, matcher) idempotent dedup, so the rate is comparable.
 rm -f "${TELEM}"
