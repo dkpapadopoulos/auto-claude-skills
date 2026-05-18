@@ -8,7 +8,7 @@ Strict fallback order:
 
 **0a — `lsp = true`:** Use `mcp__ide__getDiagnostics` for compile errors, type errors, and linter warnings. Authoritative for compiler truth.
 
-**0b — `lsp = false` and `serena = true`:** Use `mcp__serena__get_diagnostics_for_file` (file-scoped) or `mcp__serena__get_diagnostics_for_symbol` (symbol-scoped) — Serena v1.3.0+. These run against Serena's bundled language server, less integrated than the IDE's own LSP but still authoritative for the languages Serena supports.
+**0b — `lsp = false` and `serena = true`:** Use `mcp__serena__get_diagnostics_for_file` (file-scoped) or `mcp__serena__get_diagnostics_for_symbol` (symbol-scoped, optional tool — availability depends on Serena's `included_optional_tools` config) — Serena v1.3.0+. These run against Serena's bundled language server, less integrated than the IDE's own LSP but still authoritative for the languages Serena supports.
 
 **0c — neither available:** Skip Tier 0 — there is no authoritative diagnostics source. Drop to Tier 1 (Serena symbol nav) or Tier 2 (grep) and verify by running the build/test commands.
 
