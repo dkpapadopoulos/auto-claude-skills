@@ -242,6 +242,19 @@ To upgrade an existing PyPI-based install to the latest version:
 uv tool upgrade serena-agent --prerelease=allow
 ```
 
+**Troubleshooting Serena:**
+
+- *Model ignoring Serena tools.* Recent Opus releases occasionally bias toward built-in tools over Serena. Anthropic's recommended workaround is to start Claude with a Serena-aware system prompt:
+  ```bash
+  claude --system-prompt="$(serena prompts print-cc-system-prompt-override)"
+  ```
+  This is a one-time per-session flag — not a permanent install — and is only needed if you observe the model preferring Grep/Read over `mcp__serena__` tools.
+
+- *Slow MCP startup or timeout errors.* Set a higher MCP timeout before launching Claude:
+  ```bash
+  export MCP_TIMEOUT=60000
+  ```
+
 **Optional: Serena official hooks (recommended for heavy Serena usage)**
 
 Serena v1.1+ provides its own hooks to reduce agent drift. These are separate from the auto-claude-skills plugin's built-in nudge hook (which is lighter-weight and activates automatically). For users who want deeper Serena integration, **ask the user:** "Serena provides official hooks for session management and enhanced tool reminders. Would you like to add them to your settings?"
@@ -277,7 +290,23 @@ If the user agrees, merge the following hook entries into the existing `.claude/
 }
 ```
 
-Note: Do NOT add the `serena-hooks activate` SessionStart hook — the auto-claude-skills session-start hook already handles Serena detection and context setup. Do NOT add the `serena-hooks auto-approve` hook — auto-approval is a user preference. The `remind` hook fires on every tool call (broader than our built-in Grep-only nudge) and the `cleanup` hook prevents session data leaks.
+Note: Do NOT add the `serena-hooks activate` SessionStart hook — the auto-claude-skills session-start hook already handles Serena detection and context setup. The `remind` hook fires on every tool call (broader than our built-in Grep-only nudge) and the `cleanup` hook prevents session data leaks.
+
+**Optional: auto-approve hook.** Serena v1.3.0 also ships `serena-hooks auto-approve`, which auto-approves Serena tool calls when Claude Code is in `acceptEdits` or `auto` permission mode. Skips the per-tool approval prompt entirely. **Ask the user:** "Do you want Serena tool calls to be auto-approved when you're in `acceptEdits` or `auto` mode? (Recommended for users who run long autonomous sessions; skip if you prefer to approve each call.)"
+
+If the user agrees, merge this into the `PreToolUse` array of `.claude/settings.json` (alongside the `remind` entry — do not replace it):
+
+```json
+{
+  "matcher": "mcp__serena__.*",
+  "hooks": [
+    {
+      "type": "command",
+      "command": "serena-hooks auto-approve --client=claude-code"
+    }
+  ]
+}
+```
 
 After installation, verify MCP servers with `claude mcp list` (look for "Connected" status) and CLIs with `command -v`.
 
