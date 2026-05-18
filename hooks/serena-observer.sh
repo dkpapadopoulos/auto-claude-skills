@@ -30,7 +30,16 @@ _SERENA="$(jq -r '.context_capabilities.serena // false' "${_CACHE}" 2>/dev/null
 
 _TELEM="${HOME}/.claude/.serena-nudge-telemetry"
 _TS="$(date +%s 2>/dev/null || echo 0)"
-_TOKEN="${CLAUDE_SESSION_TOKEN:-unknown}"
+# Hash CLAUDE_SESSION_TOKEN to a 12-char hex prefix for telemetry. Raw token
+# stays in env; only the hash is persisted. Fail-open: if sha256sum is
+# unavailable, fall back to the raw token.
+_TOKEN_RAW="${CLAUDE_SESSION_TOKEN:-unknown}"
+if [ "${_TOKEN_RAW}" = "unknown" ] || ! command -v sha256sum >/dev/null 2>&1; then
+    _TOKEN="${_TOKEN_RAW}"
+else
+    _TOKEN="$(printf '%s' "${_TOKEN_RAW}" | sha256sum 2>/dev/null | cut -c1-12)"
+    [ -n "${_TOKEN}" ] || _TOKEN="${_TOKEN_RAW}"
+fi
 _TURN="${CLAUDE_TURN_ID:-0}"
 
 _log() {

@@ -22,8 +22,26 @@ _invoke_followthrough() {
     printf '%s' "${input}" | env CLAUDE_SESSION_TOKEN="${token}" CLAUDE_TURN_ID="${turn}" bash "${HOOK}" 2>/dev/null
 }
 
+# The hooks now hash CLAUDE_SESSION_TOKEN to a 12-char hex prefix before
+# writing to telemetry. Seeded fixture rows must use the hashed value so
+# followthrough's `$2==tok` filter (which sees the hashed _TOKEN) matches.
+_hash_tok() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        printf '%s' "$1" | sha256sum | cut -c1-12
+    else
+        printf '%s' "$1"
+    fi
+}
+H_A="$(_hash_tok tok-A)"
+H_B="$(_hash_tok tok-B)"
+H_C="$(_hash_tok tok-C)"
+H_E="$(_hash_tok tok-E)"
+H_F="$(_hash_tok tok-F)"
+H_OUR="$(_hash_tok tok-OUR)"
+H_NOISY="$(_hash_tok tok-NOISY)"
+
 # Seed: a nudge at turn 5 in session tok-A.
-printf '1700000000\ttok-A\t5\tnudge\tword_boundary\tgrep_extension\n' >>"${TELEM}"
+printf '1700000000\t%s\t5\tnudge\tword_boundary\tgrep_extension\n' "${H_A}" >>"${TELEM}"
 
 # Serena call at turn 6 — within 3 turns → should produce a followup line.
 _invoke_followthrough mcp__serena__find_symbol 6 tok-A >/dev/null
@@ -40,21 +58,21 @@ assert_equals "no double-followup once nudge correlated" "${_LINES_BEFORE}" "${_
 
 # Far-apart Serena call (turn 5 nudge + turn 12 Serena call) → no followup.
 rm -f "${TELEM}"
-printf '1700000000\ttok-B\t5\tnudge\tword_boundary\tgrep_extension\n' >>"${TELEM}"
+printf '1700000000\t%s\t5\tnudge\tword_boundary\tgrep_extension\n' "${H_B}" >>"${TELEM}"
 _invoke_followthrough mcp__serena__find_symbol 12 tok-B >/dev/null
 LAST="$(tail -1 "${TELEM}")"
 assert_not_contains "no followup beyond 3 turns" "followup" "${LAST}"
 
 # Different session token → no followup.
 rm -f "${TELEM}"
-printf '1700000000\ttok-C\t5\tnudge\tword_boundary\tgrep_extension\n' >>"${TELEM}"
+printf '1700000000\t%s\t5\tnudge\tword_boundary\tgrep_extension\n' "${H_C}" >>"${TELEM}"
 _invoke_followthrough mcp__serena__find_symbol 6 tok-D >/dev/null
 LAST="$(tail -1 "${TELEM}")"
 assert_not_contains "no followup across sessions" "followup" "${LAST}"
 
 # Observation — also correlates to followup.
 rm -f "${TELEM}"
-printf '1700000000\ttok-E\t10\tobserve\tread_large_source\tsrc/big.ts\n' >>"${TELEM}"
+printf '1700000000\t%s\t10\tobserve\tread_large_source\tsrc/big.ts\n' "${H_E}" >>"${TELEM}"
 _invoke_followthrough mcp__serena__get_symbols_overview 11 tok-E >/dev/null
 LAST="$(tail -1 "${TELEM}")"
 assert_contains "observation correlates to followup" "followup" "${LAST}"
@@ -63,20 +81,20 @@ assert_contains "observation followup carries read_large_source" "read_large_sou
 # Multi-session safety: a busy concurrent session writing 250 lines must not
 # evict our own session's nudge out of the lookup window.
 rm -f "${TELEM}"
-printf '1700000000\ttok-OUR\t5\tnudge\tword_boundary\tgrep_extension\n' >>"${TELEM}"
+printf '1700000000\t%s\t5\tnudge\tword_boundary\tgrep_extension\n' "${H_OUR}" >>"${TELEM}"
 i=1
 while [ "${i}" -le 250 ]; do
-    printf '1700000001\ttok-NOISY\t%d\tobserve\tread_large_source\tsrc/x.ts\n' "${i}" >>"${TELEM}"
+    printf '1700000001\t%s\t%d\tobserve\tread_large_source\tsrc/x.ts\n' "${H_NOISY}" "${i}" >>"${TELEM}"
     i=$((i+1))
 done
 _invoke_followthrough mcp__serena__find_symbol 6 tok-OUR >/dev/null
 LAST="$(tail -1 "${TELEM}")"
 assert_contains "concurrent session noise does not evict our nudge from the window" "followup" "${LAST}"
-assert_contains "followup carries our session token" "tok-OUR" "${LAST}"
+assert_contains "followup carries our session token (hashed)" "${H_OUR}" "${LAST}"
 
 # Errored Serena tool result → no followup.
 rm -f "${TELEM}"
-printf '1700000000\ttok-F\t5\tnudge\tword_boundary\tgrep_extension\n' >>"${TELEM}"
+printf '1700000000\t%s\t5\tnudge\tword_boundary\tgrep_extension\n' "${H_F}" >>"${TELEM}"
 err_input="$(jq -n '{tool_name:"mcp__serena__find_symbol", tool_input:{}, tool_response:{is_error:true}}')"
 printf '%s' "${err_input}" | env CLAUDE_SESSION_TOKEN=tok-F CLAUDE_TURN_ID=6 bash "${HOOK}" 2>/dev/null
 LAST="$(tail -1 "${TELEM}")"
