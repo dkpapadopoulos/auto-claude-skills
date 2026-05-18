@@ -2,15 +2,11 @@
   {
     "id": "subagent-propagation",
     "prompt": "I need to find every reference to UserService in this repo's src/ directory. Use the Task tool to spawn an Explore subagent to do this. Before invoking Task, print the full text of the prompt you plan to send to the subagent so I can review it. Format the printed prompt with a clearly delimited block (e.g. fenced code, or 'SPAWN PROMPT:' / 'END SPAWN PROMPT' markers). Then invoke Task.",
-    "expected_behavior": "When serena=true (registry capability), the SessionStart Serena banner instructs the parent to propagate Serena guidance into Task spawn prompts. The model's printed spawn prompt MUST mention Serena and find_symbol (or an equivalent paraphrase such as 'find_referencing_symbols' or 'prefer find_symbol over Grep'), AND MUST carry the user's symbol-search task (UserService / references) into the subagent. If the spawn prompt omits Serena guidance, the propagation strategy is failing in practice and the parked Read/Glob matchers' revival evaluation should not assume subagent inheritance works.",
+    "expected_behavior": "Contract updated 2026-05-18 (PR #34): the SessionStart Serena banner NO LONGER instructs the parent to propagate Serena guidance into Task spawn prompts. Per Serena's client docs (https://oraios.github.io/serena/02-usage/030_clients.html), subagent MCP runs typically cannot use MCP servers, so propagation was wasted tokens. The model's printed spawn prompt MUST carry the user's symbol-search task (UserService / references) into the subagent. The spawn prompt MAY or MAY NOT mention Serena — that decision is now left to the model's own judgment based on phase docs, not banner instruction.",
     "assertions": [
       {
         "text": "task|explore|subagent|spawn",
         "description": "Mentions spawning a subagent or using the Task tool"
-      },
-      {
-        "text": "serena|find_symbol|find_referencing_symbols",
-        "description": "Spawn prompt contains a Serena reference (literal banner copy, find_symbol, or find_referencing_symbols paraphrase)"
       },
       {
         "text": "userservice|references|symbol",
