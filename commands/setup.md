@@ -210,6 +210,30 @@ uv tool install -p 3.13 serena-agent@latest --prerelease=allow
 serena init
 ```
 
+**2.5. Detect project languages and write them into `.serena/project.yml`.** A fresh `.serena/project.yml` has an empty `languages:` field — Serena will refuse to start its language servers, giving silent zero results from `find_symbol`/`find_declaration`. Run the bundled detector:
+
+```bash
+LANGS="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-serena-languages.sh" "$(pwd)")"
+```
+
+If `$LANGS` is non-empty, **ask the user:** "Detected these languages in your project: `$(echo "$LANGS" | paste -sd, -)`. Write them into `.serena/project.yml`?" If they agree, write the `languages:` block (using yq if available, otherwise sed):
+
+```bash
+if command -v yq >/dev/null 2>&1; then
+    yq -i ".languages = []" .serena/project.yml
+    echo "$LANGS" | while read -r lang; do
+        [ -n "$lang" ] && yq -i ".languages += [\"$lang\"]" .serena/project.yml
+    done
+else
+    LANG_BLOCK="languages:\n$(echo "$LANGS" | awk '{print "- " $0}')"
+    sed -i.bak "s/^languages: *$/${LANG_BLOCK}/" .serena/project.yml && rm .serena/project.yml.bak
+fi
+```
+
+If `$LANGS` is empty, **inform the user:** "No language markers found in this repo's root + 2 levels. Edit `.serena/project.yml`'s `languages:` field manually before continuing — Serena needs at least one language declared. See https://oraios.github.io/serena/01-about/020_programming-languages.html for available languages."
+
+If the user declines to auto-write, give the same manual-edit guidance with the detected list.
+
 3. Register the MCP server — choose one:
 
 Per-project (recommended, captures current working directory):
