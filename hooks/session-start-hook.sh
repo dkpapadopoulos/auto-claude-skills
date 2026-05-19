@@ -1047,9 +1047,10 @@ for _plugin in superpowers frontend-design claude-md-management claude-code-setu
     fi
 done
 
-# MCP plugins (SDLC data sources — live docs, GitHub, Atlassian)
-# Note: Atlassian may be available as a claude.ai managed integration
-# (mcp__claude_ai_Atlassian__) without a marketplace install.
+# MCP plugins (SDLC data sources — live docs, GitHub, Atlassian Rovo)
+# Note: Atlassian Rovo MCP (Jira/Confluence/Compass) is a claude.ai managed
+# integration at https://mcp.atlassian.com/v1/mcp/authv2. Tools appear under
+# the mcp__atlassian__ prefix (server name set by the user's /mcp config).
 MISSING_MCP=""
 MISSING_MCP_COUNT=0
 for _plugin in context7 github; do

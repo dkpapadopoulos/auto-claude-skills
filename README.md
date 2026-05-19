@@ -149,7 +149,7 @@ Installed via `/setup` unless noted. The routing engine discovers these automati
 
 **GCP Observability** — When the observability MCP is installed, incident-analysis and alert-hygiene gain direct log/trace/metric queries instead of falling back to gcloud CLI guidance.
 
-**Atlassian managed integration** — Jira and Confluence connect via `/mcp` as a claude.ai managed MCP, not through `/setup`.
+**Atlassian Rovo MCP** (formerly Atlassian MCP) — Jira, Confluence, and Compass connect via `/mcp` as a claude.ai managed integration at `https://mcp.atlassian.com/v1/mcp/authv2`. `/setup` includes a walkthrough that detects existing connections, warns on the legacy `/v1/mcp` endpoint (deprecated after 2026-06-30), and offers a copy-paste defaults block. Skills prefer the Rovo cross-system `search` tool for unified Jira+Confluence discovery.
 
 ## Configuration
 

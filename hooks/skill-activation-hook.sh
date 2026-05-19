@@ -1331,7 +1331,7 @@ case "${PRIMARY_PHASE}" in
   DISCOVER)
     RED_FLAGS="
 HALT if any Red Flag is true:
-- Skipping Jira/Confluence context pull when Atlassian MCP is available
+- Skipping Jira/Confluence context pull when Atlassian Rovo MCP is connected (prefer `search` for cross-system scoping)
 - Jumping to design without presenting a discovery brief
 - Writing code during the DISCOVER phase"
     ;;
@@ -1371,7 +1371,7 @@ HALT if any Red Flag is true:
   LEARN)
     RED_FLAGS="
 HALT if any Red Flag is true:
-- Creating Jira follow-up tickets without user approval
+- Creating Jira follow-up tickets via Atlassian Rovo MCP without user approval
 - Skipping metrics analysis and going straight to recommendations
 - Editing code during the LEARN phase"
     ;;
