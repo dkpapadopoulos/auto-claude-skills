@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": "docs/plans/2026-05-19-forgetful-integration-tightening-design.md",
+  "plan_path": "docs/plans/2026-05-19-forgetful-integration-tightening-plan.md",
+  "spec_path": "",
+  "sp_plan_path": "docs/plans/2026-05-19-forgetful-integration-tightening-plan.md",
+  "sp_spec_path": "",
+  "change_slug": "forgetful-integration-tightening",
+  "capability_slug": "unified-context-stack",
+  "source_branch": "worktree-forgetful-integration-tightening",
+  "base_commit": "3fa9767a8f22ec04d4b2c802ce016d35c9f91adf",
+  "openspec_surface": "none",
+  "archived_at": "2026-05-19T08:11:04Z"
+}

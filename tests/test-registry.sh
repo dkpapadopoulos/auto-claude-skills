@@ -936,10 +936,10 @@ EOF
     has_malicious="$(jq '.context_capabilities | has("malicious_safety_gate")' "${cache_file}" 2>/dev/null)"
     assert_equals "malicious_safety_gate key dropped by whitelist" "false" "${has_malicious}"
 
-    # Key count must equal the canonical set size (9)
+    # Key count must equal the canonical set size (10)
     local key_count
     key_count="$(jq '.context_capabilities | keys | length' "${cache_file}" 2>/dev/null)"
-    assert_equals "context_capabilities has exactly 9 canonical keys" "9" "${key_count}"
+    assert_equals "context_capabilities has exactly 10 canonical keys" "10" "${key_count}"
 
     teardown_test_env
 }

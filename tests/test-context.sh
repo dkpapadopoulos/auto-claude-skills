@@ -899,6 +899,44 @@ json.dump(d, open('${HOME}/.claude.json', 'w'))
 }
 test_mcp_fallback_detection
 
+test_forgetful_connected_default_false() {
+    echo "-- test: forgetful_connected defaults to false when probe disabled --"
+    setup_test_env
+
+    local proj_root
+    proj_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+    python3 -c "
+import json
+d = {}
+try:
+    d = json.load(open('${HOME}/.claude.json'))
+except: pass
+d.setdefault('mcpServers', {})['forgetful'] = {'type':'stdio','command':'echo'}
+json.dump(d, open('${HOME}/.claude.json', 'w'))
+"
+
+    # Run hook with connection probe OFF (default)
+    CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${PROJECT_ROOT}/hooks/session-start-hook.sh" 2>/dev/null >/dev/null
+
+    local cache="${HOME}/.claude/.skill-registry-cache.json"
+    local fm fc
+    fm="$(jq -r '.context_capabilities.forgetful_memory // false' "${cache}" 2>/dev/null)"
+    fc="$(jq -r '.context_capabilities.forgetful_connected // false' "${cache}" 2>/dev/null)"
+
+    assert_equals "forgetful_memory true via MCP config" "true" "${fm}"
+    assert_equals "forgetful_connected false when probe disabled" "false" "${fc}"
+    echo "   PASS"
+}
+test_forgetful_connected_default_false
+
+test_forgetful_connected_in_canonical_keys() {
+    echo "-- test: forgetful_connected appears in canonical capability keys --"
+    local hook="${PROJECT_ROOT}/hooks/session-start-hook.sh"
+    assert_contains "canonical keys include forgetful_connected" "forgetful_connected" "$(cat "${hook}")"
+    echo "   PASS"
+}
+test_forgetful_connected_in_canonical_keys
+
 # ---------------------------------------------------------------------------
 # Design phase context stack integration
 # ---------------------------------------------------------------------------

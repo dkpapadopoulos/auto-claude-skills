@@ -41,6 +41,33 @@ assert_not_contains "Serena banner does NOT use 'Serena available' propagation p
 assert_contains "LSP banner still names mcp__ide__getDiagnostics" "mcp__ide__getDiagnostics" "${SRC}"
 assert_not_contains "banner does NOT mention get_diagnostics_for_file (kept in phase docs)" "get_diagnostics_for_file" "${SRC}"
 
+# Forgetful banner content — names all three tools and orders them per the real
+# forgetful-ai MCP server surface: discover_forgetful_tools (no args) is the
+# entry point, then execute_forgetful_tool, then how_to_use_forgetful_tool
+# (which takes a required tool_name and returns per-tool docs). Codex review
+# (PR #37) caught that the original how_to_use-first ordering was inverted.
+assert_contains "Forgetful banner names discover_forgetful_tools" "discover_forgetful_tools" "${SRC}"
+assert_contains "Forgetful banner names execute_forgetful_tool" "execute_forgetful_tool" "${SRC}"
+assert_contains "Forgetful banner names how_to_use_forgetful_tool" "how_to_use_forgetful_tool" "${SRC}"
+# Ordering: discover must appear before execute, which must appear before how_to_use.
+# Use byte-offsets (grep -bo) so the check works whether the banner is on one line
+# or split across lines.
+DISCOVER_POS=$(grep -bo 'discover_forgetful_tools' "${HOOK_FILE}" | head -1 | cut -d: -f1)
+EXECUTE_POS=$(grep -bo 'execute_forgetful_tool' "${HOOK_FILE}" | head -1 | cut -d: -f1)
+HOW_POS=$(grep -bo 'how_to_use_forgetful_tool' "${HOOK_FILE}" | head -1 | cut -d: -f1)
+if [ -n "${DISCOVER_POS}" ] && [ -n "${EXECUTE_POS}" ] && [ -n "${HOW_POS}" ] && \
+   [ "${DISCOVER_POS}" -lt "${EXECUTE_POS}" ] && [ "${EXECUTE_POS}" -lt "${HOW_POS}" ]; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    TESTS_RUN=$((TESTS_RUN + 1))
+    echo "PASS: Forgetful banner orders discover → execute → how_to_use"
+else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    TESTS_RUN=$((TESTS_RUN + 1))
+    echo "FAIL: Forgetful banner ordering (disc=${DISCOVER_POS} exec=${EXECUTE_POS} how=${HOW_POS})"
+fi
+assert_contains "Forgetful banner names all phase anchors (DESIGN/PLAN/IMPLEMENT/DEBUG/REVIEW)" "DESIGN/PLAN/IMPLEMENT/DEBUG/REVIEW" "${SRC}"
+assert_contains "Forgetful banner anchors SHIP-phase write step" "store after SHIP" "${SRC}"
+
 teardown_test_env
 
 if [ "${TESTS_FAILED}" -gt 0 ]; then

@@ -23,7 +23,9 @@ These are injected by the session-start hook as: `Context Stack: context7=true, 
 | `context_hub_available` | Context Hub via Context7 | High-trust curated docs — flag means Hub is *reachable*, not that it has docs for your library (query `/andrewyng/context-hub`) |
 | `context_hub_cli` | `chub` CLI | Local curated doc retrieval and annotations |
 | `serena` | Serena MCP | LSP-powered dependency mapping and AST edits |
+| `serena_connected` | Serena MCP | MCP server is connected (not just registered); set only when `SERENA_CONNECTION_CHECK=1` |
 | `forgetful_memory` | Forgetful Memory | Persistent cross-session architectural knowledge |
+| `forgetful_connected` | Forgetful Memory | MCP server is connected (not just registered); set only when `FORGETFUL_CONNECTION_CHECK=1` |
 | `openspec` | OpenSpec CLI | Whether the `openspec` binary is available. See the separate `OpenSpec:` capability line for detailed surface/command info. Intent Truth retrieval does NOT require this flag — it checks artifact presence directly. |
 
 ## Tier Documents

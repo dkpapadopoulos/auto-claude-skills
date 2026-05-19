@@ -1003,6 +1003,7 @@
     "serena": false,
     "serena_connected": false,
     "forgetful_memory": false,
+    "forgetful_connected": false,
     "openspec": false,
     "posthog": false,
     "lsp": false

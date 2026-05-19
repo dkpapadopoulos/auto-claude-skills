@@ -763,7 +763,7 @@ OPENSPEC_CAPS="$(jq -n \
 # 2. User-config override filter (drops any non-canonical key from skill-config.json)
 # 3. Fallback-registry writer (Step 10c, hardcoded jq — kept in sync via comment)
 # If you add a capability, update this array AND the fallback writer's jq expression.
-_CANONICAL_CAP_KEYS='["context7","context_hub_cli","context_hub_available","serena","serena_connected","forgetful_memory","openspec","posthog","lsp"]'
+_CANONICAL_CAP_KEYS='["context7","context_hub_cli","context_hub_available","serena","serena_connected","forgetful_memory","forgetful_connected","openspec","posthog","lsp"]'
 
 # Single jq call: detect all plugin capabilities, derive bindings, build CONTEXT_CAPS
 # (Context7 detection checks plugin name, not MCP tool names. Covers the standard
@@ -778,7 +778,7 @@ CONTEXT_CAPS="$(printf '%s' "${PLUGINS_JSON}" | jq \
     ($avail | index("serena") != null) as $ser |
     ($avail | index("forgetful") != null) as $fm |
     ($avail | index("posthog") != null) as $ph |
-    {context7:$c7, context_hub_cli:$chub, context_hub_available:$c7, serena:$ser, serena_connected:false, forgetful_memory:$fm, openspec:$openspec, posthog:$ph, lsp:$lsp}'
+    {context7:$c7, context_hub_cli:$chub, context_hub_available:$c7, serena:$ser, serena_connected:false, forgetful_memory:$fm, forgetful_connected:false, openspec:$openspec, posthog:$ph, lsp:$lsp}'
 )"
 
 # MCP fallback: check ~/.claude.json for servers not detected via plugins
@@ -811,6 +811,18 @@ if [ "${SERENA_CONNECTION_CHECK:-0}" = "1" ] && command -v claude >/dev/null 2>&
     # Filter to the serena entry first via a literal grep, then check the marker.
     if claude mcp list 2>/dev/null | grep '^serena: ' | grep -qF '✓ Connected'; then
         CONTEXT_CAPS="$(printf '%s' "${CONTEXT_CAPS}" | jq '.serena_connected = true' 2>/dev/null || printf '%s' "${CONTEXT_CAPS}")"
+    fi
+fi
+
+# Refine `forgetful_connected` by parsing `claude mcp list` output for the
+# "✓ Connected" marker on the forgetful entry. Gated on FORGETFUL_CONNECTION_CHECK=1
+# (off by default — registration remains the routing gate). Fail-open: any
+# error leaves forgetful_connected=false.
+if [ "${FORGETFUL_CONNECTION_CHECK:-0}" = "1" ] && command -v claude >/dev/null 2>&1; then
+    # Use grep -F for the literal Unicode ✓ to avoid locale-collation issues
+    # under C/POSIX locale (where multi-byte regex matching may silently fail).
+    if claude mcp list 2>/dev/null | grep '^forgetful: ' | grep -qF '✓ Connected'; then
+        CONTEXT_CAPS="$(printf '%s' "${CONTEXT_CAPS}" | jq '.forgetful_connected = true' 2>/dev/null || printf '%s' "${CONTEXT_CAPS}")"
     fi
 fi
 # Note: no MCP fallback for lsp. Claude Code's LSP family uses the `lspServers` plugin-manifest
@@ -1141,7 +1153,7 @@ fi
 # Emit Forgetful usage hint when available
 if printf '%s' "${CONTEXT_CAPS}" | jq -e '.forgetful_memory == true' >/dev/null 2>&1; then
     CONTEXT="${CONTEXT}
-Forgetful: Use discover_forgetful_tools to list available memory operations, then execute_forgetful_tool to query or store architectural knowledge across sessions."
+Forgetful: call mcp__forgetful__discover_forgetful_tools first (no args) for the operation list, then mcp__forgetful__execute_forgetful_tool for reads/writes; call mcp__forgetful__how_to_use_forgetful_tool(tool_name) only when you need detailed docs on a specific operation. Query memory before DESIGN/PLAN/IMPLEMENT/DEBUG/REVIEW; store after SHIP. Forgetful = cross-session architectural memory; do not dual-write with Claude Code per-project auto-memory."
 fi
 
 # Append OpenSpec capabilities summary
