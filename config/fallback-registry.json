@@ -1375,7 +1375,7 @@
         "(ticket|story|epic|acceptance.criter|definition.of.done|requirement|user.story|jira|sprint|backlog|discover|triage|prioriti)"
       ],
       "trigger_mode": "regex",
-      "hint": "ATLASSIAN: If Jira MCP tools are available, pull acceptance criteria and linked context for relevant tickets. Reference any Jira context already discussed in this session.",
+      "hint": "ATLASSIAN ROVO: If Atlassian Rovo MCP is connected, prefer `search(cloudId, query)` for cross-system discovery before targeted JQL. Pull acceptance criteria and linked context. Use `maxResults: 10`.",
       "phases": [
         "DISCOVER",
         "DESIGN",
@@ -1388,7 +1388,7 @@
         "(confluence|wiki|knowledge.base|design.doc|architecture.doc|adr|decision.record)"
       ],
       "trigger_mode": "regex",
-      "hint": "ATLASSIAN: If Confluence MCP tools are available, search for relevant design docs and references. Keep searches narrow by title or space.",
+      "hint": "ATLASSIAN ROVO: If Atlassian Rovo MCP is connected, prefer `search(cloudId, query)` to scope across Jira+Confluence first; refine with CQL by title or space using `limit: 10`.",
       "phases": [
         "DESIGN",
         "PLAN"
