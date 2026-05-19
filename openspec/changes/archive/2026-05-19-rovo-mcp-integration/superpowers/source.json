@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": null,
+  "plan_path": null,
+  "spec_path": null,
+  "sp_plan_path": null,
+  "sp_spec_path": null,
+  "change_slug": "rovo-mcp-integration",
+  "capability_slug": null,
+  "source_branch": "worktree-rovo-mcp-integration",
+  "base_commit": "9f893b2135ccac3bce6814f55b923736503aa29c",
+  "openspec_surface": "none",
+  "archived_at": "2026-05-19T13:12:57Z"
+}
