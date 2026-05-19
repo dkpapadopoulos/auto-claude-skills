@@ -45,19 +45,21 @@ assert_not_contains "banner does NOT mention get_diagnostics_for_file (kept in p
 assert_contains "Forgetful banner names how_to_use_forgetful_tool first" "how_to_use_forgetful_tool" "${SRC}"
 assert_contains "Forgetful banner names discover_forgetful_tools" "discover_forgetful_tools" "${SRC}"
 assert_contains "Forgetful banner names execute_forgetful_tool" "execute_forgetful_tool" "${SRC}"
-# Ordering: how_to_use must appear before discover, which must appear before execute
-HOW_LINE=$(grep -n 'how_to_use_forgetful_tool' "${HOOK_FILE}" | head -1 | cut -d: -f1)
-DISCOVER_LINE=$(grep -n 'discover_forgetful_tools' "${HOOK_FILE}" | head -1 | cut -d: -f1)
-EXECUTE_LINE=$(grep -n 'execute_forgetful_tool' "${HOOK_FILE}" | head -1 | cut -d: -f1)
-if [ -n "${HOW_LINE}" ] && [ -n "${DISCOVER_LINE}" ] && [ -n "${EXECUTE_LINE}" ] && \
-   [ "${HOW_LINE}" -lt "${DISCOVER_LINE}" ] && [ "${DISCOVER_LINE}" -lt "${EXECUTE_LINE}" ]; then
+# Ordering: how_to_use must appear before discover, which must appear before execute.
+# Use byte-offsets (grep -bo) so the check works whether the banner is on one line
+# or split across lines.
+HOW_POS=$(grep -bo 'how_to_use_forgetful_tool' "${HOOK_FILE}" | head -1 | cut -d: -f1)
+DISCOVER_POS=$(grep -bo 'discover_forgetful_tools' "${HOOK_FILE}" | head -1 | cut -d: -f1)
+EXECUTE_POS=$(grep -bo 'execute_forgetful_tool' "${HOOK_FILE}" | head -1 | cut -d: -f1)
+if [ -n "${HOW_POS}" ] && [ -n "${DISCOVER_POS}" ] && [ -n "${EXECUTE_POS}" ] && \
+   [ "${HOW_POS}" -lt "${DISCOVER_POS}" ] && [ "${DISCOVER_POS}" -lt "${EXECUTE_POS}" ]; then
     TESTS_PASSED=$((TESTS_PASSED + 1))
     TESTS_RUN=$((TESTS_RUN + 1))
     echo "PASS: Forgetful banner orders how_to_use → discover → execute"
 else
     TESTS_FAILED=$((TESTS_FAILED + 1))
     TESTS_RUN=$((TESTS_RUN + 1))
-    echo "FAIL: Forgetful banner ordering (how=${HOW_LINE} disc=${DISCOVER_LINE} exec=${EXECUTE_LINE})"
+    echo "FAIL: Forgetful banner ordering (how=${HOW_POS} disc=${DISCOVER_POS} exec=${EXECUTE_POS})"
 fi
 assert_contains "Forgetful banner references DESIGN phase" "DESIGN" "${SRC}"
 assert_contains "Forgetful banner references SHIP phase" "SHIP" "${SRC}"

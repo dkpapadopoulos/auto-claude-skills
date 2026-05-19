@@ -1141,7 +1141,7 @@ fi
 # Emit Forgetful usage hint when available
 if printf '%s' "${CONTEXT_CAPS}" | jq -e '.forgetful_memory == true' >/dev/null 2>&1; then
     CONTEXT="${CONTEXT}
-Forgetful: Use discover_forgetful_tools to list available memory operations, then execute_forgetful_tool to query or store architectural knowledge across sessions."
+Forgetful: call mcp__forgetful__how_to_use_forgetful_tool once at session start to learn the API, then mcp__forgetful__discover_forgetful_tools for the operation list, then mcp__forgetful__execute_forgetful_tool for reads/writes. Query memory before DESIGN/PLAN/IMPLEMENT/DEBUG/REVIEW; store after SHIP. Forgetful = cross-session architectural memory; do not dual-write with Claude Code per-project auto-memory."
 fi
 
 # Append OpenSpec capabilities summary
