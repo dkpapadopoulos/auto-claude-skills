@@ -20,6 +20,16 @@ Claude Code plugin for automatic skill routing based on prompt intent and SDLC p
 - **Scoring**: Regex trigger match → base score + priority + name bonus + composition bonus → role-cap selection (max 1 process, 2 domain, 1 workflow).
 - **Output**: JSON via `hookSpecificOutput` on stdout. Hooks fail-open (exit 0 on error).
 
+## Doc locations
+
+Five canonical homes for project context. Read this before guessing where docs live.
+
+- `CLAUDE.md` (repo root) — project instructions, always auto-loaded into every session.
+- `docs/plans/` — design docs (`*-design.md`) and task plans (`*-plan.md`). Gitignored; per-session scratch. Default mode persists design intent here.
+- `openspec/changes/` — committed proposals/specs visible to teammates. Only used in `spec-driven` preset (see Spec Persistence Modes).
+- `~/.claude/projects/<project>/memory/MEMORY.md` + sibling memory files — auto-memory across sessions (typed frontmatter, slug-indexed). Project-local conversation memory.
+- `.claude/` — plugin runtime state, hooks, settings, and worktrees.
+
 ## Style
 
 - Bash 3.2 compatible (macOS `/bin/bash`). No associative arrays.
