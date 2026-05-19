@@ -41,6 +41,27 @@ assert_not_contains "Serena banner does NOT use 'Serena available' propagation p
 assert_contains "LSP banner still names mcp__ide__getDiagnostics" "mcp__ide__getDiagnostics" "${SRC}"
 assert_not_contains "banner does NOT mention get_diagnostics_for_file (kept in phase docs)" "get_diagnostics_for_file" "${SRC}"
 
+# Forgetful banner content (gaps #1 + #2 fix)
+assert_contains "Forgetful banner names how_to_use_forgetful_tool first" "how_to_use_forgetful_tool" "${SRC}"
+assert_contains "Forgetful banner names discover_forgetful_tools" "discover_forgetful_tools" "${SRC}"
+assert_contains "Forgetful banner names execute_forgetful_tool" "execute_forgetful_tool" "${SRC}"
+# Ordering: how_to_use must appear before discover, which must appear before execute
+HOW_LINE=$(grep -n 'how_to_use_forgetful_tool' "${HOOK_FILE}" | head -1 | cut -d: -f1)
+DISCOVER_LINE=$(grep -n 'discover_forgetful_tools' "${HOOK_FILE}" | head -1 | cut -d: -f1)
+EXECUTE_LINE=$(grep -n 'execute_forgetful_tool' "${HOOK_FILE}" | head -1 | cut -d: -f1)
+if [ -n "${HOW_LINE}" ] && [ -n "${DISCOVER_LINE}" ] && [ -n "${EXECUTE_LINE}" ] && \
+   [ "${HOW_LINE}" -lt "${DISCOVER_LINE}" ] && [ "${DISCOVER_LINE}" -lt "${EXECUTE_LINE}" ]; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    TESTS_RUN=$((TESTS_RUN + 1))
+    echo "PASS: Forgetful banner orders how_to_use → discover → execute"
+else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    TESTS_RUN=$((TESTS_RUN + 1))
+    echo "FAIL: Forgetful banner ordering (how=${HOW_LINE} disc=${DISCOVER_LINE} exec=${EXECUTE_LINE})"
+fi
+assert_contains "Forgetful banner references DESIGN phase" "DESIGN" "${SRC}"
+assert_contains "Forgetful banner references SHIP phase" "SHIP" "${SRC}"
+
 teardown_test_env
 
 if [ "${TESTS_FAILED}" -gt 0 ]; then
