@@ -906,6 +906,7 @@
         "agents": [],
         "hooks": [],
         "mcp_tools": [
+          "search",
           "searchJiraIssuesUsingJql",
           "getJiraIssue",
           "getConfluencePage",
@@ -921,7 +922,7 @@
         "REVIEW",
         "LEARN"
       ],
-      "description": "Jira and Confluence integration via claude.ai managed MCP. Connect via /mcp in Claude Code. Pull acceptance criteria, search issues, read design docs.",
+      "description": "Atlassian Rovo MCP (Jira, Confluence, Compass) via claude.ai managed integration. Connect via /mcp at https://mcp.atlassian.com/v1/mcp/authv2 (legacy /v1/mcp deprecated after 2026-06-30). Exposes Rovo cross-system search plus targeted Jira/Confluence tools.",
       "available": false
     },
     {
