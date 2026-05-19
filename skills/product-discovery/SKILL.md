@@ -11,12 +11,12 @@ Synthesize a discovery brief from Jira tickets, Confluence docs, and conversatio
 
 Check which MCP tools are available:
 
-**Tier 1 — Atlassian MCP:**
-If you have access to `searchJiraIssuesUsingJql`, `getJiraIssue`, `searchConfluenceUsingCql`, or `getConfluencePage` as MCP tools, use Tier 1.
+**Tier 1 — Atlassian Rovo MCP:**
+If you have access to `search` (Rovo cross-system search), `searchJiraIssuesUsingJql`, `getJiraIssue`, `searchConfluenceUsingCql`, or `getConfluencePage` as MCP tools, use Tier 1. This is the same managed integration whether the user connected it as "Atlassian" or "Atlassian Rovo MCP" — they share endpoint `https://mcp.atlassian.com/v1/mcp/authv2` (legacy `/v1/mcp` deprecated after 2026-06-30).
 
 **Tier 2 — Manual Context:**
-If no Atlassian MCP tools are available, ask the user to provide context directly:
-> "I don't have Atlassian MCP access. Please share any of the following:
+If no Atlassian Rovo MCP tools are available, ask the user to provide context directly:
+> "I don't have Atlassian Rovo MCP access. Please share any of the following:
 > - Jira ticket IDs or URLs for the work you're considering
 > - Problem statements or user pain points
 > - Acceptance criteria or success metrics
@@ -24,22 +24,21 @@ If no Atlassian MCP tools are available, ask the user to provide context directl
 
 ## Step 2: Gather Context
 
-**Tier 1 (Atlassian MCP available):**
+**Tier 1 (Atlassian Rovo MCP available):**
 
-1. Ask the user what area, project, or problem they want to explore
-2. Query Jira for relevant issues:
-   - `searchJiraIssuesUsingJql` with project, status, priority, labels
-   - `getJiraIssue` for full details on top candidates
-3. Query Confluence for related docs:
-   - `searchConfluenceUsingCql` for design docs, ADRs, prior decisions
-   - `getConfluencePage` to read full content of relevant pages
-4. Note any linked issues, parent epics, or blocked dependencies
+1. Ask the user what area, project, or problem they want to explore.
+2. **Scope across both systems first** — call `search(cloudId, query)`. This Rovo cross-system call returns Jira issues + Confluence pages ranked in a single response. Use `cloudId` from project CLAUDE.md if present; otherwise call `getAccessibleAtlassianResources` once.
+3. **Deep-read top hits** — for the most relevant returned items, call `getJiraIssue` (for `jira_issue` results) or `getConfluencePage` (for `confluence_page` results) to pull full content.
+4. **Refine only on miss** — if the cross-system scope missed relevant work, fall back to targeted queries:
+   - `searchJiraIssuesUsingJql` with project, status, priority, labels (`maxResults: 10`)
+   - `searchConfluenceUsingCql` for design docs, ADRs, prior decisions (`limit: 10`)
+5. Note any linked issues, parent epics, or blocked dependencies.
 
 **Tier 2 (Manual):**
 
-1. Ask the user to describe the problem space
-2. Ask for any existing ticket IDs, doc links, or context
-3. Synthesize from what the user provides
+1. Ask the user to describe the problem space.
+2. Ask for any existing ticket IDs, doc links, or context.
+3. Synthesize from what the user provides.
 
 ## Step 3: Synthesize Discovery Brief
 
