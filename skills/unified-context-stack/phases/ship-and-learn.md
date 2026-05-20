@@ -31,6 +31,8 @@ The helper keys the marker off the git remote URL when one is configured, so wor
 
 ## Memory Consolidation
 
+**Sequence:** Memory consolidation MUST complete before the first `git push` of the SHIP phase. If you push before consolidating, the push gate in `hooks/openspec-guard.sh` will interrupt the flow with a CONSOLIDATION GUARD warning, and the operator path back to the consolidation step is fragile — recovery typically drops it. Order: as-built docs → memory consolidation → consolidation marker → `git push`.
+
 Evaluate your available tools and execute the highest available tier:
 
 ### IF forgetful_memory = true
