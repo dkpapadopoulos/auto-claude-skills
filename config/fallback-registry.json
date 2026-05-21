@@ -426,6 +426,7 @@
       "requires": [],
       "description": "Multi-perspective parallel code review with specialist reviewers. Trigger-gated + condition-gated required.",
       "invoke": "Skill(auto-claude-skills:agent-team-review)",
+      "max_iterations": 1,
       "available": false,
       "enabled": true
     },

@@ -242,6 +242,31 @@ _score_skills() {
 
     # Apply skill-name-mention boost (+100) and allow through even with zero trigger_score
     if [[ "$trigger_score" -gt 0 ]] || [[ "$name_boost" -gt 0 ]] || [[ "$keyword_score" -gt 0 ]]; then
+      # ---- C2: per-skill iteration cap (role-allowlist: domain + required only) ----
+      # Process and workflow roles are NEVER capped — this guard protects SDLC
+      # phase gates (verification-before-completion, openspec-ship,
+      # finishing-a-development-branch, requesting-code-review, etc.) from
+      # accidental misconfiguration. Locked by tests/test-routing.sh::
+      # test_max_iterations_role_allowlist.
+      if [[ "$skill_role" == "domain" || "$skill_role" == "required" ]] && [[ -n "${_SESSION_TOKEN}" ]]; then
+        _max_iter="$(printf '%s' "$REGISTRY" | jq -r --arg n "$skill_name" \
+            '.skills[] | select(.name == $n) | .max_iterations // empty' 2>/dev/null)"
+        if [[ "$_max_iter" =~ ^[0-9]+$ ]] && [[ "$_max_iter" -ge 1 ]]; then
+          _comp_file="${HOME}/.claude/.skill-composition-state-${_SESSION_TOKEN}"
+          if [[ -f "$_comp_file" ]]; then
+            _iter_count="$(jq -r --arg n "$skill_name" \
+                '[.completed // [] | .[] | select(. == $n)] | length' \
+                "$_comp_file" 2>/dev/null)"
+            if [[ "$_iter_count" =~ ^[0-9]+$ ]] && [[ "$_iter_count" -ge "$_max_iter" ]]; then
+              [[ -n "${SKILL_EXPLAIN:-}" ]] && \
+                  printf '[skill-hook] [max-iter] skipping %s (%s of %s)\n' \
+                  "$skill_name" "$_iter_count" "$_max_iter" >&2
+              continue
+            fi
+          fi
+        fi
+      fi
+      # ---- end C2 ----
       final_score=$((trigger_score + skill_priority + name_boost + keyword_score))
       RESULTS="${RESULTS}${final_score}|${skill_name}|${skill_role}|${skill_invoke}|${skill_phase}
 "

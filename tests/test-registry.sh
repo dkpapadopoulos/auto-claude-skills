@@ -1923,4 +1923,75 @@ test_default_mode_no_workflow_warning() {
 }
 test_default_mode_no_workflow_warning
 
+# ---------------------------------------------------------------------------
+# Fallback registry must remain in sync with default-triggers.json
+# Closes drift class documented in memory: feedback_default_triggers_source_of_truth
+# ---------------------------------------------------------------------------
+test_fallback_registry_in_sync_with_default_triggers() {
+    echo "-- test: fallback-registry.json matches regenerated content from default-triggers.json --"
+
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "  SKIP: jq not available"
+        return 0
+    fi
+
+    local triggers_file="${PROJECT_ROOT}/config/default-triggers.json"
+    local fallback_file="${PROJECT_ROOT}/config/fallback-registry.json"
+
+    if [ ! -f "$triggers_file" ] || [ ! -f "$fallback_file" ]; then
+        echo "  SKIP: required config files missing"
+        return 0
+    fi
+
+    # Canonical context_capabilities key set MUST mirror _CANONICAL_CAP_KEYS in
+    # hooks/session-start-hook.sh. If keys change there, update here in lockstep.
+    local cap_keys='["context7","context_hub_cli","context_hub_available","serena","serena_connected","forgetful_memory","forgetful_connected","openspec","posthog","lsp"]'
+
+    local default_json
+    default_json="$(cat "$triggers_file")"
+
+    local regenerated
+    regenerated="$(printf '%s' "$default_json" | jq \
+        --argjson cap_keys "$cap_keys" \
+        '. as $d |
+        {
+            version: ($d.version // "4.0.0-fallback"),
+            frontmatter_schema_version: 1,
+            skills: [($d.skills // [])[] | . + {available: false, enabled: (.enabled // true)}],
+            plugins: [($d.plugins // [])[] | . + {available: false}],
+            context_capabilities: ($cap_keys | map({(.): false}) | add),
+            openspec_capabilities: {binary: false, commands: [], surface: "none", warnings: []},
+            phase_compositions: ($d.phase_compositions // {}),
+            phase_guide: ($d.phase_guide // {}),
+            methodology_hints: ($d.methodology_hints // []),
+            warnings: []
+        }
+    ' 2>/dev/null)"
+
+    if [ -z "$regenerated" ]; then
+        echo "  FAIL: jq pipeline produced empty output (default-triggers.json may be malformed)"
+        TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
+        return 1
+    fi
+
+    local committed
+    committed="$(cat "$fallback_file")"
+
+    local diff_output
+    diff_output="$(diff <(printf '%s\n' "$regenerated") <(printf '%s\n' "$committed") 2>&1)"
+
+    if [ -z "$diff_output" ]; then
+        echo "  PASS: fallback-registry.json is in sync"
+        TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
+    else
+        echo "  FAIL: fallback-registry.json drifted from default-triggers.json"
+        echo "  Run: bash hooks/session-start-hook.sh to regenerate (or apply the diff below)"
+        echo "  --- diff (regenerated vs committed) ---"
+        printf '%s\n' "$diff_output" | head -50
+        TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
+        return 1
+    fi
+}
+test_fallback_registry_in_sync_with_default_triggers
+
 print_summary

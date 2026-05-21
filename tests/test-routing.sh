@@ -5559,4 +5559,98 @@ test_completion_reads_tool_input_skill_fallback() {
 }
 test_completion_reads_tool_input_skill_fallback
 
+# ---------------------------------------------------------------------------
+# C2: max_iterations is honored only for domain/required roles.
+# Process and workflow skills must never be capped regardless of config.
+# Locks the role-allowlist invariant.
+# ---------------------------------------------------------------------------
+test_max_iterations_role_allowlist() {
+    echo "-- test: max_iterations honored only for domain/required roles --"
+    setup_test_env
+
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "  SKIP: jq not available"
+        return 0
+    fi
+
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    mkdir -p "$(dirname "$cache_file")"
+    cat > "$cache_file" <<'EOF'
+{
+  "version": "4.0",
+  "skills": [
+    {
+      "name": "test-process-skill",
+      "role": "process",
+      "phase": "REVIEW",
+      "priority": 50,
+      "max_iterations": 1,
+      "available": true,
+      "enabled": true,
+      "invoke": "Skill(test-process-skill)",
+      "triggers": ["testprocessskilltrigger"],
+      "keywords": [],
+      "precedes": [],
+      "requires": [],
+      "trigger_mode": "any"
+    },
+    {
+      "name": "test-domain-skill",
+      "role": "domain",
+      "phase": "REVIEW",
+      "priority": 10,
+      "max_iterations": 1,
+      "available": true,
+      "enabled": true,
+      "invoke": "Skill(test-domain-skill)",
+      "triggers": ["testdomainskilltrigger"],
+      "keywords": [],
+      "precedes": [],
+      "requires": [],
+      "trigger_mode": "any"
+    }
+  ],
+  "context_capabilities": {},
+  "phase_compositions": {},
+  "phase_guide": {}
+}
+EOF
+
+    local token="iter-cap-test-$$"
+    echo "$token" > "${HOME}/.claude/.skill-session-token"
+    cat > "${HOME}/.claude/.skill-composition-state-${token}" <<EOF
+{
+  "chain": ["test-process-skill","test-domain-skill"],
+  "completed": ["test-process-skill","test-domain-skill"],
+  "current_index": 0,
+  "updated_at": "2026-05-21T00:00:00Z"
+}
+EOF
+
+    local input='{"prompt":"testprocessskilltrigger and testdomainskilltrigger fire here"}'
+    local output
+    output="$(printf '%s' "$input" | bash "${PROJECT_ROOT}/hooks/skill-activation-hook.sh" 2>/dev/null)"
+
+    if printf '%s' "$output" | grep -q "test-process-skill"; then
+        echo "  PASS: process skill not capped (role-allowlist invariant holds)"
+        TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
+    else
+        echo "  FAIL: process skill was capped despite role-allowlist guard"
+        echo "  Output: $output"
+        TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
+    fi
+
+    if printf '%s' "$output" | grep -q "test-domain-skill"; then
+        echo "  FAIL: domain skill not capped despite max_iterations: 1"
+        echo "  Output: $output"
+        TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
+    else
+        echo "  PASS: domain skill capped at iteration 1"
+        TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
+    fi
+
+    teardown_test_env
+}
+test_max_iterations_role_allowlist
+
 print_summary

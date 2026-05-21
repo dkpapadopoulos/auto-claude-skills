@@ -195,11 +195,19 @@
       "triggers": [
         "(deploy|release|promote|launch|go.live|readiness|pre.?deploy|ship.*prod)"
       ],
-      "keywords": ["deploy-gate", "deployment readiness", "launch checklist"],
+      "keywords": [
+        "deploy-gate",
+        "deployment readiness",
+        "launch checklist"
+      ],
       "trigger_mode": "regex",
       "priority": 19,
-      "precedes": ["openspec-ship"],
-      "requires": ["verification-before-completion"],
+      "precedes": [
+        "openspec-ship"
+      ],
+      "requires": [
+        "verification-before-completion"
+      ],
       "description": "Pre-ship deployment readiness checklist",
       "invoke": "Skill(auto-claude-skills:deploy-gate)",
       "available": true,
@@ -376,7 +384,8 @@
       "precedes": [],
       "requires": [],
       "description": "Multi-perspective parallel code review with specialist reviewers. Trigger-gated + condition-gated required.",
-      "invoke": "Skill(auto-claude-skills:agent-team-review)"
+      "invoke": "Skill(auto-claude-skills:agent-team-review)",
+      "max_iterations": 1
     },
     {
       "name": "design-debate",
@@ -1187,7 +1196,7 @@
           "when": "installed AND prompt matches (prevent|block|guard|rule)"
         },
         {
-          "text": "DESIGN\u2192PLAN CONTRACT: Before transitioning from DESIGN to PLAN, the design output MUST include: (1) **Capabilities affected** \u2014 list every subsystem/module this touches, (2) **Explicit out-of-scope** \u2014 what this change does NOT do, (3) **Acceptance scenarios** \u2014 2-4 GIVEN/WHEN/THEN scenarios that define success. Save the design output to `docs/plans/YYYY-MM-DD-<slug>-design.md`.",
+          "text": "DESIGN→PLAN CONTRACT: Before transitioning from DESIGN to PLAN, the design output MUST include: (1) **Capabilities affected** — list every subsystem/module this touches, (2) **Explicit out-of-scope** — what this change does NOT do, (3) **Acceptance scenarios** — 2-4 GIVEN/WHEN/THEN scenarios that define success. Save the design output to `docs/plans/YYYY-MM-DD-<slug>-design.md`.",
           "when": "always"
         },
         {
