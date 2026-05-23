@@ -3,6 +3,7 @@
 set -u
 PASS=0; FAIL=0; ERRORS=""
 
+# Note: grep -qF -- "$needle" prevents needles starting with '--' (e.g., '--format=json') from being interpreted as grep flags
 assert_contains() {
   local label="$1" needle="$2" haystack="$3"
   if printf '%s' "$haystack" | grep -qF -- "$needle"; then
