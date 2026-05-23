@@ -758,6 +758,14 @@ OPENSPEC_CAPS="$(jq -n \
     {binary: $binary, commands: $commands, surface: $surface, warnings: $warnings}'
 )"
 
+# Serena first-time auto-register: if `serena` is on PATH and no `serena` MCP
+# entry exists yet (and the per-user marker isn't already set), register it
+# silently with --scope user + --open-web-dashboard false. Idempotent and
+# fail-open. See hooks/lib/serena-autoregister.sh for the full contract and
+# docs/plans/2026-05-23-serena-auto-register-design.md for the design rationale.
+# shellcheck source=lib/serena-autoregister.sh
+. "$(dirname "$0")/lib/serena-autoregister.sh" 2>/dev/null && serena_maybe_autoregister || true
+
 # Canonical context_capabilities keys. Single source of truth consumed by:
 # 1. CONTEXT_CAPS producer below (initial detection object)
 # 2. User-config override filter (drops any non-canonical key from skill-config.json)

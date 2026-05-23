@@ -545,6 +545,68 @@ test_context_capabilities_detection() {
     teardown_test_env
 }
 
+test_serena_auto_registration_runs_on_first_session() {
+    echo "-- test: session-start auto-registers serena when eligible, marker absent --"
+    setup_test_env
+
+    # Set up mock binaries on PATH (serena + claude that records calls).
+    local mock_bin="${TEST_TMPDIR}/bin"
+    local mock_log="${TEST_TMPDIR}/mock-calls.log"
+    mkdir -p "${mock_bin}"
+    : >"${mock_log}"
+
+    cat >"${mock_bin}/serena" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "${mock_bin}/serena"
+
+    cat >"${mock_bin}/claude" <<EOF
+#!/usr/bin/env bash
+echo "claude \$*" >>"${mock_log}"
+if [ "\$1" = "mcp" ] && [ "\$2" = "list" ]; then
+    echo "other: foo"
+    exit 0
+fi
+exit 0
+EOF
+    chmod +x "${mock_bin}/claude"
+
+    PATH="${mock_bin}:${PATH}" _SKILL_TEST_MODE=1 CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        bash "${PROJECT_ROOT}/hooks/session-start-hook.sh" >/dev/null 2>&1 < /dev/null
+
+    local marker="${HOME}/.claude/.auto-claude-skills-serena-registered"
+    if [ -e "${marker}" ]; then
+        echo "  PASS: marker written by session-start hook"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo "  FAIL: expected marker at ${marker}"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    if grep -qF 'claude mcp add --scope user serena' "${mock_log}"; then
+        echo "  PASS: session-start invoked claude mcp add --scope user serena"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo "  FAIL: session-start did not invoke claude mcp add"
+        echo "  log: $(cat "${mock_log}")"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    # Regression guard for the dashboard suppression (Scenario 1b in the design).
+    # Without this flag, every Claude Code session opens a Serena browser tab.
+    if grep -qF -- '--open-web-dashboard false' "${mock_log}"; then
+        echo "  PASS: registered command suppresses dashboard auto-open"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo "  FAIL: registered command MUST include '--open-web-dashboard false'"
+        echo "  log: $(cat "${mock_log}")"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    teardown_test_env
+}
+
 test_session_token_uses_session_id_when_provided() {
     echo "-- test: session-start derives token from stdin .session_id when present --"
     setup_test_env
@@ -1331,6 +1393,7 @@ test_auto_discovers_unknown_plugins
 test_health_check_reports_new_plugins
 test_fallback_registry_skill_coverage
 test_context_capabilities_detection
+test_serena_auto_registration_runs_on_first_session
 test_session_token_uses_session_id_when_provided
 test_session_token_falls_back_when_no_session_id
 test_session_token_stable_across_repeated_session_start
