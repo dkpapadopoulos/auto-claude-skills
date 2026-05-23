@@ -678,11 +678,11 @@
       "role": "domain",
       "phase": "REVIEW",
       "triggers": [
-        "(supply.?chain|compromised|malicious|hijack|backdoor|typosquat).*?(package|dependency|version|publish|registry)",
-        "(are.we|is.our.org|affected|impacted).*?(supply.?chain|compromised|malicious|hijack)",
-        "(npm|maven|pypi|pip|gradle|go.mod).*?(attack|compromise|backdoor|malicious|hijack|tamper)",
-        "(lock.?file|package.?lock|pom\\.xml|requirements\\.txt|pyproject\\.toml|go\\.sum|gradle\\.lockfile).*?(compromised|malicious|hijack|tamper|attack)",
-        "(dependency|package).*?(hijack|takeover|typosquat)"
+        "(supply.?chain|compromised|malicious|hijack|backdoor|typosquat).*(package|dependency|version|publish|registry)",
+        "(are.we|is.our.org|affected|impacted).*(supply.?chain|compromised|malicious|hijack)",
+        "(npm|maven|pypi|pip|gradle|go.mod).*(attack|compromise|backdoor|malicious|hijack|tamper)",
+        "(lock.?file|package.?lock|pom\\.xml|requirements\\.txt|pyproject\\.toml|go\\.sum|gradle\\.lockfile).*(compromised|malicious|hijack|tamper|attack)",
+        "(dependency|package).*(hijack|takeover|typosquat)"
       ],
       "keywords": [
         "supply chain attack",

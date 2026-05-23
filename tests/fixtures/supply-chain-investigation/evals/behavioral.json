@@ -41,8 +41,6 @@
       {"text": "security-scanner|OSV-Scanner|npm audit|Trivy", "description": "Recommends routine vulnerability tooling, not the supply-chain workflow"},
       {"text": "CVE|vulnerability|vulnerable", "description": "Recognizes the CVE / vulnerability framing rather than supply-chain framing"}
     ],
-    "negative_assertions": [
-      {"text": "Step 1.*PARSE|Step 2.*ORG SCAN|Step 5.*LOG FORENSICS|COMPROMISED.*AT RISK", "description": "Does NOT execute the full supply-chain workflow (no Step labels, no verdict-scale output)"}
-    ]
+    "_note": "Anti-double-fire enforcement is at the routing layer (tests/test-routing.sh::test_generic_cve_does_not_fire_supply_chain), not the behavioral layer. The behavioral runner does not support absence assertions; this scenario only verifies positive recommendations are emitted when the model encounters a generic-CVE prompt."
   }
 ]

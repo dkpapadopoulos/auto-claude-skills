@@ -305,8 +305,8 @@ install_registry() {
       "role": "domain",
       "phase": "REVIEW",
       "triggers": [
-        "(supply.?chain|compromised|malicious|hijack|backdoor|typosquat).*?(package|dependency|version|publish|registry)",
-        "(npm|maven|pypi|pip|gradle).*?(attack|compromise|backdoor|malicious|hijack)"
+        "(supply.?chain|compromised|malicious|hijack|backdoor|typosquat).*(package|dependency|version|publish|registry)",
+        "(npm|maven|pypi|pip|gradle).*(attack|compromise|backdoor|malicious|hijack)"
       ],
       "trigger_mode": "regex",
       "priority": 40,
