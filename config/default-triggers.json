@@ -672,6 +672,40 @@
       "requires": [],
       "description": "Evaluate designs involving autonomous agents for the lethal trifecta: private data + untrusted input + outbound action. Requires blast-radius mitigation, not better filtering.",
       "invoke": "Skill(auto-claude-skills:agent-safety-review)"
+    },
+    {
+      "name": "supply-chain-investigation",
+      "role": "domain",
+      "phase": "REVIEW",
+      "triggers": [
+        "(supply.?chain|compromised|malicious|hijack|backdoor|typosquat).*?(package|dependency|version|publish|registry)",
+        "(are.we|is.our.org|affected|impacted).*?(supply.?chain|compromised|malicious|hijack)",
+        "(npm|maven|pypi|pip|gradle|go.mod).*?(attack|compromise|backdoor|malicious|hijack|tamper)",
+        "(lock.?file|package.?lock|pom\\.xml|requirements\\.txt|pyproject\\.toml|go\\.sum|gradle\\.lockfile).*?(compromised|malicious|hijack|tamper|attack)",
+        "(dependency|package).*?(hijack|takeover|typosquat)"
+      ],
+      "keywords": [
+        "supply chain attack",
+        "compromised package",
+        "compromised dependency",
+        "malicious version",
+        "malicious package",
+        "npm attack",
+        "maven attack",
+        "pypi attack",
+        "dependency compromise",
+        "backdoor dependency",
+        "malicious dependency",
+        "package hijack",
+        "package takeover",
+        "typosquat"
+      ],
+      "trigger_mode": "regex",
+      "priority": 40,
+      "precedes": [],
+      "requires": [],
+      "description": "Advisory-driven org-wide audit of a published supply-chain attack on a registry package. Distinct trigger surface from security-scanner (which fires on routine CVE/scan language).",
+      "invoke": "Skill(auto-claude-skills:supply-chain-investigation)"
     }
   ],
   "phase_guide": {
