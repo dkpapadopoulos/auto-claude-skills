@@ -11,7 +11,7 @@ PROMPT="${1:-build a secure frontend component and review it for security}"
 GATE_TOKENS=200   # pre-committed: proceed to Phase 1 only if savings >= this
 
 TMP_HOME="$(mktemp -d)"
-trap 'rm -rf "${TMP_HOME}"' EXIT
+trap 'chmod -R u+w "${TMP_HOME}" 2>/dev/null; rm -rf "${TMP_HOME}" 2>/dev/null' EXIT
 mkdir -p "${TMP_HOME}/.claude"
 
 # Build the real registry from repo config into the temp HOME.
