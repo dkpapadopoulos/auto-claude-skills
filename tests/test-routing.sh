@@ -2830,6 +2830,40 @@ test_depth_full_format_first_prompt() {
     teardown_test_env
 }
 
+test_lean_tier_env_override() {
+    setup_test_env
+    install_registry
+
+    # Fresh session = prompt 1; "build a secure frontend component" selects 3+ skills => full tier
+    _setup_depth_counter
+    local full_ctx lean_ctx
+    full_ctx="$(extract_context "$(run_hook "build a secure frontend component")")"
+
+    _setup_depth_counter
+    lean_ctx="$(extract_context "$(SKILL_LEAN_TIER=1 run_hook "build a secure frontend component")")"
+
+    # Lean drops the verbose scaffold + phase-guide table
+    assert_not_contains "lean: no ASSESS PHASE" "ASSESS PHASE" "${lean_ctx}"
+    assert_not_contains "lean: no Step 1 label" "Step 1 --" "${lean_ctx}"
+
+    # Lean RETAINS compliance-carrying text
+    assert_contains "lean: keeps MUST INVOKE" "MUST INVOKE" "${lean_ctx}"
+    assert_contains "lean: keeps Skill( marker" "Skill(" "${lean_ctx}"
+    assert_contains "lean: keeps eval Phase line" "**Phase:" "${lean_ctx}"
+
+    # Lean is strictly smaller than full
+    local full_len lean_len
+    full_len="$(printf '%s' "${full_ctx}" | wc -c | tr -d ' ')"
+    lean_len="$(printf '%s' "${lean_ctx}" | wc -c | tr -d ' ')"
+    if [[ "${lean_len}" -lt "${full_len}" ]]; then
+        _record_pass "lean tier smaller than full (${lean_len} < ${full_len})"
+    else
+        _record_fail "lean tier smaller than full" "lean=${lean_len} full=${full_len}"
+    fi
+
+    teardown_test_env
+}
+
 test_depth_compact_format_after_5() {
     setup_test_env
     install_registry
@@ -3003,6 +3037,7 @@ test_skill_explain_with_matches
 test_skill_explain_no_matches
 test_skill_explain_off_by_default
 test_depth_full_format_first_prompt
+test_lean_tier_env_override
 test_depth_compact_format_after_5
 test_depth_minimal_format_after_10
 test_depth_verbose_override

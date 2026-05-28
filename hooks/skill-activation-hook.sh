@@ -968,14 +968,23 @@ Evaluate: **Phase: [${EVAL_PHASE}]** | ${EVAL_SKILLS}${DOMAIN_HINT}${COMPOSITION
 
   elif [[ "$_PROMPT_COUNT" -le 1 ]] && [[ "$TOTAL_COUNT" -ge 3 ]]; then
     # --- full format (3+ skills, prompt 1 only) ---
-    # Build phase guide from registry (falls back to a minimal default)
-    _PHASE_GUIDE="$(printf '%s' "$REGISTRY" | jq -r '
-      .phase_guide // empty | to_entries | sort_by(.key) |
-      .[] | "  " + .key + (" " * ((10 - (.key | length)) | if . < 0 then 0 else . end)) + " -> " + .value
-    ' 2>/dev/null)"
-    [[ -z "$_PHASE_GUIDE" ]] && _PHASE_GUIDE="  (no phase guide available — assess intent from context)"
+    if [[ "${SKILL_LEAN_TIER:-0}" == "1" ]]; then
+      # Lean variant (Phase 0 measurement / candidate trim): drop the Step 1/2/3
+      # scaffold + phase-guide table; KEEP skill lines, MUST INVOKE, eval format.
+      OUT="SKILL ACTIVATION (${TOTAL_COUNT} skills | ${PLABEL})
+${SKILL_LINES}${COMPOSITION_CHAIN}${COMPOSITION_LINES}
+You MUST print a brief evaluation for each skill above:
+  **Phase: [PHASE]** | ${EVAL_SKILLS}
+Process skills marked MUST INVOKE are mandatory — invoke them. Domain/workflow skills marked YES/NO are optional.${DOMAIN_HINT}${COMPOSITION_DIRECTIVE}"
+    else
+      # Build phase guide from registry (falls back to a minimal default)
+      _PHASE_GUIDE="$(printf '%s' "$REGISTRY" | jq -r '
+        .phase_guide // empty | to_entries | sort_by(.key) |
+        .[] | "  " + .key + (" " * ((10 - (.key | length)) | if . < 0 then 0 else . end)) + " -> " + .value
+      ' 2>/dev/null)"
+      [[ -z "$_PHASE_GUIDE" ]] && _PHASE_GUIDE="  (no phase guide available — assess intent from context)"
 
-    OUT="SKILL ACTIVATION (${TOTAL_COUNT} skills | ${PLABEL})
+      OUT="SKILL ACTIVATION (${TOTAL_COUNT} skills | ${PLABEL})
 
 Step 1 -- ASSESS PHASE. Check conversation context:
 ${_PHASE_GUIDE}
@@ -987,6 +996,7 @@ Process skills marked MUST INVOKE are mandatory — invoke them. Domain/workflow
 This line is MANDATORY -- do not skip it.
 
 Step 3 -- INVOKE the process skill. Do not skip to a later phase.${DOMAIN_HINT}${COMPOSITION_DIRECTIVE}"
+    fi
 
   else
     # --- compact format (depth 6-10, or any remaining cases) ---
