@@ -62,10 +62,34 @@ fi
 if [ -n "${_HOOK_SESSION_ID}" ]; then
     _SESSION_TOKEN="session-${_HOOK_SESSION_ID}"
 else
-    # Fallback for environments without session_id. Format: <epoch>-<pid>-<rand>.
-    # The random suffix defends against collisions when two sessions start in the
-    # same second with a reused PID (shell respawn, rapid subshell invocation).
-    _SESSION_TOKEN="$(date +%s)-$$-${RANDOM}${RANDOM}"
+    # Fallback for environments without session_id (TTY stdin, missing jq,
+    # absent field). Before generating a fresh `<epoch>-<pid>-<rand>` token,
+    # check whether a recent token file already exists and reuse it — this
+    # prevents ScheduleWakeup re-fires (and other harness-side re-invocations)
+    # from rotating the token and orphaning in-flight composition state.
+    # Long-stale tokens (> REUSE_WINDOW_SECONDS) still rotate to preserve the
+    # original collision-defense guarantees.
+    _REUSE_WINDOW_SECONDS="${SKILL_TOKEN_REUSE_WINDOW:-14400}"  # 4 hours default
+    _EXISTING_TOKEN_FILE="${HOME}/.claude/.skill-session-token"
+    _REUSED=""
+    if [ -f "${_EXISTING_TOKEN_FILE}" ]; then
+        _TOKEN_MTIME="$(stat -f %m "${_EXISTING_TOKEN_FILE}" 2>/dev/null \
+                       || stat -c %Y "${_EXISTING_TOKEN_FILE}" 2>/dev/null \
+                       || echo 0)"
+        _NOW="$(date +%s)"
+        _AGE=$((_NOW - _TOKEN_MTIME))
+        if [ "${_AGE}" -ge 0 ] && [ "${_AGE}" -lt "${_REUSE_WINDOW_SECONDS}" ]; then
+            _CANDIDATE="$(cat "${_EXISTING_TOKEN_FILE}" 2>/dev/null)"
+            [ -n "${_CANDIDATE}" ] && _REUSED="${_CANDIDATE}"
+        fi
+    fi
+    if [ -n "${_REUSED}" ]; then
+        _SESSION_TOKEN="${_REUSED}"
+    else
+        # The random suffix defends against collisions when two sessions start
+        # in the same second with a reused PID (shell respawn, rapid subshell).
+        _SESSION_TOKEN="$(date +%s)-$$-${RANDOM}${RANDOM}"
+    fi
 fi
 printf '%s' "$_SESSION_TOKEN" > "${HOME}/.claude/.skill-session-token" 2>/dev/null || true
 # Read previous session's zero-match stats before cleanup

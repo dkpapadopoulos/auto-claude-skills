@@ -45,8 +45,13 @@ test_token_has_random_suffix() {
 }
 test_token_has_random_suffix
 
-test_concurrent_session_tokens_differ() {
-    echo "-- test: two session-start invocations produce distinct tokens --"
+test_sequential_invocation_within_window_reuses_token() {
+    echo "-- test: sequential invocations within reuse window REUSE the same token --"
+    # Contract change: ScheduleWakeup re-fires of SessionStart must not rotate
+    # the token, because rotation orphans composition state. The original
+    # collision-protection (across truly distinct sessions with different
+    # session_id values) is unaffected — those go through the fast path at
+    # line 62 of the hook.
     setup_test_env
 
     local token1
@@ -57,16 +62,45 @@ test_concurrent_session_tokens_differ() {
     assert_not_empty "token1 non-empty" "$token1"
     assert_not_empty "token2 non-empty" "$token2"
 
-    if [ "$token1" != "$token2" ]; then
-        _record_pass "sequential invocations produce distinct tokens"
+    if [ "$token1" = "$token2" ]; then
+        _record_pass "sequential invocations within reuse window REUSE the token"
     else
-        _record_fail "sequential invocations produce distinct tokens" \
-            "both invocations produced '$token1'"
+        _record_fail "sequential invocations within reuse window REUSE the token" \
+            "expected reuse, got token1='$token1' token2='$token2'"
     fi
 
     teardown_test_env
 }
-test_concurrent_session_tokens_differ
+test_sequential_invocation_within_window_reuses_token
+
+test_stale_token_outside_window_rotates() {
+    echo "-- test: token older than the reuse window IS rotated --"
+    setup_test_env
+
+    local token1
+    token1="$(run_session_start_and_get_token)"
+    assert_not_empty "token1 non-empty" "$token1"
+
+    # Backdate the token file well outside any reasonable reuse window.
+    # GNU touch and BSD touch take different flag forms; try both.
+    touch -t 200001010000 "${HOME}/.claude/.skill-session-token" 2>/dev/null \
+        || touch -d "2000-01-01 00:00:00" "${HOME}/.claude/.skill-session-token" 2>/dev/null \
+        || true
+
+    local token2
+    token2="$(run_session_start_and_get_token)"
+    assert_not_empty "token2 non-empty" "$token2"
+
+    if [ "$token1" != "$token2" ]; then
+        _record_pass "stale token outside window rotates to a fresh value"
+    else
+        _record_fail "stale token outside window rotates to a fresh value" \
+            "expected rotation, both stayed '$token1'"
+    fi
+
+    teardown_test_env
+}
+test_stale_token_outside_window_rotates
 
 test_parallel_session_tokens_differ() {
     echo "-- test: tokens differ even when generated in the same second with same PID --"

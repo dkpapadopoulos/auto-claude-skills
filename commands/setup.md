@@ -541,9 +541,90 @@ For repos with ≥2 active developers, enable spec-driven mode. Design intent is
 
 If the user declines this step, no changes are made. They can enable it later by re-running `/setup`.
 
+### 10. Context-economy defaults
+
+Apply token/context-economy defaults to managed settings. The bare invocation
+writes truncation defaults (rationale: Anthropic's default `MAX_MCP_OUTPUT_TOKENS`
+is 25000 with a warning floor at 10000; we set the floor). Opt-in flags layer
+additional behavior.
+
+> ⚠️ **Race-test gate for the bare invocation.** Before running the bare
+> `setup-managed-settings.sh`, check `docs/plans/2026-05-28-race-truncation-results.md`
+> for a `**Verdict:** PASS` line. If the file is absent, contains
+> `**Verdict:** ABORT`, or contains a `# INVALID:` banner, **skip the bare
+> invocation** and only offer the opt-in flags below. To run the race-test:
+> ```bash
+> bash "${CLAUDE_PLUGIN_ROOT}/tests/race-truncation-defaults.sh" \
+>   --prompt "<a real noisy incident-analysis investigation>" \
+>   --out ./race-results/
+> ```
+> Then transcribe the resulting `comparison.md` into
+> `docs/plans/2026-05-28-race-truncation-results.md` along with the verdict.
+
+**Detection:** check whether the managed settings already carry the keys:
+
+```bash
+jq -r '.env | keys[]' ~/.claude/settings.json 2>/dev/null | grep -E '^(BASH_MAX_OUTPUT_LENGTH|MAX_MCP_OUTPUT_TOKENS|CLAUDE_CODE_SUBAGENT_MODEL|CLAUDE_CODE_EFFORT_LEVEL|CLAUDE_CODE_ENABLE_TELEMETRY)$'
+```
+
+If all five are present, skip this step.
+
+**Ask the user:** "Would you like to apply context-economy defaults? These can
+reduce token spend by capping verbose tool output and (optionally) routing
+subagents to cheaper models. See `docs/observability.md` for the trade-offs."
+
+If the user agrees, run:
+
+```bash
+# A — truncation defaults (always)
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/setup-managed-settings.sh"
+```
+
+**About `--force`:** the script preserves user-customized env-var values by
+default. If the user previously set `BASH_MAX_OUTPUT_LENGTH=8000` (the
+Confluence-doc value) or any other prior value, the script will leave it in
+place and emit a `preserved user value for ...` notice. To upgrade those
+values to the new defaults, re-run with `--force`. Use sparingly — `--force`
+silently overwrites everything matching the script's keys.
+
+The script refuses to overwrite a malformed `settings.json`, refuses to
+modify a non-object `.env` field, and exits non-zero on any write failure
+(read-only file, disk full, etc.) without emitting the "restart Claude"
+notice. If you see the failure summary, fix the underlying issue and re-run.
+
+Then offer the three opt-in flags individually (each is independent):
+
+**B — Observability preset.** "Enable OpenTelemetry export for tokens, cost, and
+attribution? You supply the collector endpoint — the preset writes the env
+block. Required for Task D's probation contract."
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/setup-managed-settings.sh" --observability
+```
+
+**C — Context-hygiene preset.** "Write a conservative `.claudeignore` in this
+repo and emit a hint when Claude is launched above a package subdirectory?"
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/setup-managed-settings.sh" --context-hygiene
+```
+
+**D — Model-routing preset (default-OFF, probation-gated).** "Route ALL
+subagents to Haiku and downgrade effort to medium? This overrides per-invocation
+and frontmatter model/effort — including hard-pinned Opus reviewers. Default-OFF
+until B has captured ≥2 weeks of telemetry showing no review-quality regressions
+(see `docs/observability.md` § Probation contract for Task D)."
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/setup-managed-settings.sh" --model-routing
+```
+
+After the writes, remind the user that env-var changes take effect on the next
+`claude` launch.
+
 ## Execution
 
-Run each step in order. For steps 0 and 1, use AskUserQuestion to get the user's preference before taking action. For steps 2-4, if a skill directory already exists at the target path, skip it. For steps 5, 6, 7, and 9, use AskUserQuestion to get the user's preference before installing, and skip tools that are already installed.
+Run each step in order. For steps 0 and 1, use AskUserQuestion to get the user's preference before taking action. For steps 2-4, if a skill directory already exists at the target path, skip it. For steps 5, 6, 7, 9, and 10, use AskUserQuestion to get the user's preference before installing, and skip tools that are already installed.
 
 After setup, confirm what was configured:
 - Companion plugins: which were installed or skipped
