@@ -151,3 +151,47 @@ The variance-mode hermetic self-test (`tests/test-run-behavioral-evals-variance.
 - **WHEN** a fixture is removed from any domain pack (e.g. `tests/fixtures/incident-analysis/evals/behavioral.json`)
 - **THEN** the variance-mode self-test MUST continue to pass without modification, because it does not depend on any domain fixture id
 
+### Requirement: Inner-model pinning for comparative runs
+
+The behavioral-eval runner MUST accept an optional `--model <name>` flag that
+pins the model of the inner `claude -p` invocation. When the flag is omitted,
+the runner MUST NOT forward any `--model` flag, leaving the session's configured
+model in effect. This enables running the same scenario under different models
+for comparative catch-rate measurement.
+
+#### Scenario: Model pinned when flag present
+- **WHEN** the runner is invoked with `--model haiku`
+- **THEN** the inner `claude -p` call MUST receive `--model haiku`
+
+#### Scenario: No model forwarded when flag absent
+- **WHEN** the runner is invoked without `--model`
+- **THEN** the inner `claude -p` call MUST NOT include any `--model` argument
+
+### Requirement: Bare-mode passthrough
+
+The runner MUST accept an optional `--bare` flag that runs the inner `claude -p`
+in `--bare` mode (skipping hooks, LSP, and plugin loading) to strip ambient
+output noise from the measured result. The flag MUST default to off so existing
+eval behavior is unchanged.
+
+#### Scenario: Bare flag forwarded when set
+- **WHEN** the runner is invoked with `--bare`
+- **THEN** the inner `claude -p` call MUST receive `--bare`
+
+#### Scenario: Bare flag absent by default
+- **WHEN** the runner is invoked without `--bare`
+- **THEN** the inner `claude -p` call MUST NOT include `--bare`
+
+### Requirement: Variance report tolerates pipe characters in assertions
+
+The variance report writer MUST render the assertion description correctly even
+when the assertion's `text` regex contains `|` characters. The counter store
+MUST keep assertion text and description as separate fields so a regex
+alternation does not bleed into the rendered Description column.
+
+#### Scenario: Pipe-containing regex does not corrupt the report
+- **WHEN** a scenario's `text` assertion is `alpha|bravo|charlie` and a variance
+  run produces a report
+- **THEN** the report's Description column MUST show the assertion's description
+- **AND** the regex alternatives MUST NOT appear in the report
+
