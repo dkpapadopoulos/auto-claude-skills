@@ -199,10 +199,21 @@ ONLY the deep catch — a review that flags just the decoys is a MISS.
 
 **Result: both models 5/5 `stable`, and genuinely so.** A verbatim Haiku review
 surfaced the deep fail-open ("if `run_smoke_tests` crashes… doesn't write FAIL…
-proceeds to deploy anyway"), an *unplanted* bonus depth bug (no exit check on
-`deploy_to_prod`), AND the decoys. So the depth-beyond-first-finding hypothesis
-is **disconfirmed**: Haiku 4.5 has that depth too, and the earlier race's 0/3
-did not replicate under a clean reviewer prompt with a dedicated scenario.
+proceeds to deploy anyway") AND the decoys. So the depth-beyond-first-finding
+hypothesis is **disconfirmed**: Haiku 4.5 has that depth too, and the earlier
+race's 0/3 did not replicate under a clean reviewer prompt with a dedicated
+scenario.
+
+(Validity: a 4th code review caught that the deep detector's bare `crash` /
+`empty log` / `errors out` branches matched a decoy-only or speculative review
+without the fail-open insight, and that an unchecked `deploy_to_prod` exit was a
+confounding *second* deep bug. The detector was hardened to tie every symptom to
+being-treated-as-success, the snippet reduced to a single deep bug, adversarial
+decoy-only samples added to the calibration test, and both models **re-measured
+at 5/5** — so the catch was earned, not a loose-regex artifact. This was the
+fourth detector on this fixture whose initial bare-keyword branches a review had
+to tighten: the durable rule is that a free-text catch-detector must require the
+*insight* — symptom tied to wrong conclusion — never a bare symptom token.)
 
 **Bottom line for criterion 2.** Across all seven scenarios — obvious,
 very-subtle, systemic, and layered-depth — Haiku 4.5 and Sonnet 4.6 are

@@ -127,12 +127,20 @@ expect CATCH "${RE}" "this relies on the absence of a FAIL string; an empty or p
 expect CATCH "${RE}" "no FAIL doesn't mean the tests passed — if the smoke run never ran, the log is empty and \`grep -q FAIL\` returns false, so a broken build is promoted."
 expect CATCH "${RE}" "the gate trusts that a missing FAIL means success; it should require an explicit PASS or check \`\$?\`."
 expect CATCH "${RE}" "an empty log promotes the build; the smoke suite crashing is indistinguishable from passing."
-# Decoy-only / description / different-issue — MUST MISS (this is the discriminator):
-expect MISS  "${RE}" "you should quote \`\$artifact\` — it's unquoted in three places and will break on spaces."
+# Keyword-free phrasings of the same insight (code-review #4 false-negative fix):
+expect CATCH "${RE}" "the gate is green by default: anything other than a literal FAIL line is treated as a pass."
+expect CATCH "${RE}" "no FAIL is treated as success even though the suite may never have run."
+expect CATCH "${RE}" "if run_smoke_tests dies, the function returns 0 as if it passed."
+# Decoy-only / unrelated / speculative-symptom — MUST MISS (the discriminator).
+# code-review #4 caught the original bare `crash`/`empty`/`errors out` branches
+# matching these without grasping that absence-of-FAIL is trusted as success.
+expect MISS  "${RE}" "you should quote \`\$artifact\` — it's unquoted in several places and will break on spaces."
 expect MISS  "${RE}" "the unquoted variable in \`[ -z \$artifact ]\` will error on empty input."
-expect MISS  "${RE}" "the function runs smoke tests and promotes if there's no FAIL line."
-expect MISS  "${RE}" "consider adding a timeout to run_smoke_tests."
-expect MISS  "${RE}" "\`/tmp/smoke.log\` is a fixed path; a concurrent run could clobber it."
-expect MISS  "${RE}" "add a comment explaining what deploy_to_prod does."
+expect MISS  "${RE}" "the function runs smoke tests and returns 0 if there's no FAIL line."
+expect MISS  "${RE}" "the unquoted \`\$artifact\` will break on spaces; also \`run_smoke_tests\` could crash if it's malformed."
+expect MISS  "${RE}" "quote \`\$artifact\`; separately, if the log file errors out you won't see why."
+expect MISS  "${RE}" "consider what happens if \`/tmp/smoke.log\` is an empty file from a prior run."
+expect MISS  "${RE}" "add a timeout — \`run_smoke_tests\` could hang and the whole thing errors out before finishing."
+expect MISS  "${RE}" "if the suite errors before running any test, you'll want a retry."
 
 print_summary
