@@ -187,18 +187,31 @@ returns 0 as designed") without the reviewer grasping the defect; those branches
 were removed, adversarial neutral-description samples added to the calibration
 test, and both models **re-measured at 5/5** — confirming the catch was earned.
 
-**Refined conclusion — what actually discriminates.** A *primary* systemic bug
-(the only/main defect, framed by an explicit contract) does NOT separate the
-models: both catch it. This appears to contradict an earlier in-session race
-where the strong model alone flagged a systemic issue (3/3 vs 0/3) — but the
-difference is **primary vs secondary**. In the race the systemic issue was
-*unplanted and secondary*, competing with obvious planted bugs that the weaker
-model grabbed onto and then stopped. So the discriminating axis is not "systemic
-reasoning" but **depth beyond the first finding** — surfacing a non-obvious,
-unplanted systemic issue when easier findings are present. A truly
-discriminating fixture must therefore layer an *obvious* bug OVER a deeper
-*unplanted* systemic one and score whether the deeper one is surfaced — a
-standalone systemic bug saturates like everything else.
+**Hypothesis (later disconfirmed) — what might discriminate.** A *primary*
+systemic bug does NOT separate the models. An earlier in-session race had the
+strong model alone flag a systemic issue (3/3 vs 0/3), which suggested the axis
+was **depth beyond the first finding** — surfacing a non-obvious, *secondary*
+issue when easy findings are present. To test that, a 7th scenario
+(`layered-depth-promote-fail-open`) was built: obvious unquoted-var decoys
+layered OVER a deep fail-open (a promotion gate that greps the smoke log for
+`FAIL`, so a crashed/empty log promotes a broken build). The detector scores
+ONLY the deep catch — a review that flags just the decoys is a MISS.
+
+**Result: both models 5/5 `stable`, and genuinely so.** A verbatim Haiku review
+surfaced the deep fail-open ("if `run_smoke_tests` crashes… doesn't write FAIL…
+proceeds to deploy anyway"), an *unplanted* bonus depth bug (no exit check on
+`deploy_to_prod`), AND the decoys. So the depth-beyond-first-finding hypothesis
+is **disconfirmed**: Haiku 4.5 has that depth too, and the earlier race's 0/3
+did not replicate under a clean reviewer prompt with a dedicated scenario.
+
+**Bottom line for criterion 2.** Across all seven scenarios — obvious,
+very-subtle, systemic, and layered-depth — Haiku 4.5 and Sonnet 4.6 are
+**empirically indistinguishable** (every cell 5/5 `stable`, each spot-checked
+genuine). For this repo's Bash-review profile, the fixture gate of criterion 2
+is met. Engineering still-harder scenarios to manufacture a gap would be
+p-hacking; the disciplined read is that reviewer parity holds here. (Criteria 1
+— ≥2 weeks OTEL telemetry — and 3 — no degraded-behavior reports — remain the
+open gates before any default flip.)
 
 ## What `MAX_MCP_OUTPUT_TOKENS=10000` costs you
 
