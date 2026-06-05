@@ -916,7 +916,7 @@ Check for existing directory:
 Generate from the synthesized summary (NOT raw logs). Follow the template section order:
 - Summary: one sentence plain language, then one paragraph technical
 - Impact: user-facing impact first (error count, affected users, business impact from user-provided context), then infrastructure scope
-- Action items: ordered by priority, each with current state, suggested owner, and due date. "Current state" describes the relevant existing configuration or deployed state for the system the action item targets — what is there today, not what should be. Check for functionally equivalent configurations, not just exact field matches. If current state cannot be determined, state "⚠ Not verified against live config." Flag unassigned items with "⚠ Owner needed"
+- Action items: ordered by priority, each with type (Detect/Prevent/Mitigate), current state, suggested owner, and due date. "Current state" describes the relevant existing configuration or deployed state for the system the action item targets — what is there today, not what should be. Check for functionally equivalent configurations, not just exact field matches. If current state cannot be determined, state "⚠ Not verified against live config." Flag unassigned items with "⚠ Owner needed"
 - Root cause: concise causal chain, include scheduling/resource math if relevant
 - Timeline: infrastructure events interleaved with human actions (alerts fired, human response, manual intervention), all UTC with evidence sources
 - Contributing factors: ordered by impact, most impactful first

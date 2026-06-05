@@ -486,6 +486,10 @@ assert_file_contains "command-risk: ASCII-not-emoji rule" "[Aa]SCII" "${COMMAND_
 assert_file_contains "SKILL.md: HITL gate emits RISK label" "RISK:" "${SKILL_FILE}"
 assert_file_contains "SKILL.md: HITL gate references command-risk ref" "command-risk" "${SKILL_FILE}"
 
+# SKILL.md — POSTMORTEM generation step types action items (governs project-template
+# path too; built-in template alone is bypassed when a repo-local template exists) (#8)
+assert_file_contains "SKILL.md: action items carry phase type" "Detect/Prevent/Mitigate" "${SKILL_FILE}"
+
 # ---------------------------------------------------------------------------
 # references/investigation-schema.md — existence and key fields
 # ---------------------------------------------------------------------------
