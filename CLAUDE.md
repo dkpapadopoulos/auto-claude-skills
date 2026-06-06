@@ -41,6 +41,7 @@ Five canonical homes for project context. Read this before guessing where docs l
 ## Gotchas
 
 - `[[ $P =~ $trigger ]]` returns exit 1 on regex non-match — never use `set -e` in routing hooks.
+- Bash 3.2 (`/bin/bash`, every `#!/bin/bash` hook) rejects **quoted operands in `$(( ))`**: `$(( "604800" / 86400 ))` → `syntax error: operand expected`, and the error **aborts the script at that line** — in a fail-open hook this silently kills everything after it (e.g. registry building), violating fail-open. Use unquoted arithmetic on validated-numeric input: `[[ "$V" =~ ^[0-9]+$ ]] || V=<default>; N=$(( V / 86400 ))`. Newer bash (the Bash-tool's 5.x) tolerates the quotes, so this passes manual testing and only fails under 3.2 — always syntax-check hook edits with `/bin/bash -n` and exercise them under `/bin/bash`. Bit `session-start-hook.sh` state-prune (PR #47).
 - Grepping runtime text output (CLI/log streams, not source — Serena/LSP don't apply): use `grep -F` (or `\[ERROR\]`) when matching literals containing regex metacharacters. `grep "[ERROR]"` is a character class matching any of `E,R,O` and silently returns wrong lines; `grep "v1.9.0"` matches `v1X9Y0` because `.` is a wildcard. Bites `incident-analysis` (log-level greps), `behavioral-evaluation` (version-string assertions), and any future runtime-output parser.
 - jq is optional at runtime; session-start falls back to `config/fallback-registry.json`.
 - Concurrent sessions share `~/.claude/` — session-token scoping prevents counter races.
