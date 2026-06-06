@@ -42,6 +42,14 @@ assert_contains "canonical: Lessons Learned heading" "Lessons Learned" "${SCHEMA
 assert_contains "canonical: Investigation Notes heading" "Investigation Notes" "${SCHEMA_BLOCK}"
 
 # ---------------------------------------------------------------------------
+# Test 1b: Action Items declare a Type field with the three phase values (#8)
+# ---------------------------------------------------------------------------
+assert_contains "action items: Type field present" "type" "${SCHEMA_BLOCK}"
+assert_contains "action items: Detect value defined" "Detect" "${SCHEMA_BLOCK}"
+assert_contains "action items: Prevent value defined" "Prevent" "${SCHEMA_BLOCK}"
+assert_contains "action items: Mitigate value defined" "Mitigate" "${SCHEMA_BLOCK}"
+
+# ---------------------------------------------------------------------------
 # Test 2: Canonical schema ordering — Action Items before Timeline
 # ---------------------------------------------------------------------------
 

@@ -18,7 +18,12 @@ Include duration: verified start and end timestamps in UTC.
 ## 3. Action Items
 Ordered by priority (P0 first). Each item MUST have a suggested owner and due date.
 Items without owners should be flagged: "⚠ Owner needed".
-Include: priority, action, current state, owner, due date, status.
+Include: priority, action, type, current state, owner, due date, status.
+**Type** classifies how the item reduces future incidents — exactly one of:
+- **Detect** — improves time-to-detection for this failure class (alert, SLO, monitoring).
+- **Prevent** — stops the root cause from recurring (validation, CI gate, guardrail).
+- **Mitigate** — reduces blast radius or speeds recovery when it recurs (runbook, automation, capacity).
+A postmortem with several Prevent items and zero Detect items signals an unaddressed detection gap.
 
 ## 4. Root Cause & Trigger
 Concise explanation of why the incident happened.
