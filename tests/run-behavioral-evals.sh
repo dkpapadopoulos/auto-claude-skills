@@ -283,10 +283,13 @@ ${SCENARIO_PROMPT}
     EXTRA_ARGS=()
     [ -n "${MODEL_FLAG}" ] && EXTRA_ARGS+=(--model "${MODEL_FLAG}")
     [ "${BARE}" = "1" ] && EXTRA_ARGS+=(--bare)
-    CLAUDE_JSON="$("${CLAUDE_BIN}" -p --output-format json \
-        --disallowedTools "Edit Write Bash" \
-        ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} \
-        "${CONSTRUCTED_PROMPT}" 2>&1)"
+    # Prompt via stdin, NOT as a positional argument: current CLI parses
+    # --disallowedTools as variadic, so any trailing positional (the prompt)
+    # is swallowed as more tool names ("Permission deny rule ... matches no
+    # known tool") and the run dies with "Input must be provided".
+    CLAUDE_JSON="$(printf '%s' "${CONSTRUCTED_PROMPT}" | "${CLAUDE_BIN}" -p --output-format json \
+        --disallowedTools "Edit,Write,Bash" \
+        ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} 2>&1)"
     claude_exit=$?
     end_ts="$(date +%s)"
     elapsed=$((end_ts - start_ts))

@@ -14,9 +14,30 @@ RUNNER="${PROJECT_ROOT}/tests/run-behavioral-evals.sh"
 TMPDIR_TEST="$(mktemp -d -t variance-self-test.XXXXXX)"
 trap 'rm -rf "${TMPDIR_TEST}"' EXIT
 
-# Stub claude — emits a 'result' field that matches every CAST assertion regex
+# Stub claude — emits a 'result' field that matches every CAST assertion regex.
+# Regression guard: the runner MUST deliver the prompt via stdin (current CLI
+# parses --disallowedTools as variadic and swallows trailing positionals). If
+# stdin carries no prompt, emit a non-matching result so every assertion fails
+# loudly. read -t bounds the wait: with argv-passing (the regression) stdin is
+# an open-but-silent inherited fd and a bare `cat` would deadlock the suite.
 cat > "${TMPDIR_TEST}/claude" <<'STUBEOF'
 #!/usr/bin/env bash
+STDIN_PROMPT=""
+IFS= read -r -d '' -t 5 STDIN_PROMPT || true
+if [ -z "${STDIN_PROMPT}" ]; then
+    cat <<JSONEOF
+{
+  "type": "result",
+  "is_error": false,
+  "duration_ms": 1000,
+  "result": "REGRESSION: prompt did not arrive on stdin",
+  "modelUsage": {
+    "claude-test-stub": {"inputTokens": 0, "outputTokens": 0}
+  }
+}
+JSONEOF
+    exit 0
+fi
 cat <<JSONEOF
 {
   "type": "result",

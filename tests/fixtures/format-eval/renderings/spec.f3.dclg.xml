@@ -1,0 +1,162 @@
+<doclang xmlns="https://www.doclang.ai/ns/v0" version="0.2">
+  <heading level="2">Purpose</heading>
+  <text>Domain skills that enforce safety disciplines in DESIGN. Scaffolding for new skills, prototype variation for design decisions, and lethal-trifecta review for agent designs — co-selected alongside the superpowers process drivers without displacing them.</text>
+  <heading level="2">Requirements</heading>
+  <heading level="3">Requirement: starter-template domain skill</heading>
+  <text>
+    The plugin MUST provide a
+    <code>starter-template</code>
+domain skill in DESIGN phase that emits repo-native seed files when creating new skills, commands, plugins, hooks, or modules.
+  </text>
+  <heading level="4">Scenario: New skill creation</heading>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      <bold>WHEN</bold>
+<![CDATA[the user prompts with "create a new skill" or matching trigger patterns]]>      
+    </text>
+    <ldiv/>
+    <text>
+      <bold>THEN</bold>
+starter-template MUST co-select alongside brainstorming as a domain skill
+    </text>
+    <ldiv/>
+    <text>
+      <bold>AND</bold>
+brainstorming MUST remain the process driver
+    </text>
+  </list>
+  <heading level="4">Scenario: Process skill restriction</heading>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      <bold>WHEN</bold>
+the user requests a process skill for a superpowers-owned phase (DESIGN, PLAN, IMPLEMENT, REVIEW, SHIP, DEBUG)
+    </text>
+    <ldiv/>
+    <text>
+      <bold>THEN</bold>
+the skill MUST emit a warning about the superpowers phase driver contract
+    </text>
+  </list>
+  <heading level="3">Requirement: prototype-lab domain skill</heading>
+  <text>
+    The plugin MUST provide a
+    <code>prototype-lab</code>
+domain skill in DESIGN phase that produces exactly 3 thin comparable variants with a comparison artifact and mandatory Human Validation Plan.
+  </text>
+  <heading level="4">Scenario: Multi-variant design</heading>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      <bold>WHEN</bold>
+<![CDATA[the user prompts with "prototype" or "compare options" or matching trigger patterns]]>      
+    </text>
+    <ldiv/>
+    <text>
+      <bold>THEN</bold>
+prototype-lab MUST co-select alongside brainstorming as a domain skill
+    </text>
+    <ldiv/>
+    <text>
+      <bold>AND</bold>
+brainstorming MUST remain the process driver
+    </text>
+    <ldiv/>
+    <text>
+      <bold>AND</bold>
+prototype-lab MUST NOT appear as a process skill
+    </text>
+  </list>
+  <heading level="4">Scenario: Human Validation Plan</heading>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      <bold>WHEN</bold>
+prototype-lab produces a comparison artifact
+    </text>
+    <ldiv/>
+    <text>
+      <bold>THEN</bold>
+the artifact MUST include a Human Validation Plan section
+    </text>
+    <ldiv/>
+    <text>
+      <bold>AND</bold>
+AI-simulated user testing MUST NOT replace the Human Validation Plan
+    </text>
+  </list>
+  <heading level="3">Requirement: agent-safety-review domain skill</heading>
+  <text>
+    The plugin MUST provide an
+    <code>agent-safety-review</code>
+domain skill in DESIGN phase that evaluates designs for the lethal trifecta pattern.
+  </text>
+  <heading level="4">Scenario: Lethal trifecta detection</heading>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      <bold>WHEN</bold>
+a design involves private_data AND untrusted_input AND outbound_action
+    </text>
+    <ldiv/>
+    <text>
+      <bold>THEN</bold>
+agent-safety-review MUST classify the design as high risk
+    </text>
+    <ldiv/>
+    <text>
+      <bold>AND</bold>
+MUST recommend blast-radius mitigation (cutting at least one leg)
+    </text>
+    <ldiv/>
+    <text>
+      <bold>AND</bold>
+MUST NOT claim that improved detection scores solve the problem
+    </text>
+  </list>
+  <heading level="4">Scenario: Autonomy trigger matching</heading>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      <bold>WHEN</bold>
+the user prompts with autonomy-related language (autonomous loop, overnight, YOLO, skip permissions, etc.)
+    </text>
+    <ldiv/>
+    <text>
+      <bold>THEN</bold>
+agent-safety-review MUST fire as a domain skill
+    </text>
+  </list>
+  <heading level="3">Requirement: Driver invariant protection</heading>
+  <text>Wave 1 additions MUST NOT alter the superpowers driver invariants.</text>
+  <heading level="4">Scenario: Driver invariants unchanged</heading>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      <bold>WHEN</bold>
+any Wave 1 skill fires
+    </text>
+    <ldiv/>
+    <text>
+      <bold>THEN</bold>
+the phase_compositions drivers MUST remain: DESIGN=brainstorming, PLAN=writing-plans, IMPLEMENT=executing-plans, REVIEW=requesting-code-review, SHIP=verification-before-completion, DEBUG=systematic-debugging
+    </text>
+  </list>
+  <heading level="3">Requirement: Scenario-eval test suite</heading>
+  <text>The plugin MUST include a suite-level behavioral evaluation that validates routing judgment.</text>
+  <heading level="4">Scenario: Scenario coverage</heading>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      <bold>WHEN</bold>
+      <code>bash tests/test-scenario-evals.sh</code>
+is run
+    </text>
+    <ldiv/>
+    <text>
+      <bold>THEN</bold>
+it MUST test PDLC scenarios (prototype-lab, starter-template co-selection), safety scenarios (lethal trifecta, overnight, YOLO), guardrail scenarios (SHIP phase routing, composition chain), and driver-invariant scenarios (new skills never as process drivers)
+    </text>
+  </list>
+</doclang>

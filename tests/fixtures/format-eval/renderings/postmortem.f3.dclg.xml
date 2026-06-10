@@ -1,0 +1,525 @@
+<doclang xmlns="https://www.doclang.ai/ns/v0" version="0.2">
+  <heading level="1">Postmortem: HCS-GB Billing Tab 500 — Calendar REST API Removed in Core v4.132.0</heading>
+  <text>
+    <bold>Date:</bold>
+2026-04-08
+    <bold>Cluster:</bold>
+oviva-prod1 (oviva-k8s-prod, europe-west3)
+    <bold>Severity:</bold>
+High (100% billing tab failure for GB coaches, forced logout)
+  </text>
+  <heading level="2">1. Summary</heading>
+  <text>GB coaches are immediately logged out of the platform when attempting to access the billing tab.</text>
+  <text>
+    <code>backend-core</code>
+v4.132.0, deployed on 2026-04-07 at 20:14 UTC, removed the legacy Calendar REST API (
+    <code>CalendarEventRESTService.java</code>
+) as part of the calendar microservice extraction (CORE-6079, CORE-6097, CORE-6085). The
+    <code>hcs-gb</code>
+service was not migrated — it still calls the removed endpoint via
+    <code>com.oviva.core.openapi.client.api.CalendarApi.getEvents()</code>
+, which now returns HTTP 404. This causes all
+    <code>/rest/billing-tracker/patient/{id}/session-buckets.json</code>
+<![CDATA[requests to fail with 500 ("Request to core failed"). The OCS frontend interprets the billing 500 as a session failure and terminates the coach's session, forcing a logout. The incident began when the first coach accessed the billing tab the next morning (07:16 UTC) and remains]]>    
+    <bold>unresolved</bold>
+— rollback to v4.131.0 is unsafe because the accompanying DB migration (
+    <code>V535.6085__drop_unused_calendar_tables.sql</code>
+) has already dropped the legacy calendar tables.
+  </text>
+  <heading level="2">2. Impact</heading>
+  <text>
+    <bold>User-facing:</bold>
+  </text>
+  <list class="unordered">
+    <ldiv/>
+    <text>100% of billing-tracker session-buckets requests return HTTP 500</text>
+    <ldiv/>
+    <text>Every coach who navigates to the billing tab is immediately logged out</text>
+    <ldiv/>
+    <text>Billing workflows (session tracking, billable unit review) are fully blocked for GB market</text>
+    <ldiv/>
+    <text>150+ distinct billing errors across dozens of patient IDs since 07:16 UTC</text>
+    <ldiv/>
+    <text>Zero successful session-buckets requests since the incident began</text>
+  </list>
+  <text>
+    <bold>Infrastructure:</bold>
+  </text>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      <code>hcs-gb</code>
+(1 pod:
+      <code>hcs-gb-66d6fc6984-2qgwr</code>
+, namespace
+      <code>prod</code>
+): all CalendarApi.getEvents calls return 404
+    </text>
+    <ldiv/>
+    <text>
+      <code>backend-core</code>
+(v4.132.0): Calendar REST endpoint no longer exists; returns 404 with no body
+    </text>
+    <ldiv/>
+    <text>
+      Calendar microservice: healthy (returning 200 on
+      <code>/app/v2/calendar/events.json</code>
+), but has independent
+      <code>TaskExecutionStateChangedEvent</code>
+processing failures
+    </text>
+    <ldiv/>
+    <text>
+      <code>backend-core</code>
+also returning 500 on
+      <code>/api/rest/mobile-api/v5/measurements/measurements.json/_bulk</code>
+with calendar-related errors
+    </text>
+  </list>
+  <text>
+    <bold>Duration:</bold>
+2026-04-08 07:16 UTC →
+    <bold>ongoing</bold>
+(not yet resolved as of 10:30 UTC, ~3.5+ hours)
+  </text>
+  <heading level="2">3. Action Items</heading>
+  <text>
+    <code>CalendarClientImpl.fetchCalendarEvents()</code>
+, or (B) update hcs-gb to call Calendar microservice directly at
+    <code>http://calendar:8080/app/v2/calendar/events.json</code>
+    <code>CalendarClientImpl</code>
+exists in Core but has no REST exposure for hcs-gb | Backend-core team / HCS-GB team | 2026-04-08 (today) | Open |
+    <code>TaskExecutionStateChangedEvent</code>
+processing failures (Camel route
+    <code>task-execution-state-changed-event-consumer</code>
+throwing
+    <code>TechnicalException</code>
+) — may be an independent issue or secondary effect of the calendar decommissioning | Calendar service logging repeated message delivery failures | Calendar team | 2026-04-15 | Open |
+    <code>V535.6085</code>
+(table drops) a separate release from the code removal — dropping tables in the same release as removing the API prevents safe rollback | Migration and code removal shipped together in v4.132.0 | Backend-core team | 2026-04-30 | Open |
+  </text>
+  <table>
+    <ched/>
+    <text>Priority</text>
+    <ched/>
+    <text>Action</text>
+    <ched/>
+    <text>Current state</text>
+    <ched/>
+    <text>Owner</text>
+    <ched/>
+    <text>Due</text>
+    <ched/>
+    <text>Status</text>
+    <nl/>
+    <fcel/>
+    <text>P0</text>
+    <ecel/>
+    <ecel/>
+    <ecel/>
+    <ecel/>
+    <ecel/>
+    <nl/>
+  </table>
+  <table>
+    <ched/>
+    <text>P1</text>
+    <ched/>
+    <text>Add cross-service integration tests for hcs-gb → Core API contract — the CalendarApi.getEvents endpoint was removed without verifying that all consumers had migrated</text>
+    <ched/>
+    <text>No consumer-side contract test exists for this endpoint</text>
+    <ched/>
+    <text>Backend-core team + HCS-GB team</text>
+    <ched/>
+    <text>2026-04-15</text>
+    <ched/>
+    <text>Open</text>
+    <nl/>
+    <fcel/>
+    <text>P2</text>
+    <fcel/>
+    <text>Add API deprecation process — REST endpoints consumed by other services should go through a deprecation cycle (mark deprecated → verify consumer migration → remove) before deletion</text>
+    <fcel/>
+    <text>No formal deprecation process; endpoint was removed in one release</text>
+    <fcel/>
+    <text>Platform/Architecture team</text>
+    <fcel/>
+    <text>2026-04-30</text>
+    <fcel/>
+    <text>Open</text>
+    <nl/>
+    <fcel/>
+    <text>P2</text>
+    <ecel/>
+    <ecel/>
+    <ecel/>
+    <ecel/>
+    <ecel/>
+    <nl/>
+  </table>
+  <table>
+    <ched/>
+    <text>P3</text>
+    <nl/>
+  </table>
+  <heading level="2"><![CDATA[4. Root Cause & Trigger]]></heading>
+  <text>
+    <bold>Root cause:</bold>
+    <code>backend-core</code>
+v4.132.0 removed
+    <code>CalendarEventRESTService.java</code>
+(the JAX-RS REST endpoint for calendar events) as part of a multi-ticket calendar microservice extraction. The removal was spread across commits CORE-6079 (delete calendar service classes), CORE-6097 (migrate internal callers to
+    <code>CalendarClientImpl</code>
+), and CORE-6085 (drop database tables). Internal Core callers were migrated to the new
+    <code>CalendarClientImpl</code>
+which calls the Calendar microservice directly at
+    <code>http://calendar:8080/app/v2/calendar/events.json</code>
+. However,
+    <code>hcs-gb</code>
+— an external consumer — was not migrated. It still uses
+    <code>com.oviva.core.openapi.client.api.CalendarApi</code>
+, an OpenAPI-generated client that targets the now-removed Core endpoint.
+  </text>
+  <text>
+    <bold>Causal chain:</bold>
+  </text>
+  <code>
+    <content><![CDATA[Core v4.132.0 deployed (Apr 7 20:14 UTC)
+  → CalendarEventRESTService.java removed (CORE-6079 PR 3-E)
+  → V535.6085 drops legacy calendar DB tables
+  → hcs-gb CalendarApi.getEvents() → HTTP 404 (no body)
+  → PatientSessionServiceImpl wraps as TechnicalException: "Request to core failed"
+  → billing-tracker /session-buckets.json → HTTP 500
+  → OCS frontend interprets 500 as session failure → coach logged out]]></content>
+  </code>
+  <text>
+    <bold>Trigger:</bold>
+First coach accessing the billing tab after the overnight deployment (07:16 UTC, ~09:16 CEST).
+  </text>
+  <heading level="2">5. Timeline (all timestamps UTC)</heading>
+  <text>
+    <code>backend-core</code>
+v4.132.0 deployed to prod via Flux | k8s_cluster audit logs:
+    <code>deployments.patch namespaces/prod/deployments/backend-core</code>
+    <code>DROP TABLE IF EXISTS</code>
+    <code>CalendarApi.getEvents</code>
+<![CDATA[404 error in hcs-gb | hcs-gb ERROR logs: "getEvents call failed with: 404 - [no body]" |]]>    
+  </text>
+  <table>
+    <ched/>
+    <text>Timestamp</text>
+    <ched/>
+    <text>Precision</text>
+    <ched/>
+    <text>Event</text>
+    <ched/>
+    <text>Evidence source</text>
+    <nl/>
+    <fcel/>
+    <text>2026-04-07 13:31</text>
+    <fcel/>
+    <text>minute</text>
+    <fcel/>
+    <text>Calendar service deployed (Flux patch)</text>
+    <fcel/>
+    <text>k8s_cluster audit logs</text>
+    <nl/>
+    <fcel/>
+    <text>2026-04-07 20:14</text>
+    <fcel/>
+    <text>minute</text>
+    <ecel/>
+    <ecel/>
+    <nl/>
+  </table>
+  <table>
+    <ched/>
+    <text>2026-04-08 07:16 – 10:30+</text>
+    <ched/>
+    <text>exact</text>
+    <ched/>
+    <text>Continuous 500 errors on all billing-tracker session-buckets requests</text>
+    <ched/>
+    <text>hcs-gb ERROR logs: 150+ entries, zero successful requests</text>
+    <nl/>
+    <fcel/>
+    <text>2026-04-08 10:30</text>
+    <fcel/>
+    <text>minute</text>
+    <fcel/>
+    <text>Investigation identifies root cause: removed CalendarEventRESTService.java in Core v4.132.0</text>
+    <fcel/>
+    <text>Source analysis: GitHub compare v4.131.0...v4.132.0</text>
+    <nl/>
+    <fcel/>
+    <text>—</text>
+    <fcel/>
+    <text>—</text>
+    <fcel/>
+    <text>Recovery: NOT YET ACHIEVED</text>
+    <fcel/>
+    <text>—</text>
+    <nl/>
+  </table>
+  <heading level="2">6. Contributing Factors</heading>
+  <list class="ordered">
+    <ldiv/>
+    <text>
+      <bold>No consumer-side contract testing (most impactful):</bold>
+The Core Calendar REST API was consumed by hcs-gb via an OpenAPI-generated client, but no integration test verified that all consumers had been migrated before the endpoint was removed. The CORE-6079/CORE-6097 tickets only migrated internal Core callers.
+    </text>
+    <ldiv/>
+    <text>
+      <bold>DB migration coupled with code removal:</bold>
+The Flyway migration (
+      <code>V535.6085__drop_unused_calendar_tables.sql</code>
+<![CDATA[) that drops legacy calendar tables shipped in the same release as the code removal. This prevents safe rollback — v4.131.0's DAO would query non-existent tables. Separating table drops into a later release would have preserved the rollback path.]]>      
+    </text>
+    <ldiv/>
+    <text>
+      <bold>12-hour deployment-to-detection gap:</bold>
+The Core deployment happened at 20:14 UTC (evening), and the first error appeared at 07:16 UTC (next morning business hours). No automated test or synthetic monitor exercises the billing-tracker → Core CalendarApi path, so the break was only detected by real user traffic.
+    </text>
+    <ldiv/>
+    <text>
+      <bold>Disproportionate frontend error handling (recurring):</bold>
+<![CDATA[The OCS frontend terminates the coach's session on billing-tab 500 errors instead of showing an error message. This is the same pattern identified in the]]>      
+2026-03-09 postmortem
+— a backend failure in one feature area causes complete session loss. This amplifies the user-facing severity of any billing-related backend error.
+    </text>
+  </list>
+  <heading level="2">7. Lessons Learned</heading>
+  <text>
+    <bold>What went well:</bold>
+  </text>
+  <list class="unordered">
+    <ldiv/>
+    <text>Investigation quickly narrowed from symptom (coach logout) to root cause (CalendarApi 404) using structured log analysis</text>
+    <ldiv/>
+    <text>
+      The
+      <code>CalendarClientImpl</code>
+replacement already exists in Core and the Calendar microservice is healthy — fix paths are clear
+    </text>
+    <ldiv/>
+    <text>Error logs contained full stack traces with the exact exception chain, making root cause identification fast</text>
+  </list>
+  <text>
+    <bold>What went wrong:</bold>
+  </text>
+  <list class="unordered">
+    <ldiv/>
+    <text>Calendar REST API was removed without verifying all consumers had migrated — hcs-gb was missed</text>
+    <ldiv/>
+    <text><![CDATA[No API deprecation process exists — the endpoint went from "in use" to "deleted" in one release]]></text>
+    <ldiv/>
+    <text>No synthetic monitoring or smoke test covers the billing-tracker → Core CalendarApi call path</text>
+    <ldiv/>
+    <text>Rollback is blocked by the coupled DB migration</text>
+  </list>
+  <text>
+    <bold>Where we got lucky:</bold>
+  </text>
+  <list class="unordered">
+    <ldiv/>
+    <text><![CDATA[Only the GB market's billing tab is affected (not CH, not other features)]]></text>
+    <ldiv/>
+    <text><![CDATA[The Calendar microservice itself is healthy — the fix only requires re-exposing the endpoint or updating hcs-gb's client, not rebuilding calendar functionality]]></text>
+    <ldiv/>
+    <text>
+<![CDATA[Core's]]>      
+      <code>CalendarClientImpl</code>
+already has the
+      <code>fetchCalendarEvents</code>
+method that wraps the Calendar microservice call — a compatibility shim is straightforward
+    </text>
+  </list>
+  <heading level="2">8. Investigation Notes</heading>
+  <text>
+    <bold>Confirmed root cause (high confidence):</bold>
+  </text>
+  <list class="unordered">
+    <ldiv/>
+    <text>Zero CalendarApi 404 errors before Core v4.132.0 deployment (verified: Apr 7 00:00–20:14 UTC)</text>
+    <ldiv/>
+    <text>First error at 07:16 UTC Apr 8, corresponding to first coach billing-tab access</text>
+    <ldiv/>
+    <text>
+      GitHub compare v4.131.0...v4.132.0 shows
+      <code>CalendarEventRESTService.java</code>
+(417 lines)
+      <bold>removed</bold>
+    </text>
+    <ldiv/>
+    <text>
+      286 files changed in v4.132.0, with massive calendar code removal across
+      <code>calendar/</code>
+,
+      <code>calendarscheduler/</code>
+,
+      <code>calendarmigration/</code>
+packages
+    </text>
+  </list>
+  <text>
+    <bold>Ruled-out hypotheses:</bold>
+  </text>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      Calendar microservice failure: Calendar service returns 200 on
+      <code>/app/v2/calendar/events.json</code>
+<![CDATA[(evidence: backend-core INFO logs show "Response code: 200" for all Calendar calls)]]>      
+    </text>
+    <ldiv/>
+    <text>hcs-gb deployment: No hcs-gb deployment patches in the last 3 days (evidence: k8s_cluster audit logs)</text>
+    <ldiv/>
+    <text>Network/routing issue: The 404 with empty body is consistent with a removed JAX-RS endpoint, not a network failure (which would produce connection errors or timeouts)</text>
+    <ldiv/>
+    <text><![CDATA[Database issue: Core's own queries work fine (Hibernate warnings only, no errors); Calendar microservice is healthy]]></text>
+  </list>
+  <text>
+    <bold>Open questions:</bold>
+  </text>
+  <list class="ordered">
+    <ldiv/>
+    <text>Are other external consumers of the removed Calendar REST API affected beyond hcs-gb?</text>
+    <ldiv/>
+    <text>
+      Is the Calendar
+      <code>TaskExecutionStateChangedEvent</code>
+failure related to the calendar decommissioning or an independent issue?
+    </text>
+    <ldiv/>
+    <text><![CDATA[What is the exact URL path that hcs-gb's CalendarApi client calls on Core? (OpenAPI spec not examined)]]></text>
+  </list>
+  <text>
+    <bold>Evidence coverage:</bold>
+  </text>
+  <list class="unordered">
+    <ldiv/>
+    <text>Logs: complete (Tier 2 gcloud CLI)</text>
+    <ldiv/>
+    <text>K8s state: unavailable (kubectl unreachable — cluster API timeout, likely requires VPN)</text>
+    <ldiv/>
+    <text>
+      Metrics: partial (MCP auth expired —
+      <code>invalid_rapt</code>
+)
+    </text>
+    <ldiv/>
+    <text>
+      Source analysis: complete (GitHub API —
+      <code>oviva-ag/ocs_backend</code>
+)
+    </text>
+    <ldiv/>
+    <text>Trace correlation: unavailable (MCP auth expired)</text>
+  </list>
+  <text>
+    <bold>Gaps:</bold>
+  </text>
+  <list class="unordered">
+    <ldiv/>
+    <text>Pod replica count and distribution not verified from live cluster (kubectl unavailable)</text>
+    <ldiv/>
+    <text>User-facing error rate not quantified from load balancer metrics (MCP auth expired)</text>
+    <ldiv/>
+    <text>hcs-gb pod health/restart count not verified</text>
+    <ldiv/>
+    <text>Flyway migration execution not confirmed from logs (migration log not found, inferred from table-dependent behavior)</text>
+  </list>
+  <heading level="3">Investigation Path</heading>
+  <text>
+    <bold>Decision tree:</bold>
+  </text>
+  <code>
+    <content><![CDATA[├─ Billing-tracker 500: "Request to core failed" (hcs-gb ERROR logs)
+│  └─ Why does CalendarApi.getEvents return 404?
+│     ├─ ✗ Calendar microservice down (Core→Calendar calls return 200)
+│     ├─ ✗ Network/routing issue (404 with no body = removed endpoint, not network error)
+│     ├─ ✗ hcs-gb misconfigured (no hcs-gb deployment in 3 days)
+│     └─ ✓ Core endpoint removed in v4.132.0
+│        └─ Why was hcs-gb not migrated?
+│           └─ ✓ CORE-6079/CORE-6097 only migrated internal Core callers
+│              Evidence: GitHub compare shows CalendarEventRESTService.java removed
+│              Zero 404 errors before v4.132.0 deploy, first error after
+│              └─ Disconfirming checks: 2/2 pass → ROOT CAUSE CONFIRMED
+├─ Recovery: NOT YET ACHIEVED
+├─ Blast radius: hcs-gb billing tab only (GB market); CH not affected
+└─ Recurring pattern: OCS frontend logout-on-500 (same as 2026-03-09 postmortem)]]></content>
+  </code>
+  <text>
+    <bold>Evidence steps:</bold>
+  </text>
+  <list class="ordered">
+    <ldiv/>
+    <text>
+      <bold>Error fingerprint</bold>
+— What is failing?
+Evidence: hcs-gb ERROR logs →
+      <code>CalendarApi.getEvents call failed with: 404 - [no body]</code>
+wrapping to
+      <code>TechnicalException: Request to core failed</code>
+on all
+      <code>session-buckets.json</code>
+requests.
+Conclusion: 100% failure rate on billing-tracker endpoint due to downstream CalendarApi 404.
+    </text>
+    <ldiv/>
+    <text>
+      <bold>Onset timing</bold>
+— When did it start?
+Evidence: Log query for
+      <code>getEvents call failed with: 404</code>
+across Apr 1–8 → zero errors before Apr 7 20:14 UTC (Core deploy), first error at Apr 8 07:16:21 UTC.
+Conclusion: Error onset correlates perfectly with Core v4.132.0 deployment + next-morning business hours.
+    </text>
+    <ldiv/>
+    <text>
+      <bold>Ruled-out: Calendar microservice</bold>
+— Is the Calendar service down?
+<![CDATA[Ruled out: Calendar is healthy (backend-core INFO logs: "Request to Calendar service ... Response code: 200" throughout incident window).]]>      
+    </text>
+    <ldiv/>
+    <text>
+      <bold>Ruled-out: hcs-gb change</bold>
+— Did hcs-gb change?
+Ruled out: No hcs-gb deployment patches in k8s_cluster audit logs for past 3 days.
+    </text>
+    <ldiv/>
+    <text>
+      <bold>Source analysis</bold>
+— What changed in Core v4.132.0?
+Evidence: GitHub compare v4.131.0...v4.132.0 → 286 files changed.
+      <code>CalendarEventRESTService.java</code>
+(417 lines)
+      <bold>removed</bold>
+.
+      <code>CalendarEventServiceImpl.java</code>
+(1004 lines) removed. DB migration
+      <code>V535.6085</code>
+drops legacy calendar tables.
+Conclusion: The endpoint hcs-gb calls was deliberately removed as part of calendar decommissioning.
+    </text>
+    <ldiv/>
+    <text>
+      <bold>Rollback assessment</bold>
+— Can we roll back Core?
+Evidence: Migration
+      <code>V535.6085__drop_unused_calendar_tables.sql</code>
+drops
+      <code>CORE_CALENDAR_EVENT_TE</code>
+<![CDATA[and related tables. v4.131.0's]]>      
+      <code>CalendarEventDaoImpl</code>
+queries these tables.
+Conclusion: Rollback unsafe — would cause
+      <code><![CDATA[Table doesn't exist]]></code>
+errors.
+    </text>
+  </list>
+  <text>
+    <bold>Reviewer takeaway:</bold>
+A multi-ticket calendar decommissioning in Core removed a REST API consumed by hcs-gb without verifying all external consumers had migrated. The top action item is restoring billing functionality via a compatibility endpoint or hcs-gb client update.
+  </text>
+</doclang>

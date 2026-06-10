@@ -1,0 +1,303 @@
+<doclang xmlns="https://www.doclang.ai/ns/v0" version="0.2">
+  <heading level="1">Proposal: Context-Economy Defaults</heading>
+  <heading level="2">Why</heading>
+  <text>
+    The Oviva-published Confluence guide
+    <italic><![CDATA["Getting more out of Claude Code: a context & token guide"]]></italic>
+enumerates 25 ranked techniques for reducing token spend and improving output quality. A four-perspective design debate (architect, critic, pragmatist, Codex external) plus Context7 source verification identified four high-leverage items that ACSM is currently under-serving:
+  </text>
+  <list class="ordered">
+    <ldiv/>
+    <text>
+      <bold>Output truncation is unbounded.</bold>
+<![CDATA[ACSM's]]>      
+      <code>incident-analysis</code>
+and
+      <code>gcp-observability</code>
+flows routinely pipe 25k+ tokens of MCP/Bash output verbatim into the context window. Anthropic ships configurable caps (
+      <code>BASH_MAX_OUTPUT_LENGTH</code>
+,
+      <code>MAX_MCP_OUTPUT_TOKENS</code>
+) but ACSM never writes defaults.
+    </text>
+    <ldiv/>
+    <text>
+      <bold>No observability for cost decisions.</bold>
+<![CDATA[ACSM has shipped multiple defaults waves (security scanners, alert hygiene, incident-analysis playbooks) without measurable cost data. The "prove observability before abstraction" memory entry mandates that observability primitives ship before further optimization layers.]]>      
+    </text>
+    <ldiv/>
+    <text>
+      <bold>No</bold>
+      <code>
+        <bold>.claudeignore</bold>
+      </code>
+      <bold>scaffolding.</bold>
+Auto-discovery scans
+      <code>node_modules/</code>
+,
+      <code>dist/</code>
+, generated artefacts unless deliberately blocked. No template ships with ACSM today.
+    </text>
+    <ldiv/>
+    <text>
+      <bold>No model-routing presets.</bold>
+      <code>CLAUDE_CODE_SUBAGENT_MODEL</code>
+and
+      <code>CLAUDE_CODE_EFFORT_LEVEL</code>
+are documented levers (verified via Context7 against Anthropic docs); 22 of 27 installed plugin subagents use
+      <code>inherit</code>
+semantics and would be affected by these env vars.
+    </text>
+  </list>
+  <text>
+    Codex external review confirmed: the model-routing change must NOT default-on because the env var overrides hard-pinned Opus reviewers in
+    <code>pr-review-toolkit</code>
+AND Anthropic recommends
+    <code>high</code>
+effort as the default for agentic work. Default-off + telemetry-gated probation is the defensible path.
+  </text>
+  <heading level="2">What Changes</heading>
+  <text>
+<![CDATA[Ship a four-item "context-economy" wave via the existing]]>    
+    <code>/setup</code>
+surface:
+  </text>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      <bold>A — Truncation defaults</bold>
+: managed
+      <code>.claude/settings.json</code>
+writes
+      <code>BASH_MAX_OUTPUT_LENGTH=20000</code>
+and
+      <code>MAX_MCP_OUTPUT_TOKENS=10000</code>
+<![CDATA[. Value 10000 (not the Confluence-suggested 8000) respects Anthropic's documented warning threshold. Race-tested against a real noisy]]>      
+      <code>incident-analysis</code>
+GCP-log session before commit.
+    </text>
+    <ldiv/>
+    <text>
+      <bold>B — Observability preset</bold>
+(opt-in):
+      <code>/setup --observability</code>
+writes OTEL env block (
+      <code>CLAUDE_CODE_ENABLE_TELEMETRY=1</code>
+,
+      <code>OTEL_METRICS_EXPORTER=otlp</code>
+, exporter endpoint placeholder) plus a
+      <code>docs/observability.md</code>
+reading guide for
+      <code>/usage</code>
+and
+      <code>ccusage</code>
+. Replaces the dropped cozempic-doctor
+      <code>/context</code>
+-parsing proposal —
+      <code>/context</code>
+has no machine-readable schema per Anthropic docs.
+    </text>
+    <ldiv/>
+    <text>
+      <bold>C — Context-hygiene preset</bold>
+(opt-in):
+      <code>/setup --context-hygiene</code>
+ships a conservative
+      <code>.claudeignore</code>
+template, detects monorepo subdir launch, and adds a
+      <code>cozempic doctor</code>
+warning when launched from above a package directory.
+    </text>
+    <ldiv/>
+    <text>
+      <bold>D — Model-routing preset</bold>
+(opt-in, default-OFF + probation):
+      <code>/setup --model-routing</code>
+writes
+      <code>CLAUDE_CODE_SUBAGENT_MODEL=haiku</code>
+and
+      <code>CLAUDE_CODE_EFFORT_LEVEL=medium</code>
+to managed settings. Probation criteria: default-on only after B has captured ≥2 weeks of telemetry showing no review-quality regressions.
+    </text>
+  </list>
+  <heading level="2">Capabilities</heading>
+  <heading level="3">Added</heading>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      <code>
+        <bold>context-economy</bold>
+      </code>
+(NEW CAPABILITY) — governs context production budgets via managed
+      <code>settings.json</code>
+defaults, observability scaffolding, ignore-file templates, and opt-in model/effort presets. Owns the precedence contract for env-var defaults written by ACSM.
+    </text>
+  </list>
+  <heading level="3">Modified</heading>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      <code>
+        <bold>auto-claude-skills</bold>
+      </code>
+—
+      <code>/setup</code>
+command gains
+      <code>--observability</code>
+,
+      <code>--context-hygiene</code>
+,
+      <code>--model-routing</code>
+subcommands and a baseline truncation-defaults write.
+    </text>
+    <ldiv/>
+    <text>
+      <code>
+        <bold>unified-context-stack</bold>
+      </code>
+— references new
+      <code>context-economy</code>
+capability for production budgets (complement to existing retrieval tiers).
+    </text>
+  </list>
+  <heading level="2">Impact</heading>
+  <text>
+    <bold>Files added:</bold>
+  </text>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      <code>commands/setup.md</code>
+— extended with subcommand flags
+    </text>
+    <ldiv/>
+    <text>
+      <code>scripts/setup-managed-settings.sh</code>
+— idempotent jq merge into
+      <code>.claude/settings.json</code>
+      <code>env</code>
+block
+    </text>
+    <ldiv/>
+    <text>
+      <code>scripts/setup-claudeignore.sh</code>
+— template emitter with monorepo detection
+    </text>
+    <ldiv/>
+    <text>
+      <code>templates/claudeignore.template</code>
+— conservative ignore list
+    </text>
+    <ldiv/>
+    <text>
+      <code>docs/observability.md</code>
+—
+      <code>/usage</code>
++ ccusage + OTEL reading guide
+    </text>
+    <ldiv/>
+    <text>
+      <code>tests/test-context-economy.sh</code>
+— Bash 3.2 idempotency + precedence tests
+    </text>
+    <ldiv/>
+    <text>
+      <code>tests/race-truncation-defaults.sh</code>
+— A/B harness for incident-analysis fixture
+    </text>
+  </list>
+  <text>
+    <bold>Files modified:</bold>
+  </text>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      <code>skills/cozempic/SKILL.md</code>
+— adds
+      <code>doctor</code>
+warning for above-package-dir launch
+    </text>
+    <ldiv/>
+    <text>
+      <code>CHANGELOG.md</code>
+— accumulator entry under
+      <code>[Unreleased]</code>
+    </text>
+  </list>
+  <text>
+    <bold>APIs / settings keys touched</bold>
+(verified via Context7 against
+    <code>/websites/code_claude</code>
+):
+  </text>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      <code>env.BASH_MAX_OUTPUT_LENGTH</code>
+(env var, restart required)
+    </text>
+    <ldiv/>
+    <text>
+      <code>env.MAX_MCP_OUTPUT_TOKENS</code>
+(env var, restart required; default 25000, warns below 10000)
+    </text>
+    <ldiv/>
+    <text>
+      <code>env.CLAUDE_CODE_SUBAGENT_MODEL</code>
+(env var, overrides per-invocation + frontmatter
+      <code>model</code>
+)
+    </text>
+    <ldiv/>
+    <text>
+      <code>env.CLAUDE_CODE_EFFORT_LEVEL</code>
+(env var, overrides
+      <code>/effort</code>
++ frontmatter)
+    </text>
+    <ldiv/>
+    <text>
+      <code>env.CLAUDE_CODE_ENABLE_TELEMETRY</code>
++
+      <code>env.OTEL_*</code>
+(opt-in observability)
+    </text>
+  </list>
+  <text>
+    <bold>Dependencies:</bold>
+  </text>
+  <list class="unordered">
+    <ldiv/>
+    <text>Bash 3.2 + jq-optional (existing ACSM constraints)</text>
+    <ldiv/>
+    <text>No new runtime dependencies</text>
+    <ldiv/>
+    <text>No new plugins required</text>
+  </list>
+  <heading level="2">Out of Scope</heading>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      Cache-invalidation hook on mid-session
+      <code>/model</code>
+swap — slash commands bypass PreToolUse per Anthropic docs; unimplementable as specified.
+    </text>
+    <ldiv/>
+    <text>
+      Phase-boundary
+      <code>/clear</code>
+nudge — Anthropic ships an idle-75min
+      <code>/clear</code>
+nudge upstream; redundant.
+    </text>
+    <ldiv/>
+    <text><![CDATA[CLAUDE.md 500-token assertion — empirical survey showed every installed plugin's CLAUDE.md (including Anthropic's own examples) at ~1900 tokens; threshold is ecosystem-wrong.]]></text>
+    <ldiv/>
+    <text>
+      <code>/context</code>
+output parsing — no machine-readable schema per Anthropic docs.
+    </text>
+    <ldiv/>
+    <text>Cozempic doctor docs-pivot — superseded by B (telemetry beats interpretation).</text>
+  </list>
+</doclang>

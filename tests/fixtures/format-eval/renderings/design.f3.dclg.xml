@@ -1,0 +1,376 @@
+<doclang xmlns="https://www.doclang.ai/ns/v0" version="0.2">
+  <heading level="1">Serena Auto-Register on First Session — Design</heading>
+  <text>
+    <bold>Date:</bold>
+2026-05-23
+    <bold>Status:</bold>
+Approved (DESIGN → PLAN)
+    <bold>Slug:</bold>
+serena-auto-register
+  </text>
+  <heading level="2">Problem</heading>
+  <text>
+    Users with
+    <code>serena</code>
+installed on PATH still see
+    <code>serena_connected=false</code>
+(and often
+    <code>serena=false</code>
+too) unless they explicitly run
+    <code>/setup</code>
+<![CDATA[to register Serena as an MCP server. The friction case is real: today's own session shows]]>    
+    <code>serena=true, serena_connected=false</code>
+, and most users will not realize that running
+    <code>/setup</code>
+<![CDATA[is the prerequisite for the plugin's Serena-aware skill routing to take effect.]]>    
+  </text>
+  <text>
+    The desired outcome: any user who installs the
+    <code>auto-claude-skills</code>
+plugin and has Serena on PATH gets Serena auto-registered as an MCP server without intervention.
+    <code>/setup</code>
+remains the explicit entry point for richer onboarding (project-yml init, language detection, hooks, upgrades) — but the bare-minimum MCP wiring should be zero-touch.
+  </text>
+  <heading level="2">Capabilities Affected</heading>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      <code>
+        <bold>skill-routing</bold>
+      </code>
+—
+      <code>hooks/session-start-hook.sh</code>
+gains a new step that runs before the existing
+      <code>context_capabilities</code>
+detection. The new step auto-registers Serena if eligible, so the existing
+      <code>.serena = true</code>
+augmentation (which reads
+      <code>~/.claude.json</code>
+) sees the registration on the same session.
+    </text>
+    <ldiv/>
+    <text>
+      <code>
+        <bold>setup</bold>
+      </code>
+—
+      <code>commands/setup.md</code>
+<![CDATA[gains a "re-trigger auto-registration" entry point: deleting the marker file is the documented recovery path when a user wants the plugin to re-attempt auto-registration (e.g., after manually removing Serena to fix a broken venv and reinstalling).]]>      
+    </text>
+  </list>
+  <heading level="2">Out of Scope</heading>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      <code>
+        <bold>.serena/project.yml</bold>
+      </code>
+      <bold>initialization and language detection.</bold>
+These remain
+      <code>/setup</code>
+-only. They require user prompts and project-specific judgment; not safe to run silently on every fresh project.
+    </text>
+    <ldiv/>
+    <text>
+      <bold>Upgrading old</bold>
+      <code>
+        <bold>uvx --from git+</bold>
+      </code>
+      <bold>Serena installs.</bold>
+Disruptive (removes existing registration, reinstalls binary). Stays manual via
+      <code>/setup</code>
+.
+    </text>
+    <ldiv/>
+    <text>
+      <bold>serena-hooks installation (</bold>
+      <code>
+        <bold>auto-approve</bold>
+      </code>
+      <bold>,</bold>
+      <code>
+        <bold>remind</bold>
+      </code>
+      <bold>,</bold>
+      <code>
+        <bold>cleanup</bold>
+      </code>
+      <bold>).</bold>
+<![CDATA[These mutate the user's]]>      
+      <code>~/.claude/settings.json</code>
+hooks block and are a separate consent decision. Stay
+      <code>/setup</code>
+-gated.
+    </text>
+    <ldiv/>
+    <text>
+      <bold>Auto-registration of other MCPs (Forgetful, Context7, PostHog).</bold>
+Out of scope for this change. Same pattern could be applied later if validated here, but each MCP has different consent/install considerations and should be evaluated independently.
+    </text>
+    <ldiv/>
+    <text>
+      <code>
+        <bold>SERENA_CONNECTION_CHECK=1</bold>
+      </code>
+      <bold>default flip.</bold>
+Independent decision; this design only addresses
+      <italic>registration</italic>
+. The connection-check env var controls whether the session-start hook also probes
+      <code>claude mcp list</code>
+for the
+      <code>✓ Connected</code>
+marker after the fact — orthogonal to whether registration happened at all.
+    </text>
+    <ldiv/>
+    <text>
+      <bold>Project-scope or local-scope registration.</bold>
+This change registers Serena once with
+      <code>--scope user</code>
+. Per-project registration is explicitly rejected (see Approach).
+    </text>
+  </list>
+  <heading level="2">Approach</heading>
+  <text>
+    <bold>Trigger:</bold>
+On session start, inside
+    <code>hooks/session-start-hook.sh</code>
+, run a new helper
+    <code>_maybe_auto_register_serena</code>
+    <italic>before</italic>
+the existing
+    <code>context_capabilities</code>
+augmentation block (the
+    <code><![CDATA[($all_mcp | has("serena"))]]></code>
+check at line ~797).
+  </text>
+  <text>
+    <bold>Eligibility (all must be true):</bold>
+  </text>
+  <list class="ordered">
+    <ldiv/>
+    <text>
+      <code>command -v serena</code>
+succeeds (binary is on PATH).
+    </text>
+    <ldiv/>
+    <text>
+      <code>command -v claude</code>
+succeeds (we need the CLI to register).
+    </text>
+    <ldiv/>
+    <text>
+      Marker file
+      <code>~/.claude/.auto-claude-skills-serena-registered</code>
+does NOT exist.
+    </text>
+    <ldiv/>
+    <text>
+      <code>claude mcp list</code>
+does NOT already contain a
+      <code>serena</code>
+entry (matched by
+      <code>^serena:</code>
+line prefix, same pattern as the existing
+      <code>SERENA_CONNECTION_CHECK</code>
+block at line ~812).
+    </text>
+  </list>
+  <text>
+    <bold>Action when eligible:</bold>
+  </text>
+  <code>claude mcp add --scope user serena -- serena start-mcp-server --context claude-code --project-from-cwd</code>
+  <text>
+    This is the exact canonical command already documented in
+    <code>commands/setup.md</code>
+(line 264).
+  </text>
+  <text>
+    <bold>Post-action:</bold>
+  </text>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      On success (exit 0): write marker file
+      <code>~/.claude/.auto-claude-skills-serena-registered</code>
+with a one-line timestamp.
+    </text>
+    <ldiv/>
+    <text>
+      On failure (non-zero): write the marker anyway, plus an error breadcrumb. Rationale: a failing
+      <code>claude mcp add</code>
+<![CDATA[will fail every session — don't spam retries. Write a separate breadcrumb file]]>      
+      <code>~/.claude/.auto-claude-skills-serena-register-error</code>
+that surfaces the error on next
+      <code>/setup</code>
+invocation.
+    </text>
+    <ldiv/>
+    <text>
+      In both cases: emit a
+      <code>[serena-autoregister]</code>
+line to stderr only when
+      <code>SKILL_EXPLAIN=1</code>
+(consistent with the existing
+      <code>[design-guard]</code>
+and other debug breadcrumbs).
+    </text>
+  </list>
+  <text>
+    <bold>Fail-open invariants (mandatory, match existing hook patterns):</bold>
+  </text>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      All checks gated on
+      <code>command -v</code>
+of the tool used.
+    </text>
+    <ldiv/>
+    <text>
+      All
+      <code>claude mcp ...</code>
+calls have
+      <code><![CDATA[2>/dev/null || true]]></code>
+semantics; never propagate non-zero exit.
+    </text>
+    <ldiv/>
+    <text>
+      jq is
+      <italic>not</italic>
+required for this path (no JSON parsing — only
+      <code>grep -F</code>
+).
+    </text>
+    <ldiv/>
+    <text>
+      Latency budget: the eligibility checks (3×
+      <code>command -v</code>
++ 1×
+      <code>claude mcp list | grep</code>
+<![CDATA[) must add <100ms when the marker exists and Serena is already registered (the steady-state path). When auto-registration actually fires (once per user, ever), latency is dominated by]]>      
+      <code>claude mcp add</code>
+which takes ~200-500ms.
+    </text>
+  </list>
+  <code>
+    <bold>/setup</bold>
+  </code>
+  <text>
+    <bold>integration:</bold>
+  </text>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      Add a new step early in
+      <code>commands/setup.md</code>
+<![CDATA[Serena section: "If]]>      
+      <code>~/.claude/.auto-claude-skills-serena-registered</code>
+<![CDATA[exists and you want the plugin to re-attempt auto-registration, delete it first." This is a documentation-only change;]]>      
+      <code>/setup</code>
+itself continues to use its own (richer) registration flow.
+    </text>
+    <ldiv/>
+    <text>
+      Surface the error breadcrumb if
+      <code>~/.claude/.auto-claude-skills-serena-register-error</code>
+exists.
+    </text>
+  </list>
+  <text>
+    <bold>Why first-time-only + user-scope was chosen</bold>
+(selected via brainstorming):
+  </text>
+  <list class="unordered">
+    <ldiv/>
+    <text>
+      <bold>Zero-touch first session</bold>
+<![CDATA[— matches the user's stated goal.]]>      
+    </text>
+    <ldiv/>
+    <text>
+      <bold>Respects user state</bold>
+<![CDATA[— if the user later removes Serena's MCP registration manually (broken venv, switching projects, debugging), the plugin doesn't fight them by re-adding it.]]>      
+    </text>
+    <ldiv/>
+    <text>
+      <bold>Cheap steady state</bold>
+— after the marker exists, only a stat call adds latency (~1ms).
+    </text>
+    <ldiv/>
+    <text>
+      <bold>User scope</bold>
+— one registration covers every project; matches the trigger (binary on PATH = global resource). Project scope would require per-project markers and per-project auto-registration, which compounds the side-effect surface across every new repo the user opens.
+    </text>
+    <ldiv/>
+    <text>
+      <code>
+        <bold>/setup</bold>
+      </code>
+      <bold>remains the recovery handle</bold>
+— explicit, documented, deterministic.
+    </text>
+  </list>
+  <heading level="2">Acceptance Scenarios</heading>
+  <text>
+    <bold>Scenario 1: Fresh user with Serena installed, no MCP registration</bold>
+  </text>
+  <code>
+    <content><![CDATA[GIVEN  `command -v serena` returns /usr/local/bin/serena
+  AND  `claude mcp list` contains no `serena` entry
+  AND  `~/.claude/.auto-claude-skills-serena-registered` does not exist
+WHEN   the user starts a Claude Code session in any project
+THEN   the plugin runs `claude mcp add --scope user serena -- serena start-mcp-server --context claude-code --project-from-cwd`
+  AND  writes `~/.claude/.auto-claude-skills-serena-registered` (timestamp inside)
+  AND  the same session's context_capabilities augmentation reports `serena=true`
+  AND  with SERENA_CONNECTION_CHECK=1, reports `serena_connected=true`]]></content>
+  </code>
+  <text>
+    <bold>Scenario 2: User has existing Serena registration (any vintage)</bold>
+  </text>
+  <code>
+    <content><![CDATA[GIVEN  `claude mcp list` already contains `serena: <command>`
+  AND  the marker file does not exist
+WHEN   session starts
+THEN   the plugin skips `claude mcp add` (idempotent — registration already present)
+  AND  writes the marker file (records that auto-registration was considered and resolved)
+  AND  subsequent sessions are no-op (cheap marker check)]]></content>
+  </code>
+  <text>
+    <bold>Scenario 3: User intentionally removed Serena after auto-registration</bold>
+  </text>
+  <code>
+    <content>GIVEN  the marker file exists (`~/.claude/.auto-claude-skills-serena-registered`)
+  AND  the user has run `claude mcp remove serena` manually
+WHEN   they start a new session
+THEN   the plugin does NOT re-add Serena (marker prevents it)
+  AND  routing falls back to non-Serena behavior (matches user intent)
+  AND  the user can run `/setup` (or delete the marker) to opt back in</content>
+  </code>
+  <text>
+    <bold>Scenario 4: Serena binary not installed</bold>
+  </text>
+  <code>
+    <content>GIVEN  `command -v serena` returns nothing
+WHEN   session starts
+THEN   no MCP registration attempt is made
+  AND  marker file is not written
+  AND  behavior is identical to today (zero side effects)</content>
+  </code>
+  <heading level="2">Decision</heading>
+  <text>
+    <bold>Approved approach:</bold>
+First-time-only auto-registration with user-scope, gated on
+    <code>command -v serena</code>
+, protected by a marker file at
+    <code>~/.claude/.auto-claude-skills-serena-registered</code>
+.
+    <code>/setup</code>
+remains the explicit, richer entry point and the documented recovery path.
+  </text>
+  <text>
+    <bold>Next:</bold>
+Transition to PLAN phase (writing-plans skill) to break this into discrete tasks (helper function, marker file format, session-start integration,
+    <code>/setup</code>
+doc update, tests, changelog).
+  </text>
+</doclang>

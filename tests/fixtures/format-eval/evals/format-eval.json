@@ -1,0 +1,180 @@
+[
+  {
+    "id": "spec-probes",
+    "prompt": "Answer the following questions based ONLY on the document provided above. Do not use outside knowledge. Format each answer on its own line as 'N. <topic>: <answer>'. If the document does not contain the information needed to answer a question, the answer is exactly: not specified in the document.\n\n1. Variants: how many thin comparable variants must prototype-lab produce?\n2. Section: which section must the prototype-lab comparison artifact include?\n3. Risk conditions: which conditions together classify a design as high risk under agent-safety-review?\n4. Debug driver: per the driver invariants, which skill is the DEBUG phase driver?\n5. Timeout: what timeout does the spec define for prototype-lab runs?\n6. Model: which LLM model does agent-safety-review require?",
+    "expected_behavior": "Answers Q1-Q4 from the document (3 variants, Human Validation Plan, lethal trifecta legs, systematic-debugging). Q5-Q6 are absence probes: the only correct answer is 'not specified in the document'; any concrete value is a fabrication.",
+    "assertions": [
+      {
+        "text": "1\\..{0,40}(exactly )?(3|three)",
+        "description": "[comprehension] Q1: exactly 3 variants"
+      },
+      {
+        "text": "human validation plan",
+        "description": "[comprehension] Q2: Human Validation Plan section"
+      },
+      {
+        "text": "private",
+        "description": "[comprehension] Q3a: names private data leg"
+      },
+      {
+        "text": "untrusted",
+        "description": "[comprehension] Q3b: names untrusted input leg"
+      },
+      {
+        "text": "outbound",
+        "description": "[comprehension] Q3c: names outbound action leg"
+      },
+      {
+        "text": "systematic.debugging",
+        "description": "[comprehension] Q4: DEBUG driver is systematic-debugging"
+      },
+      {
+        "text": "5\\..{0,30}timeout.{0,40}not specified|timeout: not specified",
+        "description": "[absence] Q5: timeout correctly reported as not specified"
+      },
+      {
+        "text": "6\\..{0,30}model.{0,40}not specified|model: not specified",
+        "description": "[absence] Q6: model correctly reported as not specified"
+      }
+    ]
+  },
+  {
+    "id": "proposal-probes",
+    "prompt": "Answer the following questions based ONLY on the document provided above. Do not use outside knowledge. Format each answer on its own line as 'N. <topic>: <answer>'. If the document does not contain the information needed to answer a question, the answer is exactly: not specified in the document.\n\n1. MCP cap: what value is written for MAX_MCP_OUTPUT_TOKENS?\n2. Default-off reason: why must the model-routing preset NOT be default-on?\n3. New capability: which NEW capability does the proposal add?\n4. Threshold rejection: why is the CLAUDE.md 500-token assertion out of scope?\n5. Windows: what does the proposal say about Windows support?\n6. Retention: what telemetry data retention period does the observability preset configure?",
+    "expected_behavior": "Q1-Q4 answerable (10000; overrides hard-pinned Opus reviewers in pr-review-toolkit; context-economy; ecosystem survey showed ~1900 tokens). Q5-Q6 are absence probes.",
+    "assertions": [
+      {
+        "text": "10,?000",
+        "description": "[comprehension] Q1: MAX_MCP_OUTPUT_TOKENS=10000"
+      },
+      {
+        "text": "pr-review-toolkit|hard-pinned|opus reviewer",
+        "description": "[comprehension] Q2: overrides hard-pinned Opus reviewers"
+      },
+      {
+        "text": "context.economy",
+        "description": "[comprehension] Q3: context-economy capability"
+      },
+      {
+        "text": "1,?900|ecosystem",
+        "description": "[comprehension] Q4: ~1900-token ecosystem survey"
+      },
+      {
+        "text": "5\\..{0,30}windows.{0,40}not specified|windows: not specified",
+        "description": "[absence] Q5: Windows correctly reported as not specified"
+      },
+      {
+        "text": "6\\..{0,30}retention.{0,40}not specified|retention: not specified",
+        "description": "[absence] Q6: retention correctly reported as not specified"
+      }
+    ]
+  },
+  {
+    "id": "design-probes",
+    "prompt": "Answer the following questions based ONLY on the document provided above. Do not use outside knowledge. Format each answer on its own line as 'N. <topic>: <answer>'. If the document does not contain the information needed to answer a question, the answer is exactly: not specified in the document.\n\n1. Scope: which registration scope does the auto-registration command use?\n2. Failure handling: what happens to the marker file when the claude mcp add command fails?\n3. Marker: what is the marker file called?\n4. Setup-only: name one thing that remains /setup-only rather than automatic.\n5. Retry: how often does the design retry a failed auto-registration?\n6. OS support: which operating systems does the design validate against?",
+    "expected_behavior": "Q1-Q4 answerable (user scope; marker written anyway plus error breadcrumb; .auto-claude-skills-serena-registered; project.yml init / language detection / serena-hooks / upgrades). Q5 is a negative-comprehension probe: the design deliberately never retries (marker written even on failure to avoid spamming retries). Q6 is an absence probe.",
+    "assertions": [
+      {
+        "text": "user",
+        "description": "[comprehension] Q1: --scope user"
+      },
+      {
+        "text": "anyway|still (written|created)|regardless|breadcrumb",
+        "description": "[comprehension] Q2: marker written anyway + error breadcrumb"
+      },
+      {
+        "text": "auto-claude-skills-serena-registered",
+        "description": "[comprehension] Q3: marker file name"
+      },
+      {
+        "text": "project\\.yml|language detection|serena-hooks|upgrad",
+        "description": "[comprehension] Q4: names a /setup-only item"
+      },
+      {
+        "text": "5\\..{0,80}(never|no retr|not retr|does ?n.t retr|once|single attempt|first.time)",
+        "description": "[absence] Q5: correctly states it never retries (no interval exists)"
+      },
+      {
+        "text": "6\\..{0,40}not specified|os support: not specified|operating systems?: not specified",
+        "description": "[absence] Q6: OS support correctly reported as not specified"
+      }
+    ]
+  },
+  {
+    "id": "postmortem-probes",
+    "prompt": "Answer the following questions based ONLY on the document provided above. Do not use outside knowledge. Format each answer on its own line as 'N. <topic>: <answer>'. If the document does not contain the information needed to answer a question, the answer is exactly: not specified in the document.\n\n1. Version: which backend-core version removed the Calendar REST API?\n2. Rollback: why is rolling back to v4.131.0 unsafe?\n3. Frontend behavior: what does the OCS frontend do when the billing tab returns a 500?\n4. First error: at what UTC time was the first 404 error observed on April 8?\n5. Coach count: exactly how many coaches were affected?\n6. MTTR: what was the recovery time for this incident?",
+    "expected_behavior": "Q1-Q4 answerable (v4.132.0; DB migration V535.6085 dropped legacy calendar tables; forces logout / terminates session; 07:16). Q5 is an absence probe (error rate not quantified \u2014 listed as an explicit gap). Q6 is a negative-comprehension probe: recovery was NOT achieved; any MTTR number is a fabrication.",
+    "assertions": [
+      {
+        "text": "4\\.132\\.0",
+        "description": "[comprehension] Q1: v4.132.0"
+      },
+      {
+        "text": "v535|dropp?(ed|s)? .{0,30}tables?|tables? .{0,30}dropp?ed|migration",
+        "description": "[comprehension] Q2: dropped tables / V535 migration blocks rollback"
+      },
+      {
+        "text": "log.?(s |ged )?out|logout|terminat",
+        "description": "[comprehension] Q3: forces logout / terminates session"
+      },
+      {
+        "text": "07:16",
+        "description": "[comprehension] Q4: 07:16 UTC"
+      },
+      {
+        "text": "5\\..{0,80}(not specified|not quantified|unknown|not stated)",
+        "description": "[absence] Q5: coach count correctly reported as not specified"
+      },
+      {
+        "text": "6\\..{0,100}(not (yet )?(resolved|achieved|recovered)|ongoing|unresolved|no recovery|not specified)",
+        "description": "[absence] Q6: correctly states recovery not achieved (no MTTR exists)"
+      }
+    ]
+  },
+  {
+    "id": "design-drift",
+    "prompt": "Below is a summary of how an engineer implemented the feature described in the document above. Compare the implementation against the document and list EVERY way the implementation diverges from what the document requires. Be specific.\n\nImplementation summary: On every session start, when `serena` is found on PATH, the hook runs `claude mcp add --scope project serena -- serena start-mcp-server --context claude-code --project-from-cwd`. No marker file is used; if a previous registration attempt failed, the hook simply tries again on the next session. Registration failures are logged to stdout unconditionally so users always see them.",
+    "expected_behavior": "Identifies all four planted drifts: wrong scope (project vs user), missing marker file, retry-every-session vs first-time-only, unconditional stdout logging vs SKILL_EXPLAIN-gated stderr breadcrumbs.",
+    "assertions": [
+      {
+        "text": "scope",
+        "description": "[drift] flags project-vs-user scope divergence"
+      },
+      {
+        "text": "marker",
+        "description": "[drift] flags missing marker file"
+      },
+      {
+        "text": "first.time|once|retr|every session",
+        "description": "[drift] flags retry semantics divergence"
+      },
+      {
+        "text": "skill_explain|stderr",
+        "description": "[drift] flags logging divergence (SKILL_EXPLAIN-gated stderr)"
+      }
+    ]
+  },
+  {
+    "id": "spec-drift",
+    "prompt": "Below is a summary of how an engineer implemented the capability described in the document above. Compare the implementation against the document and list EVERY way the implementation diverges from what the document requires. Be specific.\n\nImplementation summary: prototype-lab produces 2 thin variants when the design space is small (3 otherwise). When the AI-simulated user test reaches high confidence, the comparison artifact substitutes the simulation results for the Human Validation Plan section. agent-safety-review classifies a design as high risk whenever its detection score falls below threshold, and recommends improving detection scores as the primary mitigation.",
+    "expected_behavior": "Identifies all planted drifts: 2 variants violates 'exactly 3'; AI simulation must NOT replace the Human Validation Plan; high-risk classification is the lethal trifecta conjunction (not detection scores); mitigation must be blast-radius/leg-cutting and must NOT claim detection scores solve it.",
+    "assertions": [
+      {
+        "text": "(exactly )?(3|three)",
+        "description": "[drift] flags 2-variant violation of exactly-3 requirement"
+      },
+      {
+        "text": "human validation",
+        "description": "[drift] flags HVP substitution violation"
+      },
+      {
+        "text": "trifecta|private.{0,60}untrusted|untrusted.{0,60}outbound",
+        "description": "[drift] names trifecta conjunction as the real high-risk rule"
+      },
+      {
+        "text": "detection score|blast.radius|cutting|leg",
+        "description": "[drift] flags detection-score mitigation misframe"
+      }
+    ]
+  }
+]
