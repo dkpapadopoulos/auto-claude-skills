@@ -35,6 +35,16 @@ assert_contains "agent-team-review: governance lens" "Governance" "${TEAM_CONTEN
 assert_contains "agent-team-review: HITL in adversarial focus" "HITL" "${TEAM_CONTENT}"
 assert_contains "agent-team-review: safety gate in adversarial focus" "safety gate" "${TEAM_CONTENT}"
 
+# --- agent-team-review: doubt discipline (change: adopt-doubt-discipline) ---
+assert_contains "agent-team-review: claim-withheld dispatch" "artifact and the contract" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: implementer self-summary excluded" "self-summary" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: doubt-theater red flag" "doubt theater" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: doubt-theater meaning" "validating, not reviewing" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: cross-model offer" "Codex" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: cross-model no silent skip" "silently skipping is not" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: cross-model sandboxed" "injected instructions" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: sensitive-path override" "regardless of file count" "${TEAM_CONTENT}"
+
 # Summary
 echo ""
 echo "=============================="

@@ -27,6 +27,8 @@ Ask: What are we creating?
 
 Generate based on type. Include frontmatter, tiered detection where applicable, and output contract section.
 
+**Description rule:** the frontmatter `description` states what the skill is for and when to use it. Do not summarize the workflow steps — an agent may follow the summary instead of reading the full skill.
+
 **Domain skill SKILL.md skeleton:**
 
 ```
@@ -79,6 +81,8 @@ Generate a JSON snippet for `config/default-triggers.json`:
 ```
 
 Note: Also needs a matching entry in `config/fallback-registry.json` using compact single-line trigger format.
+
+The routing entry `description` field follows the same description rule as the frontmatter: purpose and when-to-use, never workflow steps.
 
 ## Step 4: Emit Test Snippets
 
