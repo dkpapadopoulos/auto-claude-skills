@@ -1,0 +1,18 @@
+# Regex fixtures for skill: supply-chain-investigation
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# Priority-40 skill: a false fire dominates a domain slot. NO_MATCH lines are
+# generic dependency/security prose with trigger-adjacent tokens.
+
+MATCH: was the npm package compromised in the latest attack
+MATCH: check if our dependency was typosquatted
+MATCH: supply chain attack on the registry
+MATCH: is our org impacted by the compromised maven release
+MATCH: the package lock file was tampered with
+
+NO_MATCH: upgrade the lodash dependency to the latest version
+NO_MATCH: run a security scan on the docker image
+NO_MATCH: the api response was malicious looking json
+NO_MATCH: npm install fails behind the proxy
