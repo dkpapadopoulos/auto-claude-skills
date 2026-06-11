@@ -148,4 +148,21 @@ assert_equals "C1: own (payload) state advanced" "true" "${C1_A}"
 assert_equals "C1: foreign (singleton) state untouched" "false" "${C1_B}"
 teardown_test_env
 
+# ---------------------------------------------------------------------------
+# S1: compact-recovery resets the counter for the PAYLOAD token
+# ---------------------------------------------------------------------------
+echo "--- S: compact-recovery payload keying ---"
+setup_test_env
+mkdir -p "${HOME}/.claude"
+printf '%s' "session-conv-B" > "${HOME}/.claude/.skill-session-token"
+printf '%s' '{"transcript_path":"/tmp/proj/conv-A.jsonl"}' | \
+    CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "${PROJECT_ROOT}/hooks/compact-recovery-hook.sh" >/dev/null 2>&1 || true
+if [ -f "${HOME}/.claude/.skill-prompt-count-session-conv-A" ]; then
+    _record_pass "S1: compact-recovery keyed to payload token"
+else
+    _record_fail "S1: compact-recovery keyed to payload token" \
+        "$(ls -a "${HOME}/.claude" 2>/dev/null | tr '\n' ' ')"
+fi
+teardown_test_env
+
 print_summary
