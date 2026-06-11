@@ -376,7 +376,7 @@
       "required_when": "PR touches 3+ files, crosses module boundaries, or includes security-sensitive changes",
       "triggers": [
         "(team.review|multi.*(perspective|reviewer|agent).*(review|check)|thorough.*review|comprehensive.*review|full.*review)",
-        "(review|pull.?request|code.?review|check.*(code|changes|diff)|code.?quality|(^|[^a-z])pr($|[^a-z]))"
+        "((^|[^a-z])review|pull.?request|code.?review|check.*(code|changes|diff)|code.?quality|(^|[^a-z])pr($|[^a-z]))"
       ],
       "keywords": [],
       "trigger_mode": "regex",

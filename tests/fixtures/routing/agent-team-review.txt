@@ -1,0 +1,16 @@
+# Regex fixtures for skill: agent-team-review
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# NO_MATCH lines pin the same word boundaries as requesting-code-review:
+# embedded review (pREVIEW) and embedded pr (imPRove, sPRint) must not fire.
+
+MATCH: team review before merge
+MATCH: run a multi agent review of this change
+MATCH: thorough review of the hook changes
+MATCH: comprehensive review of the migration
+MATCH: review the changes with specialist agents
+
+NO_MATCH: preview my changes
+NO_MATCH: improve the sprint process
