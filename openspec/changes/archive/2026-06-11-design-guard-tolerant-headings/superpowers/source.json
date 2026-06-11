@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": "",
+  "plan_path": "",
+  "spec_path": "",
+  "sp_plan_path": "",
+  "sp_spec_path": "",
+  "change_slug": "design-guard-tolerant-headings",
+  "capability_slug": "skill-routing",
+  "source_branch": "fix/design-guard-tolerant-headings",
+  "base_commit": "7ca484f9982ea50e3134b255e7f4ccb7e1050294",
+  "openspec_surface": "none",
+  "archived_at": "2026-06-11T05:52:28Z"
+}

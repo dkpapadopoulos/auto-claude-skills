@@ -5377,6 +5377,99 @@ test_plan_completeness_handles_missing_file() {
 }
 test_plan_completeness_handles_missing_file
 
+# Helper: write a design fixture with raw heading lines (caller supplies the
+# full heading text including #-prefix, for mutation testing).
+_write_design_fixture_raw() {
+    local path="$1"; shift
+    mkdir -p "$(dirname "${path}")"
+    {
+        printf '# Design: fixture\n\n'
+        printf 'Intro paragraph.\n\n'
+        local heading
+        for heading in "$@"; do
+            printf '%s\n\n' "${heading}"
+            printf 'Body text.\n\n'
+        done
+    } > "${path}"
+}
+
+test_plan_completeness_tolerates_heading_variants() {
+    echo "-- test: DESIGN COMPLETENESS tolerates real-world heading variants --"
+    setup_test_env
+    install_registry
+
+    local token="plan-guard-variants-$$"
+    local design="${HOME}/design-variants.md"
+    # Real-world mutations from the format-eval specimen set: h3 level,
+    # lowercase, space-for-hyphen, suffix text, emoji prefix.
+    _write_design_fixture_raw "${design}" \
+        '### Capabilities affected' \
+        '## Out of Scope & Non-Goals' \
+        '## 🚫 Acceptance Scenarios'
+    _seed_plan_state "${token}" "fixture-slug" "${design}"
+
+    printf '{"skill":"brainstorming","phase":"DESIGN"}' \
+        > "${HOME}/.claude/.skill-last-invoked-${token}"
+
+    local output context
+    output="$(run_hook "let us plan this out")"
+    context="$(extract_context "${output}")"
+
+    assert_contains "completeness header present" "DESIGN COMPLETENESS" "${context}"
+    assert_contains "variant headings all recognized" "all sections present" "${context}"
+    assert_not_contains "no section flagged missing" "(missing" "${context}"
+
+    # Second fixture rotates the variant dimensions across sections so a
+    # drift in any single regex is caught regardless of which variant it
+    # was paired with above.
+    local design2="${HOME}/design-variants-2.md"
+    _write_design_fixture_raw "${design2}" \
+        '## 🚫 Capabilities Affected & Constraints' \
+        '### out of scope' \
+        '## Acceptance-Scenarios'
+    _seed_plan_state "${token}" "fixture-slug" "${design2}"
+
+    output="$(run_hook "let us plan this out")"
+    context="$(extract_context "${output}")"
+
+    assert_contains "rotated variants all recognized" "all sections present" "${context}"
+    assert_not_contains "no section flagged missing (rotated)" "(missing" "${context}"
+
+    teardown_test_env
+}
+test_plan_completeness_tolerates_heading_variants
+
+test_plan_completeness_ignores_non_heading_mentions() {
+    echo "-- test: DESIGN COMPLETENESS does not count body text or h4 as section headings --"
+    setup_test_env
+    install_registry
+
+    local token="plan-guard-nonheading-$$"
+    local design="${HOME}/design-nonheading.md"
+    # Out-of-Scope appears only as body text and as an h4 — neither counts.
+    _write_design_fixture_raw "${design}" \
+        '## Capabilities Affected' \
+        '## Acceptance Scenarios' \
+        '#### Out-of-Scope'
+    printf 'The out of scope items are listed elsewhere.\n' >> "${design}"
+    _seed_plan_state "${token}" "fixture-slug" "${design}"
+
+    printf '{"skill":"brainstorming","phase":"DESIGN"}' \
+        > "${HOME}/.claude/.skill-last-invoked-${token}"
+
+    local output context
+    output="$(run_hook "let us plan this out")"
+    context="$(extract_context "${output}")"
+
+    assert_contains "completeness header present" "DESIGN COMPLETENESS" "${context}"
+    assert_contains "Out-of-Scope still flagged missing" "Out-of-Scope (missing" "${context}"
+    assert_not_contains "Capabilities Affected not flagged" "Capabilities Affected (missing" "${context}"
+    assert_not_contains "Acceptance Scenarios not flagged" "Acceptance Scenarios (missing" "${context}"
+
+    teardown_test_env
+}
+test_plan_completeness_ignores_non_heading_mentions
+
 # ---------------------------------------------------------------------------
 # Skill-completion PostToolUse hook — advances composition state .completed
 # when a chain-member Skill tool returns successfully.

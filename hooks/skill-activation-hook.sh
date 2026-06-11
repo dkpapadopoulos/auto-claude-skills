@@ -1456,10 +1456,15 @@ Action: confirm the design_path or re-run the design step before invoking Skill(
       [[ -n "${SKILL_EXPLAIN:-}" ]] && \
         echo "[skill-hook]   [design-guard] unreadable: ${_DP_DESIGN}" >&2
     else
+      # Tolerant match: h2/h3 only, case-insensitive, space-or-hyphen
+      # word joins, prefix/suffix text allowed (e.g. "## Out of Scope",
+      # "### Capabilities affected", "## 🚫 Acceptance Scenarios").
+      # h4+, body-text mentions, and leading whitespace before ##
+      # intentionally do not count.
       _DC_CAPS=0; _DC_OOS=0; _DC_ACC=0
-      grep -q '^## Capabilities Affected' "$_DP_DESIGN" 2>/dev/null && _DC_CAPS=1
-      grep -q '^## Out-of-Scope'           "$_DP_DESIGN" 2>/dev/null && _DC_OOS=1
-      grep -q '^## Acceptance Scenarios'   "$_DP_DESIGN" 2>/dev/null && _DC_ACC=1
+      grep -Eiq '^#{2,3} .*capabilities[- ]affected' "$_DP_DESIGN" 2>/dev/null && _DC_CAPS=1
+      grep -Eiq '^#{2,3} .*out[- ]of[- ]scope'       "$_DP_DESIGN" 2>/dev/null && _DC_OOS=1
+      grep -Eiq '^#{2,3} .*acceptance[- ]scenarios'  "$_DP_DESIGN" 2>/dev/null && _DC_ACC=1
 
       if [[ $_DC_CAPS -eq 1 ]] && [[ $_DC_OOS -eq 1 ]] && [[ $_DC_ACC -eq 1 ]]; then
         DESIGN_COMPLETENESS="
