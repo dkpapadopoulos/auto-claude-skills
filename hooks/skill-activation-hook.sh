@@ -1047,7 +1047,30 @@ ${HINTS}${COMPOSITION_HINTS}"
       [[ -n "${SKILL_EXPLAIN:-}" ]] && \
         printf '[skill-hook] composition state write skipped: jq failed to encode chain\n' >&2
     }
+    # (c) Monotonic floor vs the completion hook's on-disk progress: when the
+    # chain is unchanged, union the computed prefix with the existing
+    # .completed. A prompt that re-anchors EARLIER in the same chain (e.g.
+    # "merge PR49" matching the review trigger after verification already
+    # ran) must not truncate recorded progress — that re-arms the push gate
+    # against already-reviewed work. Chain switch and pure-cancel remain the
+    # only resets. Fail-open: missing/malformed prior state, or jq failure,
+    # degrades to the prefix-only write. current_index intentionally stays
+    # the anchor index (display semantics); the push gate keys off
+    # .completed only.
     if [[ -n "$_comp_chain" ]]; then
+      _prev_state="${HOME}/.claude/.skill-composition-state-${_SESSION_TOKEN}"
+      if [[ -f "$_prev_state" ]]; then
+        _merged="$(jq -n --argjson chain "$_comp_chain" \
+                         --argjson completed "$_comp_completed" \
+                         --slurpfile prev "$_prev_state" '
+          ($prev[0] // {}) as $p |
+          if ($p.chain // []) == $chain then
+            ($completed + ($p.completed // [])) as $u |
+            [ $chain[] | select(. as $x | $u | index($x) != null) ]
+          else $completed end
+        ' 2>/dev/null)" || _merged=""
+        [[ -n "$_merged" ]] && _comp_completed="$_merged"
+      fi
       jq -n --argjson chain "$_comp_chain" \
             --argjson completed "$_comp_completed" \
             --argjson idx "${_current_idx:-0}" \
