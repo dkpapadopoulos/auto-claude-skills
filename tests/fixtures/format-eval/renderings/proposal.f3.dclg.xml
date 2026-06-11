@@ -2,7 +2,7 @@
   <heading level="1">Proposal: Context-Economy Defaults</heading>
   <heading level="2">Why</heading>
   <text>
-    The Oviva-published Confluence guide
+    The Internally published Confluence guide
     <italic><![CDATA["Getting more out of Claude Code: a context & token guide"]]></italic>
 enumerates 25 ranked techniques for reducing token spend and improving output quality. A four-perspective design debate (architect, critic, pragmatist, Codex external) plus Context7 source verification identified four high-leverage items that ACSM is currently under-serving:
   </text>

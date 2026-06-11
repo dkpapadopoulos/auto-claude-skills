@@ -1,14 +1,14 @@
 # Postmortem: HCS-GB Billing Tab 500 — Calendar REST API Removed in Core v4.132.0
 
 **Date:** 2026-04-08
-**Cluster:** oviva-prod1 (oviva-k8s-prod, europe-west3)
+**Cluster:** example-prod1 (example-k8s-prod, europe-west3)
 **Severity:** High (100% billing tab failure for GB coaches, forced logout)
 
 ## 1. Summary
 
 GB coaches are immediately logged out of the platform when attempting to access the billing tab.
 
-`backend-core` v4.132.0, deployed on 2026-04-07 at 20:14 UTC, removed the legacy Calendar REST API (`CalendarEventRESTService.java`) as part of the calendar microservice extraction (CORE-6079, CORE-6097, CORE-6085). The `hcs-gb` service was not migrated — it still calls the removed endpoint via `com.oviva.core.openapi.client.api.CalendarApi.getEvents()`, which now returns HTTP 404. This causes all `/rest/billing-tracker/patient/{id}/session-buckets.json` requests to fail with 500 ("Request to core failed"). The OCS frontend interprets the billing 500 as a session failure and terminates the coach's session, forcing a logout. The incident began when the first coach accessed the billing tab the next morning (07:16 UTC) and remains **unresolved** — rollback to v4.131.0 is unsafe because the accompanying DB migration (`V535.6085__drop_unused_calendar_tables.sql`) has already dropped the legacy calendar tables.
+`backend-core` v4.132.0, deployed on 2026-04-07 at 20:14 UTC, removed the legacy Calendar REST API (`CalendarEventRESTService.java`) as part of the calendar microservice extraction (CORE-6079, CORE-6097, CORE-6085). The `hcs-gb` service was not migrated — it still calls the removed endpoint via `com.example.core.openapi.client.api.CalendarApi.getEvents()`, which now returns HTTP 404. This causes all `/rest/billing-tracker/patient/{id}/session-buckets.json` requests to fail with 500 ("Request to core failed"). The OCS frontend interprets the billing 500 as a session failure and terminates the coach's session, forcing a logout. The incident began when the first coach accessed the billing tab the next morning (07:16 UTC) and remains **unresolved** — rollback to v4.131.0 is unsafe because the accompanying DB migration (`V535.6085__drop_unused_calendar_tables.sql`) has already dropped the legacy calendar tables.
 
 ## 2. Impact
 
@@ -40,7 +40,7 @@ GB coaches are immediately logged out of the platform when attempting to access 
 
 ## 4. Root Cause & Trigger
 
-**Root cause:** `backend-core` v4.132.0 removed `CalendarEventRESTService.java` (the JAX-RS REST endpoint for calendar events) as part of a multi-ticket calendar microservice extraction. The removal was spread across commits CORE-6079 (delete calendar service classes), CORE-6097 (migrate internal callers to `CalendarClientImpl`), and CORE-6085 (drop database tables). Internal Core callers were migrated to the new `CalendarClientImpl` which calls the Calendar microservice directly at `http://calendar:8080/app/v2/calendar/events.json`. However, `hcs-gb` — an external consumer — was not migrated. It still uses `com.oviva.core.openapi.client.api.CalendarApi`, an OpenAPI-generated client that targets the now-removed Core endpoint.
+**Root cause:** `backend-core` v4.132.0 removed `CalendarEventRESTService.java` (the JAX-RS REST endpoint for calendar events) as part of a multi-ticket calendar microservice extraction. The removal was spread across commits CORE-6079 (delete calendar service classes), CORE-6097 (migrate internal callers to `CalendarClientImpl`), and CORE-6085 (drop database tables). Internal Core callers were migrated to the new `CalendarClientImpl` which calls the Calendar microservice directly at `http://calendar:8080/app/v2/calendar/events.json`. However, `hcs-gb` — an external consumer — was not migrated. It still uses `com.example.core.openapi.client.api.CalendarApi`, an OpenAPI-generated client that targets the now-removed Core endpoint.
 
 **Causal chain:**
 ```
@@ -119,7 +119,7 @@ Core v4.132.0 deployed (Apr 7 20:14 UTC)
 - Logs: complete (Tier 2 gcloud CLI)
 - K8s state: unavailable (kubectl unreachable — cluster API timeout, likely requires VPN)
 - Metrics: partial (MCP auth expired — `invalid_rapt`)
-- Source analysis: complete (GitHub API — `oviva-ag/ocs_backend`)
+- Source analysis: complete (GitHub API — `example-org/ocs_backend`)
 - Trace correlation: unavailable (MCP auth expired)
 
 **Gaps:**

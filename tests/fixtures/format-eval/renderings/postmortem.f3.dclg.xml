@@ -4,7 +4,7 @@
     <bold>Date:</bold>
 2026-04-08
     <bold>Cluster:</bold>
-oviva-prod1 (oviva-k8s-prod, europe-west3)
+example-prod1 (example-k8s-prod, europe-west3)
     <bold>Severity:</bold>
 High (100% billing tab failure for GB coaches, forced logout)
   </text>
@@ -17,7 +17,7 @@ v4.132.0, deployed on 2026-04-07 at 20:14 UTC, removed the legacy Calendar REST 
 ) as part of the calendar microservice extraction (CORE-6079, CORE-6097, CORE-6085). The
     <code>hcs-gb</code>
 service was not migrated — it still calls the removed endpoint via
-    <code>com.oviva.core.openapi.client.api.CalendarApi.getEvents()</code>
+    <code>com.example.core.openapi.client.api.CalendarApi.getEvents()</code>
 , which now returns HTTP 404. This causes all
     <code>/rest/billing-tracker/patient/{id}/session-buckets.json</code>
 <![CDATA[requests to fail with 500 ("Request to core failed"). The OCS frontend interprets the billing 500 as a session failure and terminates the coach's session, forcing a logout. The incident began when the first coach accessed the billing tab the next morning (07:16 UTC) and remains]]>    
@@ -177,7 +177,7 @@ which calls the Calendar microservice directly at
 . However,
     <code>hcs-gb</code>
 — an external consumer — was not migrated. It still uses
-    <code>com.oviva.core.openapi.client.api.CalendarApi</code>
+    <code>com.example.core.openapi.client.api.CalendarApi</code>
 , an OpenAPI-generated client that targets the now-removed Core endpoint.
   </text>
   <text>
@@ -410,7 +410,7 @@ failure related to the calendar decommissioning or an independent issue?
     <ldiv/>
     <text>
       Source analysis: complete (GitHub API —
-      <code>oviva-ag/ocs_backend</code>
+      <code>example-org/ocs_backend</code>
 )
     </text>
     <ldiv/>

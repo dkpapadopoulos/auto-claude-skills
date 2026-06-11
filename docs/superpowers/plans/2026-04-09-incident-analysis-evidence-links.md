@@ -491,7 +491,7 @@ Replace with:
   },
   {
     "id": "evidence-links-in-synthesis",
-    "prompt": "Two services behind a reverse proxy. checkout-service has Tier 1 NullPointerException errors at 20x baseline. payment-service has Tier 2 timeout errors at 3x baseline. checkout-service was deployed 2 hours before incident. Investigation uses Tier 1 MCP tools with project_id oviva-k8s-prod. Trace correlation links checkout-service failures to payment-service timeouts.",
+    "prompt": "Two services behind a reverse proxy. checkout-service has Tier 1 NullPointerException errors at 20x baseline. payment-service has Tier 2 timeout errors at 3x baseline. checkout-service was deployed 2 hours before incident. Investigation uses Tier 1 MCP tools with project_id example-k8s-prod. Trace correlation links checkout-service failures to payment-service timeouts.",
     "expected_behavior": "The Step 7 synthesis must include a **Links:** line after the root cause statement with clickable Logs Explorer URLs for the incident-window query. The evidence_links YAML must include entries for at least the root-cause service's logs. service_error_inventory entries should have evidence_links when URL parameters were captured. Links must use stable labels like '{Service} incident logs', not raw LQL.",
     "assertions": [
       {"text": "Links:.*\\·|evidence_links|verification.*link", "description": "Includes evidence links in synthesis output with proper formatting"},
