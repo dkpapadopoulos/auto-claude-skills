@@ -12,8 +12,12 @@ MATCH: design the retry strategy for the worker
 MATCH: build a webhook receiver for stripe events
 MATCH: how should we structure the config
 MATCH: add rate limiting to the api
+MATCH: set up the project scaffolding
+MATCH: setup a webhook receiver
 
 NO_MATCH: debug the failing login test
 NO_MATCH: renewed the tls certificate on the gateway
 NO_MATCH: the building permit example in the docs is outdated
 NO_MATCH: starting the server takes 30 seconds
+NO_MATCH: fix the asset upload bug
+NO_MATCH: the offset update logic is wrong

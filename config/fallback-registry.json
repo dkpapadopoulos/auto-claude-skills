@@ -7,7 +7,7 @@
       "role": "process",
       "phase": "DEBUG",
       "triggers": [
-        "(debug|bug|broken|crash|regression|not.work|error|fail|hang|freeze|timeout|leak|corrupt|unexpected|wrong)"
+        "(debug|bug|broken|crash|regression|not.work|error|fail|(^|[^a-z])hang|freeze|timeout|leak|corrupt|unexpected|wrong)"
       ],
       "keywords": [
         "stuck",
@@ -30,7 +30,7 @@
       "role": "process",
       "phase": "DESIGN",
       "triggers": [
-        "(brainstorm|design|architect|strateg|scope|outline|approach|set.?up|wire.up|how.(should|would|could))",
+        "(brainstorm|design|architect|strateg|scope|outline|approach|(^|[^a-z])set.?up|wire.up|how.(should|would|could))",
         "(^|[^a-z])(build|create|implement|develop|scaffold|init|bootstrap|introduce|enable|add|make|new|start)($|[^a-z])"
       ],
       "keywords": [
@@ -102,7 +102,7 @@
       "role": "process",
       "phase": "IMPLEMENT",
       "triggers": [
-        "(execute.*plan|run.the.plan|implement.the.plan|implement.*(rest|remaining)|continue|follow.the.plan|pick.up|resume|next.task|next.step|carry.on|keep.going|where.were.we|what.s.next)"
+        "(execute.*plan|run.the.plan|implement.the.plan|implement.*(rest|remaining)|(^|[^a-z])continue|follow.the.plan|pick.up|resume|next.task|next.step|carry.on|keep.going|where.were.we|what.s.next)"
       ],
       "keywords": [],
       "trigger_mode": "regex",
@@ -159,7 +159,7 @@
       "role": "process",
       "phase": "REVIEW",
       "triggers": [
-        "(review comments|pr comments|feedback|nits?|changes requested|address (the )?(review|comments|feedback)|respond to review|follow.?up review|re.?request review)"
+        "(review comments|pr comments|feedback|(^|[^a-z])nits?|changes requested|address (the )?(review|comments|feedback)|respond to review|follow.?up review|re.?request review)"
       ],
       "keywords": [],
       "trigger_mode": "regex",
@@ -176,7 +176,7 @@
       "role": "workflow",
       "phase": "SHIP",
       "triggers": [
-        "((^|[^a-z])ship|merge|deploy|push|release|(^|[^a-z])tag|publish|pr.ready|ready.to|wrap.?up|all.(done|good|green|passing)|lgtm|finalize|complete|finish)"
+        "((^|[^a-z])ship|(^|[^a-z])merge|deploy|push|(^|[^a-z])release|(^|[^a-z])tag|publish|pr.ready|(^|[^a-z])ready.to|wrap.?up|all.(done|good|green|passing)|lgtm|finalize|(^|[^a-z])complete|(^|[^a-z])finish)"
       ],
       "keywords": [],
       "trigger_mode": "regex",
@@ -214,7 +214,7 @@
       "role": "domain",
       "phase": "SHIP",
       "triggers": [
-        "(deploy|release|promote|launch|go.live|readiness|pre.?deploy|ship.*prod)"
+        "(deploy|(^|[^a-z])release|promote|launch|go.live|readiness|pre.?deploy|ship.*prod)"
       ],
       "keywords": [
         "deploy-gate",
@@ -239,7 +239,7 @@
       "role": "workflow",
       "phase": "SHIP",
       "triggers": [
-        "(document.*built|as.?built|openspec|archive.*feature|shipping.*protocol)"
+        "(document.*built|(^|[^a-z])as.?built|openspec|archive.*feature|shipping.*protocol)"
       ],
       "keywords": [],
       "trigger_mode": "regex",
@@ -452,7 +452,7 @@
       "role": "workflow",
       "phase": "IMPLEMENT",
       "triggers": [
-        "(batch|bulk|mass|across.*files|every.*file|all.*files|migrate.*all|transform.*all|refactor.*all|sweep|codemod|claude.?-p|headless|each.*file)"
+        "(batch|bulk|(^|[^a-z])mass($|[^a-z])|across.*files|every.*file|all.*files|migrate.*all|transform.*all|refactor.*all|sweep|codemod|claude.?-p|headless|each.*file)"
       ],
       "keywords": [],
       "trigger_mode": "regex",
@@ -1376,7 +1376,7 @@
     {
       "name": "pr-review",
       "triggers": [
-        "(review|pull.?request|code.?review|(^|[^a-z])pr($|[^a-z]))"
+        "((^|[^a-z])review|pull.?request|code.?review|(^|[^a-z])pr($|[^a-z]))"
       ],
       "trigger_mode": "regex",
       "hint": "PR REVIEW: Consider /pr-review for structured review.",
@@ -1394,7 +1394,7 @@
     {
       "name": "github-mcp",
       "triggers": [
-        "(pull.?request|issue|github|merge|branch|repo|related.pr|similar.change|previous.attempt|what.was.tried|prior.art|code.history)"
+        "(pull.?request|issue|github|(^|[^a-z])merge|branch|repo|related.pr|similar.change|previous.attempt|what.was.tried|prior.art|code.history)"
       ],
       "trigger_mode": "regex",
       "hint": "GITHUB: If GitHub MCP tools are available, check for related PRs, issues, and workflow runs. Reference any GitHub context already discussed in this session.",

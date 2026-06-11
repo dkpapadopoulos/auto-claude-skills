@@ -1,0 +1,18 @@
+# Regex fixtures for skill: receiving-code-review
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# NO_MATCH lines pin the nits? word boundary: embedded nit (uNIT,
+# iNITialize, moNIToring, defiNITion) must not fire a process skill.
+
+MATCH: address the review comments
+MATCH: respond to review feedback
+MATCH: fix the nits from the review
+MATCH: changes requested on my pr
+MATCH: a few nitpicks on naming
+
+NO_MATCH: add a unit test for the parser
+NO_MATCH: initialize the cache on startup
+NO_MATCH: add monitoring for the queue depth
+NO_MATCH: update the type definition

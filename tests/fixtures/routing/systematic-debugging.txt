@@ -1,0 +1,17 @@
+# Regex fixtures for skill: systematic-debugging
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# NO_MATCH lines pin the hang word boundary: embedded hang (cHANGes,
+# excHANGe, cHANGelog) must not fire the highest-priority process skill.
+
+MATCH: debug the failing login flow
+MATCH: the worker crashed with a segfault
+MATCH: this hangs on startup
+MATCH: memory leak in the cache layer
+MATCH: tests are broken after the rebase
+
+NO_MATCH: summarize the changes in this pr
+NO_MATCH: update the changelog before we cut it
+NO_MATCH: rename the exchange rate field

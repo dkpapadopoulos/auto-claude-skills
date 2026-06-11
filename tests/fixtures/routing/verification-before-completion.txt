@@ -11,7 +11,14 @@ MATCH: ship it
 MATCH: all tests green lets wrap up
 MATCH: tag the release and publish the plugin
 MATCH: we shipped the fix
+MATCH: we merged and completed the work
+MATCH: release the new version
 
 NO_MATCH: the relationship between hooks and registry is unclear
 NO_MATCH: the staging environment is flaky today
 NO_MATCH: untagged resources in gcp
+NO_MATCH: a pattern emerged in the logs
+NO_MATCH: the docs are incomplete
+NO_MATCH: there is unfinished work in this branch
+NO_MATCH: pin the prerelease dependency for now
+NO_MATCH: this query is already too slow
