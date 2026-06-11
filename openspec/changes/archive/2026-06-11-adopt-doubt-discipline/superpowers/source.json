@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": null,
+  "plan_path": null,
+  "spec_path": null,
+  "sp_plan_path": null,
+  "sp_spec_path": null,
+  "change_slug": "adopt-doubt-discipline",
+  "capability_slug": null,
+  "source_branch": "worktree-feat+doubt-discipline-adoption",
+  "base_commit": "1a61498ced885db85bc5c640e6efe4bd76eb95ad",
+  "openspec_surface": "none",
+  "archived_at": "2026-06-11T10:25:19Z"
+}

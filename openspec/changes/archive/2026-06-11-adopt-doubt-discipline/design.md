@@ -28,3 +28,9 @@ The description rule grafts into `skills/skill-scaffold/SKILL.md` Step 2 (frontm
 2. Capability homes: `adversarial-review` (review rules), `skill-routing` (description rule). No new capability.
 3. ADDED requirements only — no MODIFIED (canonical-body match risk; per project convention prefer ADDED with new names).
 4. Out of scope: interview-me mechanics (deferred, lean-injection precedent), three-tier security boundaries (deferred to agent-team-review security specialist), observability-instrumentation skill (deferred with revival trigger), sdd-cache, simplify-ignore, personas, anatomy CI lint (all skipped — see triage in session memory).
+
+## Implementation Notes (synced at ship time)
+
+- Built as specified; all 5 ADDED requirements implemented and pinned by content tests (18 governance + 4 scaffold assertions, full suite 54/54).
+- Review (verdict "with fixes") added three consistency edits beyond the upfront design: the stale "5+ files" statements in agent-team-review's Overview and Integration sections were qualified to acknowledge the sensitive-path override, and the verdict-table cross-model reference was scoped "(§6, when applicable)".
+- Cross-model second opinion was offered per the new rule but the Codex provider hit a session limit; recorded in the plan rather than silently skipped. External-fact claims were verified directly via gh api during triage.
