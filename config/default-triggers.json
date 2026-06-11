@@ -1253,6 +1253,10 @@
         {
           "text": "CARRY SCENARIOS: If a design artifact exists at `docs/plans/*-design.md` for this feature, read its Acceptance Scenarios section and include them in the plan as verification criteria. Save the plan to `docs/plans/YYYY-MM-DD-<slug>-plan.md`.",
           "when": "always"
+        },
+        {
+          "text": "VERTICAL SLICES: Decompose by behavior, not by layer. Prefer thin end-to-end slices — each task touches all layers (data -> logic -> interface) and is independently testable — over file-disjoint horizontal layers (all schema, then all APIs, then all UI), which delay integration feedback. Each slice should deliver one observable behavior, paired with a failing test first. When sizing tasks for agent-team-execution, slice by behavior so parallel tasks stay end-to-end rather than horizontal.",
+          "when": "always"
         }
       ]
     },
