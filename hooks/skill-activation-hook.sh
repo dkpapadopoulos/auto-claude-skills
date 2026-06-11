@@ -20,11 +20,39 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-PROMPT=$(cat 2>/dev/null | jq -r '.prompt // empty' 2>/dev/null) || true
+# Capture stdin once; extract transcript_path + prompt in the SAME single jq
+# fork the prompt already cost (\x1f-joined, transcript first — the prompt may
+# contain anything, a path cannot contain \x1f).
+_HOOK_INPUT="$(cat 2>/dev/null)" || _HOOK_INPUT=""
+_FIELDS="$(printf '%s' "${_HOOK_INPUT}" | jq -r '[.transcript_path // "", .prompt // ""] | join("\u001f")' 2>/dev/null)" || _FIELDS=""
+_TRANSCRIPT="${_FIELDS%%$'\x1f'*}"
+PROMPT="${_FIELDS#*$'\x1f'}"
 
-# Read session token early so early-exit gates can check for active composition state.
+# Resolve session token payload-first (issue #51): the singleton races across
+# concurrent sessions (last-writer-wins); our own payload names our conversation.
+# Read early so early-exit gates can check for active composition state.
 _SESSION_TOKEN=""
-[[ -f "${HOME}/.claude/.skill-session-token" ]] && _SESSION_TOKEN="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null)"
+if [[ -f "${PLUGIN_ROOT}/hooks/lib/session-token.sh" ]]; then
+  # shellcheck source=lib/session-token.sh
+  . "${PLUGIN_ROOT}/hooks/lib/session-token.sh"
+  _SESSION_TOKEN="$(resolve_session_token_from_transcript "${_TRANSCRIPT}")"
+else
+  [[ -f "${HOME}/.claude/.skill-session-token" ]] && _SESSION_TOKEN="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null)"
+fi
+
+# Re-stamp the singleton with OUR resolved token so no-payload SKILL.md
+# consumers later in this turn read this conversation's token (narrows the
+# residual no-payload race to one prompt-width; see issue #51). Only when the
+# token came from the payload — re-stamping a singleton-fallback token is churn.
+# tmp+mv: a plain `>` truncate-then-write exposes concurrent readers to empty
+# reads; rename is atomic on the same filesystem (same shape as the
+# composition-state write in skill-completion-hook.sh).
+if [[ -n "${_SESSION_TOKEN}" && -n "${_TRANSCRIPT}" ]]; then
+  _TOKEN_FILE="${HOME}/.claude/.skill-session-token"
+  if printf '%s' "${_SESSION_TOKEN}" > "${_TOKEN_FILE}.tmp.$$" 2>/dev/null; then
+    mv "${_TOKEN_FILE}.tmp.$$" "${_TOKEN_FILE}" 2>/dev/null || rm -f "${_TOKEN_FILE}.tmp.$$" 2>/dev/null || true
+  fi
+fi
 
 # _comp_active: returns 0 (true) if composition state is live for this session,
 # 1 (false) otherwise. Used to bypass short-prompt and blocklist early-exits

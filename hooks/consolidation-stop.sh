@@ -4,9 +4,23 @@
 # Stop hook. Bash 3.2 compatible. Exits 0 always (advisory, fail-open).
 trap 'exit 0' ERR
 
-# Check session token
-[ -f "${HOME}/.claude/.skill-session-token" ] || exit 0
-_SESSION_TOKEN="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null)"
+# Resolve session token payload-first (issue #51); Stop hooks receive a JSON
+# payload with transcript_path on stdin. Empty-token exit preserves the prior
+# missing-singleton behavior (skip everything, fail-open).
+_INPUT=""
+if [ ! -t 0 ]; then
+    _INPUT="$(cat 2>/dev/null)" || _INPUT=""
+fi
+_PLUGIN_ROOT_TOK="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+_SESSION_TOKEN=""
+if [ -f "${_PLUGIN_ROOT_TOK}/hooks/lib/session-token.sh" ]; then
+    # shellcheck source=lib/session-token.sh
+    . "${_PLUGIN_ROOT_TOK}/hooks/lib/session-token.sh"
+    _SESSION_TOKEN="$(resolve_session_token "${_INPUT}")"
+else
+    [ -f "${HOME}/.claude/.skill-session-token" ] && _SESSION_TOKEN="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null)"
+fi
+[ -z "${_SESSION_TOKEN}" ] && exit 0
 
 _proj_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 

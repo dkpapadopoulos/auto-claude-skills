@@ -2,7 +2,7 @@
 
 ## Why
 
-The Oviva-published Confluence guide *"Getting more out of Claude Code: a context & token guide"* enumerates 25 ranked techniques for reducing token spend and improving output quality. A four-perspective design debate (architect, critic, pragmatist, Codex external) plus Context7 source verification identified four high-leverage items that ACSM is currently under-serving:
+The Internally published Confluence guide *"Getting more out of Claude Code: a context & token guide"* enumerates 25 ranked techniques for reducing token spend and improving output quality. A four-perspective design debate (architect, critic, pragmatist, Codex external) plus Context7 source verification identified four high-leverage items that ACSM is currently under-serving:
 
 1. **Output truncation is unbounded.** ACSM's `incident-analysis` and `gcp-observability` flows routinely pipe 25k+ tokens of MCP/Bash output verbatim into the context window. Anthropic ships configurable caps (`BASH_MAX_OUTPUT_LENGTH`, `MAX_MCP_OUTPUT_TOKENS`) but ACSM never writes defaults.
 2. **No observability for cost decisions.** ACSM has shipped multiple defaults waves (security scanners, alert hygiene, incident-analysis playbooks) without measurable cost data. The "prove observability before abstraction" memory entry mandates that observability primitives ship before further optimization layers.

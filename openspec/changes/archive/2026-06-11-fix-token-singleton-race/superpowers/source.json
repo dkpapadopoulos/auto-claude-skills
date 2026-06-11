@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": "docs/plans/2026-06-11-fix-token-singleton-race-design.md",
+  "plan_path": "docs/plans/2026-06-11-fix-token-singleton-race-plan.md",
+  "spec_path": "openspec/changes/fix-token-singleton-race/specs/skill-routing/spec.md",
+  "sp_plan_path": "docs/plans/2026-06-11-fix-token-singleton-race-plan.md",
+  "sp_spec_path": "openspec/changes/fix-token-singleton-race/specs/skill-routing/spec.md",
+  "change_slug": "fix-token-singleton-race",
+  "capability_slug": "skill-routing",
+  "source_branch": "fix/token-singleton-race",
+  "base_commit": "34e4adeedb0f414e9cc95a52f22a2a39c1cb0f77",
+  "openspec_surface": "none",
+  "archived_at": "2026-06-11T21:24:35Z"
+}

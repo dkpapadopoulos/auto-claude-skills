@@ -68,15 +68,18 @@ if [ -n "${_HOOK_STDIN}" ] && command -v jq >/dev/null 2>&1; then
     _HOOK_TRANSCRIPT="$(printf '%s' "${_HOOK_STDIN}" | jq -r '.transcript_path // empty' 2>/dev/null)" || _HOOK_TRANSCRIPT=""
 fi
 # Conversation-stable id: the transcript filename persists across resume/compact.
-_CONV_ID=""
-if [ -n "${_HOOK_TRANSCRIPT}" ]; then
-    _CONV_ID="$(basename "${_HOOK_TRANSCRIPT}" .jsonl 2>/dev/null)" || _CONV_ID=""
+# Token format is single-sourced in lib/session-token.sh so this writer and the
+# payload-first hook readers (issue #51) can never drift.
+_SESSION_TOKEN=""
+if [ -n "${_HOOK_TRANSCRIPT}" ] && [ -f "${PLUGIN_ROOT}/hooks/lib/session-token.sh" ]; then
+    # shellcheck source=lib/session-token.sh
+    . "${PLUGIN_ROOT}/hooks/lib/session-token.sh"
+    _SESSION_TOKEN="$(session_token_from_transcript "${_HOOK_TRANSCRIPT}")"
 fi
-if [ -n "${_CONV_ID}" ]; then
-    _SESSION_TOKEN="session-${_CONV_ID}"
-elif [ -n "${_HOOK_SESSION_ID}" ]; then
+if [ -z "${_SESSION_TOKEN}" ] && [ -n "${_HOOK_SESSION_ID}" ]; then
     _SESSION_TOKEN="session-${_HOOK_SESSION_ID}"
-else
+fi
+if [ -z "${_SESSION_TOKEN}" ]; then
     # Fallback for environments without session_id (TTY stdin, missing jq,
     # absent field). Before generating a fresh `<epoch>-<pid>-<rand>` token,
     # check whether a recent token file already exists and reuse it — this

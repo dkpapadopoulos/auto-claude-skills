@@ -8,10 +8,14 @@ trap 'exit 0' ERR
 # Read tool input from stdin (PreToolUse provides JSON with tool_input)
 _INPUT="$(cat)"
 
-# Extract command — use jq if available, fall back to grep
+# Extract transcript_path + command in ONE jq fork (\x1f-joined; transcript
+# first — a path cannot contain \x1f, the command may contain anything).
 _COMMAND=""
+_TRANSCRIPT=""
 if command -v jq >/dev/null 2>&1; then
-    _COMMAND="$(printf '%s' "${_INPUT}" | jq -r '.tool_input.command // empty' 2>/dev/null)" || true
+    _FIELDS="$(printf '%s' "${_INPUT}" | jq -r '[.transcript_path // "", .tool_input.command // ""] | join("\u001f")' 2>/dev/null)" || _FIELDS=""
+    _TRANSCRIPT="${_FIELDS%%$'\x1f'*}"
+    _COMMAND="${_FIELDS#*$'\x1f'}"
 else
     # Fallback: grep for command field (may miss commands with embedded quotes)
     _COMMAND="$(printf '%s' "${_INPUT}" | grep -o '"command" *: *"[^"]*"' | head -1 | sed 's/"command" *: *"//;s/"$//')" || true
@@ -23,10 +27,18 @@ case "${_COMMAND}" in
     *) exit 0 ;;
 esac
 
-# Check session token
+# Resolve session token payload-first (issue #51): the singleton is shared
+# across concurrent sessions (last-writer-wins) and may name ANOTHER session.
+_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 _SESSION_TOKEN=""
-[ -f "${HOME}/.claude/.skill-session-token" ] && \
-    _SESSION_TOKEN="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null)"
+if [ -f "${_PLUGIN_ROOT}/hooks/lib/session-token.sh" ]; then
+    # shellcheck source=lib/session-token.sh
+    . "${_PLUGIN_ROOT}/hooks/lib/session-token.sh"
+    _SESSION_TOKEN="$(resolve_session_token_from_transcript "${_TRANSCRIPT}")"
+else
+    [ -f "${HOME}/.claude/.skill-session-token" ] && \
+        _SESSION_TOKEN="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null)"
+fi
 [ -z "${_SESSION_TOKEN}" ] && exit 0
 
 # --- Push gate (fires on all git push, independent of phase) ---
@@ -99,7 +111,7 @@ fi
 # --- Check 2: Has memory consolidation been performed? ---
 # Marker path is keyed off the git remote URL (stable across worktrees/clones
 # of the same repo); path-based fallback when no remote is configured.
-_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+# (_PLUGIN_ROOT is resolved once, above, alongside token resolution.)
 _consol_marker=""
 if [ -f "${_PLUGIN_ROOT}/hooks/lib/consol-marker.sh" ]; then
     # shellcheck source=lib/consol-marker.sh
