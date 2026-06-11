@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": null,
+  "plan_path": null,
+  "spec_path": null,
+  "sp_plan_path": null,
+  "sp_spec_path": null,
+  "change_slug": "trigger-fixtures-and-bar-nudge",
+  "capability_slug": null,
+  "source_branch": "feat/trigger-fixtures-and-bar-nudge",
+  "base_commit": "926cfe126f538ac830f7872e58c17cd88d83380a",
+  "openspec_surface": "none",
+  "archived_at": "2026-06-11T17:21:39Z"
+}

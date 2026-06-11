@@ -42,3 +42,25 @@ It is informational: it never contributes to the pass/fail verdict, never produc
 ## Acceptance Scenarios
 
 See `specs/skill-routing/spec.md` in this change.
+
+## Implementation Notes (synced at ship time)
+
+- Scope extended during review, by design-debate quality gates rather than drift: the planned 6 fixture files became 13 and the planned 3 anchor fixes became 14, because fixture authoring plus a systematic sibling scan kept exposing live instances of the same bug class (each empirically pre-verified before fixing). proposal.md, the delta spec, and the CHANGELOG were synced to as-built numbers before archive.
+- The branch was rebased onto main mid-review (PRs #49/#50 landed concurrently); the rebase initially reverted #49's tolerant heading greps because the branch was cut pre-merge — caught and resolved by keeping tolerant greps + the [i] bar addition. Final suite green at 55/55 files.
+- Corpus figure: implementation-time measurement is 8/12 numeric docs (the debate's 10/14 used a looser pattern).
+
+## Divergences (auto-generated at ship time)
+
+**Acceptance Scenarios (from specs/skill-routing/spec.md in this change):**
+- [x] Near-miss prompt does not fire an adjacent skill — implemented as designed (120-assertion harness, all NO_MATCH lines adversarial)
+- [x] Trigger drift caught before merge — implemented as designed (harness glob-discovered by run-tests.sh; "no wiring step exists" correction held)
+- [~] Word-boundary anchoring — implemented with EXPANSION: planned review/ship/tag (3 words) grew to 14 words across 10 skills + 2 hints via the sibling scan; every addition followed the same pre-verify discipline
+- [x] [i] bar line on no-numerics doc, silent on numeric doc, fail-open — implemented as designed (2 regression tests; corpus figure corrected 10/14 → 8/12)
+
+**Scope changes:**
+- Added: 7 fixture files beyond the debate's six (agent-team-review, systematic-debugging, receiving-code-review, executing-plans, deploy-gate, openspec-ship, batch-scripting) — driven by live bugs found, not speculation
+- Removed: none
+- Modified: fixture shortlist substitution (security-scanner, finishing-a-development-branch → verification-before-completion, outcome-review) — original targets are composition-routed with no trigger regexes
+
+**Design decision changes:**
+- None at mechanism level. The [i] line, anchor idiom (leading-only except mass), and fail-open posture shipped exactly as decided. Mid-flight rebase onto main (PRs #49/#50) initially reverted #49's tolerant heading greps; caught at REVIEW and resolved by layering the bar nudge onto the tolerant greps.
