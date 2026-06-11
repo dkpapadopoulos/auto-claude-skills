@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": null,
+  "plan_path": null,
+  "spec_path": null,
+  "sp_plan_path": null,
+  "sp_spec_path": null,
+  "change_slug": "composition-completed-monotonic",
+  "capability_slug": null,
+  "source_branch": "fix/composition-completed-monotonic",
+  "base_commit": "dfcaa4934c7870fd97facbf0ab9a78922339472a",
+  "openspec_surface": "none",
+  "archived_at": "2026-06-11T17:01:18Z"
+}
