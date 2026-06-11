@@ -18,18 +18,33 @@ _INPUT="$(cat 2>/dev/null)"
 
 command -v jq >/dev/null 2>&1 || exit 0
 
-[ -f "${HOME}/.claude/.skill-session-token" ] || exit 0
-_SESSION_TOKEN="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null)"
+# Batch transcript + is_error + skill name into ONE jq fork (was two) —
+# \x1f-joined, controlled fields only.
+_FIELDS="$(printf '%s' "${_INPUT}" | jq -r '[.transcript_path // "", (.tool_response.is_error // false | tostring), (.tool_input.name // .tool_input.skill // "")] | join("\u001f")' 2>/dev/null)" || _FIELDS=""
+_TRANSCRIPT="${_FIELDS%%$'\x1f'*}"
+_REST="${_FIELDS#*$'\x1f'}"
+_IS_ERROR="${_REST%%$'\x1f'*}"
+_RAW="${_REST#*$'\x1f'}"
+
+# Resolve session token payload-first (issue #51): the singleton is shared
+# across concurrent sessions (last-writer-wins) and may name ANOTHER session.
+_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+_SESSION_TOKEN=""
+if [ -f "${_PLUGIN_ROOT}/hooks/lib/session-token.sh" ]; then
+    # shellcheck source=lib/session-token.sh
+    . "${_PLUGIN_ROOT}/hooks/lib/session-token.sh"
+    _SESSION_TOKEN="$(resolve_session_token_from_transcript "${_TRANSCRIPT}")"
+else
+    [ -f "${HOME}/.claude/.skill-session-token" ] && \
+        _SESSION_TOKEN="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null)"
+fi
 [ -z "${_SESSION_TOKEN}" ] && exit 0
 
 _STATE="${HOME}/.claude/.skill-composition-state-${_SESSION_TOKEN}"
 [ -f "${_STATE}" ] || exit 0
 jq empty "${_STATE}" >/dev/null 2>&1 || exit 0
 
-_IS_ERROR="$(printf '%s' "${_INPUT}" | jq -r '.tool_response.is_error // false' 2>/dev/null)"
 [ "${_IS_ERROR}" = "true" ] && exit 0
-
-_RAW="$(printf '%s' "${_INPUT}" | jq -r '.tool_input.name // .tool_input.skill // ""' 2>/dev/null)"
 [ -z "${_RAW}" ] && exit 0
 
 _BARE="${_RAW##*:}"

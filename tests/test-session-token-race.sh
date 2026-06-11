@@ -131,4 +131,21 @@ else
 fi
 teardown_test_env
 
+# ---------------------------------------------------------------------------
+# C1: completion hook advances OWN state despite foreign singleton
+# ---------------------------------------------------------------------------
+echo "--- C: completion hook payload keying ---"
+setup_test_env
+mkdir -p "${HOME}/.claude"
+write_comp_state "session-conv-A" '[]'
+write_comp_state "session-conv-B" '[]'
+printf '%s' "session-conv-B" > "${HOME}/.claude/.skill-session-token"
+printf '%s' '{"transcript_path":"/tmp/proj/conv-A.jsonl","tool_input":{"skill":"superpowers:requesting-code-review"},"tool_response":{"content":"ok"}}' | \
+    CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "${COMPLETION}" >/dev/null 2>&1 || true
+C1_A="$(jq -r '.completed | index("requesting-code-review") != null' "${HOME}/.claude/.skill-composition-state-session-conv-A" 2>/dev/null)"
+C1_B="$(jq -r '.completed | index("requesting-code-review") != null' "${HOME}/.claude/.skill-composition-state-session-conv-B" 2>/dev/null)"
+assert_equals "C1: own (payload) state advanced" "true" "${C1_A}"
+assert_equals "C1: foreign (singleton) state untouched" "false" "${C1_B}"
+teardown_test_env
+
 print_summary
