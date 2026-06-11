@@ -968,6 +968,15 @@ test_completed_never_regresses_behind_disk_state() {
         "$([ -f "${state_file}" ] && echo true || echo false)"
 
     if [ -f "${state_file}" ]; then
+        # Writer-ran canary: the seed sets current_index 2; the backward
+        # re-anchor at openspec-ship must rewrite it to 1. Guards against the
+        # test passing vacuously against its own seeded file if a registry
+        # edit ever stops the prompt from anchoring.
+        local idx_after
+        idx_after="$(jq -r '.current_index' "${state_file}" 2>/dev/null)"
+        assert_equals "writer ran and re-anchored backward (current_index 2 -> 1)" \
+            "1" "${idx_after}"
+
         # Precondition: the chain must not have switched — the scenario is a
         # backward re-anchor WITHIN the same chain.
         local chain1
