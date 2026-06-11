@@ -923,6 +923,138 @@ test_completed_uses_current_idx_floor() {
 }
 test_completed_uses_current_idx_floor
 
+# Regression: 2026-06-11 PR #49 merge session. The PostToolUse completion hook
+# had advanced .completed through verification-before-completion, but a later
+# prompt ("merge PR49") anchored the chain at an EARLIER step
+# (requesting-code-review via the pr trigger). The walker's state write rebuilt
+# .completed purely from max(_current_idx-1, _last_skill_chain_idx), discarding
+# the on-disk entries — regressing 5 -> 3 (and further on each later prompt)
+# and re-arming the openspec-guard push gate against already-reviewed work.
+# Contract: within the SAME chain, .completed is monotonic — the walker must
+# union its computed prefix with the on-disk array, never truncate it.
+# Legitimate resets are pure-cancel (file deleted) and token rotation only.
+test_completed_never_regresses_behind_disk_state() {
+    echo "-- test: completed array never regresses behind on-disk state for the same chain --"
+    setup_test_env
+    install_registry
+
+    local token="completed-monotonic-$$"
+    printf '%s' "${token}" > "${HOME}/.claude/.skill-session-token"
+
+    # On-disk state: the completion hook has recorded progress through
+    # openspec-ship (index 1) on the [verification-before-completion,
+    # openspec-ship, finishing-a-development-branch] chain.
+    jq -n '{
+        chain: ["verification-before-completion","openspec-ship","finishing-a-development-branch"],
+        completed: ["verification-before-completion","openspec-ship"],
+        current_index: 2
+    }' > "${HOME}/.claude/.skill-composition-state-${token}"
+
+    # Last-invoked signal points at the chain start (index 0) — the walker's
+    # two existing floors both resolve to index 0 here.
+    jq -n '{skill:"verification-before-completion",phase:"SHIP"}' \
+        > "${HOME}/.claude/.skill-last-invoked-${token}"
+
+    # Prompt re-anchors at openspec-ship (index 1) — earlier than disk
+    # progress. Deliberately contains no "spec"/"plan" substring so
+    # writing-plans cannot hijack the anchor and switch the chain
+    # ("openspec" would match writing-plans' `spec` trigger).
+    jq -n --arg p "archive the feature as built" '{"prompt":$p}' | \
+        CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        bash "${HOOK}" >/dev/null 2>&1
+
+    local state_file="${HOME}/.claude/.skill-composition-state-${token}"
+    assert_equals "state file still present" "true" \
+        "$([ -f "${state_file}" ] && echo true || echo false)"
+
+    if [ -f "${state_file}" ]; then
+        # Writer-ran canary: the seed sets current_index 2; the backward
+        # re-anchor at openspec-ship must rewrite it to 1. Guards against the
+        # test passing vacuously against its own seeded file if a registry
+        # edit ever stops the prompt from anchoring.
+        local idx_after
+        idx_after="$(jq -r '.current_index' "${state_file}" 2>/dev/null)"
+        assert_equals "writer ran and re-anchored backward (current_index 2 -> 1)" \
+            "1" "${idx_after}"
+
+        # Precondition: the chain must not have switched — the scenario is a
+        # backward re-anchor WITHIN the same chain.
+        local chain1
+        chain1="$(jq -r '.chain[1] // empty' "${state_file}" 2>/dev/null)"
+        assert_equals "chain unchanged (anchor stayed in-chain)" \
+            "openspec-ship" "${chain1}"
+
+        local has_ship completed_count
+        has_ship="$(jq -r '.completed | index("openspec-ship") != null' "${state_file}" 2>/dev/null)"
+        assert_equals "openspec-ship survives a backward re-anchor" "true" "${has_ship}"
+
+        completed_count="$(jq '.completed | length' "${state_file}" 2>/dev/null)"
+        if [ "${completed_count:-0}" -ge 2 ]; then
+            _record_pass "completed length is monotonic (>= disk state)"
+        else
+            _record_fail "completed length is monotonic (>= disk state)" \
+                "completed shrank to ${completed_count} entries"
+        fi
+
+        # Union must stay in chain order with no duplicates.
+        local ordered
+        ordered="$(jq -r '
+            .chain as $c |
+            (.completed == (.completed | unique_by(. as $x | $c | index($x)) |
+                            sort_by(. as $x | $c | index($x))))
+        ' "${state_file}" 2>/dev/null)"
+        assert_equals "completed is deduplicated and in chain order" "true" "${ordered}"
+    fi
+
+    teardown_test_env
+}
+test_completed_never_regresses_behind_disk_state
+
+test_completed_resets_when_chain_differs() {
+    echo "-- test: disk completed from a DIFFERENT chain does not leak into the new chain's state --"
+    setup_test_env
+    install_registry
+
+    local token="completed-chain-switch-$$"
+    printf '%s' "${token}" > "${HOME}/.claude/.skill-session-token"
+
+    # On-disk state belongs to the SHIP chain. The prompt's "openspec" hits
+    # writing-plans' `spec` trigger, anchoring a DIFFERENT chain
+    # ([brainstorming, writing-plans, executing-plans]) — verified behavior.
+    # The old chain's completed entries must NOT be unioned into the new
+    # chain's state: chain switch is a legitimate reset.
+    jq -n '{
+        chain: ["verification-before-completion","openspec-ship","finishing-a-development-branch"],
+        completed: ["verification-before-completion","openspec-ship"],
+        current_index: 2
+    }' > "${HOME}/.claude/.skill-composition-state-${token}"
+
+    jq -n '{skill:"verification-before-completion",phase:"SHIP"}' \
+        > "${HOME}/.claude/.skill-last-invoked-${token}"
+
+    jq -n --arg p "archive this feature as built openspec" '{"prompt":$p}' | \
+        CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        bash "${HOOK}" >/dev/null 2>&1
+
+    local state_file="${HOME}/.claude/.skill-composition-state-${token}"
+    if [ -f "${state_file}" ]; then
+        # Precondition: chain actually switched.
+        local chain0
+        chain0="$(jq -r '.chain[0] // empty' "${state_file}" 2>/dev/null)"
+        assert_equals "chain switched to the writing-plans chain" \
+            "brainstorming" "${chain0}"
+
+        local leaked
+        leaked="$(jq -r '.completed | (index("verification-before-completion") != null) or (index("openspec-ship") != null)' "${state_file}" 2>/dev/null)"
+        assert_equals "old chain entries do not leak across a chain switch" "false" "${leaked}"
+    else
+        _record_fail "state file written for new chain" "missing ${state_file}"
+    fi
+
+    teardown_test_env
+}
+test_completed_resets_when_chain_differs
+
 # ---------------------------------------------------------------------------
 # 3b. Sticky composition on ack-shaped prompts
 # ---------------------------------------------------------------------------
