@@ -1,0 +1,17 @@
+# Regex fixtures for skill: outcome-review
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# NO_MATCH lines pin the LEARN-phase boundary: "how did" without outcome verbs,
+# pre-experiment prose, and separated post/launch must not fire.
+
+MATCH: how did the experiment perform last week
+MATCH: what was the adoption of the new flag
+MATCH: review the cohort retention numbers
+MATCH: measure the impact of the cache change
+MATCH: did it work after the rollout
+
+NO_MATCH: how did you implement the parser
+NO_MATCH: post the launch announcement to slack
+NO_MATCH: review the experiment setup before we run it
