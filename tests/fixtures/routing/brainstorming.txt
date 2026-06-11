@@ -3,8 +3,9 @@
 #   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
 #   NO_MATCH: <prompt>  — regex must NOT match
 # Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
-# NO_MATCH lines pin the word-boundary guards on the build-verb alternation:
-# embedded tokens (reNEWed, BUILDing, STARTing) must not fire.
+# NO_MATCH lines pin the word-boundary guards on the build-verb alternation
+# (embedded reNEWed, BUILDing, STARTing must not fire), plus one generic
+# debugging contrast.
 
 MATCH: lets brainstorm the caching layer
 MATCH: design the retry strategy for the worker

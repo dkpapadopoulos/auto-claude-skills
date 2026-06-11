@@ -4,7 +4,7 @@
 #   NO_MATCH: <prompt>  — regex must NOT match
 # Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
 # Priority-40 skill: a false fire dominates a domain slot. NO_MATCH lines are
-# generic dependency/security prose with trigger-adjacent tokens.
+# generic dependency/security prose, mostly with trigger-adjacent tokens.
 
 MATCH: was the npm package compromised in the latest attack
 MATCH: check if our dependency was typosquatted

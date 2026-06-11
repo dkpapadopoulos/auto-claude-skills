@@ -3,9 +3,9 @@
 #   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
 #   NO_MATCH: <prompt>  — regex must NOT match
 # Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
-# NO_MATCH lines are adversarial near-misses: each contains a token adjacent
-# to this skill's alternations (ship/release, error, connection, deploy/staging)
-# that the regex must reject so prompts route to SHIP/REVIEW skills instead.
+# NO_MATCH lines mix one SHIP-routing contrast (ship/merge/release prose) with
+# adversarial near-misses (error, connection, deploy/staging tokens adjacent to
+# this skill's alternations) that the regex must reject.
 
 MATCH: investigate the production outage from last night
 MATCH: why did the pod crashloop after the deploy
