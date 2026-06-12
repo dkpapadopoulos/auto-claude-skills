@@ -1,0 +1,62 @@
+[
+  {
+    "id": "failure-mode-synonym-grouping",
+    "prompt": "I have two postmortems: one says the request 'timed out' and another says 'deadline exceeded on the downstream call'. For trend analysis, are these the same failure mode?",
+    "expected_behavior": "The skill normalizes differently-worded failures to a canonical failure mode: both 'request timed out' and 'deadline exceeded' map to timeout and are grouped together as one recurrence, not two separate patterns.",
+    "assertions": [
+      {
+        "text": "timeout",
+        "description": "Classifies both as the timeout failure mode"
+      },
+      {
+        "text": "(same|group|grouped|together|one (failure|mode|pattern)|both)",
+        "description": "Groups the two differently-worded incidents as one recurrence"
+      }
+    ]
+  },
+  {
+    "id": "insufficient-corpus-stops",
+    "prompt": "I only have 2 recurrence-eligible postmortems. Can you produce a trend analysis with MTTR and recurrence metrics?",
+    "expected_behavior": "With fewer than 3 eligible postmortems, the skill reports that there is not enough data for trend analysis and does NOT fabricate metrics.",
+    "assertions": [
+      {
+        "text": "(not enough|insufficient|too few|at least 3|need (at least )?3|3 (postmortems|eligible)|more data)",
+        "description": "States the corpus is below the 3-postmortem floor"
+      },
+      {
+        "text": "(do(es)? not|will not|won't|cannot|can't|decline|skip|refus|without (enough|sufficient))",
+        "description": "Declines to produce metrics rather than fabricating them"
+      }
+    ]
+  },
+  {
+    "id": "mttr-minutes-computation",
+    "prompt": "An incident was detected at 10:00 and recovered at 10:47. What is the MTTR?",
+    "expected_behavior": "The skill computes MTTR as the elapsed time between detection and recovery: 47 minutes.",
+    "assertions": [
+      {
+        "text": "47",
+        "description": "Computes 47 as the elapsed minutes"
+      },
+      {
+        "text": "(minute|min|MTTR)",
+        "description": "Expresses the result as MTTR in minutes"
+      }
+    ]
+  },
+  {
+    "id": "service-name-confidence",
+    "prompt": "A postmortem Summary says 'auth-service experienced repeated timeouts'. When you extract the affected service for grouping, what service and how confident are you?",
+    "expected_behavior": "The skill extracts auth-service from the explicit Summary mention and assigns high confidence (as opposed to unknown-service / low confidence when no service is identifiable).",
+    "assertions": [
+      {
+        "text": "auth-service",
+        "description": "Extracts auth-service as the affected service"
+      },
+      {
+        "text": "(high|confident|strong|explicit)",
+        "description": "Assigns high confidence because the service is named explicitly"
+      }
+    ]
+  }
+]

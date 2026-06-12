@@ -1,0 +1,82 @@
+[
+  {
+    "id": "no-tools-llm-fallback",
+    "prompt": "I don't have semgrep, opengrep, trivy or gitleaks installed, but I need a security review of my branch diff before I merge. What can you do?",
+    "expected_behavior": "With no SAST binary or trivy available, the skill must fall back to LLM-only code review AND recommend installing scanners, naming opengrep as the preferred binary and semgrep as the fallback. It must not silently proceed as if tools were present.",
+    "assertions": [
+      {
+        "text": "opengrep",
+        "description": "Recommends opengrep (the preferred SAST binary) for installation"
+      },
+      {
+        "text": "semgrep",
+        "description": "Names semgrep as the fallback SAST binary"
+      },
+      {
+        "text": "(LLM|manual|by hand|fall[ -]?back|without (the )?tool)",
+        "description": "Falls back to LLM-only / manual review rather than aborting"
+      },
+      {
+        "text": "(install|brew install|pip install|download)",
+        "description": "Recommends installation commands for the missing scanners"
+      }
+    ]
+  },
+  {
+    "id": "partial-tools-notes-gaps",
+    "prompt": "Only semgrep is installed on this machine (no trivy, no gitleaks). Run a security scan of my changes.",
+    "expected_behavior": "The skill runs the available SAST scan (semgrep) and explicitly notes that dependency vulnerability scanning (trivy) and secret detection (gitleaks) are unavailable — it does not claim full coverage.",
+    "assertions": [
+      {
+        "text": "semgrep|opengrep",
+        "description": "Runs the available SAST scanner"
+      },
+      {
+        "text": "(trivy|dependency|dependencies)",
+        "description": "References the missing dependency-scan dimension"
+      },
+      {
+        "text": "(gitleaks|secret)",
+        "description": "References the missing secret-scan dimension"
+      },
+      {
+        "text": "(unavailable|not installed|not available|skip|cannot|can't|missing)",
+        "description": "Notes that the missing dimensions are not covered"
+      }
+    ]
+  },
+  {
+    "id": "opengrep-preferred-over-semgrep",
+    "prompt": "Both opengrep and semgrep are on my PATH. Which one will the security scan use, and why?",
+    "expected_behavior": "The skill prefers opengrep over semgrep, explaining the rationale (Semgrep fork producing compatible/byte-identical JSON for the consumed fields, same --config auto registry, single binary, no login gating).",
+    "assertions": [
+      {
+        "text": "opengrep",
+        "description": "Names opengrep as the chosen binary"
+      },
+      {
+        "text": "(prefer|first|chosen|use opengrep|over semgrep)",
+        "description": "States the preference of opengrep over semgrep"
+      },
+      {
+        "text": "(fork|byte[ -]?identical|compatible|--config auto|registry|no login|single binary)",
+        "description": "Gives a rationale for preferring opengrep"
+      }
+    ]
+  },
+  {
+    "id": "fix-rescan-loop-bounded",
+    "prompt": "The scanner found a SQL injection in my handler. Walk me through how you fix and confirm it, and how many times you'll loop.",
+    "expected_behavior": "The skill fixes the finding, then re-runs the scanner on the changed file to verify the fix is gone, and bounds the fix-rescan loop to at most 3 iterations to avoid infinite loops.",
+    "assertions": [
+      {
+        "text": "(re[ -]?run|re[ -]?scan|scan again|verify|re-?check)",
+        "description": "Re-runs the scanner to verify the fix"
+      },
+      {
+        "text": "(3|three|at most 3|three iterations|3 iterations)",
+        "description": "Bounds the self-healing loop to 3 iterations"
+      }
+    ]
+  }
+]
