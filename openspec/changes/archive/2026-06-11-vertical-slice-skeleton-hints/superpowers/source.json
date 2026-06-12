@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": null,
+  "plan_path": null,
+  "spec_path": null,
+  "sp_plan_path": null,
+  "sp_spec_path": null,
+  "change_slug": "vertical-slice-skeleton-hints",
+  "capability_slug": null,
+  "source_branch": "feat/plan-slice-and-skeleton-hints",
+  "base_commit": "2df5780bde0da0501230fe342b4c6ab04d16e0fb",
+  "openspec_surface": "none",
+  "archived_at": "2026-06-11T23:59:44Z"
+}

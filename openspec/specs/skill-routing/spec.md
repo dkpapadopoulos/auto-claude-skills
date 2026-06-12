@@ -1031,6 +1031,7 @@ and shared by the writer and all readers.
 
 - **WHEN** `skill-activation-hook.sh` resolves a payload-derived token that differs from the singleton's content
 - **THEN** after routing, the singleton contains the resolved token, so no-payload SKILL.md consumers invoked later in the same turn read this conversation's token
+
 ### Requirement: Adversarial trigger-regex fixture coverage for collision-prone skills
 
 Each collision-prone trigger-bearing skill (`incident-analysis`, `brainstorming`, `requesting-code-review`, `supply-chain-investigation`, `verification-before-completion`, `outcome-review`) MUST have a fixture file at `tests/fixtures/routing/<skill>.txt` containing at least 4 `MATCH:` and at least 2 `NO_MATCH:` directives. (The debate's original shortlist named `security-scanner` and `finishing-a-development-branch`; both are composition-routed with no trigger regexes, so regex fixtures are meaningless for them — they were substituted by their collision counterparts `verification-before-completion` and `outcome-review`.) Every `NO_MATCH:` prompt MUST be a near-miss: it contains at least one token adjacent to the skill's trigger alternation that the regex is required to reject. Fixtures MUST be validated by the existing `tests/test-regex-fixtures.sh` harness against the live `config/default-triggers.json`; the harness MUST NOT be duplicated. Skills without trigger regexes MUST NOT have fixture files.
@@ -1087,4 +1088,26 @@ When the PLAN-phase design-guard reads a readable design document, it MUST addit
 - GIVEN the numeric-bar grep errors for any reason
 - WHEN the activation hook runs in PLAN phase
 - THEN the completeness verdict is unchanged, the worst-case effect is the advisory `[i]` line appearing, AND the hook exits 0
+
+### Requirement: Vertical-slice decomposition hint in PLAN-phase composition
+
+The PLAN-phase composition MUST emit an advisory hint steering work decomposition toward thin end-to-end vertical slices (each task touching all layers and independently testable) over file-disjoint horizontal layers, and SHOULD direct that tasks sized for `agent-team-execution` be sliced by behavior rather than by file. The hint MUST be present and byte-identical in both `config/default-triggers.json` and `config/fallback-registry.json` (fallback-drift gate). The hint MUST be advisory only: it MUST NOT alter the design-completeness verdict, role caps, composition state, or any push/transition gate. The hint MUST be independent of the spec-driven session-start rewrite — its text MUST NOT contain the `CARRY SCENARIOS` token that keys that transform — so it survives unchanged in both default and spec-driven presets.
+
+#### Scenario: PLAN-phase prompt receives the vertical-slice hint
+
+- GIVEN a session whose primary phase resolves to PLAN
+- WHEN the activation hook emits PLAN-phase composition hints
+- THEN a hint steering toward thin end-to-end vertical slices over file-disjoint horizontal layers is present in the output
+
+#### Scenario: Hint stays in sync across both registries
+
+- GIVEN the PLAN composition hints in `config/default-triggers.json`
+- WHEN compared against `config/fallback-registry.json`
+- THEN the vertical-slice hint text is present and identical in both files
+
+#### Scenario: Spec-driven rewrite leaves the hint untouched
+
+- GIVEN the repo preset is `spec-driven`
+- WHEN session-start rewrites the PLAN hint whose text matches `CARRY SCENARIOS`
+- THEN the vertical-slice hint is not matched by that transform and passes through unchanged
 
