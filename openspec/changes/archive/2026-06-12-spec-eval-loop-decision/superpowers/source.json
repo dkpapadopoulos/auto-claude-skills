@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": null,
+  "plan_path": null,
+  "spec_path": null,
+  "sp_plan_path": null,
+  "sp_spec_path": null,
+  "change_slug": "spec-eval-loop-decision",
+  "capability_slug": null,
+  "source_branch": "feat/spec-eval-coverage",
+  "base_commit": "4f24e643335f79ebc7cd7887c99262d632872e91",
+  "openspec_surface": "none",
+  "archived_at": "2026-06-12T07:32:08Z"
+}
