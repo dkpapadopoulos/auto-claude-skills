@@ -39,6 +39,13 @@ done
 # as opposed to a deterministic hook-output string or state value.
 PROB='fall[s]?[ -]?back|recommend|explain|describe|summari|prioriti|identif|classif|attribut|surface|note[s]? that|warn|suggest|flag|ask|acknowledg|mention|refuse|fabricat|diagnos|propose|infer|extract|group|comput|assign|cite'
 
+# Static-artifact negative filter: a clause that matches a probabilistic VERB but
+# whose SUBJECT is a doc/banner/config artifact (not the model) is a deterministic
+# content assertion — already covered by grep-based tests, not behavioral. These
+# are subtracted from the probabilistic count to stop documentation/guidance
+# capabilities (e.g. unified-context-stack) from being over-flagged.
+NEG='banner|phase doc|tier doc|\bthe doc\b|\.md\b|appears? in|MUST (mention|contain|name|assert|NOT (mention|contain))|context-capability|flag MUST|MUST default|SHALL (provide|expose)'
+
 SPECS_DIR="${ROOT}/openspec/specs"
 if [ ! -d "${SPECS_DIR}" ]; then
     echo "scenario-coverage: no specs directory at ${SPECS_DIR} (nothing to report)"
@@ -60,7 +67,14 @@ for spec in "${SPECS_DIR}"/*/spec.md; do
     # In scope only if a runnable SKILL.md exists for this capability.
     [ -f "${ROOT}/skills/${cap}/SKILL.md" ] || continue
 
-    pcount="$(grep -ciE "(${PROB})" "${spec}" 2>/dev/null)"
+    # Count probabilistic-verb matches in OUTCOME lines only:
+    #   - drop markdown headings (### Requirement: / #### Scenario:) — titles, not behavior
+    #   - drop GIVEN/WHEN preconditions — they describe inputs, not asserted output
+    #   - drop static-artifact (NEG) assertions — deterministic doc/banner/config content
+    pcount="$(grep -iE "(${PROB})" "${spec}" 2>/dev/null \
+        | grep -vE '^[[:space:]]*#' \
+        | grep -ivE '^[[:space:]]*(-[[:space:]]*)?(\*\*)?(given|when)\b' \
+        | grep -icvE "(${NEG})")"
     [ -n "${pcount}" ] || pcount=0
     [ "${pcount}" -ge "${THRESHOLD}" ] || continue
 
