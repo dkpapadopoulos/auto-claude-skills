@@ -1517,7 +1517,7 @@
     {
       "name": "frontend-playwright",
       "triggers": [
-        "(component|page|form|modal|dialog|sidebar|navbar|header|footer|button|dropdown|tooltip|tab|card|widget|dashboard|landing.?page|login.?page|signup|onboard|checkout|ui|frontend|layout|style|css|tailwind|responsive)"
+        "(^|[^a-z])(component|page|form|modal|dialog|sidebar|navbar|header|footer|button|dropdown|tooltip|tab|card|widget|dashboard|landing.?page|login.?page|signup|onboard|checkout|ui|frontend|layout|style|css|tailwind|responsive)($|[^a-z])"
       ],
       "trigger_mode": "regex",
       "hint": "PLAYWRIGHT TESTING: Frontend changes detected. Include Playwright E2E tests covering the changed UI behavior. During REVIEW, use Skill(auto-claude-skills:runtime-validation) for orchestrated E2E and a11y validation.",

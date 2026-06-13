@@ -1,0 +1,19 @@
+# Regex fixtures for skill: frontend-playwright
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# Backend prompts that MUST NOT trigger the Playwright mandate (substring false-fires)
+NO_MATCH: tabulate the metrics for the quant engine
+# right-boundary guard: 'onboarding' must not match the 'onboard' token
+NO_MATCH: update the onboarding docs
+NO_MATCH: configure the skill registry
+NO_MATCH: paginate the results from duckdb
+NO_MATCH: transform the dataframe and reformat the output
+NO_MATCH: perform the database migration
+# Genuine frontend prompts that MUST still trigger
+MATCH: fix the navbar layout
+MATCH: the button component is misaligned
+MATCH: make the dashboard responsive
+MATCH: add a login page form
+MATCH: a ui change to the sidebar
