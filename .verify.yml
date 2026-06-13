@@ -1,0 +1,6 @@
+# .verify.yml — declared verification gate for auto-claude-skills
+substrate: local
+commands:
+  - name: tests
+    run: bash tests/run-tests.sh
+fail_fast: false
