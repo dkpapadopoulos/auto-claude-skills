@@ -112,3 +112,13 @@ Also surface the three states distinctly (green / red / **absent-or-broken**), a
 
 - **Gap 3 phase-reconciliation** (check branch/diff/PR before asserting IMPLEMENT/REVIEW/SHIP) — a composition-state-machine change touching the walker in `skill-activation-hook.sh` and `openspec-guard.sh`. Orthogonal; its own issue/debate. Revival: the tracker asserts REVIEW/SHIP with no branch/diff/PR in ≥1 more real session after this ships.
 - v2 `openspec-guard` marker-read (skip-friction) and the opt-in `.git/hooks/pre-push` installer — designed here, built in a fast-follow once the v1 marker is observed in a real session.
+
+## Implementation Notes (synced at ship time)
+
+Built as designed; all three capabilities' acceptance scenarios implemented, full suite 59/59 green. Deviations and discoveries during implementation:
+
+- **`frontend-playwright` lives under `methodology_hints[]`, not `skills[]`.** The plan assumed it was a `skills[]` routing entry. It is a methodology hint on the raw hint path (`hooks/skill-activation-hook.sh:1270`), which is *not* covered by the scorer's word-boundary post-filter (lines 195-228) — so the anchoring had to live in the regex itself (confirming the design's bracket-class-not-`\b` decision). The zero-LLM fixture harness `tests/test-regex-fixtures.sh` was extended (additively) to also resolve triggers from `methodology_hints[]`, else the fixture would have been inert.
+- **`deploy-gate` CI snippet hardened twice in review.** `gh pr checks` stdout is now silenced (`>/dev/null 2>&1`) so `$_concl` is literally `PASS` on green; and a prose guard was added so a red `gh pr checks` is not masked by a stale `gh run list` success.
+- **Behavioral pack path** is `tests/fixtures/project-verification/evals/behavioral.json` (the repo's `tests/fixtures/<cap>/evals/` convention), not the `tests/fixtures/evals/<cap>.behavioral.json` path named in early drafts of this doc (since corrected). `scenario-coverage.sh` will track it once this spec is archived to `openspec/specs/`.
+- **Gap 3 (phase-reconciliation) stayed out of scope** as designed — and was vividly motivated *during this very session*, where the composition tracker repeatedly asserted DEBUG/DISCOVER/REVIEW phases while implementation was mid-flight. Recorded as the revival trigger.
+- **Substrate enum** correctly deferred: v1 errors on any `.verify.yml` `substrate` ≠ `local`; the enum is unbuilt.
