@@ -31,5 +31,10 @@ assert_contains "has deploy-checklist.yml override" ".deploy-checklist.yml" "$co
 assert_contains "has output table" "Deploy Gate Results" "$content"
 assert_not_contains "no kubectl reference" "kubectl" "$content"
 
+section "deploy-gate CI check fails closed on absent CI"
+assert_contains "deploy-gate treats absent CI as non-pass" "absent" "$content"
+assert_contains "deploy-gate has empty-result guard" 'GATE FAIL: no CI checks' "$content"
+assert_contains "deploy-gate accepts local verification evidence" ".skill-project-verified-" "$content"
+
 print_summary
 exit $?

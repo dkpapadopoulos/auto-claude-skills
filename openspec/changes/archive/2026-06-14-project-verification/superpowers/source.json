@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": null,
+  "plan_path": null,
+  "spec_path": null,
+  "sp_plan_path": null,
+  "sp_spec_path": null,
+  "change_slug": "project-verification",
+  "capability_slug": null,
+  "source_branch": "worktree-project-verification",
+  "base_commit": "fc2726ed687652c2f605720380e5662928300859",
+  "openspec_surface": "none",
+  "archived_at": "2026-06-14T00:02:44Z"
+}

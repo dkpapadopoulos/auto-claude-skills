@@ -313,6 +313,19 @@ install_registry() {
       "invoke": "Skill(auto-claude-skills:supply-chain-investigation)",
       "available": true,
       "enabled": true
+    },
+    {
+      "name": "project-verification",
+      "role": "domain",
+      "phase": "REVIEW",
+      "triggers": [
+        "(run.*(the )?tests?|run.*(lint|typecheck|type.?check)|project.*(gate|checks?)|verify.*(locally|the build)|does.*(it )?build|declared.*(gate|commands?))"
+      ],
+      "trigger_mode": "regex",
+      "priority": 16,
+      "invoke": "Skill(auto-claude-skills:project-verification)",
+      "available": true,
+      "enabled": true
     }
   ],
   "phase_guide": {
@@ -5991,5 +6004,23 @@ test_generic_cve_does_not_fire_supply_chain() {
     teardown_test_env
 }
 test_generic_cve_does_not_fire_supply_chain
+
+# ---------------------------------------------------------------------------
+# project-verification routes on test/gate prompts at REVIEW
+# ---------------------------------------------------------------------------
+test_project_verification_routes_review() {
+    echo "-- test: 'run the tests' routes to project-verification --"
+    setup_test_env
+    install_registry
+
+    local output context
+    output="$(run_hook "run the tests and verify the build locally")"
+    context="$(extract_context "${output}")"
+
+    assert_contains "routes to project-verification" "project-verification" "${context}"
+
+    teardown_test_env
+}
+test_project_verification_routes_review
 
 print_summary

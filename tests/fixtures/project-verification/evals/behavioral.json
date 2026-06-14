@@ -1,0 +1,29 @@
+[
+  {
+    "id": "discover-and-run-declared-gate",
+    "prompt": "Run this project's declared test/lint/type gate locally and show me the result. The project's CLAUDE.md Commands table declares the test, lint, and type commands.",
+    "expected_behavior": "The skill discovers the declared gate (deterministic-first), runs it locally, and reports a structured result containing substrate, passed, failed, command, and output_excerpt. It must NOT require a per-project config file to be authored first when a declared gate is resolvable.",
+    "assertions": [
+      { "text": "(substrate[^a-z]*local|\"substrate\")", "description": "Emits the substrate field (structured evidence) with value local, not just the word 'local' in prose" },
+      { "text": "(passed.*\\[|failed.*\\[|(PASS|FAIL).*(lint|test|type))", "description": "Reports a structured pass/fail breakdown with command names (evidence array or summary table row), not a stray 'if it passed' sentence" }
+    ]
+  },
+  {
+    "id": "ambiguous-command-table-prompts",
+    "prompt": "Verify the build. This repo has no .verify.yml and its CLAUDE.md Commands table lists a full test-suite command next to a syntax-check command and a debug invocation.",
+    "expected_behavior": "Because the deterministic classifier yields more than one candidate (suite vs syntax-check vs debug), the skill must present the candidates and ask which is the gate, offering to write .verify.yml. It must NOT silently guess and run an unconfirmed command.",
+    "assertions": [
+      { "text": "(which|candidate|choose|select|ambig|more than one)", "description": "Presents the ambiguous candidates and asks the user which is the gate" },
+      { "text": "\\.verify\\.yml", "description": "Offers to write .verify.yml to make the next run deterministic" }
+    ]
+  },
+  {
+    "id": "no-gate-found-asks-not-guesses",
+    "prompt": "Verify the build. This repo has no .verify.yml, no Makefile, no pyproject.toml, no package.json, and its CLAUDE.md has no Commands table at all.",
+    "expected_behavior": "With all discovery rungs exhausted, the skill must report that no gate was found and ask the user to add .verify.yml. It must NOT fall back to guessing a command like 'npm test' or 'make test'.",
+    "assertions": [
+      { "text": "(\\.verify\\.yml|add.*gate|declare.*gate|no.*gate|not.*found|nothing.*discovered)", "description": "Reports no gate found and directs the user to add .verify.yml" },
+      { "text": "(do(es)? not|will not|won't|cannot|can't|not.*guess|did not guess)", "description": "Declines to guess a command rather than falling back silently" }
+    ]
+  }
+]

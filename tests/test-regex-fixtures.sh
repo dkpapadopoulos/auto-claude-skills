@@ -47,9 +47,12 @@ fi
 # ---------------------------------------------------------------------------
 get_triggers_for_skill() {
     local skill="$1"
-    jq -r --arg n "${skill}" \
-        '.skills[] | select(.name==$n) | .triggers[]?' \
-        "${TRIGGERS_JSON}" 2>/dev/null
+    # Search skills[] first, then methodology_hints[] (e.g. frontend-playwright)
+    local result
+    result="$(jq -r --arg n "${skill}" \
+        '(.skills[], .methodology_hints[]) | select(.name==$n) | .triggers[]?' \
+        "${TRIGGERS_JSON}" 2>/dev/null)"
+    printf '%s\n' "${result}"
 }
 
 # ---------------------------------------------------------------------------
