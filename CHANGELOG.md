@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`agent-team-review` evidence-based finding discipline** (`skills/agent-team-review/SKILL.md`, regressions in `tests/test-adversarial-governance.sh`). REVIEW-phase controls to curb false-positive nit accretion ("crying wolf") without suppressing real findings: FINDINGs now carry `Confidence` + `Evidence` fields, and a finding MAY be `blocking` only if its `Evidence` names an observable failure path. Lead Synthesis applies a **severity floor** — drop `quality`/`spec` suggestions unmapped to a design-doc capability; demote evidence-less `quality`/`spec` blockers to `warning`. `security`/`governance` findings are exempt from drop AND demote (they MAY block on structural grounds — removing/weakening a safety constraint — with no proof-of-concept). Floored findings stay visible under a "Dropped (below severity floor)" summary section so the doubt-theater signal survives. `Confidence` is advisory-only and never gates synthesis (confidence-weighting would reintroduce self-preferential bias). Reviewer spawn templates now require the new fields; the description is aligned to trigger-condition form. **Shipped as the cheapest alternative** the rejected multi-agent adversarial-refute gate would have to beat (design-debate + Codex stress-test); the refute gate and an `agent-team-review`→`Workflow`-script migration were deferred with measured revival triggers. Spec: `openspec/changes/review-finding-evidence-floor/`. Capability: `adversarial-review`.
+
 ### Fixed
 - **`frontend-playwright` trigger now bracket-anchored** — no longer false-fires on backend prompts (`tabulate`, `onboarding`, `paginate`). (#58)
 - **`deploy-gate` CI check fails closed on absent/zero-step CI** ("absent ≠ green"). (#58)

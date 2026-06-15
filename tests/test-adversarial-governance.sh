@@ -40,6 +40,20 @@ assert_contains "agent-team-review: claim-withheld dispatch" "artifact and the c
 assert_contains "agent-team-review: implementer self-summary excluded" "self-summary" "${TEAM_CONTENT}"
 assert_contains "agent-team-review: doubt-theater red flag" "doubt theater" "${TEAM_CONTENT}"
 assert_contains "agent-team-review: doubt-theater meaning" "validating, not reviewing" "${TEAM_CONTENT}"
+
+# --- agent-team-review: finding evidence + confidence + severity floor (v1 false-positive discipline) ---
+# Cheapest-alternative controls that any future adversarial-refute gate must beat.
+assert_contains "agent-team-review: confidence field in FINDING" "Confidence: high | medium | low" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: evidence field in FINDING" "Evidence: observable failure path" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: blocking requires observable failure path" "observable failure path" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: severity floor" "Severity floor" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: security/governance exempt from drop AND demote" "Never drop or demote \`security\` or \`governance\` findings" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: structural blocking for security/governance" "structural grounds" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: confidence is advisory only" "Confidence is advisory only" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: permissions in description trigger" "auth/secrets/permissions/hooks/CI" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: dropped suggestions stay visible" "below severity floor" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: no silent discard of floored findings" "Never silently discard" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: reviewers emit confidence/evidence" "including the Confidence and Evidence fields" "${TEAM_CONTENT}"
 assert_contains "agent-team-review: cross-model offer" "Codex" "${TEAM_CONTENT}"
 assert_contains "agent-team-review: cross-model no silent skip" "silently skipping is not" "${TEAM_CONTENT}"
 assert_contains "agent-team-review: cross-model sandboxed" "injected instructions" "${TEAM_CONTENT}"
