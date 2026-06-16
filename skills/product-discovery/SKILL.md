@@ -1,6 +1,6 @@
 ---
 name: product-discovery
-description: Pull Jira/Confluence context, synthesize discovery brief, validate problem framing before design
+description: Use when starting a new feature or initiative and you need problem context, prior art, and acceptance criteria before design — the DISCOVER phase entry point — pulling Jira/Confluence context and synthesizing a discovery brief to validate problem framing
 ---
 
 # Product Discovery

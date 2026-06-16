@@ -1,6 +1,6 @@
 ---
 name: outcome-review
-description: Query PostHog metrics, synthesize outcome report, create follow-up Jira work (gated)
+description: Use when reviewing a shipped feature's real-world outcome in the LEARN phase — checking adoption, error, or experiment metrics after release, validating ship-time hypotheses, or deciding follow-up work — querying PostHog and creating gated follow-up Jira work
 ---
 
 # Outcome Review

@@ -1,6 +1,6 @@
 ---
 name: deploy-gate
-description: Pre-ship deployment readiness checklist — verifies configuration, documentation, and CI status before shipping
+description: Use when preparing to ship or release — before pushing to production, promoting a build, or finalizing a branch — to confirm CI is green, no WIP commits remain, and version and design artifacts are in order
 role: domain
 phase: SHIP
 priority: 19

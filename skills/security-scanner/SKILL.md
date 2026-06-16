@@ -1,6 +1,6 @@
 ---
 name: security-scanner
-description: Run Semgrep/Opengrep SAST and Trivy vulnerability scanning during code review with self-healing fix loop
+description: Use when reviewing code changes for security issues — during REVIEW phase or on explicit security, vulnerability, SAST, or secret-scan requests — running available Semgrep/Opengrep, Trivy, and Gitleaks scanners with a self-healing fix loop
 ---
 
 # Security Scanner

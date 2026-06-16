@@ -1,6 +1,6 @@
 ---
 name: runtime-validation
-description: Realistic-context validation orchestrator — browser E2E, API smoke, CLI checks, a11y audits with unified report
+description: Use when you need to prove a change actually works through its real interfaces — during REVIEW or on requests like validate the feature, does it work, run e2e, or smoke test — covering browser E2E, API smoke, CLI checks, and a11y audits with graceful tool-degradation
 ---
 
 # Runtime Validation

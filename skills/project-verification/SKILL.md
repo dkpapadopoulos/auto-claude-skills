@@ -1,6 +1,6 @@
 ---
 name: project-verification
-description: Discover the repo's declared test/lint/type gate (CLAUDE.md / Makefile / pyproject / .verify.yml) and run it locally, emitting structured pass/fail evidence.
+description: Use when you need to run the repo's own declared test/lint/type gate locally and emit pass/fail evidence — during REVIEW, before requesting code review, or on a request to run the tests or verify the build — discovering the gate from CLAUDE.md, Makefile, pyproject, or .verify.yml
 role: domain
 phase: REVIEW
 priority: 16

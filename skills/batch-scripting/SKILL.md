@@ -1,6 +1,6 @@
 ---
 name: batch-scripting
-description: Bulk file operations using claude -p with manifest, dry-run, and log-based retry. Use when transforming, migrating, or refactoring many files at once.
+description: Use when transforming, migrating, refactoring, or generating across many files at once — codebase-wide renames, 50+ file migrations, mass test/doc generation, framework upgrades — via claude -p with manifest, dry-run, and log-based retry
 ---
 
 # Batch Scripting

@@ -1,6 +1,6 @@
 ---
 name: implementation-drift-check
-description: Spec drift detection, assumption surfacing, and coverage gap identification against Intent Truth
+description: Use when verifying an implementation still matches its spec or plan — during REVIEW or SHIP, or on demand to check drift, confirm you are still on plan, or run a spec check — surfacing spec deviations, unvalidated assumptions, and untested code paths against Intent Truth
 ---
 
 # Implementation Drift Check
