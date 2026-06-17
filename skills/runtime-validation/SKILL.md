@@ -90,6 +90,8 @@ ls tests/fixtures/evals/*.json 2>/dev/null
 
 If eval packs exist, read them and filter scenarios by `path` field to match detected execution paths (browser, api, cli). Each scenario provides structured inputs and expected outputs.
 
+Eval-pack safety scenarios are **append-only** — never delete a scenario to make the bar pass. If a case is genuinely obsolete, mark it `deprecated` with a dated rationale instead. Production failures and edge cases become new scenarios; the set grows over the life of the work.
+
 ### Tier 2: Intent Truth
 
 If no eval packs or for additional coverage, derive scenarios from:
@@ -105,6 +107,10 @@ If neither eval packs nor Intent Truth are available, generate generic smoke che
 - **Browser:** homepage loads (HTTP 200), no console errors, basic a11y pass (axe AA)
 - **API:** health endpoint returns 200, documented endpoints respond with expected status codes
 - **CLI:** `--help` exits 0, basic command produces non-empty output with expected shape
+
+### Mandatory: Safety-Relevant Paths
+
+When the change touches **authentication/authorization, data deletion, money/payments, or destructive or externally-visible side effects**, those paths **MUST be exercised** and reported (pass/fail with evidence) — not deferred to "Manual Checks". Green tests on the happy path do not clear a change that alters a safety-relevant path without exercising it. If no tool can exercise such a path, say so explicitly in Coverage Gaps and flag it for human verification rather than omitting it.
 
 ## Step 3: Execute Per-Path
 
@@ -172,13 +178,26 @@ done
 # --help smoke
 ./${BINARY} --help >/dev/null 2>&1 && echo "help: pass (exit 0)" || echo "help: fail (exit $?)"
 
-# Scenario execution from eval packs
+# Scenario execution from eval packs.
+# SECURITY: scenario commands are run as code. Treat eval packs as TRUSTED committed fixtures
+# only — never execute scenario commands sourced from untrusted/attacker-influenced input.
+# Do NOT `eval` the command string (eval runs in THIS shell and re-parses, so a crafted
+# fixture could mutate the validation environment). Prefer the structured argv form, which
+# runs with NO shell; fall back to a child subshell (bash -c) for the legacy string form.
 for scenario in "${CLI_SCENARIOS[@]}"; do
-  cmd=$(echo "$scenario" | jq -r '.inputs.command')
   expected=$(echo "$scenario" | jq -r '.expected.exit_code // 0')
-  eval "${cmd}" >/dev/null 2>&1
-  actual=$?
-  echo "${cmd}: expected_exit=${expected} actual_exit=${actual}"
+  if echo "$scenario" | jq -e '.inputs.argv | type == "array"' >/dev/null 2>&1; then
+    # Preferred: argv array executed directly — no shell, no injection surface.
+    argv=(); while IFS= read -r _a; do argv+=("$_a"); done < <(echo "$scenario" | jq -r '.inputs.argv[]')
+    "${argv[@]}" >/dev/null 2>&1; actual=$?
+    label="${argv[*]}"
+  else
+    # Legacy string form (trusted fixtures only): run in a child subshell, never `eval`.
+    cmd=$(echo "$scenario" | jq -r '.inputs.command')
+    bash -c "${cmd}" >/dev/null 2>&1; actual=$?
+    label="${cmd}"
+  fi
+  echo "${label}: expected_exit=${expected} actual_exit=${actual}"
 done
 ```
 

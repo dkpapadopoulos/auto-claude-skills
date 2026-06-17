@@ -1251,6 +1251,10 @@
         {
           "text": "PERSIST DESIGN: After brainstorming (or design-debate) completes, save the design artifact to `docs/plans/YYYY-MM-DD-<slug>-design.md` with sections: Problem, Capabilities Affected, Out-of-Scope, Approach, Acceptance Scenarios, Decision. Then run: source hooks/lib/openspec-state.sh && openspec_state_upsert_change \"$TOKEN\" \"$SLUG\" \"\" \"\" \"\" \"$DESIGN_PATH\" to set design_path in session state.",
           "when": "always"
+        },
+        {
+          "text": "EVAL STRATEGY: Before leaving DESIGN, classify how this feature is verified — ask the user if it is unclear. If it has probabilistic/AI/LLM/agent behavior (outputs cannot be exact-matched): plan an eval SET, not just unit tests — smoke + adversarial/safety subsets (jailbreak, injection, safety-routing-suppression), a pinned judge model+version, never-delete cases (deprecate with a dated rationale), and a pre-registered safety-stop (halt condition + who can call it); author the safety subset and have it failing (red) before implementation. If it is deterministic: standard test-driven-development plus the acceptance scenarios above are the bar. Safety dimensions are hard pass/fail gates, never averaged into a quality blend. See Skill(auto-claude-skills:runtime-validation) for running eval packs.",
+          "when": "always"
         }
       ]
     },
