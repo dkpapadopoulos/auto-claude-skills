@@ -85,3 +85,4 @@ Output a structured assessment:
 - Do NOT claim that improved prompt-injection detection scores solve the problem. 97% detection is a failing grade when the 3% leaks private data.
 - Do NOT merge this analysis into security-scanner output. Keep architectural risk separate from deterministic code scanning.
 - The skill produces an assessment, not a veto. The goal is informed decision-making.
+- When the design is an AI/LLM or agent feature, the safety eval cases (injection, escalation, refusal, safety-routing-suppression) MUST be authored and failing (red) **before the behavior is implemented** — compose with `test-driven-development`. Detection added after the behavior exists is not a substitute: a feature that has never failed its safety cases has never been shown to pass them.

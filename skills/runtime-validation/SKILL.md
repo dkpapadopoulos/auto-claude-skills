@@ -90,6 +90,8 @@ ls tests/fixtures/evals/*.json 2>/dev/null
 
 If eval packs exist, read them and filter scenarios by `path` field to match detected execution paths (browser, api, cli). Each scenario provides structured inputs and expected outputs.
 
+Eval-pack safety scenarios are **append-only** — never delete a scenario to make the bar pass. If a case is genuinely obsolete, mark it `deprecated` with a dated rationale instead. Production failures and edge cases become new scenarios; the set grows over the life of the work.
+
 ### Tier 2: Intent Truth
 
 If no eval packs or for additional coverage, derive scenarios from:
@@ -105,6 +107,10 @@ If neither eval packs nor Intent Truth are available, generate generic smoke che
 - **Browser:** homepage loads (HTTP 200), no console errors, basic a11y pass (axe AA)
 - **API:** health endpoint returns 200, documented endpoints respond with expected status codes
 - **CLI:** `--help` exits 0, basic command produces non-empty output with expected shape
+
+### Mandatory: Safety-Relevant Paths
+
+When the change touches **authentication/authorization, data deletion, money/payments, or destructive or externally-visible side effects**, those paths **MUST be exercised** and reported (pass/fail with evidence) — not deferred to "Manual Checks". Green tests on the happy path do not clear a change that alters a safety-relevant path without exercising it. If no tool can exercise such a path, say so explicitly in Coverage Gaps and flag it for human verification rather than omitting it.
 
 ## Step 3: Execute Per-Path
 

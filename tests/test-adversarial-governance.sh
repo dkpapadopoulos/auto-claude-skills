@@ -59,6 +59,30 @@ assert_contains "agent-team-review: cross-model no silent skip" "silently skippi
 assert_contains "agent-team-review: cross-model sandboxed" "injected instructions" "${TEAM_CONTENT}"
 assert_contains "agent-team-review: sensitive-path override" "regardless of file count" "${TEAM_CONTENT}"
 
+# --- Eval/safety gate deltas (change: eval-safety-gate-deltas) ---
+# Safety is the first-class, non-negotiable gate: classify probabilistic-vs-
+# deterministic at DESIGN (model-asks, no AI-feature auto-trigger); safety eval
+# cases red before code; safety-relevant runtime paths exercised; eval scenarios
+# append-only.
+
+# DESIGN-phase EVAL STRATEGY hint: classify probabilistic-vs-deterministic, ask if unclear.
+assert_contains "EVAL STRATEGY hint in DESIGN hints (default)" "EVAL STRATEGY" "${REGISTRY_CONTENT}"
+assert_contains "EVAL STRATEGY hint in DESIGN hints (fallback)" "EVAL STRATEGY" "${FALLBACK_CONTENT}"
+assert_contains "EVAL STRATEGY: classify (model-asks, not regex)" "ask the user if" "${REGISTRY_CONTENT}"
+assert_contains "EVAL STRATEGY: adversarial/safety subset" "adversarial/safety subsets" "${REGISTRY_CONTENT}"
+assert_contains "EVAL STRATEGY: red before implementation" "failing (red) before implementation" "${REGISTRY_CONTENT}"
+
+# runtime-validation: safety-relevant paths must be exercised + eval scenarios append-only.
+RTV_SKILL="${PROJECT_ROOT}/skills/runtime-validation/SKILL.md"
+RTV_CONTENT="$(cat "${RTV_SKILL}")"
+assert_contains "runtime-validation: safety-relevant paths section" "Safety-Relevant Paths" "${RTV_CONTENT}"
+assert_contains "runtime-validation: safety paths must be exercised" "MUST be exercised" "${RTV_CONTENT}"
+assert_contains "runtime-validation: eval scenarios append-only" "append-only" "${RTV_CONTENT}"
+
+# agent-safety-review: safety eval cases red before code (TDD-for-evals).
+assert_contains "agent-safety-review: safety eval red before code" "before the behavior is implemented" "${SAFETY_CONTENT}"
+assert_contains "agent-safety-review: compose with TDD" "test-driven-development" "${SAFETY_CONTENT}"
+
 # Summary
 echo ""
 echo "=============================="
