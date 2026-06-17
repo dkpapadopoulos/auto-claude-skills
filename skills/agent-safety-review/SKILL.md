@@ -1,6 +1,6 @@
 ---
 name: agent-safety-review
-description: Evaluate designs involving autonomous agents for the lethal trifecta — private data + untrusted input + outbound action
+description: Use when a design or implementation involves autonomous agents, unattended/background operation, private-data access combined with external/untrusted input, or outbound actions (sending data, posting, pushing, API calls) — i.e. potential lethal-trifecta exposure
 ---
 
 # Agent Safety Review

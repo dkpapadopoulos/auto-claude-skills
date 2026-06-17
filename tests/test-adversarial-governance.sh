@@ -25,6 +25,9 @@ SAFETY_CONTENT="$(cat "${SAFETY_SKILL}")"
 
 assert_contains "agent-safety-review: lethal trifecta" "lethal trifecta" "${SAFETY_CONTENT}"
 assert_contains "agent-safety-review: blast-radius" "blast-radius" "${SAFETY_CONTENT}"
+# Frontmatter description follows the catalog "Use when…" trigger convention
+# (catalog surface only — routing is regex-based; cf. the 8-skill alignment in #62).
+assert_contains "agent-safety-review: description uses 'Use when' trigger form" "Use when" "$(sed -n '3p' "${SAFETY_SKILL}")"
 
 # --- agent-team-review: adversarial reviewer ---
 TEAM_SKILL="${PROJECT_ROOT}/skills/agent-team-review/SKILL.md"
