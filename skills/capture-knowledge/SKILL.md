@@ -11,6 +11,16 @@ description: Use when capturing a durable, team-relevant learning into the commi
 - Non-obvious — a teammate's agent would get this wrong without it.
 - NOT already recorded by code, git history, or CLAUDE.md. Do not restate source.
 
+## When NOT to use
+
+This is a **committed, team-shared** store. Do NOT use it for:
+
+- **Single-session / task-scoped notes** (scratch, progress, "what I'm doing now") — these belong in `docs/plans/` or are simply ephemeral.
+- **User preferences or personal working style** ("the user likes X", correction style) — write to Claude Code auto-memory (`~/.claude/projects/<project>/memory/`), which is private and per-machine.
+- **Debugging breadcrumbs for the current investigation** — keep in-session; only the durable *conclusion* (if non-obvious) may graduate here.
+
+If a learning is private to you or your machine, it is auto-memory, not `.claude/knowledge/`. The split: machine scope → auto-memory; repo scope → here.
+
 ## Procedure
 
 1. **Draft a fact**: slug (kebab-case), `type` (gotcha|decision|convention|architecture|runbook), `title`, `description`, `tags`, `source`, `timestamp` (ISO 8601). Body ≤ ~400 words (Forgetful-syncable).

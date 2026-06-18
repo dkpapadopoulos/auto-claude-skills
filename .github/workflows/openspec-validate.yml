@@ -13,6 +13,17 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
+# Read-only: this workflow validates checked-out files and accesses no secrets.
+# Explicit grant guards against a future org-level default permission change.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref (e.g. rapid force-pushes) to avoid
+# stale-result races.
+concurrency:
+  group: openspec-validate-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   openspec-validate:
     name: OpenSpec Validate
