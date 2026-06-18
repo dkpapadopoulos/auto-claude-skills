@@ -120,4 +120,13 @@ test_forgetful_map_multi_slug_no_clobber() {
 }
 test_forgetful_map_multi_slug_no_clobber
 
+test_ci_entry_validates_repo_bundle() {
+    if bash "${PROJECT_ROOT}/scripts/validate-knowledge-bundle.sh" >/dev/null 2>&1; then
+        _record_pass "CI entry validates repo bundle (.claude/knowledge present and valid)"
+    else
+        _record_fail "CI entry validates repo bundle" "exit 0" "non-zero"
+    fi
+}
+test_ci_entry_validates_repo_bundle
+
 print_summary

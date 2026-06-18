@@ -36,3 +36,6 @@ jobs:
 
       - name: Validate all active OpenSpec changes
         run: bash scripts/validate-active-openspec-changes.sh
+
+      - name: Validate knowledge bundle
+        run: bash scripts/validate-knowledge-bundle.sh

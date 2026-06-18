@@ -14,4 +14,4 @@ everything after it. Validate-then-unquote instead:
     [[ "$V" =~ ^[0-9]+$ ]] || V=<default>; N=$(( V / 86400 ))
 
 Newer bash (5.x) tolerates the quotes, so this passes manual testing and only fails under
-3.2. Always syntax-check hook edits with `/bin/bash -n`. See [[session-start-budget]].
+3.2. Always syntax-check hook edits with `/bin/bash -n`.
