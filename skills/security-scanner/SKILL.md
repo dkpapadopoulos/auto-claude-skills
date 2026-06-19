@@ -105,6 +105,33 @@ osv-scanner scan -r --format=json . 2>/dev/null | jq '{count: ([.results[]?.pack
 
 If `osv-scanner` is not available, this step is skipped silently — no impact on Steps 4-6.
 
+## Step 3.6: Dependency Provenance (Slopsquatting / Hallucinated Packages)
+
+The scanners above all assume a package **already exists and is known**: SAST reads source, Trivy/OSV match *declared* dependencies against CVE/advisory feeds. None of them flag a *newly-introduced* dependency whose real problem is that it should not be trusted in the first place. Two distinct failure modes of AI-generated code:
+
+- **Hallucinated package** — the model invents a plausible name that does not exist. Usually caught later by `npm install` / `pip install` / a type-checker / CI. Cheap to catch *if* a build runs.
+- **Slopsquatting** — an attacker registers a real package under a name LLMs tend to hallucinate (a near-miss typosquat of a popular package). It installs cleanly, type-checks, and is invisible to OSV/Trivy until it becomes a *known* CVE. **This is the surface the build does not cover.**
+
+So this is a review-time judgment step, not a scan you can fully automate here. Do it for **newly-added third-party dependencies only** — the slopsquatting surface is the diff, not the whole tree.
+
+1. List third-party dependencies added in this branch (from dependency manifests):
+   ```bash
+   git diff "$(git merge-base HEAD main)..HEAD" -- '*requirements*.txt' '*package.json' '*go.mod' '*pom.xml' '*build.gradle*' '*Cargo.toml' '*pyproject.toml' 2>/dev/null | grep -E '^\+' | grep -viE '^\+\+\+' || echo "no manifest changes"
+   ```
+   If `merge-base` fails (no `main` branch), fall back to `git diff HEAD~1 -- <same globs>` for the last commit only (mirrors Step 2). Import-only additions that don't touch a manifest (e.g. importing an already-declared transitive) won't show here — cross-check those manually if the diff adds imports without a manifest change.
+2. For each added package, **resolve it against its registry — do not judge from memory** (the model that may have hallucinated the name cannot reliably adjudicate it):
+   - npm: `npm view <pkg> name version time.created homepage repository.url`
+   - PyPI: `curl -sf https://pypi.org/pypi/<pkg>/json | jq '{name:.info.name, home:.info.home_page, urls:.info.project_urls, first_release:(.releases|keys|first)}'` — a non-zero exit or empty body means the package does not exist; the returned fields double as provenance signals. (The experimental `pip index versions <pkg>` also works if pip is handy.)
+   - Go: `go list -m -versions <module>`
+   - Maven/Gradle: search `https://central.sonatype.com/artifact/<group>/<artifact>`
+3. Flag as **needs human review** (do not auto-remove — it may be legitimate) any package that shows provenance red flags:
+   - Created very recently / extremely low download volume relative to its apparent popularity
+   - Name is one edit away from a well-known package (typosquat of `requests` → `request`, `python-dotenv` → `dotenv-python`, etc.)
+   - No source repository or homepage, or a maintainer/repo that doesn't match the claimed project
+   - Unresolvable entirely (hallucinated) — confirm it isn't just a private/internal registry package before flagging
+
+Report results under a **Dependency provenance** subsection (see Step 5). If no third-party dependencies were added, state that and skip.
+
 ## Step 4: Run Gitleaks (Secret Detection)
 
 If gitleaks is available, scan for hardcoded secrets.
@@ -135,6 +162,10 @@ Present findings as a structured table:
 ### Gitleaks (Secrets) — N findings
 | Rule | File | Line | Description |
 |------|------|------|-------------|
+
+### Dependency provenance (newly-added) — N flagged
+| Package | Ecosystem | Resolved? | Red flag | Action |
+|---------|-----------|-----------|----------|--------|
 ```
 
 **Fix priority:** CRITICAL > HIGH > ERROR > WARNING

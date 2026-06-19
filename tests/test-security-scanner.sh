@@ -98,6 +98,30 @@ test_skill_md_documents_osv_scanner_step() {
   assert_contains "SKILL.md mentions install fallback" "github.com/google/osv-scanner" "$skill_md"
 }
 
+# ── Test: SKILL.md documents dependency-provenance (slopsquat) step ──
+test_skill_md_documents_dependency_provenance() {
+  echo "--- test_skill_md_documents_dependency_provenance ---"
+  local skill_md
+  skill_md="$(cat skills/security-scanner/SKILL.md)"
+  assert_contains "SKILL.md has a Dependency Provenance step" "Dependency Provenance" "$skill_md"
+  assert_contains "SKILL.md names the slopsquatting threat" "Slopsquatting" "$skill_md"
+  assert_contains "SKILL.md distinguishes the typosquat case" "typosquat" "$skill_md"
+  assert_contains "SKILL.md mandates registry resolution, not memory" "resolve" "$skill_md"
+  assert_contains "SKILL.md gives an npm resolver command" "npm view" "$skill_md"
+  assert_contains "SKILL.md gives a pip resolver command" "pip index versions" "$skill_md"
+  # The check must target NEWLY-ADDED deps in the diff, not a full re-scan
+  assert_contains "SKILL.md scopes the check to added dependencies" "newly-added" "$skill_md"
+}
+
+# ── Test: agent-team-review security lens checks dependency provenance ──
+test_review_security_lens_checks_provenance() {
+  echo "--- test_review_security_lens_checks_provenance ---"
+  local review_md
+  review_md="$(cat skills/agent-team-review/SKILL.md)"
+  assert_contains "security lens names provenance" "provenance" "$review_md"
+  assert_contains "security lens names slopsquatting" "slopsquatting" "$review_md"
+}
+
 # ══════════════════════════════════════════════════════════════════
 # Run tests
 # ══════════════════════════════════════════════════════════════════
@@ -108,6 +132,8 @@ test_methodology_hint_phase_scoped
 test_review_composition_invoke_path
 test_fallback_registry_parity
 test_skill_md_documents_osv_scanner_step
+test_skill_md_documents_dependency_provenance
+test_review_security_lens_checks_provenance
 
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"

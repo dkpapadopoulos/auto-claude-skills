@@ -143,6 +143,7 @@ Task tool (general-purpose):
     - SQL/NoSQL injection
     - XSS and CSRF vulnerabilities
     - Dependency vulnerabilities
+    - Dependency provenance: confirm newly-added third-party packages exist and aren't typosquats (slopsquatting) — resolve against the registry (`npm view`, PyPI JSON API), don't judge from memory
     - Error messages leaking sensitive information
 
     ## Context
