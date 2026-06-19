@@ -1480,6 +1480,10 @@
           "plugin": "atlassian",
           "text": "JIRA PR TITLE: If the branch name carries a Jira ID (feature/PROJ-123 -> PROJ-123), fetch the ticket's exact subject via the Atlassian MCP (getJiraIssue) and title the PR '<JIRA-ID>: <subject>'. If no Jira ID is present, skip — don't fabricate one.",
           "when": "installed"
+        },
+        {
+          "text": "CAPTURE KNOWLEDGE: If this work surfaced a durable, team-relevant, non-obvious learning (a gotcha, decision, convention, or runbook a teammate's agent would benefit from), consider Skill(auto-claude-skills:capture-knowledge) to record it into the committed .claude/knowledge/ base (human-gated at write). Skip if nothing durable emerged or the fact is routine / repo-derivable.",
+          "when": "always"
         }
       ]
     },
@@ -1501,6 +1505,10 @@
       "hints": [
         {
           "text": "DEBUG ESCALATION: If the fix touches multiple files, changes behavior, or affects a public API, enter REVIEW → SHIP after debugging. Use Skill(superpowers:requesting-code-review) to transition."
+        },
+        {
+          "text": "CAPTURE KNOWLEDGE: After resolving the bug, if the root cause or fix is a non-obvious gotcha worth sharing with teammates' agents, consider Skill(auto-claude-skills:capture-knowledge) to record it into the committed .claude/knowledge/ base (human-gated at write). Skip for routine fixes.",
+          "when": "always"
         }
       ]
     },
@@ -1520,7 +1528,12 @@
           "purpose": "Create follow-up tickets and annotate original issues with outcome data"
         }
       ],
-      "hints": []
+      "hints": [
+        {
+          "text": "CAPTURE KNOWLEDGE: If this work surfaced a durable, team-relevant, non-obvious learning (a gotcha, decision, convention, or runbook a teammate's agent would benefit from), consider Skill(auto-claude-skills:capture-knowledge) to record it into the committed .claude/knowledge/ base (human-gated at write). Skip if nothing durable emerged or the fact is routine / repo-derivable.",
+          "when": "always"
+        }
+      ]
     }
   }
 }
