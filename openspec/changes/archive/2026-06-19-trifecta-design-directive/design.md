@@ -103,3 +103,26 @@ Fallback Registry Sync Gate test.
   reference `agent-safety-review`.
 - `bash -n` on any touched hook (none expected — config-only).
 - Existing Fallback Registry Sync Gate guards the dual-source mirror.
+
+## Implementation Notes (synced at ship time)
+
+- **As-built matches the design.** Two config edits (DESIGN `TRIFECTA CHECK` hint +
+  REVIEW `ADVERSARIAL REVIEW` check (7)) in `config/default-triggers.json`, mirrored to
+  `config/fallback-registry.json`; four deterministic tests in `tests/test-routing.sh`.
+  Full suite 60/60; `openspec validate --strict` passes.
+- **Deviation (code-review refinement):** the REVIEW check (7) wording was softened from
+  "treat unresolved lethal-trifecta mitigation as a blocking governance finding" to
+  "treat **unmitigated and unacknowledged** lethal-trifecta risk as a blocking governance
+  finding (**the user may still explicitly accept the risk**)". This resolves a tension
+  flagged in review with `agent-safety-review` SKILL.md ("architectural review, not a
+  pass/fail gate; the user decides"). Spec text is unaffected (it pins behavior, not
+  exact wording).
+- **Test deviation from plan:** the fast-path regression test uses
+  `install_registry_with_wave1` (the registry that actually contains
+  `agent-safety-review`) rather than the plan's `install_registry`; this makes the
+  assertion meaningful. A dedicated generic-prompt test
+  (`test_trifecta_hint_present_on_generic_design`) was added so the always-on guarantee
+  (spec Scenario 2) is directly guarded, not just transitively.
+- **Codex sparring** corrected a load-bearing premise: `when` clauses on non-plugin hints
+  are documentary (the hook emits them unconditionally), so `when:"always"` is metadata
+  only — the directive fires regardless.
