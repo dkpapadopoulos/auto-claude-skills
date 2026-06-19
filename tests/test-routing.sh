@@ -6253,4 +6253,75 @@ test_capture_knowledge_routes() {
 }
 test_capture_knowledge_routes
 
+# ---------------------------------------------------------------------------
+# Helper: v4 registry with phase_compositions hints loaded from the REAL
+# config/default-triggers.json, so these tests fail when a hint is absent
+# from the actual source of truth (not the harness's embedded copy).
+# ---------------------------------------------------------------------------
+install_registry_v4_with_real_phase_hints() {
+    install_registry_v4
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    local tmp_file; tmp_file="$(mktemp)"
+    jq --slurpfile cfg "${PROJECT_ROOT}/config/default-triggers.json" '
+      .phase_compositions = ($cfg[0].phase_compositions // {})
+    ' "${cache_file}" > "${tmp_file}" && mv "${tmp_file}" "${cache_file}"
+}
+
+# TRIFECTA CHECK present at DESIGN with the agent-safety-review invocation
+test_trifecta_hint_present_at_design() {
+    echo "-- test: TRIFECTA CHECK hint present at DESIGN --"
+    setup_test_env
+    install_registry_v4_with_real_phase_hints
+
+    local ctx
+    ctx="$(extract_context "$(run_hook "build something that reads customer support emails and posts replies to Slack")")"
+    assert_contains "DESIGN carries TRIFECTA CHECK" "TRIFECTA CHECK" "${ctx}"
+    assert_contains "TRIFECTA CHECK names agent-safety-review" "Skill(auto-claude-skills:agent-safety-review)" "${ctx}"
+
+    teardown_test_env
+}
+test_trifecta_hint_present_at_design
+
+# TRIFECTA CHECK absent outside its gate phases (SHIP)
+test_trifecta_hint_absent_at_ship() {
+    echo "-- test: TRIFECTA CHECK hint absent at SHIP --"
+    setup_test_env
+    install_registry_v4_with_real_phase_hints
+
+    local ctx
+    ctx="$(extract_context "$(run_hook "ship the release and merge to main")")"
+    assert_not_contains "SHIP omits TRIFECTA CHECK" "TRIFECTA CHECK" "${ctx}"
+
+    teardown_test_env
+}
+test_trifecta_hint_absent_at_ship
+
+# REVIEW adversarial hint references agent-safety-review for trifecta flows
+test_review_adversarial_references_safety_review() {
+    echo "-- test: REVIEW adversarial hint references agent-safety-review --"
+    setup_test_env
+    install_registry_v4_with_real_phase_hints
+
+    local ctx
+    ctx="$(extract_context "$(run_hook "review my changes before merge")")"
+    assert_contains "REVIEW adversarial routes to agent-safety-review" "Skill(auto-claude-skills:agent-safety-review)" "${ctx}"
+
+    teardown_test_env
+}
+test_review_adversarial_references_safety_review
+
+# Existing keyword fast-path for agent-safety-review still fires by triggers
+test_agent_safety_review_fastpath_still_fires() {
+    echo "-- test: agent-safety-review keyword fast-path still fires --"
+    setup_test_env
+    install_registry_with_wave1
+
+    local ctx
+    ctx="$(extract_context "$(run_hook "set up an overnight unattended email agent that runs yolo")")"
+    assert_contains "fast-path keeps routing agent-safety-review" "agent-safety-review" "${ctx}"
+
+    teardown_test_env
+}
+test_agent_safety_review_fastpath_still_fires
+
 print_summary
