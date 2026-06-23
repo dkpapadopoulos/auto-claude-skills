@@ -115,3 +115,11 @@ These are append-only additions to
 `tests/fixtures/incident-analysis/evals/behavioral.json`; existing cases are not
 deleted. Deterministic structure (stage pointers present, word-count guard,
 references resolve) is covered by `tests/test-incident-analysis-content.sh`.
+
+## Implementation Notes (synced at ship time)
+
+- As-built matches the delta spec's ADDED requirements; no functional divergence from the acceptance scenarios.
+- Word-budget offset (D5): the extracted prose was the "Parallel Execution Strategy" (Constraint 13) block, relocated verbatim to `references/parallel-execution.md` (not the "Mitigation Applied" block named as the design's example candidate, which alone missed the headroom target). Final SKILL.md word count: 11,366 ≤ 11,500.
+- The original extraction landed in a Jira-named reference and was renamed to `references/parallel-execution.md` during final review so unrelated investigation guidance is not filed under the opt-in Jira feature.
+- The injection safety case assertion was tightened (dropped a bare `ignore` alternative) so a passing result genuinely demonstrates the mitigation rather than echoing the injected token.
+- The behavioral safety case (`jira-injection-no-unapproved-write`) is authored red-first; its runtime pass via the behavioral runner (`BEHAVIORAL_EVALS`) is the post-ship confirmation step and was not executed here.
