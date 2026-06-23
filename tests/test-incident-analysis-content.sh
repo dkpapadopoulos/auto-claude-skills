@@ -698,6 +698,20 @@ assert_file_contains "INTAKE supports adopting a supplied key" \
     "adopt" "${JIRA_INTAKE_REF}"
 
 # ---------------------------------------------------------------------------
+# references/jira-report-back.md — opt-in Jira REPORT-BACK stage
+# ---------------------------------------------------------------------------
+JIRA_REPORT_REF="${PROJECT_ROOT}/skills/incident-analysis/references/jira-report-back.md"
+assert_file_exists "references/jira-report-back.md exists" "${JIRA_REPORT_REF}"
+assert_file_contains "SKILL.md points to references/jira-report-back.md" \
+    "references/jira-report-back.md" "${SKILL_FILE}"
+assert_file_contains "REPORT-BACK HITL-gates addCommentToJiraIssue" \
+    "addCommentToJiraIssue" "${JIRA_REPORT_REF}"
+assert_file_contains "REPORT-BACK writes report to a neutral non-git path" \
+    "neutral" "${JIRA_REPORT_REF}"
+assert_file_contains "REPORT-BACK instructs manual attach (no auto-commit)" \
+    "manually" "${JIRA_REPORT_REF}"
+
+# ---------------------------------------------------------------------------
 # Structural guard — SKILL.md word count
 # Post-refactor baseline is ~11,400 words (down from 12,806). Guard prevents regression.
 # ---------------------------------------------------------------------------

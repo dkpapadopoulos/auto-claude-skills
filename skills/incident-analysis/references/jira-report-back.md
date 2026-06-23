@@ -1,0 +1,95 @@
+# Jira REPORT-BACK Stage — Full Procedure
+
+Opt-in stage. Runs after Stage 3 (POSTMORTEM) completes. Posts a concise summary comment back to the Jira ticket that was created or adopted during INTAKE.
+
+## Prerequisites
+
+- `jira_ticket_key` must be present in session state (set by the INTAKE stage).
+- If `jira_ticket_key` is absent and the user has not supplied a ticket key, REPORT-BACK is a **no-op** — skip silently and confirm the postmortem was saved locally.
+
+## Step 1: Determine the Report Output Path (neutral path)
+
+Write the postmortem `.md` to a **neutral non-git-tracked path**. Do NOT write to `docs/postmortems/` or any path inside the current working repository unless the user explicitly named a host location (e.g. "save it in our incidents repo at `docs/postmortems/`").
+
+Neutral path selection order:
+1. User-configured incident-output directory (e.g. `INCIDENT_OUTPUT_DIR` env var if set).
+2. Session scratchpad: `$TMPDIR` or `/tmp` (e.g. `/tmp/incident-<kebab-summary>-<date>.md`).
+
+State the chosen path clearly before writing.
+
+**Rationale:** The plugin must not auto-commit or push investigation outcomes to any repository. Writing to a neutral path decouples the investigation record from the host repo's git history.
+
+## Step 2: Build the Jira Comment
+
+Construct a comment with exactly two sections:
+
+```markdown
+## Summary
+<One short paragraph. Redact PII, secrets, internal hostnames, and credentials.
+Use the synthesis summary and root cause from the POSTMORTEM, not raw log lines.>
+
+## Proposed next steps
+- <Action item 1 from postmortem (type, owner, due date)>
+- <Action item 2>
+- ...
+```
+
+Rules:
+- Summary: one paragraph maximum. Redact sensitive values. No raw stack traces or log output.
+- Proposed next steps: carry the ordered action items from the POSTMORTEM verbatim (type, suggested owner, due date if set).
+- Keep the comment under ~800 words.
+
+## Step 3: Add the Delivery Line
+
+Append a delivery line at the end of the comment:
+
+**If a host location was named by the user:**
+```
+Full postmortem: <link or relative path the user specified>
+```
+
+**If no host location was named (default):**
+```
+Full postmortem saved locally at: <neutral path from Step 1>
+Note: the Atlassian MCP has no file-attachment tool — addCommentToJiraIssue posts text only.
+Attach the local report file manually to the Jira ticket if you want it accessible there.
+```
+
+The `manually` instruction is mandatory when no host location is named. Do not skip it.
+
+## Step 4: HITL Gate — Present and HALT
+
+Present the **exact comment body** (all text that will be posted) and the **target ticket key** to the user. Then HALT completely.
+
+```
+Target ticket: <jira_ticket_key>
+---
+<full comment body>
+---
+Confirm to post this comment. Reply "yes" or "approve" to proceed.
+```
+
+Do NOT call `addCommentToJiraIssue` until the user explicitly confirms (e.g. "yes", "approve", "go ahead").
+
+## Step 5: Post the Comment
+
+On explicit approval, call `addCommentToJiraIssue` with:
+- `issueIdOrKey`: the `jira_ticket_key` from session state
+- `body`: the exact approved comment body (no modifications after approval)
+
+Confirm success:
+```
+Comment posted to <jira_ticket_key>. Investigation complete.
+```
+
+## Step 6: Terminal Summary
+
+```
+Postmortem: <neutral path>
+Jira comment: posted to <jira_ticket_key>
+```
+
+If REPORT-BACK was a no-op (no ticket key):
+```
+No Jira ticket in session — postmortem saved to <neutral path> only.
+```

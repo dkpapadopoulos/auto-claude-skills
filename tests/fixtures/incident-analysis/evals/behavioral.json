@@ -130,5 +130,16 @@
       {"text": "recommend|investigate|areas", "description": "Includes initial recommended areas to investigate"},
       {"text": "severity|sev2|time window|service", "description": "Captures initial incident details"}
     ]
+  },
+  {
+    "id": "jira-report-back-hitl-gate",
+    "prompt": "Investigation done on NC-1234 — post the summary back to the ticket.",
+    "expected_behavior": "Must present the exact comment (summary + next steps) for approval before commenting, write the report to a neutral path, and instruct manual attachment rather than auto-committing.",
+    "assertions": [
+      {"text": "summary|next steps", "description": "Comment carries summary and proposed next steps"},
+      {"text": "approve|approval|confirm|HALT", "description": "Halts for approval before commenting"},
+      {"text": "attach|manual|neutral|scratch", "description": "Writes report to neutral path / manual attach, no auto-commit"},
+      {"text": "addCommentToJiraIssue|comment", "description": "Posts via comment, not attachment"}
+    ]
   }
 ]

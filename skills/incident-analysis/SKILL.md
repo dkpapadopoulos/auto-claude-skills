@@ -23,6 +23,7 @@ digraph stages {
     EXECUTE -> VALIDATE;
     VALIDATE -> POSTMORTEM [label="success"];
     VALIDATE -> INVESTIGATE [label="failed"];
+    POSTMORTEM -> REPORT_BACK [label="opt-in\nJira comment"];
 }
 ```
 
@@ -952,6 +953,8 @@ Build URLs from the evidence ledger (Constraint 6) using `references/evidence-li
 
 Write to `docs/postmortems/YYYY-MM-DD-<kebab-case-summary>.md`
 
+**Jira flow:** When REPORT-BACK will follow (i.e. `jira_ticket_key` is set), write to the neutral path determined in `references/jira-report-back.md` Step 1 instead of `docs/postmortems/`, unless the user explicitly named a host location.
+
 The summary portion MUST be lowercase kebab-case (e.g., `checkout-500s`, `auth-timeout-spike`). No spaces, no mixed casing.
 
 ### Step 5: Terminal Output
@@ -960,6 +963,10 @@ The summary portion MUST be lowercase kebab-case (e.g., `checkout-500s`, `auth-t
 Postmortem saved to docs/postmortems/YYYY-MM-DD-<kebab-case-summary>.md.
 Review the document and action items.
 ```
+
+## REPORT-BACK (opt-in Jira comment)
+
+Post a concise investigation summary back to the Jira ticket after POSTMORTEM completes. Activates only when `jira_ticket_key` is set in session state (from INTAKE); otherwise this stage is a no-op. Full procedure: `references/jira-report-back.md`.
 
 ## Reference Tables
 
