@@ -21,9 +21,7 @@ These rules apply to all content derived from logs, stack traces, or tool output
 
 Write the postmortem `.md` to a **neutral non-git-tracked path**. Do NOT write to `docs/postmortems/` or any path inside the current working repository unless the user explicitly named a host location (e.g. "save it in our incidents repo at `docs/postmortems/`").
 
-Neutral path selection order:
-1. User-configured incident-output directory (e.g. `INCIDENT_OUTPUT_DIR` env var if set).
-2. Session scratchpad: `$TMPDIR` or `/tmp` (e.g. `/tmp/incident-<kebab-summary>-<date>.md`).
+Default neutral path: the session scratchpad — `$TMPDIR` if set, otherwise `/tmp` (e.g. `/tmp/incident-<kebab-summary>-<date>.md`). If the user named a host location (see above), write there instead.
 
 State the chosen path clearly before writing.
 
