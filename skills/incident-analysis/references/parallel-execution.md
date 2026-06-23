@@ -1,6 +1,6 @@
-# Jira Bracket Overview
+# Parallel Execution Strategy
 
-Shared reference for Jira-stage framing and parallel query strategy used by the incident-analysis skill. Later tasks append stage-pointer metadata here.
+Extracted detail for Constraint 13 (parallel query batching), referenced from the incident-analysis SKILL.md.
 
 ## Parallel Execution Strategy — Batch Independent Queries (Constraint 13)
 

@@ -1,6 +1,6 @@
 # Jira REPORT-BACK Stage — Full Procedure
 
-Opt-in stage. Runs after Stage 3 (POSTMORTEM) completes. Posts a concise summary comment back to the Jira ticket that was created or adopted during INTAKE.
+Opt-in stage. Runs after POSTMORTEM completes. Posts a concise summary comment back to the Jira ticket that was created or adopted during INTAKE.
 
 ## Prerequisites
 
