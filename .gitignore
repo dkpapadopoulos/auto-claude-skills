@@ -15,3 +15,6 @@ __pycache__/
 .DS_Store
 # Behavioral eval runner artifacts (opt-in, local-only)
 tests/artifacts/
+
+# Subagent-driven-development scratch (briefs, reports, diffs, ledger)
+.superpowers/

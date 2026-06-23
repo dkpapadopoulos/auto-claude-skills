@@ -5,7 +5,7 @@ description: Use when investigating production symptoms — connection failures,
 
 # Incident Analysis
 
-Tiered GCP log investigation with playbook-driven mitigation and structured validation. Stages: MITIGATE, CLASSIFY, INVESTIGATE, EXECUTE, VALIDATE, POSTMORTEM. Detects available tools at runtime and uses the best tier. Playbook YAML files define mitigation commands, safety invariants, and validation criteria.
+Tiered GCP log investigation with playbook-driven mitigation and structured validation. Stages: (opt-in) INTAKE → MITIGATE → CLASSIFY → INVESTIGATE → EXECUTE → VALIDATE → POSTMORTEM → (opt-in) REPORT-BACK. Detects available tools at runtime and uses the best tier. Playbook YAML files define mitigation commands, safety invariants, and validation criteria.
 
 ## Stage Flow
 
@@ -13,6 +13,7 @@ Tiered GCP log investigation with playbook-driven mitigation and structured vali
 digraph stages {
     rankdir=LR;
     node [shape=box];
+    INTAKE -> MITIGATE [label="opt-in\nJira ticket\n(or skip)"];
     MITIGATE -> CLASSIFY [label="mitigation\nneeded\n(Step 5)"];
     MITIGATE -> INVESTIGATE [label="no mitigation\n(Step 6)"];
     CLASSIFY -> EXECUTE [label="high\nconfidence"];
@@ -22,6 +23,7 @@ digraph stages {
     EXECUTE -> VALIDATE;
     VALIDATE -> POSTMORTEM [label="success"];
     VALIDATE -> INVESTIGATE [label="failed"];
+    POSTMORTEM -> REPORT_BACK [label="opt-in\nJira comment"];
 }
 ```
 
@@ -181,25 +183,7 @@ Full specification — link types, YAML shape, priority rule, omission rules, la
 
 ### 13. Parallel Execution Strategy — Batch Independent Queries
 
-When multiple independent queries are needed at the same investigation step, dispatch them in parallel rather than sequentially. Independence means the queries do not depend on each other's results to formulate the filter.
-
-**Mandatory parallel batches:**
-
-| Phase | What to batch | Why |
-|-------|---------------|-----|
-| Step 1 + Step 2 | Preflight + timezone detection + scope queries | No dependencies between them |
-| Step 2b + 2c | Inventory queries + impact quantification | Independent data sources |
-| Step 2d | Incident count + baseline count (per error signal) | Same query, different time window |
-| Step 3 (intermediary found) | All-container ERROR inventory + deployment history + auth layer errors + HTTP status distribution | Architecture discovery — each query is independent |
-| Step 3c (2+ services) | Per-service ERROR log queries (all services in one batch) | Same query template, different service filter |
-| Step 3c item 3+4 | Deployment history + runtime signal (per service, all in one batch) | Independent per-service queries |
-| Step 5 | Disconfirming query + per-service attribution queries | Independent verification checks |
-
-**Always pair incident + baseline:** Every count or rate query should have a parallel twin for the baseline period (same service, same error class, same time-of-day on a prior day). This adds zero wall-clock time (parallel) and prevents deep-diving into baseline signals (Step 2d gate).
-
-**When NOT to parallelize:** Queries that depend on a prior result to formulate the filter. For example, Step 4 (trace correlation) requires a trace_id from Step 3 exemplars — these must be sequential.
-
-**Anti-pattern:** Sequential single-service discovery through an intermediary (N round-trips) when all services could be discovered in one parallel batch.
+Full detail: see `references/parallel-execution.md`.
 
 ## Investigation Modes
 
@@ -231,6 +215,10 @@ An explicit fast path that prioritizes time-to-first-hypothesis for active, ongo
 - HITL gate for mutations is never skipped
 
 **Mode recorded in synthesis:** The `investigation_summary.scope.mode` field captures which mode was used, so the postmortem and completeness gate know whether deferred steps were intentional.
+
+## INTAKE (opt-in Jira ticket)
+
+Create or adopt a Jira ticket before investigation begins. This stage is opt-in: it activates only when the user explicitly requests a ticket (e.g. "file a Jira ticket") or supplies a ticket key (e.g. "investigate NC-1234"). When neither signal is present, skip INTAKE and begin at Stage 1. On creation, present the exact ticket payload and HALT for approval before calling `createJiraIssue`. Full procedure: `references/jira-intake.md`.
 
 ## Stage 1 — MITIGATE
 
@@ -965,6 +953,8 @@ Build URLs from the evidence ledger (Constraint 6) using `references/evidence-li
 
 Write to `docs/postmortems/YYYY-MM-DD-<kebab-case-summary>.md`
 
+**Jira flow:** When REPORT-BACK will follow (i.e. `jira_ticket_key` is set), write to the neutral path determined in `references/jira-report-back.md` Step 1 instead of `docs/postmortems/`, unless the user explicitly named a host location.
+
 The summary portion MUST be lowercase kebab-case (e.g., `checkout-500s`, `auth-timeout-spike`). No spaces, no mixed casing.
 
 ### Step 5: Terminal Output
@@ -973,6 +963,10 @@ The summary portion MUST be lowercase kebab-case (e.g., `checkout-500s`, `auth-t
 Postmortem saved to docs/postmortems/YYYY-MM-DD-<kebab-case-summary>.md.
 Review the document and action items.
 ```
+
+## REPORT-BACK (opt-in Jira comment)
+
+Post a concise investigation summary back to the Jira ticket after POSTMORTEM completes. Activates only when `jira_ticket_key` is set in session state (from INTAKE); otherwise this stage is a no-op. Full procedure: `references/jira-report-back.md`.
 
 ## Reference Tables
 

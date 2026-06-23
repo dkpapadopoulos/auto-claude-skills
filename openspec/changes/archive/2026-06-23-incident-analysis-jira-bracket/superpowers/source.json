@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": null,
+  "plan_path": null,
+  "spec_path": null,
+  "sp_plan_path": null,
+  "sp_spec_path": null,
+  "change_slug": "incident-analysis-jira-bracket",
+  "capability_slug": null,
+  "source_branch": "worktree-incident-analysis-jira-bracket",
+  "base_commit": "7c3fa24faf2e8cf2baddac18dac4ebfcfb480ea2",
+  "openspec_surface": "none",
+  "archived_at": "2026-06-23T12:17:55Z"
+}

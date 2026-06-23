@@ -683,6 +683,43 @@ assert_file_contains "schema ref: systemic_factors has environmental_change key"
     "environmental_change:" "${SCHEMA_FILE}"
 
 # ---------------------------------------------------------------------------
+# references/jira-intake.md — opt-in Jira INTAKE stage
+# ---------------------------------------------------------------------------
+JIRA_INTAKE_REF="${PROJECT_ROOT}/skills/incident-analysis/references/jira-intake.md"
+assert_file_exists "references/jira-intake.md exists" "${JIRA_INTAKE_REF}"
+assert_file_contains "SKILL.md points to references/jira-intake.md" \
+    "references/jira-intake.md" "${SKILL_FILE}"
+assert_file_contains "INTAKE stage is opt-in" "opt-in" "${JIRA_INTAKE_REF}"
+assert_file_contains "INTAKE asks project via getVisibleJiraProjects" \
+    "getVisibleJiraProjects" "${JIRA_INTAKE_REF}"
+assert_file_contains "INTAKE HITL-gates createJiraIssue" \
+    "createJiraIssue" "${JIRA_INTAKE_REF}"
+assert_file_contains "INTAKE supports adopting a supplied key" \
+    "adopt" "${JIRA_INTAKE_REF}"
+
+# ---------------------------------------------------------------------------
+# references/jira-report-back.md — opt-in Jira REPORT-BACK stage
+# ---------------------------------------------------------------------------
+JIRA_REPORT_REF="${PROJECT_ROOT}/skills/incident-analysis/references/jira-report-back.md"
+assert_file_exists "references/jira-report-back.md exists" "${JIRA_REPORT_REF}"
+assert_file_contains "SKILL.md points to references/jira-report-back.md" \
+    "references/jira-report-back.md" "${SKILL_FILE}"
+assert_file_contains "REPORT-BACK HITL-gates addCommentToJiraIssue" \
+    "addCommentToJiraIssue" "${JIRA_REPORT_REF}"
+assert_file_contains "REPORT-BACK writes report to a neutral non-git path" \
+    "neutral" "${JIRA_REPORT_REF}"
+assert_file_contains "REPORT-BACK instructs manual attach (no auto-commit)" \
+    "manually" "${JIRA_REPORT_REF}"
+
+# ---------------------------------------------------------------------------
+# Trifecta safety — untrusted log content + redaction (Task 4)
+# ---------------------------------------------------------------------------
+assert_file_contains "jira-intake states log content is untrusted" \
+    "untrusted" "${JIRA_INTAKE_REF}"
+assert_file_contains "jira-report-back redacts secrets/PII" \
+    "redact" "${JIRA_REPORT_REF}"
+
+# ---------------------------------------------------------------------------
 # Structural guard — SKILL.md word count
 # Post-refactor baseline is ~11,400 words (down from 12,806). Guard prevents regression.
 # ---------------------------------------------------------------------------
