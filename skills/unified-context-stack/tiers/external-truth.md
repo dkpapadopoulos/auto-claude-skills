@@ -54,11 +54,12 @@ you pulled from sets how much you trust it — carry that trust level into the w
   source and tier (e.g. "per Context Hub `/andrewyng/context-hub`" or "per
   web-scraped Context7"). A reviewer must be able to trace a claim back to where it
   came from; an uncited API signature is unverifiable.
-- **Mark UNVERIFIED facts.** Anything from a lower-trust tier (Tier 2 web-scraped,
-  Tier 4 web search) is UNVERIFIED until you confirm it against the actual installed
-  library — method signatures, parameter names, version. Label it `UNVERIFIED` in
-  notes and code comments until checked. Do not let a web-scraped signature harden
-  into an assumed fact.
+- **Mark UNVERIFIED facts.** Anything not from the curated, human-reviewed Tier 1
+  (Tier 2 web-scraped, Tier 3 chub until its version is checked, Tier 4 web search)
+  is UNVERIFIED until you confirm it against the actual installed library — method
+  signatures, parameter names, version. Label it `UNVERIFIED` in notes and code
+  comments until checked. Do not let a web-scraped signature harden into an assumed
+  fact.
 - **Plan inline before acting on docs.** Once you have the docs, write the two or
   three steps you'll take *before* editing — which call, which params, what you
   expect back. This catches a misread doc before it becomes a wrong implementation.
