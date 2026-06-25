@@ -38,10 +38,28 @@ skill (T3a) must later produce against — so the contract ships before the prod
   hard-gate it to fire solely when the ask is underspecified AND no approved brief exists.
 - **Codex ranked T1b #1**; placed in PR2 behind T1a (earlier in chain, clears a standing trigger).
 
+## Round 3 additions (meta-axis: anatomy, references, personas)
+
+- **PR-T4 skill-authoring anatomy standard — RESHAPED (Codex round 3).** Adopt anti-rationalization /
+  Red Flags / Verification anatomy as OPTIONAL `skill-scaffold` template sections + backfill Verification
+  on readiness-claim skills. Grounded audit (headings only): anti-rationalization 0/21, Red Flags 2/21,
+  Verification 1/21. **Excludes** behavioral-eval enforcement (the runner asserts regex/tool-calls, not
+  section quality) and any frontmatter-schema extension (`docs/skill-frontmatter-schema.md` is routing
+  metadata). Codex caught that my initial counts (3/21, 9/21) were inflated by inline-word matches.
+- **Agent personas (test-engineer, code-reviewer) — SKIP.** Covered by pr-review-toolkit + agent-team-review;
+  our structured FINDING + evidence/confidence/severity-floor contract is stronger than their freeform templates.
+- **Reference checklists — mostly captured/skip.** observability-checklist → folded into T3a; security-checklist
+  → feeds the PR1 STRIDE graft; performance/accessibility → frontend (skip/low); definition-of-done &
+  orchestration-patterns → mild, optional consolidation, LOW. The progressive-disclosure *pattern* is already
+  ours (references/ in incident-analysis, project-verification, supply-chain).
+- **idea-refine — DEFER (corrected).** Skip standalone; the uncovered nugget is systematic divergent-lens
+  expansion before options exist. The "design-debate is purely convergent" rationale was false (it has an
+  architect proposing + a critic proposing alternatives) and is removed. Revival trigger recorded in proposal.
+
 ## Decisions & rejected alternatives
 
 - **Rejected:** addy plugin as a dependency / routing at its skill names (mechanism 2).
 - **Rejected:** T1c, T1d, T1e as standalone directives (collapsed into grafts / folded into T3a).
-- **Rejected now, revivable:** T3a composition wiring; T3b; T3c (reframe-gated).
+- **Rejected now, revivable:** T3a composition wiring; T3b; T3c (reframe-gated); idea-refine divergent nugget.
 - **Confirmed skip:** using-agent-skills, performance-optimization, ci-cd scaffolding,
-  ADR-lifecycle, frontend AI-aesthetic.
+  ADR-lifecycle, frontend AI-aesthetic, addy agent personas.

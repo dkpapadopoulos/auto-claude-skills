@@ -28,6 +28,14 @@ A ranked, sequenced adoption. In scope for this change:
 - Intent-extraction pre-brainstorming directive writing `confirmed-intent` to session state for brainstorming to consume.
 - Scope-manifest IMPLEMENT→REVIEW context contract consumed by agent-team-review / implementation-drift-check.
 
+**PR-T4 — skill-authoring anatomy standard (small, standalone, alongside PR1):**
+- Add OPTIONAL Rationalizations / Red Flags / Verification sections to the `skill-scaffold` emitted
+  skeleton, included where a skill bears discipline or makes a readiness claim (not blanket-mandated).
+- Backfill Verification sections only on owned skills that make completion/readiness claims.
+- Grounded audit (headings only): anti-rationalization 0/21, Red Flags 2/21, Verification 1/21.
+- Excludes: behavioral-eval enforcement (runner asserts regex/tool-calls, not section quality) and any
+  extension of `docs/skill-frontmatter-schema.md` (routing metadata, not body anatomy).
+
 ## Capabilities
 
 ### Modified
@@ -50,6 +58,7 @@ A ranked, sequenced adoption. In scope for this change:
 - T3a observability skill (standalone-first; **composition** with deploy-gate/incident-analysis deferred until the manual handoff is hit ≥2×).
 - T3b deprecation-and-migration skill (episodic).
 - T3c api-and-interface-design skill (needs Kotlin/Spring reframe; gate behind T3b).
+- idea-refine divergent-lens framework — skip the standalone skill (low-freq for backend; output ~80% covered by Out-of-Scope contract + brainstorming + prototype-lab + T1a). Revival trigger: a greenfield/novel ideation task where brainstorming's 2-3-approaches under-delivers. If revived, prefer a separate lightweight divergent mode, NOT a graft into the opt-in approval-gated design-debate.
 
 ## Skipped
 using-agent-skills (competing router), performance-optimization (frontend-heavy),

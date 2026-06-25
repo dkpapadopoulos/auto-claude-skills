@@ -51,8 +51,36 @@ We don't *own* superpowers skills (brainstorming, TDD, code-review, systematic-d
 8. **T3b** deprecation-and-migration skill — bounded, episodic, no composition.
 9. **T3c** api-and-interface-design skill — after T3b; needs Kotlin/Spring reframe.
 
+### DO ALONGSIDE PR1 — PR-T4: skill-authoring anatomy standard (reshaped per Codex round 3)
+Adopt addy's consistent skill anatomy (anti-rationalization / Red Flags / Verification) where it
+bears weight. Grounded audit of our 21 owned skills (corrected; headings only, not inline mentions):
+- Anti-rationalization sections: **0/21**
+- Red Flags sections: **2/21** (agent-team-execution, agent-team-review)
+- Verification sections: **1/21** — load-bearing for our evidence-before-assertions philosophy, yet near-absent.
+
+**Scope (reshaped):** add OPTIONAL Rationalizations / Red Flags / Verification sections to the
+`skill-scaffold` emitted skeleton (Step 2), to be included where a skill bears discipline or makes a
+readiness claim — NOT blanket-mandated on tool/domain skills where they would be filler. Backfill
+**Verification** sections only on owned skills that make completion/readiness claims.
+**Explicitly excluded:** no behavioral-eval enforcement (the runner asserts output regex / tool calls,
+not section quality → would be a checkbox); no extension of `docs/skill-frontmatter-schema.md` (that is
+routing metadata, not body anatomy). Small standalone PR, low risk.
+
 ### SKIP / fold
 T1c, T1e, T1d standalone (collapsed/folded above); using-agent-skills (competing router); performance-optimization (frontend-heavy; backend latency covered by incident loop); ci-cd scaffolding (low freq); ADR-lifecycle (openspec covers traceability); frontend AI-aesthetic (belongs to frontend-design plugin).
+
+### DEFER — idea-refine divergent-lens framework (corrected per Codex round 3)
+SKIP idea-refine as a standalone skill: low-frequency for backend feature work; output (~80%) covered by
+the Out-of-Scope contract + brainstorming + prototype-lab + the new T1a intent-extraction. The one
+uncovered nugget is its **divergent-lens framework** (inversion / constraint-removal / audience-shift /
+10x / simplification / expert-lens → 5-8 variations, cluster to 2-3). The real gap is narrow: **no
+systematic divergent-lens expansion step before options exist.** (Correction: design-debate is NOT
+"purely convergent" — its architect proposes and its critic proposes alternatives; the gap is the
+absence of structured *divergent generation before any option is on the table*, not convergence.)
+**Defer** with a revival trigger: a genuinely greenfield / novel-product ideation task where
+brainstorming's 2-3-approaches visibly under-delivers. If revived, do NOT bloat the opt-in, approval-gated
+`design-debate` — prefer a separate lightweight divergent mode. Ranks below T1a (which clears a standing
+PR #50 trigger and has no equivalent).
 
 ## Recommended approach
 
@@ -64,6 +92,7 @@ Sequence by ROI: **PR1 first** (four paragraph-inserts, zero routing/eval risk, 
 - **Critic:** T1a should be cut outright — duplicates brainstorming + product-discovery, risks double-interview, has no eval. *Overridden by gating T1a behind the red-first eval the Critic itself named as the only honest path to adoption.*
 - **Codex ranked T1b #1** (highest leverage). *Placed in PR2 behind T1a because T1a sits earlier in the chain and clears a standing trigger.*
 - **Architect:** rank by edges created, not capabilities added — hence T2a (the consumer contract) outranks the entire T3a observability skill. *Adopted as the sequencing rule.*
+- **Codex (round 3) caught load-bearing audit errors** before they reached this doc: my initial anatomy counts (Red Flags 3/21, Verification 9/21) were inflated by matching inline word-mentions instead of section headings — corrected to 2/21 and 1/21. It also flagged a non-existent `behavioral-evaluation/SKILL.md` and the wrong path for the frontmatter schema, which forced T4 to be reshaped (scaffold-only, no eval enforcement, no schema extension), and corrected the false "design-debate is purely convergent" rationale for the idea-refine deferral. *Re-derive load-bearing numbers cross-model — the recurring lesson.*
 
 ## Trade-offs accepted
 
