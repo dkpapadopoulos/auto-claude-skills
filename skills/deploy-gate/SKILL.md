@@ -109,4 +109,34 @@ Report as a structured checklist:
 **Result: PASS** (2 warnings, 0 failures)
 ```
 
+## Staged Rollout & Rollback Plan (advisory)
+
+This gate checks readiness; it does not execute the rollout. But a "go" is only
+meaningful against a **pre-agreed** rollout and rollback plan. Before promoting,
+confirm the human has these defined (surface them; do not enforce):
+
+**Progressive canary stages.** Ship to a small slice first, bake, then widen.
+A typical ladder — adjust to traffic and risk:
+
+| Stage | Traffic | Bake (target soak) | Advance when |
+|-------|---------|-----------------|--------------|
+| Canary | ~5% | long enough to cover peak + one full request mix | no trigger tripped |
+| Early | ~25% | shorter soak | no trigger tripped |
+| Half | ~50% | shorter soak | no trigger tripped |
+| Full | 100% | monitor | stable |
+
+**Rollback triggers (define BEFORE rollout, measured against the pre-deploy
+baseline — not against zero):**
+- **Error rate** — e.g. roll back if 5xx / error-event rate exceeds baseline by a
+  pre-set margin (a relative bump, e.g. +0.5pp absolute or +50% relative, whichever
+  the team picks) sustained over the bake window.
+- **Latency** — e.g. roll back if p95 (and/or p99) exceeds the baseline by a pre-set
+  margin sustained over the bake window. Use the same percentile the SLO is written in.
+- **Saturation** — CPU/memory/connection-pool/queue-depth nearing limits at the
+  current canary share (it will scale ~linearly as traffic widens).
+
+**Rollback is the default, not the exception.** If a trigger trips, revert first and
+diagnose after — do not "wait and see" while widening. Prefer a fast revert path
+(redeploy previous image / flip the flag) over a forward-fix under load.
+
 If any required check FAILS, report the failure clearly and stop. Do not proceed to openspec-ship.

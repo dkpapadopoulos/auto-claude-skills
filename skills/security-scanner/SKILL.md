@@ -11,6 +11,28 @@ Hybrid deterministic scanning: CLI tools find vulnerabilities, you fix them.
 
 During REVIEW phase, after code changes are complete. Also invocable on explicit security requests.
 
+## Step 0: STRIDE Threat-Model Pre-Pass
+
+Before running tools, spend ~60 seconds orienting the scan with a STRIDE pass over
+the change. Tools find known patterns; this catches the design-level risk a linter
+can't see, and tells you *which* findings matter for *this* diff. Keep it to one line
+per category — skip any that plainly don't apply.
+
+| STRIDE | Ask of this change | Typical tells |
+|--------|--------------------|---------------|
+| **S**poofing | Can a caller fake identity / bypass authn? | new endpoint, token check, session handling |
+| **T**ampering | Can inputs or stored data be altered untrusted? | request parsing, file writes, deserialization |
+| **R**epudiation | Is a security-relevant action unlogged / unattributable? | new mutation with no audit log |
+| **I**nformation disclosure | Can secrets / PII leak? | logging, error messages, new response fields, broad scopes |
+| **D**enial of service | Can input cause unbounded work? | unpaginated query, regex on user input, recursion, large upload |
+| **E**levation of privilege | Can a user gain rights they shouldn't? | authz check, role/permission change, admin path |
+
+Use the result to **prioritize triage in Step 5**: a finding on a STRIDE axis you
+flagged as live for this diff outranks an equal-severity finding on an axis that
+doesn't apply here. If the change handles untrusted input AND private data AND an
+outbound/privileged action, that is the lethal-trifecta surface — invoke
+`agent-safety-review` rather than treating it as a routine scan.
+
 ## Step 1: Detect Available Tools
 
 Pick the SAST binary (prefer opengrep, fall back to semgrep), then check the rest:

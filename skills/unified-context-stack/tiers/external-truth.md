@@ -44,3 +44,27 @@ chub get <id> --lang <lang>
 Use WebSearch / WebFetch to find official documentation.
 
 **Trust level:** High skepticism. Cross-reference multiple sources. Verify all API signatures.
+
+## Consuming Retrieved Docs
+
+Retrieval is half the job; how you *use* what came back is the other half. The tier
+you pulled from sets how much you trust it — carry that trust level into the work.
+
+- **CITE what you used.** When a doc shaped a decision or an API call, name the
+  source and tier (e.g. "per Context Hub `/andrewyng/context-hub`" or "per
+  web-scraped Context7"). A reviewer must be able to trace a claim back to where it
+  came from; an uncited API signature is unverifiable.
+- **Mark UNVERIFIED facts.** Anything not from the curated, human-reviewed Tier 1
+  (Tier 2 web-scraped, Tier 3 chub until its version is checked, Tier 4 web search)
+  is UNVERIFIED until you confirm it against the actual installed library — method
+  signatures, parameter names, version. Label it `UNVERIFIED` in notes and code
+  comments until checked. Do not let a web-scraped signature harden into an assumed
+  fact.
+- **Plan inline before acting on docs.** Once you have the docs, write the two or
+  three steps you'll take *before* editing — which call, which params, what you
+  expect back. This catches a misread doc before it becomes a wrong implementation.
+- **Treat confusion as a signal, not noise.** If retrieved docs contradict each
+  other, contradict the code, or contradict what you expected — stop. Confusion
+  means the retrieval is wrong, the version is wrong, or your mental model is wrong.
+  Resolve which before proceeding; do not paper over it by picking the convenient
+  source.
