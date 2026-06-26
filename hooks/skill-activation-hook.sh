@@ -1609,7 +1609,10 @@ Brainstorming MUST build on this confirmed intent and out-of-scope boundary — 
   else
     # Scenario 1: no intent, no brief (or no token) -> emit the directive.
     SKILL_LINES="${SKILL_LINES}
-INTENT EXTRACTION: If your ask is underspecified (missing one or more of who/why/success-criteria/constraints), run a brief intent-extraction pass before brainstorming proposes approaches: ask ONE question at a time, track your confidence (low/med/high) in understanding the real goal, and include at least one \"what would you actually want if this worked perfectly?\" probe to surface the underlying need (not just the literal request). Converge on a one-line confirmed intent plus an explicit out-of-scope line (what this is NOT). Then persist it: run \`source \"\$CLAUDE_PLUGIN_ROOT/hooks/lib/openspec-state.sh\" && openspec_state_set_intent \"\$TOKEN\" \"<confirmed intent> :: out-of-scope: <...>\"\` so brainstorming builds on it. SKIP this pass entirely if the ask is already fully specified, is mechanical (rename/typo/file-move), or an approved discovery brief already covers intent."
+INTENT EXTRACTION: If your ask is underspecified (missing one or more of who/why/success-criteria/constraints), do NOT propose approaches, designs, or options yet. First run a one-question-at-a-time intent pass: ask ONE question at a time, track your confidence (low/med/high) in the real goal, and include a \"what would you actually want if this worked perfectly?\" probe for the underlying need (not just the literal request). Then, as soon as the user has given you enough to act on, you MUST — BEFORE proposing ANY approach, design, or option — emit this convergence block verbatim and stop for confirmation:
+  **Confirmed intent:** <one line capturing who/why/success>
+  **Out-of-scope:** <what this is explicitly NOT>
+Only AFTER the user confirms that block may you propose approaches. Then persist it by running \`source \"\$CLAUDE_PLUGIN_ROOT/hooks/lib/openspec-state.sh\" && openspec_state_set_intent \"\$TOKEN\" \"<confirmed intent> :: out-of-scope: <...>\"\`. SKIP this pass entirely if the ask is already fully specified, is mechanical (rename/typo/file-move), or an approved discovery brief already covers intent."
     [[ -n "${SKILL_EXPLAIN:-}" ]] && echo "[skill-hook]   [intent-extraction] emitted directive (no intent, no brief)" >&2
   fi
 fi

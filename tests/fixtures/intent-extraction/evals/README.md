@@ -128,14 +128,30 @@ The flakiness was an **injection-fidelity artifact**: buried in the skill doc �
 prominently the way the hook does → 2/2 (a run cut short at iter 3 by an API session limit). A full
 variance pass at the prominent fidelity follows.
 
-### Final gate (prominent injection, variance 5) — _pending the in-flight run_
+### Gate — prominent injection, variance 5, two directive revisions — 2026-06-26
 
-| delta | baseline 5× | treatment 5× | classification |
-|-------|-------------|--------------|----------------|
-| C1 out-of-scope | _pending_ | _pending_ | _pending_ |
-| C2 confirmed-intent | _pending_ | _pending_ | _pending_ |
+| delta | baseline 5× | v1 prose 5× | **v2 prose 5× (shipped)** | classification (v2) |
+|-------|-------------|-------------|---------------------------|---------------------|
+| C1 out-of-scope | 0/5 (0%) | 1/5 (20%) | **5/5 (100%)** | stable |
+| C2 confirmed-intent | 0/5 (0%) | 1/5 (20%) | **5/5 (100%)** | stable |
+| C3 persist (excluded) | 0/5 | 0/5 | 1/5 (20%) | sandbox artifact |
 
-**Verdict:** _pending — ship if C1 & C2 are stably green on treatment and red on baseline._
+**v1 prose FAILED** the gate at proper n=5: only 20% convergence (the n=2 "2/2" that looked promising
+was sampling noise — inspection confirmed *genuine* non-convergence, the model jumping to "propose
+approaches" as brainstorming's default pull won). **v2 prose PASSES decisively:** making convergence an
+imperative pre-proposal gate ("do NOT propose approaches… you MUST — BEFORE proposing ANY approach —
+emit this convergence block and stop for confirmation") lifted both quality deltas to **5/5 stable**.
+
+**Verdict: the gate PASSES on v2 prose.** Baseline 0/5 → treatment 5/5 (stable) on both out-of-scope and
+confirmed-intent is a clear, reliable measurable improvement over brainstorming alone (which never
+produces a confirmed-intent lock). C3 (persist) stays at 20% purely because the eval sandboxes Bash so
+the model can't run `openspec_state_set_intent` — that path is covered deterministically by the
+`set_intent` unit test + the seeded handoff test in `tests/test-routing.sh`. **v2 is the prose shipped in
+`hooks/skill-activation-hook.sh`.**
+
+**Lesson (recorded):** small-n eval results lie — the n=2 fidelity pass read 100% but the proper n=5 read
+20%. Always run full variance before a ship/park call. And a multi-turn directive cannot be gated by a
+single-turn eval.
 
 Example treatment convergence (turn 2):
 > *"My confidence is now **high**. Let me lock the intent before proposing approaches.
