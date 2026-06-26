@@ -1,0 +1,5 @@
+{
+  "name": "intent-31-suppressed-mechanical",
+  "prompt": "rename the function getUserData to fetchUserData across the repo",
+  "must_not_match": ["INTENT EXTRACTION:"]
+}

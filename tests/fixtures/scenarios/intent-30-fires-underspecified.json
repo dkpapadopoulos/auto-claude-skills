@@ -1,0 +1,7 @@
+{
+  "name": "intent-30-fires-underspecified",
+  "prompt": "I want to add notifications to the app",
+  "expected_phase": "DESIGN",
+  "expected_skills": ["brainstorming"],
+  "must_match": ["INTENT EXTRACTION:", "what would you actually want", "out-of-scope", "openspec_state_set_intent"]
+}

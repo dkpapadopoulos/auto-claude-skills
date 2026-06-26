@@ -6418,4 +6418,45 @@ test_agent_safety_review_fastpath_still_fires() {
 }
 test_agent_safety_review_fastpath_still_fires
 
+# ---------------------------------------------------------------------------
+# INTENT EXTRACTION directive tests (Task 3)
+# ---------------------------------------------------------------------------
+
+# Scenario 1: DESIGN phase with no confirmed-intent marker -> emits directive
+test_intent_extraction_emits_on_underspecified_design() {
+    echo "-- test: intent-extraction emits on underspecified DESIGN ask --"
+    setup_test_env
+    install_registry
+
+    local ctx
+    ctx="$(extract_context "$(run_hook "I want to add notifications to the app")")"
+    assert_contains "emits INTENT EXTRACTION directive" "INTENT EXTRACTION:" "${ctx}"
+
+    teardown_test_env
+}
+test_intent_extraction_emits_on_underspecified_design
+
+# Scenario 3: confirmed-intent marker present -> handoff injected, directive suppressed
+test_intent_extraction_handoff_when_intent_present() {
+    echo "-- test: intent-extraction suppressed + handoff when confirmed-intent present --"
+    setup_test_env
+    install_registry
+
+    # Seed the singleton token so the hook resolves the same token we write the marker for.
+    local _seed_tok
+    _seed_tok="session-intent-seed-$$"
+    printf '%s\n' "${_seed_tok}" > "${HOME}/.claude/.skill-session-token"
+    printf '%s\n' "Notify users on ship :: out-of-scope: in-app inbox" \
+      > "${HOME}/.claude/.skill-confirmed-intent-${_seed_tok}"
+
+    local ctx
+    ctx="$(extract_context "$(run_hook "I want to add notifications to the app")")"
+    assert_contains "handoff line present" "CONFIRMED INTENT (from earlier extraction):" "${ctx}"
+    assert_not_contains "directive suppressed when intent present" "INTENT EXTRACTION:" "${ctx}"
+
+    # Cleanup is handled by teardown_test_env (removes the temp HOME dir).
+    teardown_test_env
+}
+test_intent_extraction_handoff_when_intent_present
+
 print_summary

@@ -106,6 +106,17 @@ run_scenario() {
         assert_not_contains "${name}: must not contain '${must_not}'" "${must_not}" "${context}"
         j=$((j + 1))
     done
+
+    # Check must_match patterns are present
+    local must_count
+    must_count="$(jq -r '.must_match // [] | length' "$fixture_file")"
+    local m=0
+    while [ "$m" -lt "$must_count" ]; do
+        local must
+        must="$(jq -r ".must_match[$m]" "$fixture_file")"
+        assert_contains "${name}: must contain '${must}'" "${must}" "${context}"
+        m=$((m + 1))
+    done
 }
 
 # ---------------------------------------------------------------------------

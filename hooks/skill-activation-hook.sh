@@ -1562,6 +1562,58 @@ Action: complete the missing section(s) before invoking Skill(superpowers:writin
   fi
 fi
 
+# =================================================================
+# INTENT EXTRACTION: DESIGN-phase pre-brainstorming directive.
+# Hook-resident (not a config hint) because emission is state-gated:
+#   confirmed-intent marker present -> inject handoff, suppress directive (Scenario 3 / 2)
+#   discovery brief in openspec state -> suppress directive (Scenario 2)
+#   otherwise -> emit directive (Scenario 1)
+# Advisory-only; fail-open on every sub-check. Mechanical asks do not
+# reach DESIGN phase, and the directive prose tells the model to skip
+# them. See docs/plans/2026-06-26-intent-extraction-directive-plan.md.
+# =================================================================
+if [[ "${PRIMARY_PHASE}" == "DESIGN" ]]; then
+  # Read confirmed-intent marker directly (no lib sourcing needed).
+  # Requires a session token to locate the marker file; without a token
+  # we can't check state, so we default to Scenario 1 (emit directive).
+  _INTENT_TEXT=""
+  _BRIEF_PRESENT=0
+  if [[ -n "${_SESSION_TOKEN:-}" ]]; then
+    _IE_MARKER="${HOME}/.claude/.skill-confirmed-intent-${_SESSION_TOKEN}"
+    if [[ -f "$_IE_MARKER" ]]; then
+      _INTENT_TEXT="$(head -1 "$_IE_MARKER" 2>/dev/null || true)"
+    fi
+
+    # Discovery brief present? (any non-archived change with a readable discovery_path)
+    _IE_STATE="${HOME}/.claude/.skill-openspec-state-${_SESSION_TOKEN}"
+    if [[ -f "$_IE_STATE" ]] && jq empty "$_IE_STATE" >/dev/null 2>&1; then
+      _BRIEF_CT="$(jq -r '
+        [.changes // {} | to_entries[]
+          | select(.value.archived_at == null)
+          | select((.value.discovery_path // "") != "")] | length
+      ' "$_IE_STATE" 2>/dev/null)"
+      [[ "${_BRIEF_CT:-0}" =~ ^[0-9]+$ ]] && [[ "${_BRIEF_CT}" -gt 0 ]] && _BRIEF_PRESENT=1
+    fi
+  fi
+
+  if [[ -n "$_INTENT_TEXT" ]]; then
+    # Scenario 3: handoff. Suppress the directive; reference confirmed intent.
+    SKILL_LINES="${SKILL_LINES}
+CONFIRMED INTENT (from earlier extraction): ${_INTENT_TEXT}
+Brainstorming MUST build on this confirmed intent and out-of-scope boundary — do not re-elicit it from scratch."
+    [[ -n "${SKILL_EXPLAIN:-}" ]] && echo "[skill-hook]   [intent-extraction] handoff: intent present" >&2
+  elif [[ "$_BRIEF_PRESENT" -eq 1 ]]; then
+    # Scenario 2: brief exists -> suppress (brainstorming uses the brief).
+    [[ -n "${SKILL_EXPLAIN:-}" ]] && echo "[skill-hook]   [intent-extraction] suppressed: discovery brief present" >&2
+    :
+  else
+    # Scenario 1: no intent, no brief (or no token) -> emit the directive.
+    SKILL_LINES="${SKILL_LINES}
+INTENT EXTRACTION: If your ask is underspecified (missing one or more of who/why/success-criteria/constraints), run a brief intent-extraction pass before brainstorming proposes approaches: ask ONE question at a time, track your confidence (low/med/high) in understanding the real goal, and include at least one \"what would you actually want if this worked perfectly?\" probe to surface the underlying need (not just the literal request). Converge on a one-line confirmed intent plus an explicit out-of-scope line (what this is NOT). Then persist it: run \`source \"\$CLAUDE_PLUGIN_ROOT/hooks/lib/openspec-state.sh\" && openspec_state_set_intent \"\$TOKEN\" \"<confirmed intent> :: out-of-scope: <...>\"\` so brainstorming builds on it. SKIP this pass entirely if the ask is already fully specified, is mechanical (rename/typo/file-move), or an approved discovery brief already covers intent."
+    [[ -n "${SKILL_EXPLAIN:-}" ]] && echo "[skill-hook]   [intent-extraction] emitted directive (no intent, no brief)" >&2
+  fi
+fi
+
 # --- PHASE REALITY: advisory-only reconciliation of claimed SHIP vs repo state.
 # Advisory only (never blocks); fail-open on every sub-check. SHIP-only: at
 # REVIEW, requesting-code-review is the current step and a clean tree is usually
