@@ -6459,4 +6459,28 @@ test_intent_extraction_handoff_when_intent_present() {
 }
 test_intent_extraction_handoff_when_intent_present
 
+# Scenario 2: discovery brief present (non-archived change with discovery_path) -> directive suppressed
+test_intent_extraction_suppressed_when_discovery_brief_present() {
+    echo "-- test: intent-extraction suppressed when discovery brief present --"
+    setup_test_env
+    install_registry
+
+    # Seed the singleton token and a valid openspec-state file with a non-archived
+    # change that has a discovery_path (Scenario 2 trigger).
+    local _seed_tok
+    _seed_tok="session-brief-seed-$$"
+    printf '%s' "${_seed_tok}" > "${HOME}/.claude/.skill-session-token"
+    printf '%s' '{"changes":{"feat-x":{"discovery_path":"docs/plans/x-discovery.md","archived_at":null}}}' \
+      > "${HOME}/.claude/.skill-openspec-state-${_seed_tok}"
+
+    local ctx
+    ctx="$(extract_context "$(run_hook "I want to add notifications to the app")")"
+    assert_not_contains "directive suppressed when discovery brief present" "INTENT EXTRACTION:" "${ctx}"
+
+    # Cleanup seeded state file; HOME teardown handles the rest.
+    rm -f "${HOME}/.claude/.skill-openspec-state-${_seed_tok}" 2>/dev/null || true
+    teardown_test_env
+}
+test_intent_extraction_suppressed_when_discovery_brief_present
+
 print_summary

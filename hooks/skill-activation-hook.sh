@@ -1573,16 +1573,16 @@ fi
 # them. See docs/plans/2026-06-26-intent-extraction-directive-plan.md.
 # =================================================================
 if [[ "${PRIMARY_PHASE}" == "DESIGN" ]]; then
-  # Read confirmed-intent marker directly (no lib sourcing needed).
+  # Read confirmed-intent marker via lib helper (DRY: path lives in openspec-state.sh).
   # Requires a session token to locate the marker file; without a token
   # we can't check state, so we default to Scenario 1 (emit directive).
   _INTENT_TEXT=""
   _BRIEF_PRESENT=0
   if [[ -n "${_SESSION_TOKEN:-}" ]]; then
-    _IE_MARKER="${HOME}/.claude/.skill-confirmed-intent-${_SESSION_TOKEN}"
-    if [[ -f "$_IE_MARKER" ]]; then
-      _INTENT_TEXT="$(head -1 "$_IE_MARKER" 2>/dev/null || true)"
+    if ! command -v openspec_state_read_intent >/dev/null 2>&1; then
+      . "${PLUGIN_ROOT}/hooks/lib/openspec-state.sh" 2>/dev/null || true
     fi
+    _INTENT_TEXT="$(command -v openspec_state_read_intent >/dev/null 2>&1 && openspec_state_read_intent "${_SESSION_TOKEN}" 2>/dev/null || true)"
 
     # Discovery brief present? (any non-archived change with a readable discovery_path)
     _IE_STATE="${HOME}/.claude/.skill-openspec-state-${_SESSION_TOKEN}"
