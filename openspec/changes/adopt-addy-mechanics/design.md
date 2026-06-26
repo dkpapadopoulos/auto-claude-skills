@@ -56,6 +56,46 @@ skill (T3a) must later produce against — so the contract ships before the prod
   expansion before options exist. The "design-debate is purely convergent" rationale was false (it has an
   architect proposing + a critic proposing alternatives) and is removed. Revival trigger recorded in proposal.
 
+## PR2a as-built (intent-extraction directive)
+
+The design above (line 13) envisioned T1a as a `methodology_hints[]` config entry. As built,
+PR2a is **hook-resident** — the directive logic lives in `hooks/skill-activation-hook.sh`, not
+in `config/*.json`. The four implementation decisions:
+
+- **D-1 — Hook-resident, not a config hint.** Spec Scenario 2 ("MUST NOT appear when a brief/intent
+  exists") needs hard, state-aware suppression, and Scenario 3 injects the *actual* confirmed-intent
+  text — neither expressible as a static `"when":"always"` hint (the hints jq branch has no gate
+  support; only `parallel`/`sequence` do). So a DESIGN-phase hook block (modeled on the PLAN-phase
+  design-completeness guard) handles emission, suppression, and handoff. **No `config/*.json` change.**
+  This corrects the earlier "JSON entry in both configs, not a hook-code edit" pricing estimate.
+- **D-2 — State is a flat marker file** `~/.claude/.skill-confirmed-intent-<token>` written by
+  `openspec_state_set_intent` (and read by `openspec_state_read_intent`) in `hooks/lib/openspec-state.sh`.
+  Not the openspec-state JSON, because intent is captured *before* a change slug exists. The hook
+  sources the lib via `$PLUGIN_ROOT` (the lib lives in the plugin install, not the user's project).
+- **D-3 — Eval is a multi-turn, prominent-injection A/B.** `run-behavioral-evals.sh` injects the skill
+  body from `SKILL_PATH` and does not fire the working-tree hook (a live `claude -p` fires the *installed*
+  hook). The eval went through three corrections, each forced by a red result (recorded in the eval
+  README): (1) a single-turn A/B mis-measured a multi-turn directive — the model correctly stops after
+  the first question, so out-of-scope/confirmed-intent convergence can't appear in one turn; rebuilt as a
+  **two-turn** scenario (`followup` → `claude -p --resume`) asserting on the convergence (turn-2) output.
+  (2) Appending the directive to the end of the skill body under-measured it (1/5); injecting it as a
+  prominent `<activation_directive>` block above the skill (`--directive-file`) is the faithful mirror of
+  how the hook places it in `additionalContext`. (3) At proper n=5 the original directive prose converged
+  only 20% (the n=2 "100%" was noise) — the prose was strengthened to make convergence an *imperative
+  pre-proposal gate* ("do NOT propose… you MUST emit the convergence block and stop"). **Result: baseline
+  0/5 → treatment 5/5 stable** on out-of-scope + confirmed-intent. C3 (persist) is excluded — the eval
+  sandboxes Bash, so the model can't run `openspec_state_set_intent`; that path is covered by the
+  deterministic `set_intent` unit test + seeded handoff test. The v2 prose is what ships in the hook. See
+  `tests/fixtures/intent-extraction/evals/README.md`.
+- **D-4 — Precedence:** confirmed-intent marker (→ handoff, suppress) > discovery brief in openspec
+  state (→ suppress) > emit directive. DESIGN phase only. No session token → fail-open to emit
+  (Scenario 1); production sessions always carry a token, so suppression/handoff hold there.
+
+Deterministic coverage: `tests/fixtures/scenarios/intent-30..33` (routing + must_match directive
+presence / must_not_match suppression) and seeded hook tests in `tests/test-routing.sh` (handoff when
+intent present; suppression when discovery brief present). The quality bar is the red-first behavioral
+eval (manual, opt-in, API-cost — not in CI `run-tests.sh`).
+
 ## Decisions & rejected alternatives
 
 - **Rejected:** addy plugin as a dependency / routing at its skill names (mechanism 2).

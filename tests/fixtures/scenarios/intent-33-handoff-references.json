@@ -1,0 +1,6 @@
+{
+  "name": "intent-33-design-routes-brainstorming",
+  "prompt": "design a caching layer for the product catalog service",
+  "expected_phase": "DESIGN",
+  "expected_skills": ["brainstorming"]
+}

@@ -1114,4 +1114,47 @@ test_knowledge_absent_no_block
 test_knowledge_injection_is_framed_as_data
 test_knowledge_injection_strips_nonlink_prose
 
+# ---------------------------------------------------------------------------
+# Confirmed intent state helpers
+# ---------------------------------------------------------------------------
+test_openspec_state_set_and_read_intent() {
+    echo "-- test: openspec_state_set_intent writes and reads back --"
+    setup_test_env
+    # Source the lib to test
+    . "${PROJECT_ROOT}/hooks/lib/openspec-state.sh"
+
+    _tok="session-intent-test-$$"
+    rm -f "${HOME}/.claude/.skill-confirmed-intent-${_tok}"
+    openspec_state_set_intent "${_tok}" "Notify users on order ship :: out-of-scope: in-app inbox"
+    _got="$(openspec_state_read_intent "${_tok}")"
+    assert_equals "set_intent persists text" "Notify users on order ship :: out-of-scope: in-app inbox" "${_got}"
+
+    teardown_test_env
+}
+
+test_openspec_state_set_intent_empty_token() {
+    echo "-- test: set_intent no-ops on empty token --"
+    setup_test_env
+    . "${PROJECT_ROOT}/hooks/lib/openspec-state.sh"
+
+    openspec_state_set_intent "" "should not write"
+    assert_equals "empty token is no-op" "" "$(openspec_state_read_intent "")"
+
+    teardown_test_env
+}
+
+test_openspec_state_read_intent_missing_file() {
+    echo "-- test: read_intent empty when no file --"
+    setup_test_env
+    . "${PROJECT_ROOT}/hooks/lib/openspec-state.sh"
+
+    assert_equals "missing file reads empty" "" "$(openspec_state_read_intent "session-absent-$$")"
+
+    teardown_test_env
+}
+
+test_openspec_state_set_and_read_intent
+test_openspec_state_set_intent_empty_token
+test_openspec_state_read_intent_missing_file
+
 print_summary

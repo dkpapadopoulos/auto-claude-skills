@@ -1,0 +1,6 @@
+{
+  "name": "intent-32-brief-prompt-routes-design",
+  "prompt": "per the approved feature brief, design the rate limiter for the public API",
+  "expected_phase": "DESIGN",
+  "expected_skills": ["brainstorming"]
+}

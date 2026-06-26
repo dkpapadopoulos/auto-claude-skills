@@ -1,0 +1,40 @@
+[
+  {
+    "id": "intent-underspecified-ask",
+    "prompt": "I want to add notifications to the app.",
+    "expected_behavior": "With the intent-extraction directive present, the model should run a one-question-at-a-time intent pass: track confidence, ask a deeper 'what would you actually want' probe, converge on a one-line confirmed intent with an explicit out-of-scope boundary, and state it will persist that confirmed intent before brainstorming approaches. Brainstorming alone asks clarifying questions but does NOT frame out-of-scope, track confidence, or persist a confirmed-intent statement.",
+    "assertions": [
+      { "text": "out.of.scope|not in scope|explicitly not|won'?t (cover|include|do)|exclud", "description": "D1: states an explicit out-of-scope boundary" },
+      { "text": "confidence|confident|i'?m not (yet )?(sure|certain)|how sure|once i understand", "description": "D2: tracks/declares confidence in understanding the goal" },
+      { "text": "what would you (actually|really|ideally)|underlying (need|goal|problem)|if (this|it) worked perfectly|really trying to", "description": "D3: deeper-need probe beyond the literal request" },
+      { "text": "confirm(ed)? intent|persist.*intent|confirmed.intent|so the (goal|intent) is|once we'?ve confirmed", "description": "D4: converges on and will persist a confirmed-intent statement" }
+    ]
+  },
+  {
+    "id": "intent-underspecified-converge",
+    "prompt": "I want to add notifications to the app.",
+    "followup": "It's for this plugin's own developers. The point is they should immediately realize when one of their git pushes just got blocked by a hook, instead of staring at a silent terminal wondering why nothing happened. If it works, they notice within a second or two without having to open any logs. Keep it lightweight — don't nag them with repeated popups, and there's no need for email or phone alerts.",
+    "expected_behavior": "MULTI-TURN. Turn 1 = underspecified ask; turn 2 = the user has answered with who/why/success/constraints. With the intent-extraction directive, by turn 2 the model should CONVERGE: state a one-line confirmed intent, name an explicit out-of-scope boundary (e.g. email/phone alerts are out of scope), and indicate it will persist the confirmed intent (openspec_state_set_intent) before brainstorming approaches. Brainstorming alone, given the same answer, tends to jump toward proposing approaches without framing out-of-scope, labeling a confirmed intent, or persisting it. The followup deliberately supplies substance WITHOUT using the delta vocabulary (no 'out of scope' / 'confirmed intent' / 'confidence') so matches reflect the model's own framing.",
+    "assertions": [
+      { "text": "out.of.scope|not in scope|out.of.bounds|excluded?|won'?t (cover|include|do)|non.?goal|not (doing|building|covering)", "description": "C1: frames an explicit out-of-scope boundary at convergence" },
+      { "text": "confirmed intent|to confirm,? the (goal|intent)|so the (goal|intent) is|the intent is:|here'?s the (confirmed )?intent|intent \\(confirmed\\)", "description": "C2: states a one-line confirmed-intent statement" },
+      { "text": "openspec_state_set_intent|persist.*(the )?(confirmed )?intent|record (this|the) (confirmed )?intent|save (this|the) (confirmed )?intent|write.*confirmed.intent", "description": "C3: indicates it will persist the confirmed intent" }
+    ]
+  },
+  {
+    "id": "intent-mechanical-noninterview",
+    "prompt": "Rename the function getUserData to fetchUserData across the repo.",
+    "expected_behavior": "A mechanical rename must NOT trigger a multi-question intent interview. The model proceeds with the rename (or asks at most a single scoping confirmation), without confidence-tracking or out-of-scope elicitation. Adversarial / false-positive subset: the harm is unwanted interview behavior.",
+    "assertions": [
+      { "text": "rename|fetchUserData|getUserData", "description": "engages with the actual rename task" }
+    ]
+  },
+  {
+    "id": "intent-respects-existing-brief",
+    "prompt": "Per the approved discovery brief (problem, users, success metric, and constraints already defined), design the rate-limiter for the public API.",
+    "expected_behavior": "When intent is already established (brief present), the model must build on it and proceed toward design, not re-run an intent interview from scratch. Adversarial / false-positive subset.",
+    "assertions": [
+      { "text": "rate.?limit", "description": "engages with the stated design task" }
+    ]
+  }
+]

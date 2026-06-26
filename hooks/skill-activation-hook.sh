@@ -1562,6 +1562,61 @@ Action: complete the missing section(s) before invoking Skill(superpowers:writin
   fi
 fi
 
+# =================================================================
+# INTENT EXTRACTION: DESIGN-phase pre-brainstorming directive.
+# Hook-resident (not a config hint) because emission is state-gated:
+#   confirmed-intent marker present -> handoff (Scenario 3) + suppress (Scenario 2, intent case)
+#   discovery brief in openspec state -> suppress directive (Scenario 2, brief case)
+#   otherwise -> emit directive (Scenario 1)
+# Advisory-only; fail-open on every sub-check. Mechanical asks do not
+# reach DESIGN phase, and the directive prose tells the model to skip
+# them. See docs/plans/2026-06-26-intent-extraction-directive-plan.md.
+# =================================================================
+if [[ "${PRIMARY_PHASE}" == "DESIGN" ]]; then
+  # Read confirmed-intent marker via lib helper (DRY: path lives in openspec-state.sh).
+  # Requires a session token to locate the marker file; without a token
+  # we can't check state, so we default to Scenario 1 (emit directive).
+  _INTENT_TEXT=""
+  _BRIEF_PRESENT=0
+  if [[ -n "${_SESSION_TOKEN:-}" ]]; then
+    if ! command -v openspec_state_read_intent >/dev/null 2>&1; then
+      . "${PLUGIN_ROOT}/hooks/lib/openspec-state.sh" 2>/dev/null || true
+    fi
+    _INTENT_TEXT="$(command -v openspec_state_read_intent >/dev/null 2>&1 && openspec_state_read_intent "${_SESSION_TOKEN}" 2>/dev/null || true)"
+
+    # Discovery brief present? (any non-archived change with a readable discovery_path)
+    _IE_STATE="${HOME}/.claude/.skill-openspec-state-${_SESSION_TOKEN}"
+    if [[ -f "$_IE_STATE" ]] && jq empty "$_IE_STATE" >/dev/null 2>&1; then
+      _BRIEF_CT="$(jq -r '
+        [.changes // {} | to_entries[]
+          | select(.value.archived_at == null)
+          | select((.value.discovery_path // "") != "")] | length
+      ' "$_IE_STATE" 2>/dev/null)"
+      [[ "${_BRIEF_CT:-0}" =~ ^[0-9]+$ ]] && [[ "${_BRIEF_CT}" -gt 0 ]] && _BRIEF_PRESENT=1
+    fi
+  fi
+
+  if [[ -n "$_INTENT_TEXT" ]]; then
+    # Scenario 3: handoff. Suppress the directive; reference confirmed intent.
+    SKILL_LINES="${SKILL_LINES}
+CONFIRMED INTENT (from earlier extraction): ${_INTENT_TEXT}
+Brainstorming MUST build on this confirmed intent and out-of-scope boundary — do not re-elicit it from scratch."
+    [[ -n "${SKILL_EXPLAIN:-}" ]] && echo "[skill-hook]   [intent-extraction] handoff: intent present" >&2
+  elif [[ "$_BRIEF_PRESENT" -eq 1 ]]; then
+    # Scenario 2: brief exists -> suppress (brainstorming uses the brief).
+    [[ -n "${SKILL_EXPLAIN:-}" ]] && echo "[skill-hook]   [intent-extraction] suppressed: discovery brief present" >&2
+    :
+  else
+    # Scenario 1: no intent, no brief (or no token) -> emit the directive.
+    SKILL_LINES="${SKILL_LINES}
+INTENT EXTRACTION: If your ask is underspecified (missing one or more of who/why/success-criteria/constraints), do NOT propose approaches, designs, or options yet. First run a one-question-at-a-time intent pass: ask ONE question at a time, track your confidence (low/med/high) in the real goal, and include a \"what would you actually want if this worked perfectly?\" probe for the underlying need (not just the literal request). Then, as soon as the user has given you enough to act on, you MUST — BEFORE proposing ANY approach, design, or option — emit this convergence block verbatim and stop for confirmation:
+  **Confirmed intent:** <one line capturing who/why/success>
+  **Out-of-scope:** <what this is explicitly NOT>
+Only AFTER the user confirms that block may you propose approaches. Then persist it by running \`source \"\$CLAUDE_PLUGIN_ROOT/hooks/lib/openspec-state.sh\" && openspec_state_set_intent \"\$TOKEN\" \"<confirmed intent> :: out-of-scope: <...>\"\`. SKIP this pass entirely if the ask is already fully specified, is mechanical (rename/typo/file-move), or an approved discovery brief already covers intent."
+    [[ -n "${SKILL_EXPLAIN:-}" ]] && echo "[skill-hook]   [intent-extraction] emitted directive (no intent, no brief)" >&2
+  fi
+fi
+
 # --- PHASE REALITY: advisory-only reconciliation of claimed SHIP vs repo state.
 # Advisory only (never blocks); fail-open on every sub-check. SHIP-only: at
 # REVIEW, requesting-code-review is the current step and a clean tree is usually

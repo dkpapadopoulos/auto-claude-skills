@@ -116,6 +116,33 @@ openspec_state_set_discovery_path() {
     fi
 }
 
+# --- openspec_state_set_intent <token> <intent_text> --------------
+# Persist a confirmed-intent statement to a flat marker file
+# ~/.claude/.skill-confirmed-intent-<token>. Captured pre-design
+# (before a change slug exists), so it is NOT stored in the openspec
+# state JSON. Existence = suppression signal for the intent-extraction
+# directive; contents feed the brainstorming handoff. Overwrites.
+# No-op on empty token or empty text.
+openspec_state_set_intent() {
+    local token="${1:-}"
+    local intent="${2:-}"
+    [ -z "$token" ] && return 0
+    [ -z "$intent" ] && return 0
+    local f="${HOME}/.claude/.skill-confirmed-intent-${token}"
+    printf '%s\n' "$intent" > "$f" 2>/dev/null || return 0
+}
+
+# --- openspec_state_read_intent <token> ---------------------------
+# Print the confirmed-intent marker contents (single line) or nothing.
+# No-op on empty token or missing file.
+openspec_state_read_intent() {
+    local token="${1:-}"
+    [ -z "$token" ] && return 0
+    local f="${HOME}/.claude/.skill-confirmed-intent-${token}"
+    [ -f "$f" ] || return 0
+    head -1 "$f" 2>/dev/null || return 0
+}
+
 # --- openspec_state_set_hypotheses <token> <slug> <hypotheses_json> ---
 # Set hypotheses array for a change entry. Validates input is JSON.
 # Creates change entry if absent; merges into existing fields otherwise.

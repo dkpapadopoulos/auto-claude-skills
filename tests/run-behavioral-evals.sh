@@ -53,6 +53,7 @@ VARIANCE_N=1
 VARIANCE_REPORT=""
 MODEL_FLAG=""
 BARE=0
+DIRECTIVE_FILE=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -79,6 +80,10 @@ while [ $# -gt 0 ]; do
         --bare)
             BARE=1
             shift
+            ;;
+        --directive-file)
+            DIRECTIVE_FILE="${2:-}"
+            shift 2
             ;;
         -h|--help)
             usage
@@ -153,6 +158,15 @@ if [ "${ASSERTION_COUNT}" -lt 1 ]; then
     exit 2
 fi
 
+# -------- optional multi-turn followup --------
+# When the scenario carries a "followup" string, the runner continues the
+# conversation: turn 1 = prompt, turn 2 = followup via `claude -p --resume
+# <session_id>`. Assertions then evaluate the turn-2 (convergence) output.
+# Used for directives whose payoff is multi-turn — e.g. intent-extraction
+# converging to a confirmed intent + out-of-scope line after the user answers
+# the first question. Empty/absent => single-turn (unchanged behavior).
+FOLLOWUP_TEXT="$(printf '%s' "${SCENARIO_JSON}" | jq -r '.followup // empty')"
+
 # -------- skill loading --------
 SKILL_PATH="${SKILL_PATH:-skills/incident-analysis/SKILL.md}"
 if [ ! -f "${SKILL_PATH}" ]; then
@@ -161,6 +175,22 @@ if [ ! -f "${SKILL_PATH}" ]; then
 fi
 SKILL_BODY="$(cat "${SKILL_PATH}")"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-tests/artifacts}"
+
+# -------- optional activation directive --------
+# When --directive-file is given, its contents are injected as a prominent
+# standalone block ABOVE the skill guidance, mirroring how the activation hook
+# puts a phase directive in `additionalContext` (a top-level context block),
+# rather than burying it inside the skill body. This is the high-fidelity way
+# to A/B a hook-injected directive: baseline and treatment share the SAME
+# unmodified skill body; treatment adds only this block.
+DIRECTIVE_BODY=""
+if [ -n "${DIRECTIVE_FILE}" ]; then
+    if [ ! -f "${DIRECTIVE_FILE}" ]; then
+        echo "error: directive file not found: ${DIRECTIVE_FILE}" >&2
+        exit 2
+    fi
+    DIRECTIVE_BODY="$(cat "${DIRECTIVE_FILE}")"
+fi
 
 # -------- helper: update_counter --------
 # Increment pass or fail count for assertion idx in counter file.
@@ -270,6 +300,15 @@ ${SKILL_BODY}
 <user_request>
 ${SCENARIO_PROMPT}
 </user_request>"
+    # High-fidelity directive injection: prepend a prominent standalone block,
+    # the way the activation hook injects additionalContext (above the skill).
+    if [ -n "${DIRECTIVE_BODY}" ]; then
+        CONSTRUCTED_PROMPT="<activation_directive>
+${DIRECTIVE_BODY}
+</activation_directive>
+
+${CONSTRUCTED_PROMPT}"
+    fi
 
     local start_ts end_ts elapsed claude_exit CLAUDE_JSON
     start_ts="$(date +%s)"
@@ -318,6 +357,36 @@ ${SCENARIO_PROMPT}
         echo "error: claude response has no 'result' field on iteration ${iter_idx}" >&2
         echo "${CLAUDE_JSON}" >&2
         return 2
+    fi
+
+    # Multi-turn: continue the conversation and assert on the turn-2 output.
+    local RAW_OUTPUT_T1=""
+    if [ -n "${FOLLOWUP_TEXT}" ]; then
+        local SID CLAUDE_JSON2 claude2_exit RAW2
+        SID="$(printf '%s' "${CLAUDE_JSON}" | jq -r '.session_id // empty')"
+        if [ -n "${SID}" ]; then
+            RAW_OUTPUT_T1="${RAW_OUTPUT}"
+            CLAUDE_JSON2="$(printf '%s' "${FOLLOWUP_TEXT}" | "${CLAUDE_BIN}" -p --resume "${SID}" --output-format json \
+                --disallowedTools "Edit,Write,Bash" 2>&1)"
+            claude2_exit=$?
+            if [ "${claude2_exit}" -eq 0 ]; then
+                RAW2="$(printf '%s' "${CLAUDE_JSON2}" | jq -r '.result // empty')"
+                if [ -n "${RAW2}" ]; then
+                    RAW_OUTPUT="${RAW2}"
+                    TOOL_CALLS_JSON="$(printf '%s' "${CLAUDE_JSON2}" | jq -c '[
+                        (.messages // []) | .[]? | (.content // []) | .[]?
+                        | select(.type == "tool_use") | {name: .name, input: (.input // {})}
+                    ]' 2>/dev/null || printf '[]')"
+                    [ -z "${TOOL_CALLS_JSON}" ] && TOOL_CALLS_JSON="[]"
+                else
+                    echo "warning: turn-2 resume returned no result on iter ${iter_idx}; asserting on turn 1" >&2
+                fi
+            else
+                echo "warning: turn-2 resume claude call failed (exit ${claude2_exit}) on iter ${iter_idx}; asserting on turn 1" >&2
+            fi
+        else
+            echo "warning: no session_id from turn 1 on iter ${iter_idx}; cannot run followup" >&2
+        fi
     fi
 
     if [ "${VARIANCE_N}" -gt 1 ]; then
@@ -407,6 +476,8 @@ ${SCENARIO_PROMPT}
         --arg model "${MODEL}" \
         --arg prompt "${SCENARIO_PROMPT}" \
         --arg raw_output "${RAW_OUTPUT}" \
+        --arg raw_output_turn1 "${RAW_OUTPUT_T1}" \
+        --arg followup "${FOLLOWUP_TEXT}" \
         --argjson assertions "${ASSERTION_RESULTS_JSON}" \
         --argjson overall "${overall_json}" \
         --argjson elapsed "${elapsed}" \
@@ -419,7 +490,8 @@ ${SCENARIO_PROMPT}
             assertions: $assertions,
             overall_passed: $overall,
             elapsed_seconds: $elapsed
-        }' > "${artifact_file}"
+        }
+        + (if $followup != "" then {followup: $followup, raw_output_turn1: $raw_output_turn1} else {} end)' > "${artifact_file}"
 
     if [ "${VARIANCE_N}" -eq 1 ]; then
         if [ "${ALL_PASSED}" = "1" ]; then
