@@ -6449,6 +6449,7 @@ test_perf_overlay_routing() {
 
     ctx=$(extract_context "$(run_hook "the database performance is slow today")")
     assert_not_contains "bare performance does NOT route to runtime-validation" "runtime-validation" "${ctx}"
+    teardown_test_env
 }
 test_perf_overlay_routing
 

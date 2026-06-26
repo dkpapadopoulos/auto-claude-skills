@@ -24,7 +24,7 @@ assert_file_contains "detects lighthouse tool" "lighthouse" "${SKILL_FILE}"
 assert_file_contains "detection self-gates (not detected branch)" "lighthouse: not detected" "${SKILL_FILE}"
 # Lab-honest framing (scenario 1) — NOT field CWV; INP not measured
 assert_file_contains "labels metrics as lab" "Lighthouse — lab" "${SKILL_FILE}"
-assert_file_contains "states field INP not measured" "INP" "${SKILL_FILE}"
+assert_file_contains "states field INP not measured" "INP is not measured" "${SKILL_FILE}"
 # Report-only, outside fix-loop (scenario 3)
 assert_file_contains "perf is report-only / outside fix loop" "report-only" "${SKILL_FILE}"
 # Conditional critical/beasties remediation (scenario 3)
