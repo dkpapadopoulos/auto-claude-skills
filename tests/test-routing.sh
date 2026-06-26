@@ -6418,4 +6418,38 @@ test_agent_safety_review_fastpath_still_fires() {
 }
 test_agent_safety_review_fastpath_still_fires
 
+# ---------------------------------------------------------------------------
+# Perf overlay routing — reads the REAL trigger regex from default-triggers.json,
+# so it tests the shipped artifact, not a hand-copied regex.
+# ---------------------------------------------------------------------------
+_install_rv_registry_from_config() {
+    local trig cache
+    trig=$(jq -r '.skills[] | select(.name=="runtime-validation") | .triggers[0]' \
+        "${PROJECT_ROOT}/config/default-triggers.json")
+    cache="${HOME}/.claude/.skill-registry-cache.json"
+    mkdir -p "$(dirname "${cache}")"
+    jq -n --arg t "${trig}" '{version:"4.0.0", skills:[
+      {name:"runtime-validation", role:"domain", phase:"REVIEW",
+       triggers:[$t], keywords:[], trigger_mode:"regex", priority:15,
+       precedes:[], requires:[], description:"validation",
+       invoke:"Skill(auto-claude-skills:runtime-validation)",
+       available:true, enabled:true}]}' > "${cache}"
+}
+
+test_perf_overlay_routing() {
+    echo "-- test: perf overlay routing --"
+    _install_rv_registry_from_config
+
+    local ctx
+    ctx=$(extract_context "$(run_hook "check the lighthouse score on this build")")
+    assert_contains "lighthouse routes to runtime-validation" "runtime-validation" "${ctx}"
+
+    ctx=$(extract_context "$(run_hook "review the core web vitals before we merge")")
+    assert_contains "core web vitals routes to runtime-validation" "runtime-validation" "${ctx}"
+
+    ctx=$(extract_context "$(run_hook "the database performance is slow today")")
+    assert_not_contains "bare performance does NOT route to runtime-validation" "runtime-validation" "${ctx}"
+}
+test_perf_overlay_routing
+
 print_summary
