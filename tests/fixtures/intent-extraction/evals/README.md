@@ -86,8 +86,11 @@ one-line rationale in `expected_behavior`.
 ```bash
 export BS="$(ls -d "$HOME"/.claude/plugins/cache/*/superpowers/*/skills/brainstorming/SKILL.md | sort -V | tail -1)"
 PACK=tests/fixtures/intent-extraction/evals/behavioral.json
-# directive prose — copy VERBATIM from the INTENT EXTRACTION block in hooks/skill-activation-hook.sh:
-DIR=/tmp/intent-directive.txt   # paste the directive text here
+# directive prose — the SOURCE OF TRUTH is the INTENT EXTRACTION block in
+# hooks/skill-activation-hook.sh (Scenario-1 emit branch). Copy it VERBATIM here
+# (unescape the bash \" \$ and backticks). If you edit the hook prose, re-paste —
+# a stale paste silently tests the wrong text.
+DIR=/tmp/intent-directive.txt
 
 # Baseline (expect RED on C1/C2):
 BEHAVIORAL_EVALS=1 SKILL_PATH="$BS" tests/run-behavioral-evals.sh --pack "$PACK" \
