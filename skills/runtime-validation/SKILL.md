@@ -181,7 +181,10 @@ for _port in 3000 5173 8000 8080; do
   fi
 done
 
+# npx arm requires lighthouse already in node_modules — `--no-install` never triggers an
+# install, so a package.json-listed-but-uninstalled lighthouse correctly skips (self-gating).
 if [ -n "${PERF_URL}" ] && { command -v lighthouse >/dev/null 2>&1 || npx --no-install lighthouse --version >/dev/null 2>&1; }; then
+  mkdir -p tests/artifacts/validation/
   npx lighthouse "${PERF_URL}" --quiet --chrome-flags="--headless" \
     --only-categories=performance --output=json --output-path=stdout 2>/dev/null \
     | jq '{perf_score: (.categories.performance.score * 100 | floor),
