@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": null,
+  "plan_path": null,
+  "spec_path": null,
+  "sp_plan_path": null,
+  "sp_spec_path": null,
+  "change_slug": "frontend-perf-overlay",
+  "capability_slug": null,
+  "source_branch": "feat/frontend-perf-overlay",
+  "base_commit": "29794d4470a3b725a726fc3f7e1643444ddf0a00",
+  "openspec_surface": "none",
+  "archived_at": "2026-06-26T13:25:02Z"
+}

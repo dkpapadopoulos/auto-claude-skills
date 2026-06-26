@@ -451,7 +451,7 @@
       "role": "domain",
       "phase": "REVIEW",
       "triggers": [
-        "(validate|validation|e2e|end.to.end|smoke.test|a11y|accessibility|exercise|try.it|does.it.work|interactive.test)"
+        "(validate|validation|e2e|end.to.end|smoke.test|a11y|accessibility|exercise|try.it|does.it.work|interactive.test|lighthouse|web.vitals|core.web.vitals|page.?speed)"
       ],
       "keywords": [],
       "trigger_mode": "regex",

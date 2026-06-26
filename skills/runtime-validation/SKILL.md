@@ -1,6 +1,6 @@
 ---
 name: runtime-validation
-description: Use when you need to prove a change actually works through its real interfaces — during REVIEW or on requests like validate the feature, does it work, run e2e, or smoke test — covering browser E2E, API smoke, CLI checks, and a11y audits with graceful tool-degradation
+description: Use when you need to prove a change actually works through its real interfaces — during REVIEW or on requests like validate the feature, does it work, run e2e, or smoke test — covering browser E2E, API smoke, CLI checks, and a11y and perf (Lighthouse) audits with graceful tool-degradation
 ---
 
 # Runtime Validation
@@ -34,6 +34,19 @@ command -v axe && echo "axe: available" || {
     jq -e '.dependencies["@axe-core/cli"] // .devDependencies["@axe-core/cli"]' package.json >/dev/null 2>&1 && echo "axe: available via npx" || echo "axe: not detected"
   else
     echo "axe: not detected"
+  fi
+}
+
+# Lighthouse (perf overlay) — self-gating: only runs if already present.
+# Detect ONLY the `lighthouse` CLI (what the overlay actually invokes) so detection
+# matches execution. @lhci/cli and unlighthouse have different invocations and are
+# NOT run by this overlay — reporting them "available" would announce-then-skip.
+command -v lighthouse >/dev/null 2>&1 && echo "lighthouse: available" || {
+  if [ -f package.json ]; then
+    jq -e '.dependencies.lighthouse // .devDependencies.lighthouse' package.json >/dev/null 2>&1 \
+      && echo "lighthouse: available via npx" || echo "lighthouse: not detected"
+  else
+    echo "lighthouse: not detected"
   fi
 }
 
@@ -154,6 +167,43 @@ npx playwright screenshot --full-page "http://localhost:${PORT}/" "tests/artifac
 
 Check for AA contrast, ARIA landmarks, keyboard navigation, form labels, and alt text.
 
+**Lighthouse perf overlay** (runs alongside the browser path when a Lighthouse-family
+tool was detected AND the port probe found a dev-server URL). **Report-only:** perf
+findings are advisory and do NOT enter the fix-rescan loop.
+
+```bash
+# Self-contained port probe — re-probe candidate ports to set PERF_URL.
+# (The Step 1 port probe echoes findings but does not export a variable;
+#  this block is self-contained so the overlay always has a URL to target.)
+PERF_URL=""
+for _port in 3000 5173 8000 8080; do
+  _code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 2 "http://localhost:${_port}/" 2>/dev/null)
+  if [ "${_code}" != "000" ] && [ -n "${_code}" ]; then
+    PERF_URL="http://localhost:${_port}/"
+    break
+  fi
+done
+
+# Self-gate: global lighthouse OR a local install in node_modules/.bin (checked directly,
+# no npx — so it never triggers a network download and is portable across npm versions).
+# A package.json-listed-but-uninstalled lighthouse correctly skips here.
+if [ -n "${PERF_URL}" ] && { command -v lighthouse >/dev/null 2>&1 || node_modules/.bin/lighthouse --version >/dev/null 2>&1; }; then
+  mkdir -p tests/artifacts/validation/
+  npx lighthouse "${PERF_URL}" --quiet --chrome-flags="--headless" \
+    --only-categories=performance --output=json --output-path=stdout 2>/dev/null \
+    | jq '{perf_score: (.categories.performance.score * 100 | floor),
+           lcp_ms: .audits["largest-contentful-paint"].numericValue,
+           cls:    .audits["cumulative-layout-shift"].numericValue,
+           tbt_ms: .audits["total-blocking-time"].numericValue}' \
+    | tee tests/artifacts/validation/lighthouse.json
+fi
+```
+
+These are **Lighthouse lab** metrics from a single run, **not** field Core Web Vitals.
+The three field CWV are LCP, **INP**, and CLS; a lab run cannot measure INP, so TBT is
+reported as its lab proxy. The report MUST state that field INP is not measured and that
+only one dev-server URL was sampled (not the production bundle / field data).
+
 ### API Path
 
 ```bash
@@ -222,6 +272,7 @@ No interactive validation tools detected. Verify manually:
 - [ ] Verify API responses match expected schemas
 - [ ] Test CLI commands produce expected output
 - [ ] Check accessibility with browser dev tools
+- [ ] Run `npx lighthouse <url>` manually and review the performance score + LCP/CLS/TBT
 ```
 
 ## Step 4: Unified Report
@@ -255,6 +306,18 @@ Present results with the heading `## Validation Report`. Same shape regardless o
 | color-contrast | serious | .btn-primary | Contrast ratio 3.2:1 < 4.5:1 (AA) |
 | aria-label | moderate | nav > ul | Navigation landmark missing label |
 
+### Perf Results (Lighthouse — lab) — lab signals, NOT field CWV
+| Metric | Value | Band | Good / Needs-work / Poor |
+|--------|-------|------|--------------------------|
+| Perf score | 0–100 | … | ≥90 / 50–89 / <50 |
+| LCP (lab) | ms | … | <2.5s / 2.5–4.0s / >4.0s |
+| CLS (lab) | n | … | <0.1 / 0.1–0.25 / >0.25 |
+| TBT (lab) | ms | … | <200ms / 200–600ms / >600ms |
+
+> Lab signals from one dev-server URL. Field **INP is not measured** (TBT is its lab
+> proxy); production bundle, CDN/image delivery, per-route, and third-party effects are
+> out of scope. "Perf overlay ran" ≠ "Core Web Vitals covered."
+
 ### Coverage Gaps
 - [Scenarios that could not be validated and why]
 - [Paths that had no tool available]
@@ -279,6 +342,13 @@ If validation failures are found during REVIEW, fix and re-validate. **Max 3 ite
 5. After 3 iterations, report remaining failures as requiring human review
 
 **Fix priority:** Functional failures (wrong output, crashes) > A11y violations (serious > moderate) > Warnings
+
+**Perf is report-only.** Lighthouse scores are noisy and not rescannable like discrete
+defects, so perf findings do NOT enter this fix-rescan loop and never hard-block REVIEW —
+they are reported with a remediation hint only. When render-blocking CSS is the flagged
+cause AND the project has no framework-level critical-CSS inlining, the hint MAY name a
+critical-CSS tool (`critical` or the maintained `beasties` fork of critters); for
+framework apps (Next/Nuxt/SSR) defer to the framework's own inlining.
 
 After the loop completes (or on first pass if all scenarios pass), present the final Validation Report.
 
