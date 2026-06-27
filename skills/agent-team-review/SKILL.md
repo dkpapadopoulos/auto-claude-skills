@@ -255,6 +255,10 @@ Task tool (general-purpose):
     - A finding is suggestion if it could be made safer but isn't actively dangerous
 ```
 
+## Red Flags
+
+- **Doubt theater:** across 2 or more review rounds, reviewers surfaced substantive findings and zero were classified actionable. That is doubt theater — you are validating, not reviewing. Stop and surface the dismissal pattern to the user instead of proceeding to SHIP.
+
 ## Verification
 
 Before emitting an APPROVE verdict, confirm:
@@ -262,11 +266,7 @@ Before emitting an APPROVE verdict, confirm:
 - Every spawned reviewer returned a finding set this session -- no reviewer silently dropped.
 - Each actionable finding was resolved or explicitly accepted with rationale -- not waved through.
 - The verdict cites evidence / confidence / severity per the finding contract, not a bare "looks good".
-- If reviewers surfaced substantive findings but zero were classified actionable across >=2 rounds, surface the doubt-theater pattern (see Red Flags) instead of approving.
-
-## Red Flags
-
-- **Doubt theater:** across 2 or more review rounds, reviewers surfaced substantive findings and zero were classified actionable. That is doubt theater — you are validating, not reviewing. Stop and surface the dismissal pattern to the user instead of proceeding to SHIP.
+- If reviewers surfaced substantive findings but zero were classified actionable across >=2 rounds, surface the doubt-theater pattern (see Red Flags above) instead of approving.
 
 ## Integration
 
