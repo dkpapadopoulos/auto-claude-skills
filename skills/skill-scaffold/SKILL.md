@@ -88,6 +88,8 @@ Before claiming <the skill's specific completion claim>, confirm -- with evidenc
 - <observable check tied to the claim>
 ```
 
+The qualifier after `confirm --` is the canonical default; adapt it to the claim's failure mode (e.g. `do not infer` for state checks, `from observed output` for execution checks).
+
 ## Step 3: Emit Routing Entry Snippet
 
 Generate a JSON snippet for `config/default-triggers.json`:
