@@ -92,3 +92,25 @@ Deterministic feature → standard TDD plus the acceptance scenarios in
 scenario (diff that deletes assertions while the suite exits 0 → expect `suspect` / non-PASS) and a
 deterministic unit grep test. No probabilistic/LLM-judge subset needed — the check is bash, not
 model behavior. No external numbers imported.
+
+## Implementation Notes (synced at ship time)
+
+- **Inline snippet → committed script (intentional divergence).** §1 above sketched the gate-gaming
+  check as an inline `grep` snippet run in-skill. As built, the logic ships as a committed,
+  unit-tested script `skills/project-verification/scripts/gate-gaming-check.sh` (reads a unified
+  diff on stdin → prints `clean`/`suspect` + offending lines), and the SKILL.md *invokes* it via
+  `${CLAUDE_PLUGIN_ROOT}/skills/project-verification/scripts/gate-gaming-check.sh`. This is the
+  honest-validation form the debate demanded: a script is deterministic, external to the model's
+  incentive, and testable as bash (8 unit cases incl. regression guards), whereas an inline snippet
+  the model retypes is neither.
+- **Detector grep, as shipped:** removed-assertion detection pre-filters unified-diff header lines
+  (`grep -vE '^(---|+++)([[:space:]]|$)'`) on **both** the removed and added-marker paths, then
+  matches real deletions (`^-`) / additions (`^+`). This catches indented and non-indented
+  assertion deletions and added skip/xfail/disabled markers, without false-positiving on a keyword
+  inside a `---`/`+++` file path. Accepted ceiling (advisory check): broad `expect`/`require.`
+  patterns are unscoped, and a `--`-prefixed *already-commented* assertion line is not flagged
+  (inactive code, not gate-gaming).
+- **deploy-gate** surfaces the specific rejection reason (which gates could not be verified, or that
+  the gate looks gamed), not merely "hosted CI absent".
+- Commits: `d9702bf` (script) · `9947b97` (project-verification wiring + tri-state) · `8e96dfa`
+  (deploy-gate) · `90276a3` (drift-check) · `b15ff3b`/`4dc0be6`/`3fb3a8b` (review fixes).
