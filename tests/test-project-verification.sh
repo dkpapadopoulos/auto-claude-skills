@@ -33,6 +33,10 @@ assert_file_exists "gate-gaming-check.sh exists" "${GGC}"
 out_removed="$(printf '%s\n' '-    assert result == expected' '+    pass' | bash "${GGC}" 2>/dev/null)"
 assert_contains "removed assertion is suspect" "suspect" "${out_removed}"
 
+# removed assertion with NO leading whitespace => suspect (header pre-filter must not eat content)
+out_removed_noindent="$(printf '%s\n' '-assert x == y' | bash "${GGC}" 2>/dev/null)"
+assert_contains "removed assertion (no indent) is suspect" "suspect" "${out_removed_noindent}"
+
 # added pytest skip => suspect
 out_skip="$(printf '%s\n' '+@pytest.mark.skip(reason="flaky")' | bash "${GGC}" 2>/dev/null)"
 assert_contains "added skip marker is suspect" "suspect" "${out_skip}"
