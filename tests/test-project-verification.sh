@@ -57,6 +57,10 @@ assert_contains "empty input is clean" "clean" "${out_empty}"
 out_header="$(printf '%s\n' '--- a/tests/assert.py' '+++ b/tests/assert.py' | bash "${GGC}" 2>/dev/null)"
 assert_contains "diff header path is not suspect" "clean" "${out_header}"
 
+# +++ header whose path contains a skip-marker substring => clean (added-skip pre-filter symmetry)
+out_addhdr="$(printf '%s\n' '+++ b/tests/weird.skip(x).py' | bash "${GGC}" 2>/dev/null)"
+assert_contains "added-skip header path is not suspect" "clean" "${out_addhdr}"
+
 assert_contains "documents gate-gaming check"   "gate-gaming-check.sh"   "${skill}"
 assert_contains "documents could_not_verify"    "could_not_verify"       "${skill}"
 assert_contains "documents gate_gaming_status"  "gate_gaming_status"     "${skill}"

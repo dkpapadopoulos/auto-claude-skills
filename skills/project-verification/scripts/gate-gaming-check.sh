@@ -15,8 +15,10 @@ _removed="$(printf '%s\n' "$_diff" \
   | grep -E '^-.*\b(assert|assertEquals|assertThat|assertTrue|assertEqual|expect|require\.|t\.Error|t\.Fatal)\b' \
   2>/dev/null || true)"
 
-# Added skip / disable / ignore markers.
+# Added skip / disable / ignore markers (same header pre-filter as the removed path,
+# so a marker substring inside a +++ file path cannot false-positive).
 _added_skip="$(printf '%s\n' "$_diff" \
+  | grep -vE '^(\-\-\-|\+\+\+)([[:space:]]|$)' \
   | grep -E '^\+.*(@pytest\.mark\.skip|@unittest\.skip|pytest\.skip|xfail|@Disabled|@Ignore|\.skip\(|\bxit\(|\bxdescribe\(|t\.Skip\(|t\.SkipNow)' \
   2>/dev/null || true)"
 
