@@ -41,7 +41,7 @@ Run each check. Report pass/fail with evidence. Do not block on warnings — rep
    ```
    Gate: distinguish three states — **green** (`$_concl` = PASS/success), **red** (any failure conclusion), **absent-or-broken** (empty `$_concl`, or a run that concluded with zero completed steps). Absent-or-broken is a **FAIL**, never a pass. Do not read an empty `statusCheckRollup` as "nothing blocking → ship". If `gh pr checks` itself reports failing checks, that is **red** regardless of what `gh run list` returns — do not let a stale prior run's `success` conclusion mask currently-red PR checks.
 
-   **Local verification of record:** when hosted CI is absent, you MAY accept a fresh `~/.claude/.skill-project-verified-<token>` evidence file with an empty `failed` list as verification performed on substrate `local` — but still surface that hosted CI was absent rather than claiming hosted-CI green. This evidence is advisory provenance, not a non-bypassable gate.
+   **Local verification of record:** when hosted CI is absent, you MAY accept a fresh `~/.claude/.skill-project-verified-<token>` evidence file as verification performed on substrate `local` ONLY when its `failed` list is empty, its `could_not_verify` list is empty, and `gate_gaming_status` is not `suspect` — a non-empty `could_not_verify` (a gate that could not run) or a `suspect` status (a possibly-gamed gate) MUST NOT be accepted as verification, since absence-of-failure is not proof-of-pass. Still surface that hosted CI was absent rather than claiming hosted-CI green. This evidence is advisory provenance, not a non-bypassable gate.
 
 2. **No WIP Commits**
    ```bash
