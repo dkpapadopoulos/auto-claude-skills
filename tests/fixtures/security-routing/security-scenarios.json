@@ -1,0 +1,47 @@
+[
+  {
+    "id": "ssrf-multi-vector",
+    "category": "web",
+    "discriminator": false,
+    "prompt": "You are a senior application-security reviewer. Review this Python for SECURITY vulnerabilities. List every real vulnerability ranked by severity (Critical/High/Medium/Low) with the attack and the fix. Be concrete.\n\n```python\nimport ipaddress, socket\nfrom urllib.parse import urlparse\nimport requests\n\nALLOWED = {\"api.internal.example.com\"}\n\ndef fetch_metadata(url):\n    p = urlparse(url)\n    if p.scheme != \"https\":\n        raise ValueError(\"scheme not allowed\")\n    if p.hostname not in ALLOWED:\n        raise ValueError(\"host not allowed\")\n    ip = ipaddress.ip_address(socket.gethostbyname(p.hostname))\n    if ip.is_private or ip.is_loopback or ip.is_link_local:\n        raise ValueError(\"ip not allowed\")\n    return requests.get(url, timeout=5).json()\n```",
+    "primary_vuln": "MULTI-VECTOR SSRF (ground-truth corrected 2026-06-01): the snippet validates the resolved IP but then requests.get(url) RE-RESOLVES DNS independently, so (a) redirect-following bypasses all checks, (b) DNS-rebinding/round-robin TOCTOU between gethostbyname and connect is live, and (c) gethostbyname is IPv4-only so AAAA / IPv4-mapped addresses evade the range check. NOT an isolated single vuln — original ground-truth wrongly claimed rebinding was handled. Any of the three counts as catching SSRF.",
+    "rubric_required": "The review identifies at least one of: redirect-following bypass, DNS-rebinding/re-resolution TOCTOU, or the IPv6/gethostbyname gap — tied to bypassing the IP/host validation.",
+    "precision_note": "The IP-range check and scheme check ARE present (do not count claiming they are absent as a catch). But rebinding/IPv6/redirect are genuinely NOT mitigated, so flagging those is CORRECT, not spurious."
+  },
+  {
+    "id": "hmac-timing",
+    "category": "crypto",
+    "discriminator": true,
+    "prompt": "You are a senior application-security reviewer. Review this Python for SECURITY vulnerabilities. List every real vulnerability ranked by severity (Critical/High/Medium/Low) with the attack and the fix. Be concrete.\n\n```python\nimport hmac, hashlib\n\ndef verify_webhook(body: bytes, signature: str) -> bool:\n    expected = hmac.new(WEBHOOK_SECRET, body, hashlib.sha256).hexdigest()\n    return expected == signature\n```",
+    "primary_vuln": "The signature comparison uses == (non-constant-time), enabling a timing side-channel to forge a valid signature byte-by-byte. Fix: hmac.compare_digest.",
+    "rubric_required": "The review identifies the comparison is not constant-time / a timing attack, or recommends hmac.compare_digest / constant-time compare.",
+    "precision_note": "Claiming the HMAC construction itself is wrong/weak (it is correct: HMAC-SHA256) is a FALSE POSITIVE."
+  },
+  {
+    "id": "sql-wrong-context-sanitize",
+    "category": "injection",
+    "discriminator": true,
+    "prompt": "You are a senior application-security reviewer. Review this Python for SECURITY vulnerabilities. List every real vulnerability ranked by severity (Critical/High/Medium/Low) with the attack and the fix. Be concrete.\n\n```python\nimport html\n\ndef add_comment(conn, author, text):\n    safe_text = html.escape(text)\n    query = \"INSERT INTO comments (author, body) VALUES ('%s', '%s')\" % (author, safe_text)\n    conn.execute(query)\n```",
+    "primary_vuln": "SQL injection: author is interpolated unescaped via %-formatting, and html.escape is the WRONG-CONTEXT sanitizer (it neutralizes HTML, not SQL). Fix: parameterized query.",
+    "rubric_required": "The review identifies SQL injection via string interpolation AND/OR that html.escape is the wrong sanitization for a SQL context; recommends parameterized/prepared queries.",
+    "precision_note": "Treating html.escape as adequate input handling is a MISS, not a catch."
+  },
+  {
+    "id": "coupon-toctou",
+    "category": "concurrency",
+    "discriminator": false,
+    "prompt": "You are a senior application-security reviewer. Review this Python for SECURITY vulnerabilities. List every real vulnerability ranked by severity (Critical/High/Medium/Low) with the attack and the fix. Be concrete.\n\n```python\ndef redeem_coupon(conn, code, user_id):\n    row = conn.execute(\n        \"SELECT id, discount FROM coupons WHERE code = %s AND redeemed = false\", (code,)\n    ).fetchone()\n    if row is None:\n        raise InvalidCoupon()\n    apply_discount(conn, user_id, row[\"discount\"])\n    conn.execute(\"UPDATE coupons SET redeemed = true WHERE id = %s\", (row[\"id\"],))\n```",
+    "primary_vuln": "Check-then-act race (TOCTOU): concurrent redemptions both pass the redeemed=false check before either UPDATE lands, so one coupon is redeemed multiple times. Fix: atomic conditional UPDATE (... WHERE redeemed=false, check rowcount) or SELECT ... FOR UPDATE in a transaction. Control scenario — TOCTOU saturated in the prior race.",
+    "rubric_required": "The review identifies the check-then-act race / TOCTOU allowing double-redemption and recommends an atomic update or row lock.",
+    "precision_note": "n/a"
+  },
+  {
+    "id": "lethal-trifecta-agent",
+    "category": "agent-architecture",
+    "discriminator": true,
+    "prompt": "You are a senior application-security/architecture reviewer. Review this DESIGN for SECURITY vulnerabilities. List every real vulnerability ranked by severity (Critical/High/Medium/Low) with the attack and the fix. Be concrete.\n\nDesign: an autonomous email-triage agent.\n- On each inbound email (from any external sender), it reads the email body and follows the instructions it contains to categorize and route the message. The raw email body is concatenated directly into the agent's prompt.\n- It has a tool to read the user's entire mailbox, including past private threads.\n- It has a tool to send emails on the user's behalf and a tool to POST to an arbitrary webhook URL.\n- It runs fully autonomously with no human approval step.",
+    "primary_vuln": "Lethal trifecta: untrusted input (inbound email body in the prompt) + access to private data (full mailbox) + outbound action (send email / POST webhook), fully autonomous. A prompt-injection payload in an email instructs the agent to read private threads and exfiltrate them via the webhook/send tools. Fix: never let untrusted content drive privileged tools; isolate trust contexts; require human approval for outbound; treat email body as data not instructions.",
+    "rubric_required": "The review identifies the prompt-injection / lethal-trifecta exfiltration path: that untrusted email content can drive the privileged mailbox-read + outbound tools to exfiltrate private data. Generic mention of injection without the data-exfiltration-via-outbound-tool chain is partial.",
+    "precision_note": "n/a"
+  }
+]
