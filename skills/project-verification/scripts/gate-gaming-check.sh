@@ -12,7 +12,7 @@ _hits=""
 # file path cannot false-positive, then match any real deletion line (^-).
 _removed="$(printf '%s\n' "$_diff" \
   | grep -vE '^(\-\-\-|\+\+\+)([[:space:]]|$)' \
-  | grep -E '^-.*\b(assert|assertEquals|assertThat|assertTrue|assertEqual|expect|require\.|t\.Error|t\.Fatal)\b' \
+  | grep -E '^-.*\b(assert|assertEquals|assertThat|assertTrue|assertEqual|expect|t\.Error|t\.Fatal)\b' \
   2>/dev/null || true)"
 
 # Added skip / disable / ignore markers (same header pre-filter as the removed path,

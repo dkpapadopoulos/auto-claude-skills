@@ -33,7 +33,7 @@ BASE="$(git merge-base HEAD @{u} 2>/dev/null || git merge-base HEAD main 2>/dev/
 GG="$(git diff "$BASE"...HEAD -- '*test*' '*spec*' 2>/dev/null | bash "$GGC")"
 ```
 
-`GG` is `clean`, or `suspect` followed by the offending diff lines. A `suspect` result means the gate may be passing because the test was weakened (deleted assertions, added skip/xfail/disabled markers), not because the code is correct.
+`GG` is `clean`, or `suspect` followed by the offending diff lines. A `suspect` result means the gate may be passing because the test was weakened (deleted assertions, added skip/xfail/disabled markers), not because the code is correct. If `GG` is **empty** (the script was not found, or the pipe failed), the gate-gaming check **could not run** — treat that as *unverified*, the same class as a gate that could not execute: surface that the check did not run and do NOT record `gate_gaming_status: clean`.
 
 ## Step 3: Emit evidence
 
@@ -69,7 +69,7 @@ Before emitting a PASS verdict, confirm -- do not infer:
 - The evidence file was written to `~/.claude/.skill-project-verified-${TOKEN}` and the in-session summary table is shown.
 - If no gate was discovered, the verdict is "no gate found" -- never a silent PASS.
 - A command that errored to run is in `could_not_verify` (verdict `could-not-verify`), not absent and not in `passed`. Absence MUST NOT read as pass.
-- `gate-gaming-check.sh` was run over the diff; a `suspect` result downgrades the verdict to SUSPECT (reported, with offending lines shown) and is never emitted as PASS. This is advisory — it does not hard-block.
+- `gate-gaming-check.sh` was run over the diff; a `suspect` result downgrades the verdict to SUSPECT (reported, with offending lines shown) and is never emitted as PASS. This is advisory — it does not hard-block. An **empty** result (script not found or pipe failed) means the check could not run — report it as *unverified*, never assume `clean`.
 
 ## Output
 

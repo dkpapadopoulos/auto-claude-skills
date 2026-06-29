@@ -61,7 +61,14 @@ assert_contains "diff header path is not suspect" "clean" "${out_header}"
 out_addhdr="$(printf '%s\n' '+++ b/tests/weird.skip(x).py' | bash "${GGC}" 2>/dev/null)"
 assert_contains "added-skip header path is not suspect" "clean" "${out_addhdr}"
 
+# Node require.<property> boilerplate (require.resolve / require.main) is NOT an assertion => clean
+out_reqresolve="$(printf '%s\n' '-const p = require.resolve("./fixtures");' | bash "${GGC}" 2>/dev/null)"
+assert_contains "require.resolve deletion is not suspect" "clean" "${out_reqresolve}"
+out_reqmain="$(printf '%s\n' '-if (require.main === module) run();' | bash "${GGC}" 2>/dev/null)"
+assert_contains "require.main deletion is not suspect" "clean" "${out_reqmain}"
+
 assert_contains "documents gate-gaming check"   "gate-gaming-check.sh"   "${skill}"
+assert_contains "documents empty-GG as unverified" "unverified"          "${skill}"
 assert_contains "documents could_not_verify"    "could_not_verify"       "${skill}"
 assert_contains "documents gate_gaming_status"  "gate_gaming_status"     "${skill}"
 assert_contains "documents suspect verdict"     "suspect"                "${skill}"
