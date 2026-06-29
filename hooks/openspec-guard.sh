@@ -50,12 +50,34 @@ fi
 case "${_COMMAND}" in
     *"git push"*)
         _COMP_STATE="${HOME}/.claude/.skill-composition-state-${_SESSION_TOKEN}"
+        # Durable per-(repo+branch) ledger: gate readiness that survives chain
+        # re-anchors. Fail-safe: if the helper or branch key is unavailable, the
+        # ledger checks are simply false and the .completed path below governs.
+        _LEDGER_OK=false
+        if [ -f "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" ]; then
+            # shellcheck source=lib/branch-ledger.sh
+            . "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" && _LEDGER_OK=true
+        fi
+        _HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+        _STALE_MSG=""
+        # _ledger_has MILESTONE — returns 0 if ledger satisfies; accumulates stale
+        # warning text in _STALE_MSG when the recorded SHA differs from HEAD.
+        _ledger_has() {
+            [ "${_LEDGER_OK}" = "true" ] || return 1
+            branch_ledger_has "$1" || return 1
+            local _ls; _ls="$(branch_ledger_sha "$1")"
+            if [ -n "${_HEAD_SHA}" ] && [ -n "${_ls}" ] && [ "${_ls}" != "${_HEAD_SHA}" ]; then
+                _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+ }$1 stale: recorded at ${_ls}, HEAD is ${_HEAD_SHA}. Rerun if new commits changed reviewed content."
+            fi
+            return 0
+        }
         if [ -f "${_COMP_STATE}" ] && command -v jq >/dev/null 2>&1; then
             # Check 1: REVIEW in chain but not completed — deny with REVIEW message
             _review_in_chain=false
             _review_completed=false
             jq -e '.chain | index("requesting-code-review")' "${_COMP_STATE}" >/dev/null 2>&1 && _review_in_chain=true
             jq -e '.completed | index("requesting-code-review")' "${_COMP_STATE}" >/dev/null 2>&1 && _review_completed=true
+            _ledger_has "requesting-code-review" && _review_completed=true
             if [ "${_review_in_chain}" = "true" ] && [ "${_review_completed}" = "false" ]; then
                 _MSG="PUSH GATE: A composition chain is active and requesting-code-review has not been completed. Complete the REVIEW → VERIFY → SHIP sequence before pushing. Invoke Skill(superpowers:requesting-code-review) first."
                 jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
@@ -67,9 +89,18 @@ case "${_COMMAND}" in
             _verif_completed=false
             jq -e '.chain | index("verification-before-completion")' "${_COMP_STATE}" >/dev/null 2>&1 && _verif_in_chain=true
             jq -e '.completed | index("verification-before-completion")' "${_COMP_STATE}" >/dev/null 2>&1 && _verif_completed=true
+            _ledger_has "verification-before-completion" && _verif_completed=true
             if [ "${_verif_in_chain}" = "true" ] && [ "${_verif_completed}" = "false" ]; then
                 _MSG="PUSH GATE: A composition chain is active and verification-before-completion has not run. Complete the REVIEW → VERIFY → SHIP sequence before pushing. Invoke Skill(superpowers:verification-before-completion) first."
                 jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+                exit 0
+            fi
+
+            # Soft staleness warning (advisory only — never denies): emitted when the
+            # gate was satisfied via a stale ledger entry (recorded SHA != HEAD).
+            if [ -n "${_STALE_MSG}" ]; then
+                jq -n --arg msg "PUSH GATE (advisory): ${_STALE_MSG}" \
+                    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"},"systemMessage":$msg}' 2>/dev/null
                 exit 0
             fi
         fi
@@ -168,6 +199,12 @@ if [ -f "${_COMP_STATE}" ] && command -v jq >/dev/null 2>&1; then
     _in_completed=false
     jq -e '.chain | index("requesting-code-review")' "${_COMP_STATE}" >/dev/null 2>&1 && _in_chain=true
     jq -e '.completed | index("requesting-code-review")' "${_COMP_STATE}" >/dev/null 2>&1 && _in_completed=true
+    # Ledger-aware (same OR as the push gate): a durable branch milestone counts as
+    # completed, so this advisory does not contradict a ledger-satisfied push gate.
+    if [ "${_in_completed}" = "false" ] && [ -f "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" ]; then
+        . "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" 2>/dev/null && \
+            branch_ledger_has "requesting-code-review" && _in_completed=true
+    fi
     if [ "${_in_chain}" = "true" ] && [ "${_in_completed}" = "false" ]; then
         _review_ok=false
     fi
