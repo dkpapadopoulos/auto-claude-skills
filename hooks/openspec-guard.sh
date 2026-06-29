@@ -67,7 +67,7 @@ case "${_COMMAND}" in
             branch_ledger_has "$1" || return 1
             local _ls; _ls="$(branch_ledger_sha "$1")"
             if [ -n "${_HEAD_SHA}" ] && [ -n "${_ls}" ] && [ "${_ls}" != "${_HEAD_SHA}" ]; then
-                _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+ }$1 stale: recorded at ${_ls}, HEAD is ${_HEAD_SHA}. Rerun if new commits changed reviewed content."
+                _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }$1 stale: recorded at ${_ls}, HEAD is ${_HEAD_SHA}. Rerun if new commits changed reviewed content."
             fi
             return 0
         }
