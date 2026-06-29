@@ -127,6 +127,7 @@ done
 - **No rollback infrastructure** — git IS your rollback. Run the batch on a branch, review, revert if bad.
 - **No progress bars** — `wc -l "$BATCH_DIR/results.log"` tells you where you are.
 - **Never write in-place without .tmp** — always write to a temp file, verify, then move.
+- **Clean up `.bak` on interrupted runs** — the postcondition pattern writes a `${file}.bak` before transforming; a run interrupted (Ctrl-C) between the `cp` and the `mv`/`rm` leaves stale `.bak` files in the tree. They won't re-enter a `*.ts`-style manifest, but must not be committed — sweep them before re-running and before commit: `find . -name '*.bak' -delete` (or add a `trap 'rm -f "${file}.bak"' EXIT` around the loop).
 
 ## Integration
 

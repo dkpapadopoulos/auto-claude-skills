@@ -76,9 +76,9 @@ Present a structured report:
 
 **Hypothesis Validation** (when baseline has non-null `hypotheses`):
 
-| ID | Hypothesis | Metric | Baseline | Target | Actual | Status |
-|----|-----------|--------|----------|--------|--------|--------|
-| H1 | [description] | [metric] | [baseline] | [target] | [measured value] | [status] |
+| ID | Hypothesis | Metric | Baseline | Target | Actual | Status | Cause |
+|----|-----------|--------|----------|--------|--------|--------|-------|
+| H1 | [description] | [metric] | [baseline] | [target] | [measured value] | [status] | [cause if status ≠ Confirmed, else —] |
 
 Status values:
 - `Confirmed` — Actual meets or exceeds target
