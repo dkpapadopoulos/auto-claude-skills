@@ -25,6 +25,12 @@ assert_contains "Status: Inconclusive" "Inconclusive" "${SKILL_CONTENT}"
 # Graceful fallback when no hypotheses
 assert_contains "fallback for null hypotheses" "null" "${SKILL_CONTENT}"
 
+# Step 4 failure-cause split for non-confirmed hypotheses
+assert_contains "cause split: instrumentation-broken" "instrumentation-broken" "${SKILL_CONTENT}"
+assert_contains "cause split: adoption-gap" "adoption-gap" "${SKILL_CONTENT}"
+assert_contains "cause split: product-miss" "product-miss" "${SKILL_CONTENT}"
+assert_contains "cause split: inconclusive-data" "inconclusive-data" "${SKILL_CONTENT}"
+
 # Summary
 echo ""
 echo "=============================="

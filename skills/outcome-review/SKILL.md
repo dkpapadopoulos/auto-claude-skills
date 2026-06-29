@@ -86,9 +86,17 @@ Status values:
 - `Inconclusive` — Insufficient data, or validation window has not elapsed
 - `Partially confirmed` — Directionally correct but below target threshold
 
+**Cause (required for any non-`Confirmed` hypothesis) — diagnose WHY before recommending.** A low metric does not by itself mean the feature failed; mistaking the cause is how a working feature gets reverted. Classify the cause and let it drive the recommendation:
+- `instrumentation-broken` — the metric pipeline is wrong, not the feature (e.g. event renamed/never fired, 0 events while manual QA confirms the flow works). → **Fix tracking and re-measure; do NOT change the feature.**
+- `adoption-gap` — the feature works but is under-exposed or undiscovered (e.g. flag at 5% rollout; healthy within the exposed cohort). → **Increase rollout/discoverability, then re-measure before judging the feature.**
+- `product-miss` — fully exposed and correctly measured, users still don't convert. → **Iterate on or roll back the feature.**
+- `inconclusive-data` — not enough signal yet. → **Extend the window; do not act.**
+
+Add the chosen cause to the row (or list it under the table) for each non-`Confirmed` hypothesis (this includes `Partially confirmed` and `Inconclusive`, not only `Not confirmed`), and make the recommendation follow from it.
+
 When `hypotheses` is null in the baseline (or no baseline found): skip this section entirely. Fall back to the existing generic metrics flow with no behavioral change.
 
-**Recommendations:** Specific next actions based on the assessment.
+**Recommendations:** Specific next actions based on the assessment — and, for each non-`Confirmed` hypothesis, consistent with its diagnosed Cause above.
 
 ## Step 5: User Decision Gate
 
