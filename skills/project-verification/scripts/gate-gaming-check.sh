@@ -1,7 +1,13 @@
 #!/bin/bash
 # gate-gaming-check.sh — deterministic detector for test-gate gaming.
 # Reads a unified diff on stdin. Prints "clean" or "suspect" (+ offending lines).
-# Advisory only; never errors (fail-open => clean) so it cannot break the verifier.
+# Advisory only and fail-open: exits cleanly (exit 0) on every path so it never aborts
+# the verifier. NOTE: empty output is NOT "clean" — the caller (project-verification)
+# treats an empty result as "unverified" (script missing / pipe failed), and a normal
+# run always prints an explicit "clean" or "suspect".
+# Portability: the \b word boundaries below rely on a grep that supports them. GNU grep
+# and macOS's GNU-compatible BSD grep (/usr/bin/grep, "BSD grep, GNU compatible") both do;
+# a strictly POSIX-only grep would silently under-match (acceptable for an advisory tripwire).
 set -u
 
 _diff="$(cat 2>/dev/null || true)"

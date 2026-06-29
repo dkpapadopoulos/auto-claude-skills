@@ -78,6 +78,7 @@ assert_contains "documents empty-GG as unverified" "unverified"          "${skil
 assert_contains "documents could_not_verify"    "could_not_verify"       "${skill}"
 assert_contains "documents gate_gaming_status"  "gate_gaming_status"     "${skill}"
 assert_contains "documents suspect verdict"     "suspect"                "${skill}"
+assert_contains "evidence accepted only when exactly clean" "exactly"     "${skill}"
 
 print_summary
 exit $?

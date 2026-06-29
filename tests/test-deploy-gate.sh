@@ -40,6 +40,8 @@ section "deploy-gate local verification tightened acceptance"
 assert_contains "CI fail-closed retained"                  "absent ≠ green"     "$content"
 assert_contains "acceptance needs could_not_verify empty"  "could_not_verify"   "$content"
 assert_contains "acceptance rejects suspect"               "gate_gaming_status" "$content"
+assert_contains "acceptance requires exactly clean"        "exactly \`clean\`"  "$content"
+assert_contains "acceptance rejects unverified"            "unverified"         "$content"
 
 print_summary
 exit $?

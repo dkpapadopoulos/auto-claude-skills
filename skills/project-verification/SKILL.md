@@ -36,7 +36,7 @@ BASE="$(git merge-base HEAD @{u} 2>/dev/null || git merge-base HEAD main 2>/dev/
 GG="$(git diff "$BASE"...HEAD -- '*test*' '*spec*' 2>/dev/null | bash "$GGC" 2>/dev/null)"
 ```
 
-`GG` is `clean`, or `suspect` followed by the offending diff lines. A `suspect` result means the gate may be passing because the test was weakened (deleted assertions, added skip/xfail/disabled markers), not because the code is correct. If `GG` is **empty** (the script was not found, or the pipe failed), the gate-gaming check **could not run** — treat that as *unverified*, the same class as a gate that could not execute: surface that the check did not run and do NOT record `gate_gaming_status: clean`.
+`GG` is `clean`, or `suspect` followed by the offending diff lines. A `suspect` result means the gate may be passing because the test was weakened (deleted assertions, added skip/xfail/disabled markers), not because the code is correct. If `GG` is **empty** (the script was not found, or the pipe failed), the gate-gaming check **could not run** — treat that as *unverified*: record `gate_gaming_status: "unverified"` (NOT `clean`, and never omit the field) AND add `"gate-gaming-check"` to `could_not_verify`, so `deploy-gate` rejects the evidence rather than accepting an unchecked diff. Surface that the check did not run.
 
 ## Step 3: Emit evidence
 
@@ -61,7 +61,7 @@ TOKEN="$(cat ~/.claude/.skill-session-token 2>/dev/null || echo default)"
 }
 ```
 
-`passed`/`failed` are the command *names*. A command that could not execute (missing tool, runner error — distinct from a test failure) goes in `could_not_verify`, never silently omitted. If `gate_gaming_status` is `suspect`, the verdict is SUSPECT, not PASS. Then print a short human summary table (name, command, PASS/FAIL, excerpt) so the result is visible in-session. This evidence is advisory; `deploy-gate` may read it as local verification of record when hosted CI is absent.
+`passed`/`failed` are the command *names*. A command that could not execute (missing tool, runner error — distinct from a test failure) goes in `could_not_verify`, never silently omitted. `gate_gaming_status` is one of `clean` | `suspect` | `unverified` (the check could not run); if `suspect`, the verdict is SUSPECT, not PASS; if `unverified`, the gate-gaming check is also added to `could_not_verify`. The field is always written — `deploy-gate` accepts local evidence only when it is exactly `clean`. Then print a short human summary table (name, command, PASS/FAIL, excerpt) so the result is visible in-session. This evidence is advisory; `deploy-gate` may read it as local verification of record when hosted CI is absent.
 
 ## Verification
 
