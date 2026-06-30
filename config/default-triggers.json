@@ -283,7 +283,7 @@
       "role": "required",
       "phase": "DESIGN",
       "triggers": [
-        "(skill|write.*skill|create.*skill|edit.*skill|new.*skill|skill.*(file|md|template|format))"
+        "(write.*skill|create.*skill|edit.*skill|new.*skill|skill.*(file|md|template|format))"
       ],
       "keywords": [],
       "trigger_mode": "regex",
