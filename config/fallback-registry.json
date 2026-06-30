@@ -309,7 +309,7 @@
     },
     {
       "name": "writing-skills",
-      "role": "domain",
+      "role": "required",
       "phase": "DESIGN",
       "triggers": [
         "(skill|write.*skill|create.*skill|edit.*skill|new.*skill|skill.*(file|md|template|format))"
