@@ -34,16 +34,14 @@ while IFS= read -r skill || [ -n "${skill}" ]; do
     if [ "${nm}" -ge 1 ]; then _record_pass "${skill}.txt has >=1 NO_MATCH decoy"
     else _record_fail "${skill}.txt has no NO_MATCH: decoy line"; fi
 
-    # borrowed-decoy: >=1 NO_MATCH must be a genuine MATCH line in some other fixture.
-    # Use a two-stage pipe: first collect all lines containing "MATCH: <decoy>" in
-    # other fixtures (this includes NO_MATCH: lines since "MATCH: x" ⊂ "NO_MATCH: x"),
-    # then filter out the NO_MATCH: variant — if any lines survive, a real MATCH exists.
+    # borrowed-decoy: >=1 NO_MATCH must be a VERBATIM FULL-LINE MATCH in some other
+    # fixture. -x requires the whole line to equal "MATCH: <decoy>" exactly, which
+    # also inherently excludes "NO_MATCH:" lines — no second-stage filter needed.
     borrowed=0
     while IFS= read -r decoy; do
         [ -z "${decoy}" ] && continue
-        if grep -rhF "MATCH: ${decoy}" "${FIXTURES_DIR}" \
-           --include='*.txt' --exclude="${skill}.txt" 2>/dev/null \
-           | grep -qvF "NO_MATCH: ${decoy}"; then
+        if grep -rqxF "MATCH: ${decoy}" "${FIXTURES_DIR}" \
+           --include='*.txt' --exclude="${skill}.txt" 2>/dev/null; then
             borrowed=1; break
         fi
     done <<EOD
