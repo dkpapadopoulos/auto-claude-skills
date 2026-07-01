@@ -78,7 +78,7 @@ if [ -f "${_CACHE}" ] && command -v jq >/dev/null 2>&1; then
     fi
 fi
 
-_MSG="CONSOLIDATION REMINDER: Session ending without memory consolidation. Learnings from this session may be lost. ${_GUIDANCE}"
+_MSG="CONSOLIDATION: Session ending. Before you stop, enumerate the durable, team-relevant learnings from this session, route each to the correct backend (auto-memory for project-local facts; .claude/knowledge for durable team gotchas/decisions/conventions; Forgetful for cross-session architecture), and persist them now. Skip transient or personal context. ${_GUIDANCE}"
 if command -v jq >/dev/null 2>&1; then
     jq -n --arg msg "${_MSG}" '{"stopReason":$msg}'
 else
