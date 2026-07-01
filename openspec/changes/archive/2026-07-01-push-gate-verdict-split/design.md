@@ -42,6 +42,13 @@ The verdict is read **live at push time**, not snapshotted — see Decision D.
 
 - **Routing gate requires `gate_gaming_status == "clean"` (via `verdict_is_clean`).** Consistent with `deploy-gate`'s local-verification-of-record precedent, but because the gate-gaming tripwire is documented false-alarm-prone (benign moves/renames/reorders), a routing push bundled with a benign test refactor could be hard-denied on a `suspect` false positive. Revival trigger: if this false-blocks a legitimate routing change in practice, loosen the routing-gate deny predicate to `failed[]` + `could_not_verify[]` empty only (a `verdict_passed` predicate) and demote `suspect` to the advisory `_STALE_MSG`, keeping gate-gaming advisory per its settled treatment.
 
+## Implementation Notes (synced at ship time)
+
+Two review-driven refinements to the upfront design (both from an adversarial gate-breaking review; Decisions A/B above reflect the as-built state):
+- **Verify-hardening deny tightened from "covers HEAD" to "at HEAD"** (`verdict_sha_is_head`). The upfront design honored an ancestor FAIL as covering; review showed that denies a fixed HEAD (false-block). A failure is authoritative only for the commit it was measured at.
+- **Routing gate made delta-aware.** The upfront "warn on any ancestor-clean verdict" allowed unverified routing changes made *after* the verdict (bypass). As-built: an ancestor-clean verdict is accepted only when routing files are unchanged since it (`verdict_routing_delta`); a post-verdict routing change denies.
+- Spec/design prose reconciled so the committed record matches the shipped `failed[]`-only verify-hardening condition (`could_not_verify`/`suspect` advisory).
+
 ## Out-of-scope
 
 - An owned/deterministic **review** verdict (Option C). Deferred with the revival trigger above.

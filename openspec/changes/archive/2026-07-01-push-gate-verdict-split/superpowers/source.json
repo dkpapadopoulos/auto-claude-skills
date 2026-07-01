@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": null,
+  "plan_path": null,
+  "spec_path": null,
+  "sp_plan_path": null,
+  "sp_spec_path": null,
+  "change_slug": "push-gate-verdict-split",
+  "capability_slug": null,
+  "source_branch": "feature/push-gate-verdict-split",
+  "base_commit": "3c3b1b7aeede6f1d0c1f96c8b6f7afde570b39d6",
+  "openspec_surface": "none",
+  "archived_at": "2026-07-01T23:46:29Z"
+}
