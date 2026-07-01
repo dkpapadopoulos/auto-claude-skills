@@ -5420,7 +5420,7 @@ test_starter_template_content_contract() {
     assert_contains "skill-scaffold has Constraints section" "Constraints" "${content}"
     assert_contains "skill-scaffold has SKILL.md skeleton" "SKILL.md skeleton" "${content}"
     assert_contains "skill-scaffold has routing entry snippet" "default-triggers.json" "${content}"
-    assert_contains "skill-scaffold has test snippet" "test-routing.sh" "${content}"
+    assert_contains "skill-scaffold emits routing fixture" "tests/fixtures/routing/" "${content}"
     assert_contains "skill-scaffold warns about process skill restriction" "superpowers-owned phase" "${content}"
 }
 
@@ -6522,5 +6522,50 @@ test_intent_extraction_suppressed_when_discovery_brief_present() {
     teardown_test_env
 }
 test_intent_extraction_suppressed_when_discovery_brief_present
+
+# ---------------------------------------------------------------------------
+# test_writing_skills_required_on_skill_creation
+# Regression: writing-skills (role=required) must survive when domain slots are
+# full. Three competing domain skills get priorities 18, 17, 16 — all strictly
+# above writing-skills' priority 15. The max-2-domain cap selects skill-scaffold
+# (18) and design-debate (17); prototype-lab (16) is domain slot #3 and gets
+# evicted; writing-skills (15) as role=domain would be domain slot #4 → also
+# evicted. Only role=required (Pass 0, uncapped) rescues it.
+# ---------------------------------------------------------------------------
+test_writing_skills_required_on_skill_creation() {
+    echo "-- test: writing-skills (required) selected on skill creation despite full domain slots --"
+    setup_test_env
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    mkdir -p "$(dirname "${cache_file}")"
+    cat > "${cache_file}" <<'REGISTRY'
+{
+  "version": "4.0.0",
+  "skills": [
+    { "name": "writing-skills", "role": "required", "phase": "DESIGN",
+      "triggers": ["(skill|write.*skill|create.*skill|edit.*skill|new.*skill)"],
+      "trigger_mode": "regex", "priority": 15,
+      "invoke": "Skill(superpowers:writing-skills)", "available": true, "enabled": true },
+    { "name": "skill-scaffold", "role": "domain", "phase": "DESIGN",
+      "triggers": ["(new.?skill|scaffold|skeleton|skill.?template)"],
+      "trigger_mode": "regex", "priority": 18,
+      "invoke": "Skill(auto-claude-skills:skill-scaffold)", "available": true, "enabled": true },
+    { "name": "design-debate", "role": "domain", "phase": "DESIGN",
+      "triggers": ["(skill|trade.?off|compare.*approach)"],
+      "trigger_mode": "regex", "priority": 17,
+      "invoke": "Skill(auto-claude-skills:design-debate)", "available": true, "enabled": true },
+    { "name": "prototype-lab", "role": "domain", "phase": "DESIGN",
+      "triggers": ["(skill|prototype|variants)"],
+      "trigger_mode": "regex", "priority": 16,
+      "invoke": "Skill(auto-claude-skills:prototype-lab)", "available": true, "enabled": true }
+  ]
+}
+REGISTRY
+    local output context
+    output="$(run_hook "create a new skill for parsing CSV files")"
+    context="$(extract_context "${output}")"
+    assert_contains "writing-skills fires (required, uncapped) on skill creation" "writing-skills" "${context}"
+    teardown_test_env
+}
+test_writing_skills_required_on_skill_creation
 
 print_summary

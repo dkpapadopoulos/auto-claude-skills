@@ -1,0 +1,12 @@
+# Regex fixtures for skill: prototype-lab
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# NO_MATCH line is verbatim-borrowed from supply-chain-investigation MATCH fixture.
+
+MATCH: build a quick prototype to validate whether this approach holds up
+MATCH: try both implementations side by side and tell me which is faster
+MATCH: compare options for the new caching layer and show the tradeoffs
+
+NO_MATCH: check if our dependency was typosquatted

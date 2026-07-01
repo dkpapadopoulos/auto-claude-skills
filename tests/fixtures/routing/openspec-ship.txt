@@ -13,3 +13,4 @@ MATCH: run the openspec validation
 
 NO_MATCH: explain how this hook was built
 NO_MATCH: the session has built the parser
+NO_MATCH: investigate the production outage from last night

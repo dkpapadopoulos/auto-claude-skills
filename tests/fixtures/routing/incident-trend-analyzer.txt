@@ -1,0 +1,12 @@
+# Regex fixtures for skill: incident-trend-analyzer
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# NO_MATCH line is verbatim-borrowed from outcome-review MATCH fixture.
+
+MATCH: analyze postmortems from the last quarter and surface the failure patterns
+MATCH: what keeps breaking in the payment service over the past month
+MATCH: show me incident trends and recurring incidents for this sprint
+
+NO_MATCH: how did the experiment perform last week

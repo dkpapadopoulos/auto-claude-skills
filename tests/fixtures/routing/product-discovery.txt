@@ -1,0 +1,12 @@
+# Regex fixtures for skill: product-discovery
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# NO_MATCH line is verbatim-borrowed from incident-analysis MATCH fixture.
+
+MATCH: let's do a discovery session to map out user problems before we build anything
+MATCH: map out the pain points users face when onboarding to the product
+MATCH: what should we build next given the backlog and roadmap priorities
+
+NO_MATCH: investigate the production outage from last night

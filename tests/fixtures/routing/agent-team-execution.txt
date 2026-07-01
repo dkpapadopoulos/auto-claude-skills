@@ -1,0 +1,12 @@
+# Regex fixtures for skill: agent-team-execution
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# NO_MATCH line is verbatim-borrowed from alert-hygiene MATCH fixture.
+
+MATCH: dispatch a swarm of agents to tackle the migration in parallel
+MATCH: fan out the work to specialist agents for each layer of the stack
+MATCH: run a multi-agent execution across all the affected modules
+
+NO_MATCH: our alerts are flapping and pager is noisy, help tune thresholds

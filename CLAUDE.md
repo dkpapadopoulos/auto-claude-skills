@@ -20,6 +20,16 @@ Claude Code plugin for automatic skill routing based on prompt intent and SDLC p
 - **Scoring**: Regex trigger match → base score + priority + name bonus + composition bonus → role-cap selection (max 1 process, 2 domain, 1 workflow).
 - **Output**: JSON via `hookSpecificOutput` on stdout. Hooks fail-open (exit 0 on error).
 
+## Skill-creation flow
+
+Three-stage division of labor for building new skills:
+
+1. **`writing-skills`** (DESIGN phase, `role=required`, always fires) — enforces discipline, anatomy completeness, and a failing pressure-test before a line of implementation is written.
+2. **`skill-scaffold`** — emits seed files including the routing fixture stub (`tests/fixtures/routing/<name>.txt`) and an evals stub; provides the mechanical skeleton for the next two stages.
+3. **`skill-creator`** (REVIEW phase, advisory) — validates triggering on a held-out prompt set before merge; catches over/under-matching that unit tests miss.
+
+The **enforceable done-gate** is owned and deterministic: every owned, trigger-routed skill must ship `tests/fixtures/routing/<name>.txt` with >=1 `MATCH` line and >=1 verbatim-borrowed `NO_MATCH` decoy. This is enforced by `tests/test-fixture-coverage.sh` and is CI-blocking via `.verify.yml`. The external skills (`writing-skills`, `skill-creator`) are recommended quality layers — they are not merge preconditions.
+
 ## Doc locations
 
 Six canonical homes for project context. Read this before guessing where docs live.
@@ -55,6 +65,7 @@ Six canonical homes for project context. Read this before guessing where docs li
 - Memory backends are orthogonal: Forgetful MCP = cross-session architectural memory (opt-in), Claude Code auto-memory at `~/.claude/projects/<project>/memory/` = per-project conversation memory (built-in, slug-indexed with typed frontmatter). Do not dual-write — pick one per learning based on whether it's cross-project (Forgetful) or project-local (auto-memory). See `skills/unified-context-stack/tiers/historical-truth.md` "Memory backend boundary".
 - `.claude/knowledge/` writes are human-gated AND PR-gated (memory-poisoning / lethal-trifecta surface) — never auto-write; the session-start injection is framed as untrusted reference data; `scripts/knowledge-validate.sh` is the consistency gate (type present, no dangling `[[links]]`, index↔files match, source resolves).
 - `max_iterations` is role-gated: the cap in `config/default-triggers.json` is only honored for skills with `role: domain` or `role: required`. Process and workflow skills (e.g., `verification-before-completion`, `openspec-ship`, `finishing-a-development-branch`, `requesting-code-review`) are NEVER capped — this is a hardcoded invariant in `hooks/skill-activation-hook.sh::_score_skills`, not config-driven. Protects SDLC phase gates from accidental misconfiguration. Push-gate (`hooks/openspec-guard.sh`) is independent of this mechanism. Regression: `tests/test-routing.sh::test_max_iterations_role_allowlist`.
+- `tests/test-regex-fixtures.sh` only checks fixtures that EXIST — `tests/test-fixture-coverage.sh` enforces that every owned, trigger-routed skill HAS one (with >=1 MATCH + >=1 verbatim-borrowed NO_MATCH decoy). `security-scanner` (composition-only, empty triggers) is exempt.
 
 ## Spec Persistence Modes
 

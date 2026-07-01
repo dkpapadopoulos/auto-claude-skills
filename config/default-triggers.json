@@ -280,10 +280,10 @@
     },
     {
       "name": "writing-skills",
-      "role": "domain",
+      "role": "required",
       "phase": "DESIGN",
       "triggers": [
-        "(skill|write.*skill|create.*skill|edit.*skill|new.*skill|skill.*(file|md|template|format))"
+        "(write.*skill|create.*skill|edit.*skill|new.*skill|skill.*(file|md|template|format))"
       ],
       "keywords": [],
       "trigger_mode": "regex",
@@ -1398,6 +1398,11 @@
         {
           "text": "ADVERSARIAL REVIEW: In addition to standard code review, evaluate these governance checks: (1) Does any change weaken or remove an existing safety gate, HITL requirement, or approval step? (2) Does any change expand autonomous action scope (new outbound actions, broader permissions, reduced human oversight)? (3) Does any change modify hook behavior, permission settings, or composition routing in ways that reduce guardrails? (4) Does any change add `dangerouslyDisableSandbox`, `--no-verify`, `force`, or equivalent bypass patterns? (5) Does any change touch files in `hooks/` or `config/` that govern skill routing or phase enforcement? (6) If any answer is YES: flag as a blocking governance finding with specific file:line evidence. (7) Does the resulting change have >=2 lethal-trifecta fields (private_data, untrusted_input, outbound_action), or add a missing leg to an existing >=2-field flow? If so, invoke Skill(auto-claude-skills:agent-safety-review) and treat unmitigated and unacknowledged lethal-trifecta risk as a blocking governance finding (the user may still explicitly accept the risk).",
           "when": "always"
+        },
+        {
+          "plugin": "skill-creator",
+          "text": "When a skill was created/edited in this change, run Skill(skill-creator) to validate triggering on a held-out prompt set before merge (advisory).",
+          "when": "installed"
         }
       ],
       "sequence": [

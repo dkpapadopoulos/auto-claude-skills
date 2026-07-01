@@ -1,0 +1,12 @@
+# Regex fixtures for skill: agent-safety-review
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# NO_MATCH line is verbatim-borrowed from openspec-ship MATCH fixture.
+
+MATCH: run an overnight autonomous loop to refactor the codebase while I sleep
+MATCH: launch a background agent to monitor the inbox and auto-reply to messages
+MATCH: deploy an unattended email agent that auto responds to support tickets
+
+NO_MATCH: archive the feature change

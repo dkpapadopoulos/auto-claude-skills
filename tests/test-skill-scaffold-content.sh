@@ -25,6 +25,12 @@ assert_contains "skill-scaffold: anatomy lists Verification" "## Verification" "
 assert_contains "skill-scaffold: keep-or-delete criterion" "earns its place" "${SCAFFOLD_CONTENT}"
 assert_contains "skill-scaffold: filler anti-goal stated" "anti-goal" "${SCAFFOLD_CONTENT}"
 
+# --- Task 4: fixture + evals stub + dual-file routing ---
+assert_contains "scaffold emits a routing fixture" "tests/fixtures/routing/" "${SCAFFOLD_CONTENT}"
+assert_contains "scaffold requires a NO_MATCH decoy" "NO_MATCH" "${SCAFFOLD_CONTENT}"
+assert_contains "scaffold names the evals stub" "evals/evals.json" "${SCAFFOLD_CONTENT}"
+assert_contains "scaffold states dual-file routing" "fallback-registry.json" "${SCAFFOLD_CONTENT}"
+
 # Summary
 echo ""
 echo "=============================="

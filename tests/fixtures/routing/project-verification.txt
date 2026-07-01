@@ -1,0 +1,13 @@
+# Regex fixtures for skill: project-verification
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# NO_MATCH lines are verbatim-borrowed from incident-analysis and alert-hygiene MATCH fixtures.
+
+MATCH: run the tests locally and show me pass/fail before I push
+MATCH: verify the build passes the project gate
+MATCH: run typecheck and lint and tell me if the repo is green
+
+NO_MATCH: investigate the production outage from last night
+NO_MATCH: our alerts are flapping and pager is noisy, help tune thresholds

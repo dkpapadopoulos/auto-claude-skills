@@ -1,0 +1,12 @@
+# Regex fixtures for skill: runtime-validation
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# NO_MATCH line is verbatim-borrowed from batch-scripting MATCH fixture.
+
+MATCH: run an e2e smoke test on the login flow before we ship
+MATCH: check accessibility on the checkout page and report any a11y violations
+MATCH: run the lighthouse audit and show me the web vitals score
+
+NO_MATCH: mass rename the fixtures

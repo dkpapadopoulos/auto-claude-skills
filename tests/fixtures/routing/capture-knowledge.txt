@@ -1,0 +1,12 @@
+# Regex fixtures for skill: capture-knowledge
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# NO_MATCH line is verbatim-borrowed from deploy-gate MATCH fixture.
+
+MATCH: capture this knowledge before we forget it
+MATCH: save the decision we made about the database schema today
+MATCH: remember the gotcha we hit with the build environment
+
+NO_MATCH: deploy to production tonight

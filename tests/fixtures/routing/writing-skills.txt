@@ -1,0 +1,6 @@
+# writing-skills routing fixtures
+MATCH: create a new skill for parsing CSV files
+MATCH: edit the skill to add a verification section
+MATCH: write a skill that documents our deployment runbook
+NO_MATCH: the team has the skills to build it themselves
+NO_MATCH: investigate the production outage from last night
