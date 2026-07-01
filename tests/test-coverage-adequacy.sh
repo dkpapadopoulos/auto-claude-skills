@@ -109,5 +109,15 @@ LCOV
 v_nomatch="$(printf '%s' "${diff3}" | COVERAGE_ADEQUACY_LCOV="${PROJECT_ROOT}/tests/fixtures/coverage/other.lcov" bash "${CAC}" 2>/dev/null)"
 assert_contains "non-suffix path does not match (unverified)" "unverified" "${v_nomatch}"
 
+# --- compact cobertura: two <line> on one physical line must each emit exactly once ---
+cat > "${PROJECT_ROOT}/tests/fixtures/coverage/compact-cobertura.xml" <<'XML'
+<coverage><packages><package><classes><class filename="src/bar.py"><lines><line number="2" hits="0"/><line number="3" hits="4"/></lines></class></classes></package></packages></coverage>
+XML
+ch="$(COVERAGE_ADEQUACY_MODE=cobertura-hits COVERAGE_ADEQUACY_LCOV="${PROJECT_ROOT}/tests/fixtures/coverage/compact-cobertura.xml" bash "${CAC}" </dev/null 2>/dev/null)"
+count_l2="$(printf '%s\n' "${ch}" | grep -c 'src/bar.py	2	0')"
+assert_equals "compact cobertura line 2 emitted exactly once" "1" "${count_l2}"
+count_l3="$(printf '%s\n' "${ch}" | grep -c 'src/bar.py	3	4')"
+assert_equals "compact cobertura line 3 emitted exactly once" "1" "${count_l3}"
+
 print_summary
 exit $?

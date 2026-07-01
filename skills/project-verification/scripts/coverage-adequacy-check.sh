@@ -34,11 +34,12 @@ _cobertura_hits() {
     {
       s=$0
       while (match(s, /<line number="[0-9]+" hits="[0-9]+"/)) {
+        adv=RSTART+RLENGTH
         seg=substr(s,RSTART,RLENGTH)
         match(seg,/number="[0-9]+"/); num=substr(seg,RSTART+8,RLENGTH-9)
         match(seg,/hits="[0-9]+"/);   h=substr(seg,RSTART+6,RLENGTH-7)
         if (fn!="") print fn "\t" num "\t" h
-        s=substr(s,RSTART+RLENGTH)
+        s=substr(s,adv)
       }
     }
   ' "$1" 2>/dev/null
