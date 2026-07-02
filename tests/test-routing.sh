@@ -1579,6 +1579,18 @@ test_phase_scoped_methodology_hints() {
     teardown_test_env
 }
 
+test_frontend_playwright_has_review_phase() {
+    echo "-- test: frontend-playwright hint includes REVIEW phase --"
+    # The hint text promises "During REVIEW, use runtime-validation", so REVIEW
+    # MUST be in its phases or the engine suppresses it in REVIEW (the bug this fixes).
+    # Engine phase-gating itself is covered by test_phase_scoped_methodology_hints;
+    # this locks the real config so the promise cannot silently drift out of REVIEW.
+    local phases
+    phases="$(jq -r '.methodology_hints[] | select(.name=="frontend-playwright") | .phases[]' \
+        "${PROJECT_ROOT}/config/default-triggers.json" 2>/dev/null)"
+    assert_contains "frontend-playwright config includes REVIEW phase" "REVIEW" "${phases}"
+}
+
 test_claude_md_maintenance_hint() {
     echo "-- test: claude-md maintenance hint --"
     setup_test_env
@@ -2254,6 +2266,7 @@ test_output_valid_json
 test_zero_matches_phase_checkpoint
 test_methodology_hints
 test_phase_scoped_methodology_hints
+test_frontend_playwright_has_review_phase
 test_claude_md_maintenance_hint
 test_agent_team_execution_matches
 test_design_debate_as_domain

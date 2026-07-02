@@ -1,6 +1,6 @@
 ---
 name: runtime-validation
-description: Use when you need to prove a change actually works through its real interfaces — during REVIEW or on requests like validate the feature, does it work, run e2e, or smoke test — covering browser E2E, API smoke, CLI checks, and a11y and perf (Lighthouse) audits with graceful tool-degradation
+description: Use when you need to prove a change actually works through its real interfaces — during REVIEW or on requests like validate the feature, does it work, run e2e, or smoke test — covering browser E2E, API smoke, CLI checks, and a11y, perf (Lighthouse), and visual-regression audits with graceful tool-degradation
 ---
 
 # Runtime Validation
@@ -204,6 +204,57 @@ The three field CWV are LCP, **INP**, and CLS; a lab run cannot measure INP, so 
 reported as its lab proxy. The report MUST state that field INP is not measured and that
 only one dev-server URL was sampled (not the production bundle / field data).
 
+**Visual-regression overlay** (runs alongside the browser path when Playwright is
+available). **Report-only:** visual diffs are advisory and do NOT enter the fix-rescan loop
+and never hard-block REVIEW — same rationale as the Lighthouse overlay (screenshots are
+environment-sensitive).
+
+Uses Playwright's built-in screenshot comparison (`toHaveScreenshot`) — no extra dependency.
+Baselines are **gitignored** artifacts under `tests/artifacts/validation/`, never committed:
+
+```bash
+# Baselines: tests/artifacts/validation/visual-baselines/  (gitignored, persists across runs)
+# Actuals + diffs: tests/artifacts/validation/visual-runs/
+BASELINE_DIR="$(pwd)/tests/artifacts/validation/visual-baselines"
+mkdir -p "${BASELINE_DIR}" tests/artifacts/validation/visual-runs
+
+# Route Playwright's snapshots to the PERSISTENT baseline dir (default is a
+# <spec>-snapshots/ folder beside the spec — which here is the mktemp dir that
+# gets rm -rf'd, so baselines would never survive). snapshotPathTemplate fixes that.
+cat > "${VALIDATION_TMPDIR}/pw.config.ts" << EOCFG
+import { defineConfig } from '@playwright/test';
+export default defineConfig({
+  snapshotPathTemplate: '${BASELINE_DIR}/{arg}{ext}',
+  outputDir: '$(pwd)/tests/artifacts/validation/visual-runs',
+});
+EOCFG
+cat > "${VALIDATION_TMPDIR}/visual.spec.ts" << 'EOTEST'
+import { test, expect } from '@playwright/test';
+test('homepage visual', async ({ page }) => {
+  await page.goto(process.env.PERF_URL || 'http://localhost:3000/');
+  await page.waitForLoadState('networkidle');
+  await expect(page).toHaveScreenshot('homepage.png', { maxDiffPixelRatio: 0.02 });
+});
+EOTEST
+
+# argv array (not a string) so paths with spaces never word-split the invocation.
+PW=(npx playwright test --config "${VALIDATION_TMPDIR}/pw.config.ts" "${VALIDATION_TMPDIR}/visual.spec.ts")
+# First run: no baseline yet → seed it (BASELINE_MISSING/SEEDED, not pass/fail).
+# Later runs: the baseline persists in visual-baselines/ → diff → MATCH or CHANGED.
+if [ -z "$(ls -A "${BASELINE_DIR}" 2>/dev/null)" ]; then
+  "${PW[@]}" --update-snapshots 2>/dev/null \
+    && echo "visual: BASELINE_MISSING/SEEDED (baseline captured under visual-baselines/ — list in Coverage Gaps)"
+else
+  "${PW[@]}" 2>/dev/null && echo "visual: MATCH" || echo "visual: CHANGED (see diff under visual-runs/)"
+fi
+```
+
+A first run with no baseline reports `BASELINE_MISSING/SEEDED` and lists the scenario in
+Coverage Gaps — it is **not** a PASS or FAIL. Subsequent runs report `MATCH` or `CHANGED`.
+This is **session-scoped** diffing (detects change within a review session); it is **not**
+cross-commit field regression. For durable cross-commit regression, direct the user to
+**project-native committed Playwright snapshots** in their own suite.
+
 ### API Path
 
 ```bash
@@ -318,15 +369,27 @@ Present results with the heading `## Validation Report`. Same shape regardless o
 > proxy); production bundle, CDN/image delivery, per-route, and third-party effects are
 > out of scope. "Perf overlay ran" ≠ "Core Web Vitals covered."
 
+### Visual Regression Results (Playwright — report-only) — N captures
+| Capture | Source | Viewport | Result | Evidence |
+|---------|--------|----------|--------|----------|
+| homepage | generic-smoke | 1280x720 | MATCH | visual-runs/homepage.png |
+| checkout | intent-truth | 375x667 | CHANGED | diff: visual-runs/checkout-diff.png |
+
+> Session-scoped diffing, not cross-commit field regression. Baselines are gitignored and
+> committed snapshots in the consumer's own suite own durable regression. `BASELINE_MISSING/SEEDED`
+> on first run is neither pass nor fail — list the seeded capture in Coverage Gaps.
+
 ### Coverage Gaps
-- [Scenarios that could not be validated and why]
-- [Paths that had no tool available]
-- [Eval pack scenarios without matching execution path]
+State each gap as a next action, not a passive note — a downstream agent or reviewer should be able to act on it without re-deriving what to do:
+- [Validate scenario X manually — it could not be auto-validated because <reason>]
+- [Install/enable <tool> to cover path Y, then re-run this scenario]
+- [Add an execution path for eval-pack scenario Z, or mark it out-of-scope with a reason]
 
 ### Manual Checks Recommended
-- [Checks requiring human judgment — visual design, UX flow, business logic correctness]
-- [Cross-browser testing if only one browser engine was available]
-- [Performance characteristics under load]
+Phrase each as an imperative the human can execute:
+- [Review <element/flow> by hand — requires human judgment (visual design, UX flow, business-logic correctness)]
+- [Test in <other browser engine> — only one engine was available this run]
+- [Load-test <path> to confirm performance characteristics under concurrency]
 ```
 
 **Source column values:** `eval-pack` (from `tests/fixtures/evals/*.json`), `intent-truth` (from specs/plans), `generic-smoke` (auto-generated).
@@ -383,3 +446,4 @@ Before claiming the change works, confirm -- from observed output, not inference
 - Safety-relevant paths were exercised, not deferred.
 - A passing run shows real interface output (HTTP status, exit code, screenshot) -- not a stubbed or assumed success.
 - Lab-only signals (e.g. Lighthouse perf) are reported as lab, never field, and never gate the result.
+- Visual-regression results (if run) are reported as MATCH / CHANGED / BASELINE_MISSING and never hard-block the review -- first-run baselines are seeded, not failed; durable cross-commit regression is delegated to the consumer's committed snapshot suite.

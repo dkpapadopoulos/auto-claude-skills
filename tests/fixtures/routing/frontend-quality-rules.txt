@@ -1,0 +1,26 @@
+# Regex fixtures for methodology hint: frontend-quality-rules
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — a trigger regex must match
+#   NO_MATCH: <prompt>  — no trigger regex may match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# False-fire guards (same substring traps as frontend-playwright)
+NO_MATCH: tabulate the metrics for the quant engine
+NO_MATCH: update the onboarding docs
+NO_MATCH: paginate the results from duckdb
+NO_MATCH: perform the database migration
+NO_MATCH: transform the dataframe and reformat the output
+# This repo is hook-heavy: a bare 'hook' token must NOT route frontend-quality here.
+NO_MATCH: run the session-start hook
+NO_MATCH: fix the skill-activation-hook
+# 'interaction' must be UI-scoped — a backend 'interaction' must NOT route here.
+NO_MATCH: refactor the database interaction layer
+# General frontend prompts (web-interface-guidelines territory)
+MATCH: fix the form accessibility
+MATCH: improve the responsive layout
+MATCH: a ui change to the sidebar
+# React/Next prompts (react-best-practices territory)
+MATCH: add a react component
+MATCH: optimize the next.js bundle size
+MATCH: the component re-renders on every hook update
+# plural 're-renders' as a standalone token (no other trigger word present)
+MATCH: stop the excessive re-renders

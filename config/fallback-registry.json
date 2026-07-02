@@ -502,7 +502,7 @@
       "role": "domain",
       "phase": "REVIEW",
       "triggers": [
-        "(validate|validation|e2e|end.to.end|smoke.test|a11y|accessibility|exercise|try.it|does.it.work|interactive.test|lighthouse|web.vitals|core.web.vitals|page.?speed)"
+        "(validate|validation|e2e|end.to.end|smoke.test|a11y|accessibility|exercise|try.it|does.it.work|interactive.test|lighthouse|web.vitals|core.web.vitals|page.?speed|visual.regress|layout.regress|screenshot.*(diff|compar|regress|baseline|test)|(compare|diff|visual|baseline).*screenshot)"
       ],
       "keywords": [],
       "trigger_mode": "regex",
@@ -1590,7 +1590,21 @@
       "hint": "PLAYWRIGHT TESTING: Frontend changes detected. Include Playwright E2E tests covering the changed UI behavior. During REVIEW, use Skill(auto-claude-skills:runtime-validation) for orchestrated E2E and a11y validation.",
       "phases": [
         "DESIGN",
-        "IMPLEMENT"
+        "IMPLEMENT",
+        "REVIEW"
+      ]
+    },
+    {
+      "name": "frontend-quality-rules",
+      "triggers": [
+        "(^|[^a-z])(react|next.?js|jsx|tsx|component|hydrat|bundle|re.?renders?)($|[^a-z])",
+        "(^|[^a-z])(ui|frontend|layout|form|accessibility|a11y|responsive|user.?interaction|animation|tailwind|css)($|[^a-z])"
+      ],
+      "trigger_mode": "regex",
+      "hint": "FRONTEND QUALITY: For prescriptive build-it-right standards — if the web-interface-guidelines skill is installed, use it for UI interaction, accessibility, forms, and layout rules; if this is a React/Next app and the react-best-practices skill is installed, use it for performance rules (async waterfalls, bundle size, re-renders). If neither is installed, apply frontend-design and validate with runtime-validation.",
+      "phases": [
+        "IMPLEMENT",
+        "REVIEW"
       ]
     },
     {

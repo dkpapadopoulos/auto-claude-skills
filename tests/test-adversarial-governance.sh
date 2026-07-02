@@ -85,6 +85,23 @@ assert_contains "runtime-validation: eval scenarios append-only" "append-only" "
 assert_not_contains "runtime-validation: no eval of eval-pack command (injection)" 'eval "${cmd}"' "${RTV_CONTENT}"
 assert_contains "runtime-validation: eval-pack trust-boundary note" "TRUSTED committed fixtures" "${RTV_CONTENT}"
 
+# frontend-quality-rules: advisory routing to EXTERNAL Vercel skills must stay conditional,
+# must not hardcode an unknowable Skill() invocation token for a namespace we don't own,
+# and must name our own fallback so a stale/absent reference degrades to silence.
+FQR_HINT="$(jq -r '.methodology_hints[] | select(.name=="frontend-quality-rules") | .hint' "${REGISTRY}" 2>/dev/null)"
+FQR_PHASES="$(jq -r '.methodology_hints[] | select(.name=="frontend-quality-rules") | .phases[]' "${REGISTRY}" 2>/dev/null)"
+assert_contains "frontend-quality: hint present" "FRONTEND QUALITY" "${FQR_HINT}"
+assert_contains "frontend-quality: names web-interface-guidelines" "web-interface-guidelines" "${FQR_HINT}"
+assert_contains "frontend-quality: names react-best-practices" "react-best-practices" "${FQR_HINT}"
+assert_contains "frontend-quality: names our fallback (runtime-validation)" "runtime-validation" "${FQR_HINT}"
+assert_contains "frontend-quality: conditional wording (is installed)" "is installed" "${FQR_HINT}"
+assert_not_contains "frontend-quality: no hardcoded Skill() for web-interface-guidelines" "Skill(web-interface-guidelines" "${FQR_HINT}"
+assert_not_contains "frontend-quality: no hardcoded Skill() for react-best-practices" "Skill(react-best-practices" "${FQR_HINT}"
+assert_contains "frontend-quality: fires in IMPLEMENT" "IMPLEMENT" "${FQR_PHASES}"
+assert_contains "frontend-quality: fires in REVIEW" "REVIEW" "${FQR_PHASES}"
+# fallback registry must carry the same hint (drift guard)
+assert_contains "frontend-quality: mirrored to fallback registry" "frontend-quality-rules" "${FALLBACK_CONTENT}"
+
 # agent-safety-review: safety eval cases red before code (TDD-for-evals).
 assert_contains "agent-safety-review: safety eval red before code" "before the behavior is implemented" "${SAFETY_CONTENT}"
 assert_contains "agent-safety-review: compose with TDD" "test-driven-development" "${SAFETY_CONTENT}"
