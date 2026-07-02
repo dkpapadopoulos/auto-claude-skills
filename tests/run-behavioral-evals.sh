@@ -418,6 +418,17 @@ ${CONSTRUCTED_PROMPT}"
                     printf '  %s [%d/text]: %s  (regex: %s)\n' "${verdict}" "${i}" "${a_desc}" "${a_text}"
                 fi
                 ;;
+            absent)
+                a_text="$(printf '%s' "${SCENARIO_JSON}" | jq -r ".assertions[${i}].text")"
+                if printf '%s' "${RAW_OUTPUT}" | grep -E -i -q "${a_text}"; then
+                    verdict="FAIL"; passed=false; ALL_PASSED=0
+                else
+                    verdict="PASS"; passed=true
+                fi
+                if [ "${VARIANCE_N}" -eq 1 ]; then
+                    printf '  %s [%d/absent]: %s  (must-not-match regex: %s)\n' "${verdict}" "${i}" "${a_desc}" "${a_text}"
+                fi
+                ;;
             tool_call)
                 a_tool="$(printf '%s' "${SCENARIO_JSON}" | jq -r ".assertions[${i}].tool")"
                 a_min="$(printf '%s' "${SCENARIO_JSON}" | jq -r ".assertions[${i}].min_count // 1")"

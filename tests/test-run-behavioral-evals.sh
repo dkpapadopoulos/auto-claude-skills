@@ -313,4 +313,75 @@ MOCK_RESPONSE_FILE="${MODEL_RESPONSE_FILE}" \
 nobare_flag_line="$(grep -nxF -- '--bare' "${NOBARE_ARGS_FILE}" 2>/dev/null | head -n1 | cut -d: -f1)"
 assert_equals "no --bare flag forwarded when unset" "" "${nobare_flag_line}"
 
+# ---------------------------------------------------------------------------
+# Assertion kind: absent — mirror of 'text' that PASSES when a regex is NOT
+# found in RAW_OUTPUT and FAILS when it is. Built as a scenario-level,
+# end-to-end run through the real runner (not a bare grep test) so the
+# actual `case "${a_kind}" in absent)` branch is exercised. The pack is a
+# throwaway temp file (not a committed fixture) to keep this change scoped
+# to this test file only.
+# ---------------------------------------------------------------------------
+echo "-- assertion kind: absent --"
+
+ABSENT_PACK_FILE="${TMPDIR:-/tmp}/acs-absent-pack-$$.json"
+ABSENT_PASS_RESPONSE_FILE="${TMPDIR:-/tmp}/acs-absent-pass-resp-$$.txt"
+ABSENT_FAIL_RESPONSE_FILE="${TMPDIR:-/tmp}/acs-absent-fail-resp-$$.txt"
+ABSENT_ART_DIR="${TMPDIR:-/tmp}/acs-absent-art-$$"
+trap 'rm -f "${CANNED_RESPONSE_FILE}" "${SANDBOX_RESPONSE_FILE}" "${SANDBOX_ARGS_FILE}" "${MODEL_RESPONSE_FILE}" "${MODEL_ARGS_FILE}" "${NOMODEL_ARGS_FILE}" "${BARE_ARGS_FILE}" "${NOBARE_ARGS_FILE}" "${ABSENT_PACK_FILE}" "${ABSENT_PASS_RESPONSE_FILE}" "${ABSENT_FAIL_RESPONSE_FILE}"; rm -rf "${SANDBOX_ART_DIR}" "${MODEL_ART_DIR}" "${ABSENT_ART_DIR}"' EXIT
+
+cat > "${ABSENT_PACK_FILE}" <<'EOF'
+[
+  {
+    "id": "absent-assertion-scenario",
+    "prompt": "review this migration",
+    "expected_behavior": "Must not mention destructive DDL when the migration is safe.",
+    "assertions": [
+      {"kind": "absent", "text": "DROP TABLE|TRUNCATE", "description": "Does not mention destructive DDL"}
+    ]
+  }
+]
+EOF
+
+cat > "${ABSENT_PASS_RESPONSE_FILE}" <<'EOF'
+Reviewed migration: adds a nullable column, safe online.
+EOF
+
+cat > "${ABSENT_FAIL_RESPONSE_FILE}" <<'EOF'
+This migration will DROP TABLE orders — destructive.
+EOF
+
+echo "-- absent: PASSES when regex is missing from output --"
+
+output="$(MOCK_RESPONSE_FILE="${ABSENT_PASS_RESPONSE_FILE}" \
+BEHAVIORAL_EVALS=1 \
+CLAUDE_BIN="${PROJECT_ROOT}/tests/fixtures/behavioral-runner/mock-claude.sh" \
+ARTIFACTS_DIR="${ABSENT_ART_DIR}" \
+SKILL_PATH="${PROJECT_ROOT}/skills/incident-analysis/SKILL.md" \
+bash "${RUNNER}" \
+  --scenario absent-assertion-scenario \
+  --pack "${ABSENT_PACK_FILE}" 2>&1)"
+exit_code=$?
+
+assert_equals "absent assertion PASSES (exit 0) when regex missing from output" "0" "${exit_code}"
+assert_contains "output reports PASS for the absent assertion" "PASS" "${output}"
+assert_contains "output tags the assertion as kind absent" "absent" "${output}"
+
+echo "-- absent: FAILS when regex is present in output --"
+
+output="$(MOCK_RESPONSE_FILE="${ABSENT_FAIL_RESPONSE_FILE}" \
+BEHAVIORAL_EVALS=1 \
+CLAUDE_BIN="${PROJECT_ROOT}/tests/fixtures/behavioral-runner/mock-claude.sh" \
+ARTIFACTS_DIR="${ABSENT_ART_DIR}" \
+SKILL_PATH="${PROJECT_ROOT}/skills/incident-analysis/SKILL.md" \
+bash "${RUNNER}" \
+  --scenario absent-assertion-scenario \
+  --pack "${ABSENT_PACK_FILE}" 2>&1)"
+exit_code=$?
+
+assert_equals "absent assertion FAILS (exit 1) when regex present in output" "1" "${exit_code}"
+assert_contains "output reports FAIL for the absent assertion" "FAIL" "${output}"
+assert_contains "output names the failing assertion description" "Does not mention destructive DDL" "${output}"
+
+rm -rf "${ABSENT_ART_DIR}"
+
 print_summary
