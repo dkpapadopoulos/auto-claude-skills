@@ -1,0 +1,12 @@
+# Regex fixtures for skill: implementation-drift-check
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# NO_MATCH line is verbatim-borrowed from agent-team-review MATCH fixture.
+
+MATCH: check if we've drifted from the original spec since the last review
+MATCH: reflect on our assumptions and flag any gaps in the implementation
+MATCH: are we still on plan or have we deviated from the design document
+
+NO_MATCH: team review before merge

@@ -1,0 +1,12 @@
+# Regex fixtures for skill: design-debate
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# NO_MATCH line is verbatim-borrowed from supply-chain-investigation MATCH fixture.
+
+MATCH: let's debate the tradeoffs between a monolith and microservices architecture
+MATCH: compare the two approaches and give me the pro-con breakdown for each
+MATCH: what are the alternatives to using a message queue for this use case
+
+NO_MATCH: was the npm package compromised in the latest attack

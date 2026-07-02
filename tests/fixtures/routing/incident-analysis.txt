@@ -17,3 +17,4 @@ NO_MATCH: lets ship and merge this release
 NO_MATCH: review the error handling in this PR
 NO_MATCH: configure the connection string for the new database
 NO_MATCH: deploy the new version to staging
+NO_MATCH: run the tests locally and show me pass/fail before I push

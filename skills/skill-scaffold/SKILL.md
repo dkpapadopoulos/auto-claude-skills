@@ -112,38 +112,40 @@ Generate a JSON snippet for `config/default-triggers.json`:
 }
 ```
 
-Note: Also needs a matching entry in `config/fallback-registry.json` using compact single-line trigger format.
+The routing entry MUST be added to **both** `config/default-triggers.json` and `config/fallback-registry.json`.
 
 The routing entry `description` field follows the same description rule as the frontmatter: purpose and when-to-use, never workflow steps.
 
 ## Step 4: Emit Test Snippets
 
-**Routing test** (for `tests/test-routing.sh`):
+**Routing fixture** (`tests/fixtures/routing/<skill-name>.txt`) — the deterministic
+done-gate. REQUIRED for every owned skill that has a trigger regex:
 
-```bash
-test_<skill_name>_triggers() {
-    echo "-- test: <skill-name> triggers on <trigger phrase> --"
-    setup_test_env
-    install_registry_with_<appropriate_helper>
-
-    local output
-    output="$(run_hook "<sample prompt>")"
-    local context
-    context="$(extract_context "${output}")"
-
-    assert_contains "<skill-name> fires" "<skill-name>" "${context}"
-
-    teardown_test_env
-}
+```
+# <skill-name> routing fixtures
+MATCH: <realistic prompt the trigger regex matches>
+MATCH: <a second, differently-phrased positive>
+NO_MATCH: <a decoy borrowed from another skill's fixture — must NOT match>
 ```
 
-**Content/behavior assertion:**
+Borrow the NO_MATCH decoy from an existing `tests/fixtures/routing/*.txt` so an
+over-broad regex fails the gate. `tests/test-fixture-coverage.sh` fails the build
+if this file is missing or lacks a MATCH or NO_MATCH line.
+
+**Trigger-accuracy eval** (`skills/<skill-name>/evals/evals.json`) — optional but
+recommended; the held-out LLM trigger eval (`skill-creator` / `skill-eval.yml`)
+reads it. See `docs/eval-pack-schema.md`.
+
+**Content/behavior assertion** (for a `tests/test-<skill>-content.sh`): keep the
+SKILL.md non-empty + frontmatter `name:` check.
 
 ```bash
 test_<skill_name>_content_contract() {
     echo "-- test: <skill-name> SKILL.md has required sections --"
     local skill_file="${PROJECT_ROOT}/skills/<skill-name>/SKILL.md"
 
+    # Bash 3.2: declare `local` and assign on SEPARATE lines. `local x=$(...)`
+    # swallows the command's exit code (local always returns 0), masking failures.
     local content
     content="$(cat "${skill_file}" 2>/dev/null || echo "")"
     assert_not_empty "<skill-name> SKILL.md exists and is non-empty" "${content}"

@@ -3,8 +3,9 @@
 #   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
 #   NO_MATCH: <prompt>  — regex must NOT match
 # Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
-# NO_MATCH lines pin the release word boundary: preRELEASE and unRELEASEd
-# must not fire.
+# NO_MATCH lines: first two pin the release word boundary (preRELEASE and
+# unRELEASEd must not fire); third is borrowed verbatim from capture-knowledge
+# MATCH fixtures (no deploy/release/promote/launch/go.live in that prompt).
 
 MATCH: deploy to production tonight
 MATCH: release to production tonight
@@ -13,3 +14,4 @@ MATCH: are we ready to go live
 
 NO_MATCH: pin the prerelease dependency
 NO_MATCH: unreleased changes in the changelog
+NO_MATCH: capture this knowledge before we forget it
