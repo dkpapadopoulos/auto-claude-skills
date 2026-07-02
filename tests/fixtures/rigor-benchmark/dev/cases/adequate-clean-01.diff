@@ -1,0 +1,6 @@
+--- a/src/pay.py
++++ b/src/pay.py
+@@ -1,1 +1,3 @@
+ import os
++def refund(amount):
++    return -amount
