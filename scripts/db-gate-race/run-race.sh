@@ -88,6 +88,12 @@ fi
 echo "=========================="
 
 export BEHAVIORAL_EVALS=1
+# Force the inner `claude -p` to load NO setting sources (strip this repo's
+# plugin hooks/banner so only SKILL_PATH + the arm directive are injected)
+# while keeping OAuth auth. `--bare` cannot be used here: it demands
+# ANTHROPIC_API_KEY and returns "Not logged in" under OAuth (db-gate pilot).
+CLAUDE_BIN="$(cd "$(dirname "$0")" && pwd)/claude-clean.sh"
+export CLAUDE_BIN
 
 FAIL_COUNT=0
 TOTAL_COUNT=0
@@ -101,12 +107,12 @@ run_arm() {
     for id in ${ids}; do
         TOTAL_COUNT=$((TOTAL_COUNT + 1))
         if [ "${DRY_RUN}" = "1" ]; then
-            echo "[DRY_RUN][${arm}] would run: ARTIFACTS_DIR=${dir} SKILL_PATH=${BASE} BEHAVIORAL_EVALS=1 bash ${RUNNER} --scenario ${id} --pack ${PACK} --variance ${VARIANCE} --bare $* --variance-report ${dir}/${id}-variance.md > ${dir}/${id}.log 2>&1"
+            echo "[DRY_RUN][${arm}] would run: ARTIFACTS_DIR=${dir} SKILL_PATH=${BASE} CLAUDE_BIN=${CLAUDE_BIN} BEHAVIORAL_EVALS=1 bash ${RUNNER} --scenario ${id} --pack ${PACK} --variance ${VARIANCE} $* --variance-report ${dir}/${id}-variance.md > ${dir}/${id}.log 2>&1"
             continue
         fi
         ARTIFACTS_DIR="${dir}" SKILL_PATH="${BASE}" \
             bash "${RUNNER}" --scenario "${id}" --pack "${PACK}" \
-            --variance "${VARIANCE}" --bare "$@" \
+            --variance "${VARIANCE}" "$@" \
             --variance-report "${dir}/${id}-variance.md" \
             >"${dir}/${id}.log" 2>&1
         rc=$?
