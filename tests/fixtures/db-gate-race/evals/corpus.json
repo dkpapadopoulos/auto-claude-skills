@@ -1,0 +1,318 @@
+[
+  {
+    "id": "defect-unsafe-migration-01",
+    "prompt": "Please review this Postgres 15 migration for the production checkout database. The orders table has 82 million rows and receives about 900 writes/sec. Existing indexes: orders_pkey(id), idx_orders_account_created(account_id, created_at). Migration:\nALTER TABLE orders ADD COLUMN requires_signature boolean NOT NULL;\nThe application will start writing requires_signature on new orders after the deploy.",
+    "expected_behavior": "A correct review must flag that adding a NOT NULL column without a staged default/backfill on the large orders table is an unsafe migration that can block or fail.",
+    "assertions": [
+      {
+        "text": "not null|blocking|lock|table rewrite|backfill|unsafe migration",
+        "description": "Flags the unsafe large-table NOT NULL column migration and names the blocking/backfill risk."
+      }
+    ]
+  },
+  {
+    "id": "defect-unsafe-migration-02",
+    "prompt": "Please review this MySQL 8.0 migration for the production users table. The table has 64 million rows, steady signup traffic, and replicas used by the API. Existing indexes: PRIMARY(id), idx_users_email(email), idx_users_org_created(org_id, created_at). Migration:\nALTER TABLE users ADD COLUMN risk_score int NOT NULL;\nNew application code will populate risk_score for future users only.",
+    "expected_behavior": "A correct review must flag the NOT NULL column addition on a large existing table as an unsafe migration requiring a nullable/add-backfill-enforce sequence.",
+    "assertions": [
+      {
+        "text": "not null|backfill|blocking|lock|online|unsafe migration",
+        "description": "Detects the unsafe non-staged NOT NULL addition on a large MySQL table."
+      }
+    ]
+  },
+  {
+    "id": "defect-unsafe-migration-03",
+    "prompt": "Please review this Postgres migration. The audit_events table has 140 million rows. Existing indexes include audit_events_pkey(id) and idx_audit_events_tenant_created(tenant_id, created_at DESC). A hot API query runs thousands of times per minute:\nSELECT id, event_type, created_at FROM audit_events WHERE tenant_id = $1 AND created_at >= $2 ORDER BY created_at DESC LIMIT 100;\nMigration:\nDROP INDEX idx_audit_events_tenant_created;",
+    "expected_behavior": "A correct review must flag that the migration drops an in-use index required by a hot query and would cause scan/sort regressions.",
+    "assertions": [
+      {
+        "text": "drop.*index|in-use index|full scan|seq scan|regression|supporting index",
+        "description": "Identifies that dropping the hot-query index is unsafe."
+      }
+    ]
+  },
+  {
+    "id": "defect-unsafe-migration-04",
+    "prompt": "Please review this MySQL migration for the audit_log table. The table has 310 million append-only rows and about 4000 writes/sec. The request_path column already contains non-null values. Existing indexes: PRIMARY(id), idx_audit_log_created(created_at). Migration:\nALTER TABLE audit_log MODIFY COLUMN request_path varchar(1024) NOT NULL, ALGORITHM=COPY, LOCK=EXCLUSIVE;",
+    "expected_behavior": "A correct review must flag the COPY/exclusive-lock table rebuild on a large hot table as an unsafe non-online migration.",
+    "assertions": [
+      {
+        "text": "copy|exclusive|blocking|online|lock|downtime",
+        "description": "Flags the non-online schema change and exclusive lock risk."
+      }
+    ]
+  },
+  {
+    "id": "defect-missing-index-01",
+    "prompt": "Please review this Postgres 14 query change. Table audit_events has 96 million rows. Schema: audit_events(id bigserial primary key, tenant_id uuid not null, actor_id uuid not null, event_type text not null, created_at timestamptz not null). Indexes: audit_events_pkey(id), idx_audit_events_tenant_created(tenant_id, created_at DESC). New query:\nSELECT id, event_type, created_at FROM audit_events WHERE actor_id = $1 ORDER BY created_at DESC LIMIT 50;",
+    "expected_behavior": "A correct review must flag that the actor_id filter and created_at order have no supporting index, causing a full/seq scan on a large table.",
+    "assertions": [
+      {
+        "text": "missing index|full scan|seq scan|type: ?ALL|add .*index|actor_id",
+        "description": "Detects the missing supporting index for the actor_id lookup."
+      }
+    ]
+  },
+  {
+    "id": "defect-missing-index-02",
+    "prompt": "Please review this MySQL 8 query and schema. orders has 40 million rows with indexes PRIMARY(id) and idx_orders_account_created(account_id, created_at). shipments has 42 million rows with indexes PRIMARY(id) and idx_shipments_created(created_at). New endpoint query:\nSELECT o.id, s.status FROM orders o JOIN shipments s ON s.order_id = o.id WHERE o.account_id = ? AND o.created_at >= ? ORDER BY o.created_at DESC LIMIT 100;",
+    "expected_behavior": "A correct review must flag the missing index on shipments.order_id for the join, which can force a scan of shipments.",
+    "assertions": [
+      {
+        "text": "missing index|full scan|type: ?ALL|add .*index|shipments.*order_id|order_id",
+        "description": "Identifies the missing join index on shipments.order_id."
+      }
+    ]
+  },
+  {
+    "id": "defect-missing-index-03",
+    "prompt": "Please review this Postgres billing query. The invoices table has 58 million rows. Schema includes id, customer_id, status, due_date, total_cents. Indexes: invoices_pkey(id), idx_invoices_customer_due(customer_id, due_date). New dashboard query:\nSELECT id, customer_id, total_cents FROM invoices WHERE status = 'open' ORDER BY due_date ASC LIMIT 200;",
+    "expected_behavior": "A correct review must flag that status/due_date lacks a supporting index and can require a seq scan plus sort on a large invoices table.",
+    "assertions": [
+      {
+        "text": "missing index|seq scan|full scan|sort|add .*index|status.*due_date",
+        "description": "Detects the missing index for the open-invoices query."
+      }
+    ]
+  },
+  {
+    "id": "defect-missing-index-04",
+    "prompt": "Please review this MySQL cleanup query. customer_sessions has 120 million rows. Indexes: PRIMARY(id), UNIQUE(session_token), idx_customer_sessions_user(user_id). New scheduled read before deletion:\nSELECT id FROM customer_sessions WHERE expires_at < NOW() AND revoked_at IS NULL ORDER BY expires_at ASC LIMIT 500;",
+    "expected_behavior": "A correct review must flag that expires_at/revoked_at has no supporting index and the cleanup query can full-scan the large sessions table.",
+    "assertions": [
+      {
+        "text": "missing index|full scan|type: ?ALL|add .*index|expires_at|revoked_at",
+        "description": "Finds the missing cleanup-query index."
+      }
+    ]
+  },
+  {
+    "id": "defect-n-plus-one-01",
+    "prompt": "Please review this TypeScript/Postgres endpoint. orders has idx_orders_account_created(account_id, created_at DESC). order_items has idx_order_items_order_id(order_id). Change:\nconst orders = await db.many('select id, total_cents from orders where account_id = $1 order by created_at desc limit 100', [accountId]);\nfor (const order of orders) {\n  order.items = await db.many('select sku, quantity from order_items where order_id = $1', [order.id]);\n}\nreturn orders;",
+    "expected_behavior": "A correct review must flag the per-order query in the loop as an N+1 pattern that should be replaced with a batched query or join.",
+    "assertions": [
+      {
+        "text": "n[+]1|n[ -]?plus[ -]?one|query.*loop|per-row|per row|batch|join",
+        "description": "Flags the looped per-order item query as N+1."
+      }
+    ]
+  },
+  {
+    "id": "defect-n-plus-one-02",
+    "prompt": "Please review this Ruby/Rails change. customers are prefiltered by an indexed org_id query and invoices has index idx_invoices_customer_id(customer_id). Code:\ncustomers = Customer.where(org_id: org_id).order(:id).limit(250)\ncustomers.map do |customer|\n  {\n    id: customer.id,\n    overdue_total: Invoice.where(customer_id: customer.id, status: 'overdue').sum(:total_cents)\n  }\nend",
+    "expected_behavior": "A correct review must flag the invoice aggregate query inside the customer loop as an N+1 database access pattern.",
+    "assertions": [
+      {
+        "text": "n[+]1|n[ -]?plus[ -]?one|query.*loop|per-row|per row|batch|aggregate",
+        "description": "Detects the per-customer aggregate query loop."
+      }
+    ]
+  },
+  {
+    "id": "defect-n-plus-one-03",
+    "prompt": "Please review this Go/Postgres service change. users is read with an indexed tenant_id query. login_events has idx_login_events_user_created(user_id, created_at DESC). Code:\nusers, _ := db.ListUsersByTenant(ctx, tenantID, 300)\nfor i := range users {\n    row := db.QueryRowContext(ctx, 'select created_at from login_events where user_id = $1 order by created_at desc limit 1', users[i].ID)\n    _ = row.Scan(&users[i].LastLoginAt)\n}\nreturn users",
+    "expected_behavior": "A correct review must flag the latest-login lookup inside the user loop as N+1 and recommend batching or a lateral/join query.",
+    "assertions": [
+      {
+        "text": "n[+]1|n[ -]?plus[ -]?one|query.*loop|per-row|per row|batch|join",
+        "description": "Finds the repeated latest-login query per user."
+      }
+    ]
+  },
+  {
+    "id": "defect-n-plus-one-04",
+    "prompt": "Please review this Django/Postgres change. projects are fetched by indexed workspace_id and comments has idx_comments_project_id(project_id). Code:\nprojects = list(Project.objects.filter(workspace_id=workspace_id).order_by('name')[:150])\nfor project in projects:\n    project.open_comment_count = Comment.objects.filter(project_id=project.id, resolved=False).count()\nreturn projects",
+    "expected_behavior": "A correct review must flag the count query inside the projects loop as an N+1 issue requiring a grouped aggregate or prefetch.",
+    "assertions": [
+      {
+        "text": "n[+]1|n[ -]?plus[ -]?one|query.*loop|per-row|per row|batch|group",
+        "description": "Identifies the per-project count query as N+1."
+      }
+    ]
+  },
+  {
+    "id": "defect-offset-pagination-01",
+    "prompt": "Please review this Postgres API query. activity_feed has 220 million rows and id is the primary key. New endpoint supports arbitrary page numbers:\nSELECT id, actor_id, created_at FROM activity_feed ORDER BY id DESC LIMIT 100 OFFSET 5000000;",
+    "expected_behavior": "A correct review must flag deep LIMIT/OFFSET pagination on a huge table and recommend keyset/cursor pagination.",
+    "assertions": [
+      {
+        "text": "keyset|cursor|seek method|OFFSET.*slow|deep pagination|limit.*offset",
+        "description": "Flags deep offset pagination and names the keyset/cursor fix."
+      }
+    ]
+  },
+  {
+    "id": "defect-offset-pagination-02",
+    "prompt": "Please review this MySQL 8 query. messages has 180 million rows and index idx_messages_tenant_created_id(tenant_id, created_at DESC, id DESC). New inbox endpoint:\nSELECT id, sender_id, created_at FROM messages WHERE tenant_id = ? ORDER BY created_at DESC, id DESC LIMIT 50 OFFSET 250000;",
+    "expected_behavior": "A correct review must flag the deep OFFSET despite the supporting order index and recommend cursor/keyset pagination.",
+    "assertions": [
+      {
+        "text": "keyset|cursor|seek method|OFFSET.*slow|deep pagination|large offset",
+        "description": "Catches the high-offset pagination risk."
+      }
+    ]
+  },
+  {
+    "id": "defect-offset-pagination-03",
+    "prompt": "Please review this Postgres export query. transactions has 75 million rows and index idx_transactions_created_id(created_at DESC, id DESC). The export worker pages through all rows like this, with page_number sometimes above 20000:\nSELECT id, amount_cents, created_at FROM transactions ORDER BY created_at DESC, id DESC LIMIT 1000 OFFSET ($1 * 1000);",
+    "expected_behavior": "A correct review must flag the OFFSET-based export paging as deep pagination that should use a cursor/seek predicate.",
+    "assertions": [
+      {
+        "text": "keyset|cursor|seek method|OFFSET.*slow|deep pagination|large offset",
+        "description": "Detects offset paging in a full-table export."
+      }
+    ]
+  },
+  {
+    "id": "defect-offset-pagination-04",
+    "prompt": "Please review this MySQL catalog query. products has 55 million rows and index idx_products_status_published_id(status, published_at DESC, id DESC). New listing endpoint:\nSELECT id, title, published_at FROM products WHERE status = 'active' ORDER BY published_at DESC, id DESC LIMIT 60 OFFSET ?;\nThe API allows users to jump to page 10000.",
+    "expected_behavior": "A correct review must flag the large OFFSET pagination on the active-products list and recommend keyset/cursor pagination.",
+    "assertions": [
+      {
+        "text": "keyset|cursor|seek method|OFFSET.*slow|deep pagination|large offset",
+        "description": "Identifies deep offset pagination on the product listing."
+      }
+    ]
+  },
+  {
+    "id": "defect-lock-risk-01",
+    "prompt": "Please review this Postgres checkout change. cart_items has idx_cart_items_cart_id(cart_id), and carts are small. Code:\nawait db.query('begin');\nconst rows = await db.query('select id, sku, quantity from cart_items where cart_id = $1 for update', [cartId]);\nconst charge = await paymentClient.charge(cardToken, rows.total);\nawait db.query('insert into orders(cart_id, charge_id) values ($1, $2)', [cartId, charge.id]);\nawait db.query('commit');",
+    "expected_behavior": "A correct review must flag that the transaction holds FOR UPDATE locks while waiting on an external payment call, creating contention risk.",
+    "assertions": [
+      {
+        "text": "lock|contention|for update|long transaction|hold.*transaction|external call",
+        "description": "Detects locks held across the external payment call."
+      }
+    ]
+  },
+  {
+    "id": "defect-lock-risk-02",
+    "prompt": "Please review this MySQL worker change. jobs has 15 million rows and index idx_jobs_status_priority(status, priority DESC, id). Worker code:\nSTART TRANSACTION;\nSELECT id, payload FROM jobs WHERE status = 'queued' ORDER BY priority DESC, id ASC LIMIT 500 FOR UPDATE;\n-- deserialize payloads and build requests for about 30 seconds\nUPDATE jobs SET status = 'running' WHERE id IN (...);\nCOMMIT;",
+    "expected_behavior": "A correct review must flag that selecting hundreds of hot queued jobs FOR UPDATE and doing work before commit creates broad, long-held lock contention.",
+    "assertions": [
+      {
+        "text": "lock|contention|for update|long transaction|broad.*lock|skip locked",
+        "description": "Flags broad row locks held during worker processing."
+      }
+    ]
+  },
+  {
+    "id": "defect-lock-risk-03",
+    "prompt": "Please review this Postgres maintenance job. accounts has 30 million rows and index idx_accounts_dormant_last_seen(dormant, last_seen_at). Code:\nBEGIN;\nUPDATE accounts SET dormant = true WHERE dormant = false AND last_seen_at < now() - interval '18 months';\nSELECT pg_sleep(20);\nINSERT INTO maintenance_audit(job_name, finished_at) VALUES ('mark_dormant', now());\nCOMMIT;",
+    "expected_behavior": "A correct review must flag the huge update held open in one transaction, which can hold many row locks and cause contention.",
+    "assertions": [
+      {
+        "text": "lock|contention|long transaction|batch|row locks|hold.*transaction",
+        "description": "Detects the long transaction and broad row-lock risk."
+      }
+    ]
+  },
+  {
+    "id": "defect-lock-risk-04",
+    "prompt": "Please review this MySQL/InnoDB reservation change. reservations has index idx_reservations_room_start_end(room_id, starts_at, ends_at). The database runs at REPEATABLE READ. Booking code:\nSTART TRANSACTION;\nSELECT id FROM reservations WHERE room_id = ? AND starts_at < ? AND ends_at > ? FOR UPDATE;\n-- calculate alternate slots and insert audit rows\nCOMMIT;\nThis path runs on every booking search for popular rooms.",
+    "expected_behavior": "A correct review must flag the range SELECT FOR UPDATE on a hot path as a lock/gap-lock contention risk.",
+    "assertions": [
+      {
+        "text": "gap lock|next-key|for update|contention|lock|hot path",
+        "description": "Identifies the hot range-lock contention risk."
+      }
+    ]
+  },
+  {
+    "id": "clean-01",
+    "prompt": "Please review this Postgres migration. The customers table has 48 million rows and steady writes. Migration:\nALTER TABLE customers ADD COLUMN preferred_locale text;\nThe column is nullable, has no default, and application code handles NULL until a later backfill.",
+    "expected_behavior": "A correct review should treat this as a safe additive nullable column migration with no planted defect.",
+    "assertions": [
+      {
+        "kind": "absent",
+        "text": "unsafe migration|table rewrite|blocking migration|not null",
+        "description": "Guards against falsely flagging a safe nullable additive column."
+      }
+    ]
+  },
+  {
+    "id": "clean-02",
+    "prompt": "Please review this MySQL 8 query. orders has 90 million rows and index idx_orders_account_status_created(account_id, status, created_at DESC, id DESC). Query:\nSELECT id, created_at, total_cents FROM orders WHERE account_id = ? AND status = 'paid' ORDER BY created_at DESC, id DESC LIMIT 100;",
+    "expected_behavior": "A correct review should recognize the filter and sort are covered by the composite index and not flag a defect.",
+    "assertions": [
+      {
+        "kind": "absent",
+        "text": "missing index|full scan|type: ?ALL|seq scan|add .*index",
+        "description": "Guards against a false missing-index finding on a covered query."
+      }
+    ]
+  },
+  {
+    "id": "clean-03",
+    "prompt": "Please review this Postgres feed query. notifications has 130 million rows and index idx_notifications_user_created_id(user_id, created_at DESC, id DESC). The endpoint uses a cursor from the previous page:\nSELECT id, body, created_at FROM notifications WHERE user_id = $1 AND (created_at, id) < ($2, $3) ORDER BY created_at DESC, id DESC LIMIT 50;",
+    "expected_behavior": "A correct review should treat this as safe keyset pagination with a supporting index.",
+    "assertions": [
+      {
+        "kind": "absent",
+        "text": "OFFSET.*slow|deep pagination|large offset",
+        "description": "Guards against falsely flagging offset pagination where no OFFSET is used."
+      }
+    ]
+  },
+  {
+    "id": "clean-04",
+    "prompt": "Please review this TypeScript/Postgres endpoint. orders has idx_orders_account_created(account_id, created_at DESC), and order_items has idx_order_items_order_id(order_id). Code:\nconst orders = await db.many('select id, total_cents from orders where account_id = $1 order by created_at desc limit 100', [accountId]);\nconst items = await db.many('select order_id, sku, quantity from order_items where order_id = any($1)', [orders.map(o => o.id)]);\nreturn attachItems(orders, items);",
+    "expected_behavior": "A correct review should treat this as a batched item load rather than an N+1 query pattern.",
+    "assertions": [
+      {
+        "kind": "absent",
+        "text": "n[+]1|n[ -]?plus[ -]?one|query.*loop|per-row query",
+        "description": "Guards against falsely flagging a batched lookup as N+1."
+      }
+    ]
+  },
+  {
+    "id": "clean-05",
+    "prompt": "Please review this Postgres account update. accounts has PRIMARY KEY(id). Code:\nBEGIN;\nSELECT id, balance_cents FROM accounts WHERE id = $1 FOR UPDATE;\nUPDATE accounts SET balance_cents = balance_cents - $2 WHERE id = $1;\nCOMMIT;\nThere are no network calls or sleeps inside the transaction.",
+    "expected_behavior": "A correct review should treat the short primary-key transaction as safe and not flag broad or long-held locking.",
+    "assertions": [
+      {
+        "kind": "absent",
+        "text": "long transaction|broad.*lock|gap lock|contention|deadlock",
+        "description": "Guards against falsely flagging a short row-level lock as a lock-risk defect."
+      }
+    ]
+  },
+  {
+    "id": "clean-06",
+    "prompt": "Please review this Postgres migration for a 70 million row events table. The migration is run outside a transaction:\nCREATE INDEX CONCURRENTLY idx_events_org_created ON events(org_id, created_at DESC);\nThe application query using org_id and created_at is deployed only after this migration completes.",
+    "expected_behavior": "A correct review should treat the concurrent index build and staged rollout as a safe migration.",
+    "assertions": [
+      {
+        "kind": "absent",
+        "text": "unsafe migration|blocking migration|table rewrite|drop.*index",
+        "description": "Guards against falsely flagging a safe concurrent index build."
+      }
+    ]
+  },
+  {
+    "id": "clean-07",
+    "prompt": "Please review this Rails/Postgres change. projects has idx_projects_workspace_id(workspace_id), and comments has idx_comments_project_resolved(project_id, resolved). Code:\nprojects = Project.where(workspace_id: workspace_id).limit(150).to_a\ncounts = Comment.where(project_id: projects.map(&:id), resolved: false).group(:project_id).count\nprojects.each { |p| p.open_comment_count = counts[p.id] || 0 }\nreturn projects",
+    "expected_behavior": "A correct review should recognize the grouped aggregate as a safe batched alternative to N+1.",
+    "assertions": [
+      {
+        "kind": "absent",
+        "text": "n[+]1|n[ -]?plus[ -]?one|per-row query|query.*loop",
+        "description": "Guards against falsely flagging grouped aggregate loading as N+1."
+      }
+    ]
+  },
+  {
+    "id": "clean-08",
+    "prompt": "Please review this MySQL admin query. country_codes is a static lookup table with 249 rows and PRIMARY KEY(code). Query used by an internal admin page:\nSELECT code, display_name FROM country_codes ORDER BY display_name ASC LIMIT 25 OFFSET 25;",
+    "expected_behavior": "A correct review should treat the small lookup-table OFFSET as safe and not flag deep pagination.",
+    "assertions": [
+      {
+        "kind": "absent",
+        "text": "deep pagination|large offset|OFFSET.*slow|keyset required",
+        "description": "Guards against falsely flagging shallow OFFSET on a tiny lookup table."
+      }
+    ]
+  }
+]
