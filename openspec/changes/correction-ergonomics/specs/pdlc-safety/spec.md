@@ -15,7 +15,7 @@ messages that offer an explicit opt-out (e.g. the SHIP-phase `…or proceed if n
 warnings) MUST remain advisory and MUST NOT be rewritten into imperative form. The rewrite
 MUST NOT change any gate block/allow decision, verdict routing, or fix-loop iteration count —
 only message wording. The rewrite ships on clarity / actionability merit — because the gate
-LOGIC is unchanged there is no behavioral-regression risk — and MUST NOT be justified by a
+LOGIC is unchanged there is no gate-logic regression — and MUST NOT be justified by a
 claimed behavioral self-correction lift unless such a lift is actually measured (see the
 red-first probe requirement below).
 

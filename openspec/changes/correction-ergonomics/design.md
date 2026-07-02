@@ -78,8 +78,9 @@ Do now: <imperative remediation the reader can execute>, then <verify/retry>.
    baseline already produces the corrective action — no red→green headroom. The TrueCall lift does
    not replicate here for capable subject models with ambient context. Per the pre-registered
    discipline we did NOT tighten assertions to force baseline-red (that would measure structural
-   echo = theater). The rewrites ship on clarity / actionability merit (gate logic unchanged → no
-   regression risk); the lift claim is not asserted. Method caveats: `--bare` is unusable in
+   echo = theater; a *pre-registered* semantic assertion could in principle be valid — future
+   work). The rewrites ship on clarity / actionability merit (gate logic unchanged → no gate-logic
+   regression); the lift claim is not asserted. Method caveats: `--bare` is unusable in
    nested sessions (auth), so the subject ran with ambient plugin context (identical across arms);
    the `text` regex assertions proved too brittle to gate on. Harness retained as a recorded
    negative experiment. Full run record in the pack README.

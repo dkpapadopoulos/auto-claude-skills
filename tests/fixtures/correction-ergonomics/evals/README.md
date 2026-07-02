@@ -81,17 +81,21 @@ auth, so runs used a neutral skill body + ambient plugin context, identical acro
 | consolidation-reminder | haiku | PASS | FAIL (regex artifact¹) | none / inverted |
 | blocking-verdict | haiku | PASS | PASS | none |
 
-**Conclusion.** The passive baselines already elicit the corrective action on both `sonnet`
-and `haiku` — no red→green headroom. TrueCall's 8%→64% self-correction lift **does not
-replicate** in this harness for capable subject models with ambient context. Baselines are not
-red, so there is no measured lift to gate on. Forcing baseline-red by tightening the regex would
-only measure whether the model **echoes the treatment's structure** (injection fidelity), not a
-genuine self-correction improvement — that would be theater, so we do not do it.
+**Conclusion.** In this **n=1, non-bare, ambient-context** calibration the passive baselines
+already elicit the corrective action on both `sonnet` and `haiku` — no red→green headroom.
+TrueCall's 8%→64% self-correction lift **did not replicate in this calibration** (several
+treatment cells were not run once the baselines came up green; this is not a claim that a lift is
+impossible in a cleaner setup). Baselines are not red, so there is no measured lift to gate on.
+**Post-hoc** tightening of the assertions to force baseline-red would be invalid — it would
+measure whether the model **echoes the treatment's structure** (injection fidelity), not a
+genuine self-correction improvement, so we do not do it. (A *pre-registered* semantic assertion,
+fixed before seeing outputs, could in principle be valid; that is future work, not this run.)
 
 **Decision.** The four message rewrites ship on **clarity / actionability merit** (the
 expected→actual→imperative shape is objectively more scannable and hands a downstream reader an
-executable next action; gate LOGIC is unchanged, so there is zero behavioral-regression risk).
-They do **not** ship on a claimed behavioral lift. This eval is retained as a **recorded negative
+executable next action). Gate LOGIC is unchanged, so there is **no gate-logic regression**; the
+rewrites do intentionally target reader behavior, but no behavioral **lift** is claimed. They do
+**not** ship on a claimed behavioral lift. This eval is retained as a **recorded negative
 experiment** — do not re-run it expecting a green, and do not cite it as evidence of a lift.
 
 ¹ The consolidation-treatment "FAIL" was a regex artifact: the model correctly asked for the
