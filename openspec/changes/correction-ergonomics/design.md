@@ -99,3 +99,16 @@ Do now: <imperative remediation the reader can execute>, then <verify/retry>.
 - The five opt-out SHIP advisories in openspec-guard.
 - SDLC phase directives / methodology_hints.
 - Any change to gate block/allow logic, verdict routing, or fix-loop iteration counts.
+
+## Implementation Notes (synced at ship time)
+
+- **Concurrent adoption of consolidation-stop.** A parallel session merged an imperative
+  consolidation nudge to `origin/main` independently during this work. On rebase, this branch's
+  consolidation-stop contribution narrowed to adding the honest opt-out clause ("if nothing
+  durable emerged, say so and stop") on top of the already-merged nudge.
+- **Rebased onto an advanced `origin/main` (+8 commits).** The `push-gate-verdict-split` work
+  merged meanwhile and added two NEW passive hard-gate push messages (verification-verdict and
+  routing-governance) in `openspec-guard.sh`. These were **left out of scope** (they postdate the
+  approved scope) — a follow-up could apply the same expected→actual→imperative shape to them.
+- **Negative eval outcome** is recorded in Decision #6 and the pack README; the rewrites shipped
+  on clarity merit, not a measured lift.
