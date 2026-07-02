@@ -318,7 +318,7 @@ When live cluster access is unavailable for inventory or action item verificatio
 ### Step 2c: Quantify User-Facing Impact
 
 Before diving into root cause, establish the impact magnitude from available sources:
-- **From metrics (query):** HTTP 5xx error count/rate at the load balancer or ingress, SLI degradation (latency, availability), affected endpoint paths.
+- **From metrics (query):** HTTP 5xx **and 4xx** error count/rate at the load balancer or ingress (a persistent per-user failure is often a **404 for a not-yet-provisioned resource**, not a 5xx), SLI degradation (latency, availability), affected endpoint paths.
 - **From alerts (check):** If an SLO burn rate alert fired for this service in the time
   window, note the alert name, burn rate value, and error budget remaining. This provides
   severity context before the deep dive. Check via `list_alert_policies` (Tier 1) or
@@ -327,6 +327,8 @@ Before diving into root cause, establish the impact magnitude from available sou
 - **If neither is available:** state "user-facing impact not quantified" and proceed. Do not estimate.
 
 This frames severity before the deep dive — a 1,100-error incident gets different treatment than a 5-error incident.
+
+**Clean 5xx/ERROR sweep ≠ backend healthy.** `severity>=ERROR`/`status>=500` both exclude **4xx**; a persistent per-user failure with a clean 5xx sweep is often a **404 for a not-yet-provisioned resource**, visible only at the gateway/access-log layer or an app-level status field. See `references/4xx-sweep-blind-spot.md`.
 
 ### Step 2d: Baseline-First Gate — Skip Baseline Signals Early
 
