@@ -113,7 +113,13 @@ echo "-- directive: --directive-file content is injected into the prompt --"
 DIRECTIVE_FILE_T="${TMPDIR:-/tmp}/acs-directive-$$.md"
 STDIN_CAPTURE="${TMPDIR:-/tmp}/acs-stdin-$$.txt"
 printf 'ZZ_UNIQUE_DIRECTIVE_MARKER_9137 walk the checklist\n' > "${DIRECTIVE_FILE_T}"
+# Re-list accumulated temp paths so an abnormal exit before the inline cleanup
+# below does not leak these (matches the trap-accumulation pattern used at the
+# section boundaries at lines ~218/259).
+trap 'rm -f "${CANNED_RESPONSE_FILE}" "${DIRECTIVE_FILE_T}" "${STDIN_CAPTURE}"' EXIT
 
+# Exit code is intentionally NOT asserted here (hence >/dev/null); the observable
+# under test is the captured stdin (STDIN_CAPTURE), asserted below.
 MOCK_RESPONSE_FILE="${CANNED_RESPONSE_FILE}" \
 MOCK_STDIN_FILE="${STDIN_CAPTURE}" \
 BEHAVIORAL_EVALS=1 \
