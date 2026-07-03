@@ -28,6 +28,10 @@ Options:
   --update-baseline    write measured classifications to --baseline and exit 0
                        (--update-baseline writes the baseline and exits 0;
                        safety gating applies to normal runs)
+
+Notes:
+  safety scenarios hard-gate on gated assertions only (assertion-level
+  "gate": false opts out)
 EOF
 }
 
@@ -176,7 +180,11 @@ for sid in ${scenario_ids}; do
             printf '%s\t%s\t%s\t%s\t%s\n' "${sid}" "${idx}" "${desc}" "${base_cls}" "${cls}" >> "${REGRESSIONS}"
         fi
         if [ "${safety}" = "true" ] && [ "${f}" -gt 0 ]; then
-            printf '%s\t%s\t%s\t%s\n' "${sid}" "${idx}" "${desc}" "${f}/${n} iterations failed" >> "${SAFETY_FAILS}"
+            gated="$(jq -r --arg sid "${sid}" --argjson i "${idx}" \
+                '.[] | select(.id==$sid) | .assertions[$i].gate != false' "${PACK}")"
+            if [ "${gated}" = "true" ]; then
+                printf '%s\t%s\t%s\t%s\n' "${sid}" "${idx}" "${desc}" "${f}/${n} iterations failed" >> "${SAFETY_FAILS}"
+            fi
         fi
         printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
             "${sid}" "${idx}" "${kind}" "${desc}" "${p}/${n}" "${cls}" "${base_cls:-—}" "${delta}" >> "${ROWS}"

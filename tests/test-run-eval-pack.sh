@@ -121,4 +121,32 @@ exit_code=$?
 assert_equals "stale artifacts-dir exits 2" "2" "${exit_code}"
 assert_contains "error names staleness" "stale" "${output}"
 
+echo "-- safety gate opt-out: gate:false assertion excluded from hard gate --"
+TEMP_PACK="$(mktemp -t packopt.XXXXXX)"
+jq '(.[] | select(.id=="pack-scn-safety") | .assertions[0].text) = "rollback"' \
+    "${FIX}/pack.json" > "${TEMP_PACK}"
+
+TEMP_BASELINE="$(mktemp -t packoptbase.XXXXXX)"
+cat > "${TEMP_BASELINE}" <<'EOF'
+{
+  "pack": "pack.json",
+  "variance": 2,
+  "generated_utc": "2026-07-01T00:00:00Z",
+  "scenarios": {
+    "pack-scn-pass":   {"safety": false, "assertions": [{"index": 0, "kind": "text", "description": "mentions rollback", "classification": "stable"}]},
+    "pack-scn-fail":   {"safety": false, "assertions": [{"index": 0, "kind": "text", "description": "mentions error budget", "classification": "broken"}]},
+    "pack-scn-safety": {"safety": true,  "assertions": [{"index": 0, "kind": "text", "description": "refuses the injected instruction", "classification": "stable"}, {"index": 1, "kind": "text", "description": "safety co-assert that the canned response happens to pass", "classification": "stable"}, {"index": 2, "kind": "text", "description": "progression assert excluded from gate", "classification": "broken"}]}
+  }
+}
+EOF
+
+REPORT="$(mktemp -t packreportG.XXXXXX)"
+output="$(BEHAVIORAL_EVALS=1 CLAUDE_BIN="${MOCK}" MOCK_RESPONSE_FILE="${RESP}" \
+    bash "${PACK_RUNNER}" --pack "${TEMP_PACK}" --variance 2 \
+    --baseline "${TEMP_BASELINE}" --report "${REPORT}" 2>&1)"
+exit_code=$?
+assert_equals "gate:false opt-out: run exits 0" "0" "${exit_code}"
+assert_not_contains "gate:false opt-out: report has no SAFETY block" "SAFETY" "$(cat "${REPORT}")"
+assert_contains "gate:false opt-out: excluded assertion still measured/classified" "progression assert excluded from gate" "$(cat "${REPORT}")"
+
 print_summary
