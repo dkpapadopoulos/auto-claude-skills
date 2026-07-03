@@ -35,7 +35,9 @@ tests/artifacts/<scenario>-<ts>-iterN.json (machine-readable per-iteration resul
 **Workflow** (`.github/workflows/behavioral-evals.yml`):
 - Triggers: `schedule` (weekly, Monday 06:00 UTC) + `workflow_dispatch` (inputs: pack, variance). No `pull_request`/`issue_comment` surface — always executes committed main code, so the fork/injection attack classes in `skill-eval.yml`'s threat model do not arise.
 - Permissions: `contents: read`, `issues: write`. Timeout 45 min. Concurrency group, no cancel of in-flight runs.
-- Steps: checkout main → install claude CLI at a pinned version → run pack runner → `$GITHUB_STEP_SUMMARY` ← report → upload artifacts dir → on exit 1, create-or-update a single tracking issue (title keyed by pack name; body = report, model outputs fenced as data); on exit 0, comment-and-close the tracking issue if open.
+- Steps: checkout main → install claude CLI at a pinned version → run pack runner → `$GITHUB_STEP_SUMMARY` ← report → upload artifacts dir → on exit 1, create-or-update a single tracking issue (title keyed by pack name); on exit 0, comment-and-close the tracking issue if open.
+- **Injection-relay control (safety review):** the tracking issue and step summary carry ONLY structured results — scenario ids, assertion verdicts, pass rates, classifications, baseline deltas, artifact link. Raw subject/judge text lives exclusively in the uploaded artifacts, never in outbound surfaces; this repo's `@claude` issue bot and future sessions must never ingest adversarial-scenario output as context. Issue body opens with a data-only banner.
+- **CI sandbox narrowing (safety review):** in CI, subject and judge runs disallow `Edit,Write,Bash,WebFetch,WebSearch,Task,Agent` (runner flag `--ci-sandbox` or env `EVAL_CI_SANDBOX=1`), removing all network/spawn channels from the eval sandbox. Local runs keep the default `Edit,Write,Bash` denial for fidelity.
 
 ## Trade-offs
 
