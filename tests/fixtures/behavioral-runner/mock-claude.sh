@@ -20,6 +20,17 @@ if [ -n "${MOCK_ARGS_FILE:-}" ]; then
     fi
 fi
 
+# Optional stdin capture: tests may set MOCK_STDIN_FILE to assert on the
+# constructed prompt the runner pipes in on stdin (e.g. --directive-file
+# injection). Fail loudly if advertised but unwritable, so a dependent test
+# can't pass by accident. When unset, stdin is left untouched.
+if [ -n "${MOCK_STDIN_FILE:-}" ]; then
+    if ! cat > "${MOCK_STDIN_FILE}" 2>/dev/null; then
+        echo "mock-claude: failed to write MOCK_STDIN_FILE='${MOCK_STDIN_FILE}'" >&2
+        exit 1
+    fi
+fi
+
 response_text="$(cat "${MOCK_RESPONSE_FILE}")"
 jq -n \
     --arg result "${response_text}" \

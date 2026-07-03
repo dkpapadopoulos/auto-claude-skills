@@ -4,7 +4,11 @@
 # Aggregates per-arm detection & false-positive rates from the variance
 # reports written by tests/run-behavioral-evals.sh (one *-variance.md per
 # (arm, scenario) under tests/artifacts/db-gate-race/<arm>/), applies the
-# frozen decision rule, and writes docs/plans/2026-07-01-db-gate-race-DECISION.md.
+# frozen decision rule, and writes a scratch DECISION file (default
+# docs/plans/db-gate-race-DECISION.md, override with DECISION_OUT). NOTE: the
+# AUTHORITATIVE, committed record is openspec/changes/db-gate-decision-race/
+# DECISION.md — this scratch output is not that file; copy it there when
+# finalizing a re-run.
 #
 # Usage:
 #   . scripts/db-gate-race/score.sh --lib   # source decide()/aggregate_arm() only
@@ -147,7 +151,10 @@ EOF_PAIRS
 # -------- main --------
 main() {
     local out_dir="tests/artifacts/db-gate-race"
-    local decision_file="docs/plans/2026-07-01-db-gate-race-DECISION.md"
+    # Scratch output, not the committed record. Non-date-stamped so a revival
+    # re-run doesn't resurrect a stale 2026-07-01 filename; override via DECISION_OUT.
+    # Authoritative committed record: openspec/changes/db-gate-decision-race/DECISION.md.
+    local decision_file="${DECISION_OUT:-docs/plans/db-gate-race-DECISION.md}"
     local arm result
 
     if [ ! -d "$out_dir" ]; then

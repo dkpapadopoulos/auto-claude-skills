@@ -103,6 +103,34 @@ assert_contains "output reports PASS for the matching assertion" "PASS" "${outpu
 assert_contains "output names the matched scenario id" "well-formed-scenario" "${output}"
 
 # ---------------------------------------------------------------------------
+# Directive injection: --directive-file content reaches the constructed prompt.
+# This is the mechanism that drives the db-gate-race B1/B2 treatment arms; a
+# silent break here would make all arms identical with no error. Assert the
+# directive body is injected (and wrapped in the activation_directive block).
+# ---------------------------------------------------------------------------
+echo "-- directive: --directive-file content is injected into the prompt --"
+
+DIRECTIVE_FILE_T="${TMPDIR:-/tmp}/acs-directive-$$.md"
+STDIN_CAPTURE="${TMPDIR:-/tmp}/acs-stdin-$$.txt"
+printf 'ZZ_UNIQUE_DIRECTIVE_MARKER_9137 walk the checklist\n' > "${DIRECTIVE_FILE_T}"
+
+MOCK_RESPONSE_FILE="${CANNED_RESPONSE_FILE}" \
+MOCK_STDIN_FILE="${STDIN_CAPTURE}" \
+BEHAVIORAL_EVALS=1 \
+CLAUDE_BIN="${PROJECT_ROOT}/tests/fixtures/behavioral-runner/mock-claude.sh" \
+ARTIFACTS_DIR="${TMPDIR:-/tmp}/acs-artifacts-$$" \
+SKILL_PATH="${PROJECT_ROOT}/skills/incident-analysis/SKILL.md" \
+bash "${RUNNER}" \
+  --scenario well-formed-scenario \
+  --directive-file "${DIRECTIVE_FILE_T}" \
+  --pack "${PROJECT_ROOT}/tests/fixtures/behavioral-runner/scenarios.json" >/dev/null 2>&1
+
+directive_captured="$(cat "${STDIN_CAPTURE}" 2>/dev/null)"
+assert_contains "directive body is injected into the constructed prompt" "ZZ_UNIQUE_DIRECTIVE_MARKER_9137" "${directive_captured}"
+assert_contains "directive is wrapped in an activation_directive block" "activation_directive" "${directive_captured}"
+rm -f "${DIRECTIVE_FILE_T}" "${STDIN_CAPTURE}"
+
+# ---------------------------------------------------------------------------
 # Verdict: stubbed claude returns a response that does NOT match the assertion
 # ---------------------------------------------------------------------------
 echo "-- verdict: stubbed claude fail case --"
