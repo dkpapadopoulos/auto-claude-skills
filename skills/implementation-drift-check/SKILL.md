@@ -149,6 +149,7 @@ What code paths in the diff have no test exercise? Cross-reference test files ag
 - Conditional branches (error handlers, fallbacks, edge cases) not covered
 - Integration boundaries (API calls, file I/O, external services) without mocks or integration tests
 - **Test-weakening (gate-gaming):** if `project-verification` reported `gate_gaming_status: suspect` — or the diff deleted assertions, added skip/xfail/disabled markers, or loosened a fixture to make a previously-failing gate pass — flag it as a blocking drift finding. A path that *was* tested and is now un-tested is drift, not coverage.
+- **Coverage gap (test-adequacy):** if `project-verification` reported `coverage_adequacy_status: suspect` (new code below the changed-line coverage floor), surface it as a blocking coverage-gap drift signal, mirroring the gate-gaming treatment above — this catches new code shipping untested, whereas gate-gaming catches existing tests getting weaker. `unverified` or an absent status is not itself drift (fail-open, no coverage tooling present) and MUST NOT be surfaced as a finding on that basis alone.
 
 ### Edge Cases Identified
 

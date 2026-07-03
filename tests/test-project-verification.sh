@@ -83,5 +83,12 @@ assert_contains "example JSON annotated as field-shape (not accepted)" "field-sh
 assert_contains "states detector limits (clean != proof)" "Limits"        "${skill}"
 assert_contains "limits name structural blind spots"      "subject-under-test" "${skill}"
 
+CAC2="${PROJECT_ROOT}/skills/project-verification/scripts/coverage-adequacy-check.sh"
+assert_file_exists "coverage-adequacy-check.sh exists" "${CAC2}"
+assert_contains "documents coverage_adequacy_status" "coverage_adequacy_status" "${skill}"
+assert_contains "documents adequacy unverified semantics" "coverage-adequacy-check.sh" "${skill}"
+assert_contains "adequacy accepted only when exactly clean" "exactly clean" "${skill}"
+assert_contains "adequacy limits: coverage != effectiveness" "coverage is not effectiveness" "${skill}"
+
 print_summary
 exit $?

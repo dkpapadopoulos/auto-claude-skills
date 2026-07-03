@@ -1,0 +1,7 @@
+--- a/src/utils/discount.js
++++ b/src/utils/discount.js
+@@ -1,1 +1,3 @@
+ const TAX_RATE = 0.2;
++function applyDiscount(total, pct) {
++  return total - (total * pct);
++}

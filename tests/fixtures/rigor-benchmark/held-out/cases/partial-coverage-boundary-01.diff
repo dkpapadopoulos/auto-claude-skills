@@ -1,0 +1,6 @@
+--- a/src/utils/shipping.js
++++ b/src/utils/shipping.js
+@@ -1,1 +1,3 @@
+ const BASE_RATE = 5;
++function isEligible(total) { return total > 0; }
++let _cache = null;

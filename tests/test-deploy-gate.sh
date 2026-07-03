@@ -43,5 +43,10 @@ assert_contains "acceptance rejects suspect"               "gate_gaming_status" 
 assert_contains "acceptance requires exactly clean"        "exactly \`clean\`"  "$content"
 assert_contains "acceptance rejects unverified"            "unverified"         "$content"
 
+section "deploy-gate coverage_adequacy_status parity"
+assert_contains "documents coverage_adequacy_status"          "coverage_adequacy_status" "$content"
+assert_contains "suspect coverage_adequacy_status blocks"     "coverage_adequacy_status\` is **not \`suspect\`**" "$content"
+assert_contains "unverified/absent coverage does not block"   "unverified\` or an absent \`coverage_adequacy_status\` does NOT block" "$content"
+
 print_summary
 exit $?

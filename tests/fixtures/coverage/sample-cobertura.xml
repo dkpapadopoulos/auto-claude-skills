@@ -1,0 +1,4 @@
+<coverage><packages><package><classes>
+<class filename="src/foo.py"><lines>
+<line number="2" hits="0"/><line number="3" hits="4"/>
+</lines></class></classes></package></packages></coverage>

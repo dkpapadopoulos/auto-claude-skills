@@ -4,12 +4,14 @@
 
 `project-verification` SHALL, after running the repo's declared test gate, evaluate
 whether the change under review is adequately tested by parsing whatever coverage
-artifact the test runner already emits. It MUST assess (1) changed-line coverage
-against a floor and (2) coverage regression against the base ref, and MUST express
-the result through the existing tri-state evidence contract (`clean` / `suspect` /
-`unverified`). It MUST fail-open: absent, unparseable, or tool-less coverage MUST
-resolve to `unverified` and MUST NOT block. It MUST NOT introduce any new push-gate
-state.
+artifact the test runner already emits. In Phase 1, scope is limited to changed-line
+coverage against a floor, expressed through the existing tri-state evidence contract
+(`clean` / `suspect` / `unverified`). Coverage regression against the base ref is
+explicitly OUT OF SCOPE for Phase 1 and is DEFERRED to Phase 2 — this is a disclosed
+deferral, not a silent omission; the base-ref comparison MUST be tracked as a Phase-2
+item before any claim of full coverage-regression detection is made. It MUST fail-open:
+absent, unparseable, or tool-less coverage MUST resolve to `unverified` and MUST NOT
+block. It MUST NOT introduce any new push-gate state.
 
 #### Scenario: New code shipped without covering tests
 - **GIVEN** a diff that adds executable logic and a coverage artifact exists
@@ -24,21 +26,28 @@ state.
 - **AND** the check MUST NOT block the push gate or alter existing behavior
 
 #### Scenario: Adequately tested change passes
-- **GIVEN** a diff whose changed lines are covered above the floor with no coverage regression vs base
+- **GIVEN** a diff whose changed lines are covered above the floor
 - **WHEN** the adequacy check runs
 - **THEN** the status MUST be `clean`
+- **AND** `clean` reflects changed-line coverage only in Phase 1 — it MUST NOT be read as also certifying no coverage regression against the base ref, which is a Phase-2 deferral (see Phase-2 escalation note above)
 
 ### Requirement: Rigor Benchmark measurement instrument
 
 The change SHALL provide a committed, labeled Rigor Benchmark of seeded
 `(diff, ground-truth-verdict)` cases that supplies objective ground truth for scoring
-any testing-rigor mechanism independent of felt production pain. It MUST cover the six
+any testing-rigor mechanism independent of felt production pain. Coverage of the six
 case classes (untested-new-code, assertion-free-test, bug-with-green-tests,
-weakened-test, adequate-clean, pure-refactor), MUST be split into a `dev` set and a
-blind `held-out` set with the held-out set sourced from a different codebase than the
-gate was tuned on, and MUST report recall, control-set precision, incremental recall
-over the cheapest baseline, and cost per mechanism. Benchmark cases MUST NOT be deleted;
-they MUST be deprecated with a dated rationale.
+weakened-test, adequate-clean, pure-refactor) is PHASED, not all-at-once: Phase 1 MUST
+seed the two classes the Phase 1 adequacy mechanism actually discriminates
+(untested-new-code, adequate-clean); the remaining four (assertion-free-test,
+bug-with-green-tests, weakened-test, pure-refactor) are DEFERRED to Phase 2 and MUST be
+seeded alongside the Phase-2 mechanisms (mutation testing, spec-derived test generation,
+cross-model review) that are able to catch them. This phasing MUST be disclosed in the
+benchmark's own documentation, not left as a silent reduction in scope. The benchmark
+MUST be split into a `dev` set and a blind `held-out` set with the held-out set sourced
+from a different codebase than the gate was tuned on, and MUST report recall, control-set
+precision, incremental recall over the cheapest baseline, and cost per mechanism.
+Benchmark cases MUST NOT be deleted; they MUST be deprecated with a dated rationale.
 
 #### Scenario: Scoring a mechanism against held-out ground truth
 - **GIVEN** a rigor mechanism (the adequacy gate, mutation, test-gen, or cross-model review)

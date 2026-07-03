@@ -1,0 +1,2 @@
+{"id":"untested-new-code-01","class":"untested-new-code","should_flag":true,"diff":"cases/untested-new-code-01.diff","coverage":"cases/untested-new-code-01.lcov","rationale":"new fn, 0 hits","source":"seeded"}
+{"id":"adequate-clean-01","class":"adequate-clean","should_flag":false,"diff":"cases/adequate-clean-01.diff","coverage":"cases/adequate-clean-01.lcov","rationale":"new fn fully covered","source":"seeded"}

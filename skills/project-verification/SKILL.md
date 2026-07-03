@@ -71,6 +71,24 @@ The example above is a **field-shape illustration**, not an accepted-evidence sa
 
 `passed`/`failed` are the command *names*. A command that could not execute (missing tool, runner error — distinct from a test failure) goes in `could_not_verify`, never silently omitted. `gate_gaming_status` is one of `clean` | `suspect` | `unverified` (the check could not run); if `suspect`, the verdict is SUSPECT, not PASS; if `unverified`, the gate-gaming check is also added to `could_not_verify`. The field is always written — `deploy-gate` accepts local evidence only when it is exactly `clean`. Then print a short human summary table (name, command, PASS/FAIL, excerpt) so the result is visible in-session. This evidence is advisory; `deploy-gate` may read it as local verification of record when hosted CI is absent.
 
+**`coverage_adequacy_status`** — a second deterministic tripwire
+(`scripts/coverage-adequacy-check.sh`) complements gate-gaming: gate-gaming catches
+tests getting *weaker*; adequacy catches *new code shipping untested*. Pipe the review
+diff on stdin with `COVERAGE_ADEQUACY_LCOV` pointing at the runner's coverage artifact
+(`lcov.info` or `coverage.xml`); it prints `clean` | `suspect` (+ uncovered `path:line`) |
+`unverified`. Empty output or no artifact = `unverified` (fail-open — never blocks).
+Evidence is accepted-as-adequate only when the status is **exactly clean**; `suspect` and
+`unverified` are surfaced, not swallowed.
+
+Limits: coverage is not effectiveness — a line can be executed by a test that asserts
+nothing, so `clean` here means "exercised," not "meaningfully tested." Only two artifact
+formats are parsed (lcov, cobertura); everything else degrades to `unverified`. Phase 1
+checks changed-line coverage only — coverage regression against the base ref (did overall
+coverage drop even though the new lines are covered) is a disclosed Phase-2 deferral, not
+implemented here. This is an advisory tripwire, not a trust boundary; it is however
+CONSUMED by `deploy-gate` (parity with `gate_gaming_status`) — a `suspect` result there
+blocks acceptance of local verification evidence, so it is not advisory-prose-only.
+
 ## Verification
 
 Before emitting a PASS verdict, confirm -- do not infer:
