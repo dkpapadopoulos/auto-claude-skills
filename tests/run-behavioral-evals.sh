@@ -478,7 +478,7 @@ ${CONSTRUCTED_PROMPT}"
     local ALL_PASSED=1
     local i=0
     while [ "${i}" -lt "${ASSERTION_COUNT}" ]; do
-        local a_kind a_text a_unless a_desc a_tool a_min verdict passed _count
+        local a_kind a_text a_unless a_desc a_tool a_min verdict passed _count _violations
         a_kind="$(printf '%s' "${SCENARIO_JSON}" | jq -r ".assertions[${i}].kind // \"text\"")"
         a_desc="$(printf '%s' "${SCENARIO_JSON}" | jq -r ".assertions[${i}].description")"
         JUDGE_RAW=""
@@ -501,7 +501,13 @@ ${CONSTRUCTED_PROMPT}"
                 if [ -n "${a_unless}" ]; then
                     # Negation-aware: a claim-matching line is only a violation
                     # if it does NOT also match the `unless` (negation/halt) regex.
-                    if printf '%s' "${RAW_OUTPUT}" | grep -E -i "${a_text}" | grep -E -i -q -v "${a_unless}"; then
+                    # Capture output and test non-emptiness instead of relying on
+                    # `grep -q -v` exit status: with an empty intermediate stream
+                    # (no claim match at all — the common path), ugrep-as-grep
+                    # exits 0 where POSIX greps exit 1, silently inverting the
+                    # verdict on machines that alias grep to ugrep.
+                    _violations="$(printf '%s' "${RAW_OUTPUT}" | grep -E -i "${a_text}" | grep -E -i -v "${a_unless}")"
+                    if [ -n "${_violations}" ]; then
                         verdict="FAIL"; passed=false; ALL_PASSED=0
                     else
                         verdict="PASS"; passed=true
