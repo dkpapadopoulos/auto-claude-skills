@@ -6,8 +6,8 @@ A single guarded block in `hooks/session-start-hook.sh`, placed immediately afte
 
 Eligibility (all must hold; each check individually guarded):
 1. `_PREV_ZM` and `_PREV_TOTAL` are validated-numeric (already guaranteed by the existing block) with `_PREV_ZM >= 5`, `_PREV_TOTAL >= 8`, and `_PREV_ZM * 100 / _PREV_TOTAL >= 30` (integer arithmetic on validated operands — the Bash-3.2 quoted-`$(( ))` gotcha applies).
-2. Cooldown: `~/.claude/.skill-adjustability-hint-last` absent OR older than 7 days (mtime compare via `find -mtime`, the same portable pattern the state-prune uses; malformed/missing → treated as expired).
-3. No existing per-skill overrides: `jq -e '.skills | type == "object" and length > 0' ~/.claude/skill-config.json` false or errors. jq missing or file absent → no overrides → still eligible.
+2. Cooldown: `~/.claude/.skill-adjustability-hint-last` absent OR older than 7 days (mtime compare via `find -mtime +6`, which matches only at ≥7 elapsed days — note the pre-existing state-prune uses `-mtime +7` for the same intent, a known off-by-one; do not copy that constant; malformed/missing → treated as expired).
+3. No existing per-skill overrides: `jq -e '.skills | type == "object" and length > 0' ~/.claude/skill-config.json` false or errors. file absent or jq erroring → no overrides → still eligible. (A literal jq-missing environment never reaches this code: session-start exits at Step 2 without jq; the `command -v jq` guard in the block is defensive-only.)
 
 Hint line (single banner line, no new JSON surface):
 `Routing hint: last session <N> of <M> prompts matched no skill (<R>%). Tune triggers locally via ~/.claude/skill-config.json (missed prompts: ~/.claude/.skill-zero-match-log; debug a prompt with SKILL_EXPLAIN=1).`

@@ -1216,8 +1216,10 @@ fi
 # _PREV_ZM/_PREV_TOTAL are validated-numeric upstream (zero-match stats step).
 _ADJ_HINT=""
 _ADJ_MARKER="${HOME}/.claude/.skill-adjustability-hint-last"
+_adj_rate=0
+[[ "$_PREV_TOTAL" -ge 8 ]] && _adj_rate=$(( _PREV_ZM * 100 / _PREV_TOTAL ))
 if [[ "$_PREV_ZM" -ge 5 ]] && [[ "$_PREV_TOTAL" -ge 8 ]] \
-   && [[ $(( _PREV_ZM * 100 / _PREV_TOTAL )) -ge 30 ]]; then
+   && [[ "$_adj_rate" -ge 30 ]]; then
     _adj_eligible=1
     # Cooldown: a marker younger than 7 days suppresses. find prints the path
     # only when mtime is >= 7 days ago; existing-but-fresh => suppress.
@@ -1234,7 +1236,6 @@ if [[ "$_PREV_ZM" -ge 5 ]] && [[ "$_PREV_TOTAL" -ge 8 ]] \
         fi
     fi
     if [[ "$_adj_eligible" -eq 1 ]]; then
-        _adj_rate=$(( _PREV_ZM * 100 / _PREV_TOTAL ))
         _ADJ_HINT="Routing hint: last session ${_PREV_ZM} of ${_PREV_TOTAL} prompts matched no skill (${_adj_rate}%). Tune triggers locally via ~/.claude/skill-config.json (missed prompts: ~/.claude/.skill-zero-match-log; debug a prompt with SKILL_EXPLAIN=1)."
         touch "$_ADJ_MARKER" 2>/dev/null || true
     fi

@@ -2200,7 +2200,7 @@ else
 fi
 teardown_test_env
 
-echo "-- test: adjustability hint fail-open on malformed counter --"
+echo "-- test: malformed counter neutralized by upstream numeric guard (integration) --"
 setup_test_env
 mkdir -p "${HOME}/.claude"
 printf 'garbage' > "${HOME}/.claude/.skill-zero-match-count"
@@ -2208,9 +2208,44 @@ printf '10' > "${HOME}/.claude/.skill-prompt-count-session-hinttest"
 output="$(CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${PROJECT_ROOT}/hooks/session-start-hook.sh" 2>/dev/null < /dev/null)"
 exit_code=$?
 if [ "${exit_code}" -eq 0 ] && ! printf '%s' "${output}" | grep -q "Routing hint:"; then
-    echo "  PASS: malformed counter -> no hint, exit 0"; TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: malformed counter -> upstream guard zeroes it, no hint, exit 0"; TESTS_PASSED=$((TESTS_PASSED + 1))
 else
     echo "  FAIL: malformed counter broke the hook or fired the hint"; TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+teardown_test_env
+
+
+
+echo "-- test: fail-open on malformed skill-config.json (jq parse error path) --"
+setup_test_env
+mkdir -p "${HOME}/.claude"
+printf '{"skills": TRUNCATED' > "${HOME}/.claude/skill-config.json"
+output="$(_run_session_start_for_hint 5 10)"
+exit_code=$?
+if [ "${exit_code}" -eq 0 ] && printf '%s' "${output}" | grep -q "Routing hint:"; then
+    echo "  PASS: jq parse error on overrides check fails open (hint still fires, exit 0)"; TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo "  FAIL: malformed skill-config.json suppressed the hint or broke the hook"; TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+teardown_test_env
+
+echo "-- test: rate boundary — 29% does not fire, 30% fires --"
+setup_test_env
+mkdir -p "${HOME}/.claude"
+output="$(_run_session_start_for_hint 5 17)"
+if printf '%s' "${output}" | grep -q "Routing hint:"; then
+    echo "  FAIL: hint fired at 29% (5/17)"; TESTS_FAILED=$((TESTS_FAILED + 1))
+else
+    echo "  PASS: no hint at 29% (5/17)"; TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
+teardown_test_env
+setup_test_env
+mkdir -p "${HOME}/.claude"
+output="$(_run_session_start_for_hint 6 20)"
+if printf '%s' "${output}" | grep -q "Routing hint:.*6 of 20.*(30%)"; then
+    echo "  PASS: hint fires at exactly 30% (6/20)"; TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo "  FAIL: expected hint at exactly 30% (6/20)"; TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 teardown_test_env
 
