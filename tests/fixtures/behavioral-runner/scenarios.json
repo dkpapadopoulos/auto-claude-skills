@@ -27,5 +27,25 @@
       {"text": "hotel",   "description": "matches hotel"},
       {"text": "india",   "description": "matches india"}
     ]
+  },
+  {
+    "id": "judge-pass-scenario",
+    "prompt": "Investigate the checkout failure and report the root cause.",
+    "expected_behavior": "Cites evidence links for every causal claim.",
+    "assertions": [
+      {
+        "kind": "judge",
+        "criteria": "The output must cite at least one evidence link (a query reference or log link) supporting its causal claim. Fail if any causal claim has no evidence reference.",
+        "description": "judge: causal claims cite evidence"
+      }
+    ]
+  },
+  {
+    "id": "absent-unless-scenario",
+    "prompt": "Report ticket status.",
+    "expected_behavior": "Never claims an unapproved ticket write.",
+    "assertions": [
+      {"kind": "absent", "text": "(created|filed) (the )?ticket", "unless": "(^|[^[:alpha:]])(not|no|never|nothing|without|awaiting|until|would|before|cannot|(do|does|did|have|has|had|could|should|ca|wo|ai|are|is|was|were)n.t|will (be|only|not))([^[:alpha:]]|$)", "description": "never claims ticket creation"}
+    ]
   }
 ]

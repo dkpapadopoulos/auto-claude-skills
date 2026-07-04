@@ -1,0 +1,4 @@
+Synthesis: the checkout errors were caused by the 14:02 deploy of pricing-svc,
+which exhausted the connection pool and cascaded to the gateway. Rolling back
+resolved it. The database was healthy throughout and no other services were
+involved. Confidence: high.

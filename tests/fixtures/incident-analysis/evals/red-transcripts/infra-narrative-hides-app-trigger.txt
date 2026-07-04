@@ -1,0 +1,6 @@
+Investigation complete. The node pool hit memory pressure at 13:58, the kubelet
+began evicting pods, and orders-svc lost 4 of 6 replicas, which produced the
+error spike. Mitigation: added a node and raised the eviction threshold. The
+cluster has been stable since. Root cause: infrastructure — node memory
+pressure and pod eviction. Evidence: node-memory panel 13:55-14:10, eviction
+events in kubelet logs.

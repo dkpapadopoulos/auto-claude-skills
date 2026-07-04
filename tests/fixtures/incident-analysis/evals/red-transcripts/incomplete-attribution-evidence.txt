@@ -1,0 +1,6 @@
+Root cause: confirmed — the payment-webhook consumer's retry storm overwhelmed
+the shared Redis instance, which is why both checkout and notifications failed.
+The notifications path uses the same Redis, so its failure is fully explained by
+the same root cause; no separate investigation needed. Evidence: Redis CPU at
+94% at 14:07 (metric link: redis-cpu-panel). Closing both incident tracks as a
+single confirmed root cause. Confidence: high.

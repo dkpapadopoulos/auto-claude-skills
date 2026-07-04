@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": "",
+  "plan_path": "",
+  "spec_path": "",
+  "sp_plan_path": "",
+  "sp_spec_path": "",
+  "change_slug": "scheduled-behavioral-evals",
+  "capability_slug": "behavioral-evaluation",
+  "source_branch": "feat/scheduled-behavioral-evals",
+  "base_commit": "d7ef4249bace802fa568315cd0ea833cea77746b",
+  "openspec_surface": "none",
+  "archived_at": "2026-07-04T00:18:08Z"
+}

@@ -93,21 +93,36 @@ for i in $(jq -r 'keys[]' "${ASSERTIONS_FILE}"); do
         _record_fail "behavioral.json entry ${i}: has id, prompt, assertions, expected_behavior" "missing field"
         all_valid=false
     fi
-    # Each assertion must have both text (regex) and description fields
+    # Kind-aware field check: text/absent need `text`; judge needs `criteria`;
+    # tool_call needs `tool`. All kinds need `description`.
     assertion_count="$(jq -r ".[$i].assertions | length" "${ASSERTIONS_FILE}")"
     for j in $(seq 0 $((assertion_count - 1))); do
-        a_text="$(jq -r ".[$i].assertions[$j].text // empty" "${ASSERTIONS_FILE}")"
+        a_kind="$(jq -r ".[$i].assertions[$j].kind // \"text\"" "${ASSERTIONS_FILE}")"
         a_desc="$(jq -r ".[$i].assertions[$j].description // empty" "${ASSERTIONS_FILE}")"
-        if [ -z "${a_text}" ] || [ -z "${a_desc}" ]; then
-            _record_fail "behavioral.json ${sid} assertion ${j}: has text and description" "missing field"
+        case "${a_kind}" in
+            judge)     a_req="$(jq -r ".[$i].assertions[$j].criteria // empty" "${ASSERTIONS_FILE}")" ;;
+            tool_call) a_req="$(jq -r ".[$i].assertions[$j].tool // empty" "${ASSERTIONS_FILE}")" ;;
+            *)         a_req="$(jq -r ".[$i].assertions[$j].text // empty" "${ASSERTIONS_FILE}")" ;;
+        esac
+        if [ -z "${a_req}" ] || [ -z "${a_desc}" ]; then
+            _record_fail "behavioral.json ${sid} assertion ${j} (${a_kind}): has required field and description" "missing field"
             all_valid=false
         fi
     done
 done
 if [ "${all_valid}" = "true" ]; then
     _record_pass "behavioral.json: all entries have required fields (id, prompt, assertions, expected_behavior)"
-    _record_pass "behavioral.json: all assertions have text and description"
+    _record_pass "behavioral.json: all assertions have kind-required field and description"
 fi
+
+# Safety subset must be tagged (hard-gate contract with run-eval-pack.sh)
+for sid in jira-injection-no-unapproved-write jira-intake-hitl-gate jira-report-back-hitl-gate; do
+    if jq -e --arg sid "${sid}" '.[] | select(.id == $sid) | .safety == true' "${ASSERTIONS_FILE}" >/dev/null 2>&1; then
+        _record_pass "behavioral.json: ${sid} tagged safety:true"
+    else
+        _record_fail "behavioral.json: ${sid} tagged safety:true" "missing safety tag"
+    fi
+done
 
 # At least one scenario must test each key behavior
 for behavior in "exit.code.*triage\|crashloop.*exit" "evidence_coverage\|gaps" "rollback\|bad.release" "live.triage\|triage.*mode" "independent.*root.*cause\|attribution\|confirmed.dependent" "inconclusive\|not.investigated" "dual.layer\|app.*layer\|infra.*layer" "anchoring\|rank\|diagnostic.value" "baseline.*verif\|intermediate.*conclusion\|tier.*reclassif" "evidence.link\|Links:.*\\·\|verification.*link"; do
