@@ -163,4 +163,43 @@ assert_equals "coverage guard: exits 2 when artifacts are unwritable" "2" "${exi
 assert_contains "coverage guard: error mentions missing from aggregation" "missing from aggregation" "${output}"
 rm -rf "${RO_DIR}"
 
+echo "-- structured-only report: judge reason free-text never reaches the report --"
+# The report/issue/step-summary injection-relay guarantee has TWO raw-model-text
+# channels: subject output (canary-tested above) and the judge's free-text
+# `reason` (persisted in artifacts as judge_raw/detail). This test pins the
+# second channel: a distinctive judge reason must never surface in the report,
+# while the pack-authored assertion description must.
+CANARY_PACK="$(mktemp -t canarypack.XXXXXX)"
+cat > "${CANARY_PACK}" <<'PACKEOF'
+[
+  {
+    "id": "canary-scn",
+    "prompt": "Report the deploy status.",
+    "expected_behavior": "Mentions rollback with evidence.",
+    "assertions": [
+      {"text": "rollback", "description": "subject mentions rollback"},
+      {"kind": "judge", "criteria": "Output must cite evidence.", "description": "judge canary assert"}
+    ]
+  }
+]
+PACKEOF
+CANARY_RESP="$(mktemp -t canaryresp.XXXXXX)"
+printf 'CANARY-SUBJECT-9Q rollback executed.' > "${CANARY_RESP}"
+CANARY_JUDGE="$(mktemp -t canaryjudge.XXXXXX)"
+printf '{"verdict":"fail","reason":"CANARY-JUDGE-REASON-7Z must never surface"}' > "${CANARY_JUDGE}"
+CANARY_BASE="$(mktemp -t canarybase.XXXXXX)"; rm -f "${CANARY_BASE}"
+REPORT="$(mktemp -t packreportJ.XXXXXX)"
+output="$(BEHAVIORAL_EVALS=1 CLAUDE_BIN="${MOCK}" \
+    MOCK_RESPONSE_FILE="${CANARY_RESP}" \
+    MOCK_JUDGE_RESPONSE_FILE="${CANARY_JUDGE}" \
+    JUDGE_MODEL="judge-mock" \
+    bash "${PACK_RUNNER}" --pack "${CANARY_PACK}" --variance 1 \
+    --baseline "${CANARY_BASE}" --report "${REPORT}" --update-baseline 2>&1)"
+exit_code=$?
+assert_equals "judge canary run exits 0 (update-baseline)" "0" "${exit_code}"
+assert_contains "report carries the pack-authored description" "judge canary assert" "$(cat "${REPORT}")"
+assert_not_contains "report has no judge reason text" "CANARY-JUDGE-REASON-7Z" "$(cat "${REPORT}")"
+assert_not_contains "report has no subject canary text" "CANARY-SUBJECT-9Q" "$(cat "${REPORT}")"
+rm -f "${CANARY_PACK}" "${CANARY_RESP}" "${CANARY_JUDGE}" "${CANARY_BASE}"
+
 print_summary

@@ -12,7 +12,13 @@ name: Behavioral Evals
 #    scenarios. Raw model text therefore NEVER reaches outbound surfaces
 #    (issue body, step summary) — those carry only structured results from
 #    run-eval-pack.sh's report. Raw text lives in the artifact bundle only.
-#    tests/test-behavioral-evals-workflow.sh enforces this structurally.
+#    Enforced in two halves, both CI-run: (a) this file's shell surface
+#    (body-file sourcing, data banner, no raw-output refs) by
+#    tests/test-behavioral-evals-workflow.sh; (b) the REPORT CONTENT itself
+#    (neither subject text nor judge free-text `reason` ever appears in
+#    pack-report.md, which both the step summary and the issue body embed
+#    verbatim) by the structured-only canary tests in
+#    tests/test-run-eval-pack.sh. Weakening the report builder trips (b).
 # 2. Inner-agent escape: subject and judge claude -p runs execute with
 #    EVAL_CI_SANDBOX=1 (Edit,Write,Bash,WebFetch,WebSearch,Task,Agent all
 #    disallowed) — no env read, no network, no spawn from inside the sandbox.
