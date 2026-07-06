@@ -1079,7 +1079,8 @@
     "forgetful_connected": false,
     "openspec": false,
     "posthog": false,
-    "lsp": false
+    "lsp": false,
+    "org_hub": false
   },
   "openspec_capabilities": {
     "binary": false,

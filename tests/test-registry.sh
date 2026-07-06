@@ -1043,10 +1043,10 @@ EOF
     has_malicious="$(jq '.context_capabilities | has("malicious_safety_gate")' "${cache_file}" 2>/dev/null)"
     assert_equals "malicious_safety_gate key dropped by whitelist" "false" "${has_malicious}"
 
-    # Key count must equal the canonical set size (10)
+    # Key count must equal the canonical set size (11)
     local key_count
     key_count="$(jq '.context_capabilities | keys | length' "${cache_file}" 2>/dev/null)"
-    assert_equals "context_capabilities has exactly 10 canonical keys" "10" "${key_count}"
+    assert_equals "context_capabilities has exactly 11 canonical keys" "11" "${key_count}"
 
     teardown_test_env
 }
@@ -2055,7 +2055,7 @@ test_fallback_registry_in_sync_with_default_triggers() {
 
     # Canonical context_capabilities key set MUST mirror _CANONICAL_CAP_KEYS in
     # hooks/session-start-hook.sh. If keys change there, update here in lockstep.
-    local cap_keys='["context7","context_hub_cli","context_hub_available","serena","serena_connected","forgetful_memory","forgetful_connected","openspec","posthog","lsp"]'
+    local cap_keys='["context7","context_hub_cli","context_hub_available","serena","serena_connected","forgetful_memory","forgetful_connected","openspec","posthog","lsp","org_hub"]'
 
     local default_json
     default_json="$(cat "$triggers_file")"
