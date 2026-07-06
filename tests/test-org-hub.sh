@@ -196,6 +196,24 @@ test_builder_rejects_traversal_index_path() {
     teardown_test_env
 }
 
+test_absolute_index_path_is_neutralized() {
+    echo "-- test: absolute index_path is neutralized by the repo-root prefix --"
+    setup_test_env
+    local hub consumer ctx
+    hub="$(make_hub_clone)"; consumer="$(make_consumer_repo "${hub}")"
+    # An absolute index_path is NOT blocked by the .. guard, but the
+    # "${_OH_REPO_ROOT}/${_oh_idx_rel}" concatenation turns "/etc/hosts" into
+    # "<repo>//etc/hosts" (a nonexistent path under the repo), so it reads
+    # nothing and stays silent. This test pins that invariant so a future
+    # change to the guard does not "fix" absolute paths and break the prefix.
+    local tmp="${consumer}/.claude/org-hub.json.tmp"
+    jq '.index_path = "/etc/hosts"' \
+        "${consumer}/.claude/org-hub.json" > "${tmp}" && mv "${tmp}" "${consumer}/.claude/org-hub.json"
+    ctx="$(run_hook_in "${consumer}")"
+    assert_not_contains "absolute index_path reads nothing (silent)" "Org Hub" "${ctx}"
+    teardown_test_env
+}
+
 test_multiline_usage_note_still_injects() {
     echo "-- test: multi-line usage_note does not kill injection --"
     setup_test_env
@@ -286,6 +304,7 @@ test_injection_refuses_oversized_index
 test_staleness_advisory
 test_index_path_traversal_blocked
 test_builder_rejects_traversal_index_path
+test_absolute_index_path_is_neutralized
 test_multiline_usage_note_still_injects
 test_us_byte_in_descriptor_field_survives
 test_tilde_hub_path_staleness

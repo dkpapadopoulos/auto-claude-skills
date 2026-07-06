@@ -1285,7 +1285,7 @@ fi
 
 # Inject org-hub frozen index (read-as-data, capped, REFUSE-not-truncate, fail-open).
 # All structure inference happened at /setup onboarding; this reads two committed files.
-_OH_DESC="${_OH_REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}/.claude/org-hub.json"
+_OH_DESC="${_OH_REPO_ROOT}/.claude/org-hub.json"  # _OH_REPO_ROOT is set unconditionally above
 if [ "${_has_org_hub:-false}" = "true" ] && [ -f "${_OH_DESC}" ]; then
     _US="$(printf '\x1f')"
     _OH_FIELDS="$(jq -r \
