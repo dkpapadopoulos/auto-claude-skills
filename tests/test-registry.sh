@@ -2295,5 +2295,32 @@ else
 fi
 teardown_test_env
 
+echo "-- test: intentPatterns ERE-validated (PCRE dropped, valid kept, malformed dropped) --"
+setup_test_env
+_hub3="${HOME}/.claude/plugins/cache/oviva-hub/ip-plugin/1.0.0"
+mkdir -p "${_hub3}/skills/ip-skill"
+printf '%s\n' '---' 'name: ip-skill' 'description: ip' '---' '# IP' \
+    > "${_hub3}/skills/ip-skill/SKILL.md"
+cat > "${_hub3}/skill-rules.json" <<'JSON'
+{ "skills": { "ip-skill": { "promptTriggers": {
+  "keywords": ["deploy"],
+  "intentPatterns": [
+    "(create|start).*(branch|feature)",
+    "(deploy|release).*?(prod)",
+    "(unbalanced"
+  ] } } } }
+JSON
+run_hook >/dev/null
+_cf3="${HOME}/.claude/.skill-registry-cache.json"
+_it="$(jq -r '.skills[] | select(.name=="ip-skill") | .triggers[]' "${_cf3}" 2>/dev/null)"
+if printf '%s\n' "${_it}" | grep -qxF '(create|start).*(branch|feature)' \
+   && ! printf '%s\n' "${_it}" | grep -qF '.*?(prod)' \
+   && ! printf '%s\n' "${_it}" | grep -qF '(unbalanced'; then
+    echo "  PASS: valid ERE kept, PCRE and malformed intentPatterns dropped"; TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo "  FAIL: got triggers=${_it}"; TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+teardown_test_env
+
 
 print_summary
