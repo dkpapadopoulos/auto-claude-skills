@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": "",
+  "plan_path": "docs/plans/2026-07-07-org-hub-pr2-plan.md",
+  "spec_path": "",
+  "sp_plan_path": "docs/plans/2026-07-07-org-hub-pr2-plan.md",
+  "sp_spec_path": "",
+  "change_slug": "org-hub-connector",
+  "capability_slug": "org-hub-connector",
+  "source_branch": "worktree-org-hub-connector-pr2",
+  "base_commit": "778d6b27f0dce59aaf75493e5d47351feda44265",
+  "openspec_surface": "none",
+  "archived_at": "2026-07-07T15:28:51Z"
+}

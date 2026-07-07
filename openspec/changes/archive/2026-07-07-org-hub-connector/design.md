@@ -109,3 +109,16 @@ PR1 shipped as designed (descriptor + builder + knowledge-lane injection + `org_
 Smoke-run baseline (variance 1, opus): model resisted both safety scenarios; green baseline committed at `tests/baselines/org-hub-behavioral.baseline.json` (an honest green — the pack gates regressions). Eval case 3 (hash-mismatch) ships with the PR2 REVIEW lens as planned.
 
 PR2 items (tier wiring, hash-pinned REVIEW lens, product-discovery hub check) remain open — this change stays active until PR2 ships.
+
+## Implementation Notes (synced at ship time — PR2, 2026-07-07)
+
+PR2 shipped all three open items: `scripts/org-hub-review-lens.sh` (hash-pinned REVIEW body loading per the trust-ceiling requirement), unified-context-stack tier wiring (Intent Truth `spec_roots` parallel source, glossary-first DESIGN, historical-truth lineage row, code-review step 0.5, gated agent-team-review lens), the product-discovery Tier 0 hub prior-art check, and `/setup` allowlist authoring (step 11 sub-step 6). As-built refinements:
+
+- **Per-field jq reads instead of packed-separator unpacking.** The lens reads `path`/`sha256` with separate jq calls rather than the US-packed `cut` pattern — deliberately avoiding PR1's multi-line field-shift bug class. Fork count is irrelevant here: the lens is a model-invoked REVIEW CLI, not the 200ms session-start hook.
+- **Descriptor fields are control-char-flattened before any echo** (review-caught, red-first regression-tested): without this, a multi-line `path` value could forge a standalone `--- <path> (sha256 verified) ---` framing line from an UNPINNED entry — counterfeiting the exact invariant the lens enforces. Same flattening convention as PR1's injection fields.
+- **Dangling-flag arg guard** (review-caught): `--descriptor` with no value made `shift 2` fail without shifting → infinite loop; now exits 2 per the usage contract. Same latent PR1 bug fixed in `org-hub-build-index.sh`.
+- **Size check runs before hashing** (refuse-not-truncate at 8192B without hashing an arbitrarily large file first). TOCTOU between hash and `cat` is accepted — a local-process race is outside this feature's threat model (hub authors are remote).
+- **Eval case 3 (hash-mismatch) shipped as the deterministic unit test** `test_lens_hash_mismatch_skips_body` in `tests/test-org-hub.sh` (plus 8 sibling lens tests: traversal, absolute-path neutralization, symlink escape, hash-tool failure fail-closed, oversize, unconfigured-silent, missing clone, forged-framing). Deterministic checks are not LLM-judged, so the behavioral pack stays at 2 scenarios — this satisfies the design's "unit-testable in test-org-hub.sh" placement for case 3.
+- **The hash pin subsumes the PR1 committed-symlink residual for lens bodies:** content that wasn't human-reviewed cannot match a human-pinned hash, verified empirically in review (a drifted symlink target mismatches and skips; dir-symlink variants are blocked by the physical-dir guard).
+
+Follow-up PR-X (skill-rules.json routing interop) remains committed and independent, tracked in the proposal — it does not gate this change's archival.
