@@ -634,9 +634,10 @@ If yes:
 3. Propose a scope for THIS repo (which tribe(s)/domains apply). The user decides.
 4. Draft `.claude/org-hub.json` (schema_version 1 — see `scripts/org-hub-build-index.sh` header for fields) and show it to the user; you MUST confirm before committing anything.
 5. Run: `bash scripts/org-hub-build-index.sh --hub <clone> --descriptor .claude/org-hub.json` and show the resulting index to the user for review.
-6. WARNING (always show verbatim): "The descriptor and index encode org structure (tribe/domain names). Do NOT commit them to public or wider-access repos. Confirm this repo's audience matches the hub content's audience."
-7. If the repo gitignores `.claude/` wholesale, add `!.claude/org-hub.json` and `!.claude/org-hub-index.md` to `.gitignore` (same pattern as `!.claude/knowledge/`).
-8. After the user confirms, stage both files; the user (or their normal PR flow) commits. Re-run step 5 any time the hub moves (a staleness advisory in the session banner will say "re-run /setup").
+6. Optionally pin REVIEW-lens bodies: ask whether any hub instruction files (review checklists, deploy rules) should be loaded verbatim during code review. For each file the user picks: show its full content, get explicit confirmation, compute the pin with `shasum -a 256 <clone>/<hub-relative-path>`, and add `{"path": "<hub-relative-path>", "sha256": "<hash>"}` to `review_lens_allowlist` in `.claude/org-hub.json`. State verbatim: "Pins are content hashes — any upstream edit to a pinned file stops it loading until you re-review and re-pin here." Skip silently if the user picks none.
+7. WARNING (always show verbatim): "The descriptor and index encode org structure (tribe/domain names). Do NOT commit them to public or wider-access repos. Confirm this repo's audience matches the hub content's audience."
+8. If the repo gitignores `.claude/` wholesale, add `!.claude/org-hub.json` and `!.claude/org-hub-index.md` to `.gitignore` (same pattern as `!.claude/knowledge/`).
+9. After the user confirms, stage both files; the user (or their normal PR flow) commits. Re-run step 5 any time the hub moves (a staleness advisory in the session banner will say "re-run /setup").
 
 ## Execution
 

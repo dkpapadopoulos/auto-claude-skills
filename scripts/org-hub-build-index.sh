@@ -4,6 +4,8 @@
 # Usage: org-hub-build-index.sh --hub <clone-path> --descriptor <descriptor-json>
 # Reads scope/context_roots from the descriptor; writes index to its index_path
 # (relative to the descriptor's directory parent repo); records hub HEAD sha.
+# Descriptor also supports optional review_lens_allowlist: [{path, sha256}] — consumed by
+# scripts/org-hub-review-lens.sh (REVIEW-phase hash-pinned body loading), not by this builder.
 # Bash 3.2. Exits non-zero on hard errors (this is a CLI, not a fail-open hook).
 
 HUB=""; DESC=""
