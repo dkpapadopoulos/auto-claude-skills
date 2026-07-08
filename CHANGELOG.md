@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **skill-rules.json routing interop (org-hub PR-X):** hub-published plugin skills are now routable. When a discovered plugin skill has no SKILL.md frontmatter `triggers`, the session-start registry builder falls back to the plugin's `skill-rules.json` — translating `promptTriggers.keywords` into lowercased, ERE-escaped, word-boundary-wrapped regexes and passing through only ERE-valid `intentPatterns` (PCRE-only constructs dropped via denylist + in-process `[[ =~ ]]` compile-check, dropped count logged to stderr). Frontmatter triggers still win; fail-open on every path; ~2 jq forks per file (measured ~20ms translation cost for a 30-skill hub). Spec: `openspec/changes/skill-rules-interop/`. Capability: `skill-routing`.
 - Local-adjustability hint: evidence-gated session-start banner line surfacing `~/.claude/skill-config.json` overrides when the previous session's zero-match rate shows routing friction (>=5 misses, >=8 prompts, >=30%; 7-day cooldown; suppressed for users with existing overrides; fail-open).
 
 ### Fixed

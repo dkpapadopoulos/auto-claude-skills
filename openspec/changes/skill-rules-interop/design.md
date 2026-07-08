@@ -126,3 +126,19 @@ Read-only of local, already-installed plugin files. skill-rules.json content
 becomes routing regexes only (never injected as instructions). No trifecta legs
 added by this change. Malformed input degrades to empty triggers (fail-open),
 never an abort — preserving the hook's fail-open contract.
+
+## Implementation Notes (synced at ship time — PR-X, 2026-07-08)
+
+Shipped as designed. Two refinements captured during code review, both retested:
+
+- **Batched translation.** The first cut used a per-skill loop with 3 jq forks
+  per skill; a measured 30-skill hub added ~520ms over baseline. Reworked
+  `_translate_skill_rules` to 2 jq forks per FILE (extract K/P records → in-process
+  compile-check → assemble map), bringing the translation-only delta to ~20ms
+  for 30 skills. Behavior unchanged; all unit tests + full suite green.
+- **Test assertions extract raw triggers** (`jq -r '.triggers[]'`) rather than the
+  `jq -c` JSON form, so an escaped metacharacter like `values\.yaml` is matched as
+  the real regex string, not its JSON-doubled `values\\.yaml` serialization.
+
+Archive deferred to merge time (consistent with the parent org-hub-connector
+change, which stays active across its PRs).
