@@ -11,11 +11,13 @@ MATCH: rewrite this so it doesn't sound like AI
 MATCH: make this piece less generic, it reads like AI
 MATCH: punch up this newsletter draft so it sounds human
 MATCH: make this blog intro sound less like a robot wrote it
+MATCH: draft a linkedin post arguing that most standups are theater
 
 NO_MATCH: revise the postgres schema for the new table
 NO_MATCH: write a migration to add a column to the users table
 NO_MATCH: these exception log messages sound too generic make them more specific
 NO_MATCH: revise this pr draft before merging
+NO_MATCH: make this error message less generic so users understand what went wrong
 NO_MATCH: the parser we developed, write docs about it
 NO_MATCH: write code for the particle system and document it
 NO_MATCH: write me a python script to rename files
