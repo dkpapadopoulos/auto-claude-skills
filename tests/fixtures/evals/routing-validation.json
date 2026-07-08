@@ -22,6 +22,14 @@
       "inputs": {"prompt": "review my code changes"},
       "expected": {"output_contains": "security-scanner"},
       "tags": ["routing", "review"]
+    },
+    {
+      "name": "design-phase-surfaces-autonomy-check",
+      "description": "DESIGN phase activation output carries the AUTONOMY CHECK hint",
+      "path": "cli",
+      "inputs": {"prompt": "let's design a new autonomous agent feature"},
+      "expected": {"output_contains": "AUTONOMY CHECK"},
+      "tags": ["routing", "design", "autonomy"]
     }
   ]
 }

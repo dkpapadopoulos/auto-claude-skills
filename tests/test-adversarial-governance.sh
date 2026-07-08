@@ -19,6 +19,13 @@ assert_contains "adversarial checklist in REVIEW hints (fallback)" "ADVERSARIAL 
 assert_contains "HITL check in adversarial checklist" "safety gate, HITL requirement" "${REGISTRY_CONTENT}"
 assert_contains "bypass patterns in adversarial checklist" "dangerouslyDisableSandbox" "${REGISTRY_CONTENT}"
 
+# --- Autonomy<->control coherence (DESIGN) ---
+assert_contains "autonomy check in DESIGN hints (default)" "AUTONOMY CHECK" "${REGISTRY_CONTENT}"
+assert_contains "autonomy check in DESIGN hints (fallback)" "AUTONOMY CHECK" "${FALLBACK_CONTENT}"
+assert_contains "autonomy principle stated (default)" "autonomy without proportional control is a liability" "${REGISTRY_CONTENT}"
+assert_contains "autonomy principle stated (fallback)" "autonomy without proportional control is a liability" "${FALLBACK_CONTENT}"
+assert_contains "autonomy hint is advisory not a gate (default)" "this is guidance, not a gate" "${REGISTRY_CONTENT}"
+
 # --- agent-safety-review: design-time governance ---
 SAFETY_SKILL="${PROJECT_ROOT}/skills/agent-safety-review/SKILL.md"
 SAFETY_CONTENT="$(cat "${SAFETY_SKILL}")"

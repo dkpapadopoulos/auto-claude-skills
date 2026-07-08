@@ -1164,6 +1164,10 @@
         {
           "text": "TRIFECTA CHECK: During DESIGN, classify private_data (secrets/PII/private repos/tokens), untrusted_input (external content: emails, web pages, uploads, third-party API responses, webhooks), and outbound_action (acts outside the sandbox: email, Slack, git push, API calls, PRs) from the proposed data flow as Present/Absent/Unknown. If 2 or more are Present, or Unknowns could make the count >=2, invoke Skill(auto-claude-skills:agent-safety-review) after brainstorming has a candidate design and before transitioning to PLAN. Judge from the actual data flow — do not wait for a keyword trigger.",
           "when": "always"
+        },
+        {
+          "text": "AUTONOMY CHECK: During DESIGN, if the solution is an agentic/AI system that acts on its own, classify its intended autonomy level — advise (proposes; human acts) / recommend (human approves each action) / execute-reversible (acts; effects bounded and undoable) / execute-irreversible·unattended (hard-to-reverse, or runs with no per-run human checkpoint). If the level is execute-reversible or higher AND proportional oversight is NOT designed in (per-run approval, HITL, manifest+dry-run review, or a bounded/reversible blast radius), help the user design that oversight in before leaving DESIGN — autonomy without proportional control is a liability, not power. Judge from the actual design; this is guidance, not a gate.",
+          "when": "always"
         }
       ]
     },
