@@ -80,6 +80,24 @@ keywords are the load-bearing routing source. That is expected and logged.
 - **Frontmatter precedence.** A skill carrying both frontmatter triggers and a
   skill-rules entry keeps frontmatter (more specific/curated). skill-rules is a
   fallback, not an override.
+- **Default-triggers interaction.** skill-rules triggers sit at the frontmatter
+  tier (above `default-triggers.json`). If an external plugin shipped a skill
+  whose name collided with a curated default skill AND provided skill-rules
+  keywords, those keywords would override the curated triggers. Accepted:
+  correct-by-design (frontmatter tier wins), the own plugin is skipped in
+  discovery, and cross-plugin name collisions with curated skills are unlikely.
+
+## Performance (measured)
+
+Fork budget was the one substantive review concern. The translator is **2 jq
+forks per skill-rules.json file** (extract records → in-process bash
+compile-check → assemble map), independent of skill count, plus one map-merge
+per file and one final `FRONTMATTER_MAP` merge. Measured on macOS `/bin/bash`
+3.2 with a synthetic 30-skill single-file hub (2 keywords + 3 intentPatterns
+each): translation-only delta (30 skills **with** vs **without** `skill-rules.json`,
+same discovery cost both sides) is **~20 ms**. The larger cost of a big hub is
+discovering the skills themselves (frontmatter parsing), which is
+feature-independent. Well within the 200 ms session-start budget.
 
 ## Decisions
 

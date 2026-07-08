@@ -255,15 +255,24 @@ _parse_frontmatter() {
 # -----------------------------------------------------------------
 # skill-rules.json -> ERE trigger translation (hub routing interop)
 # -----------------------------------------------------------------
-# Emits one line per skill:  <name>\t<triggers_json_array>\t<dropped_count>
-# keywords       -> lowercased, ERE-escaped, word-boundary-wrapped regexes
-# intentPatterns -> ERE-valid only: PCRE-only dropped via jq denylist, then
-#                   survivors compile-checked under bash [[ =~ ]].
-# Fail-open: a missing/malformed file yields no output for it.
+# For one skill-rules.json, prints a single line:  <dropped_count><US><json_map>
+# where json_map is {"<skill>": [<ERE trigger>, ...], ...}.
+#   keywords       -> lowercased, ERE-escaped, word-boundary-wrapped regexes
+#   intentPatterns -> ERE-valid only: PCRE-only dropped via jq denylist (below),
+#                     then survivors compile-checked in-process under [[ =~ ]].
+# The denylist covers the load-bearing PCRE constructs (lazy quantifiers,
+# \d \w \s \b shorthand, (?:/lookarounds, backrefs); exotic anchors like \A
+# pass through as literals and simply mis-match harmlessly). Fork budget is
+# 2 jq calls per FILE (extract + assemble) regardless of skill count -- the
+# compile-check runs in-process. Fail-open: a missing/malformed file yields
+# no output.
 _translate_skill_rules() {
     _srf="$1"
     [ -f "${_srf}" ] || return 0
-    _sr_rows="$(jq -r '
+    # Stage 1 (1 jq): emit records.
+    #   K<US>name<US>kw_json<US>orig_ip_count   (one per skill)
+    #   P<US>name<US>candidate_pattern          (one per denylist survivor)
+    _sr_recs="$(jq -r '
         def esc: gsub("(?<c>[.^$*+?()\\[\\]{}|\\\\])"; "\\" + .c);
         def pcre: "[*+?]\\?|\\{[0-9,]*\\}\\?|\\\\[dDwWsSbB]|\\(\\?[:=!<]|\\\\[1-9]";
         (.skills // {}) | to_entries[] |
@@ -274,37 +283,34 @@ _translate_skill_rules() {
         ((.value.promptTriggers.intentPatterns // [])
             | map(select(type=="string" and length>0))) as $ipall |
         ($ipall | map(select(test(pcre) | not))) as $ip |
-        [$n, ($kw|tojson), ($ip|tojson), ($ipall|length|tostring)] | join("\u001f")
+        ( "K\u001f" + $n + "\u001f" + ($kw|tojson) + "\u001f" + ($ipall|length|tostring) ),
+        ( $ip[] | "P\u001f" + $n + "\u001f" + . )
     ' "${_srf}" 2>/dev/null)" || return 0
-    [ -z "${_sr_rows}" ] && return 0
+    [ -z "${_sr_recs}" ] && return 0
 
-    printf '%s\n' "${_sr_rows}" | while IFS=$'\x1f' read -r _n _kwj _ipj _iporig; do
-        [ -z "${_n}" ] && continue
-        _kept=0
-        _good_lines=""
-        _ip_list="$(printf '%s' "${_ipj}" | jq -r '.[]' 2>/dev/null)"
-        if [ -n "${_ip_list}" ]; then
-            while IFS= read -r _pat; do
-                [ -z "${_pat}" ] && continue
-                [[ "" =~ ${_pat} ]] 2>/dev/null
-                if [ "$?" -ne 2 ]; then
-                    _good_lines="${_good_lines}${_pat}
-"
-                    _kept=$((_kept + 1))
-                fi
-            done <<IPEOF
-${_ip_list}
-IPEOF
-        fi
-        _good_ip="$(printf '%s' "${_good_lines}" | jq -Rn '[inputs | select(length>0)]' 2>/dev/null)"
-        [ -z "${_good_ip}" ] && _good_ip="[]"
-        _trig="$(jq -cn --argjson kw "${_kwj:-[]}" --argjson ip "${_good_ip}" '$kw + $ip' 2>/dev/null)"
-        [ -z "${_trig}" ] && _trig="[]"
-        _drop=0
-        [[ "${_iporig}" =~ ^[0-9]+$ ]] && _drop=$(( _iporig - _kept ))
-        [ "${_drop}" -lt 0 ] && _drop=0
-        printf '%s\t%s\t%s\n' "${_n}" "${_trig}" "${_drop}"
-    done
+    # Stage 2 (0 forks): compile-check candidate patterns in-process; a regex
+    # that fails to compile under bash ERE returns [[ ]] status 2 and is dropped.
+    _sr_kw=""    # lines: name<US>kw_json<US>orig
+    _sr_good=""  # lines: name<US>compilable_pattern
+    while IFS=$'\x1f' read -r _tag _a _b _c; do
+        case "${_tag}" in
+            K) _sr_kw="${_sr_kw}${_a}"$'\x1f'"${_b}"$'\x1f'"${_c}"$'\n' ;;
+            P) [[ "" =~ ${_b} ]] 2>/dev/null
+               [ "$?" -ne 2 ] && _sr_good="${_sr_good}${_a}"$'\x1f'"${_b}"$'\n' ;;
+        esac
+    done <<RECEOF
+${_sr_recs}
+RECEOF
+
+    # Stage 3 (1 jq): assemble name->triggers map + total dropped count.
+    jq -rn --arg kw "${_sr_kw}" --arg good "${_sr_good}" '
+        def rows($s): $s | split("\n") | map(select(length>0) | split("\u001f"));
+        (rows($kw) | map({name:.[0], kw:(.[1]|fromjson), orig:(.[2]|tonumber)})) as $ks |
+        (rows($good) | reduce .[] as $p ({}; .[$p[0]] += [$p[1]])) as $gm |
+        (reduce $ks[] as $k ({}; .[$k.name] = ($k.kw + ($gm[$k.name] // [])))) as $map |
+        (reduce $ks[] as $k (0; . + ($k.orig - (($gm[$k.name] // []) | length)))) as $drop |
+        ($drop|tostring) + "\u001f" + ($map|tojson)
+    ' 2>/dev/null || return 0
 }
 
 # -----------------------------------------------------------------
@@ -444,28 +450,25 @@ fi
 # whose SKILL.md frontmatter supplied none (hub routing interop).
 # -----------------------------------------------------------------
 if [ -n "${_SR_FILES}" ]; then
-    _SR_OUT=""
+    _SR_TRIGGERS_MAP="{}"
     for _srf in ${_SR_FILES}; do
-        _one="$(_translate_skill_rules "${_srf}")"
-        [ -z "${_one}" ] && continue
-        _SR_OUT="${_SR_OUT}${_one}
-"
-        _file_drop="$(printf '%s' "${_one}" | awk -F'\t' '{s+=$3} END{print s+0}')"
-        if [[ "${_file_drop}" =~ ^[0-9]+$ ]] && [ "${_file_drop}" -gt 0 ]; then
+        _res="$(_translate_skill_rules "${_srf}")"
+        [ -z "${_res}" ] && continue
+        _sr_drop="${_res%%$'\x1f'*}"
+        _sr_map="${_res#*$'\x1f'}"
+        [ -z "${_sr_map}" ] && continue
+        _SR_TRIGGERS_MAP="$(jq -cn --argjson a "${_SR_TRIGGERS_MAP}" --argjson b "${_sr_map}" '$a * $b' 2>/dev/null)"
+        [ -z "${_SR_TRIGGERS_MAP}" ] && _SR_TRIGGERS_MAP="{}"
+        if [[ "${_sr_drop}" =~ ^[0-9]+$ ]] && [ "${_sr_drop}" -gt 0 ]; then
             _sr_label="$(basename "$(dirname "${_srf}")")"
             case "${_sr_label}" in
                 [0-9]*.[0-9]*) _sr_label="$(basename "$(dirname "$(dirname "${_srf}")")")" ;;
             esac
             printf '[skill-rules] %s: dropped %s PCRE-only/invalid intentPattern(s)\n' \
-                "${_sr_label}" "${_file_drop}" >&2
+                "${_sr_label}" "${_sr_drop}" >&2
         fi
     done
-    if [ -n "${_SR_OUT}" ]; then
-        _SR_TRIGGERS_MAP="$(printf '%s' "${_SR_OUT}" | jq -Rn '
-            [inputs | select(length>0) | split("\t") | select(length>=2)
-             | {(.[0]): (.[1]|fromjson)}] | add // {}
-        ' 2>/dev/null)"
-        [ -z "${_SR_TRIGGERS_MAP}" ] && _SR_TRIGGERS_MAP="{}"
+    if [ "${_SR_TRIGGERS_MAP}" != "{}" ]; then
         FRONTMATTER_MAP="$(printf '%s' "${FRONTMATTER_MAP}" | jq -c --argjson add "${_SR_TRIGGERS_MAP}" '
             reduce ($add | to_entries[]) as $e (.;
                 if ((.[$e.key].triggers // []) | length) == 0 and (($e.value | length) > 0)
