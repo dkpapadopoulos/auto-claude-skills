@@ -2250,4 +2250,117 @@ fi
 teardown_test_env
 
 
+# ---------------------------------------------------------------------------
+# skill-rules.json routing interop (org-hub PR-X)
+# ---------------------------------------------------------------------------
+echo "-- test: skill-rules.json keywords become word-boundary triggers --"
+setup_test_env
+_hub="${HOME}/.claude/plugins/cache/example-hub/hub-plugin/1.0.0"
+mkdir -p "${_hub}/skills/hub-skill"
+printf '%s\n' '---' 'name: hub-skill' 'description: A hub skill' '---' '# Hub Skill' \
+    > "${_hub}/skills/hub-skill/SKILL.md"
+cat > "${_hub}/skill-rules.json" <<'JSON'
+{ "skills": { "hub-skill": { "promptTriggers": {
+  "keywords": ["branch", "values.yaml", "PR"] } } } }
+JSON
+run_hook >/dev/null
+_cf="${HOME}/.claude/.skill-registry-cache.json"
+# Extract raw trigger strings (jq -r) so regex backslashes are not JSON-doubled
+_trigs="$(jq -r '.skills[] | select(.name=="hub-skill") | .triggers[]' "${_cf}" 2>/dev/null)"
+if printf '%s\n' "${_trigs}" | grep -qxF '(^|[^a-z0-9])branch($|[^a-z0-9])' \
+   && printf '%s\n' "${_trigs}" | grep -qxF '(^|[^a-z0-9])values\.yaml($|[^a-z0-9])' \
+   && printf '%s\n' "${_trigs}" | grep -qxF '(^|[^a-z0-9])pr($|[^a-z0-9])'; then
+    echo "  PASS: keywords translated to lowercased, escaped, boundary-wrapped triggers"; TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo "  FAIL: got triggers=${_trigs}"; TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+teardown_test_env
+
+echo "-- test: frontmatter triggers win over skill-rules --"
+setup_test_env
+_hub2="${HOME}/.claude/plugins/cache/example-hub/fm-plugin/1.0.0"
+mkdir -p "${_hub2}/skills/fm-skill"
+printf '%s\n' '---' 'name: fm-skill' 'description: fm' 'triggers:' '  - "customtrig"' '---' '# FM' \
+    > "${_hub2}/skills/fm-skill/SKILL.md"
+cat > "${_hub2}/skill-rules.json" <<'JSON'
+{ "skills": { "fm-skill": { "promptTriggers": { "keywords": ["ignored"] } } } }
+JSON
+run_hook >/dev/null
+_cf2="${HOME}/.claude/.skill-registry-cache.json"
+_ft="$(jq -c '.skills[] | select(.name=="fm-skill") | .triggers' "${_cf2}" 2>/dev/null)"
+if printf '%s' "${_ft}" | grep -qF 'customtrig' && ! printf '%s' "${_ft}" | grep -qF 'ignored'; then
+    echo "  PASS: frontmatter triggers preserved, skill-rules ignored"; TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo "  FAIL: got triggers=${_ft}"; TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+teardown_test_env
+
+echo "-- test: intentPatterns ERE-validated (PCRE dropped, valid kept, malformed dropped) --"
+setup_test_env
+_hub3="${HOME}/.claude/plugins/cache/example-hub/ip-plugin/1.0.0"
+mkdir -p "${_hub3}/skills/ip-skill"
+printf '%s\n' '---' 'name: ip-skill' 'description: ip' '---' '# IP' \
+    > "${_hub3}/skills/ip-skill/SKILL.md"
+cat > "${_hub3}/skill-rules.json" <<'JSON'
+{ "skills": { "ip-skill": { "promptTriggers": {
+  "keywords": ["deploy"],
+  "intentPatterns": [
+    "(create|start).*(branch|feature)",
+    "(deploy|release).*?(prod)",
+    "(unbalanced"
+  ] } } } }
+JSON
+run_hook >/dev/null
+_cf3="${HOME}/.claude/.skill-registry-cache.json"
+_it="$(jq -r '.skills[] | select(.name=="ip-skill") | .triggers[]' "${_cf3}" 2>/dev/null)"
+if printf '%s\n' "${_it}" | grep -qxF '(create|start).*(branch|feature)' \
+   && ! printf '%s\n' "${_it}" | grep -qF '.*?(prod)' \
+   && ! printf '%s\n' "${_it}" | grep -qF '(unbalanced'; then
+    echo "  PASS: valid ERE kept, PCRE and malformed intentPatterns dropped"; TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo "  FAIL: got triggers=${_it}"; TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+teardown_test_env
+
+echo "-- test: malformed skill-rules.json fails open --"
+setup_test_env
+_hub4="${HOME}/.claude/plugins/cache/example-hub/bad-plugin/1.0.0"
+mkdir -p "${_hub4}/skills/bad-skill"
+printf '%s\n' '---' 'name: bad-skill' 'description: bad' '---' '# Bad' \
+    > "${_hub4}/skills/bad-skill/SKILL.md"
+printf '%s' 'not json{' > "${_hub4}/skill-rules.json"
+run_hook >/dev/null; _rc=$?
+_cf4="${HOME}/.claude/.skill-registry-cache.json"
+_bt="$(jq -c '.skills[] | select(.name=="bad-skill") | .triggers' "${_cf4}" 2>/dev/null)"
+if [ "${_rc}" -eq 0 ] && [ -f "${_cf4}" ] && [ "${_bt}" = "[]" ]; then
+    echo "  PASS: malformed skill-rules.json -> empty triggers, build completed (exit 0)"; TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo "  FAIL: rc=${_rc} triggers=${_bt}"; TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+teardown_test_env
+
+echo "-- test: dropped-count logs to stderr, never stdout --"
+setup_test_env
+_hub5="${HOME}/.claude/plugins/cache/example-hub/log-plugin/1.0.0"
+mkdir -p "${_hub5}/skills/log-skill"
+printf '%s\n' '---' 'name: log-skill' 'description: log' '---' '# Log' \
+    > "${_hub5}/skills/log-skill/SKILL.md"
+cat > "${_hub5}/skill-rules.json" <<'JSON'
+{ "skills": { "log-skill": { "promptTriggers": {
+  "keywords": ["deploy"],
+  "intentPatterns": ["(a).*?(b)", "(c).+?(d)"] } } } }
+JSON
+CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" _SKILL_TEST_MODE=1 bash "${HOOK}" 2>"/tmp/sr_stderr.$$" >"/tmp/sr_stdout.$$"
+if grep -qF '[skill-rules]' "/tmp/sr_stderr.$$" \
+   && grep -qE 'dropped 2 ' "/tmp/sr_stderr.$$" \
+   && ! grep -qF '[skill-rules]' "/tmp/sr_stdout.$$" \
+   && jq -e . "/tmp/sr_stdout.$$" >/dev/null 2>&1; then
+    echo "  PASS: drop count on stderr, stdout is clean valid JSON"; TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo "  FAIL: stderr=$(cat "/tmp/sr_stderr.$$")"; TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f "/tmp/sr_stderr.$$" "/tmp/sr_stdout.$$"
+teardown_test_env
+
+
 print_summary
