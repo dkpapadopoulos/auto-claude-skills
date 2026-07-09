@@ -1,0 +1,29 @@
+# Regex fixtures for skill: authorial-judgment
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+
+MATCH: write a blog post arguing that remote work exposed a writing problem
+MATCH: draft an essay on how adoption became the wrong scoreboard
+MATCH: help me write an op-ed about AI and judgment
+MATCH: rewrite this so it doesn't sound like AI
+MATCH: make this piece less generic, it reads like AI
+MATCH: punch up this newsletter draft so it sounds human
+MATCH: make this blog intro sound less like a robot wrote it
+MATCH: draft a linkedin post arguing that most standups are theater
+
+NO_MATCH: revise the postgres schema for the new table
+NO_MATCH: write a migration to add a column to the users table
+NO_MATCH: these exception log messages sound too generic make them more specific
+NO_MATCH: revise this pr draft before merging
+NO_MATCH: make this error message less generic so users understand what went wrong
+NO_MATCH: the parser we developed, write docs about it
+NO_MATCH: write code for the particle system and document it
+NO_MATCH: revise the particle system to use smaller step sizes
+NO_MATCH: write me a python script to rename files
+NO_MATCH: write the readme for this module
+NO_MATCH: write the changelog entry for the release
+NO_MATCH: write a test for the parser
+NO_MATCH: open a PR to bump the helm chart version
+NO_MATCH: write the postmortem for yesterdays incident

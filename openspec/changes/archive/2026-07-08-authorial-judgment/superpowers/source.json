@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": "",
+  "plan_path": "docs/plans/2026-07-08-authorial-judgment-plan.md",
+  "spec_path": "",
+  "sp_plan_path": "docs/plans/2026-07-08-authorial-judgment-plan.md",
+  "sp_spec_path": "",
+  "change_slug": "authorial-judgment",
+  "capability_slug": "prose-quality",
+  "source_branch": "feat/authorial-judgment-skill",
+  "base_commit": "9048fb86f78d755d8f5ea4c618dda2d3c80535b4",
+  "openspec_surface": "none",
+  "archived_at": "2026-07-08T20:31:08Z"
+}

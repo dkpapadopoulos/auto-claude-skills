@@ -1,0 +1,22 @@
+[
+  {"query": "i am writing an op-ed for our local paper about why the new zoning law hurts small businesses, help me sharpen the argument", "should_trigger": true},
+  {"query": "draft a linkedin post arguing that most standups are theater, make it punchy and not corporate", "should_trigger": true},
+  {"query": "here is my newsletter draft about burnout in tech, it reads kind of flat and generic, can you make it land harder", "should_trigger": true},
+  {"query": "write the opening for a personal essay on leaving academia, something that grabs people and does not sound like chatgpt", "should_trigger": true},
+  {"query": "can you rewrite this blog post so it does not sound so ai-generated and smooth", "should_trigger": true},
+  {"query": "help me write a persuasive article about remote work for our company blog", "should_trigger": true},
+  {"query": "punch up this essay draft, the argument is fine but the prose is lifeless", "should_trigger": true},
+  {"query": "compose an op-ed on why okrs fail and make the reasoning sharper", "should_trigger": true},
+  {"query": "make this piece sound more human, right now it reads like ai wrote it", "should_trigger": true},
+  {"query": "write a blog post arguing that adoption is the wrong scoreboard for AI", "should_trigger": true},
+  {"query": "write the api documentation for our new payments endpoint", "should_trigger": false},
+  {"query": "draft the release notes for v2.3 grouped by feature area", "should_trigger": false},
+  {"query": "rewrite this sql query so it does not do a full table scan", "should_trigger": false},
+  {"query": "help me write a commit message for this refactor", "should_trigger": false},
+  {"query": "revise the postmortem doc for the outage last week", "should_trigger": false},
+  {"query": "write a test for the checkout flow", "should_trigger": false},
+  {"query": "make this error message less generic so users understand what went wrong", "should_trigger": false},
+  {"query": "the parser we developed, write docs about it", "should_trigger": false},
+  {"query": "write code for the particle system and document it", "should_trigger": false},
+  {"query": "rewrite the readme intro so it is clearer", "should_trigger": false}
+]
