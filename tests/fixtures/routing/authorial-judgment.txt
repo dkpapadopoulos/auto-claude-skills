@@ -20,6 +20,7 @@ NO_MATCH: revise this pr draft before merging
 NO_MATCH: make this error message less generic so users understand what went wrong
 NO_MATCH: the parser we developed, write docs about it
 NO_MATCH: write code for the particle system and document it
+NO_MATCH: revise the particle system to use smaller step sizes
 NO_MATCH: write me a python script to rename files
 NO_MATCH: write the readme for this module
 NO_MATCH: write the changelog entry for the release
