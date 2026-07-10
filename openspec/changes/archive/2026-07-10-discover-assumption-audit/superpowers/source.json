@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": null,
+  "plan_path": null,
+  "spec_path": null,
+  "sp_plan_path": null,
+  "sp_spec_path": null,
+  "change_slug": "discover-assumption-audit",
+  "capability_slug": null,
+  "source_branch": "feat/discover-assumption-audit",
+  "base_commit": "185a80d80925a2f31e84ab759444969b3a8f52c5",
+  "openspec_surface": "none",
+  "archived_at": "2026-07-10T18:31:42Z"
+}

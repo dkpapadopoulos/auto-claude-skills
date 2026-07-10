@@ -76,12 +76,48 @@ Add H2, H3, etc. for additional hypotheses. All structured fields are nullable a
 
 **Open Questions:** What needs to be answered before design can begin?
 
-## Step 4: User Validation
+## Step 3b: Assumption Audit
 
-Present the brief and ask:
-> "Does this discovery brief capture the problem accurately? Should I adjust anything before we move to design?"
+Reconstruct the initiative's logic chain — "we achieve [outcome] because A1..An
+hold" — and add an `## Assumption Ledger` section to the brief. Grade evidence,
+not confidence: direct data caps at A, analogous evidence at C, expert judgment
+(however senior or certain the source) at D, no evidence at F. Tag brief findings
+as fact, inference, or unknown — an empty unknown list is a red flag, not a
+success. Full schema, enum, and worked example: `references/assumption-audit.md`.
 
-Wait for user confirmation. If they request changes, revise and re-present.
+Emit the ledger with this exact column order (the checker parses by position),
+plus an `## Options` section containing at least a do-nothing baseline row:
+
+`| id | belief | category | importance | evidence_kind | source_ref | observed_at | grade | kill_threshold |`
+
+`evidence_kind` is one of direct_metric, direct_observation, analogous,
+expert_judgment, none. Cells must not contain a literal `|` — rephrase with "or"
+or "/". For the top 3 fragile assumptions (importance H, grade C or below),
+design a kill-shot test and pre-declare its kill/validate threshold BEFORE
+running it; mark the rest `untested (cutoff)`. State the recommendation
+conditionally: proceed / proceed-with-conditions naming a hard number / hold.
+
+Before presenting the brief, run the deterministic checker and fix every violation:
+`bash "${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)}/scripts/assumption-audit-check.sh" <discovery-doc>`
+
+Proportionality: for declared small/obvious work, state "skipping Assumption
+Audit: <reason>" in chat and proceed — never skip silently.
+
+## Step 4: Two-Step Active Validation
+
+Validation is an active choice, not a yes/no. When a genuine option set exists:
+
+1. **Confirm the map first**: present decision criteria and weights
+   BEFORE any scores — ask the user to confirm or adjust them.
+2. **Then judge on it**: present scored options and the fragile-assumption
+   quadrant. Ask the user to (a) grade or veto specific assumptions, (b) pick
+   which kill-shot test runs first, (c) confirm or override the conditional
+   recommendation.
+
+Close with one serendipity question: the adjacent, debated question the user has
+not asked that would most change this picture.
+
+For declared small/obvious work, collapse to a single confirmation step and say so.
 
 ## Step 5: Persist Discovery State
 

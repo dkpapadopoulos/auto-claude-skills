@@ -49,6 +49,20 @@ assert_contains "DISCOVER persistence hint in fallback" "PERSIST DISCOVERY" "${F
 assert_contains "write-learn-baseline in SHIP sequence" "write-learn-baseline" "${REGISTRY_CONTENT}"
 assert_contains "write-learn-baseline in fallback" "write-learn-baseline" "${FALLBACK_CONTENT}"
 
+# --- Assumption Audit stage (Step 3b) + two-step active validation ---
+assert_contains "SKILL emits an Assumption Ledger section" "## Assumption Ledger" "${SKILL_CONTENT}"
+assert_contains "SKILL runs the deterministic checker before presenting the brief" "scripts/assumption-audit-check.sh" "${SKILL_CONTENT}"
+assert_contains "SKILL points to the references schema" "references/assumption-audit.md" "${SKILL_CONTENT}"
+assert_contains "SKILL confirms criteria/weights before scores (two-step validation)" "BEFORE any scores" "${SKILL_CONTENT}"
+
+REF_FILE="${PROJECT_ROOT}/skills/product-discovery/references/assumption-audit.md"
+assert_file_exists "assumption-audit references schema exists" "${REF_FILE}"
+REF_CONTENT="$(cat "${REF_FILE}" 2>/dev/null)"
+assert_contains "schema defines evidence_kind enum" "evidence_kind" "${REF_CONTENT}"
+assert_contains "schema includes expert_judgment ceiling" "expert_judgment" "${REF_CONTENT}"
+assert_contains "schema defines kill_threshold" "kill_threshold" "${REF_CONTENT}"
+assert_contains "schema requires a do-nothing option" "do-nothing" "${REF_CONTENT}"
+
 # Summary
 echo ""
 echo "=============================="

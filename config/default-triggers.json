@@ -986,6 +986,17 @@
       ]
     },
     {
+      "name": "discovery-audit-companion",
+      "triggers": [
+        "(^|[^a-z])(build|create|implement|develop|design)[^a-z].*(feature|capability|product|service|integration|initiative)(s)?([^a-z]|$)"
+      ],
+      "trigger_mode": "regex",
+      "hint": "DISCOVERY CHECK: If this is a new feature or initiative and no discovery brief with an Assumption Ledger exists for it (check session-state discovery_path / docs/plans/*-discovery.md), consider Skill(auto-claude-skills:product-discovery) first to surface and grade the load-bearing assumptions before designing. Judge from the actual ask — skip for small changes, bugfixes, and work already covered by an approved brief.",
+      "phases": [
+        "DESIGN"
+      ]
+    },
+    {
       "name": "deterministic-security-scan",
       "triggers": [
         "(security|vulnerabilit|owasp|cve|semgrep|opengrep|trivy|sast|dast|dependency.audit)"

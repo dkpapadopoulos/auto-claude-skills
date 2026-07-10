@@ -2,4 +2,5 @@
 # Knowledge Index
 
 - [Bash 3.2 rejects quoted operands in arithmetic](bash32-arithmetic-quoting.md) — Quoted operands in $(( )) abort the script under macOS /bin/bash, breaking fail-open hooks.
+- [Behavioral-eval subjects can Read the branch's own spec — sandbox denies writes, not reads](behavioral-eval-subject-read-contamination.md) — run-behavioral-evals.sh denies Edit/Write/Bash (and in CI WebFetch/WebSearch/Task/Agent) but never Read, so a subject evaluated on a branch whose committed spec/design describes the expected behavior can read the answer and false-pass the baseline; isolate the subject's cwd.
 - [A "no resource yet" 404 is invisible to severity>=ERROR / status>=500 sweeps](no-resource-404-invisible-to-error-sweeps.md) — Persistent per-user failures with a clean 5xx sweep are often 4xx (esp. 404); query the gateway access-log layer and app-level response_status, not the app exception stream.
