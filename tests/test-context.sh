@@ -1157,4 +1157,43 @@ test_openspec_state_set_and_read_intent
 test_openspec_state_set_intent_empty_token
 test_openspec_state_read_intent_missing_file
 
+# ---------------------------------------------------------------------------
+# discovery-audit-companion hint (DESIGN routing companion for Assumption Audit)
+# ---------------------------------------------------------------------------
+test_discovery_audit_companion_hint() {
+    echo "-- test: discovery-audit-companion hint present and fires on DESIGN --"
+
+    local reg_hint fb_hint
+    reg_hint="$(jq -r '.methodology_hints[] | select(.name=="discovery-audit-companion") | .hint' "${PROJECT_ROOT}/config/default-triggers.json" 2>/dev/null)"
+    fb_hint="$(jq -r '.methodology_hints[] | select(.name=="discovery-audit-companion") | .hint' "${PROJECT_ROOT}/config/fallback-registry.json" 2>/dev/null)"
+
+    assert_contains "hint routes to product-discovery (default)" "product-discovery" "${reg_hint}"
+    assert_contains "hint mentions Assumption Ledger (default)" "Assumption Ledger" "${reg_hint}"
+    assert_contains "hint is model-gated, judge the ask (default)" "Judge from the actual ask" "${reg_hint}"
+    assert_contains "hint mirrored in fallback registry" "product-discovery" "${fb_hint}"
+
+    local phases
+    phases="$(jq -r '.methodology_hints[] | select(.name=="discovery-audit-companion") | .phases[]' "${PROJECT_ROOT}/config/default-triggers.json" 2>/dev/null)"
+    assert_equals "hint is DESIGN-scoped" "DESIGN" "${phases}"
+
+    # Live: a DESIGN-routed new-feature prompt surfaces the hint.
+    # Isolated HOME + registry cache seeded from THIS tree's config, so the
+    # shared ~/.claude cache (built from another checkout) cannot leak in.
+    setup_test_env
+    # The cache schema carries per-skill available/enabled flags that
+    # session-start discovery normally sets; seed them all true.
+    jq '.skills = [.skills[] | .available = true | .enabled = true]' \
+        "${PROJECT_ROOT}/config/default-triggers.json" \
+        > "${TEST_HOME}/.claude/.skill-registry-cache.json"
+    local out ctx
+    out="$(jq -n --arg p "let's build a new reporting feature for the dashboard" '{"prompt":$p}' | \
+        HOME="${TEST_HOME}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        bash "${HOOK}" 2>/dev/null)"
+    ctx="$(extract_context "${out}")"
+    assert_contains "hint fires on DESIGN new-feature prompt" "DISCOVERY CHECK" "${ctx}"
+    teardown_test_env
+}
+
+test_discovery_audit_companion_hint
+
 print_summary
