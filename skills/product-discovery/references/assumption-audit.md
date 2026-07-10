@@ -35,7 +35,11 @@ reads by position, so reordering or dropping a column corrupts every row.
 
 `evidence_kind` is one of: `direct_metric`, `direct_observation`, `analogous`,
 `expert_judgment`, `none`. Each kind caps the best grade the belief may claim —
-grade the evidence, not the authority or confidence behind it:
+grade the evidence, not the authority or confidence behind it. `direct_metric`
+is measured data (dashboards, experiment results, billing/funnel numbers);
+`direct_observation` is first-hand witnessed behaviour (a usability-session
+recording, a support call you listened to, watching a user hit the bug) — a
+distinct kind, same A ceiling:
 
 | evidence_kind | grade ceiling |
 |---------------|---------------|
