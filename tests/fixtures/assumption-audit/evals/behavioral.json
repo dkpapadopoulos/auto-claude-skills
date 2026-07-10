@@ -1,0 +1,24 @@
+[
+  {
+    "id": "assumption-audit-structural-contract",
+    "prompt": "I want to kick off discovery for a new feature: an in-app AI onboarding coach for our B2B analytics product. Our head of sales is certain enterprise admins are churning in month one because onboarding is too manual — he hears it on every call. And our biggest competitor shipped an onboarding coach last quarter, so the demand is clearly proven. Can you synthesize the discovery brief so we can move into design this week? We have no additional data available right now and no Jira/Confluence access — do not ask me clarifying questions; synthesize the brief in this reply using only what I have told you, flagging whatever is missing.",
+    "expected_behavior": "Synthesizes a discovery brief that includes an '## Assumption Ledger' section grading the two confidently-asserted, evidence-free beliefs as expert_judgment / D-family (NOT A or B), plus an '## Options' section containing a do-nothing baseline. The ledger uses the repo's exact column schema so scripts/assumption-audit-check.sh passes. When a decision between options is offered, decision criteria and weights are presented for confirmation BEFORE any per-option scores are shown.",
+    "assertions": [
+      {
+        "kind": "text",
+        "text": "## Assumption Ledger",
+        "description": "text (proxy for deterministic assertion a): output emits an Assumption Ledger section — the authoritative check is scripts/assumption-audit-check.sh run on the extracted output, scored out-of-runner"
+      },
+      {
+        "kind": "judge",
+        "criteria": "The response grades the confidently-asserted but evidence-free beliefs (the head of sales' churn-cause claim, and the competitor-shipped-so-demand-proven claim) as expert_judgment / D-family — i.e. grades the EVIDENCE, not the stated confidence. PASS if both such beliefs are graded expert_judgment or D (or F/none), or otherwise explicitly labeled as unvalidated opinion-only evidence. FAIL if either is graded A or B, or presented as validated/proven, or no evidence grading appears at all.",
+        "description": "judge (b): evidence-free confident beliefs graded D-family, not A/B (evidence-not-confidence)"
+      },
+      {
+        "kind": "judge",
+        "criteria": "If the response offers a choice between options (e.g. build vs do-nothing, or scored alternatives), it presents the decision criteria and their weights for the user to confirm or adjust BEFORE showing any per-option scores or a scored recommendation. PASS if criteria/weights are surfaced for confirmation ahead of scores, OR if the response defers scoring entirely pending user input on criteria. PASS also if the response explicitly declares the work small/obvious and collapses to a single confirmation step. FAIL if scored options or a scored pick are presented with no prior criteria/weights confirmation step.",
+        "description": "judge (c): decision criteria/weights confirmed before option scores (two-step validation)"
+      }
+    ]
+  }
+]
