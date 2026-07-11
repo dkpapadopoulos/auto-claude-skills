@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": null,
+  "plan_path": null,
+  "spec_path": null,
+  "sp_plan_path": null,
+  "sp_spec_path": null,
+  "change_slug": "failclosed-push-gate",
+  "capability_slug": null,
+  "source_branch": "feature/failclosed-push-gate",
+  "base_commit": "9a7f1c57595c281cbf422165d1477f8f86bde80c",
+  "openspec_surface": "none",
+  "archived_at": "2026-07-11T07:25:44Z"
+}
