@@ -1523,10 +1523,37 @@ Action: confirm the design_path or re-run the design step before invoking Skill(
       # "### Capabilities affected", "## 🚫 Acceptance Scenarios").
       # h4+, body-text mentions, and leading whitespace before ##
       # intentionally do not count.
-      _DC_CAPS=0; _DC_OOS=0; _DC_ACC=0
+      _DC_CAPS=0; _DC_OOS=0; _DC_ACC=0; _DC_ACC_HEAD=0; _DC_GWT=""
       grep -Eiq '^#{2,3} .*capabilities[- ]affected' "$_DP_DESIGN" 2>/dev/null && _DC_CAPS=1
       grep -Eiq '^#{2,3} .*out[- ]of[- ]scope'       "$_DP_DESIGN" 2>/dev/null && _DC_OOS=1
-      grep -Eiq '^#{2,3} .*acceptance[- ]scenarios'  "$_DP_DESIGN" 2>/dev/null && _DC_ACC=1
+      grep -Eiq '^#{2,3} .*acceptance[- ]scenarios'  "$_DP_DESIGN" 2>/dev/null && _DC_ACC_HEAD=1
+      _DC_ACC=$_DC_ACC_HEAD
+
+      # G/W/T body check (validation-contract-hardening): the DESIGN->PLAN
+      # contract promises 2-4 GIVEN/WHEN/THEN scenarios, so a bare heading
+      # must not satisfy the check. When the heading exists, one awk pass
+      # counts uppercase GIVEN/WHEN/THEN tokens inside the section (until
+      # the next h2/h3; h4+ subsections stay inside). Case-sensitive so
+      # lowercase prose ("when the user...") never counts. Contract holds
+      # at min(GIVEN,WHEN,THEN) >= 2; upper bound not enforced. Fail-open:
+      # awk failure or non-numeric output degrades to heading semantics.
+      if [[ $_DC_ACC_HEAD -eq 1 ]]; then
+        _DC_GWT="$(awk '
+          /^##/ && !/^####/ {
+            inacc = (tolower($0) ~ /acceptance[- ]scenarios/) ? 1 : 0
+            next
+          }
+          inacc {
+            if ($0 ~ /(^|[^A-Za-z])GIVEN([^A-Za-z]|$)/) g++
+            if ($0 ~ /(^|[^A-Za-z])WHEN([^A-Za-z]|$)/)  w++
+            if ($0 ~ /(^|[^A-Za-z])THEN([^A-Za-z]|$)/)  t++
+          }
+          END { m = g + 0; if (w + 0 < m) m = w + 0; if (t + 0 < m) m = t + 0; print m }
+        ' "$_DP_DESIGN" 2>/dev/null || true)"
+        if [[ "$_DC_GWT" =~ ^[0-9]+$ ]] && [[ "$_DC_GWT" -lt 2 ]]; then
+          _DC_ACC=0
+        fi
+      fi
 
       # [i]-only numeric-bar nudge: advisory, never affects the verdict.
       # ERE avoids \b (BSD grep) and PCRE (Bash 3.2 gotcha); grep failure
@@ -1555,6 +1582,8 @@ DESIGN COMPLETENESS: all sections present (${_DP_DESIGN})${_DC_LINE_BAR}"
         fi
         if [[ $_DC_ACC -eq 1 ]]; then
           _DC_LINE_ACC='  [OK] Acceptance Scenarios'
+        elif [[ $_DC_ACC_HEAD -eq 1 ]]; then
+          _DC_LINE_ACC='  [X]  Acceptance Scenarios (heading present but <2 GIVEN/WHEN/THEN scenarios — write 2-4 concrete GIVEN/WHEN/THEN scenarios)'
         else
           _DC_LINE_ACC='  [X]  Acceptance Scenarios (missing — add `## Acceptance Scenarios` section)'
         fi
@@ -1566,7 +1595,7 @@ ${_DC_LINE_ACC}${_DC_LINE_BAR}
 Action: complete the missing section(s) before invoking Skill(superpowers:writing-plans)."
       fi
       [[ -n "${SKILL_EXPLAIN:-}" ]] && \
-        echo "[skill-hook]   [design-guard] caps=${_DC_CAPS} oos=${_DC_OOS} acc=${_DC_ACC} bar=${_DC_BAR} path=${_DP_DESIGN}" >&2
+        echo "[skill-hook]   [design-guard] caps=${_DC_CAPS} oos=${_DC_OOS} acc=${_DC_ACC} gwt=${_DC_GWT:-n/a} bar=${_DC_BAR} path=${_DP_DESIGN}" >&2
     fi
 
     SKILL_LINES="${SKILL_LINES}${DESIGN_COMPLETENESS}"

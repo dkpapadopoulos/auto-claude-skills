@@ -5516,6 +5516,14 @@ _write_design_fixture() {
         for section in "$@"; do
             printf '## %s\n\n' "${section}"
             printf 'Body for %s.\n\n' "${section}"
+            # Acceptance sections carry the 2 GIVEN/WHEN/THEN scenarios the
+            # DESIGN->PLAN contract promises (validation-contract-hardening).
+            case "${section}" in
+                *cceptance*)
+                    printf -- '- GIVEN a fixture WHEN the guard runs THEN it passes\n'
+                    printf -- '- GIVEN another fixture WHEN it runs again THEN it still passes\n\n'
+                    ;;
+            esac
         done
     } > "${path}"
 }
@@ -5671,6 +5679,8 @@ test_plan_completeness_tolerates_heading_variants() {
         '### Capabilities affected' \
         '## Out of Scope & Non-Goals' \
         '## 🚫 Acceptance Scenarios'
+    # Acceptance is the last section, so appended scenarios land inside it.
+    printf -- '- GIVEN a fixture WHEN the guard runs THEN it passes\n- GIVEN another WHEN it reruns THEN it passes\n' >> "${design}"
     _seed_plan_state "${token}" "fixture-slug" "${design}"
 
     printf '{"skill":"brainstorming","phase":"DESIGN"}' \
@@ -5692,6 +5702,7 @@ test_plan_completeness_tolerates_heading_variants() {
         '## 🚫 Capabilities Affected & Constraints' \
         '### out of scope' \
         '## Acceptance-Scenarios'
+    printf -- '- GIVEN a fixture WHEN the guard runs THEN it passes\n- GIVEN another WHEN it reruns THEN it passes\n' >> "${design2}"
     _seed_plan_state "${token}" "fixture-slug" "${design2}"
 
     output="$(run_hook "let us plan this out")"
@@ -5734,6 +5745,91 @@ test_plan_completeness_ignores_non_heading_mentions() {
     teardown_test_env
 }
 test_plan_completeness_ignores_non_heading_mentions
+
+test_plan_completeness_gwt_thin_heading() {
+    echo "-- test: DESIGN COMPLETENESS flags acceptance heading with <2 GWT scenarios --"
+    setup_test_env
+    install_registry
+
+    local token="plan-guard-gwt-thin-$$"
+    local design="${HOME}/design-gwt-thin.md"
+    # Raw fixture: acceptance heading present but body has no GWT scenarios.
+    _write_design_fixture_raw "${design}" \
+        '## Capabilities Affected' \
+        '## Out-of-Scope' \
+        '## Acceptance Scenarios'
+    _seed_plan_state "${token}" "fixture-slug" "${design}"
+
+    printf '{"skill":"brainstorming","phase":"DESIGN"}' \
+        > "${HOME}/.claude/.skill-last-invoked-${token}"
+
+    local output context
+    output="$(run_hook "let us plan this out")"
+    context="$(extract_context "${output}")"
+
+    assert_contains "completeness header present" "DESIGN COMPLETENESS" "${context}"
+    assert_contains "thin acceptance flagged" "heading present but <2 GIVEN/WHEN/THEN" "${context}"
+    assert_not_contains "not the missing-heading message" "Acceptance Scenarios (missing" "${context}"
+    assert_not_contains "no all-present verdict" "all sections present" "${context}"
+
+    teardown_test_env
+}
+test_plan_completeness_gwt_thin_heading
+
+test_plan_completeness_gwt_out_of_section_not_counted() {
+    echo "-- test: DESIGN COMPLETENESS ignores GWT tokens outside the acceptance section --"
+    setup_test_env
+    install_registry
+
+    local token="plan-guard-gwt-oos-$$"
+    local design="${HOME}/design-gwt-oos.md"
+    _write_design_fixture_raw "${design}" \
+        '## Capabilities Affected' \
+        '## Acceptance Scenarios' \
+        '## Out-of-Scope'
+    # GWT tokens land in the trailing Out-of-Scope section, not acceptance.
+    printf -- '- GIVEN x WHEN y THEN z\n- GIVEN a WHEN b THEN c\n' >> "${design}"
+    _seed_plan_state "${token}" "fixture-slug" "${design}"
+
+    printf '{"skill":"brainstorming","phase":"DESIGN"}' \
+        > "${HOME}/.claude/.skill-last-invoked-${token}"
+
+    local output context
+    output="$(run_hook "let us plan this out")"
+    context="$(extract_context "${output}")"
+
+    assert_contains "thin acceptance flagged despite GWT elsewhere" "heading present but <2 GIVEN/WHEN/THEN" "${context}"
+
+    teardown_test_env
+}
+test_plan_completeness_gwt_out_of_section_not_counted
+
+test_plan_completeness_gwt_lowercase_not_counted() {
+    echo "-- test: DESIGN COMPLETENESS does not count lowercase given/when/then prose --"
+    setup_test_env
+    install_registry
+
+    local token="plan-guard-gwt-lower-$$"
+    local design="${HOME}/design-gwt-lower.md"
+    _write_design_fixture_raw "${design}" \
+        '## Capabilities Affected' \
+        '## Out-of-Scope' \
+        '## Acceptance Scenarios'
+    printf -- 'given the user clicks, when it loads, then we are happy. Repeated: given when then.\n' >> "${design}"
+    _seed_plan_state "${token}" "fixture-slug" "${design}"
+
+    printf '{"skill":"brainstorming","phase":"DESIGN"}' \
+        > "${HOME}/.claude/.skill-last-invoked-${token}"
+
+    local output context
+    output="$(run_hook "let us plan this out")"
+    context="$(extract_context "${output}")"
+
+    assert_contains "lowercase prose does not satisfy contract" "heading present but <2 GIVEN/WHEN/THEN" "${context}"
+
+    teardown_test_env
+}
+test_plan_completeness_gwt_lowercase_not_counted
 
 test_plan_completeness_bar_info_when_no_numerics() {
     echo "-- test: DESIGN COMPLETENESS adds [i] numeric-bar line when doc has no thresholds --"
