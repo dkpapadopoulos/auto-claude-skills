@@ -59,3 +59,28 @@ Current: `_DC_ACC=1` iff an h2/h3 `Acceptance Scenarios` heading matches. New:
 ## Acceptance Scenarios
 
 See `specs/runtime-validation/spec.md` and `specs/skill-routing/spec.md` (2-4 GIVEN/WHEN/THEN each). Success bar: all existing suites stay green and the new regression cases pass with min(GIVEN,WHEN,THEN) >= 2 logic verified in both directions.
+
+## Implementation Notes (synced at ship time)
+
+- Built as designed; no architectural deviations. One review follow-up: the spec's "extraction failure fails open" scenario initially relied on structural enforcement only (`|| true` + numeric validation) — code review flagged the missing regression test, so a targeted awk-stub test was added (`test_plan_completeness_gwt_awk_failure_fails_open`, failing only the G/W/T awk pass via an `inacc`-matching stub so the hook's unrelated awk uses keep working).
+- The existing `_write_design_fixture` helper and the heading-variants test needed G/W/T content added — the old fixtures encoded the pre-hardening contract (bare heading = OK), which is exactly the behavior this change retires.
+- Per-line token counting (documented in the hook comment): a line holding two full scenarios counts once and heading-line tokens are skipped; an undercount can only strengthen the advisory, never block.
+
+## Divergences (auto-generated at ship time)
+
+**Acceptance Scenarios:**
+- [x] runtime-validation: expectation derivable only from implementation → downgrade/Coverage Gap, never spec-backed PASS — implemented as designed (SKILL.md Step 2 provenance block)
+- [x] runtime-validation: out-of-enum Source row invalid → re-derive or drop — implemented as designed (report-section sentence)
+- [x] runtime-validation: content test pins the directive — implemented as designed (4 assertions)
+- [x] skill-routing: >=2 G/W/T in section → [OK] — implemented as designed
+- [x] skill-routing: heading present but thin → distinct advisory [X], no deny — implemented as designed
+- [x] skill-routing: out-of-section tokens don't count — implemented as designed
+- [~] skill-routing: extraction failure fails open — implemented as designed, PLUS a regression test added post-review (`test_plan_completeness_gwt_awk_failure_fails_open`); the plan had left this scenario structurally-enforced-only
+
+**Scope changes:**
+- Added: none
+- Removed: none
+- Modified: none
+
+**Design decision changes:**
+- None. The no-behavioral-uptake-eval decision and the clean-context-dispatch rejection (with revival criteria) stand as recorded in Trade-offs/Dissenting Views.
