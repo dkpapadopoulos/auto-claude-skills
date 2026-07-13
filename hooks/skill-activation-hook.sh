@@ -1523,7 +1523,7 @@ Action: confirm the design_path or re-run the design step before invoking Skill(
       # "### Capabilities affected", "## 🚫 Acceptance Scenarios").
       # h4+, body-text mentions, and leading whitespace before ##
       # intentionally do not count.
-      _DC_CAPS=0; _DC_OOS=0; _DC_ACC=0; _DC_ACC_HEAD=0; _DC_GWT=""; _DC_GWT_CLOSED=""
+      _DC_CAPS=0; _DC_OOS=0; _DC_ACC=0; _DC_ACC_HEAD=0; _DC_GWT=""; _DC_GWT_CLOSED=""; _DC_GWT_FILE=""
       grep -Eiq '^#{2,3} .*capabilities[- ]affected' "$_DP_DESIGN" 2>/dev/null && _DC_CAPS=1
       grep -Eiq '^#{2,3} .*out[- ]of[- ]scope'       "$_DP_DESIGN" 2>/dev/null && _DC_OOS=1
       grep -Eiq '^#{2,3} .*acceptance[- ]scenarios'  "$_DP_DESIGN" 2>/dev/null && _DC_ACC_HEAD=1
@@ -1548,7 +1548,17 @@ Action: confirm the design_path or re-run the design step before invoking Skill(
       # Fail-open: awk failure or non-numeric output degrades to heading
       # semantics.
       if [[ $_DC_ACC_HEAD -eq 1 ]]; then
+        # Output: "<in-section min> <early closures> <file-wide min>".
+        # file-wide min >= 2 while in-section < 2 means the scenarios
+        # exist but sit outside the section (typically h3 sub-grouping)
+        # -> the advisory carries a placement remedy instead of a bare
+        # "write scenarios" instruction.
         _DC_GWT_PAIR="$(awk '
+          {
+            if ($0 ~ /(^|[^A-Za-z])GIVEN([^A-Za-z]|$)/) fg++
+            if ($0 ~ /(^|[^A-Za-z])WHEN([^A-Za-z]|$)/)  fw++
+            if ($0 ~ /(^|[^A-Za-z])THEN([^A-Za-z]|$)/)  ft++
+          }
           /^##/ && !/^####/ {
             if (inacc && tolower($0) !~ /acceptance[- ]scenarios/) closed++
             inacc = (tolower($0) ~ /acceptance[- ]scenarios/) ? 1 : 0
@@ -1559,10 +1569,13 @@ Action: confirm the design_path or re-run the design step before invoking Skill(
             if ($0 ~ /(^|[^A-Za-z])WHEN([^A-Za-z]|$)/)  w++
             if ($0 ~ /(^|[^A-Za-z])THEN([^A-Za-z]|$)/)  t++
           }
-          END { m = g + 0; if (w + 0 < m) m = w + 0; if (t + 0 < m) m = t + 0; print m, closed + 0 }
+          END {
+            m = g + 0; if (w + 0 < m) m = w + 0; if (t + 0 < m) m = t + 0
+            fm = fg + 0; if (fw + 0 < fm) fm = fw + 0; if (ft + 0 < fm) fm = ft + 0
+            print m, closed + 0, fm
+          }
         ' "$_DP_DESIGN" 2>/dev/null || true)"
-        _DC_GWT="${_DC_GWT_PAIR%% *}"
-        _DC_GWT_CLOSED="${_DC_GWT_PAIR##* }"
+        read -r _DC_GWT _DC_GWT_CLOSED _DC_GWT_FILE <<< "$_DC_GWT_PAIR" || true
         if [[ "$_DC_GWT" =~ ^[0-9]+$ ]] && [[ "$_DC_GWT" -lt 2 ]]; then
           _DC_ACC=0
         fi
@@ -1596,7 +1609,11 @@ DESIGN COMPLETENESS: all sections present (${_DP_DESIGN})${_DC_LINE_BAR}"
         if [[ $_DC_ACC -eq 1 ]]; then
           _DC_LINE_ACC='  [OK] Acceptance Scenarios'
         elif [[ $_DC_ACC_HEAD -eq 1 ]]; then
-          _DC_LINE_ACC='  [X]  Acceptance Scenarios (heading present but <2 GIVEN/WHEN/THEN scenarios — write 2-4 concrete GIVEN/WHEN/THEN scenarios)'
+          if [[ "${_DC_GWT_FILE:-}" =~ ^[0-9]+$ ]] && [[ "$_DC_GWT_FILE" -ge 2 ]]; then
+            _DC_LINE_ACC='  [X]  Acceptance Scenarios (heading present but <2 GIVEN/WHEN/THEN scenarios in the section — scenarios exist elsewhere in the doc; keep them directly under the heading (h2/h3 headings end the section) or use "#### Scenario:" (h4) sub-grouping)'
+          else
+            _DC_LINE_ACC='  [X]  Acceptance Scenarios (heading present but <2 GIVEN/WHEN/THEN scenarios — write 2-4 concrete GIVEN/WHEN/THEN scenarios)'
+          fi
         else
           _DC_LINE_ACC='  [X]  Acceptance Scenarios (missing — add `## Acceptance Scenarios` section)'
         fi
@@ -1608,7 +1625,7 @@ ${_DC_LINE_ACC}${_DC_LINE_BAR}
 Action: complete the missing section(s) before invoking Skill(superpowers:writing-plans)."
       fi
       [[ -n "${SKILL_EXPLAIN:-}" ]] && \
-        echo "[skill-hook]   [design-guard] caps=${_DC_CAPS} oos=${_DC_OOS} acc=${_DC_ACC} gwt=${_DC_GWT:-n/a} gwt_closed_by_heading=${_DC_GWT_CLOSED:-n/a} bar=${_DC_BAR} path=${_DP_DESIGN}" >&2
+        echo "[skill-hook]   [design-guard] caps=${_DC_CAPS} oos=${_DC_OOS} acc=${_DC_ACC} gwt=${_DC_GWT:-n/a} gwt_closed_by_heading=${_DC_GWT_CLOSED:-n/a} gwt_filewide=${_DC_GWT_FILE:-n/a} bar=${_DC_BAR} path=${_DP_DESIGN}" >&2
     fi
 
     SKILL_LINES="${SKILL_LINES}${DESIGN_COMPLETENESS}"

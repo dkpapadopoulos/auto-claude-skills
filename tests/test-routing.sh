@@ -5771,6 +5771,11 @@ test_plan_completeness_gwt_thin_heading() {
     assert_contains "thin acceptance flagged" "heading present but <2 GIVEN/WHEN/THEN" "${context}"
     assert_not_contains "not the missing-heading message" "Acceptance Scenarios (missing" "${context}"
     assert_not_contains "no all-present verdict" "all sections present" "${context}"
+    # No scenarios exist anywhere in this doc -> the placement hint
+    # ("scenarios exist elsewhere") must NOT render; that advice only
+    # applies when tokens were found outside the section.
+    assert_not_contains "no placement hint on a genuinely empty section" \
+        "elsewhere in the doc" "${context}"
 
     teardown_test_env
 }
@@ -5909,6 +5914,11 @@ test_plan_completeness_gwt_h3_grouping_closes_section() {
 
     assert_contains "h3-grouped scenarios trip the thin advisory" \
         "heading present but <2 GIVEN/WHEN/THEN" "${context}"
+
+    # Scenarios exist in the doc (just outside the section) -> the message
+    # itself carries the placement remedy, no SKILL_EXPLAIN needed.
+    assert_contains "placement hint names h4 grouping" \
+        '#### Scenario:' "${context}"
 
     # The SKILL_EXPLAIN breadcrumb surfaces the early-closure count so a
     # false advisory on an h3-grouped doc is debuggable.
