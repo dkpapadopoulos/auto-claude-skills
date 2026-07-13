@@ -1585,11 +1585,17 @@ Action: confirm the design_path or re-run the design step before invoking Skill(
       # scenarios live in sibling specs/<cap>/spec.md files, not design.md —
       # without this, [OK] is unreachable for spec-driven changes (measured:
       # 8/10 real docs permanently [X] in the PR #105 dogfood). Satisfied
-      # when sibling specs carry >=2 aggregated WHEN/THEN pairs. GIVEN is
-      # deliberately NOT required — the OpenSpec scenario template makes it
-      # optional. Strictly additive: only flips [X]->[OK]; any error path
-      # (no specs dir, empty glob, awk failure, non-numeric output)
-      # degrades to the design-file verdict above.
+      # when sibling specs carry >=2 aggregated WHEN/THEN pairs. NOTE the
+      # deliberate threshold divergence from the design-file check above:
+      # that one requires min(GIVEN,WHEN,THEN); this one only
+      # min(WHEN,THEN), because the OpenSpec scenario template makes GIVEN
+      # optional — if that policy changes, change BOTH blocks. Strictly
+      # additive: only flips [X]->[OK]; any error path (no specs dir,
+      # empty glob, awk failure, non-numeric output) degrades to the
+      # design-file verdict above. Empty-glob mechanics: bash 3.2 has no
+      # nullglob here, so a matchless glob reaches cat as a literal path —
+      # the resulting ENOENT is intentionally absorbed by 2>/dev/null and
+      # `|| true`, not an oversight.
       _DC_ACC_SPECS=0; _DC_SPEC_WT=""
       if [[ $_DC_ACC -eq 0 ]]; then
         _DP_DIR="${_DP_DESIGN%/*}"
