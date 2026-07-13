@@ -40,3 +40,21 @@ One additive block in the DESIGN COMPLETENESS section of `hooks/skill-activation
 ## Acceptance Scenarios
 
 See `specs/skill-routing/spec.md` (4 GIVEN/WHEN/THEN scenarios). Success bar: aggregated min(WHEN,THEN) >= 2 flips the line to [OK]; full suite stays green at 85/85 files; post-fix corpus re-run flips the acceptance line on the repo's real spec-driven changes whose specs carry >= 2 scenarios.
+
+## Implementation Notes (synced at ship time)
+
+- Built as designed. One review follow-up strengthened spec conformance: the all-present short-circuit initially dropped the "(in sibling specs/)" annotation (a documented deviation); review flagged it against the spec's SHALL, so the summary line now carries "; acceptance in sibling specs/" when the fallback satisfied the check — verified red-first against the pre-fix hook.
+- Post-fix dogfood corpus: all 7 real spec-driven changes flipped to [OK] (gwt_specs 4-10), including this change itself rendering "all sections present (…; acceptance in sibling specs/)".
+
+## Divergences (auto-generated at ship time)
+
+**Acceptance Scenarios:**
+- [x] Spec-driven change satisfies via sibling specs — implemented as designed (`test_plan_completeness_specpath_satisfies_perline`)
+- [x] GIVEN-less template scenarios count — implemented as designed (GIVEN-less bold WHEN/THEN fixtures in both flip tests)
+- [x] Thin sibling specs do not flip — implemented as designed (`test_plan_completeness_specpath_thin_specs_stay_flagged`)
+- [x] Default-mode designs unaffected — locked by the entire pre-existing fixture population (verified by reviewer)
+- [~] Distinct annotation on the summary line — spec's SHALL initially unmet on the all-present short-circuit; fixed post-review (6429c30), red-first verified
+
+**Scope changes:** none (Added/Removed/Modified: none)
+
+**Design decision changes:** none — deny-bias trade (WHEN/THEN prose meta-mentions) stands as documented in Dissenting Views.

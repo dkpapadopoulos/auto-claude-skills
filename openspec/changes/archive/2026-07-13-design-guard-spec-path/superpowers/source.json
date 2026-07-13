@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": "openspec/changes/design-guard-spec-path/design.md",
+  "plan_path": "docs/plans/2026-07-13-design-guard-spec-path-plan.md",
+  "spec_path": "openspec/changes/design-guard-spec-path/specs/skill-routing/spec.md",
+  "sp_plan_path": "docs/plans/2026-07-13-design-guard-spec-path-plan.md",
+  "sp_spec_path": "openspec/changes/design-guard-spec-path/specs/skill-routing/spec.md",
+  "change_slug": "design-guard-spec-path",
+  "capability_slug": "skill-routing",
+  "source_branch": "feat/design-guard-spec-path",
+  "base_commit": "6429c30533647c8402057cc8d67ee011787a6cdc",
+  "openspec_surface": "none",
+  "archived_at": "2026-07-13T17:06:25Z"
+}
