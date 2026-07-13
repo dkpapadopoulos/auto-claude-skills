@@ -1523,10 +1523,63 @@ Action: confirm the design_path or re-run the design step before invoking Skill(
       # "### Capabilities affected", "## 🚫 Acceptance Scenarios").
       # h4+, body-text mentions, and leading whitespace before ##
       # intentionally do not count.
-      _DC_CAPS=0; _DC_OOS=0; _DC_ACC=0
+      _DC_CAPS=0; _DC_OOS=0; _DC_ACC=0; _DC_ACC_HEAD=0; _DC_GWT=""; _DC_GWT_CLOSED=""; _DC_GWT_FILE=""
       grep -Eiq '^#{2,3} .*capabilities[- ]affected' "$_DP_DESIGN" 2>/dev/null && _DC_CAPS=1
       grep -Eiq '^#{2,3} .*out[- ]of[- ]scope'       "$_DP_DESIGN" 2>/dev/null && _DC_OOS=1
-      grep -Eiq '^#{2,3} .*acceptance[- ]scenarios'  "$_DP_DESIGN" 2>/dev/null && _DC_ACC=1
+      grep -Eiq '^#{2,3} .*acceptance[- ]scenarios'  "$_DP_DESIGN" 2>/dev/null && _DC_ACC_HEAD=1
+      _DC_ACC=$_DC_ACC_HEAD
+
+      # G/W/T body check (validation-contract-hardening): the DESIGN->PLAN
+      # contract promises 2-4 GIVEN/WHEN/THEN scenarios, so a bare heading
+      # must not satisfy the check. When the heading exists, one awk pass
+      # counts uppercase GIVEN/WHEN/THEN tokens inside the section (until
+      # the next h2/h3; h4+ subsections stay inside). Case-sensitive so
+      # lowercase prose ("when the user...") never counts. Contract holds
+      # at min(GIVEN,WHEN,THEN) >= 2; upper bound not enforced. Counting
+      # is per-line (a line with two full scenarios counts once; tokens on
+      # the heading line are skipped) — an undercount can only make the
+      # advisory stricter, never block. h3 sub-headings CLOSE the section
+      # (h2/h3 are section boundaries per the heading grammar above) —
+      # deliberate deny-bias: scenarios grouped under h3 trip the advisory
+      # rather than risk counting a neighboring section (use h4
+      # "#### Scenario:" grouping, the OpenSpec convention); early
+      # closures are surfaced as gwt_closed_by_heading in the
+      # SKILL_EXPLAIN breadcrumb so a false advisory is debuggable.
+      # Fail-open: awk failure or non-numeric output degrades to heading
+      # semantics.
+      if [[ $_DC_ACC_HEAD -eq 1 ]]; then
+        # Output: "<in-section min> <early closures> <file-wide min>".
+        # file-wide min >= 2 while in-section < 2 means the scenarios
+        # exist but sit outside the section (typically h3 sub-grouping)
+        # -> the advisory carries a placement remedy instead of a bare
+        # "write scenarios" instruction.
+        _DC_GWT_PAIR="$(awk '
+          {
+            if ($0 ~ /(^|[^A-Za-z])GIVEN([^A-Za-z]|$)/) fg++
+            if ($0 ~ /(^|[^A-Za-z])WHEN([^A-Za-z]|$)/)  fw++
+            if ($0 ~ /(^|[^A-Za-z])THEN([^A-Za-z]|$)/)  ft++
+          }
+          /^##/ && !/^####/ {
+            if (inacc && tolower($0) !~ /acceptance[- ]scenarios/) closed++
+            inacc = (tolower($0) ~ /acceptance[- ]scenarios/) ? 1 : 0
+            next
+          }
+          inacc {
+            if ($0 ~ /(^|[^A-Za-z])GIVEN([^A-Za-z]|$)/) g++
+            if ($0 ~ /(^|[^A-Za-z])WHEN([^A-Za-z]|$)/)  w++
+            if ($0 ~ /(^|[^A-Za-z])THEN([^A-Za-z]|$)/)  t++
+          }
+          END {
+            m = g + 0; if (w + 0 < m) m = w + 0; if (t + 0 < m) m = t + 0
+            fm = fg + 0; if (fw + 0 < fm) fm = fw + 0; if (ft + 0 < fm) fm = ft + 0
+            print m, closed + 0, fm
+          }
+        ' "$_DP_DESIGN" 2>/dev/null || true)"
+        read -r _DC_GWT _DC_GWT_CLOSED _DC_GWT_FILE <<< "$_DC_GWT_PAIR" || true
+        if [[ "$_DC_GWT" =~ ^[0-9]+$ ]] && [[ "$_DC_GWT" -lt 2 ]]; then
+          _DC_ACC=0
+        fi
+      fi
 
       # [i]-only numeric-bar nudge: advisory, never affects the verdict.
       # ERE avoids \b (BSD grep) and PCRE (Bash 3.2 gotcha); grep failure
@@ -1555,6 +1608,12 @@ DESIGN COMPLETENESS: all sections present (${_DP_DESIGN})${_DC_LINE_BAR}"
         fi
         if [[ $_DC_ACC -eq 1 ]]; then
           _DC_LINE_ACC='  [OK] Acceptance Scenarios'
+        elif [[ $_DC_ACC_HEAD -eq 1 ]]; then
+          if [[ "${_DC_GWT_FILE:-}" =~ ^[0-9]+$ ]] && [[ "$_DC_GWT_FILE" -ge 2 ]]; then
+            _DC_LINE_ACC='  [X]  Acceptance Scenarios (heading present but <2 GIVEN/WHEN/THEN scenarios in the section — scenarios exist elsewhere in the doc; keep them directly under the heading (h2/h3 headings end the section) or use "#### Scenario:" (h4) sub-grouping)'
+          else
+            _DC_LINE_ACC='  [X]  Acceptance Scenarios (heading present but <2 GIVEN/WHEN/THEN scenarios — write 2-4 concrete GIVEN/WHEN/THEN scenarios)'
+          fi
         else
           _DC_LINE_ACC='  [X]  Acceptance Scenarios (missing — add `## Acceptance Scenarios` section)'
         fi
@@ -1566,7 +1625,7 @@ ${_DC_LINE_ACC}${_DC_LINE_BAR}
 Action: complete the missing section(s) before invoking Skill(superpowers:writing-plans)."
       fi
       [[ -n "${SKILL_EXPLAIN:-}" ]] && \
-        echo "[skill-hook]   [design-guard] caps=${_DC_CAPS} oos=${_DC_OOS} acc=${_DC_ACC} bar=${_DC_BAR} path=${_DP_DESIGN}" >&2
+        echo "[skill-hook]   [design-guard] caps=${_DC_CAPS} oos=${_DC_OOS} acc=${_DC_ACC} gwt=${_DC_GWT:-n/a} gwt_closed_by_heading=${_DC_GWT_CLOSED:-n/a} gwt_filewide=${_DC_GWT_FILE:-n/a} bar=${_DC_BAR} path=${_DP_DESIGN}" >&2
     fi
 
     SKILL_LINES="${SKILL_LINES}${DESIGN_COMPLETENESS}"

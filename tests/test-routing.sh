@@ -5516,6 +5516,14 @@ _write_design_fixture() {
         for section in "$@"; do
             printf '## %s\n\n' "${section}"
             printf 'Body for %s.\n\n' "${section}"
+            # Acceptance sections carry the 2 GIVEN/WHEN/THEN scenarios the
+            # DESIGN->PLAN contract promises (validation-contract-hardening).
+            case "${section}" in
+                *cceptance*)
+                    printf -- '- GIVEN a fixture WHEN the guard runs THEN it passes\n'
+                    printf -- '- GIVEN another fixture WHEN it runs again THEN it still passes\n\n'
+                    ;;
+            esac
         done
     } > "${path}"
 }
@@ -5671,6 +5679,8 @@ test_plan_completeness_tolerates_heading_variants() {
         '### Capabilities affected' \
         '## Out of Scope & Non-Goals' \
         '## 🚫 Acceptance Scenarios'
+    # Acceptance is the last section, so appended scenarios land inside it.
+    printf -- '- GIVEN a fixture WHEN the guard runs THEN it passes\n- GIVEN another WHEN it reruns THEN it passes\n' >> "${design}"
     _seed_plan_state "${token}" "fixture-slug" "${design}"
 
     printf '{"skill":"brainstorming","phase":"DESIGN"}' \
@@ -5692,6 +5702,7 @@ test_plan_completeness_tolerates_heading_variants() {
         '## 🚫 Capabilities Affected & Constraints' \
         '### out of scope' \
         '## Acceptance-Scenarios'
+    printf -- '- GIVEN a fixture WHEN the guard runs THEN it passes\n- GIVEN another WHEN it reruns THEN it passes\n' >> "${design2}"
     _seed_plan_state "${token}" "fixture-slug" "${design2}"
 
     output="$(run_hook "let us plan this out")"
@@ -5734,6 +5745,191 @@ test_plan_completeness_ignores_non_heading_mentions() {
     teardown_test_env
 }
 test_plan_completeness_ignores_non_heading_mentions
+
+test_plan_completeness_gwt_thin_heading() {
+    echo "-- test: DESIGN COMPLETENESS flags acceptance heading with <2 GWT scenarios --"
+    setup_test_env
+    install_registry
+
+    local token="plan-guard-gwt-thin-$$"
+    local design="${HOME}/design-gwt-thin.md"
+    # Raw fixture: acceptance heading present but body has no GWT scenarios.
+    _write_design_fixture_raw "${design}" \
+        '## Capabilities Affected' \
+        '## Out-of-Scope' \
+        '## Acceptance Scenarios'
+    _seed_plan_state "${token}" "fixture-slug" "${design}"
+
+    printf '{"skill":"brainstorming","phase":"DESIGN"}' \
+        > "${HOME}/.claude/.skill-last-invoked-${token}"
+
+    local output context
+    output="$(run_hook "let us plan this out")"
+    context="$(extract_context "${output}")"
+
+    assert_contains "completeness header present" "DESIGN COMPLETENESS" "${context}"
+    assert_contains "thin acceptance flagged" "heading present but <2 GIVEN/WHEN/THEN" "${context}"
+    assert_not_contains "not the missing-heading message" "Acceptance Scenarios (missing" "${context}"
+    assert_not_contains "no all-present verdict" "all sections present" "${context}"
+    # No scenarios exist anywhere in this doc -> the placement hint
+    # ("scenarios exist elsewhere") must NOT render; that advice only
+    # applies when tokens were found outside the section.
+    assert_not_contains "no placement hint on a genuinely empty section" \
+        "elsewhere in the doc" "${context}"
+
+    teardown_test_env
+}
+test_plan_completeness_gwt_thin_heading
+
+test_plan_completeness_gwt_out_of_section_not_counted() {
+    echo "-- test: DESIGN COMPLETENESS ignores GWT tokens outside the acceptance section --"
+    setup_test_env
+    install_registry
+
+    local token="plan-guard-gwt-oos-$$"
+    local design="${HOME}/design-gwt-oos.md"
+    _write_design_fixture_raw "${design}" \
+        '## Capabilities Affected' \
+        '## Acceptance Scenarios' \
+        '## Out-of-Scope'
+    # GWT tokens land in the trailing Out-of-Scope section, not acceptance.
+    printf -- '- GIVEN x WHEN y THEN z\n- GIVEN a WHEN b THEN c\n' >> "${design}"
+    _seed_plan_state "${token}" "fixture-slug" "${design}"
+
+    printf '{"skill":"brainstorming","phase":"DESIGN"}' \
+        > "${HOME}/.claude/.skill-last-invoked-${token}"
+
+    local output context
+    output="$(run_hook "let us plan this out")"
+    context="$(extract_context "${output}")"
+
+    assert_contains "thin acceptance flagged despite GWT elsewhere" "heading present but <2 GIVEN/WHEN/THEN" "${context}"
+
+    teardown_test_env
+}
+test_plan_completeness_gwt_out_of_section_not_counted
+
+test_plan_completeness_gwt_lowercase_not_counted() {
+    echo "-- test: DESIGN COMPLETENESS does not count lowercase given/when/then prose --"
+    setup_test_env
+    install_registry
+
+    local token="plan-guard-gwt-lower-$$"
+    local design="${HOME}/design-gwt-lower.md"
+    _write_design_fixture_raw "${design}" \
+        '## Capabilities Affected' \
+        '## Out-of-Scope' \
+        '## Acceptance Scenarios'
+    printf -- 'given the user clicks, when it loads, then we are happy. Repeated: given when then.\n' >> "${design}"
+    _seed_plan_state "${token}" "fixture-slug" "${design}"
+
+    printf '{"skill":"brainstorming","phase":"DESIGN"}' \
+        > "${HOME}/.claude/.skill-last-invoked-${token}"
+
+    local output context
+    output="$(run_hook "let us plan this out")"
+    context="$(extract_context "${output}")"
+
+    assert_contains "lowercase prose does not satisfy contract" "heading present but <2 GIVEN/WHEN/THEN" "${context}"
+
+    teardown_test_env
+}
+test_plan_completeness_gwt_lowercase_not_counted
+
+test_plan_completeness_gwt_awk_failure_fails_open() {
+    echo "-- test: DESIGN COMPLETENESS G/W/T check fails open when awk fails --"
+    setup_test_env
+    install_registry
+
+    local token="plan-guard-gwt-failopen-$$"
+    local design="${HOME}/design-gwt-failopen.md"
+    # Thin acceptance section: with awk working this is flagged; with the
+    # G/W/T awk pass broken it must degrade to heading-presence [OK].
+    _write_design_fixture_raw "${design}" \
+        '## Capabilities Affected' \
+        '## Out-of-Scope' \
+        '## Acceptance Scenarios'
+    _seed_plan_state "${token}" "fixture-slug" "${design}"
+
+    printf '{"skill":"brainstorming","phase":"DESIGN"}' \
+        > "${HOME}/.claude/.skill-last-invoked-${token}"
+
+    # Stub awk that fails ONLY the G/W/T section pass (its program text
+    # contains "inacc") and passes all other awk invocations through, so
+    # the hook's unrelated awk field-splitting keeps working.
+    local stubdir="${HOME}/awk-stub"
+    mkdir -p "${stubdir}"
+    printf '#!/bin/sh\ncase "$*" in *inacc*) exit 1 ;; esac\nexec /usr/bin/awk "$@"\n' \
+        > "${stubdir}/awk"
+    chmod +x "${stubdir}/awk"
+    local saved_path="${PATH}"
+    export PATH="${stubdir}:${PATH}"
+
+    local output context
+    output="$(run_hook "let us plan this out")"
+    export PATH="${saved_path}"
+    context="$(extract_context "${output}")"
+
+    assert_contains "degrades to heading-presence semantics" "all sections present" "${context}"
+    assert_not_contains "no thin-heading advisory without a count" "heading present but <2" "${context}"
+
+    teardown_test_env
+}
+test_plan_completeness_gwt_awk_failure_fails_open
+
+test_plan_completeness_gwt_h3_grouping_closes_section() {
+    echo "-- test: DESIGN COMPLETENESS h3 sub-headings close the acceptance section (deny-bias) --"
+    setup_test_env
+    install_registry
+
+    local token="plan-guard-gwt-h3-$$"
+    local design="${HOME}/design-gwt-h3.md"
+    # Scenarios grouped under h3 sub-headings: the first h3 closes the
+    # section (h2/h3 are section boundaries per the guard's own heading
+    # grammar), so the count is 0 and the thin advisory fires. This is
+    # the documented deny-bias trade-off: an undercount only strengthens
+    # the advisory; treating h3 as non-boundary could leak counts in
+    # from neighboring sections (false OK). h4 grouping (the OpenSpec
+    # '#### Scenario:' convention) stays inside the section.
+    {
+        printf '# Design: fixture\n\n'
+        printf '## Capabilities Affected\n\nBody.\n\n'
+        printf '## Out-of-Scope\n\nBody.\n\n'
+        printf '## Acceptance Scenarios\n\n'
+        printf '### Scenario A\n\n- GIVEN x WHEN y THEN z\n\n'
+        printf '### Scenario B\n\n- GIVEN a WHEN b THEN c\n\n'
+    } > "${design}"
+    _seed_plan_state "${token}" "fixture-slug" "${design}"
+
+    printf '{"skill":"brainstorming","phase":"DESIGN"}' \
+        > "${HOME}/.claude/.skill-last-invoked-${token}"
+
+    local stderr_file="${TEST_TMPDIR}/stderr_gwt_h3.txt"
+    local output context
+    output="$(jq -n --arg p "let us plan this out" '{"prompt":$p}' | \
+        CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        SKILL_EXPLAIN=1 \
+        bash "${HOOK}" 2>"${stderr_file}")"
+    context="$(extract_context "${output}")"
+
+    assert_contains "h3-grouped scenarios trip the thin advisory" \
+        "heading present but <2 GIVEN/WHEN/THEN" "${context}"
+
+    # Scenarios exist in the doc (just outside the section) -> the message
+    # itself carries the placement remedy, no SKILL_EXPLAIN needed.
+    assert_contains "placement hint names h4 grouping" \
+        '#### Scenario:' "${context}"
+
+    # The SKILL_EXPLAIN breadcrumb surfaces the early-closure count so a
+    # false advisory on an h3-grouped doc is debuggable.
+    local guard_line
+    guard_line="$(grep '\[design-guard\]' "${stderr_file}")"
+    assert_contains "breadcrumb reports h3 closures" \
+        "gwt_closed_by_heading=1" "${guard_line}"
+
+    teardown_test_env
+}
+test_plan_completeness_gwt_h3_grouping_closes_section
 
 test_plan_completeness_bar_info_when_no_numerics() {
     echo "-- test: DESIGN COMPLETENESS adds [i] numeric-bar line when doc has no thresholds --"

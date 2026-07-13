@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": "openspec/changes/validation-contract-hardening/design.md",
+  "plan_path": "docs/plans/2026-07-13-validation-contract-hardening-plan.md",
+  "spec_path": "openspec/changes/validation-contract-hardening/specs/skill-routing/spec.md",
+  "sp_plan_path": "docs/plans/2026-07-13-validation-contract-hardening-plan.md",
+  "sp_spec_path": "openspec/changes/validation-contract-hardening/specs/skill-routing/spec.md",
+  "change_slug": "validation-contract-hardening",
+  "capability_slug": "runtime-validation",
+  "source_branch": "feat/validation-contract-hardening",
+  "base_commit": "8f1a7aff19bb8aa39adfc964b43fae991f09cbe3",
+  "openspec_surface": "none",
+  "archived_at": "2026-07-13T12:12:32Z"
+}

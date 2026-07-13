@@ -57,6 +57,12 @@ assert_contains "rv: registry-based webapp-testing check" "skill-registry-cache"
 # Eval pack consumption
 assert_contains "rv: eval pack consumption" "fixtures/evals" "$RV_CONTENT"
 
+# Expectation provenance (validation-contract-hardening)
+assert_contains "rv: expectation provenance heading" "Expectation Provenance" "$RV_CONTENT"
+assert_contains "rv: provenance MUST rule" "MUST NOT define what counts as correct" "$RV_CONTENT"
+assert_contains "rv: provenance source enum" 'eval-pack`, `intent-truth`, or `generic-smoke' "$RV_CONTENT"
+assert_contains "rv: untraceable expectation never PASS" "do not report it as PASS" "$RV_CONTENT"
+
 # ---------------------------------------------------------------------------
 # implementation-drift-check content assertions
 # ---------------------------------------------------------------------------

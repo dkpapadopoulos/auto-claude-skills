@@ -121,6 +121,12 @@ If neither eval packs nor Intent Truth are available, generate generic smoke che
 - **API:** health endpoint returns 200, documented endpoints respond with expected status codes
 - **CLI:** `--help` exits 0, basic command produces non-empty output with expected shape
 
+### Expectation Provenance (MUST)
+
+Every scenario's **expected outcome** MUST trace to one of the three source tiers above — `eval-pack`, `intent-truth`, or `generic-smoke` (the only values the report's Source column permits). The implementation under validation (diff, source code) MAY inform **which paths to exercise** and supplies **actual observations** — it MUST NOT define what counts as correct. Deriving "expected" from the code you are validating turns validation into confirmation of the implementation, bugs included.
+
+If the only statement of expected behavior is the implementation itself, the scenario is at best `generic-smoke` — or a Coverage Gap flagged for human definition of expected behavior. A scenario whose expectation cannot be traced to a source tier is invalid: do not report it as PASS.
+
 ### Mandatory: Safety-Relevant Paths
 
 When the change touches **authentication/authorization, data deletion, money/payments, or destructive or externally-visible side effects**, those paths **MUST be exercised** and reported (pass/fail with evidence) — not deferred to "Manual Checks". Green tests on the happy path do not clear a change that alters a safety-relevant path without exercising it. If no tool can exercise such a path, say so explicitly in Coverage Gaps and flag it for human verification rather than omitting it.
@@ -392,7 +398,7 @@ Phrase each as an imperative the human can execute:
 - [Load-test <path> to confirm performance characteristics under concurrency]
 ```
 
-**Source column values:** `eval-pack` (from `tests/fixtures/evals/*.json`), `intent-truth` (from specs/plans), `generic-smoke` (auto-generated).
+**Source column values:** `eval-pack` (from `tests/fixtures/evals/*.json`), `intent-truth` (from specs/plans), `generic-smoke` (auto-generated). A row whose Source is not one of these three values had its expectation derived from somewhere else — usually the implementation — and must be re-derived from a valid source tier or dropped (see Expectation Provenance).
 
 ## Step 5: Fix-Rescan Loop
 
