@@ -16,5 +16,10 @@ assert_contains "gating set names verification-before-completion" "verification-
 # Source must be guarded so a non-zero source can't trip `trap ERR` and skip telemetry
 assert_contains "branch-ledger source is guarded (|| true)" 'branch-ledger.sh" 2>/dev/null || true' "${h}"
 
+assert_contains "credits subagent-driven-development"  "subagent-driven-development" "${h}"
+assert_contains "credits agent-team-execution"         "agent-team-execution"        "${h}"
+assert_contains "credits agent-team-review"            "agent-team-review"           "${h}"
+assert_contains "review-embedding arm records canonical key" '_record_gating_milestone "requesting-code-review"' "${h}"
+
 print_summary
 exit $?
