@@ -65,3 +65,17 @@ documented inline there.
    (healthy silence + two degradation modes + jq-less wording).
 3. Trifecta: no new legs (reads local plugin files, writes session context
    only); no agent-safety-review needed.
+
+## Implementation Notes (synced at ship time)
+
+- Built as designed except one TDD-driven revision, recorded above: the red
+  fixture proved `bash -n` blind to the Bash-3.2 expansion-time class, so
+  libs are source-probed (subshell, stdio-nulled) instead of parse-checked.
+- Review (combined code+governance, verdict Yes / APPROVE-WITH-NOTES)
+  verified the reordered claims: render path traced end-to-end, all four
+  libs confirmed function-definition-only, report-only property confirmed.
+  Applied its accuracy note: the canary list covers gate-ENFORCEMENT libs;
+  the guard's fifth sourced lib (`consol-marker.sh`, advisory with inline
+  fallback) is deliberately excluded and now documented as such.
+- Measured healthy-path cost ~10ms (5 probes), within the session-start
+  budget; the cold-run 2s baseline is pre-existing registry-build weight.

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": null,
+  "plan_path": null,
+  "spec_path": null,
+  "sp_plan_path": null,
+  "sp_spec_path": null,
+  "change_slug": "push-gate-precondition-canary",
+  "capability_slug": "pdlc-safety",
+  "source_branch": "fix/push-gate-precondition-canary",
+  "base_commit": "512562a259354e219fd7d7d2febd2dbce8b7b45e",
+  "openspec_surface": "none",
+  "archived_at": "2026-07-14T15:11:22Z"
+}
