@@ -39,6 +39,16 @@ assert_contains "real push is gated" '"deny"' "${out:-<empty>}"
 out="$(_run 'git -C /tmp/x push -u origin feature/y')"
 assert_contains "push with -C is gated" '"deny"' "${out:-<empty>}"
 
+# Pre-filter: a large command with no "git" substring is not gated (and returns fast).
+_big_nogit="echo $(printf 'x%.0s' $(seq 1 6000))"
+out="$(_run "${_big_nogit}")"
+assert_not_contains "large non-git command not gated" '"deny"' "${out:-}"
+
+# Length cap: a >4096-char command that IS a real push still denies (substring fallback, fail-closed).
+_big_push="git push origin HEAD # $(printf 'y%.0s' $(seq 1 4200))"
+out="$(_run "${_big_push}")"
+assert_contains "oversized real push still gated (fallback)" '"deny"' "${out:-<empty>}"
+
 export HOME="$_OLDHOME"
 print_summary
 exit $?

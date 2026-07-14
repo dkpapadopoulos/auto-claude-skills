@@ -21,15 +21,30 @@ else
     _COMMAND="$(printf '%s' "${_INPUT}" | grep -o '"command" *: *"[^"]*"' | head -1 | sed 's/"command" *: *"//;s/"$//')" || true
 fi
 
+# Cheap pre-filter: only a command mentioning "git" can be a git write, so skip
+# the precise (char-scan) parser for the overwhelming majority of Bash calls.
+# Every real git invocation (git, */git, env-prefixed, -C form) contains "git".
+case "${_COMMAND}" in *git*) ;; *) exit 0 ;; esac
+
 # Precise git-write detection (fail-open): source the predicate. If unavailable,
 # the substring fallbacks below preserve the original (fail-closed) behavior.
 _GC_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 [ -f "${_GC_ROOT}/hooks/lib/git-command.sh" ] && \
     . "${_GC_ROOT}/hooks/lib/git-command.sh" 2>/dev/null || true
 
+# Bound the worst case: the precise detector is an O(n^2) char-scan parser, so
+# only use it below a size cap; above it, fall back to the (fail-closed)
+# substring check so a huge git-containing command can't stall the hot path.
+_GC_MAX=4096   # above this, use the substring fallback (fail-closed) — bounds cost
+_gc_precise() {
+    [ "${#_COMMAND}" -le "${_GC_MAX}" ] && \
+        command -v command_invokes_git_write >/dev/null 2>&1
+}
+
 # Fast path: only proceed for a REAL git commit/push invocation. Precise when the
-# detector lib loaded; substring fallback (fail-closed) when it did not.
-if command -v command_invokes_git_write >/dev/null 2>&1; then
+# detector lib loaded and the command is small; substring fallback (fail-closed)
+# otherwise.
+if _gc_precise; then
     command_invokes_git_write "${_COMMAND}" || exit 0
 else
     case "${_COMMAND}" in *"git commit"*|*"git push"*) ;; *) exit 0 ;; esac
@@ -63,7 +78,7 @@ fi
 #      verification verdict. Routing changes are high-risk by nature, not by phase.
 # Fail-open guards for both: missing lib / missing jq / not a routing repo /
 # unresolvable diff base => no gate (never a false-block).
-if command -v command_invokes_git_write >/dev/null 2>&1; then
+if _gc_precise; then
     _gc_is_push=false; command_invokes_git_write "${_COMMAND}" "push" && _gc_is_push=true
 else
     case "${_COMMAND}" in *"git push"*) _gc_is_push=true ;; *) _gc_is_push=false ;; esac
