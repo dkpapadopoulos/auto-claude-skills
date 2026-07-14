@@ -115,6 +115,46 @@ else
 fi
 rm -rf "$NOJQ_BIN"
 
+# (h) END-TO-END fabrication regression (audit F1): a fresh session whose only
+#     activity is a "ship it"-class prompt must NOT be able to push. The REAL
+#     activation hook writes composition state for the prompt (late anchor);
+#     pre-fix its back-fill put requesting-code-review/-verification into
+#     .completed, satisfying every gate leg with zero skills invoked. Post-fix
+#     the gating names are absent and the composition block denies on REVIEW.
+_E2E_HOME="$(mktemp -d /tmp/pg-fc-e2e-XXXXXX)"
+_ACT_HOOK="${PROJECT_ROOT}/hooks/skill-activation-hook.sh"
+if [ -f "${_ACT_HOOK}" ]; then
+    _oHOME="$HOME"
+    export HOME="${_E2E_HOME}"
+    mkdir -p "$HOME/.claude"
+    touch "$HOME/t.jsonl"                               # guard token: session-t
+    printf 'session-t' > "$HOME/.claude/.skill-session-token"   # walker token
+    # Real routing config as the registry cache: the production chain reaches
+    # verification-before-completion through requesting-code-review. Session-start
+    # normally stamps availability while building the cache; mirror that here
+    # (config ships available/enabled as null, which the activation hook drops).
+    jq '.skills |= map(.available = true | .enabled = true)' \
+        "${PROJECT_ROOT}/config/default-triggers.json" \
+        > "$HOME/.claude/.skill-registry-cache.json"
+    jq -n --arg p "ship it" '{"prompt":$p}' | \
+        CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${_ACT_HOOK}" >/dev/null 2>&1
+    _E2E_COMP="$HOME/.claude/.skill-composition-state-session-t"
+    if [ -f "${_E2E_COMP}" ]; then
+        out="$(jq -n --arg tp "$HOME/t.jsonl" --arg cmd "git push origin HEAD" \
+                 '{"transcript_path":$tp,"tool_input":{"command":$cmd}}' | \
+               CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null)"
+        assert_contains "e2e: ship-it prompt alone cannot arm the gate => deny" \
+            '"deny"' "${out:-<empty>}"
+        assert_contains "e2e: deny names the unfabricatable REVIEW milestone" \
+            "requesting-code-review" "${out:-<empty>}"
+    else
+        _record_fail "e2e activation hook wrote composition state" \
+            "missing ${_E2E_COMP}"
+    fi
+    export HOME="$_oHOME"
+fi
+rm -rf "${_E2E_HOME}"
+
 export HOME="$_OLDHOME"
 print_summary
 exit $?
