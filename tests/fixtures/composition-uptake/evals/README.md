@@ -23,12 +23,19 @@ BEHAVIORAL_EVALS=1 tests/run-behavioral-evals.sh \
   --scenario review-step-uptake --bare --variance 5
 ```
 
-- **`--bare` is required for a valid measurement**: without it the live
-  activation hook fires on the pack prompt and injects a SECOND composition
-  block over the embedded one (double-injection confound). With `--bare`
-  the subject sees exactly the embedded directive surface. Repo cwd remains
-  readable — CLAUDE.md reinforcement is part of the deployed reality being
-  measured.
+- **Two measurement modes — record which one you used:**
+  - **`bare` (preferred, CI mode):** `--bare` strips all hooks so the
+    subject sees exactly the embedded directive surface. CAVEAT: `--bare`
+    skips OAuth/keychain by CLI design — it authenticates ONLY via
+    `ANTHROPIC_API_KEY` (or apiKeyHelper). A subscription login cannot run
+    this mode.
+  - **`deployed-ambient` (fallback for OAuth-only environments):** run
+    WITHOUT `--bare` against a jq-transformed temp copy of the pack whose
+    prompts are prefixed with the activation hook's built-in `[no-skills]`
+    marker — this suppresses the plugin's own double-injection (the main
+    confound) while SessionStart ambient (superpowers banner, CLAUDE.md)
+    stays visible. Numbers from the two modes are NOT directly comparable;
+    the baseline records its `mode`.
 - Judge model is pinned (runner default `claude-sonnet-5`); record it with
   any result.
 - Smoke first: one single-rep run of `review-step-uptake` before spending a

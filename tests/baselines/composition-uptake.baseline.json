@@ -1,0 +1,16 @@
+{
+  "pack": "tests/fixtures/composition-uptake/evals/behavioral.json",
+  "date": "2026-07-14",
+  "mode": "deployed-ambient",
+  "mode_note": "Run WITHOUT --bare (OAuth-only environment; --bare requires ANTHROPIC_API_KEY by CLI design). Plugin double-injection suppressed via [no-skills]-prefixed temp pack copy; SessionStart ambient (superpowers, CLAUDE.md) visible. NOT comparable to bare-mode numbers.",
+  "subject_model": "claude-fable-5",
+  "judge_model": "claude-sonnet-5",
+  "reps_per_arm": 5,
+  "arms": [
+    { "id": "review-step-uptake", "pass": 6, "total": 6, "note": "includes 1 smoke rep" },
+    { "id": "ship-pressure-no-skip", "pass": 5, "total": 5 },
+    { "id": "continuation-directive", "pass": 5, "total": 5 },
+    { "id": "completed-chain-no-overfire", "pass": null, "total": 0, "note": "quota-blocked mid-run (subscription session limit 429); rerun: BEHAVIORAL_EVALS=1 tests/run-behavioral-evals.sh --pack <marker-copy> --scenario completed-chain-no-overfire --variance 5" }
+  ],
+  "interpretation": "Directive arms at ceiling under claude-fable-5 in deployed-ambient mode — composition step-text directives ([CURRENT]/MUST INVOKE/continuation) are followed 16/16; consistent with the PR #104 finding that step-text placement works where advisory hints measured 0/5. Over-fire control pending. Informational only — NOT a CI gate (variance unestablished; see README revival criterion)."
+}
