@@ -21,11 +21,19 @@ else
     _COMMAND="$(printf '%s' "${_INPUT}" | grep -o '"command" *: *"[^"]*"' | head -1 | sed 's/"command" *: *"//;s/"$//')" || true
 fi
 
-# Fast path: only care about git commit/push
-case "${_COMMAND}" in
-    *"git commit"*|*"git push"*) ;;
-    *) exit 0 ;;
-esac
+# Precise git-write detection (fail-open): source the predicate. If unavailable,
+# the substring fallbacks below preserve the original (fail-closed) behavior.
+_GC_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+[ -f "${_GC_ROOT}/hooks/lib/git-command.sh" ] && \
+    . "${_GC_ROOT}/hooks/lib/git-command.sh" 2>/dev/null || true
+
+# Fast path: only proceed for a REAL git commit/push invocation. Precise when the
+# detector lib loaded; substring fallback (fail-closed) when it did not.
+if command -v command_invokes_git_write >/dev/null 2>&1; then
+    command_invokes_git_write "${_COMMAND}" || exit 0
+else
+    case "${_COMMAND}" in *"git commit"*|*"git push"*) ;; *) exit 0 ;; esac
+fi
 
 # Resolve session token payload-first (issue #51): the singleton is shared
 # across concurrent sessions (last-writer-wins) and may name ANOTHER session.
@@ -55,8 +63,12 @@ fi
 #      verification verdict. Routing changes are high-risk by nature, not by phase.
 # Fail-open guards for both: missing lib / missing jq / not a routing repo /
 # unresolvable diff base => no gate (never a false-block).
-case "${_COMMAND}" in
-    *"git push"*)
+if command -v command_invokes_git_write >/dev/null 2>&1; then
+    _gc_is_push=false; command_invokes_git_write "${_COMMAND}" "push" && _gc_is_push=true
+else
+    case "${_COMMAND}" in *"git push"*) _gc_is_push=true ;; *) _gc_is_push=false ;; esac
+fi
+if [ "${_gc_is_push}" = "true" ]; then
         # Explicit bypass — HUMAN-ONLY by construction. This is a Claude Code PreToolUse
         # hook: it only sees pushes the AGENT runs through the Bash tool — a human pushing
         # from their own terminal never reaches here, which is the primary escape hatch.
@@ -231,8 +243,7 @@ case "${_COMMAND}" in
                 fi
             fi
         fi
-        ;;
-esac
+fi
 
 # Check if we're in SHIP phase (signal file is JSON: {"skill":"...","phase":"..."})
 _SIGNAL_FILE="${HOME}/.claude/.skill-last-invoked-${_SESSION_TOKEN}"
