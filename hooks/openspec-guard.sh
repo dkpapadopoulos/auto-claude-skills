@@ -21,10 +21,11 @@ else
     _COMMAND="$(printf '%s' "${_INPUT}" | grep -o '"command" *: *"[^"]*"' | head -1 | sed 's/"command" *: *"//;s/"$//')" || true
 fi
 
-# Cheap pre-filter: only a command mentioning "git" can be a git write, so skip
-# the precise (char-scan) parser for the overwhelming majority of Bash calls.
-# Every real git invocation (git, */git, env-prefixed, -C form) contains "git".
-case "${_COMMAND}" in *git*) ;; *) exit 0 ;; esac
+# Cheap pre-filter: only a command mentioning "git" can be a git write, and
+# only one mentioning "gh" can be a gh merge — skip the precise (char-scan)
+# parser for the overwhelming majority of Bash calls. Every real git/gh
+# invocation (bare, */path, env-prefixed, -C/-R form) contains the substring.
+case "${_COMMAND}" in *git*|*gh*) ;; *) exit 0 ;; esac
 
 # Precise git-write detection (fail-open): source the predicate. If unavailable,
 # the substring fallbacks below preserve the original (fail-closed) behavior.
@@ -37,17 +38,27 @@ _GC_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 # substring check so a huge git-containing command can't stall the hot path.
 _GC_MAX=4096   # above this, use the substring fallback (fail-closed) — bounds cost
 _gc_precise() {
+    # Both predicates are required: the fast-path and gate body call
+    # command_invokes_gh_merge too — if the lib were ever split and only one
+    # loaded, an unbound call would ERR-trap the whole gate open. Check both.
     [ "${#_COMMAND}" -le "${_GC_MAX}" ] && \
-        command -v command_invokes_git_write >/dev/null 2>&1
+        command -v command_invokes_git_write >/dev/null 2>&1 && \
+        command -v command_invokes_gh_merge >/dev/null 2>&1
 }
 
-# Fast path: only proceed for a REAL git commit/push invocation. Precise when the
-# detector lib loaded and the command is small; substring fallback (fail-closed)
-# otherwise.
+# Fast path: only proceed for a REAL git commit/push or gh-merge invocation.
+# Precise when the detector lib loaded and the command is small; substring
+# fallback (fail-closed) otherwise.
 if _gc_precise; then
-    command_invokes_git_write "${_COMMAND}" || exit 0
+    if ! command_invokes_git_write "${_COMMAND}" \
+       && ! command_invokes_gh_merge "${_COMMAND}"; then
+        exit 0
+    fi
 else
-    case "${_COMMAND}" in *"git commit"*|*"git push"*) ;; *) exit 0 ;; esac
+    case "${_COMMAND}" in
+        *"git commit"*|*"git push"*|*"gh pr merge"*|*mergePullRequest*|*pulls/*merge*) ;;
+        *) exit 0 ;;
+    esac
 fi
 
 # Resolve session token payload-first (issue #51): the singleton is shared
@@ -80,10 +91,18 @@ fi
 # unresolvable diff base => no gate (never a false-block).
 if _gc_precise; then
     _gc_is_push=false; command_invokes_git_write "${_COMMAND}" "push" && _gc_is_push=true
+    _gc_is_ghmerge=false; command_invokes_gh_merge "${_COMMAND}" && _gc_is_ghmerge=true
 else
     case "${_COMMAND}" in *"git push"*) _gc_is_push=true ;; *) _gc_is_push=false ;; esac
+    case "${_COMMAND}" in
+        *"gh pr merge"*|*mergePullRequest*|*pulls/*merge*) _gc_is_ghmerge=true ;;
+        *) _gc_is_ghmerge=false ;;
+    esac
 fi
-if [ "${_gc_is_push}" = "true" ]; then
+# gh-merge is a remote mutation that ships code without a push — it passes the
+# SAME evidence gates (audit F2). Evidence is the CURRENT session/branch proxy;
+# GitHub branch protection is the per-PR backstop (see design doc).
+if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # Explicit bypass — HUMAN-ONLY by construction. This is a Claude Code PreToolUse
         # hook: it only sees pushes the AGENT runs through the Bash tool — a human pushing
         # from their own terminal never reaches here, which is the primary escape hatch.
@@ -96,6 +115,24 @@ if [ "${_gc_is_push}" = "true" ]; then
         # SHIP-phase advisories below still emit.
         _PUSHGATE_SKIP=false
         [ "${ACSM_SKIP_PUSH_GATE:-}" = "1" ] && _PUSHGATE_SKIP=true
+        _GATE_ACTION="pushing this branch"
+        [ "${_gc_is_push}" != "true" ] && [ "${_gc_is_ghmerge}" = "true" ] && _GATE_ACTION="merging this PR"
+
+        # Compound mutate-then-push deny (audit F2). The gate evaluates PRE-EXEC
+        # state: any evidence below describes the CURRENT HEAD, so a commit/merge/
+        # rebase created inline in the same command would push unverified content
+        # (and evade the routing-delta check — the new commit can't be diffed yet).
+        # Unconditional (evidence cannot save it by definition); honors the human
+        # bypass; fail-open when the predicate or jq is unavailable.
+        if [ "${_PUSHGATE_SKIP}" != "true" ] && [ "${_gc_is_push}" = "true" ] \
+           && command -v jq >/dev/null 2>&1 \
+           && command -v command_git_mutate_before_push >/dev/null 2>&1 \
+           && [ "${#_COMMAND}" -le "${_GC_MAX}" ] \
+           && command_git_mutate_before_push "${_COMMAND}"; then
+            _MSG="PUSH GATE: this command mutates history (commit/merge/rebase/cherry-pick/revert/am) and pushes in ONE command. The gate evaluates evidence for the CURRENT commit, so the pushed result would be unverified. Run the mutation first, re-run verification if content changed, then run git push as a separate command."
+            jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+            exit 0
+        fi
         _COMP_STATE="${HOME}/.claude/.skill-composition-state-${_SESSION_TOKEN}"
         # Durable per-(repo+branch) ledger: gate readiness that survives chain
         # re-anchors. Fail-safe: if the helper or branch key is unavailable, the
@@ -148,7 +185,7 @@ if [ "${_gc_is_push}" = "true" ]; then
             jq -e '.completed | index("requesting-code-review")' "${_COMP_STATE}" >/dev/null 2>&1 && _review_completed=true
             _ledger_has "requesting-code-review" && _review_completed=true
             if [ "${_review_in_chain}" = "true" ] && [ "${_review_completed}" = "false" ]; then
-                _MSG="PUSH GATE — Expected: REVIEW → VERIFY → SHIP completed before push. Actual: requesting-code-review has not run on this chain. Do now: invoke Skill(superpowers:requesting-code-review), then re-run your push."
+                _MSG="PUSH GATE — Expected: REVIEW → VERIFY → SHIP completed before push. Actual: requesting-code-review has not run on this chain. Do now: invoke Skill(superpowers:requesting-code-review), then retry the denied command."
                 jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
                 exit 0
             fi
@@ -160,7 +197,7 @@ if [ "${_gc_is_push}" = "true" ]; then
             jq -e '.completed | index("verification-before-completion")' "${_COMP_STATE}" >/dev/null 2>&1 && _verif_completed=true
             _ledger_has "verification-before-completion" && _verif_completed=true
             if [ "${_verif_in_chain}" = "true" ] && [ "${_verif_completed}" = "false" ]; then
-                _MSG="PUSH GATE — Expected: verification-before-completion completed before push. Actual: it has not run on this active chain. Do now: invoke Skill(superpowers:verification-before-completion), then re-run your push."
+                _MSG="PUSH GATE — Expected: verification-before-completion completed before push. Actual: it has not run on this active chain. Do now: invoke Skill(superpowers:verification-before-completion), then retry the denied command."
                 jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
                 exit 0
             fi
@@ -176,7 +213,7 @@ if [ "${_gc_is_push}" = "true" ]; then
                && verdict_sha_is_head "${_VERDICT_TOKEN}" "" \
                && verdict_has_test_failure "${_VERDICT_TOKEN}"; then
                 _gates="$(verdict_failing_gates "${_VERDICT_TOKEN}")" || true
-                _MSG="PUSH GATE: verification-before-completion is recorded, but the verification verdict at HEAD reports failing gate(s): ${_gates}. Fix and re-run Skill(auto-claude-skills:project-verification) before pushing."
+                _MSG="PUSH GATE: verification-before-completion is recorded, but the verification verdict at HEAD reports failing gate(s): ${_gates}. Fix and re-run Skill(auto-claude-skills:project-verification) before retrying."
                 jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
                 exit 0
             fi
@@ -225,7 +262,7 @@ if [ "${_gc_is_push}" = "true" ]; then
                 _need=""
                 [ "${_g_review}" = "false" ] && _need="requesting-code-review"
                 [ "${_g_verify}" = "false" ] && _need="${_need}${_need:+ and }verification-before-completion"
-                _MSG="PUSH GATE (fail-closed): pushing this branch requires ${_need} to have run, but no record exists for it on this branch. Invoke the missing Skill(s) and let them complete, then push again. To bypass intentionally: push from your own terminal, or relaunch Claude Code with ACSM_SKIP_PUSH_GATE=1 set in its environment."
+                _MSG="PUSH GATE (fail-closed): ${_GATE_ACTION} requires ${_need} to have run, but no record exists for it on this branch. Invoke the missing Skill(s) and let them complete, then retry. To bypass intentionally: run the command from your own terminal, or relaunch Claude Code with ACSM_SKIP_PUSH_GATE=1 set in its environment."
                 # jq presence is guaranteed by the block guard above.
                 jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
                 exit 0
@@ -237,7 +274,10 @@ if [ "${_gc_is_push}" = "true" ]; then
         # verdict covering the branch. Fires regardless of composition chain — routing
         # changes are high-risk by nature, not by phase. Fail-safe: no lib, not a
         # routing repo, or an unresolvable diff base => no gate (never a false-block).
-        if [ "${_PUSHGATE_SKIP}" != "true" ] && [ "${_VERDICT_OK}" = "true" ]; then
+        # Push-only by design: the origin/main...HEAD delta describes the LOCAL
+        # branch, which for `gh pr merge <other>` is unrelated — extending the
+        # check to merges would compare the wrong branch (see F2 design doc).
+        if [ "${_PUSHGATE_SKIP}" != "true" ] && [ "${_gc_is_push}" = "true" ] && [ "${_VERDICT_OK}" = "true" ]; then
             # _proot resolved once above, alongside _VERDICT_TOKEN.
             if is_routing_repo "${_proot}" && diff_touches_routing "${_proot}"; then
                 if verdict_is_clean "${_VERDICT_TOKEN}" && verdict_covers_head "${_VERDICT_TOKEN}" "${_proot}" \

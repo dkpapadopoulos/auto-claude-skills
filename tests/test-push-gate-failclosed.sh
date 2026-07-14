@@ -161,6 +161,27 @@ if [ -f "${_ACT_HOOK}" ]; then
 fi
 rm -rf "${_E2E_HOME}"
 
+# (i) gh-merge gating (audit F2): same evidence bar as push. State here: review
+#     ledger recorded (b), verdict absent (removed in c) => VERIFY leg unmet.
+out="$(run_guard "gh pr merge 123 --auto")"
+assert_contains     "gh pr merge without VERIFY => deny"      '"deny"'                         "${out:-<empty>}"
+assert_contains     "gh-merge deny names the missing gate"    "verification-before-completion" "${out:-<empty>}"
+_write_verdict
+out="$(run_guard "gh pr merge 123")"
+assert_not_contains "gh pr merge with full evidence => no deny" '"deny"' "${out:-}"
+out="$(run_guard "gh pr create --title \"gate gh pr merge\" --body b")"
+assert_not_contains "gh pr create is never gated"               '"deny"' "${out:-}"
+
+# (j) Compound mutate-then-push: denied even with FULL clean evidence (the
+#     evidence describes pre-exec HEAD; an inline commit invalidates it).
+out="$(run_guard "git commit -m fix && git push origin HEAD")"
+assert_contains     "commit&&push denied despite clean evidence" '"deny"'            "${out:-<empty>}"
+assert_contains     "compound deny carries separate-command remedy" "separate"       "${out:-<empty>}"
+out="$(run_guard "git push origin HEAD")"
+assert_not_contains "plain push with clean evidence => no deny"  '"deny"' "${out:-}"
+out="$(_mkinput "git commit -m fix && git push origin HEAD" | ACSM_SKIP_PUSH_GATE=1 CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null)"
+assert_not_contains "human bypass covers compound deny"          '"deny"' "${out:-}"
+
 export HOME="$_OLDHOME"
 print_summary
 exit $?

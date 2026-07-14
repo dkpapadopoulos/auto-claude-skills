@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": null,
+  "plan_path": null,
+  "spec_path": null,
+  "sp_plan_path": null,
+  "sp_spec_path": null,
+  "change_slug": "gate-gh-merge-and-compound-push",
+  "capability_slug": "pdlc-safety",
+  "source_branch": "fix/gate-gh-merge-and-compound-push",
+  "base_commit": "2d06f7950154827ee60c9a87219d35f89dba2078",
+  "openspec_surface": "none",
+  "archived_at": "2026-07-14T13:48:42Z"
+}
