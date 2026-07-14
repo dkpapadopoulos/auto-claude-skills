@@ -33,5 +33,13 @@ _no  "git log is not a write"     "git log --oneline -3"
 _yes "commit matches default set" "git commit -m x"
 _no  "commit excluded when asking push-only" "git commit -m x" "push"
 
+# Quote-aware: operator INSIDE quotes is not a boundary -> phrase-as-argument stays FALSE
+_no  "semicolon inside dquotes"   'echo "note; git push "'
+_no  "pipe inside dquotes"        'echo "msg| git push "'
+_no  "semicolon inside squotes"   "printf 'log; git commit '"
+# Real chained commands still detected (no regression)
+_yes "chained with && still true" "cd /repo && git push origin x"
+_yes "real cmd then piped grep"   "git commit -m x | tee log"
+
 print_summary
 exit $?

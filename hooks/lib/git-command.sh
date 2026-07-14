@@ -5,18 +5,44 @@
 # a parse it cannot handle returns 1 (not a write) — callers that need
 # fail-CLOSED behavior keep a substring fallback.
 
+# Split a command into segments on UNQUOTED ; | & boundaries (covers ; | && ||).
+# Quote-aware: operators inside '...' or "..." are literal, not boundaries. Emits
+# one segment per line. Backslash-escaping is not interpreted (rare here; a stray
+# escaped quote at worst mis-splits toward a false negative, the safe direction).
+_gc_split_segments() {
+    local _s="$1" _seg="" _sq=0 _dq=0 _i=0 _n _c _out=""
+    _n=${#_s}
+    while [ "${_i}" -lt "${_n}" ]; do
+        _c="${_s:${_i}:1}"
+        if [ "${_sq}" -eq 1 ]; then
+            [ "${_c}" = "'" ] && _sq=0
+            _seg="${_seg}${_c}"; _i=$((_i+1)); continue
+        fi
+        if [ "${_dq}" -eq 1 ]; then
+            [ "${_c}" = '"' ] && _dq=0
+            _seg="${_seg}${_c}"; _i=$((_i+1)); continue
+        fi
+        case "${_c}" in
+            "'") _sq=1; _seg="${_seg}${_c}" ;;
+            '"') _dq=1; _seg="${_seg}${_c}" ;;
+            ';'|'|'|'&') _out="${_out}${_seg}
+"; _seg="" ;;
+            *) _seg="${_seg}${_c}" ;;
+        esac
+        _i=$((_i+1))
+    done
+    printf '%s\n' "${_out}${_seg}"
+}
+
 # command_invokes_git_write <command> [subcommands]
 #   subcommands: space-separated, default "push commit".
 #   Returns 0 if any ; | && || -separated segment's first real token is git
 #   (or */git) whose first non-flag argument is one of <subcommands>.
 command_invokes_git_write() {
+    local _gc_cmd _gc_want _gc_segs _gc_oldifs _gc_seg _gc_sub _gc_w
     _gc_cmd="$1"
     _gc_want="${2:-push commit}"
-    # One segment per line: split on && || ; |
-    _gc_segs="$(printf '%s' "${_gc_cmd}" | sed -e 's/&&/\
-/g' -e 's/||/\
-/g' -e 's/[;|]/\
-/g')"
+    _gc_segs="$(_gc_split_segments "${_gc_cmd}")"
     _gc_oldifs="$IFS"
     IFS='
 '
