@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": null,
+  "plan_path": null,
+  "spec_path": null,
+  "sp_plan_path": null,
+  "sp_spec_path": null,
+  "change_slug": "walker-backfill-gating-milestones",
+  "capability_slug": null,
+  "source_branch": "fix/walker-backfill-gating-milestones",
+  "base_commit": "4adef0872639d0982b833b274b6fd3299edead51",
+  "openspec_surface": "none",
+  "archived_at": "2026-07-14T12:10:57Z"
+}

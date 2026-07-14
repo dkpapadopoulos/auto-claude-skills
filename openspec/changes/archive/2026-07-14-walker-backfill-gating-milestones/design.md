@@ -75,3 +75,15 @@ folds into the existing `jq -s` that builds the prefix array.
 4. Trifecta note: this change REDUCES the untrusted_input → outbound_action
    coupling (prompt text can no longer arm the push gate); no new legs added,
    no agent-safety-review required.
+
+## Implementation Notes (synced at ship time)
+
+- Built as designed; no architectural deviations. Two ship-time additions from
+  review: the e2e test additionally asserts the walker-written `.completed`
+  itself carries no gating name (robust against future chain reordering), and
+  a CLAUDE.md gotcha documents that a prior-session review without a ledger
+  record is deliberately not resurrectable (correct deny, not a false block).
+- Review record: code review "Ready to merge: Yes" (no critical/important);
+  adversarial governance APPROVE-WITH-NOTES — residual trivial-return
+  crediting is pre-existing and tracked via the provenance-marker revival
+  criterion above.
