@@ -38,6 +38,19 @@ else
     _record_fail "SDD completion records canonical REVIEW milestone" "ledger has no requesting-code-review"
 fi
 
+# (a2) the other two review-embedding skills credit the same milestone —
+# behavioral, so a rename of either identifier can't silently break the bridge.
+for _skill in agent-team-execution agent-team-review; do
+    rm -rf "$(branch_ledger_dir "${PROJECT_ROOT}")" 2>/dev/null
+    _run_completion "${_skill}"
+    if branch_ledger_has "requesting-code-review" "${PROJECT_ROOT}"; then
+        _record_pass "${_skill} completion records canonical REVIEW milestone"
+    else
+        _record_fail "${_skill} completion records canonical REVIEW milestone" \
+            "ledger has no requesting-code-review"
+    fi
+done
+
 # (b) executing-plans completion => NO REVIEW milestone.
 rm -rf "$(branch_ledger_dir "${PROJECT_ROOT}")" 2>/dev/null
 _run_completion "executing-plans"
