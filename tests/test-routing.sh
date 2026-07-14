@@ -1105,6 +1105,233 @@ test_completed_resets_when_chain_differs() {
 }
 test_completed_resets_when_chain_differs
 
+# --- Gating-milestone back-fill exclusion (audit F1, 2026-07-14) -----------
+# The walker's computed done-prefix must never fabricate the two push-gate
+# milestones (requesting-code-review, verification-before-completion) from a
+# mere trigger match: a "ship it"/"as built" prompt anchoring late in the
+# chain used to back-fill them into .completed, which the push gate trusts —
+# letting a push through with neither skill ever invoked. Gating names enter
+# .completed only via the completion hook (real Skill return) or preservation
+# of on-disk entries through the monotonic union. Non-gating steps are still
+# back-filled (chore false-block guard, PR #47 lineage).
+
+# Patches the standard fixture so the SHIP chain reaches back through the
+# gating milestones, mirroring config/default-triggers.json:
+# brainstorming -> writing-plans -> executing-plans -> requesting-code-review
+# -> verification-before-completion -> openspec-ship -> finishing.
+install_registry_full_chain() {
+    install_registry
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    jq '
+        (.skills[] | select(.name=="executing-plans") | .precedes) = ["requesting-code-review"] |
+        (.skills[] | select(.name=="requesting-code-review") | .requires) = ["executing-plans"] |
+        (.skills[] | select(.name=="requesting-code-review") | .precedes) = ["verification-before-completion"] |
+        (.skills[] | select(.name=="verification-before-completion") | .requires) = ["requesting-code-review"]
+    ' "${cache_file}" > "${cache_file}.tmp" && mv "${cache_file}.tmp" "${cache_file}"
+}
+
+_FULL_CHAIN_JSON='["brainstorming","writing-plans","executing-plans","requesting-code-review","verification-before-completion","openspec-ship","finishing-a-development-branch"]'
+
+test_backfill_excludes_gating_milestones() {
+    echo "-- test: late-anchor back-fill does not fabricate REVIEW/VERIFY milestones --"
+    setup_test_env
+    install_registry_full_chain
+
+    local token="backfill-gating-$$"
+    printf '%s' "${token}" > "${HOME}/.claude/.skill-session-token"
+
+    # Fresh session: no composition state, no last-invoked signal. Prompt
+    # anchors at openspec-ship (index 5 of the 7-step chain).
+    jq -n --arg p "archive the feature as built" '{"prompt":$p}' | \
+        CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        bash "${HOOK}" >/dev/null 2>&1
+
+    local state_file="${HOME}/.claude/.skill-composition-state-${token}"
+    assert_equals "state file written" "true" \
+        "$([ -f "${state_file}" ] && echo true || echo false)"
+
+    if [ -f "${state_file}" ]; then
+        # Writer-ran canary: anchor sits past the gating steps.
+        local idx
+        idx="$(jq -r '.current_index' "${state_file}" 2>/dev/null)"
+        if [ "${idx:-0}" -ge 4 ]; then
+            _record_pass "anchor is beyond the gating milestones (current_index ${idx})"
+        else
+            _record_fail "anchor is beyond the gating milestones" \
+                "current_index was ${idx}"
+        fi
+
+        # Non-gating predecessors are still back-filled (writer-ran + chore guard).
+        local has_exec
+        has_exec="$(jq -r '.completed | index("executing-plans") != null' "${state_file}" 2>/dev/null)"
+        assert_equals "non-gating predecessor executing-plans back-filled" "true" "${has_exec}"
+
+        local fabricated
+        fabricated="$(jq -r '.completed | (index("requesting-code-review") != null) or (index("verification-before-completion") != null)' "${state_file}" 2>/dev/null)"
+        assert_equals "gating milestones absent from trigger-match back-fill" \
+            "false" "${fabricated}"
+    fi
+
+    teardown_test_env
+}
+test_backfill_excludes_gating_milestones
+
+test_backfill_ship_prompt_excludes_review() {
+    echo "-- test: a 'ship it' prompt cannot fabricate the REVIEW milestone --"
+    setup_test_env
+    install_registry_full_chain
+
+    local token="backfill-ship-$$"
+    printf '%s' "${token}" > "${HOME}/.claude/.skill-session-token"
+
+    # "ship" matches both verification-before-completion and
+    # finishing-a-development-branch triggers; whichever anchors, the
+    # requesting-code-review step lies before it in the chain.
+    jq -n --arg p "ship it" '{"prompt":$p}' | \
+        CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        bash "${HOOK}" >/dev/null 2>&1
+
+    local state_file="${HOME}/.claude/.skill-composition-state-${token}"
+    assert_equals "state file written" "true" \
+        "$([ -f "${state_file}" ] && echo true || echo false)"
+
+    if [ -f "${state_file}" ]; then
+        local idx
+        idx="$(jq -r '.current_index' "${state_file}" 2>/dev/null)"
+        if [ "${idx:-0}" -ge 4 ]; then
+            _record_pass "ship prompt anchored past REVIEW (current_index ${idx})"
+        else
+            _record_fail "ship prompt anchored past REVIEW" "current_index was ${idx}"
+        fi
+
+        local fabricated
+        fabricated="$(jq -r '.completed | (index("requesting-code-review") != null) or (index("verification-before-completion") != null)' "${state_file}" 2>/dev/null)"
+        assert_equals "ship prompt fabricates no gating milestone" "false" "${fabricated}"
+    fi
+
+    teardown_test_env
+}
+test_backfill_ship_prompt_excludes_review
+
+test_backfill_preserves_disk_gating_entries() {
+    echo "-- test: completion-hook-recorded gating milestones survive re-anchoring --"
+    setup_test_env
+    install_registry_full_chain
+
+    local token="backfill-preserve-$$"
+    printf '%s' "${token}" > "${HOME}/.claude/.skill-session-token"
+
+    # Disk state as the completion hook leaves it after review actually ran.
+    jq -n --argjson chain "${_FULL_CHAIN_JSON}" '{
+        chain: $chain,
+        completed: ["brainstorming","writing-plans","executing-plans","requesting-code-review"],
+        current_index: 3
+    }' > "${HOME}/.claude/.skill-composition-state-${token}"
+    jq -n '{skill:"requesting-code-review",phase:"REVIEW"}' \
+        > "${HOME}/.claude/.skill-last-invoked-${token}"
+
+    # Re-anchor later in the SAME chain.
+    jq -n --arg p "archive the feature as built" '{"prompt":$p}' | \
+        CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        bash "${HOOK}" >/dev/null 2>&1
+
+    local state_file="${HOME}/.claude/.skill-composition-state-${token}"
+    if [ -f "${state_file}" ]; then
+        # Precondition: same chain (no reset).
+        local chain3
+        chain3="$(jq -r '.chain[3] // empty' "${state_file}" 2>/dev/null)"
+        assert_equals "chain unchanged across re-anchor" \
+            "requesting-code-review" "${chain3}"
+
+        local has_review
+        has_review="$(jq -r '.completed | index("requesting-code-review") != null' "${state_file}" 2>/dev/null)"
+        assert_equals "invocation-recorded REVIEW milestone survives the union" \
+            "true" "${has_review}"
+    else
+        _record_fail "state file written" "missing ${state_file}"
+    fi
+
+    teardown_test_env
+}
+test_backfill_preserves_disk_gating_entries
+
+test_backfill_nongating_steps_still_credited() {
+    echo "-- test: non-gating predecessors still back-fill (chore false-block guard) --"
+    setup_test_env
+    install_registry_full_chain
+
+    local token="backfill-chore-$$"
+    printf '%s' "${token}" > "${HOME}/.claude/.skill-session-token"
+
+    # Anchor AT requesting-code-review (index 3): every predecessor is
+    # non-gating and must still be credited, exactly as before the fix.
+    jq -n --arg p "code review please" '{"prompt":$p}' | \
+        CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        bash "${HOOK}" >/dev/null 2>&1
+
+    local state_file="${HOME}/.claude/.skill-composition-state-${token}"
+    if [ -f "${state_file}" ]; then
+        local idx
+        idx="$(jq -r '.current_index' "${state_file}" 2>/dev/null)"
+        assert_equals "anchored at requesting-code-review" "3" "${idx}"
+
+        local nongating
+        nongating="$(jq -r '.completed | (index("brainstorming") != null) and (index("writing-plans") != null) and (index("executing-plans") != null)' "${state_file}" 2>/dev/null)"
+        assert_equals "non-gating predecessors credited" "true" "${nongating}"
+
+        local fabricated
+        fabricated="$(jq -r '.completed | (index("requesting-code-review") != null) or (index("verification-before-completion") != null)' "${state_file}" 2>/dev/null)"
+        assert_equals "no gating milestone credited at the REVIEW anchor" \
+            "false" "${fabricated}"
+    else
+        _record_fail "state file written" "missing ${state_file}"
+    fi
+
+    teardown_test_env
+}
+test_backfill_nongating_steps_still_credited
+
+test_lastinvoked_signal_excludes_gating() {
+    echo "-- test: last-invoked prefix signal cannot leak the other gating milestone --"
+    setup_test_env
+    install_registry_full_chain
+
+    local token="backfill-lastinv-$$"
+    printf '%s' "${token}" > "${HOME}/.claude/.skill-session-token"
+
+    # verification-before-completion actually ran (completion hook recorded
+    # it); requesting-code-review never did. The last-invoked index (4) lies
+    # beyond requesting-code-review (3), so the unfixed prefix computation
+    # fabricates REVIEW from the VERIFY invocation.
+    jq -n --argjson chain "${_FULL_CHAIN_JSON}" '{
+        chain: $chain,
+        completed: ["verification-before-completion"],
+        current_index: 4
+    }' > "${HOME}/.claude/.skill-composition-state-${token}"
+    jq -n '{skill:"verification-before-completion",phase:"SHIP"}' \
+        > "${HOME}/.claude/.skill-last-invoked-${token}"
+
+    jq -n --arg p "archive the feature as built" '{"prompt":$p}' | \
+        CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        bash "${HOOK}" >/dev/null 2>&1
+
+    local state_file="${HOME}/.claude/.skill-composition-state-${token}"
+    if [ -f "${state_file}" ]; then
+        local has_verify has_review
+        has_verify="$(jq -r '.completed | index("verification-before-completion") != null' "${state_file}" 2>/dev/null)"
+        assert_equals "real VERIFY evidence preserved from disk" "true" "${has_verify}"
+
+        has_review="$(jq -r '.completed | index("requesting-code-review") != null' "${state_file}" 2>/dev/null)"
+        assert_equals "REVIEW not fabricated from the last-invoked signal" \
+            "false" "${has_review}"
+    else
+        _record_fail "state file written" "missing ${state_file}"
+    fi
+
+    teardown_test_env
+}
+test_lastinvoked_signal_excludes_gating
+
 # ---------------------------------------------------------------------------
 # 3b. Sticky composition on ack-shaped prompts
 # ---------------------------------------------------------------------------
