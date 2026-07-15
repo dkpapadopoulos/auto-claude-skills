@@ -39,9 +39,10 @@ external CI remains the enforcement layer, unchanged. Exit 0 means a verdict
 was RECORDED (a failing verdict is still exit 0 — read the printed summary,
 never treat exit 0 as "gates passed"; non-zero means it could not measure or
 write). Then print the human summary table from its output and continue at
-the Verification checklist. If there is no `.verify.yml`, offer to write one
-(per Step 1) — the manual Steps 2–3 below remain the fallback and may
-require per-instance user approval for the evidence write.
+the Verification checklist — the human should still eyeball that summary
+before any downstream push relies on it. If there is no `.verify.yml`, offer
+to write one (per Step 1) — the manual Steps 2–3 below remain the fallback
+and may require per-instance user approval for the evidence write.
 
 ## Step 2: Run locally (fallback — no `.verify.yml`)
 

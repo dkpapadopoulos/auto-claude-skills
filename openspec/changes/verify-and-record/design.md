@@ -38,6 +38,14 @@ model during the project-verification skill:
 - **`writer` field** is provenance metadata only — the guard does not read
   it, and it must never become an enforcement input (a forger would just set
   it).
+- **`CLAUDE_PLUGIN_ROOT`-controlled checker resolution** is part of the same
+  shell-trust model as `.verify.yml` itself: anyone who can set env or write
+  the YAML already controls the shell and could write the artifact directly —
+  no new forgery surface (governance review 2026-07-15).
+- **Gate-gaming diff base** reuses `verdict.sh::_routing_base`
+  (mainline-first): an `@{u}`-first base under-scopes the check on pushed
+  branches, and a base or diff that cannot be resolved is `unverified`, never
+  `clean` — only a diff that was actually computed reaches the checker.
 - Classifier evidence is n=1 (2026-07-15 pilot); if future classifier
   versions flag the script invocation, the fallback is the documented
   per-instance user approval — no laundering.

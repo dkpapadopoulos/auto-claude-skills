@@ -90,6 +90,32 @@ rm -f "${ARTIFACT}"
 assert_equals "mixed run: lint passed" '["lint"]' "$(jq -c '.passed' "${ARTIFACT}")"
 assert_equals "mixed run: tests failed" '["tests"]' "$(jq -c '.failed' "${ARTIFACT}")"
 
+echo "== T7: unrunnable gate-gaming check — unverified, never clean =="
+R7="$(mkrepo "${TEST_TMPDIR}/r7")"
+printf 'substrate: local\ncommands:\n  - name: tests\n    run: echo ok\n' > "${R7}/.verify.yml"
+rm -f "${ARTIFACT}"
+mkdir -p "${TEST_TMPDIR}/emptyplugin"
+( cd "${R7}" && CLAUDE_PLUGIN_ROOT="${TEST_TMPDIR}/emptyplugin" /bin/bash "${VAR}" >/dev/null 2>&1 )
+assert_equals "missing checker => gate_gaming unverified" "unverified" "$(jq -r '.gate_gaming_status' "${ARTIFACT}")"
+assert_equals "missing checker lands in could_not_verify[]" '["gate-gaming-check"]' "$(jq -c '.could_not_verify' "${ARTIFACT}")"
+
+echo "== T8: unresolvable diff base — unverified, never clean =="
+mkdir -p "${TEST_TMPDIR}/r8" && cd "${TEST_TMPDIR}/r8" || exit 1
+git init -q -b trunk . && git config user.email t@t && git config user.name t
+echo x > f.txt && git add . && git commit -qm base   # no main/master, no upstream
+printf 'substrate: local\ncommands:\n  - name: tests\n    run: echo ok\n' > .verify.yml
+rm -f "${ARTIFACT}"
+/bin/bash "${VAR}" >/dev/null 2>&1
+assert_equals "no mainline base => gate_gaming unverified" "unverified" "$(jq -r '.gate_gaming_status' "${ARTIFACT}")"
+
+echo "== T9: declared name without run: — could_not_verify, not dropped =="
+R9="$(mkrepo "${TEST_TMPDIR}/r9")"
+printf 'substrate: local\ncommands:\n  - name: lint\n  - name: tests\n    run: echo ok\n' > "${R9}/.verify.yml"
+rm -f "${ARTIFACT}"
+( cd "${R9}" && /bin/bash "${VAR}" >/dev/null 2>&1 )
+assert_equals "run-less name lands in could_not_verify[]" '["lint"]' "$(jq -c '.could_not_verify' "${ARTIFACT}")"
+assert_equals "paired command still measured" '["tests"]' "$(jq -c '.passed' "${ARTIFACT}")"
+
 cd "${REPO_ROOT}" || true
 teardown_test_env
 print_summary
