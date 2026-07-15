@@ -61,3 +61,20 @@ as F5.
   `WARNINGS` machinery.
 - Bash 3.2 compatible; no associative arrays; unquoted arithmetic only on
   validated-numeric input (none needed here).
+
+## Implementation Notes (synced at ship time)
+
+Behavior ships exactly as specified; three review-driven internal refinements:
+
+- The gate-file list is now a shared `_GATE_ENFORCE_LIBS` variable defined in
+  the F5 canary block and reused by the drift canary — the PAIRED-lists
+  discipline became structural (single point of extension) instead of
+  comment-enforced.
+- `.cwd` is extracted in the existing Step-1c payload-parsing block alongside
+  `session_id`/`transcript_path`, so the drift canary adds no unconditional jq
+  fork of its own.
+- The warning append uses `_W_NEW="$(…)" && WARNINGS="${_W_NEW}"` rather than
+  the F5 block's `|| WARNINGS="[]"` reset, because at this point WARNINGS may
+  already hold an F5 warning that a jq failure must not discard.
+- Test hardening: silent cases (b)/(e) also assert `SessionStart` presence so
+  they cannot pass vacuously on a crashed hook (13 assertions, was 11).

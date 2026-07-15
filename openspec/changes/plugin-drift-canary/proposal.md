@@ -28,9 +28,10 @@ the gate-enforcement files the F5 canary already owns.
 
 ## Capabilities
 
-### Added
-- `session-start-drift-canary` (new capability under session-start
-  diagnostics): version-drift and enforcement-manifest-drift warnings.
+### Modified
+- `pdlc-safety`: adds the installed-plugin drift canary (version-drift and
+  enforcement-manifest-drift warnings) beside the existing F5 push-gate
+  precondition canary it extends.
 
 ## Impact
 
