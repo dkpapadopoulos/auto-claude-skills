@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": "openspec/changes/plugin-drift-canary/design.md",
+  "plan_path": "docs/plans/2026-07-15-plugin-drift-canary-plan.md",
+  "spec_path": null,
+  "sp_plan_path": "docs/plans/2026-07-15-plugin-drift-canary-plan.md",
+  "sp_spec_path": null,
+  "change_slug": "plugin-drift-canary",
+  "capability_slug": "pdlc-safety",
+  "source_branch": "feat/plugin-drift-canary",
+  "base_commit": "a0319fd84bc70914d6c865997c4b369134cbd398",
+  "openspec_surface": "none",
+  "archived_at": "2026-07-15T09:33:38Z"
+}
