@@ -21,7 +21,29 @@ Discover the repository's own declared test/lint/type gate, run it **locally**, 
 
 Walk the ladder in `references/discovery-ladder.md` top-down, first-match-wins. Prefer the deterministic rungs (`.verify.yml`, manifest-standard targets, a clearly-labelled "run all tests" row) before any prose reasoning. On a genuine tie in the CLAUDE.md `## Commands` table (0 or ≥2 surviving candidates), STOP, show the candidates, ask which command(s) are the gate, and offer to write `.verify.yml` so the next run is deterministic. Record which rung produced the gate as `discovery_source`.
 
-## Step 2: Run locally
+## Preferred path: deterministic writer (when `.verify.yml` exists)
+
+When Step 1 landed on `.verify.yml` (`substrate: local`), do NOT perform
+Steps 2–3 by hand. Run:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)}/scripts/verify-and-record.sh"
+```
+
+It runs the declared commands (stdin nulled), runs the gate-gaming check, and
+writes the evidence file from its OWN measured exit codes — the model never
+authors the verdict JSON. This is measured provenance (and avoids the
+auto-mode classifier's self-approval denial on model-authored verdict
+writes); it is NOT a trust boundary — the artifact stays forgeable and
+external CI remains the enforcement layer, unchanged. Exit 0 means a verdict
+was RECORDED (a failing verdict is still exit 0 — read the printed summary,
+never treat exit 0 as "gates passed"; non-zero means it could not measure or
+write). Then print the human summary table from its output and continue at
+the Verification checklist. If there is no `.verify.yml`, offer to write one
+(per Step 1) — the manual Steps 2–3 below remain the fallback and may
+require per-instance user approval for the evidence write.
+
+## Step 2: Run locally (fallback — no `.verify.yml`)
 
 Run each discovered command in the working tree. Capture each command's exit code and the last ~4 KB of combined stdout/stderr (replace newlines with the two-character sequence \n so the excerpt is valid inside JSON; truncate to ~4 KB). Substrate is the literal `local` in this version; a `.verify.yml` declaring any other `substrate` value is an ERROR — report it, do not silently run locally.
 
