@@ -63,9 +63,13 @@ if [ ! -t 0 ]; then
 fi
 _HOOK_SESSION_ID=""
 _HOOK_TRANSCRIPT=""
+_HOOK_CWD=""
 if [ -n "${_HOOK_STDIN}" ] && command -v jq >/dev/null 2>&1; then
     _HOOK_SESSION_ID="$(printf '%s' "${_HOOK_STDIN}" | jq -r '.session_id // empty' 2>/dev/null)" || _HOOK_SESSION_ID=""
     _HOOK_TRANSCRIPT="$(printf '%s' "${_HOOK_STDIN}" | jq -r '.transcript_path // empty' 2>/dev/null)" || _HOOK_TRANSCRIPT=""
+    # .cwd is consumed by the drift canary (Step 6a-ter); extracted here so the
+    # canary adds no unconditional jq fork of its own.
+    _HOOK_CWD="$(printf '%s' "${_HOOK_STDIN}" | jq -r '.cwd // empty' 2>/dev/null)" || _HOOK_CWD=""
 fi
 # Conversation-stable id: the transcript filename persists across resume/compact.
 # Token format is single-sourced in lib/session-token.sh so this writer and the
@@ -593,8 +597,11 @@ fi
 # the documented Bash-3.2 expansion-time killer (quoted operand in $(( ))),
 # which aborts at source time; sourcing is exactly what the guard does, and
 # these libs are function-definition-only, so a subshell probe is safe.
-for _cf in "hooks/lib/branch-ledger.sh" "hooks/lib/verdict.sh" \
-           "hooks/lib/git-command.sh" "hooks/lib/session-token.sh"; do
+# Shared with the drift canary (Step 6a-ter) — extend this ONE list to cover a
+# new gate-enforcement lib in both canaries. Repo-relative literals, no spaces:
+# unquoted word-split expansion is intentional and Bash-3.2 safe.
+_GATE_ENFORCE_LIBS="hooks/lib/branch-ledger.sh hooks/lib/verdict.sh hooks/lib/git-command.sh hooks/lib/session-token.sh"
+for _cf in ${_GATE_ENFORCE_LIBS}; do
     if [ ! -f "${PLUGIN_ROOT}/${_cf}" ]; then
         _CANARY_BAD="${_CANARY_BAD}${_CANARY_BAD:+, }${_cf##*/} (missing)"
     elif ! ( . "${PLUGIN_ROOT}/${_cf}" ) </dev/null >/dev/null 2>&1; then
@@ -612,13 +619,12 @@ fi
 # plugin's own source repo, a stale cache silently enforces OLD gate logic
 # (bit twice: pre-#107 cache false-denied phrase mentions). Compare manifest
 # versions plus a cksum manifest over the gate-enforcement files.
-# PAIRED: the file list mirrors the F5 canary list above — extend both in the
-# same change. Warning-only, fail-open: unreadable input silently skips; a
+# PAIRED: reuses _GATE_ENFORCE_LIBS from the F5 canary above (single point of
+# extension). Warning-only, fail-open: unreadable input silently skips; a
 # canary error must never break session start. jq is guaranteed here (the
 # jq-less path exited at the fallback-registry step).
 _DRIFT_MSG=""
-_DRIFT_CWD="$(printf '%s' "${_HOOK_STDIN}" | jq -r '.cwd // empty' 2>/dev/null)" || _DRIFT_CWD=""
-[ -n "${_DRIFT_CWD}" ] || _DRIFT_CWD="${PWD}"
+_DRIFT_CWD="${_HOOK_CWD:-${PWD}}"
 _SRC_MANIFEST="${_DRIFT_CWD}/.claude-plugin/plugin.json"
 _RUN_MANIFEST="${PLUGIN_ROOT}/.claude-plugin/plugin.json"
 if [ -f "${_SRC_MANIFEST}" ] && [ -f "${_RUN_MANIFEST}" ]; then
@@ -635,10 +641,10 @@ if [ -f "${_SRC_MANIFEST}" ] && [ -f "${_RUN_MANIFEST}" ]; then
             _DRIFT_MSG="running plugin is v${_RUN_VER} but source repo is v${_SRC_VER}"
         fi
         # Gate-enforcement manifest: catches drift even without a version bump.
+        # Reuses the F5 canary's _GATE_ENFORCE_LIBS so the two lists cannot
+        # diverge; the guard script itself is added here (F5 checks it apart).
         _DRIFT_FILES=""
-        for _df in "hooks/openspec-guard.sh" "hooks/lib/branch-ledger.sh" \
-                   "hooks/lib/verdict.sh" "hooks/lib/git-command.sh" \
-                   "hooks/lib/session-token.sh"; do
+        for _df in "hooks/openspec-guard.sh" ${_GATE_ENFORCE_LIBS}; do
             _SRC_SUM="$(cksum "${_DRIFT_CWD}/${_df}" 2>/dev/null | awk '{print $1, $2}')" || _SRC_SUM=""
             _RUN_SUM="$(cksum "${PLUGIN_ROOT}/${_df}" 2>/dev/null | awk '{print $1, $2}')" || _RUN_SUM=""
             [ "${_SRC_SUM}" = "${_RUN_SUM}" ] \
@@ -650,7 +656,9 @@ if [ -f "${_SRC_MANIFEST}" ] && [ -f "${_RUN_MANIFEST}" ]; then
     fi
 fi
 if [ -n "${_DRIFT_MSG}" ]; then
-    WARNINGS="$(printf '%s' "${WARNINGS}" | jq --arg m "PLUGIN DRIFT CANARY: ${_DRIFT_MSG} — this session runs the cached plugin, not this repo's working tree; update/reinstall the plugin (or restart the session after a marketplace refresh) to pick up changes." '. + [$m]')" || WARNINGS="[]"
+    # && assignment (not || reset): WARNINGS may already hold an F5 canary
+    # warning here — a contrived jq failure must not discard it.
+    _W_NEW="$(printf '%s' "${WARNINGS}" | jq --arg m "PLUGIN DRIFT CANARY: ${_DRIFT_MSG} — this session runs the cached plugin, not this repo's working tree; update/reinstall the plugin (or restart the session after a marketplace refresh) to pick up changes." '. + [$m]')" && WARNINGS="${_W_NEW}"
 fi
 
 # Step 6b: Resolve preset (if configured in skill-config.json)

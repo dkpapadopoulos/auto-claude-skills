@@ -41,6 +41,7 @@ rm -rf "${_PLAIN}"
 
 # (b) source repo, same version, identical gate files => silent.
 out="$(_run_hook "${_SRC}")"
+assert_contains     "healthy source-repo session emits session context" "SessionStart" "${out:-<empty>}"
 assert_not_contains "healthy source-repo session emits no drift canary" "PLUGIN DRIFT CANARY" "${out:-}"
 
 # (c) version mismatch => warning names both versions.
@@ -65,6 +66,7 @@ cp "${PROJECT_ROOT}/hooks/lib/verdict.sh" "${_SRC}/hooks/lib/verdict.sh"
 printf '{"name":"some-other-plugin","version":"9.9.9"}\n' \
     > "${_SRC}/.claude-plugin/plugin.json"
 out="$(_run_hook "${_SRC}")"
+assert_contains     "foreign plugin repo still emits session context" "SessionStart" "${out:-<empty>}"
 assert_not_contains "foreign plugin repo emits no drift canary" "PLUGIN DRIFT CANARY" "${out:-}"
 printf '{"name":"auto-claude-skills","version":"3.71.0"}\n' \
     > "${_SRC}/.claude-plugin/plugin.json"
