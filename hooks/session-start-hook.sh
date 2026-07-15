@@ -607,6 +607,52 @@ if [ -n "${_CANARY_BAD}" ]; then
     WARNINGS="$(printf '%s' "${WARNINGS}" | jq --arg m "PUSH-GATE CANARY: ${_CANARY_BAD} — the fail-closed push gate silently skips the affected checks (fail-open, no enforcement). Restore the file(s) to re-arm enforcement." '. + [$m]')" || WARNINGS="[]"
 fi
 
+# Step 6a-ter: installed-plugin drift canary (post-audit item 1, Codex D2).
+# The plugin runs from a versioned cache; when this session's cwd IS the
+# plugin's own source repo, a stale cache silently enforces OLD gate logic
+# (bit twice: pre-#107 cache false-denied phrase mentions). Compare manifest
+# versions plus a cksum manifest over the gate-enforcement files.
+# PAIRED: the file list mirrors the F5 canary list above — extend both in the
+# same change. Warning-only, fail-open: unreadable input silently skips; a
+# canary error must never break session start. jq is guaranteed here (the
+# jq-less path exited at the fallback-registry step).
+_DRIFT_MSG=""
+_DRIFT_CWD="$(printf '%s' "${_HOOK_STDIN}" | jq -r '.cwd // empty' 2>/dev/null)" || _DRIFT_CWD=""
+[ -n "${_DRIFT_CWD}" ] || _DRIFT_CWD="${PWD}"
+_SRC_MANIFEST="${_DRIFT_CWD}/.claude-plugin/plugin.json"
+_RUN_MANIFEST="${PLUGIN_ROOT}/.claude-plugin/plugin.json"
+if [ -f "${_SRC_MANIFEST}" ] && [ -f "${_RUN_MANIFEST}" ]; then
+    _SRC_REAL="$(cd "${_DRIFT_CWD}" 2>/dev/null && pwd -P)" || _SRC_REAL=""
+    _RUN_REAL="$(cd "${PLUGIN_ROOT}" 2>/dev/null && pwd -P)" || _RUN_REAL=""
+    _SRC_NAME="$(jq -r '.name // empty' "${_SRC_MANIFEST}" 2>/dev/null)" || _SRC_NAME=""
+    _RUN_NAME="$(jq -r '.name // empty' "${_RUN_MANIFEST}" 2>/dev/null)" || _RUN_NAME=""
+    if [ -n "${_SRC_REAL}" ] && [ -n "${_RUN_REAL}" ] \
+       && [ "${_SRC_REAL}" != "${_RUN_REAL}" ] \
+       && [ -n "${_SRC_NAME}" ] && [ "${_SRC_NAME}" = "${_RUN_NAME}" ]; then
+        _SRC_VER="$(jq -r '.version // empty' "${_SRC_MANIFEST}" 2>/dev/null)" || _SRC_VER=""
+        _RUN_VER="$(jq -r '.version // empty' "${_RUN_MANIFEST}" 2>/dev/null)" || _RUN_VER=""
+        if [ -n "${_SRC_VER}" ] && [ -n "${_RUN_VER}" ] && [ "${_SRC_VER}" != "${_RUN_VER}" ]; then
+            _DRIFT_MSG="running plugin is v${_RUN_VER} but source repo is v${_SRC_VER}"
+        fi
+        # Gate-enforcement manifest: catches drift even without a version bump.
+        _DRIFT_FILES=""
+        for _df in "hooks/openspec-guard.sh" "hooks/lib/branch-ledger.sh" \
+                   "hooks/lib/verdict.sh" "hooks/lib/git-command.sh" \
+                   "hooks/lib/session-token.sh"; do
+            _SRC_SUM="$(cksum "${_DRIFT_CWD}/${_df}" 2>/dev/null | awk '{print $1, $2}')" || _SRC_SUM=""
+            _RUN_SUM="$(cksum "${PLUGIN_ROOT}/${_df}" 2>/dev/null | awk '{print $1, $2}')" || _RUN_SUM=""
+            [ "${_SRC_SUM}" = "${_RUN_SUM}" ] \
+                || _DRIFT_FILES="${_DRIFT_FILES}${_DRIFT_FILES:+, }${_df##*/}"
+        done
+        if [ -n "${_DRIFT_FILES}" ]; then
+            _DRIFT_MSG="${_DRIFT_MSG}${_DRIFT_MSG:+; }gate-enforcement files differ from source: ${_DRIFT_FILES}"
+        fi
+    fi
+fi
+if [ -n "${_DRIFT_MSG}" ]; then
+    WARNINGS="$(printf '%s' "${WARNINGS}" | jq --arg m "PLUGIN DRIFT CANARY: ${_DRIFT_MSG} — this session runs the cached plugin, not this repo's working tree; update/reinstall the plugin (or restart the session after a marketplace refresh) to pick up changes." '. + [$m]')" || WARNINGS="[]"
+fi
+
 # Step 6b: Resolve preset (if configured in skill-config.json)
 _preset_name=""
 if [ -f "${USER_CONFIG}" ]; then
