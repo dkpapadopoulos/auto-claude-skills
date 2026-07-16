@@ -46,6 +46,16 @@
         ]
       },
       {
+        "matcher": "^Skill$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/skill-gate.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
         "matcher": "Grep",
         "hooks": [
           {

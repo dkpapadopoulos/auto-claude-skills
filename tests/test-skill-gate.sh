@@ -113,4 +113,96 @@ printf '{"transcript_path":"","tool_response":{"is_error":false},"tool_input":{"
     | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "$COMPLETION_HOOK" >/dev/null 2>&1
 assert_contains "invocation record written without composition state" "project-verification" "$(cat "$INVOC_FILE" 2>/dev/null)"
 
+# --- skill-gate: sequencing matrix (Scenarios 1 and 4) ---
+GATE_HOOK="${PROJECT_ROOT}/hooks/skill-gate.sh"
+_gate() {  # $1 = skill name to invoke; prints hook stdout
+    printf '{"tool_name":"Skill","tool_input":{"skill":"%s"},"transcript_path":""}' "$1" \
+        | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" SKILL_PROJECT_ROOT="${PROJECT_ROOT}" /bin/bash "$GATE_HOOK" 2>/dev/null
+}
+assert_equals "gate hook is executable" "yes" "$([ -x "$GATE_HOOK" ] && echo yes || echo no)"
+
+# The provenance block above removed both COMP_FILE and INVOC_FILE — reset
+# COMP_FILE to the chain fixture this block needs before using it.
+printf '{"chain":["brainstorming","writing-plans","subagent-driven-development","requesting-code-review","verification-before-completion","openspec-ship","finishing-a-development-branch"],"completed":[],"current_index":0}\n' > "$COMP_FILE"
+
+# The completion-hook test block above invoked the real hook without cd'ing
+# into its throwaway repo, so branch_ledger_record resolved proj_root via
+# `git rev-parse --show-toplevel` on THIS repo/branch and durably recorded
+# "writing-plans" in this same $HOME's branch ledger (leg 2 of
+# phase_step_satisfied). Left in place, that permanently satisfies
+# "writing-plans" for the rest of this suite run regardless of INVOC_FILE,
+# masking every deny assertion below. Purge it so this block starts clean.
+rm -rf "$HOME"/.claude/.skill-branch-ledger-* 2>/dev/null
+
+# chain: brainstorming[evidence] -> writing-plans -> subagent-driven-development -> ...
+# Evidence lives in INVOC_FILE (the append-only record) — NEVER seeded via .completed.
+printf '["brainstorming"]\n' > "$INVOC_FILE"
+_out="$(_gate superpowers:subagent-driven-development)"
+assert_contains "deny: SDD before writing-plans" '"permissionDecision": "deny"' "$_out"
+assert_contains "deny names the missing step" "writing-plans" "$_out"
+assert_contains "deny offers attestation remedy" "phase_attest" "$_out"
+
+# THE CODEX-#2 PIN (gate-level): walker back-fill in .completed alone must NOT unblock.
+jq '.completed = ["brainstorming","writing-plans"]' "$COMP_FILE" > "$COMP_FILE.t" && mv "$COMP_FILE.t" "$COMP_FILE"
+_out="$(_gate superpowers:subagent-driven-development)"
+assert_contains "deny: walker-backfilled .completed is not invocation evidence" '"permissionDecision": "deny"' "$_out"
+
+# THE CODEX-#3 PIN: sibling implementation skill cannot bypass the slot.
+_out="$(_gate auto-claude-skills:agent-team-execution)"
+assert_contains "deny: impl-slot sibling also gated (alias mapping)" "writing-plans" "$_out"
+
+_out="$(_gate superpowers:writing-plans)"
+assert_equals "allow: invoking the first unfinished step itself" "" "$_out"
+
+_out="$(_gate superpowers:brainstorming)"
+assert_equals "allow: re-invoking an evidenced step" "" "$_out"
+
+_out="$(_gate superpowers:systematic-debugging)"
+assert_equals "allow: non-chain skill (DEBUG detour)" "" "$_out"
+
+# real evidence satisfies: writing-plans in the invocation record -> SDD allowed
+printf '["brainstorming","writing-plans"]\n' > "$INVOC_FILE"
+_out="$(_gate superpowers:subagent-driven-development)"
+assert_equals "allow: after predecessor invocation evidence exists" "" "$_out"
+
+# attestation satisfies: openspec-ship attested earlier (Task 1) -> finishing allowed
+# (requesting-code-review + verification-before-completion must block first though)
+# Reconciliation: the just-allowed SDD invocation above only checked SDD's own
+# predecessors — it did not add "subagent-driven-development" itself to the
+# invocation record. Without it, finishing-a-development-branch's first
+# unsatisfied predecessor would be SDD (chain index 2), not the gating
+# milestone the brief's assert targets. Record it now, as the real
+# completion hook would once SDD actually returns.
+printf '["brainstorming","writing-plans","subagent-driven-development"]\n' > "$INVOC_FILE"
+_out="$(_gate superpowers:finishing-a-development-branch)"
+assert_contains "deny: finishing blocked by unfinished gating milestone" "requesting-code-review" "$_out"
+printf '["brainstorming","writing-plans","subagent-driven-development","requesting-code-review","verification-before-completion"]\n' > "$INVOC_FILE"
+_out="$(_gate superpowers:finishing-a-development-branch)"
+assert_equals "allow: finishing with gating evidenced + openspec-ship attested" "" "$_out"
+
+# Scenario 4: no chain / malformed state / gate error -> allow, exit 0
+rm -f "$COMP_FILE"
+_out="$(_gate superpowers:finishing-a-development-branch)"
+assert_equals "allow: no composition state" "" "$_out"
+printf 'NOT JSON' > "$COMP_FILE"
+_out="$(_gate superpowers:finishing-a-development-branch)"
+assert_equals "allow: malformed composition state" "" "$_out"
+_rc=0; printf 'NOT EVEN JSON PAYLOAD' | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "$GATE_HOOK" >/dev/null 2>&1 || _rc=$?
+assert_equals "fail-open: malformed hook payload exits 0" "0" "$_rc"
+
+# warn mode: config flips deny to systemMessage-only
+# Reconciliation: restore the original "writing-plans missing" evidence state
+# (INVOC_FILE currently carries the finishing-test's full evidence trail,
+# which would silently satisfy SDD's predecessors here) so this block
+# exercises the same gap as the very first deny test, just under warn config.
+printf '["brainstorming"]\n' > "$INVOC_FILE"
+printf '{"chain":["brainstorming","writing-plans","subagent-driven-development"],"completed":[],"current_index":0}\n' > "$COMP_FILE"
+printf '{"phase_enforcement":{"skill_sequencing":"warn"}}\n' > "$HOME/.claude/skill-config.json"
+_out="$(_gate superpowers:subagent-driven-development)"
+assert_not_contains "warn mode: no permissionDecision" "permissionDecision" "$_out"
+assert_contains "warn mode: still surfaces the gap" "writing-plans" "$_out"
+rm -f "$HOME/.claude/skill-config.json"
+# events log got deny + allow lines
+assert_contains "telemetry log written" "gate=skill-seq" "$(cat "$HOME/.claude/.phase-gate-events.log" 2>/dev/null)"
+
 print_summary

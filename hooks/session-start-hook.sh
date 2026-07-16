@@ -596,6 +596,14 @@ if [ ! -f "${PLUGIN_ROOT}/hooks/openspec-guard.sh" ]; then
 elif ! /bin/bash -n "${PLUGIN_ROOT}/hooks/openspec-guard.sh" >/dev/null 2>&1; then
     _CANARY_BAD="openspec-guard.sh (unparseable)"
 fi
+# skill-gate.sh (phase-enforcement C1): same shape as openspec-guard.sh above
+# — it executes and reads stdin directly (PreToolUse ^Skill$), so parse-check
+# only, not source-probed like the libs below.
+if [ ! -f "${PLUGIN_ROOT}/hooks/skill-gate.sh" ]; then
+    _CANARY_BAD="${_CANARY_BAD}${_CANARY_BAD:+, }skill-gate.sh (missing)"
+elif ! /bin/bash -n "${PLUGIN_ROOT}/hooks/skill-gate.sh" >/dev/null 2>&1; then
+    _CANARY_BAD="${_CANARY_BAD}${_CANARY_BAD:+, }skill-gate.sh (unparseable)"
+fi
 # Gate libs: SOURCE-probe in a stdio-nulled subshell — parse-only (-n) misses
 # the documented Bash-3.2 expansion-time killer (quoted operand in $(( ))),
 # which aborts at source time; sourcing is exactly what the guard does, and
@@ -647,7 +655,7 @@ if [ -f "${_SRC_MANIFEST}" ] && [ -f "${_RUN_MANIFEST}" ]; then
         # Reuses the F5 canary's _GATE_ENFORCE_LIBS so the two lists cannot
         # diverge; the guard script itself is added here (F5 checks it apart).
         _DRIFT_FILES=""
-        for _df in "hooks/openspec-guard.sh" ${_GATE_ENFORCE_LIBS}; do
+        for _df in "hooks/openspec-guard.sh" "hooks/skill-gate.sh" ${_GATE_ENFORCE_LIBS}; do
             _SRC_SUM="$(cksum "${_DRIFT_CWD}/${_df}" 2>/dev/null | awk '{print $1, $2}')" || _SRC_SUM=""
             _RUN_SUM="$(cksum "${PLUGIN_ROOT}/${_df}" 2>/dev/null | awk '{print $1, $2}')" || _RUN_SUM=""
             [ "${_SRC_SUM}" = "${_RUN_SUM}" ] \
