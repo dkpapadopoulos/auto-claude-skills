@@ -245,6 +245,45 @@ EOF
     teardown_test_env
 }
 
+run_select() { printf '%s' "$1" | /bin/bash "${MINE}" select 2>&1; }
+
+test_select_contract_gate_and_meta_cap() {
+    echo "-- test: select — missing contract withheld; 3rd meta (worst grade) trimmed --"
+    setup_test_env
+    local input out
+    input='[
+      {"fp":"f1","title":"meta B","grade":"B","meta":true,"contract_complete":true,"end_user":false},
+      {"fp":"f2","title":"user C","grade":"C","meta":false,"contract_complete":true,"end_user":true},
+      {"fp":"f3","title":"meta C","grade":"C","meta":true,"contract_complete":true,"end_user":false},
+      {"fp":"f4","title":"meta D","grade":"D","meta":true,"contract_complete":true,"end_user":false},
+      {"fp":"f5","title":"no contract","grade":"A","meta":false,"contract_complete":false,"end_user":true}
+    ]'
+    out="$(run_select "${input}")"
+    assert_equals "f5 withheld missing_contract" "missing_contract" "$(printf '%s' "$out" | jq -r '.withheld[] | select(.fp=="f5") | .reason')"
+    assert_equals "f4 withheld meta_cap" "meta_cap" "$(printf '%s' "$out" | jq -r '.withheld[] | select(.fp=="f4") | .reason')"
+    assert_equals "presented count" "3" "$(printf '%s' "$out" | jq -r '.presented | length')"
+    assert_contains "order preserved, f1 first" '"f1"' "$(printf '%s' "$out" | jq -c '[.presented[].fp]')"
+    teardown_test_env
+}
+
+test_select_cap_and_end_user_warning() {
+    echo "-- test: select — cap 5 preserves rank order; all-meta report warns --"
+    setup_test_env
+    local input out
+    input='[
+      {"fp":"m1","title":"m1","grade":"A","meta":true,"contract_complete":true,"end_user":false},
+      {"fp":"m2","title":"m2","grade":"A","meta":true,"contract_complete":true,"end_user":false},
+      {"fp":"u1","title":"u1","grade":"B","meta":false,"contract_complete":true,"end_user":false},
+      {"fp":"u2","title":"u2","grade":"B","meta":false,"contract_complete":true,"end_user":false},
+      {"fp":"u3","title":"u3","grade":"B","meta":false,"contract_complete":true,"end_user":false},
+      {"fp":"u4","title":"u4","grade":"B","meta":false,"contract_complete":true,"end_user":false}
+    ]'
+    out="$(run_select "${input}")"
+    assert_equals "cap withholds 6th" "cap" "$(printf '%s' "$out" | jq -r '.withheld[] | select(.fp=="u4") | .reason')"
+    assert_equals "warning emitted" "no_end_user_facing" "$(printf '%s' "$out" | jq -r '.warnings[0]')"
+    teardown_test_env
+}
+
 test_fingerprint_stable_and_distinct
 test_missing_gh_fails_loud
 test_bundle_local_sources
@@ -257,5 +296,7 @@ test_ledger_author_allowlist
 test_dedup_decisions
 test_kill_window_is_permanent
 test_malformed_fence_skipped
+test_select_contract_gate_and_meta_cap
+test_select_cap_and_end_user_warning
 
 print_summary

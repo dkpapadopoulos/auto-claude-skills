@@ -192,9 +192,28 @@ case "${MODE}" in
         done
         ;;
     select)
-        require jq; require gh; require shasum
-        echo "ERROR: mode '${MODE}' not implemented yet" >&2
-        exit 4
+        require jq
+        jq '
+          def grank: {"A":1,"B":2,"C":3,"D":4,"F":5}[.grade] // 9;
+          . as $in
+          | [ $in[] | select(.contract_complete != true)
+              | {fp, reason: "missing_contract"} ] as $w1
+          | [ $in[] | select(.contract_complete == true) ] as $pool
+          | ([ $pool | to_entries[] | select(.value.meta == true) ]
+             | sort_by([.value | grank, .key]) | .[0:2] | [ .[].key ]) as $keepmeta
+          | [ $pool | to_entries[]
+              | select(.value.meta != true or (.key as $k | $keepmeta | index($k) != null))
+              | .value ] as $afterMeta
+          | [ $pool | to_entries[]
+              | select(.value.meta == true and (.key as $k | $keepmeta | index($k) == null))
+              | {fp: .value.fp, reason: "meta_cap"} ] as $w2
+          | ($afterMeta | .[0:5]) as $presented
+          | [ $afterMeta | .[5:][] | {fp, reason: "cap"} ] as $w3
+          | {presented: $presented,
+             withheld: ($w1 + $w2 + $w3),
+             warnings: (if ([ $presented[] | select(.end_user == true) ] | length) == 0
+                        then ["no_end_user_facing"] else [] end)}'
         ;;
+
     *) usage ;;
 esac

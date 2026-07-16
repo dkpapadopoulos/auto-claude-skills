@@ -41,15 +41,14 @@ boundary is code; everything requiring judgment is model**.
    and STOPS unless the user explicitly overrides. Otherwise: extracts
    candidate proposals (each with verbatim source quote, run id / source sha
    / observed-at, A–F grade under assumption-audit evidence ceilings,
-   meta vs end-user-facing tag, draft A/B contract); applies gates in order
-   — contract-completeness presentation gate, fingerprint dedup,
-   anti-treadmill (max 2 meta, drop lowest-graded meta first; at least 1
-   end-user-facing or the report states why none qualified), cap 5; ranks;
-   presents the report with the script-printed kill counter verbatim;
-   collects per-item approve/reject; creates one labeled issue per approved
-   item; writes the run-ledger issue LAST (every presented item with
-   fingerprint, rank, decision, reason, timestamps; cumulative counters;
-   ranking-instrumentation stats).
+   meta vs end-user-facing tag, draft A/B contract); ranks candidates, then
+   applies the gates by CALLING the script's `select` mode
+   (contract-completeness, meta cap, report cap — thresholds enforced in
+   code) after fingerprint dedup via `dedup` mode; presents the report with
+   the script-printed kill counter verbatim; collects per-item approve/reject;
+   creates one labeled issue per approved item; writes the run-ledger issue
+   LAST (every presented item with fingerprint, rank, decision, reason,
+   timestamps; cumulative counters; ranking-instrumentation stats).
 
 ## Decisions
 
