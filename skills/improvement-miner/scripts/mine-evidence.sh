@@ -79,7 +79,18 @@ json_memory_index() {
     printf '%s' "${rows}"
 }
 
-json_eval_reports() { echo '[]'; }
+json_eval_reports() {
+    local BOT_LOGIN="github-actions"
+    local EVAL_TITLE_PREFIX="Behavioral eval regression"
+    # NOTE: field list deliberately excludes comments — trust boundary.
+    local raw
+    raw="$(gh issue list --state all --limit 50 \
+            --search "\"${EVAL_TITLE_PREFIX}\" in:title" \
+            --json number,title,body,author 2>/dev/null)" || raw='[]'
+    # Guard against empty output (e.g., from testing fixtures)
+    [ -z "${raw}" ] && raw='[]'
+    printf '%s' "${raw}" | jq --arg bot "${BOT_LOGIN}" --arg pfx "${EVAL_TITLE_PREFIX}" '[.[] | select((.author.login == $bot) and (.title | startswith($pfx))) | {number, title, body}]' 2>/dev/null || echo '[]'
+}
 json_ledger_summary() { echo '{}'; }
 
 emit_bundle() {

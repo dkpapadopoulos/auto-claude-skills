@@ -97,9 +97,42 @@ test_bundle_gate_status_present() {
     teardown_test_env
 }
 
+test_eval_reports_author_allowlist() {
+    echo "-- test: non-allowlisted author excluded from eval_reports --"
+    setup_test_env; make_fake_gh
+    mkdir -p "${TEST_TMPDIR}/repo" "${TEST_TMPDIR}/memory"
+    (cd "${TEST_TMPDIR}/repo" && git init -q && git -c user.email="test@example.com" -c user.name="Test" commit -q --allow-empty -m init)
+    FAKE_GH_EVALS="${TEST_TMPDIR}/evals.json"
+    cat > "${FAKE_GH_EVALS}" <<'EOF'
+[
+ {"number": 94, "title": "Behavioral eval regression: incident-analysis",
+  "body": "SAFE-BOT-BODY", "author": {"login": "github-actions"}},
+ {"number": 95, "title": "Behavioral eval regression: fake",
+  "body": "MALICIOUS-INJECTED-BODY", "author": {"login": "mallory"}}
+]
+EOF
+    local out; out="$(run_bundle)"
+    assert_contains "bot-authored body present" "SAFE-BOT-BODY" "$out"
+    assert_not_contains "third-party body excluded" "MALICIOUS-INJECTED-BODY" "$out"
+    teardown_test_env
+}
+
+test_comments_never_requested() {
+    echo "-- test: gh is never asked for comment fields --"
+    setup_test_env; make_fake_gh
+    mkdir -p "${TEST_TMPDIR}/repo" "${TEST_TMPDIR}/memory"
+    (cd "${TEST_TMPDIR}/repo" && git init -q && git -c user.email="test@example.com" -c user.name="Test" commit -q --allow-empty -m init)
+    run_bundle > /dev/null
+    local log; log="$(cat "${GH_LOG}" 2>/dev/null)"
+    assert_not_contains "no comments field in any gh call" "comments" "${log}"
+    teardown_test_env
+}
+
 test_fingerprint_stable_and_distinct
 test_missing_gh_fails_loud
 test_bundle_local_sources
 test_bundle_gate_status_present
+test_eval_reports_author_allowlist
+test_comments_never_requested
 
 print_summary
