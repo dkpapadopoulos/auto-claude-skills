@@ -316,6 +316,23 @@ test_select_meta_tie_keeps_earlier() {
     teardown_test_env
 }
 
+test_skill_md_content() {
+    echo "-- test: SKILL.md exists with required contract anchors --"
+    local skill="${REPO_ROOT}/skills/improvement-miner/SKILL.md"
+    assert_file_exists "SKILL.md exists" "${skill}"
+    if [ ! -f "${skill}" ]; then
+        return
+    fi
+    local body; body="$(cat "${skill}")"
+    assert_contains "frontmatter description present" "description:" "${body}"
+    assert_contains "invokes bundle mode" "mine-evidence.sh" "${body}"
+    assert_contains "kill refusal step present" "decommission recommended" "${body}"
+    assert_contains "A/B contract fields named" "pinned" "${body}"
+    assert_contains "ledger fence contract documented" '```json' "${body}"
+    assert_contains "run label documented" "improvement-miner-run" "${body}"
+    assert_contains "no-push invariant stated" "no code, no pushes" "${body}"
+}
+
 test_fingerprint_stable_and_distinct
 test_missing_gh_fails_loud
 test_bundle_local_sources
@@ -332,5 +349,6 @@ test_select_contract_gate_and_meta_cap
 test_select_cap_and_end_user_warning
 test_select_null_grade_degrades
 test_select_meta_tie_keeps_earlier
+test_skill_md_content
 
 print_summary
