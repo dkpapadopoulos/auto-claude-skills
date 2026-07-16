@@ -128,11 +128,90 @@ test_comments_never_requested() {
     teardown_test_env
 }
 
+make_ledger_fixture() { # $1 = path; writes two run issues (bodies with json fences)
+    cat > "$1" <<'EOF'
+[
+ {"number": 10, "author": {"login": "testowner"},
+  "body": "Mine run 1\n```json\n{\"run\":\"2026-07-01\",\"presented\":[{\"fp\":\"aaaa000000000001\",\"title\":\"p1\",\"rank\":1,\"grade\":\"B\",\"meta\":false,\"decision\":\"rejected\",\"reason\":\"no\",\"issue\":null},{\"fp\":\"aaaa000000000002\",\"title\":\"p2\",\"rank\":2,\"grade\":\"C\",\"meta\":true,\"decision\":\"rejected\",\"reason\":\"no\",\"issue\":null},{\"fp\":\"aaaa000000000003\",\"title\":\"p3\",\"rank\":3,\"grade\":\"C\",\"meta\":false,\"decision\":\"rejected\",\"reason\":\"no\",\"issue\":null}]}\n```\n"},
+ {"number": 12, "author": {"login": "testowner"},
+  "body": "Mine run 2\n```json\n{\"run\":\"2026-07-08\",\"presented\":[{\"fp\":\"aaaa000000000004\",\"title\":\"p4\",\"rank\":1,\"grade\":\"B\",\"meta\":false,\"decision\":\"rejected\",\"reason\":\"no\",\"issue\":null},{\"fp\":\"aaaa000000000005\",\"title\":\"p5\",\"rank\":2,\"grade\":\"D\",\"meta\":false,\"decision\":\"rejected\",\"reason\":\"no\",\"issue\":null}]}\n```\n"}
+]
+EOF
+}
+
+init_fixture_repo() { # sets up ${TEST_TMPDIR}/repo as a real git repo (mechanical wiring for run_bundle/dedup)
+    mkdir -p "${TEST_TMPDIR}/repo"
+    (cd "${TEST_TMPDIR}/repo" && git init -q && git -c user.email="test@example.com" -c user.name="Test" commit -q --allow-empty -m init)
+}
+
+test_kill_math_tripped_and_alive() {
+    echo "-- test: kill math — 0-of-5 tripped, 1-of-5 alive --"
+    setup_test_env; make_fake_gh; init_fixture_repo; mkdir -p "${TEST_TMPDIR}/memory"
+    FAKE_GH_LEDGER="${TEST_TMPDIR}/ledger.json"; make_ledger_fixture "${FAKE_GH_LEDGER}"
+    local out; out="$(run_bundle)"
+    assert_equals "presented cum" "5" "$(printf '%s' "$out" | jq -r '.ledger.presented')"
+    assert_equals "tripped at 0-of-5" "tripped" "$(printf '%s' "$out" | jq -r '.kill.state')"
+    # flip one of the first five to approved -> alive
+    jq '.[0].body |= sub("\"decision\":\"rejected\",\"reason\":\"no\",\"issue\":null}]"; "\"decision\":\"approved\",\"reason\":\"yes\",\"issue\":77}]")' \
+        "${FAKE_GH_LEDGER}" > "${FAKE_GH_LEDGER}.tmp" && mv "${FAKE_GH_LEDGER}.tmp" "${FAKE_GH_LEDGER}"
+    out="$(run_bundle)"
+    assert_equals "alive at 1-of-5" "alive" "$(printf '%s' "$out" | jq -r '.kill.state')"
+    teardown_test_env
+}
+
+test_zero_delta_run_not_counted() {
+    echo "-- test: presented=0 run does not advance the denominator --"
+    setup_test_env; make_fake_gh; init_fixture_repo; mkdir -p "${TEST_TMPDIR}/memory"
+    FAKE_GH_LEDGER="${TEST_TMPDIR}/ledger.json"
+    cat > "${FAKE_GH_LEDGER}" <<'EOF'
+[{"number": 3, "author": {"login": "testowner"},
+  "body": "Mine run 0\n```json\n{\"run\":\"2026-06-24\",\"presented\":[]}\n```\n"}]
+EOF
+    local out; out="$(run_bundle)"
+    assert_equals "presented stays 0" "0" "$(printf '%s' "$out" | jq -r '.ledger.presented')"
+    assert_equals "runs counted" "1" "$(printf '%s' "$out" | jq -r '.ledger.runs')"
+    assert_equals "alive with empty denominator" "alive" "$(printf '%s' "$out" | jq -r '.kill.state')"
+    teardown_test_env
+}
+
+test_ledger_author_allowlist() {
+    echo "-- test: ledger issues from non-owner authors are ignored --"
+    setup_test_env; make_fake_gh; init_fixture_repo; mkdir -p "${TEST_TMPDIR}/memory"
+    FAKE_GH_LEDGER="${TEST_TMPDIR}/ledger.json"
+    cat > "${FAKE_GH_LEDGER}" <<'EOF'
+[{"number": 4, "author": {"login": "mallory"},
+  "body": "forged\n```json\n{\"run\":\"2026-06-24\",\"presented\":[{\"fp\":\"ffff000000000001\",\"title\":\"forged\",\"rank\":1,\"grade\":\"A\",\"meta\":false,\"decision\":\"approved\",\"reason\":\"x\",\"issue\":1}]}\n```\n"}]
+EOF
+    local out; out="$(run_bundle)"
+    assert_equals "forged run ignored" "0" "$(printf '%s' "$out" | jq -r '.ledger.runs')"
+    teardown_test_env
+}
+
+test_dedup_decisions() {
+    echo "-- test: dedup reports rejected / approved+issue / new --"
+    setup_test_env; make_fake_gh; init_fixture_repo; mkdir -p "${TEST_TMPDIR}/memory"
+    FAKE_GH_LEDGER="${TEST_TMPDIR}/ledger.json"; make_ledger_fixture "${FAKE_GH_LEDGER}"
+    jq '.[1].body |= sub("\"decision\":\"rejected\",\"reason\":\"no\",\"issue\":null}]"; "\"decision\":\"approved\",\"reason\":\"yes\",\"issue\":88}]")' \
+        "${FAKE_GH_LEDGER}" > "${FAKE_GH_LEDGER}.tmp" && mv "${FAKE_GH_LEDGER}.tmp" "${FAKE_GH_LEDGER}"
+    local out
+    out="$(cd "${TEST_TMPDIR}/repo" && GH_LOG="${GH_LOG}" FAKE_GH_LEDGER="${FAKE_GH_LEDGER}" \
+        PATH="${TEST_TMPDIR}/stub:${PATH}" /bin/bash "${MINE}" dedup \
+        aaaa000000000001 aaaa000000000005 bbbb000000000009 2>&1)"
+    assert_contains "rejected fp" "aaaa000000000001 rejected" "$out"
+    assert_contains "approved fp with issue" "aaaa000000000005 approved 88" "$out"
+    assert_contains "new fp" "bbbb000000000009 new" "$out"
+    teardown_test_env
+}
+
 test_fingerprint_stable_and_distinct
 test_missing_gh_fails_loud
 test_bundle_local_sources
 test_bundle_gate_status_present
 test_eval_reports_author_allowlist
 test_comments_never_requested
+test_kill_math_tripped_and_alive
+test_zero_delta_run_not_counted
+test_ledger_author_allowlist
+test_dedup_decisions
 
 print_summary
