@@ -1,9 +1,16 @@
 # Spec: pdlc-safety — phase-transition enforcement
 
 The plugin MUST deterministically prevent silent skipping of composition-chain
-steps. A chain step is "done" only via invocation evidence (`.completed` from
-the completion hook, or a branch-ledger record) or an explicit, logged
-skip-attestation. Sequencing MUST be enforced at the Skill-invocation boundary
+steps. A chain step is "done" only via invocation evidence — the completion
+hook's append-only invocation record (`.skill-invocation-evidence-<token>`,
+written exclusively on a successful Skill tool return) or a branch-ledger
+record — or an explicit, logged skip-attestation. The walker-maintained
+`.completed` array MUST NOT satisfy the gates: the walker back-fills
+non-gating steps on prompt trigger matches, which is anchoring, not
+invocation (same provenance rule as audit F1, extended to all steps).
+Implementation-slot skills (`executing-plans`,
+`subagent-driven-development`, `agent-team-execution`) MUST be treated as
+one canonical slot in both membership and evidence checks. Sequencing MUST be enforced at the Skill-invocation boundary
 (PreToolUse `^Skill$`) with hard-deny + remedy text; DESIGN/PLAN evidence MAY
 join the outbound push gate only after the replay backtest shows <10%
 false-block for that predicate. Attestation MUST NOT satisfy

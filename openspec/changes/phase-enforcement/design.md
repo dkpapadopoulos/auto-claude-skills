@@ -103,6 +103,42 @@ thresholds (discovery brief): deny ships <10% FB; 10–20% narrow; >20% advisory
 - H2 uptake eval (step-text promotion) is red-first with a pinned judge,
   reusing the behavioral-eval runner.
 
+### Sparring amendments (codex adversarial pass, 2026-07-16)
+
+- **Provenance split (codex #2, Critical):** the gates MUST NOT trust the
+  walker-maintained `.completed` — the walker back-fills non-gating steps on
+  trigger matches (anchoring ≠ invocation; a "continue implementing" prompt
+  would fabricate DESIGN/PLAN evidence). The completion hook gains an
+  append-only invocation record (`.skill-invocation-evidence-<token>`,
+  written only on successful Skill returns) and records ALL chain-step
+  returns to the branch ledger (previously gating milestones only — this
+  also fixes re-anchor erasure of legitimate prior evidence, codex #4).
+  Evidence = invocation record ∪ ledger ∪ attestation.
+- **Implementation-slot aliases (codex #3, Critical):** `executing-plans`,
+  `subagent-driven-development`, `agent-team-execution` are one canonical
+  slot in membership and evidence checks — invoking a sibling of the
+  chain's rendered implementation skill cannot bypass sequencing.
+- **C2 warn is telemetry-only (codex #1 / independent convergence):** the
+  guard emits at most one JSON object per run; warn mode logs to the events
+  file (+ SKILL_EXPLAIN stderr) and never writes stdout. A combined
+  regression pins C2-warn + routing-governance-deny emitting exactly one
+  deny object.
+- **Attestation surfacing (codex #5):** the activation hook renders active
+  attestations under the composition block on every prompt — not just in
+  logs. Reason-quality policing stays human (REVIEW) — rejected the
+  "reason must name evidence" extension as YAGNI.
+- **Chain-covered predicate (codex #6):** C2 scope = active chain includes
+  `brainstorming` OR the branch ledger carries `brainstorming`/
+  `writing-plans` records (covers comp-state resets between sessions).
+- **Dogfood identity (codex #8):** default-deny keys on the plugin
+  manifest name (`.claude-plugin/plugin.json` name == `auto-claude-skills`),
+  not on a generic path that external repos may legitimately have.
+- **Backtest labeled advisory-only (codex #7, partial):** replay error is
+  bidirectional (errored Skill returns counted as evidence; ledger and
+  attestation state invisible); output is labeled accordingly and every
+  DENY line is human-classified — full state replay rejected as
+  disproportionate for a one-shot calibration instrument.
+
 ## Out-of-Scope
 
 - Edit/Write PreToolUse deny (O3) — revival: backtest <10% FB AND ≥1 true catch.
