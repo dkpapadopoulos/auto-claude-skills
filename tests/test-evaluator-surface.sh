@@ -159,7 +159,19 @@ out="$( ( cd "${REPO}" && \
       _mkinput "gh pr merge 123 --squash" | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null ) )"
 assert_not_contains "gh-merge is not denied (evidence satisfied)" '"deny"'            "${out:-}"
 assert_not_contains "gh-merge outside SHIP flushes nothing"       "additionalContext" "${out:-}"
-rm -f "$HOME/.claude/.skill-composition-state-${_TOK}"
+
+# REAL allow path (review coverage note): no bypass env — a clean verdict
+# seeded at the fixture repo's exact HEAD satisfies routing-governance and the
+# VERIFY leg, ledger records satisfy REVIEW, so the push is ALLOWED and the
+# advisory must emit on that genuine allow, not only under ACSM_SKIP.
+_PVHEAD="$(git -C "${REPO}" rev-parse HEAD)"
+jq -nc --arg s "${_PVHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' \
+    > "$HOME/.claude/.skill-project-verified-${_TOK}"
+out="$( ( cd "${REPO}" && \
+      _mkinput "git push origin HEAD" | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null ) )"
+assert_not_contains "seeded-verdict push is not denied"           '"deny"'            "${out:-}"
+assert_contains     "advisory emits on the genuine allow path"    "EVALUATOR SURFACE" "${out:-<empty>}"
+rm -f "$HOME/.claude/.skill-composition-state-${_TOK}" "$HOME/.claude/.skill-project-verified-${_TOK}"
 
 export HOME="$_OLDHOME"
 
