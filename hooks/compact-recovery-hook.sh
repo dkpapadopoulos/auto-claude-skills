@@ -37,31 +37,24 @@ if [ -n "$_SESSION_TOKEN" ]; then
     printf '0' > "${HOME}/.claude/.skill-prompt-count-${_SESSION_TOKEN}" 2>/dev/null || true
 fi
 
-# --- Re-inject team checkpoint if it exists ---
-CHECKPOINT="${HOME}/.claude/team-checkpoint.md"
-if [ -f "$CHECKPOINT" ]; then
-    echo "=== Team State Recovery (from pre-compaction checkpoint) ==="
-    cat "$CHECKPOINT"
-    echo ""
-    echo "=== End Team State Recovery ==="
+# --- Consume the pending marker (prompt-carrier coordination; see
+# openspec/changes/compact-recovery-prompt-carrier) ---
+_TRIGGER=""
+if [ -n "$_SESSION_TOKEN" ]; then
+    _MARKER="${HOME}/.claude/.skill-compact-pending-${_SESSION_TOKEN}"
+    if [ -f "$_MARKER" ]; then
+        _TRIGGER="$(sed -n '1s/.*trigger=//p' "$_MARKER" 2>/dev/null)" || _TRIGGER=""
+        rm -f "$_MARKER" 2>/dev/null || true
+    fi
 fi
 
-# --- Re-inject composition state if it exists ---
-if [ -n "$_SESSION_TOKEN" ]; then
-    COMP_FILE="${HOME}/.claude/.skill-composition-state-${_SESSION_TOKEN}"
-    if [ -f "$COMP_FILE" ] && command -v jq >/dev/null 2>&1; then
-        _chain="$(jq -r '.chain | join(" -> ")' "$COMP_FILE" 2>/dev/null)"
-        _completed="$(jq -r '.completed | join(", ")' "$COMP_FILE" 2>/dev/null)"
-        _current="$(jq -r '.chain[.current_index] // "unknown"' "$COMP_FILE" 2>/dev/null)"
-        if [ -n "$_chain" ]; then
-            echo "=== Composition Recovery (from pre-compaction state) ==="
-            echo "Chain: ${_chain}"
-            echo "Completed: ${_completed}"
-            echo "Current step: ${_current}"
-            echo "Resume from: ${_current}"
-            echo "=== End Composition Recovery ==="
-        fi
-    fi
+# --- Re-inject recovery state (shared renderer: team checkpoint,
+# composition chain, confirmed intent, active OpenSpec changes) ---
+if [ -f "${_PLUGIN_ROOT}/hooks/lib/compact-recovery-render.sh" ]; then
+    # shellcheck source=lib/compact-recovery-render.sh
+    . "${_PLUGIN_ROOT}/hooks/lib/compact-recovery-render.sh" 2>/dev/null || true
+    command -v render_compact_recovery >/dev/null 2>&1 && \
+        render_compact_recovery "$_SESSION_TOKEN" "$_TRIGGER" 2>/dev/null
 fi
 
 # --- Log post-compaction event ---

@@ -129,25 +129,28 @@ rm -f "${HOME}/.claude/.skill-zero-match-count" 2>/dev/null || true
 rm -f "${HOME}/.claude/.skill-prompt-count-"* 2>/dev/null || true
 printf '0' > "${HOME}/.claude/.skill-prompt-count-${_SESSION_TOKEN}" 2>/dev/null || true
 
-# Prune STALE per-session state files (composition + openspec) so they don't
-# accumulate unbounded — these were never cleaned and piled up in the wild.
-# Age-based: an active conversation rewrites its state on routing (bumping mtime),
-# so files untouched longer than the retention window belong to dead
-# conversations. The current token is excluded (`! -name "*-state-<token>"`) so a
-# long-idle-then-resumed conversation is never cut. Learn-baselines are
-# intentionally persistent (outcome-review reads them) and are NOT matched here.
-# A single `find` fork keeps the ~200ms session-start budget intact (a per-file
-# stat loop ran 0.5-0.9s once hundreds had accumulated); fail-open via
-# `2>/dev/null || true`. `-mtime` is day-granular, which is the right resolution
-# for a 7-day GC; sub-day SKILL_STATE_RETENTION overrides floor at 1 day.
+# Prune STALE per-session state files (composition + openspec + compact-pending
+# markers) so they don't accumulate unbounded — these were never cleaned and
+# piled up in the wild. Age-based: an active conversation rewrites its state on
+# routing (bumping mtime), so files untouched longer than the retention window
+# belong to dead conversations. The current token is excluded (`! -name
+# "*-state-<token>"`, plus an explicit compact-pending exclusion since that
+# filename has no "-state-" segment) so a long-idle-then-resumed conversation
+# is never cut. Learn-baselines are intentionally persistent (outcome-review
+# reads them) and are NOT matched here. A single `find` fork keeps the ~200ms
+# session-start budget intact (a per-file stat loop ran 0.5-0.9s once hundreds
+# had accumulated); fail-open via `2>/dev/null || true`. `-mtime` is
+# day-granular, which is the right resolution for a 7-day GC; sub-day
+# SKILL_STATE_RETENTION overrides floor at 1 day.
 _STATE_RETENTION_SECS="${SKILL_STATE_RETENTION:-604800}"
 [[ "${_STATE_RETENTION_SECS}" =~ ^[0-9]+$ ]] || _STATE_RETENTION_SECS=604800
 _STATE_RETENTION_DAYS=$(( _STATE_RETENTION_SECS / 86400 ))
 [ "${_STATE_RETENTION_DAYS}" -ge 1 ] || _STATE_RETENTION_DAYS=1
 find "${HOME}/.claude" -maxdepth 1 \
-    \( -name '.skill-composition-state-*' -o -name '.skill-openspec-state-*' \) \
+    \( -name '.skill-composition-state-*' -o -name '.skill-openspec-state-*' -o -name '.skill-compact-pending-*' \) \
     -mtime +"${_STATE_RETENTION_DAYS}" \
     ! -name "*-state-${_SESSION_TOKEN}" \
+    ! -name ".skill-compact-pending-${_SESSION_TOKEN}" \
     -exec rm -f {} + 2>/dev/null || true
 
 # -----------------------------------------------------------------

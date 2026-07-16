@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": "",
+  "plan_path": "",
+  "spec_path": "",
+  "sp_plan_path": "",
+  "sp_spec_path": "",
+  "change_slug": "compact-recovery-prompt-carrier",
+  "capability_slug": "compact-recovery",
+  "source_branch": "feat/compact-recovery-prompt-carrier",
+  "base_commit": "e6cd2187b614c0974c7bba6e0c24db34263707b5",
+  "openspec_surface": "none",
+  "archived_at": "2026-07-16T10:52:29Z"
+}
