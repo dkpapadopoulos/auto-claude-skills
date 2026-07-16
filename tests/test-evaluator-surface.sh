@@ -41,7 +41,11 @@ if [ -z "${_canary_libs}" ]; then
 else
     _record_pass "canary list extracted from session-start-hook"
 fi
-for _f in hooks/openspec-guard.sh ${_canary_libs} .verify.yml; do
+# skill-completion-hook.sh is the branch-ledger milestone WRITER — the gate
+# trusts what it records, so editing it is evaluator-shaped (review F6). The
+# activation-hook walker is deliberately excluded: it is the most-edited file
+# in the repo and listing it would make the advisory near-constant noise.
+for _f in hooks/openspec-guard.sh ${_canary_libs} .verify.yml hooks/skill-completion-hook.sh; do
     case " ${_EVALUATOR_SURFACES:-} " in
         *" ${_f} "*) _record_pass "evaluator surfaces include ${_f}" ;;
         *)           _record_fail "evaluator surfaces include ${_f}" "missing from _EVALUATOR_SURFACES" ;;
@@ -56,9 +60,15 @@ _bool() { if "$@" >/dev/null 2>&1; then echo 0; else echo 1; fi; }
 TMP="$(mktemp -d /tmp/evalsurf-XXXXXX)"
 REPO="${TMP}/repo"
 mkdir -p "${REPO}"
+# Canonicalize: macOS /tmp is a symlink, and branch-ledger keys hash the
+# PHYSICAL toplevel (git rev-parse --show-toplevel) — a symlinked path here
+# would write ledger records under a different key than the guard reads.
+REPO="$(cd "${REPO}" && pwd -P)"
 (
   cd "${REPO}"
-  git init -q
+  # Force a branch name _routing_base can resolve — a machine-level
+  # init.defaultBranch (e.g. "trunk") would false-fail the whole suite.
+  git -c init.defaultBranch=main init -q
   git config user.email t@t; git config user.name t
   # Default branch may be main or master; _routing_base tries both.
   mkdir -p hooks/lib config
@@ -94,7 +104,7 @@ assert_equals "gate-lib diff => match"        "0" "$(_bool diff_touches_evaluato
 
 # Exact-path discipline: a nested file that merely CONTAINS a surface name
 # must not match (surfaces are files, not trees).
-( cd "${REPO}"; git checkout -q "$(git rev-parse --verify main 2>/dev/null || git rev-parse --verify master)" ; git checkout -qb feat2
+( cd "${REPO}"; git checkout -q main ; git checkout -qb feat2
   mkdir -p docs; echo x > "docs/.verify.yml.md"; git add -A; git commit -qm docs )
 assert_equals "lookalike path => no match"    "1" "$(_bool diff_touches_evaluator "${REPO}")"
 
@@ -104,7 +114,8 @@ assert_equals "lookalike path => no match"    "1" "$(_bool diff_touches_evaluato
 #    still emit — that invariant is documented in the guard itself.
 # ---------------------------------------------------------------------------
 _OLDHOME="$HOME"
-export HOME="$(mktemp -d /tmp/evalsurf-home-XXXXXX)"
+_FAKEHOME="$(mktemp -d /tmp/evalsurf-home-XXXXXX)"
+export HOME="${_FAKEHOME}"
 mkdir -p "$HOME/.claude"
 _TPATH="$HOME/t.jsonl"; touch "$_TPATH"     # basename "t" -> token "session-t"
 
@@ -128,6 +139,27 @@ assert_not_contains "advisory never denies"                      '"deny"'       
 
 out="$(run_guard_in "${REPO}" "feat2")"
 assert_not_contains "clean branch => no evaluator advisory"      "EVALUATOR SURFACE"   "${out:-}"
+
+# gh-merge must NOT flush push advisories: the branch-local staleness text is
+# the wrong delta for a merge of an (arbitrary) PR, and pre-flush behavior for
+# gh-merge outside SHIP was silence — preserve it (review F5). Non-vacuous
+# setup: composition state satisfied + ledger records made STALE by a later
+# commit, no bypass env — so _STALE_MSG has real content and the only question
+# is whether the pre-SHIP flush leaks it for a merge command.
+_TOK="session-t"
+jq -nc '{chain:["requesting-code-review","verification-before-completion"],completed:["requesting-code-review","verification-before-completion"]}' \
+    > "$HOME/.claude/.skill-composition-state-${_TOK}"
+# shellcheck disable=SC1090
+. "${PROJECT_ROOT}/hooks/lib/branch-ledger.sh"
+( cd "${REPO}" && git checkout -q feat )
+branch_ledger_record "requesting-code-review"         "${REPO}"
+branch_ledger_record "verification-before-completion" "${REPO}"
+( cd "${REPO}" && echo stale-maker >> README.md && git commit -qam stale )
+out="$( ( cd "${REPO}" && \
+      _mkinput "gh pr merge 123 --squash" | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null ) )"
+assert_not_contains "gh-merge is not denied (evidence satisfied)" '"deny"'            "${out:-}"
+assert_not_contains "gh-merge outside SHIP flushes nothing"       "additionalContext" "${out:-}"
+rm -f "$HOME/.claude/.skill-composition-state-${_TOK}"
 
 export HOME="$_OLDHOME"
 
@@ -160,6 +192,48 @@ _grow_diff='--- a/.verify.yml
 out="$(_ggc "${_grow_diff}")"
 assert_contains ".verify.yml additions stay clean" "clean" "${out:-<empty>}"
 
+# A REWRITE (same gate entry, edited run: command — here a strengthening edit)
+# must stay clean: suspect is consumed by verdict_is_clean, which routing-
+# governance hard-requires, so a rewrite false-positive would DENY legitimate
+# gate edits — the exact false-block shape this feature forbids (review F2).
+_rewrite_diff='--- a/.verify.yml
++++ b/.verify.yml
+@@ -1,4 +1,4 @@
+ substrate: local
+ checks:
+   - name: tests
+-    run: bash tests/run-tests.sh
++    run: bash tests/run-tests.sh < /dev/null'
+out="$(_ggc "${_rewrite_diff}")"
+assert_contains ".verify.yml run: rewrite stays clean" "clean" "${out:-<empty>}"
+
+# Whole-file deletion is the MAXIMAL weakening and must flag: a deletion
+# diff's new-side header is "+++ /dev/null", so the tracker must fall back to
+# the --- side path (review F1: pre-fix this printed clean).
+_delete_diff='--- a/.verify.yml
++++ /dev/null
+@@ -1,4 +0,0 @@
+-substrate: local
+-checks:
+-  - name: tests
+-    run: bash tests/run-tests.sh'
+out="$(_ggc "${_delete_diff}")"
+assert_contains "whole-file .verify.yml deletion => suspect" "suspect" "${out:-<empty>}"
+
+# Non-default diff prefixes (diff.mnemonicPrefix=true => i/ and w/) must not
+# silently disable detection (review F3: per-machine gitconfig blind spot).
+_mnemonic_diff='--- i/.verify.yml
++++ w/.verify.yml
+@@ -1,6 +1,4 @@
+ substrate: local
+ checks:
+-  - name: tests
+-    run: bash tests/run-tests.sh
+   - name: lint
+     run: bash lint.sh'
+out="$(_ggc "${_mnemonic_diff}")"
+assert_contains "mnemonic-prefix removal => suspect" "suspect" "${out:-<empty>}"
+
 # name:/run: removals OUTSIDE .verify.yml (e.g. a workflow step) must not hit,
 # even when a .verify.yml hunk appears earlier in the same diff.
 _decoy_diff='--- a/.verify.yml
@@ -186,6 +260,12 @@ assert_contains "workflow name:/run: removals stay clean" "clean" "${out:-<empty
 var="$(grep -F -- '...HEAD --' "${PROJECT_ROOT}/scripts/verify-and-record.sh" || true)"
 assert_contains "gate-gaming diff pathspec includes .verify.yml" ".verify.yml" "${var:-<empty>}"
 
-rm -rf "${TMP}"
+# The SKILL.md-documented manual invocation is the SECOND verdict writer
+# (model-run fallback); its pathspec must match verify-and-record.sh or the
+# two writers disagree on gate_gaming_status for the same branch (review F4).
+var="$(grep -F -- "'*test*' '*spec*'" "${PROJECT_ROOT}/skills/project-verification/SKILL.md" || true)"
+assert_contains "SKILL.md documented pathspec includes .verify.yml" ".verify.yml" "${var:-<empty>}"
+
+rm -rf "${TMP}" "${_FAKEHOME}"
 print_summary
 exit $?
