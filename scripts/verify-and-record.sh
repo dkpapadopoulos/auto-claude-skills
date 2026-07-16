@@ -95,7 +95,7 @@ if [ -f "${PLUGIN_ROOT}/hooks/lib/verdict.sh" ]; then
     command -v _routing_base >/dev/null 2>&1 && BASE="$(_routing_base "$ROOT" 2>/dev/null)" || BASE=""
 fi
 if [ -n "$BASE" ] && [ -f "$GGC" ]; then
-    if DIFF="$(git -C "$ROOT" diff "$BASE"...HEAD -- '*test*' '*spec*' 2>/dev/null)"; then
+    if DIFF="$(git -C "$ROOT" diff "$BASE"...HEAD -- '*test*' '*spec*' '.verify.yml' 2>/dev/null)"; then
         GG="$(printf '%s' "$DIFF" | bash "$GGC" 2>/dev/null)"
         case "$GG" in clean) GG_STATUS="clean" ;; suspect*) GG_STATUS="suspect" ;; esac
     fi
