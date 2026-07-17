@@ -1,7 +1,7 @@
 {
   "name": "auto-claude-skills",
   "description": "Enables agentic PDLC in Claude Code with phase-aware skill routing, guardrails, and workflow state recovery",
-  "version": "3.76.0",
+  "version": "3.77.0",
   "author": {
     "name": "auto-claude-skills contributors"
   },
