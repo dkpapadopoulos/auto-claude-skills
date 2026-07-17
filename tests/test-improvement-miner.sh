@@ -81,6 +81,32 @@ FAKEGH
     teardown_test_env
 }
 
+test_garbage_json_fails_loud() {
+    echo "-- test: gh succeeds (rc 0) but emits non-JSON — jq filter failure must abort loudly, never degrade to an empty bundle/ledger --"
+    setup_test_env
+    mkdir -p "${TEST_TMPDIR}/stub" "${TEST_TMPDIR}/repo"
+    (cd "${TEST_TMPDIR}/repo" && git init -q && git -c user.email="test@example.com" -c user.name="Test" commit -q --allow-empty -m init)
+    cat > "${TEST_TMPDIR}/stub/gh" <<'FAKEGH'
+#!/bin/bash
+case "$1 $2" in
+    "repo view") echo '{"owner":{"login":"testowner"}}' ;;
+    "issue list") echo '<html>502 Bad Gateway</html>' ;;
+    *) echo '{}' ;;
+esac
+exit 0
+FAKEGH
+    chmod +x "${TEST_TMPDIR}/stub/gh"
+    local out rc
+    out="$(cd "${TEST_TMPDIR}/repo" && PATH="${TEST_TMPDIR}/stub:${PATH}" /bin/bash "${MINE}" bundle 2>&1)"; rc=$?
+    [ "$rc" -ne 0 ] && _record_pass "bundle: non-zero exit on garbage JSON at gh rc 0" || _record_fail "bundle: non-zero exit on garbage JSON at gh rc 0" "rc=$rc"
+    assert_contains "bundle: ERROR printed on garbage JSON" "ERROR" "$out"
+
+    out="$(cd "${TEST_TMPDIR}/repo" && PATH="${TEST_TMPDIR}/stub:${PATH}" /bin/bash "${MINE}" dedup somefp 2>&1)"; rc=$?
+    [ "$rc" -ne 0 ] && _record_pass "dedup: non-zero exit on garbage JSON at gh rc 0" || _record_fail "dedup: non-zero exit on garbage JSON at gh rc 0" "rc=$rc"
+    assert_contains "dedup: ERROR printed on garbage JSON" "ERROR" "$out"
+    teardown_test_env
+}
+
 make_fake_gh() {
     # fake gh: logs argv, serves canned JSON per subcommand from env-pointed files
     mkdir -p "${TEST_TMPDIR}/stub"
@@ -382,6 +408,7 @@ test_fingerprint_stable_and_distinct
 test_missing_gh_fails_loud
 test_gh_runtime_failure_fails_loud
 test_empty_owner_login_fails_loud
+test_garbage_json_fails_loud
 test_bundle_local_sources
 test_bundle_gate_status_present
 test_eval_reports_author_allowlist

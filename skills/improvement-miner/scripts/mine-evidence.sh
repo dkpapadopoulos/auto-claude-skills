@@ -99,7 +99,14 @@ json_eval_reports() {
     fi
     # Guard against empty-but-SUCCESSFUL output (e.g., no matching issues).
     [ -z "${raw}" ] && raw='[]'
-    printf '%s' "${raw}" | jq --arg bot "${BOT_LOGIN}" --arg pfx "${EVAL_TITLE_PREFIX}" '[.[] | select((.author.login == $bot) and (.title | startswith($pfx))) | {number, title, body}]' 2>/dev/null || echo '[]'
+    local filtered
+    filtered="$(printf '%s' "${raw}" | jq --arg bot "${BOT_LOGIN}" --arg pfx "${EVAL_TITLE_PREFIX}" '[.[] | select((.author.login == $bot) and (.title | startswith($pfx))) | {number, title, body}]')"
+    rc=$?
+    if [ "${rc}" -ne 0 ]; then
+        echo "ERROR: eval-report response from gh is not parseable JSON (jq exit ${rc}) — improvement-miner is fail-loud, refusing to degrade to an empty bundle (see jq stderr above)" >&2
+        exit 5
+    fi
+    printf '%s' "${filtered}"
 }
 LABEL_RUN="improvement-miner-run"
 
@@ -139,7 +146,8 @@ json_ledger_items() {
         exit 5
     fi
     [ -z "${raw}" ] && raw='[]'
-    printf '%s' "${raw}" | jq --arg o "${owner}" '
+    local filtered
+    filtered="$(printf '%s' "${raw}" | jq --arg o "${owner}" '
         [ .[] | select(.author.login == $o) ]
         | sort_by(.number)
         | map(
@@ -152,7 +160,13 @@ json_ledger_items() {
             | select($run != null)
             | ($run.presented // []) | sort_by(.rank)
           )
-        ' 2>/dev/null || echo '[]'
+        ')"
+    rc=$?
+    if [ "${rc}" -ne 0 ]; then
+        echo "ERROR: ledger response from gh is not parseable JSON (jq exit ${rc}) — the kill criterion cannot be computed from garbage; improvement-miner is fail-loud, refusing to degrade to an empty ledger (see jq stderr above)" >&2
+        exit 5
+    fi
+    printf '%s' "${filtered}"
 }
 
 json_ledger_summary() {
