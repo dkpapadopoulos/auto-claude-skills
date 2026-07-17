@@ -240,7 +240,7 @@ printf '{"chain":["brainstorming","writing-plans","requesting-code-review","veri
 : > "$HOME/.claude/.phase-gate-events.log"
 _out="$(cd "$_C2_REPO" && _push)"
 assert_not_contains "C2 default: no deny for missing DESIGN/PLAN" '"permissionDecision": "deny"' "$_out"
-assert_not_contains "C2 default: warn emits NO stdout JSON (one-object contract)" "brainstorming" "$_out"
+assert_equals "C2 default: warn emits empty stdout" "" "$_out"
 assert_contains "C2 default: warn logged to events" "gate=outbound decision=warn" "$(cat "$HOME/.claude/.phase-gate-events.log" 2>/dev/null)"
 printf '{"phase_enforcement":{"outbound":"deny"}}\n' > "$HOME/.claude/skill-config.json"
 _out="$(cd "$_C2_REPO" && _push)"
@@ -269,16 +269,20 @@ assert_contains "C2 ledger-covered: warn logged for missing brainstorming (no co
     "missing=brainstorming" "$(cat "$HOME/.claude/.phase-gate-events.log" 2>/dev/null)"
 
 # codex #1: combined C2-warn + routing-governance-deny emits EXACTLY ONE JSON object.
-# Run in THIS repo (routing repo) with a chain-covered session, warn-mode C2 gap,
-# and no clean verdict: stdout must be a single deny object, parseable as one.
-printf '{"chain":["brainstorming","writing-plans","requesting-code-review","verification-before-completion"],"completed":[],"current_index":0}\n' > "$COMP_FILE"
+# Run in THIS repo (routing repo) with a chain-covered session, REVIEW+VERIFY satisfied
+# (in invocation record), DESIGN+PLAN missing, warn-mode C2 gap, and no clean verdict:
+# stdout must be a single deny object (from routing-governance, the hard gate).
+# The warn leg runs first; verify it logs the outbound warn before routing-governance denies.
+printf '{"chain":["brainstorming","writing-plans","requesting-code-review","verification-before-completion"],"completed":["requesting-code-review","verification-before-completion"],"current_index":0}\n' > "$COMP_FILE"
 printf '["requesting-code-review","verification-before-completion"]\n' > "$INVOC_FILE"
 rm -f "$HOME/.claude/.skill-project-verified-${TOKEN}"
+: > "$HOME/.claude/.phase-gate-events.log"
 _out="$(printf '{"tool_name":"Bash","tool_input":{"command":"git push"},"transcript_path":""}' \
     | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "$GUARD" 2>/dev/null)"
 _objs="$(printf '%s' "$_out" | jq -s 'length' 2>/dev/null)"
 assert_equals "combined warn+deny path: exactly one JSON object on stdout" "1" "$_objs"
 assert_contains "combined path: the one object is the hard deny" '"permissionDecision": "deny"' "$_out"
+assert_contains "combined path: C2-warn leg runs first before routing-governance deny" "gate=outbound decision=warn" "$(cat "$HOME/.claude/.phase-gate-events.log" 2>/dev/null)"
 rm -f "$COMP_FILE" "$INVOC_FILE"; rm -rf "$_C2_REPO"
 
 print_summary
