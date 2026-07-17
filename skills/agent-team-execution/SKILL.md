@@ -68,10 +68,11 @@ Specialists work in parallel per their prompts. Reviewer processes review reques
 
 1. All tasks approved by Reviewer
 2. Run full test suite (verification-before-completion)
-3. Integration review
-4. `shutdown_request` to all agents
-5. `TeamDelete`
-6. Invoke finishing-a-development-branch
+3. Scope conformance check (advisory, branch-level — see lead-prompt.md)
+4. Integration review
+5. `shutdown_request` to all agents
+6. `TeamDelete`
+7. Invoke finishing-a-development-branch
 
 ## Deadlock Prevention
 
