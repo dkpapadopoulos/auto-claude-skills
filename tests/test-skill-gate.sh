@@ -353,6 +353,26 @@ printf '{"product-discovery":{"reason":"bugfix - covered","ts":"2026-07-16"}}\n'
 _hook_out="$(jq -n --arg p "implement the next feature for the app" '{"prompt":$p}' \
     | HOME="$HOME" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${PROJECT_ROOT}/hooks/skill-activation-hook.sh" 2>/dev/null)"
 assert_contains "activation hook surfaces attested skips" "ATTESTED SKIP: product-discovery" "$_hook_out"
+# --- placement: ATTESTED SKIP must render AFTER the Composition: block, not detached above it ---
+# _hook_out is the raw JSON line (newlines JSON-escaped) — decode additionalContext
+# to real newlines first so line-number grep can establish render order.
+_hook_ctx="$(printf '%s' "$_hook_out" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
+_comp_line="$(printf '%s\n' "$_hook_ctx" | grep -n "^Composition:" | head -1 | cut -d: -f1)"
+_attest_line="$(printf '%s\n' "$_hook_ctx" | grep -n "ATTESTED SKIP: product-discovery" | head -1 | cut -d: -f1)"
+assert_not_empty "composition block line found" "$_comp_line"
+assert_not_empty "attested skip line found" "$_attest_line"
+if [[ -n "$_comp_line" ]] && [[ -n "$_attest_line" ]]; then
+    _after=0
+    [[ "$_attest_line" -gt "$_comp_line" ]] && _after=1
+    assert_equals "ATTESTED SKIP renders after Composition: block" "1" "$_after"
+fi
 rm -f "$HOME/.claude/.skill-registry-cache.json"
+
+# --- superseded hint retirement: old always-on TRIFECTA CHECK hint removed (cf38c6c
+# promoted it into brainstorming's precondition instead) from BOTH config files ---
+for _cfg in config/default-triggers.json config/fallback-registry.json; do
+    _design_hints="$(jq -r '.phase_compositions.DESIGN.hints[]?.text // empty' "${PROJECT_ROOT}/${_cfg}" 2>/dev/null)"
+    assert_not_contains "DESIGN hints no longer contain superseded TRIFECTA CHECK (${_cfg})" "TRIFECTA CHECK" "$_design_hints"
+done
 
 print_summary
