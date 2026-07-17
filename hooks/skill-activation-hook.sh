@@ -927,6 +927,16 @@ EOF
       COMPOSITION_CHAIN="
 Composition: ${_phase_labels}${_chain_lines}"
 
+      # Surface active skip-attestations on EVERY prompt (phase-enforcement,
+      # codex #5): a skipped step must stay visible to the human and the REVIEW
+      # lens, not live only in logs. Fail-open; single jq fork; bounded to 6.
+      _ATTEST_F="${HOME}/.claude/.skill-phase-attest-${_SESSION_TOKEN}"
+      if [[ -f "$_ATTEST_F" ]] && command -v jq >/dev/null 2>&1; then
+        _ATTEST_LINES="$(jq -r '[to_entries[] | "  ATTESTED SKIP: \(.key) — \(.value.reason // "?") (\(.value.ts // "?"))"] | .[0:6] | join("\n")' "$_ATTEST_F" 2>/dev/null)" || _ATTEST_LINES=""
+        [[ -n "$_ATTEST_LINES" ]] && SKILL_LINES="${SKILL_LINES}
+${_ATTEST_LINES}"
+      fi
+
       if [[ -n "$_next_skill" ]]; then
         COMPOSITION_DIRECTIVE="
 IMPORTANT: After completing ${_CHAIN_ANCHOR}, invoke ${_next_invoke}. Do not stop at the current step."

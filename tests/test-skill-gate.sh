@@ -306,4 +306,53 @@ _out="$(/bin/bash "$BT" "$_BT_DIR" 2>/dev/null)"
 assert_contains "backtest clean sequence: zero denies" "would_have_denied=0" "$_out"
 rm -rf "$_BT_DIR"
 
+# --- step-text promotion: trifecta directive in brainstorming's precondition in BOTH configs ---
+for _cfg in config/default-triggers.json config/fallback-registry.json; do
+    _txt="$(jq -r '.skills[] | select(.name == "brainstorming") | .precondition // empty' "${PROJECT_ROOT}/${_cfg}" 2>/dev/null)"
+    assert_contains "trifecta directive in brainstorming precondition (${_cfg})" "agent-safety-review" "$_txt"
+    assert_contains "discovery precondition preserved (${_cfg})" "product-discovery" "$_txt"
+done
+
+# --- attestation surfacing: activation hook renders ATTESTED SKIP lines ---
+# The activation hook only emits a Composition: block (and hence our
+# attestation-surfacing addition, which sits right after the chain render)
+# when the routing engine resolves a 2+-skill precedes/requires chain from an
+# `available: true` skill. The repo's checked-in fallback-registry.json marks
+# every skill `available: false` (session-start computes real availability at
+# runtime) — mirror tests/test-context.sh:1159's pattern instead: seed a
+# minimal registry cache directly under this file's swapped $HOME so the real
+# hook has a live, available `brainstorming` process skill with a `precedes`
+# edge to walk into a chain.
+mkdir -p "$HOME/.claude"
+cat > "$HOME/.claude/.skill-registry-cache.json" <<'ATTESTREG'
+{
+  "version": "4.0.0",
+  "skills": [
+    {
+      "name": "brainstorming",
+      "role": "process",
+      "phase": "DESIGN",
+      "triggers": ["(^|[^a-z])(build|create|implement|develop|scaffold|init|bootstrap|introduce|enable|add|make|new|start)($|[^a-z])"],
+      "priority": 30,
+      "precedes": ["writing-plans"],
+      "requires": [],
+      "invoke": "Skill(superpowers:brainstorming)",
+      "description": "Ask clarifying questions, explore options, and get user approval before planning.",
+      "available": true,
+      "enabled": true
+    }
+  ],
+  "plugins": [],
+  "phase_compositions": {
+    "DESIGN": {"driver": "brainstorming", "parallel": [], "sequence": [], "hints": []}
+  },
+  "methodology_hints": []
+}
+ATTESTREG
+printf '{"product-discovery":{"reason":"bugfix - covered","ts":"2026-07-16"}}\n' > "$ATTEST_FILE"
+_hook_out="$(jq -n --arg p "implement the next feature for the app" '{"prompt":$p}' \
+    | HOME="$HOME" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${PROJECT_ROOT}/hooks/skill-activation-hook.sh" 2>/dev/null)"
+assert_contains "activation hook surfaces attested skips" "ATTESTED SKIP: product-discovery" "$_hook_out"
+rm -f "$HOME/.claude/.skill-registry-cache.json"
+
 print_summary

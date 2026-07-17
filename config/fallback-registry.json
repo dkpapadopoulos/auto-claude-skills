@@ -48,7 +48,7 @@
       "requires": [],
       "description": "Ask clarifying questions, explore options, and get user approval before planning. Activated for Build intents.",
       "invoke": "Skill(superpowers:brainstorming)",
-      "precondition": "PRECONDITION: if this is a new feature or initiative and no discovery brief with an Assumption Ledger exists (check session-state discovery_path or docs/plans/*-discovery.md), invoke Skill(auto-claude-skills:product-discovery) FIRST to surface and grade the load-bearing assumptions, then return to brainstorming. Skip for bugfixes, small changes, or work already covered by an approved brief.",
+      "precondition": "PRECONDITION: if this is a new feature or initiative and no discovery brief with an Assumption Ledger exists (check session-state discovery_path or docs/plans/*-discovery.md), invoke Skill(auto-claude-skills:product-discovery) FIRST to surface and grade the load-bearing assumptions, then return to brainstorming. Skip for bugfixes, small changes, or work already covered by an approved brief. TRIFECTA: classify private_data / untrusted_input / outbound_action from the candidate design's data flow. If >=2 are Present (or Unknowns could reach 2), invoke Skill(auto-claude-skills:agent-safety-review) before leaving DESIGN, or record the skip: phase_attest agent-safety-review \"<why the trifecta is <2>\".",
       "available": false,
       "enabled": true
     },
