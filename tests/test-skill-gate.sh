@@ -285,4 +285,25 @@ assert_contains "combined path: the one object is the hard deny" '"permissionDec
 assert_contains "combined path: C2-warn leg runs first before routing-governance deny" "gate=outbound decision=warn" "$(cat "$HOME/.claude/.phase-gate-events.log" 2>/dev/null)"
 rm -f "$COMP_FILE" "$INVOC_FILE"; rm -rf "$_C2_REPO"
 
+# --- backtest instrument: fixture replay ---
+BT="${PROJECT_ROOT}/scripts/phase-gate-backtest.sh"
+_BT_DIR="$(mktemp -d /tmp/psg-bt-XXXXXX)"
+printf '%s\n' \
+ '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Skill","input":{"skill":"superpowers:brainstorming"}}]}}' \
+ '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Skill","input":{"skill":"superpowers:subagent-driven-development"}}]}}' \
+ > "${_BT_DIR}/fixture-skip.jsonl"
+_out="$(/bin/bash "$BT" "$_BT_DIR" 2>/dev/null)"
+assert_contains "backtest flags the skipped writing-plans" "missing=writing-plans" "$_out"
+assert_contains "backtest summary counts the deny" "would_have_denied=1" "$_out"
+printf '%s\n' \
+ '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Skill","input":{"skill":"superpowers:brainstorming"}}]}}' \
+ '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Skill","input":{"skill":"superpowers:writing-plans"}}]}}' \
+ '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Skill","input":{"skill":"superpowers:subagent-driven-development"}}]}}' \
+ > "${_BT_DIR}/fixture-clean.jsonl"
+: > "${_BT_DIR}/fixture-skip.jsonl.bak" 2>/dev/null || true
+rm -f "${_BT_DIR}/fixture-skip.jsonl"
+_out="$(/bin/bash "$BT" "$_BT_DIR" 2>/dev/null)"
+assert_contains "backtest clean sequence: zero denies" "would_have_denied=0" "$_out"
+rm -rf "$_BT_DIR"
+
 print_summary
