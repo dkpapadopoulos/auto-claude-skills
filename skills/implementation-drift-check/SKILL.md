@@ -117,6 +117,27 @@ For each requirement or acceptance scenario found in specs, check whether the im
 | `added-without-spec` | Implementation includes behavior not described in any spec |
 | `specified-not-implemented` | Spec requirement has no corresponding implementation in the diff |
 
+### Scope Conformance (deterministic pre-pass)
+
+Before the model-judged Plan Alignment below, run the owned deterministic
+check (advisory; never blocks):
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT:-.}/scripts/scope-conformance.sh" <plan-file>
+```
+
+Use the newest matching plan from the comparison material gathered in Step 1
+(e.g. `docs/plans/*-plan.md`). Map the exit code into the report:
+
+| Exit | Verdict | Report as |
+|------|---------|-----------|
+| 0 | `clean` | One line: scope conformance clean. Before reporting it, eyeball the plan's `Allow:` entries — an over-broad glob (e.g. a bare `*`) makes a clean verdict meaningless; flag it as a finding instead. |
+| 1 | `violation` | Surface each listed file as an `added-without-plan` candidate finding with the script output as evidence. The reviewer judges intent — plans legitimately evolve; an out-of-scope file is a finding to explain, not an automatic defect. |
+| 2 | `unverified` | Note scope conformance unverified (no manifest); proceed with model-judged alignment only. |
+
+This is branch-level conformance (whole diff vs the plan's declared scope),
+not per-agent attribution.
+
 ### Plan Alignment
 
 For each task in the implementation plan, check whether the git diff includes changes to the expected files and scope.

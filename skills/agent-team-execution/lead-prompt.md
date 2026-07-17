@@ -70,10 +70,21 @@ Create entries for each task. Assign to owning specialist.
 When all tasks are complete:
 
 1. Run full test suite. All tests must pass.
-2. Integration review: verify specialist outputs are consistent with each other and `shared-contracts.md`.
-3. `shutdown_request` to every specialist and the reviewer.
-4. `TeamDelete`
-5. Invoke finishing-a-development-branch skill.
+2. Scope conformance (advisory): run the deterministic scope check against the plan:
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT:-.}/scripts/scope-conformance.sh" docs/plans/<plan-file>.md
+   ```
+
+   This is BRANCH-level conformance — it checks the team's combined diff against
+   the plan's declared scope, not per-specialist attribution (a global diff
+   cannot prove which specialist touched a file). On exit 1, list the
+   out-of-scope files in the completion report and have the owning specialist
+   (or the user) explain or revert each before finishing.
+3. Integration review: verify specialist outputs are consistent with each other and `shared-contracts.md`.
+4. `shutdown_request` to every specialist and the reviewer.
+5. `TeamDelete`
+6. Invoke finishing-a-development-branch skill.
 
 ---
 

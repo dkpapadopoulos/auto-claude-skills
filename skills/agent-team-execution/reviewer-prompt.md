@@ -53,6 +53,17 @@ Task tool (general-purpose):
     - Misunderstandings: requirements interpreted differently than intended?
     - Contract compliance: types and signatures match shared-contracts.md?
 
+    ### Step 3b: Scope Check (advisory)
+
+    Compare the files in the submitted diff against the specialist's owned
+    files in {contracts_path} (File Ownership table) and the task's declared
+    Files list in {plan_path}. Flag any file outside both — an out-of-lane
+    touch is grounds for rejection unless the Lead updated ownership first.
+    This is an advisory signal within the team workflow: you use judgment
+    (a justified touch the Lead ratifies is fine), and it never feeds any
+    push/merge gate. Note: in the shared workspace you are judging the
+    SUBMITTED diff, not proving write attribution.
+
     ### Step 4: Code Quality
 
     - Readability: clean, meaningful names, clear structure?

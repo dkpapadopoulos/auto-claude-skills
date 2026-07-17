@@ -1239,6 +1239,10 @@
         {
           "text": "VERTICAL SLICES: Decompose by behavior, not by layer. Prefer thin end-to-end slices — each task touches all layers (data -> logic -> interface) and is independently testable — over file-disjoint horizontal layers (all schema, then all APIs, then all UI), which delay integration feedback. Each slice should deliver one observable behavior, paired with a failing test first. When sizing tasks for agent-team-execution, slice by behavior so parallel tasks stay end-to-end rather than horizontal.",
           "when": "always"
+        },
+        {
+          "text": "SCOPE MANIFEST: Each task's **Files:** block (Create/Modify/Test/Delete entries with exact backticked repo-relative paths) doubles as the machine-checked scope manifest. Optionally add `- Allow: ` entries (backticked globs) for legitimate extras. REVIEW runs scripts/scope-conformance.sh against these entries; undeclared touched files surface as advisory violations.",
+          "when": "always"
         }
       ]
     },

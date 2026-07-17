@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": null,
+  "plan_path": null,
+  "spec_path": null,
+  "sp_plan_path": null,
+  "sp_spec_path": null,
+  "change_slug": "add-scope-conformance-check",
+  "capability_slug": null,
+  "source_branch": "worktree-scope-conformance",
+  "base_commit": "6f3d42386aaeb3f34ce17c2846d42c94a6eb6f54",
+  "openspec_surface": "none",
+  "archived_at": "2026-07-17T19:21:44Z"
+}
