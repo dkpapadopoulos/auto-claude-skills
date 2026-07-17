@@ -116,6 +116,33 @@ rm -f "${ARTIFACT}"
 assert_equals "run-less name lands in could_not_verify[]" '["lint"]' "$(jq -c '.could_not_verify' "${ARTIFACT}")"
 assert_equals "paired command still measured" '["tests"]' "$(jq -c '.passed' "${ARTIFACT}")"
 
+echo "== T10 (issue #122): token captured BEFORE the gate loop — mid-run rewrite doesn't rebind =="
+# A concurrent session rebinds the shared singleton mid-suite. Simulate that with
+# a gate command that overwrites ~/.claude/.skill-session-token, then verify the
+# verdict still lands under the START-of-run token, not the sibling's.
+R10="$(mkrepo "${TEST_TMPDIR}/r10")"
+SIBLING_ARTIFACT="${TEST_HOME}/.claude/.skill-project-verified-session-sibling"
+printf 'substrate: local\ncommands:\n  - name: tests\n    run: printf session-sibling > "%s/.claude/.skill-session-token"; echo ok\n' "${TEST_HOME}" > "${R10}/.verify.yml"
+printf 'session-vartest' > "${TEST_HOME}/.claude/.skill-session-token"   # start-of-run token
+rm -f "${ARTIFACT}" "${SIBLING_ARTIFACT}"
+( cd "${R10}" && /bin/bash "${VAR}" >/dev/null 2>&1 )
+assert_file_exists "verdict binds to START-of-run token despite mid-run rewrite" "${ARTIFACT}"
+[ ! -f "${SIBLING_ARTIFACT}" ] && _record_pass "no verdict leaked under the sibling (mid-run) token" \
+    || _record_fail "no verdict leaked under the sibling (mid-run) token" "verdict written to sibling-token artifact"
+printf 'session-vartest' > "${TEST_HOME}/.claude/.skill-session-token"   # restore for any later cases
+
+echo "== T11 (issue #122): explicit SKILL_SESSION_TOKEN env overrides the token file =="
+R11="$(mkrepo "${TEST_TMPDIR}/r11")"
+EXPLICIT_ARTIFACT="${TEST_HOME}/.claude/.skill-project-verified-payload-tok"
+printf 'substrate: local\ncommands:\n  - name: tests\n    run: echo ok\n' > "${R11}/.verify.yml"
+printf 'file-token' > "${TEST_HOME}/.claude/.skill-session-token"
+rm -f "${EXPLICIT_ARTIFACT}" "${TEST_HOME}/.claude/.skill-project-verified-file-token"
+( cd "${R11}" && SKILL_SESSION_TOKEN=payload-tok /bin/bash "${VAR}" >/dev/null 2>&1 )
+assert_file_exists "explicit env token binds the verdict" "${EXPLICIT_ARTIFACT}"
+[ ! -f "${TEST_HOME}/.claude/.skill-project-verified-file-token" ] && _record_pass "file token ignored when env token given" \
+    || _record_fail "file token ignored when env token given" "verdict written under the file token"
+printf 'session-vartest' > "${TEST_HOME}/.claude/.skill-session-token"   # restore
+
 cd "${REPO_ROOT}" || true
 teardown_test_env
 print_summary

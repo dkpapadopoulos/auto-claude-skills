@@ -47,6 +47,16 @@ PAIRS="$(awk '
 ' "$VY")"
 [ -n "$PAIRS" ] || { echo "verify-and-record: no commands declared in .verify.yml" >&2; exit 1; }
 
+# Capture the session token BEFORE running the gate (issue #122). This repo's
+# suite runs ~3 minutes; a concurrent session prompting in that window rebinds
+# the shared last-writer-wins singleton (~/.claude/.skill-session-token), and a
+# post-run read would bind the verdict to the SIBLING's token — the writer would
+# then measure PASS but the push gate, reading the own-token file, would still
+# deny. An explicit SKILL_SESSION_TOKEN (e.g. the invoking skill's hook-payload
+# token, per issue #51 payload-first resolution) wins over the file.
+TOKEN="${SKILL_SESSION_TOKEN:-}"
+[ -n "$TOKEN" ] || TOKEN="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null || echo default)"
+
 PASSED=""; FAILED=""; CNV=""; CMDS=""
 LOG="$(mktemp "${TMPDIR:-/tmp}/verify-and-record.XXXXXX")" || exit 1
 trap 'rm -f "$LOG"' EXIT
@@ -106,7 +116,6 @@ if [ -n "$BASE" ] && [ -f "$GGC" ]; then
 fi
 [ "$GG_STATUS" = "unverified" ] && CNV="${CNV}${CNV:+,}gate-gaming-check"
 
-TOKEN="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null || echo default)"
 SHA="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 EXCERPT="$(tail -c 600 "$LOG" 2>/dev/null | tr -d '\000-\010\013-\037' | tr '\n' ' ')"
