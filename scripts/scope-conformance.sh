@@ -37,10 +37,21 @@ if [ -z "$BASE" ] || ! git rev-parse --verify --quiet "$BASE" >/dev/null 2>&1; t
     exit 2
 fi
 
+# Normalize an explicit base to its merge-base with HEAD: identity when the
+# base is already an ancestor, and on a diverged mainline this stops mainline
+# churn from being misattributed to the branch (false violations).
+BASE="$(git merge-base "$BASE" HEAD 2>/dev/null)"
+if [ -z "$BASE" ]; then
+    say "scope-conformance: unverified — cannot resolve base ref"
+    exit 2
+fi
+
 # Manifest entries: backticked payload of Create/Modify/Test/Delete/Allow
-# lines, with a trailing :N or :N-M line-range suffix stripped.
+# lines, with a trailing :N or :N-M line-range suffix stripped. A trailing-/
+# directory entry becomes dir/* so it covers contained files.
 MANIFEST="$(sed -n -E 's/^[[:space:]]*-[[:space:]]*(Create|Modify|Test|Delete|Allow):[[:space:]]*`([^`]+)`.*/\2/p' "$PLAN" \
-    | sed -E 's/:[0-9]+(-[0-9]+)?$//')"
+    | sed -E 's/:[0-9]+(-[0-9]+)?$//' \
+    | sed -E 's|/$|/*|')"
 
 if [ -z "$MANIFEST" ]; then
     say "scope-conformance: unverified — no Files/Allow entries parseable in ${PLAN}"
@@ -48,8 +59,9 @@ if [ -z "$MANIFEST" ]; then
 fi
 
 # Changed set: committed + uncommitted vs base (includes deletes), + untracked.
-CHANGED="$( { git diff --name-only "$BASE" -- 2>/dev/null;
-              git ls-files --others --exclude-standard 2>/dev/null; } | sort -u )"
+# quotePath off so non-ASCII filenames come out raw, not octal-escape-quoted.
+CHANGED="$( { git -c core.quotePath=false diff --name-only "$BASE" -- 2>/dev/null;
+              git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null; } | sort -u )"
 
 if [ -z "$CHANGED" ]; then
     say "scope-conformance: clean — no changes vs base ${BASE}"

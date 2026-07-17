@@ -17,8 +17,9 @@ assert_contains() { # desc needle haystack-file
         FAIL=$((FAIL + 1)); echo "FAIL: $1 (missing: $2)"; fi
 }
 
-make_repo() { # $1 = dir
-    mkdir -p "$1" && cd "$1" || return 1
+make_repo() { # $1 = dir; exits the suite on setup failure (a silent cd back
+              # into the previous temp repo would corrupt every later case)
+    mkdir -p "$1" && cd "$1" || { echo "FATAL: repo setup failed for $1"; exit 1; }
     git init -q -b main . 2>/dev/null || { git init -q .; git checkout -q -b main; }
     git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base
     mkdir -p scripts hooks tests
@@ -112,6 +113,42 @@ echo changed > scripts/foo.sh
 echo entry > CHANGELOG.md
 bash "$SUT" plan.md main > "$OUT" 2>&1; rc=$?
 assert_exit "CHANGELOG.md exempt via meta allowlist" 0 "$rc"
+
+# --- Case 9: diverged mainline + EXPLICIT base — no false violation ---------
+make_repo "$TMP/diverge"
+cat > plan.md <<'EOF'
+**Files:**
+- Modify: `scripts/foo.sh`
+EOF
+echo changed > scripts/foo.sh
+git add . && git -c user.email=t@t -c user.name=t commit -q -m feat
+git checkout -q main
+echo mainline > main-only.txt
+git add . && git -c user.email=t@t -c user.name=t commit -q -m mainchurn
+git checkout -q feature
+bash "$SUT" plan.md main > "$OUT" 2>&1; rc=$?
+assert_exit "explicit base on diverged main exits 0 (merge-base normalized)" 0 "$rc"
+
+# --- Case 10: automatic base resolution (no base arg) -----------------------
+make_repo "$TMP/autobase"
+cat > plan.md <<'EOF'
+**Files:**
+- Modify: `scripts/foo.sh`
+EOF
+echo changed > scripts/foo.sh
+bash "$SUT" plan.md > "$OUT" 2>&1; rc=$?
+assert_exit "auto-resolved base (local main) exits 0" 0 "$rc"
+
+# --- Case 11: trailing-slash directory entry covers contained files ---------
+make_repo "$TMP/direntry"
+cat > plan.md <<'EOF'
+**Files:**
+- Create: `newdir/`
+EOF
+mkdir -p newdir
+echo impl > newdir/impl.sh
+bash "$SUT" plan.md main > "$OUT" 2>&1; rc=$?
+assert_exit "dir/ entry covers contained file" 0 "$rc"
 
 echo "test-scope-conformance: ${PASS} passed, ${FAIL} failed"
 [ "$FAIL" -eq 0 ]

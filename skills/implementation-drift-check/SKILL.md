@@ -131,7 +131,7 @@ Use the newest matching plan from the comparison material gathered in Step 1
 
 | Exit | Verdict | Report as |
 |------|---------|-----------|
-| 0 | `clean` | One line: scope conformance clean. |
+| 0 | `clean` | One line: scope conformance clean. Before reporting it, eyeball the plan's `Allow:` entries — an over-broad glob (e.g. a bare `*`) makes a clean verdict meaningless; flag it as a finding instead. |
 | 1 | `violation` | Surface each listed file as an `added-without-plan` candidate finding with the script output as evidence. The reviewer judges intent — plans legitimately evolve; an out-of-scope file is a finding to explain, not an automatic defect. |
 | 2 | `unverified` | Note scope conformance unverified (no manifest); proceed with model-judged alignment only. |
 
