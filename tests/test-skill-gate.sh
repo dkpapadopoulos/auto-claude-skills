@@ -226,4 +226,59 @@ assert_equals "off mode: no hook output" "" "$_out"
 assert_contains "off mode: violation telemetry logged before exit" "gate=skill-seq decision=off" "$(cat "$HOME/.claude/.phase-gate-events.log" 2>/dev/null)"
 rm -f "$HOME/.claude/skill-config.json"
 
+# --- C2: outbound DESIGN/PLAN leg (warn default = telemetry-only; deny only via config) ---
+GUARD="${PROJECT_ROOT}/hooks/openspec-guard.sh"
+_push() {  # runs guard against a git push command payload
+    printf '{"tool_name":"Bash","tool_input":{"command":"git push"},"transcript_path":""}' \
+        | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "$GUARD" 2>/dev/null
+}
+# Seed: chain active, REVIEW+VERIFY satisfied, DESIGN+PLAN missing.
+# (Run inside a throwaway git repo so branch-ledger keys don't touch the real repo.)
+_C2_REPO="$(mktemp -d /tmp/psg-repo-XXXXXX)"
+( cd "$_C2_REPO" && git init -q && git config user.email t@t && git config user.name t && git commit -q --allow-empty -m init )
+printf '{"chain":["brainstorming","writing-plans","requesting-code-review","verification-before-completion"],"completed":["requesting-code-review","verification-before-completion"],"current_index":0}\n' > "$COMP_FILE"
+: > "$HOME/.claude/.phase-gate-events.log"
+_out="$(cd "$_C2_REPO" && _push)"
+assert_not_contains "C2 default: no deny for missing DESIGN/PLAN" '"permissionDecision": "deny"' "$_out"
+assert_not_contains "C2 default: warn emits NO stdout JSON (one-object contract)" "brainstorming" "$_out"
+assert_contains "C2 default: warn logged to events" "gate=outbound decision=warn" "$(cat "$HOME/.claude/.phase-gate-events.log" 2>/dev/null)"
+printf '{"phase_enforcement":{"outbound":"deny"}}\n' > "$HOME/.claude/skill-config.json"
+_out="$(cd "$_C2_REPO" && _push)"
+assert_contains "C2 deny mode: denies without DESIGN evidence" '"permissionDecision": "deny"' "$_out"
+# REAL evidence flips it (invocation record, NOT .completed — codex #2)
+printf '["brainstorming","writing-plans","requesting-code-review","verification-before-completion"]\n' > "$INVOC_FILE"
+_out="$(cd "$_C2_REPO" && _push)"
+assert_not_contains "C2 deny mode: allows with DESIGN+PLAN invocation evidence" "brainstorming" "$_out"
+rm -f "$HOME/.claude/skill-config.json"
+
+# codex #6: ledger-covered branch with NO comp state still gets the C2 check
+# NOTE: branch_ledger_record/branch_ledger_key resolve an EMPTY proj_root via
+# `git rev-parse --show-toplevel`, which canonicalizes symlinks (macOS /tmp ->
+# /private/tmp) — the same resolution openspec-guard.sh's `_proot` uses. If we
+# instead pass the literal "$_C2_REPO" path (unresolved /tmp/...), the ledger
+# key hashes to a DIFFERENT value than the guard's lookup and the seeded
+# records silently miss. Omit the arg so both sides resolve identically.
+rm -f "$COMP_FILE" "$INVOC_FILE"
+( cd "$_C2_REPO" && . "${PROJECT_ROOT}/hooks/lib/branch-ledger.sh" \
+    && branch_ledger_record "writing-plans" \
+    && branch_ledger_record "requesting-code-review" \
+    && branch_ledger_record "verification-before-completion" ) 2>/dev/null
+: > "$HOME/.claude/.phase-gate-events.log"
+_out="$(cd "$_C2_REPO" && _push)"
+assert_contains "C2 ledger-covered: warn logged for missing brainstorming (no comp state)" \
+    "missing=brainstorming" "$(cat "$HOME/.claude/.phase-gate-events.log" 2>/dev/null)"
+
+# codex #1: combined C2-warn + routing-governance-deny emits EXACTLY ONE JSON object.
+# Run in THIS repo (routing repo) with a chain-covered session, warn-mode C2 gap,
+# and no clean verdict: stdout must be a single deny object, parseable as one.
+printf '{"chain":["brainstorming","writing-plans","requesting-code-review","verification-before-completion"],"completed":[],"current_index":0}\n' > "$COMP_FILE"
+printf '["requesting-code-review","verification-before-completion"]\n' > "$INVOC_FILE"
+rm -f "$HOME/.claude/.skill-project-verified-${TOKEN}"
+_out="$(printf '{"tool_name":"Bash","tool_input":{"command":"git push"},"transcript_path":""}' \
+    | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "$GUARD" 2>/dev/null)"
+_objs="$(printf '%s' "$_out" | jq -s 'length' 2>/dev/null)"
+assert_equals "combined warn+deny path: exactly one JSON object on stdout" "1" "$_objs"
+assert_contains "combined path: the one object is the hard deny" '"permissionDecision": "deny"' "$_out"
+rm -f "$COMP_FILE" "$INVOC_FILE"; rm -rf "$_C2_REPO"
+
 print_summary

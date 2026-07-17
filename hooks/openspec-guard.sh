@@ -269,6 +269,55 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             fi
         fi
 
+        # --- Phase-enforcement C2: DESIGN/PLAN evidence on chain-covered pushes ---
+        # (openspec/changes/phase-enforcement). WARN by default; DENY only when
+        # ~/.claude/skill-config.json .phase_enforcement.outbound == "deny" —
+        # that flip is gated on the replay backtest (<10% false-block), never
+        # hardcoded. Evidence = the same shared predicate as skill-gate.sh.
+        # Scoped to chain-covered work: an ACTIVE chain that includes
+        # brainstorming, OR durable branch-ledger records of DESIGN/PLAN steps
+        # (covers comp-state resets between sessions — codex #6). Ad-hoc
+        # pushes stay ungated (false-block discipline).
+        _pe_covered=false
+        if [ -f "${_COMP_STATE}" ] && jq -e '.chain | index("brainstorming")' "${_COMP_STATE}" >/dev/null 2>&1; then
+            _pe_covered=true
+        elif [ "${_LEDGER_OK}" = "true" ]; then
+            { branch_ledger_has "brainstorming" "${_proot}" || branch_ledger_has "writing-plans" "${_proot}"; } && _pe_covered=true
+        fi
+        if [ "${_PUSHGATE_SKIP}" != "true" ] && command -v jq >/dev/null 2>&1 \
+           && [ "${_pe_covered}" = "true" ]; then
+            if [ -f "${_PLUGIN_ROOT}/hooks/lib/phase-evidence.sh" ]; then
+                # shellcheck source=lib/phase-evidence.sh
+                . "${_PLUGIN_ROOT}/hooks/lib/phase-evidence.sh" 2>/dev/null || true
+            fi
+            if command -v phase_step_satisfied >/dev/null 2>&1; then
+                _pe_missing=""
+                for _pe_step in brainstorming writing-plans; do
+                    if ! phase_step_satisfied "${_SESSION_TOKEN}" "${_pe_step}" "${_proot}"; then
+                        _pe_missing="${_pe_step}"
+                        break
+                    fi
+                done
+                if [ -n "${_pe_missing}" ]; then
+                    _pe_mode="$(jq -r '.phase_enforcement.outbound // "warn"' "${HOME}/.claude/skill-config.json" 2>/dev/null)" || _pe_mode="warn"
+                    _PE_MSG="PHASE GATE (outbound): this chain-covered ${_GATE_ACTION} has no evidence for '${_pe_missing}'. Invoke Skill(${_pe_missing}) or record an explicit skip (phase_attest ${_pe_missing} \"<reason>\") before shipping."
+                    command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "outbound" "${_pe_mode}" "${_GATE_ACTION}" "${_pe_missing}"
+                    if [ "${_pe_mode}" = "deny" ]; then
+                        jq -n --arg msg "${_PE_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+                        exit 0
+                    fi
+                    # warn mode: TELEMETRY ONLY (events log + SKILL_EXPLAIN stderr).
+                    # The guard emits at most ONE JSON object per run — every existing
+                    # systemMessage is paired with a deny + exit 0 (verified: no
+                    # warn-and-continue precedent exists). A mid-guard JSON warn that
+                    # falls through would put two objects on stdout when a later
+                    # check denies. Same constraint as the "Soft staleness is NOT
+                    # emitted here" comment at ~line 221.
+                    [ -n "${SKILL_EXPLAIN:-}" ] && printf '[openspec-guard] %s\n' "${_PE_MSG}" >&2
+                fi
+            fi
+        fi
+
         # Routing-governance gate (fail-closed, scoped). In a skill-routing plugin
         # repo, pushes touching routing paths (skills/|config/|hooks/) require a CLEAN
         # verdict covering the branch. Fires regardless of composition chain — routing
