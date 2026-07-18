@@ -141,6 +141,17 @@ printf '%s' "$(jq -nc '{failed:[],could_not_verify:[],gate_gaming_status:"clean"
 out="$(run_in "${CV}")"
 assert_contains "foreign verdict not@HEAD => still deny (sha binding intact)" '"deny"' "${out:-<empty>}"
 
+# (12) PR #121 scenario (issue #123): OWN token clean at an ANCESTOR + FOREIGN token clean at
+# EXACT HEAD, routing changed after the ancestor. Pre-fix, the resolver short-circuited to the
+# own ANCESTOR verdict (routing delta since it) => false DENY, shadowing the genuine exact-HEAD
+# verdict on disk. Post-fix, the exact-HEAD foreign verdict OUTRANKS the own ancestor => NO deny.
+rm -f "${HOME}/.claude/.skill-project-verified-"*
+mkart "$(jq -nc --arg s "${CVBASE}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"   # OWN token @ ANCESTOR
+printf '%s' "$(jq -nc --arg s "${CVHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')" \
+  > "${HOME}/.claude/.skill-project-verified-session-EXACTFOREIGN"                                          # FOREIGN @ EXACT HEAD
+out="$(run_in "${CV}")"
+assert_not_contains "own ancestor must not shadow foreign exact-HEAD@HEAD (PR #121, #123)" '"deny"' "${out:-}"
+
 export HOME="${_OLDHOME}"
 rm -rf "${TMP}"
 print_summary

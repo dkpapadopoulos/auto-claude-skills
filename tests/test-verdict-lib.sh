@@ -133,6 +133,31 @@ assert_equals "resolve: foreign ancestor-clean does NOT bridge (exact-HEAD only)
 mv "${HOME}/.claude/.skill-project-verified-session-anc" "${HOME}/.claude/.skill-project-verified-session-own"
 assert_equals "resolve: own ancestor-clean still covers (step 1)" "session-own" "$(verdict_resolve_token "session-own" "${REPO}")"
 
+# (f) issue #123: own ANCESTOR-clean must NOT shadow a sibling EXACT-HEAD clean.
+# The stronger evidence (exact HEAD) outranks the weaker (own ancestor) across tokens —
+# routing-governance needs a verdict AT HEAD, so an own-ancestor short-circuit that hides
+# a genuine sibling exact-HEAD verdict is a false-block.
+rm -f "${HOME}/.claude/.skill-project-verified-"*
+mkart_tok "session-own" "$(jq -nc --arg s "${C1}"    '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+mkart_tok "session-sib" "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+assert_equals "resolve: sibling exact-HEAD outranks own ancestor-clean (#123)" "session-sib" "$(verdict_resolve_token "session-own" "${REPO}")"
+
+# (g) deny-bias preserved across the widened bridge: own ancestor-clean + sibling
+# exact-HEAD FAILED => the sibling failure wins (a failure at HEAD outranks a clean ancestor).
+rm -f "${HOME}/.claude/.skill-project-verified-"*
+mkart_tok "session-own" "$(jq -nc --arg s "${C1}"    '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+mkart_tok "session-sib" "$(jq -nc --arg s "${RHEAD}" '{failed:["tests"],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+RT3="$(verdict_resolve_token "session-own" "${REPO}")"
+assert_equals "resolve: own ancestor yields to sibling FAILED@HEAD (deny-bias, #123)" "session-sib" "${RT3}"
+assert_equals "resolve: the resolved token carries the failure" "0" "$(_bool verdict_has_test_failure "${RT3}")"
+
+# (h) #123 regression guard: own EXACT-HEAD clean is still preferred over a sibling
+# EXACT-HEAD clean (own fast path preserved — byte-identical to case (a)).
+rm -f "${HOME}/.claude/.skill-project-verified-"*
+mkart_tok "session-own" "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+mkart_tok "session-sib" "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+assert_equals "resolve: own exact-HEAD clean still wins over sibling exact-HEAD clean" "session-own" "$(verdict_resolve_token "session-own" "${REPO}")"
+
 export HOME="${_OLDHOME}"
 rm -rf "${TMP}"
 print_summary

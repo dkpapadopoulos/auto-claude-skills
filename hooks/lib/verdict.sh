@@ -50,43 +50,52 @@ verdict_covers_head() {
 # (issue #51). Concurrent sessions clobber the singleton (last-writer-wins) so the two
 # tokens diverge and a token-scoped read would never find the verdict — a live deadlock.
 #
-# To stay byte-identical when the session's own verdict is usable, this returns
-# <session_token> whenever ITS artifact covers HEAD. ONLY otherwise (the divergence
-# case) does it scan sibling ~/.claude/.skill-project-verified-* artifacts and return
-# the first one bound to the same HEAD, preferring a FAILURE at HEAD (deny-bias /
-# anti-gate-gaming) over a clean one. If nothing covers HEAD, returns <session_token>
-# unchanged (absent/stale semantics preserved). sha==HEAD remains the sole authority —
-# no forgery surface is added (token-scoping was session-isolation, never a security
-# property). Fail-open: echoes <session_token> on any error.
+# Precedence (issue #123 — an EXACT-HEAD verdict, ANY token, outranks an own ANCESTOR one):
+#   1. Own token's verdict at EXACT HEAD -> use it (strongest own evidence; byte-identical
+#      fast path, no sibling scan). Ancestor-only own coverage NO LONGER short-circuits here.
+#   2. Cross-token bridge: sibling artifacts bound to the EXACT HEAD; a FAILURE at HEAD
+#      outranks a clean one (deny-bias / anti-gate-gaming). This is now ALSO reached when the
+#      own verdict covers HEAD only via an ANCESTOR — pre-#123 that ancestor short-circuit
+#      shadowed a genuine sibling exact-HEAD verdict and false-blocked routing-governance.
+#   3. Own token's ANCESTOR coverage (fallback) -> use it; else <session_token> unchanged
+#      (absent/stale semantics preserved).
+# This widens WHEN the bridge is consulted, not WHAT it accepts: cross-token acceptance stays
+# EXACT-HEAD only (ancestor acceptance is scoped to the own token), so no forgery surface is
+# added (token-scoping was session-isolation, never a security property). The grep -F prefilter
+# on the HEAD sha still bounds the jq/git forks to the few files naming HEAD (usually 0-2).
+# Fail-open: echoes <session_token> on any error.
 verdict_resolve_token() {
     local session_token="${1:-}" proot="${2:-}" head f base tok best_clean=""
-    # 1. Session token's own verdict covers HEAD (equal OR ancestor) -> use it. This is
-    #    byte-identical to prior single-token behavior, including ancestor acceptance.
+    # 1. Own verdict at EXACT HEAD -> use it, no sibling scan (byte-identical fast path).
+    #    NOTE: verdict_sha_is_head, NOT verdict_covers_head — an own ANCESTOR verdict must
+    #    NOT short-circuit past a sibling verdict measured at the exact HEAD (issue #123).
+    if [ -n "$session_token" ] && verdict_sha_is_head "$session_token" "$proot"; then
+        printf '%s' "$session_token"; return 0
+    fi
+    head="$(git -C "${proot:-.}" rev-parse HEAD 2>/dev/null)" || head=""
+    if [ -n "$head" ]; then
+        # 2. Cross-token bridge: sibling artifacts bound to the EXACT HEAD. Failure@HEAD
+        #    outranks clean (deny-bias). Own token skipped — steps 1/3 own it. A grep -F
+        #    prefilter on the HEAD sha bounds the jq/git forks to the files naming HEAD.
+        while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            base="${f##*/}"                               # fork-free basename (bash 3.2; no BSD -- ambiguity)
+            tok="${base#.skill-project-verified-}"
+            [ -z "$tok" ] && continue
+            [ "$tok" = "$session_token" ] && continue
+            verdict_sha_is_head "$tok" "$proot" || continue   # jq-confirm exact HEAD (grep can match other fields)
+            if verdict_has_test_failure "$tok"; then printf '%s' "$tok"; return 0; fi
+            [ -z "$best_clean" ] && verdict_is_clean "$tok" && best_clean="$tok"
+        done <<EOF
+$(grep -lF "$head" "${HOME}/.claude/.skill-project-verified-"* 2>/dev/null)
+EOF
+        [ -n "$best_clean" ] && { printf '%s' "$best_clean"; return 0; }
+    fi
+    # 3. No exact-HEAD verdict anywhere -> fall back to the session's OWN coverage, which
+    #    ACCEPTS an ANCESTOR (scoped to the own token — forgery posture). Else unchanged.
     if [ -n "$session_token" ] && verdict_covers_head "$session_token" "$proot"; then
         printf '%s' "$session_token"; return 0
     fi
-    # 2. Cross-token bridge: consult sibling artifacts, but ONLY those bound to the EXACT
-    #    HEAD. A foreign session's verdict is authoritative for THIS push solely when
-    #    measured at this precise commit — the forgery-resistant binding (ancestor
-    #    acceptance stays scoped to the session's own token, step 1). A grep -F prefilter
-    #    on the HEAD sha bounds the jq/git forks to the few files naming HEAD (usually
-    #    0-2), so the scan cost does not grow with an un-GC'd artifact dir. A failure at
-    #    HEAD outranks a clean one (deny-bias / anti-gate-gaming).
-    head="$(git -C "${proot:-.}" rev-parse HEAD 2>/dev/null)" || head=""
-    [ -z "$head" ] && { printf '%s' "$session_token"; return 0; }
-    while IFS= read -r f; do
-        [ -n "$f" ] || continue
-        base="${f##*/}"                                   # fork-free basename (bash 3.2; no BSD -- ambiguity)
-        tok="${base#.skill-project-verified-}"
-        [ -z "$tok" ] && continue
-        [ "$tok" = "$session_token" ] && continue
-        verdict_sha_is_head "$tok" "$proot" || continue   # jq-confirm exact HEAD (grep can match other fields)
-        if verdict_has_test_failure "$tok"; then printf '%s' "$tok"; return 0; fi
-        [ -z "$best_clean" ] && verdict_is_clean "$tok" && best_clean="$tok"
-    done <<EOF
-$(grep -lF "$head" "${HOME}/.claude/.skill-project-verified-"* 2>/dev/null)
-EOF
-    [ -n "$best_clean" ] && { printf '%s' "$best_clean"; return 0; }
     printf '%s' "$session_token"
 }
 
