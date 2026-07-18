@@ -79,20 +79,34 @@ transcript, session token, guard path, plugin root, and the raw stdin `_INPUT`.
 ## Record shape (one JSONL line per push/merge invocation)
 
 ```json
-{"ts":"<epoch>","event":"exit","pid":1234,"action":"push",
+{"event":"exit","pid":1234,"action":"push",
  "decision":"deny:global-failclosed","guard_path":"/…/openspec-guard.sh",
  "guard_cksum":"<cksum> <bytes>","plugin_version":"3.78.0","session_token":"…",
- "command_sha":"…","command_len":42,"command_redacted":"git push -u origin br",
- "transcript_path":"…","ondisk_replay":"<empty=allow | deny json>",
- "gate_status_mirror":"…","capture_error":null}
+ "command_sha":"…","command_len":42,"command_label":"git push","command":"",
+ "transcript_path":"…","ondisk_replay_decision":"deny|allow|incomplete",
+ "replay_stdout_len":218,"replay_stderr":"…","gate_status_mirror":"…",
+ "capture_error":null}
 ```
+
+- **`command` is empty by default** — shell text cannot be robustly de-secreted
+  (inline `-c http.extraHeader="Authorization: Bearer …"`, quoted suffixes), so
+  the safe record carries `command_sha` + `command_len` + a coarse
+  `command_label` (first two words after stripping env prefixes). Full
+  (best-effort-redacted) text is opt-in via `PUSH_GATE_CAPTURE_FULL_CMD=1`.
+- **`ondisk_replay_decision` is a POSITIVE classification, not raw output.** The
+  replayed guard is itself fail-open, so an empty stdout cannot distinguish
+  "genuine allow" from "crashed / early-exit". The guard prints a
+  `__PGC_EVALUATED__` sentinel (under `PUSH_GATE_CAPTURE_REPLAY=1`) when it
+  reaches the push-decision point; the classifier keys on that + a `deny`
+  substring.
 
 ## What this proves
 
-| live `decision` | `ondisk_replay` | record present? | interpretation |
+| live `decision` | `ondisk_replay_decision` | record present? | interpretation |
 |---|---|---|---|
-| deny:X | deny (agrees) | yes | on-disk guard genuinely denied — inspect gate X |
-| deny:X | empty (allow) | yes | **live ≠ on-disk for identical input → drift confirmed** |
+| deny:X | `deny` (agrees) | yes | on-disk guard genuinely denied — inspect gate X |
+| deny:X | `allow` (sentinel, no deny) | yes | **live ≠ on-disk for identical input → drift confirmed** |
+| deny:X | `incomplete` (+`capture_error`) | yes | replay never reached the decision point — NOT a drift signal; see `replay_stderr` |
 | (push denied live) | — | **no record** | on-disk guard never ran → stale in-process code |
 
 ## Honest limitations
