@@ -55,6 +55,44 @@ chmod 755 "$HOME/.claude" 2>/dev/null || true
 assert_contains "fail-open exit 0 on unwritable" 'rc=0' "$out"
 assert_equals "no stdout on fail-open" "rc=0" "$out"
 
+# --- guard-level integration ------------------------------------------------
+GUARD="${PROJECT_ROOT}/hooks/openspec-guard.sh"
+export HOME="$(mktemp -d /tmp/pgc-ghome-XXXXXX)"; mkdir -p "$HOME/.claude"
+GLOG="$HOME/.claude/.push-gate-invocation-log"
+_TPATH="$HOME/t.jsonl"; touch "$_TPATH"
+
+_grun() { # $1=command  $2=extra-env-prefix
+  jq -n --arg tp "$_TPATH" --arg c "$1" \
+    '{"transcript_path":$tp,"tool_input":{"command":$c}}' \
+  | env $2 CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null
+}
+
+# (5) deny path: real push, no evidence -> deny + a deny:* record written.
+: > "$GLOG" 2>/dev/null || true
+out="$(_grun 'git push origin HEAD' '')"
+assert_contains "guard still denies" '"deny"' "${out:-<empty>}"
+assert_file_exists "capture record written on deny" "$GLOG"
+assert_contains "record marks a deny gate" '"decision":"deny:' "$(cat "$GLOG")"
+
+# (6) stdout hygiene: guard stdout is EXACTLY one JSON object (capture leaks nothing).
+assert_equals "exactly one json object on stdout" "1" "$(printf '%s' "${out}" | jq -s 'length' 2>/dev/null)"
+
+# (7) allow path via human-bypass env: capture still records, decision=allow.
+: > "$GLOG" 2>/dev/null || true
+out="$(_grun 'git push origin HEAD' 'ACSM_SKIP_PUSH_GATE=1')"
+assert_not_contains "bypass allows (no deny)" '"deny"' "${out:-}"
+assert_contains "allow record written" '"decision":"allow"' "$(cat "$GLOG")"
+
+# (8) recursion guard: PUSH_GATE_CAPTURE_DISABLE=1 writes NO record.
+: > "$GLOG" 2>/dev/null || true
+_grun 'git push origin HEAD' 'PUSH_GATE_CAPTURE_DISABLE=1' >/dev/null
+assert_equals "disabled capture writes nothing" "0" "$(wc -l < "$GLOG" 2>/dev/null | tr -d ' ')"
+
+# (9) non-push git command writes NO record (no overhead/noise).
+: > "$GLOG" 2>/dev/null || true
+_grun 'git status' '' >/dev/null
+assert_equals "non-push writes nothing" "0" "$(wc -l < "$GLOG" 2>/dev/null | tr -d ' ')"
+
 export HOME="$_OLDHOME"
 print_summary
 exit $?
