@@ -217,6 +217,54 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             fi
             return 0
         }
+        # _invoc_has MILESTONE — session-local invocation-evidence leg (issue
+        # #131). ~/.claude/.skill-invocation-evidence-<token> is written ONLY
+        # by the completion hook on a successful Skill return (never the
+        # walker), so it is real-invocation evidence of the same trust class
+        # as the branch-ledger — without the ledger's cwd/branch-key
+        # fragility or .completed's reset fragility. SAME resolved token
+        # only: sibling tokens' files carry no repo/branch binding and would
+        # over-accept another session's work. The review leg honors the
+        # review-embedding proxies — PAIRED with skill-completion-hook.sh's
+        # gating-milestone crediting case list.
+        _invoc_has() {
+            local _f="${HOME}/.claude/.skill-invocation-evidence-${_SESSION_TOKEN}"
+            [ -f "${_f}" ] || return 1
+            command -v jq >/dev/null 2>&1 || return 1
+            # type guard: index() on a JSON *string* is substring search, so a
+            # corrupt scalar file merely containing the name would satisfy it.
+            case "$1" in
+                requesting-code-review)
+                    jq -e 'type=="array" and (index("requesting-code-review") != null
+                        or index("subagent-driven-development") != null
+                        or index("agent-team-execution") != null
+                        or index("agent-team-review") != null)' "${_f}" >/dev/null 2>&1 ;;
+                *)
+                    jq -e --arg s "$1" 'type=="array" and (index($s) != null)' "${_f}" >/dev/null 2>&1 ;;
+            esac
+        }
+        # _invoc_ok MILESTONE — _invoc_has + advisory note: this leg is
+        # session-scoped, not branch-bound (design D3 accepts the widening),
+        # so its acceptance is surfaced like the bridge's, never silent.
+        _invoc_ok() {
+            _invoc_has "$1" || return 1
+            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }$1 accepted via session-local invocation evidence (real Skill return this session; not branch-bound — issue #131)."
+            return 0
+        }
+        # _bridge_has MILESTONE — cross-location branch-ledger read (issue
+        # #131): sibling ledger keys (worktree/cwd split, detached HEAD,
+        # branch rename, remote-URL variant), accepted only when the recorded
+        # SHA is HEAD or a branch-local ancestor of HEAD (see
+        # branch_ledger_bridge_has). Acceptance is advisory-noted, never
+        # silent; tried only after every primary leg missed.
+        _bridge_has() {
+            local _bsha=""
+            [ "${_LEDGER_OK}" = "true" ] || return 1
+            command -v branch_ledger_bridge_has >/dev/null 2>&1 || return 1
+            _bsha="$(branch_ledger_bridge_has "$1" "${_proot}")" || return 1
+            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }$1 accepted via cross-location branch-ledger evidence recorded at ${_bsha:-unknown} on this branch (issue #131 bridge). Rerun if later commits changed reviewed content."
+            return 0
+        }
         if [ "${_PUSHGATE_SKIP}" != "true" ] && [ -f "${_COMP_STATE}" ] && command -v jq >/dev/null 2>&1; then
             # Check 1: REVIEW in chain but not completed — deny with REVIEW message
             _review_in_chain=false
@@ -224,6 +272,8 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             jq -e '.chain | index("requesting-code-review")' "${_COMP_STATE}" >/dev/null 2>&1 && _review_in_chain=true
             jq -e '.completed | index("requesting-code-review")' "${_COMP_STATE}" >/dev/null 2>&1 && _review_completed=true
             _ledger_has "requesting-code-review" && _review_completed=true
+            [ "${_review_completed}" = "false" ] && _invoc_ok "requesting-code-review" && _review_completed=true
+            [ "${_review_completed}" = "false" ] && _bridge_has "requesting-code-review" && _review_completed=true
             if [ "${_review_in_chain}" = "true" ] && [ "${_review_completed}" = "false" ]; then
                 _MSG="PUSH GATE — Expected: REVIEW → VERIFY → SHIP completed before push. Actual: requesting-code-review has not run on this chain. Do now: invoke Skill(superpowers:requesting-code-review), then retry the denied command."
                 jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
@@ -237,6 +287,8 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             jq -e '.chain | index("verification-before-completion")' "${_COMP_STATE}" >/dev/null 2>&1 && _verif_in_chain=true
             jq -e '.completed | index("verification-before-completion")' "${_COMP_STATE}" >/dev/null 2>&1 && _verif_completed=true
             _ledger_has "verification-before-completion" && _verif_completed=true
+            [ "${_verif_completed}" = "false" ] && _invoc_ok "verification-before-completion" && _verif_completed=true
+            [ "${_verif_completed}" = "false" ] && _bridge_has "verification-before-completion" && _verif_completed=true
             if [ "${_verif_in_chain}" = "true" ] && [ "${_verif_completed}" = "false" ]; then
                 _MSG="PUSH GATE — Expected: verification-before-completion completed before push. Actual: it has not run on this active chain. Do now: invoke Skill(superpowers:verification-before-completion), then retry the denied command."
                 jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
@@ -295,6 +347,12 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
                 jq -e '.completed | index("requesting-code-review")'         "${_COMP_STATE}" >/dev/null 2>&1 && _g_review=true
                 jq -e '.completed | index("verification-before-completion")' "${_COMP_STATE}" >/dev/null 2>&1 && _g_verify=true
             fi
+            # Same-token invocation evidence, then the cross-location ledger
+            # bridge (issue #131) — tried only after the primary legs miss.
+            [ "${_g_review}" = "false" ] && _invoc_ok "requesting-code-review"         && _g_review=true
+            [ "${_g_verify}" = "false" ] && _invoc_ok "verification-before-completion" && _g_verify=true
+            [ "${_g_review}" = "false" ] && _bridge_has "requesting-code-review"         && _g_review=true
+            [ "${_g_verify}" = "false" ] && _bridge_has "verification-before-completion" && _g_verify=true
             # A clean verification verdict covering HEAD is stronger (SHA-bound) evidence
             # of VERIFY than the status milestone, so it also satisfies the verify leg.
             if [ "${_g_verify}" = "false" ] && [ "${_VERDICT_OK}" = "true" ] \

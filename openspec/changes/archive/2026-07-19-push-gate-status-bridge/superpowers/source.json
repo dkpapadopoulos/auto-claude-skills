@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": "",
+  "plan_path": "",
+  "spec_path": "",
+  "sp_plan_path": "",
+  "sp_spec_path": "",
+  "change_slug": "push-gate-status-bridge",
+  "capability_slug": "skill-routing",
+  "source_branch": "fix/131-status-layer-bridge",
+  "base_commit": "20361e69630505af9869b2dc4b8666f3b8470f5b",
+  "openspec_surface": "none",
+  "archived_at": "2026-07-19T11:14:26Z"
+}

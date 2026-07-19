@@ -64,11 +64,47 @@ if [ -n "${_ITMP}" ]; then
         mv "${_INVOC}.tmp.$$" "${_INVOC}" 2>/dev/null || rm -f "${_INVOC}.tmp.$$" 2>/dev/null || true
 fi
 
+# ---- Durable gating-milestone ledger (push-gate readiness, branch-scoped) ----
+# Record review/verify completion to a per-(repo+branch) ledger so the push gate
+# survives composition chain re-anchors that reset .completed. Fail-open.
+# STATE-INDEPENDENT (issue #131): evaluated BEFORE the composition-state gate
+# below — under concurrent-session token scattering the state file may not
+# exist for this hook's resolved token, and the ledger is the documented
+# cross-session carrier, so a real gating-Skill return must always record
+# (same rationale as the invocation record's earlier move).
+# Review-embedding skills (subagent-driven-development, agent-team-execution,
+# agent-team-review) each carry a mandated internal review, so they credit the
+# canonical `requesting-code-review` milestone — the same "skill-ran" proxy the
+# gate already trusts for the literal review skill.
+_record_gating_milestone() {
+    [ -f "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" ] || return 0
+    # shellcheck source=lib/branch-ledger.sh
+    # `|| true` so a non-zero source cannot trip `trap ERR` and skip the rest.
+    . "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" 2>/dev/null || true
+    command -v branch_ledger_record >/dev/null 2>&1 || return 0
+    branch_ledger_record "$1" 2>/dev/null || true
+}
+# PAIRED: these milestone names are also excluded from the walker's back-fill
+# prefix (skill-activation-hook.sh gating-milestone filter), checked by
+# openspec-guard.sh, and the proxy list is mirrored by the guard's
+# invocation-evidence review leg — a third gated milestone must be added in
+# all of them.
+case "${_BARE}" in
+    requesting-code-review|verification-before-completion)
+        _record_gating_milestone "${_BARE}" ;;
+    subagent-driven-development|agent-team-execution|agent-team-review)
+        # subagent-driven-development's review mandate lives in the EXTERNAL
+        # superpowers plugin ("review after each task" in its SKILL.md) — not
+        # verifiable from this repo; re-check if superpowers drops that step.
+        # The two agent-team-* skills are owned here (skills/<name>/SKILL.md).
+        _record_gating_milestone "requesting-code-review" ;;
+esac
+
 # ---- Composition-state-dependent sections below (chain .completed merge,
-# gating-milestone ledger, per-chain-step ledger, C1 telemetry). All require
-# the state file to exist and be valid JSON — same early-exit gate as
-# before restructuring, just evaluated after the state-independent
-# invocation record above.
+# per-chain-step ledger, C1 telemetry). All require the state file to exist
+# and be valid JSON — same early-exit gate as before restructuring, just
+# evaluated after the state-independent invocation record and
+# gating-milestone ledger writes above.
 _STATE="${HOME}/.claude/.skill-composition-state-${_SESSION_TOKEN}"
 [ -f "${_STATE}" ] || exit 0
 jq empty "${_STATE}" >/dev/null 2>&1 || exit 0
@@ -90,34 +126,6 @@ printf '%s\n' "${_TMP}" > "${_STATE}.tmp.$$" 2>/dev/null && \
 
 [ -n "${SKILL_EXPLAIN:-}" ] && \
     printf '[skill-hook]   [completion] %s → completed\n' "${_BARE}" >&2
-
-# ---- Durable gating-milestone ledger (push-gate readiness, branch-scoped) ----
-# Record review/verify completion to a per-(repo+branch) ledger so the push gate
-# survives composition chain re-anchors that reset .completed. Fail-open.
-# Review-embedding skills (subagent-driven-development, agent-team-execution,
-# agent-team-review) each carry a mandated internal review, so they credit the
-# canonical `requesting-code-review` milestone — the same "skill-ran" proxy the
-# gate already trusts for the literal review skill.
-_record_gating_milestone() {
-    [ -f "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" ] || return 0
-    # shellcheck source=lib/branch-ledger.sh
-    # `|| true` so a non-zero source cannot trip `trap ERR` and skip telemetry.
-    . "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" 2>/dev/null || true
-    branch_ledger_record "$1" 2>/dev/null || true
-}
-# PAIRED: these milestone names are also excluded from the walker's back-fill
-# prefix (skill-activation-hook.sh gating-milestone filter) and checked by
-# openspec-guard.sh — a third gated milestone must be added in all three.
-case "${_BARE}" in
-    requesting-code-review|verification-before-completion)
-        _record_gating_milestone "${_BARE}" ;;
-    subagent-driven-development|agent-team-execution|agent-team-review)
-        # subagent-driven-development's review mandate lives in the EXTERNAL
-        # superpowers plugin ("review after each task" in its SKILL.md) — not
-        # verifiable from this repo; re-check if superpowers drops that step.
-        # The two agent-team-* skills are owned here (skills/<name>/SKILL.md).
-        _record_gating_milestone "requesting-code-review" ;;
-esac
 
 # ---- Durable per-branch ledger for ALL chain-step returns (codex #4) ----
 # Re-anchors reset session .completed state but must not erase evidence that
