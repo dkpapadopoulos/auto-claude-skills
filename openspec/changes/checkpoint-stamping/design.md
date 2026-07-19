@@ -39,3 +39,9 @@ The split mirrors house style (cf. `verify-and-record.sh`): model judgment for c
 ## Acceptance Scenarios
 
 See `specs/openspec-ship/spec.md` (GIVEN/WHEN/THEN).
+
+## Implementation Notes (synced at ship time)
+
+- Built as designed; three review-driven additions beyond the upfront spec: (1) the skill invokes the validator via `${CLAUDE_PLUGIN_ROOT:-.}` so it resolves in adopter repos, not only in this one (Opus review — near-critical); (2) the validator exits 2 when its validation loop is silently skipped (here-doc temp-file failure) instead of falsely reporting clean (Codex review); (3) stamp extraction tolerates a missing space after the colon and the completed-count includes indented subtasks.
+- Dogfooded on this change's own `tasks.md`: `checkpoints: 3 stamped / 4 completed tasks`, exit 0 (task 1.4 bare per the unique-match tie-breaker — two review-fix commits are ambiguous).
+- Archive deliberately deferred (matches current repo practice: recent shipped changes stay active under `openspec/changes/` so CHANGELOG spec pointers remain valid; archive happens in a later pass).
