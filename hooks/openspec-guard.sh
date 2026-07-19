@@ -270,7 +270,8 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
                 _names="$1 subagent-driven-development agent-team-execution agent-team-review" ;;
             esac
             if [ -f "${_sf}" ] && [ "${_LEDGER_OK}" = "true" ] && [ -n "${_HEAD_SHA}" ] \
-               && command -v branch_ledger_sha_is_branch_local >/dev/null 2>&1; then
+               && command -v branch_ledger_sha_is_branch_local >/dev/null 2>&1 \
+               && command -v _branch_ledger_mainline_base >/dev/null 2>&1; then
                 if [ "${_INVOC_BASE_RESOLVED}" != "true" ]; then
                     _INVOC_BASE_RESOLVED=true
                     _INVOC_BASE="$(_branch_ledger_mainline_base "${_proot}")" || _INVOC_BASE=""

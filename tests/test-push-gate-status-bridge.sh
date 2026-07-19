@@ -468,6 +468,8 @@ teardown_test_env
 # NOT block — binding is SOFT: acceptance stands, the unbound advisory stays.
 # A hard SHA requirement here would re-break the #130 repro (the recording
 # cwd's SHA is unrelated to the push branch when session cwd != worktree).
+# The sidecar also carries garbage lines (extra fields, missing SHA, unknown
+# skill) — the reader must tolerate them without denying or crashing.
 echo "--- G9: unbound sidecar record still accepted (soft binding) ---"
 setup_test_env
 mkdir -p "${HOME}/.claude"
@@ -476,11 +478,31 @@ _mk_repo "${REPO}"
 BASE_SHA="$(git -C "${REPO}" rev-parse main)"
 printf '%s' '["requesting-code-review","verification-before-completion"]' \
     > "${HOME}/.claude/.skill-invocation-evidence-${_TOK}"
-printf 'requesting-code-review %s\nverification-before-completion %s\n' "${BASE_SHA}" "${BASE_SHA}" \
-    > "${HOME}/.claude/.skill-invocation-evidence-sha-${_TOK}"
+{
+    printf 'not json at all\n'
+    printf 'requesting-code-review\n'
+    printf 'requesting-code-review %s trailing junk fields\n' "${BASE_SHA}"
+    printf 'verification-before-completion %s\n' "${BASE_SHA}"
+} > "${HOME}/.claude/.skill-invocation-evidence-sha-${_TOK}"
 G9="$(run_guard_in "${REPO}")"
 assert_not_contains "G9a: unbound sidecar SHA does NOT deny (soft binding)" '"deny"' "${G9:-}"
 assert_contains "G9b: unbound acceptance keeps the not-branch-bound advisory" 'not branch-bound' "${G9:-<empty>}"
+teardown_test_env
+
+# G11: red-team pin of the CRITICAL invariant — the sidecar alone (even with
+# a perfectly branch-bound SHA) must NEVER satisfy the gate. Acceptance
+# authority is the main string array only; the sidecar merely annotates.
+echo "--- G11: sidecar alone does not satisfy the gate ---"
+setup_test_env
+mkdir -p "${HOME}/.claude"
+REPO="${TEST_TMPDIR}/repo"
+_mk_repo "${REPO}"
+LOCAL_SHA="$(git -C "${REPO}" rev-parse feature/x)"
+# NO main invocation-evidence array — only the sidecar, bound to HEAD.
+printf 'requesting-code-review %s\nverification-before-completion %s\n' "${LOCAL_SHA}" "${LOCAL_SHA}" \
+    > "${HOME}/.claude/.skill-invocation-evidence-sha-${_TOK}"
+G11="$(run_guard_in "${REPO}")"
+assert_contains "G11: bound sidecar WITHOUT the main array still denies" '"deny"' "${G11:-<empty>}"
 teardown_test_env
 
 # G10: review-embedding proxy name in the sidecar binds the REVIEW leg —
