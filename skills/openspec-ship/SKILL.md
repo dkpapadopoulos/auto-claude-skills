@@ -191,11 +191,27 @@ Use RFC 2119 keywords in UPPERCASE: MUST, MUST NOT, SHALL, SHALL NOT, SHOULD, SH
 ```
 # Tasks: <Feature Name>
 
+> Checkpoints reference branch commits. After squash-merge they are typically
+> recoverable only via the feature's GitHub PR (`gh pr view <N> --json commits`)
+> — plain clones and forks do not fetch PR refs.
+
 ## Completed
 
-- [x] 1.1 <task description> (from SP execution plan)
+- [x] 1.1 <task description> (from SP execution plan) [checkpoint: <sha7>]
 - [x] 1.2 <task description>
 ```
+
+**Checkpoint stamping (issue #129):** while writing the completed-task lines, attribute commits from `git log --oneline --abbrev=7 <merge-base>..HEAD`. Append ` [checkpoint: <sha7>]` ONLY when exactly one in-range commit matches the task by task number or strong keyword — ambiguous or unattributable tasks stay bare (a missing stamp is honest; a guessed one is not). Then run the deterministic integrity floor:
+
+```bash
+bash scripts/checkpoint-validate.sh openspec/changes/<feature-name>/tasks.md
+```
+
+- Exit 1 (malformed stamp, or SHA outside `merge-base..HEAD`): repair or remove the offending stamps and re-run until clean. Do not proceed to Step 4 with a failing validation.
+- Exit 2 (unrunnable): note it in the ship report and continue — never blocking.
+- Always copy the `checkpoints: N stamped / M completed tasks` summary line into the ship report (this line is the kill-criterion evidence: two consecutive ships whose checkpoints nobody reads → remove this stamping step).
+
+The validator is scoped to pre-merge feature-branch use only — never run it against archived `tasks.md` files (after squash-merge the branch SHAs are gone from main's history and every stamp would spuriously fail).
 
 **tasks.md** (when `plan_path` is NOT provided):
 ```
