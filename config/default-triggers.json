@@ -106,6 +106,7 @@
         "writing-plans"
       ],
       "description": "Step-by-step execution of an approved plan. REQUIRED: set up git worktree first. If subagents available, use subagent-driven-development instead. Invoke finishing-a-development-branch after all tasks complete.",
+      "precondition": "PRECONDITION: invoke Skill(superpowers:executing-plans) — or subagent-driven-development / agent-team-execution — BEFORE editing code. Doing the implementation with raw tools first silently skips the IMPLEMENT phase: no evidence is recorded and the push gate will flag (later, deny) the push. If you deliberately skip it, record it: phase_attest executing-plans \"<reason>\".",
       "invoke": "Skill(superpowers:executing-plans)"
     },
     {

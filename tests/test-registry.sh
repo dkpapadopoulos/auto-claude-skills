@@ -2362,5 +2362,18 @@ fi
 rm -f "/tmp/sr_stderr.$$" "/tmp/sr_stdout.$$"
 teardown_test_env
 
+# executing-plans carries an IMPLEMENT precondition in BOTH config files
+_ep_pre_default="$(jq -r '(.. | objects | select(.name?=="executing-plans") | .precondition) // empty' "${PROJECT_ROOT}/config/default-triggers.json" 2>/dev/null | head -1)"
+if printf '%s' "${_ep_pre_default}" | grep -qiF "before editing"; then
+    _record_pass "executing-plans precondition present in default-triggers.json"
+else
+    _record_fail "executing-plans precondition present in default-triggers.json" "got: ${_ep_pre_default}"
+fi
+_ep_pre_fb="$(jq -r '(.. | objects | select(.name?=="executing-plans") | .precondition) // empty' "${PROJECT_ROOT}/config/fallback-registry.json" 2>/dev/null | head -1)"
+if [ -n "${_ep_pre_fb}" ] && [ "${_ep_pre_fb}" = "${_ep_pre_default}" ]; then
+    _record_pass "executing-plans precondition identical in fallback-registry.json"
+else
+    _record_fail "executing-plans precondition identical in fallback-registry.json" "default='${_ep_pre_default}' fb='${_ep_pre_fb}'"
+fi
 
 print_summary
