@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# test-memory-validate.sh — scripts/memory-validate.sh: structural ERRORs (exit 1),
-# staleness WARNs (exit 0). Hermetic: builds a throwaway git repo + memory fixtures.
+# test-memory-validate.sh — scripts/memory-validate.sh.
+# Corruption -> ERROR (exit 1); drift & stale anchors -> WARN (exit 0).
+# Hermetic: builds a throwaway git repo + memory fixtures.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -9,7 +10,7 @@ VALIDATE="${PROJECT_ROOT}/scripts/memory-validate.sh"
 
 echo "=== test-memory-validate.sh ==="
 
-# --- hermetic sandbox: a repo-root with two committed files, and a memory dir ---
+# --- hermetic sandbox: a repo-root with committed files, and a memory dir ---
 SBOX="$(mktemp -d)"
 trap 'rm -rf "${SBOX}"' EXIT
 REPO="${SBOX}/repo"; MEM="${SBOX}/memory"
@@ -22,99 +23,100 @@ mkdir -p "${REPO}/hooks" "${MEM}"
   echo x > config.json
   git add -A && git commit -qm init ) >/dev/null 2>&1
 
-# helper: write a memory file
 _mem() { printf '%s\n' "$2" > "${MEM}/$1"; }
-
-# valid MEMORY.md index referencing every fixture we create with a valid type
-_mem MEMORY.md "# Memory Index
-- [Good](good.md) — ok"
-
-# Fixture A: missing metadata.type -> ERROR
-_mem bad_type.md "---
-name: bad
-metadata:
-  foo: bar
----
-body"
-# ensure index has an entry so ONLY the type defect fires
-printf '%s\n' "- [Bad](bad_type.md) — x" >> "${MEM}/MEMORY.md"
-
-# Fixture B: valid type
-_mem good.md "---
-name: good
+# reset the memory dir to a known-clean baseline (no ERRORs, no WARNs)
+_reset_mem() {
+    rm -f "${MEM}"/*.md
+    # index lists exactly the baseline files below
+    _mem MEMORY.md "# Memory Index
+- [Good](good.md) — ok
+- [Top](toplevel.md) — ok"
+    # nested metadata.type variant, name: good-slug
+    _mem good.md "---
+name: good-slug
 metadata:
   type: feedback
 ---
 body"
-
-out="$("${VALIDATE}" "${MEM}" "${REPO}" 2>&1)"; rc=$?
-if [ "${rc}" -eq 1 ] && printf '%s' "${out}" | grep -qF "bad_type.md"; then
-    _record_pass "missing metadata.type -> ERROR exit 1"
-else
-    _record_fail "missing metadata.type -> ERROR exit 1" "rc=${rc} out=${out}"
-fi
-
-# give bad_type.md a valid type now so later multi-defect assertions isolate cleanly
-_mem bad_type.md "---
-name: bad
-metadata:
-  type: project
+    # top-level type variant, name: top-slug
+    _mem toplevel.md "---
+name: top-slug
+type: project
 ---
 body"
+}
 
-# Fixture C: dangling [[link]] -> ERROR
-_mem dangling.md "---
-name: dangling
+# ---- ERROR: missing frontmatter type (neither top-level nor nested) ----
+_reset_mem
+_mem bad_type.md "---
+name: bad
+foo: bar
+---
+body"
+printf '%s\n' "- [Bad](bad_type.md) — x" >> "${MEM}/MEMORY.md"
+out="$("${VALIDATE}" "${MEM}" "${REPO}" 2>&1)"; rc=$?
+if [ "${rc}" -eq 1 ] && printf '%s' "${out}" | grep -qF "bad_type.md"; then
+    _record_pass "missing type -> ERROR exit 1"
+else
+    _record_fail "missing type -> ERROR exit 1" "rc=${rc} out=${out}"
+fi
+
+# ---- both type schema variants accepted (baseline is clean) ----
+_reset_mem
+out="$("${VALIDATE}" "${MEM}" "${REPO}" 2>&1)"; rc=$?
+if [ "${rc}" -eq 0 ] && [ -z "${out}" ]; then
+    _record_pass "top-level AND nested type both accepted; clean baseline silent"
+else
+    _record_fail "top-level AND nested type both accepted" "rc=${rc} out=${out}"
+fi
+
+# ---- WARN: dangling [[name]] link (no file has that name:) exit stays 0 ----
+_reset_mem
+_mem linker.md "---
+name: linker-slug
 metadata:
   type: project
 ---
-see [[nonexistent-slug]]"
-printf '%s\n' "- [Dangling](dangling.md) — x" >> "${MEM}/MEMORY.md"
-
+see [[no-such-name]] and [[good-slug]]"
+printf '%s\n' "- [Linker](linker.md) — x" >> "${MEM}/MEMORY.md"
 out="$("${VALIDATE}" "${MEM}" "${REPO}" 2>&1)"; rc=$?
-if [ "${rc}" -eq 1 ] && printf '%s' "${out}" | grep -qF "nonexistent-slug"; then
-    _record_pass "dangling [[link]] -> ERROR"
+if [ "${rc}" -eq 0 ] \
+   && printf '%s' "${out}" | grep -qF "no-such-name" \
+   && ! printf '%s' "${out}" | grep -qF "good-slug"; then
+    _record_pass "dangling [[link]] -> WARN (name-slug resolved), resolvable link silent"
 else
-    _record_fail "dangling [[link]] -> ERROR" "rc=${rc} out=${out}"
+    _record_fail "dangling [[link]] -> WARN, resolvable link silent" "rc=${rc} out=${out}"
 fi
 
-# Fixture D: file present on disk but absent from MEMORY.md -> ERROR (index sync)
-_mem orphan_file.md "---
-name: orphan
+# ---- WARN: memory file absent from MEMORY.md (forward index drift) exit 0 ----
+_reset_mem
+_mem unindexed.md "---
+name: unindexed-slug
 metadata:
   type: reference
 ---
 body"
 out="$("${VALIDATE}" "${MEM}" "${REPO}" 2>&1)"; rc=$?
-if [ "${rc}" -eq 1 ] && printf '%s' "${out}" | grep -qF "orphan_file.md"; then
-    _record_pass "file missing from index -> ERROR"
+if [ "${rc}" -eq 0 ] && printf '%s' "${out}" | grep -qF "unindexed.md"; then
+    _record_pass "file missing from index -> WARN, exit 0"
 else
-    _record_fail "file missing from index -> ERROR" "rc=${rc} out=${out}"
+    _record_fail "file missing from index -> WARN, exit 0" "rc=${rc} out=${out}"
 fi
-# add its index entry so later assertions aren't polluted by this defect
-printf '%s\n' "- [Orphan](orphan_file.md) — x" >> "${MEM}/MEMORY.md"
 
-# Fixture E: index links a file that does not exist -> ERROR (reverse index sync)
+# ---- ERROR: index links a file that does not exist (reverse) ----
+_reset_mem
 printf '%s\n' "- [Ghost](ghost.md) — x" >> "${MEM}/MEMORY.md"
 out="$("${VALIDATE}" "${MEM}" "${REPO}" 2>&1)"; rc=$?
 if [ "${rc}" -eq 1 ] && printf '%s' "${out}" | grep -qF "ghost.md"; then
-    _record_pass "index entry for missing file -> ERROR"
+    _record_pass "index entry for missing file -> ERROR exit 1"
 else
-    _record_fail "index entry for missing file -> ERROR" "rc=${rc} out=${out}"
+    _record_fail "index entry for missing file -> ERROR exit 1" "rc=${rc} out=${out}"
 fi
-# remove the ghost line to clean state for later tasks
-grep -vF "ghost.md" "${MEM}/MEMORY.md" > "${MEM}/MEMORY.md.tmp" && mv "${MEM}/MEMORY.md.tmp" "${MEM}/MEMORY.md"
-# resolve the dangling link so downstream tasks start from a clean tree
-_mem dangling.md "---
-name: dangling
-metadata:
-  type: project
----
-no link now"
 
-# Fixture F: anchor to a path absent at HEAD -> WARN, but exit stays 0 (reproduces #125)
+# ---- WARN: anchor to a path absent at HEAD (reproduces #125), exit 0 ----
+_reset_mem
 _mem stale_anchor.md "---
-name: stale
+name: stale-slug
 metadata:
   type: project
 ---
@@ -127,9 +129,10 @@ else
     _record_fail "stale anchor -> WARN, exit stays 0" "rc=${rc} out=${out}"
 fi
 
-# Fixture G: anchor to a path that DOES exist at HEAD -> no warning
+# ---- anchor to a live path (with :line) -> no warning ----
+_reset_mem
 _mem live_anchor.md "---
-name: live
+name: live-slug
 metadata:
   type: project
 ---
@@ -142,9 +145,58 @@ else
     _record_pass "live anchor (with :line) -> no warning"
 fi
 
-# Fixture H: anchor inside a fenced code block -> ignored (no warning)
+# ---- bare basename of a NESTED HEAD file -> no warning (basename resolution) ----
+_reset_mem
+_mem bare_anchor.md "---
+name: bare-slug
+metadata:
+  type: project
+---
+The guard \`openspec-guard.sh\` (committed under hooks/) is fine to cite by name."
+printf '%s\n' "- [Bare](bare_anchor.md) — x" >> "${MEM}/MEMORY.md"
+out="$("${VALIDATE}" "${MEM}" "${REPO}" 2>&1)"; rc=$?
+if [ "${rc}" -eq 0 ] && ! printf '%s' "${out}" | grep -qF "openspec-guard.sh"; then
+    _record_pass "bare basename of a nested HEAD file -> no warning"
+else
+    _record_fail "bare basename of a nested HEAD file -> no warning" "rc=${rc} out=${out}"
+fi
+
+# ---- bare basename absent everywhere at HEAD -> WARN ----
+_reset_mem
+_mem bare_stale.md "---
+name: bare-stale-slug
+metadata:
+  type: project
+---
+Refers to \`totally-gone.sh\` which exists nowhere at HEAD."
+printf '%s\n' "- [BareStale](bare_stale.md) — x" >> "${MEM}/MEMORY.md"
+out="$("${VALIDATE}" "${MEM}" "${REPO}" 2>&1)"; rc=$?
+if [ "${rc}" -eq 0 ] && printf '%s' "${out}" | grep -qF "totally-gone.sh"; then
+    _record_pass "bare basename absent at HEAD -> WARN"
+else
+    _record_fail "bare basename absent at HEAD -> WARN" "rc=${rc} out=${out}"
+fi
+
+# ---- absolute path to a file whose basename exists at HEAD -> no warning ----
+_reset_mem
+_mem abs_anchor.md "---
+name: abs-slug
+metadata:
+  type: project
+---
+Absolute ref \`/Users/somebody/repo/config.json\` resolves by basename."
+printf '%s\n' "- [Abs](abs_anchor.md) — x" >> "${MEM}/MEMORY.md"
+out="$("${VALIDATE}" "${MEM}" "${REPO}" 2>&1)"; rc=$?
+if [ "${rc}" -eq 0 ] && ! printf '%s' "${out}" | grep -qF "config.json"; then
+    _record_pass "absolute path w/ HEAD basename -> no warning"
+else
+    _record_fail "absolute path w/ HEAD basename -> no warning" "rc=${rc} out=${out}"
+fi
+
+# ---- anchor inside a fenced code block -> ignored ----
+_reset_mem
 _mem fenced.md "---
-name: fenced
+name: fenced-slug
 metadata:
   type: reference
 ---
@@ -160,17 +212,21 @@ else
     _record_pass "fenced-block anchor ignored"
 fi
 
-# Fixture I: path exists in working tree but not at HEAD -> NOTE, not WARN
+# ---- path exists in working tree but not at HEAD -> NOTE, not WARN ----
+_reset_mem
 echo x > "${REPO}/uncommitted.md"   # on disk, never committed
 _mem wt_only.md "---
-name: wtonly
+name: wt-slug
 metadata:
   type: project
 ---
 Draft at \`uncommitted.md\` here."
 printf '%s\n' "- [WT](wt_only.md) — x" >> "${MEM}/MEMORY.md"
 out="$("${VALIDATE}" "${MEM}" "${REPO}" 2>&1)"; rc=$?
-if printf '%s' "${out}" | grep -qF "[NOTE]" && printf '%s' "${out}" | grep -qF "uncommitted.md"; then
+if [ "${rc}" -eq 0 ] \
+   && printf '%s' "${out}" | grep -qF "[NOTE]" \
+   && printf '%s' "${out}" | grep -qF "uncommitted.md" \
+   && ! printf '%s' "${out}" | grep -qF "[WARN]"; then
     _record_pass "working-tree-only path -> NOTE not WARN"
 else
     _record_fail "working-tree-only path -> NOTE not WARN" "rc=${rc} out=${out}"
