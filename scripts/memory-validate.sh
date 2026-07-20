@@ -52,5 +52,31 @@ if [ -e "${MEM}/MEMORY.md" ]; then
     done
 fi
 
+# Stale repo-path anchor scan (WARN-only; never affects exit code).
+_ANCHOR_EXT='sh|md|json|ya?ml|txt|ts|js|py'
+for f in "${MEM}"/*.md; do
+    [ -e "${f}" ] || continue
+    base="$(basename "${f}")"; [ "${base}" = "MEMORY.md" ] && continue
+    # strip fenced code blocks (toggle on lines beginning with ```), then extract
+    # backtick-wrapped path-shaped tokens, drop :NN suffix, dedup.
+    anchors="$(awk '
+        /^```/{infence = !infence; next}
+        !infence{print}
+    ' "${f}" \
+      | grep -oE "\`[A-Za-z0-9_./-]+\.(${_ANCHOR_EXT})(:[0-9]+)?\`" \
+      | sed 's/`//g; s/:[0-9]*$//' \
+      | sort -u)"
+    for a in ${anchors}; do
+        if git -C "${REPO}" cat-file -e "HEAD:${a}" 2>/dev/null; then
+            continue
+        fi
+        if [ -e "${REPO}/${a}" ]; then
+            _note "${base}: '${a}' exists in working tree but not at HEAD"
+        else
+            _warn "${base}: repo-path anchor '${a}' not found at HEAD"
+        fi
+    done
+done
+
 [ "${ERRORS}" -eq 0 ] || exit 1
 exit 0

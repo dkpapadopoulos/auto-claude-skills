@@ -112,4 +112,68 @@ metadata:
 ---
 no link now"
 
+# Fixture F: anchor to a path absent at HEAD -> WARN, but exit stays 0 (reproduces #125)
+_mem stale_anchor.md "---
+name: stale
+metadata:
+  type: project
+---
+The old file \`hooks/deleted-file.sh\` no longer exists."
+printf '%s\n' "- [Stale](stale_anchor.md) — x" >> "${MEM}/MEMORY.md"
+out="$("${VALIDATE}" "${MEM}" "${REPO}" 2>&1)"; rc=$?
+if [ "${rc}" -eq 0 ] && printf '%s' "${out}" | grep -qF "hooks/deleted-file.sh"; then
+    _record_pass "stale anchor -> WARN, exit stays 0"
+else
+    _record_fail "stale anchor -> WARN, exit stays 0" "rc=${rc} out=${out}"
+fi
+
+# Fixture G: anchor to a path that DOES exist at HEAD -> no warning
+_mem live_anchor.md "---
+name: live
+metadata:
+  type: project
+---
+Guard lives at \`hooks/openspec-guard.sh:12\` today."
+printf '%s\n' "- [Live](live_anchor.md) — x" >> "${MEM}/MEMORY.md"
+out="$("${VALIDATE}" "${MEM}" "${REPO}" 2>&1)"; rc=$?
+if printf '%s' "${out}" | grep -qF "openspec-guard.sh"; then
+    _record_fail "live anchor -> no warning" "unexpected warn: ${out}"
+else
+    _record_pass "live anchor (with :line) -> no warning"
+fi
+
+# Fixture H: anchor inside a fenced code block -> ignored (no warning)
+_mem fenced.md "---
+name: fenced
+metadata:
+  type: reference
+---
+Example:
+\`\`\`
+cat \`hooks/imaginary-in-fence.sh\`
+\`\`\`"
+printf '%s\n' "- [Fenced](fenced.md) — x" >> "${MEM}/MEMORY.md"
+out="$("${VALIDATE}" "${MEM}" "${REPO}" 2>&1)"; rc=$?
+if printf '%s' "${out}" | grep -qF "imaginary-in-fence.sh"; then
+    _record_fail "fenced-block anchor ignored" "leaked: ${out}"
+else
+    _record_pass "fenced-block anchor ignored"
+fi
+
+# Fixture I: path exists in working tree but not at HEAD -> NOTE, not WARN
+echo x > "${REPO}/uncommitted.md"   # on disk, never committed
+_mem wt_only.md "---
+name: wtonly
+metadata:
+  type: project
+---
+Draft at \`uncommitted.md\` here."
+printf '%s\n' "- [WT](wt_only.md) — x" >> "${MEM}/MEMORY.md"
+out="$("${VALIDATE}" "${MEM}" "${REPO}" 2>&1)"; rc=$?
+if printf '%s' "${out}" | grep -qF "[NOTE]" && printf '%s' "${out}" | grep -qF "uncommitted.md"; then
+    _record_pass "working-tree-only path -> NOTE not WARN"
+else
+    _record_fail "working-tree-only path -> NOTE not WARN" "rc=${rc} out=${out}"
+fi
+
 print_summary
