@@ -1,6 +1,6 @@
 #!/bin/bash
 # --- Session Start Hook: Skill Registry Builder -------------------
-# https://github.com/damianpapadopoulos/auto-claude-skills
+# https://github.com/dkpapadopoulos/auto-claude-skills
 #
 # Runs at SessionStart. Scans plugin cache and user skills, merges
 # with default triggers, applies user config overrides, and caches

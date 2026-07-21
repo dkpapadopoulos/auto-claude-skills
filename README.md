@@ -94,7 +94,7 @@ Artifacts from earlier phases stay readable throughout — the plan referenced i
 **Minimal install:**
 
 ```
-/plugin marketplace add damianpapadopoulos/auto-claude-skills-marketplace
+/plugin marketplace add dkpapadopoulos/auto-claude-skills-marketplace
 /plugin install auto-claude-skills@acsm
 ```
 

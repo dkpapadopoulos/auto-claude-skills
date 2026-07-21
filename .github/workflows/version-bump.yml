@@ -16,7 +16,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-          token: ${{ secrets.MARKETPLACE_PAT }}
+          # Default GITHUB_TOKEN pushes the version bump to THIS repo (main has
+          # no branch protection; `permissions: contents: write` is declared
+          # above). The cross-repo marketplace push uses MARKETPLACE_PAT
+          # explicitly in its clone URL below, so a PAT issue can never block
+          # the in-repo version bump.
 
       - name: Determine bump type from commit message
         id: bump
@@ -60,7 +64,7 @@ jobs:
 
       - name: Update marketplace repo
         run: |
-          git clone https://x-access-token:${{ secrets.MARKETPLACE_PAT }}@github.com/damianpapadopoulos/auto-claude-skills-marketplace.git /tmp/marketplace
+          git clone https://x-access-token:${{ secrets.MARKETPLACE_PAT }}@github.com/dkpapadopoulos/auto-claude-skills-marketplace.git /tmp/marketplace
           cd /tmp/marketplace
 
           jq --arg v "${{ steps.version.outputs.new }}" \

@@ -1,6 +1,6 @@
 #!/bin/bash
 # --- Claude Code Skill Activation Hook v2 (config-driven) --------
-# https://github.com/damianpapadopoulos/auto-claude-skills
+# https://github.com/dkpapadopoulos/auto-claude-skills
 #
 # Config-driven routing engine that reads the cached skill registry
 # instead of using hardcoded regex patterns.

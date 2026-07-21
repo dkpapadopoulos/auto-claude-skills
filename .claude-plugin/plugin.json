@@ -1,9 +1,9 @@
 {
   "name": "auto-claude-skills",
   "description": "Enables agentic PDLC in Claude Code with phase-aware skill routing, guardrails, and workflow state recovery",
-  "version": "3.81.2",
+  "version": "3.81.4",
   "author": {
     "name": "auto-claude-skills contributors"
   },
-  "homepage": "https://github.com/damianpapadopoulos/auto-claude-skills"
+  "homepage": "https://github.com/dkpapadopoulos/auto-claude-skills"
 }
