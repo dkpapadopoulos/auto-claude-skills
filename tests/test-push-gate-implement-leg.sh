@@ -25,7 +25,8 @@ assert_contains "leg is documented as warn-first (no deny yet)" "will become a d
 
 # --- Behavioral setup (mirrors test-push-gate-ledger.sh verbatim) ---
 _OLDHOME="$HOME"
-export HOME="$(mktemp -d /tmp/pg-impl-home-XXXXXX)"
+_THOME="$(mktemp -d /tmp/pg-impl-home-XXXXXX)"
+export HOME="$_THOME"
 mkdir -p "$HOME/.claude"
 
 _TPATH="$HOME/t.jsonl"
@@ -55,9 +56,16 @@ printf '%s' '{"chain":["requesting-code-review","verification-before-completion"
 # NON-routing (not skills/|config/|hooks/), and the fixture repo has no
 # config/default-triggers.json, so routing-governance never fires and only the
 # IMPLEMENT leg is under test.
-_REPO="$(mktemp -d /tmp/pg-impl-repo-XXXXXX)"
+#
+# pwd -P: git rev-parse --show-toplevel (how the guard resolves _proot) returns
+# the PHYSICAL path, so on macOS a /tmp symlink would make the record-time
+# branch-ledger key (raw mktemp path) differ from the guard's read-time key —
+# REVIEW/VERIFY would then be rescued only by the #131 bridge, not the direct
+# ledger this test intends. Pin the physical path so both keys agree.
+_REPO="$(cd "$(mktemp -d /tmp/pg-impl-repo-XXXXXX)" && pwd -P)"
 (
-  cd "${_REPO}" || exit 1
+  set -e                       # any failed setup step aborts the subshell (not just the last)
+  cd "${_REPO}"
   git init -q
   git config user.email test@example.com
   git config user.name  test
@@ -67,7 +75,7 @@ _REPO="$(mktemp -d /tmp/pg-impl-repo-XXXXXX)"
   git checkout -qb feat/impl
   mkdir -p src && echo "print('x')" > src/app.py
   git add src/app.py && git commit -qm "feat: material source change"
-) || { echo "FATAL: fixture repo setup failed" >&2; export HOME="$_OLDHOME"; exit 1; }
+) || { echo "FATAL: fixture repo setup failed" >&2; rm -rf "${_REPO}" "${_THOME}"; export HOME="$_OLDHOME"; exit 1; }
 
 # Clean covering verdict at the FIXTURE repo's HEAD — satisfies verify-hardening
 # and, with the ledger records below, VERIFY; routing-governance does not fire
@@ -87,7 +95,8 @@ _mkinput() {
         '{"transcript_path":$tp,"tool_input":{"command":"git push origin HEAD"}}'
 }
 # Guard runs with cwd = the fixture repo so _proot (git rev-parse --show-toplevel)
-# resolves to it and the material-source diff is computed against feat/impl..main.
+# resolves to it and the material-source diff is computed as
+# merge-base(HEAD,main)..HEAD (i.e. the src/app.py commit on feat/impl).
 run_guard() { ( cd "${_REPO}" && _mkinput | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null ); }
 
 # (a) IMPLEMENT in chain, material source in diff, no impl evidence ->
@@ -123,6 +132,6 @@ assert_not_contains "no impl-slot in chain => no IMPLEMENT advisory" "IMPLEMENT:
 assert_not_contains "no impl-slot in chain => no deny"                '"deny"'    "${out:-}"
 
 export HOME="$_OLDHOME"
-rm -rf "${_REPO}" 2>/dev/null
+rm -rf "${_REPO}" "${_THOME}" 2>/dev/null
 print_summary
 exit $?
