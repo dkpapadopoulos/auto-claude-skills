@@ -407,6 +407,19 @@ test_frontmatter_classifier() {
     teardown_test_env
 }
 
+test_mem_type_frontmatter_bounded() {
+    echo "-- test: type is read ONLY from the frontmatter block, never a body 'type:' line --"
+    setup_test_env; make_fake_gh; init_fixture_repo; mkdir -p "${TEST_TMPDIR}/memory"
+    # frontmatter has NO type: — a body line 'type: project' must NOT classify it in
+    printf -- '---\nname: x\ndescription: d\nmetadata:\n  node_type: memory\n---\nSome body.\n  type: project\n' > "${TEST_TMPDIR}/memory/no_fm_type.md"
+    # frontmatter type feedback, body mentions 'type: project' — must stay feedback
+    printf -- '---\nname: y\ndescription: d\nmetadata:\n  type: feedback\n---\nbody with type: project mentioned\n' > "${TEST_TMPDIR}/memory/fm_feedback.md"
+    local out; out="$(run_bundle)"
+    assert_equals "no-frontmatter-type file excluded (body type ignored)" "" "$(printf '%s' "$out" | jq -r '.memory_index[] | select(.file=="no_fm_type.md") | .kind')"
+    assert_equals "frontmatter type wins over body mention" "feedback" "$(printf '%s' "$out" | jq -r '.memory_index[] | select(.file=="fm_feedback.md") | .kind')"
+    teardown_test_env
+}
+
 test_project_noise_flag() {
     echo "-- test: project-noise advisory flag — status-history true, forward-delta false, feedback never noisy --"
     setup_test_env; make_fake_gh; init_fixture_repo; mkdir -p "${TEST_TMPDIR}/memory"
@@ -451,7 +464,10 @@ test_repo_type_detection() {
         PATH="${TEST_TMPDIR}/stub:${PATH}" /bin/bash "${MINE}" bundle 2>/dev/null)"
     assert_equals "override forces target" "target" "$(printf '%s' "$out" | jq -r '.repo_type')"
     assert_contains "override reason recorded" "override" "$(printf '%s' "$out" | jq -r '.repo_type_reason')"
-    # (d) invalid override ignored -> falls back to file presence (plugin_self), warns on stderr
+    # (d) invalid override ignored -> falls back to file presence (plugin_self), warns on stderr.
+    # The bundle is invoked twice on purpose: once capturing ONLY stderr (2>&1 >/dev/null)
+    # to assert the warning, once capturing ONLY stdout to assert the JSON — separating the
+    # streams in a single POSIX-shell capture is awkward, so we run it twice.
     local err; err="$(cd "${TEST_TMPDIR}/repo" && IMPROVEMENT_MINER_MEMORY_DIR="${TEST_TMPDIR}/memory" \
         GH_LOG="${GH_LOG}" IMPROVEMENT_MINER_REPO_TYPE=bogus \
         PATH="${TEST_TMPDIR}/stub:${PATH}" /bin/bash "${MINE}" bundle 2>&1 >/dev/null)"
@@ -492,6 +508,7 @@ test_empty_owner_login_fails_loud
 test_garbage_json_fails_loud
 test_bundle_local_sources
 test_frontmatter_classifier
+test_mem_type_frontmatter_bounded
 test_project_noise_flag
 test_description_length_cap
 test_repo_type_detection

@@ -59,14 +59,28 @@ json_gate_status() {
 }
 
 mem_type() {
-    # first frontmatter "type:" line (indented under metadata: or bare), value only
-    grep -m1 -E '^[[:space:]]*type:' "$1" 2>/dev/null \
-        | sed -E 's/^[[:space:]]*type:[[:space:]]*//' | tr -d '[:space:]'
+    # "type:" value read ONLY from the leading --- frontmatter block, never a
+    # body line — a classifier must not let (untrusted) body content decide the
+    # type. Returns empty when there is no frontmatter type (file is skipped).
+    awk '
+        NR==1 && $0 !~ /^---[[:space:]]*$/ { exit }        # no frontmatter fence
+        /^---[[:space:]]*$/ { d++; if (d==2) exit; next }  # d: 1=inside, 2=closed
+        d==1 && /^[[:space:]]*type:/ {
+            sub(/^[[:space:]]*type:[[:space:]]*/, "")
+            gsub(/[[:space:]]/, "")
+            print; exit
+        }
+    ' "$1" 2>/dev/null
 }
 
 mem_noise() {
     # advisory: true when a project body is dominated by past-tense
     # completion markers (>=2) AND has no forward-looking marker.
+    # NOTE: reads the WHOLE file (frontmatter included) on purpose — a
+    # `description:` summarizing "shipped X / PR #NN merged" is legitimate
+    # status-history signal, so counting it is intended, not a leak (contrast
+    # mem_type, which is bounded to frontmatter because TYPE must not come from
+    # content). The flag is advisory and never drops a row.
     # Completion markers are WORD-anchored (grep -w) so substrings like
     # "abandoned"/"disclosed"/"submerged" do not false-count; "PR #<n>" is
     # matched separately because "#" is not a word char. The forward list is
@@ -261,6 +275,10 @@ emit_bundle() {
     ledger="$(json_ledger_summary)"
     rc=$?
     [ "${rc}" -eq 0 ] || exit "${rc}"
+    # bundle top-level fields (schema stays 1 — additive, no consumer keys off
+    # a version bump): schema, head_sha, repo_type, repo_type_reason, baselines,
+    # gate_status, memory_index[] (rows: file,name,description,kind,revival,noise),
+    # eval_reports, ledger, kill.
     jq -n \
         --arg sha "${head_sha}" \
         --argjson repotype "${repotype}" \
