@@ -80,13 +80,26 @@ echo "PUSH GATE STATUS — branch ${_branch} @ ${_short}"
 [ "${ACSM_SKIP_PUSH_GATE:-}" = "1" ] && echo "  NOTE: ACSM_SKIP_PUSH_GATE=1 is set in THIS shell — if Claude Code was launched with it, all denials are skipped"
 
 # --- session/verdict token ---------------------------------------------------
+# This report runs in the model's Bash turn (no payload), so it resolves the
+# same way the Bash-turn WRITERS do — own-session-first, singleton fallback
+# (issue #156). A singleton-only read agreed with the verdict writer by accident
+# pre-#156; now that the writer binds to the own-session token, it would report
+# "no verdict" for exactly the ancestor-acceptance case #156 restored, i.e. the
+# tool would contradict the gate it exists to explain.
 _token=""
-command -v resolve_session_token_from_transcript >/dev/null 2>&1 && \
+command -v resolve_own_session_token >/dev/null 2>&1 && _token="$(resolve_own_session_token)"
+if [ -z "${_token}" ] && command -v resolve_session_token_from_transcript >/dev/null 2>&1; then
     _token="$(resolve_session_token_from_transcript "")"
+fi
+_tsrc="the shared singleton — it can name a DIFFERENT conversation under concurrent sessions (issues #51/#156)"
+case "${_token}" in
+    "session-${CLAUDE_CODE_SESSION_ID:-__no_session_id__}")
+        _tsrc="this conversation's own session id — the same identity a payload-first hook resolves" ;;
+esac
 if [ -z "${_token}" ]; then
     echo "  session token : UNRESOLVED (no singleton) — chain gates (2-3) read no state; global gate (5) still applies"
 else
-    echo "  session token : ${_token} (from the shared singleton — a hook mid-session resolves payload-first and may differ under concurrent sessions, issue #51)"
+    echo "  session token : ${_token} (from ${_tsrc})"
 fi
 _vtoken="${_token}"
 if command -v verdict_resolve_token >/dev/null 2>&1 && [ -n "${_token}" ]; then

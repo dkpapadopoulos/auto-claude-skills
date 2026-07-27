@@ -69,12 +69,15 @@ Write `~/.claude/.skill-project-verified-<token>` (same namespace as `runtime-va
 
 ```bash
 TOKEN="${SKILL_SESSION_TOKEN:-}"                       # explicit override wins (#122)
-# CLAUDE_CODE_SESSION_ID IS the transcript basename the gate derives its token
-# from — trusted only when that transcript exists (stale/foreign/injected ids
-# and path-unsafe ones fall through to the singleton).
-if [ -z "$TOKEN" ] && printf '%s' "${CLAUDE_CODE_SESSION_ID:-}" | grep -qE '^[A-Za-z0-9_-]+$' \
-   && ls ~/.claude/projects/*/"${CLAUDE_CODE_SESSION_ID}.jsonl" >/dev/null 2>&1; then
-    TOKEN="session-${CLAUDE_CODE_SESSION_ID}"
+# resolve_own_session_token derives this conversation's own token from
+# CLAUDE_CODE_SESSION_ID (which IS the transcript basename the gate derives
+# its token from), trusting it only when that transcript exists — stale,
+# foreign, injected, and path-unsafe ids fall through to the singleton. Do NOT
+# re-derive `session-<id>` by hand here: session-token.sh owns that format.
+STL="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}/hooks/lib/session-token.sh"
+if [ -z "$TOKEN" ] && [ -f "$STL" ]; then
+    . "$STL" 2>/dev/null || true
+    command -v resolve_own_session_token >/dev/null 2>&1 && TOKEN="$(resolve_own_session_token)"
 fi
 [ -n "$TOKEN" ] || TOKEN="$(cat ~/.claude/.skill-session-token 2>/dev/null || echo default)"
 SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
