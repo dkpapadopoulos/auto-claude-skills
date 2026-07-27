@@ -91,13 +91,13 @@ branch_ledger_record "requesting-code-review"        "${_REPO}"
 branch_ledger_record "verification-before-completion" "${_REPO}"
 
 _mkinput() {
-    jq -n --arg tp "$_TPATH" \
-        '{"transcript_path":$tp,"tool_input":{"command":"git push origin HEAD"}}'
+    jq -n --arg tp "$_TPATH" --arg c "${1:-git push origin HEAD}" \
+        '{"transcript_path":$tp,"tool_input":{"command":$c}}'
 }
 # Guard runs with cwd = the fixture repo so _proot (git rev-parse --show-toplevel)
 # resolves to it and the material-source diff is computed as
 # merge-base(HEAD,main)..HEAD (i.e. the src/app.py commit on feat/impl).
-run_guard() { ( cd "${_REPO}" && _mkinput | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null ); }
+run_guard() { ( cd "${_REPO}" && _mkinput "${1:-}" | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null ); }
 
 # (a) IMPLEMENT in chain, material source in diff, no impl evidence ->
 #     advisory present, and NOT a deny attributable to IMPLEMENT (no deny at
@@ -106,6 +106,7 @@ out="$(run_guard)"
 assert_contains     "no impl evidence => IMPLEMENT advisory"     "IMPLEMENT:"  "${out:-<empty>}"
 assert_contains     "advisory surfaces as additionalContext"     "additionalContext" "${out:-<empty>}"
 assert_not_contains "IMPLEMENT leg does not deny"                 '"deny"'     "${out:-}"
+assert_not_contains "IMPLEMENT leg emits no permissionDecision at all" "permissionDecision" "${out:-}"
 
 # (a2) The warn must ALSO write a telemetry line — phase_gate_log is defined in
 # phase-evidence.sh, which must be sourced BEFORE Check 0 (regression: it was
@@ -130,6 +131,122 @@ printf '%s' '{"chain":["requesting-code-review","verification-before-completion"
 out="$(run_guard)"
 assert_not_contains "no impl-slot in chain => no IMPLEMENT advisory" "IMPLEMENT:" "${out:-}"
 assert_not_contains "no impl-slot in chain => no deny"                '"deny"'    "${out:-}"
+
+# --- Stage C1: shadow record on a push warn -------------------------------
+# The warn branch must leave an adjudicable JSONL record. Uses the same seeded
+# HOME/chain as the advisory assertions above (IMPLEMENT unsatisfied, REVIEW and
+# VERIFY pre-satisfied), so a record here is attributable to the IMPLEMENT leg.
+# Restore that precondition: (c) narrowed .chain to exclude the impl-slot skill
+# for its own assertion, and (b) left an executing-plans attestation on disk —
+# either alone would keep the leg from firing here, so both are reset.
+printf '%s' '{"chain":["requesting-code-review","verification-before-completion","executing-plans"],"current_index":0,"completed":[]}' \
+    > "${_COMP}"
+rm -f "$HOME/.claude/.skill-phase-attest-${_TOK}"
+export IMPLEMENT_SHADOW_LOG="$HOME/.claude/.push-implement-shadow.jsonl"
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(run_guard)"
+assert_not_contains "shadow emission does not turn the leg into a deny" '"deny"' "${out:-}"
+assert_not_contains "shadow emission emits no permissionDecision at all" "permissionDecision" "${out:-}"
+assert_equals "one shadow record written on a push warn" "1" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+_rec="$(cat "$IMPLEMENT_SHADOW_LOG")"
+assert_json_valid "shadow record is valid json" "$IMPLEMENT_SHADOW_LOG"
+assert_contains "record names the gate"        '"gate":"push-implement"' "${_rec}"
+assert_contains "record marks a would-block"   '"would_block":true'      "${_rec}"
+assert_contains "record carries action push"   '"action":"push"'         "${_rec}"
+assert_contains "record carries schema_version"    '"schema_version":1'    "${_rec}"
+assert_contains "record carries predicate_version" '"predicate_version":1' "${_rec}"
+assert_contains "record carries a record_id"   '"record_id":'            "${_rec}"
+assert_contains "record carries a ts"          '"ts":'                   "${_rec}"
+assert_contains "record carries the transcript pointer" '"transcript_path":' "${_rec}"
+assert_not_contains "record never carries raw command text" '"command":' "${_rec}"
+
+# record_id must be unique across events, not a repeat of a constant.
+out="$(run_guard)"
+assert_equals "second warn appends a second record" "2" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+assert_equals "record_ids are distinct" "2" \
+    "$(jq -r '.record_id' "$IMPLEMENT_SHADOW_LOG" | sort -u | wc -l | tr -d ' ')"
+
+# --- Stage C1: merge coverage (population fix) ----------------------------
+# Spec says the leg applies to a push OR merge; the code gated it on push only,
+# so gh-merge events were structurally missing from the sample.
+: > "$IMPLEMENT_SHADOW_LOG"
+
+# Contrast control: the SAME unsatisfied-evidence fixture state, invoked as a
+# PUSH (identical precondition to the assertion at line ~106 above), MUST
+# surface "IMPLEMENT:" in stdout. This proves the fixture genuinely produces a
+# would-block for this state, so the merge case's empty stdout below is
+# attributable to the known advisory-flush gap and not to the leg silently
+# failing to fire at all.
+out_push_contrast="$(run_guard)"
+assert_contains "contrast control: push DOES surface IMPLEMENT advisory" "IMPLEMENT:" "${out_push_contrast:-<empty>}"
+
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(run_guard 'gh pr merge 7 --squash')"
+
+# KNOWN GAP — issue #161, deliberately NOT fixed here: _flush_push_advisories()
+# (hooks/openspec-guard.sh:604) gates the advisory-text FLUSH on _gc_is_push
+# only, so the IMPLEMENT advisory computed for a merge (Check 0 itself DOES
+# fire for merges per the widened condition at line ~398-399, as the shadow
+# record below proves) never reaches stdout. That function is shared with
+# staleness/bridge/evaluator-surface advisories too, so widening it has a
+# bigger blast radius than this leg and is out of scope for this fix.
+#
+# This assertion PINS the current (gapped) behavior on purpose: merge stdout
+# does NOT carry "IMPLEMENT:" today. When #161 ships push-advisory flushing
+# for gh-merge, this assertion MUST BE INVERTED to assert_contains — its
+# presence here is a tripwire for that fix, not an endorsement of the gap.
+assert_not_contains "KNOWN GAP #161: merge stdout omits IMPLEMENT advisory text (invert on fix)" "IMPLEMENT:" "${out:-}"
+# Paired with the above so "no deny" is non-vacuous: stdout for this case is
+# expected to be empty outright (nothing to flush), not merely deny-free.
+assert_equals "merge stdout is empty (advisory computed but not flushed, per #161 gap)" "" "${out:-}"
+
+assert_not_contains "merge path stays advisory (no deny from this leg)" '"deny"' "${out:-}"
+assert_not_contains "merge path emits no permissionDecision at all" "permissionDecision" "${out:-}"
+assert_equals "one shadow record written on a merge warn" "1" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+assert_contains "merge record carries action gh-merge" '"action":"gh-merge"' \
+    "$(cat "$IMPLEMENT_SHADOW_LOG")"
+
+# --- Stage C1: an unwritable shadow log must not change the decision -------
+# The recorder is diagnostic. If it cannot write, the guard's stdout must be
+# byte-identical to a healthy run and the exit code must stay 0.
+: > "$IMPLEMENT_SHADOW_LOG"
+_healthy="$(run_guard)"
+# Non-vacuous baseline: _healthy must actually carry the advisory and the
+# healthy run must actually have written a record, or the byte-identical
+# comparison below would trivially hold for two empty strings.
+assert_contains "healthy run surfaces the IMPLEMENT advisory (non-vacuous baseline)" \
+    "IMPLEMENT:" "${_healthy:-<empty>}"
+assert_equals "healthy run wrote exactly one shadow record" "1" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+# IMPLEMENT_SHADOW_LOG has been byte-identical to the lib's own default path
+# since it was set above, so this IS the default log; snapshot its count
+# before pointing the override at a guaranteed-unwritable path.
+_default_count_before="$(wc -l < "$HOME/.claude/.push-implement-shadow.jsonl" 2>/dev/null | tr -d ' ')"
+[ -n "${_default_count_before}" ] || _default_count_before=0
+# $HOME/.claude/.skill-session-token is a regular FILE (written near the top
+# of this test), so using it as a directory component of the log path
+# guarantees `mkdir -p` fails for every user, including root — unlike
+# /nonexistent-dir-$$, which only fails because of ambient FS permissions.
+export IMPLEMENT_SHADOW_LOG="$HOME/.claude/.skill-session-token/s.jsonl"
+_broken="$(run_guard)"; _brc=$?
+assert_equals "unwritable shadow log leaves stdout byte-identical" "${_healthy}" "${_broken}"
+assert_equals "unwritable shadow log still exits 0" "0" "${_brc}"
+_default_count_after="$(wc -l < "$HOME/.claude/.push-implement-shadow.jsonl" 2>/dev/null | tr -d ' ')"
+[ -n "${_default_count_after}" ] || _default_count_after=0
+assert_equals "default shadow log gained no record while the override was unwritable" \
+    "${_default_count_before}" "${_default_count_after}"
+export IMPLEMENT_SHADOW_LOG="$HOME/.claude/.push-implement-shadow.jsonl"
+
+# Satisfied IMPLEMENT evidence must emit nothing at all.
+: > "$IMPLEMENT_SHADOW_LOG"
+source "${PROJECT_ROOT}/hooks/lib/phase-attest.sh" 2>/dev/null
+phase_attest executing-plans "shadow-negative-test" >/dev/null 2>&1
+out="$(run_guard)"
+assert_equals "no shadow record when IMPLEMENT evidence exists" "0" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | tr -d ' ')"
 
 export HOME="$_OLDHOME"
 rm -rf "${_REPO}" "${_THOME}" 2>/dev/null
