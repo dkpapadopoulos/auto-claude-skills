@@ -125,9 +125,26 @@ After the user approves the brief — this is mandatory. The LEARN-phase `outcom
 
 1. **Write the brief** to `docs/plans/YYYY-MM-DD-<slug>-discovery.md` using the Write tool. Derive `<slug>` as kebab-case from the primary feature name.
 
-2. **Read the session token:**
+2. **Resolve the session token — own-session-first:**
    ```bash
-   TOKEN="$(cat ~/.claude/.skill-session-token 2>/dev/null)"
+   # ~/.claude/.skill-session-token is a shared last-writer-wins singleton:
+   # under concurrent sessions it names a DIFFERENT conversation, so state
+   # written under it scatters into a file the PLAN design guard
+   # (hooks/skill-activation-hook.sh, payload-first per #51) never opens — the
+   # DESIGN->PLAN completeness hint then silently never fires (issue #157).
+   # resolve_own_session_token derives THIS conversation's token from
+   # CLAUDE_CODE_SESSION_ID, which IS the transcript basename readers derive
+   # their token from, trusting it only when that transcript exists on disk.
+   # Do NOT re-derive `session-<id>` by hand — hooks/lib/session-token.sh owns
+   # that format. The singleton stays the last-resort fallback so a missing lib
+   # degrades rather than fails.
+   STL="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}/hooks/lib/session-token.sh"
+   TOKEN=""
+   if [ -f "$STL" ]; then
+       . "$STL" 2>/dev/null || true
+       command -v resolve_own_session_token >/dev/null 2>&1 && TOKEN="$(resolve_own_session_token)"
+   fi
+   [ -n "$TOKEN" ] || TOKEN="$(cat ~/.claude/.skill-session-token 2>/dev/null)"
    ```
 
 3. **Source the state helpers** from the auto-claude-skills plugin root (typically `$CLAUDE_PLUGIN_ROOT/hooks/lib/openspec-state.sh`):
