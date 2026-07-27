@@ -77,15 +77,21 @@ case "${_decision}" in
       _replay_len="${#_rout}"
       _replay_stderr="$(cut -c1-1000 < "${_rerr}" 2>/dev/null | tr '\n' ' ')"; rm -f "${_rerr}" 2>/dev/null
       # The guard emits its deny JSON via `jq -n`, which PRETTY-PRINTS
-      # ("permissionDecision": "deny" — space after the colon, own line), so a
-      # compact needle matched against raw stdout can NEVER hit a real deny.
-      # Pre-fix that mismatch silently classified every live deny as "allow",
-      # i.e. "drift confirmed" on 24/24 field records. Strip whitespace first so
-      # classification is format-agnostic (compact or pretty). The sentinel has
-      # no whitespace, so it is unaffected. Pure bash — no fork in the trap.
-      _rnorm="${_rout//[[:space:]]/}"
-      case "${_rnorm}" in
-        *'"permissionDecision":"deny"'*) _replay_decision="deny" ;;
+      # ("permissionDecision": "deny" — space after the colon, own line), while
+      # its advisory paths emit compact `printf` JSON. Matching only the compact
+      # form could never hit a real deny: every replayed deny fell through to
+      # the sentinel branch and was recorded "allow", i.e. a false "drift
+      # confirmed" on 100% of denies. Match BOTH forms explicitly — constant
+      # time and fork-free.
+      # Do NOT "simplify" this to ${_rout//[[:space:]]/}: bash 3.2 bracket-class
+      # substitution is ~O(n^2.7) (measured on /bin/bash 3.2.57: 110ms at 1KB,
+      # 3.6s at 4KB, 24.5s at 8KB) and this runs SYNCHRONOUSLY in the guard's
+      # EXIT trap, on the user's tool-call path.
+      # Branch order is load-bearing: the sentinel is printed before every deny
+      # site, so a deny replay contains BOTH strings — deny must be tested first.
+      case "${_rout}" in
+        *'"permissionDecision":"deny"'*|*'"permissionDecision": "deny"'*)
+                                         _replay_decision="deny" ;;
         *__PGC_EVALUATED__*)             _replay_decision="allow" ;;
         *) _replay_decision="incomplete"; _err="${_err}${_err:+;}replay_incomplete" ;;
       esac

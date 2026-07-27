@@ -92,7 +92,12 @@ assert_contains "deny replay classified deny" '"ondisk_replay_decision":"deny"' 
 # the field, read as "drift confirmed"). Derive the stub from the guard's own
 # emitter line so this can never silently drift from production again.
 _DENY_EMIT="$(grep -m1 -F 'permissionDecision":"deny"' "${PROJECT_ROOT}/hooks/openspec-guard.sh" | sed 's/^[[:space:]]*//')"
-assert_contains "extracted the guard's real deny-emitter line" 'jq -n' "${_DENY_EMIT}"
+# Non-vacuity guard: an empty _DENY_EMIT would make the stub emit nothing and
+# the classification assertion below would pass for the wrong reason. Assert on
+# the needle (proves extraction succeeded) rather than on `jq -n` — pinning the
+# emitter's implementation would falsely red a legitimate compact-printf
+# refactor, which the classifier now handles either way.
+assert_contains "extracted the guard's real deny-emitter line" 'permissionDecision' "${_DENY_EMIT}"
 _stub "$HOME/stub-deny-real.sh" "_MSG=blocked
 ${_DENY_EMIT}
 exit 0"
