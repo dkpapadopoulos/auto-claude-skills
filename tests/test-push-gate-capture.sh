@@ -83,6 +83,30 @@ PGC_DECISION="deny:global-failclosed" PGC_ACTION="push" PGC_COMMAND="git push" \
   PGC_GUARD_PATH="$HOME/stub-deny.sh" PGC_PLUGIN_ROOT="$HOME/none" PGC_INPUT='{}' bash "$CAP"
 assert_contains "deny replay classified deny" '"ondisk_replay_decision":"deny"' "$(cat "$LOG")"
 
+# (6r-real) REGRESSION: classify a deny emitted the way the GUARD actually emits it.
+# (6r) above hand-writes COMPACT json, so it only ever proved the classifier works
+# against the test's own idea of the guard's output. The real guard emits via
+# `jq -n`, which PRETTY-PRINTS ("permissionDecision": "deny" — space after the
+# colon, own line). The classifier's glob required the compact form, so it could
+# never match a live deny and misclassified every real deny as "allow" (24/24 in
+# the field, read as "drift confirmed"). Derive the stub from the guard's own
+# emitter line so this can never silently drift from production again.
+_DENY_EMIT="$(grep -m1 -F 'permissionDecision":"deny"' "${PROJECT_ROOT}/hooks/openspec-guard.sh" | sed 's/^[[:space:]]*//')"
+# Non-vacuity guard: an empty _DENY_EMIT would make the stub emit nothing and
+# the classification assertion below would pass for the wrong reason. Assert on
+# the needle (proves extraction succeeded) rather than on `jq -n` — pinning the
+# emitter's implementation would falsely red a legitimate compact-printf
+# refactor, which the classifier now handles either way.
+assert_contains "extracted the guard's real deny-emitter line" 'permissionDecision' "${_DENY_EMIT}"
+_stub "$HOME/stub-deny-real.sh" "_MSG=blocked
+${_DENY_EMIT}
+exit 0"
+: > "$LOG"
+PGC_DECISION="deny:global-failclosed" PGC_ACTION="push" PGC_COMMAND="git push" \
+  PGC_GUARD_PATH="$HOME/stub-deny-real.sh" PGC_PLUGIN_ROOT="$HOME/none" PGC_INPUT='{}' bash "$CAP"
+assert_contains "real guard-shaped (pretty jq) deny replay classified deny" \
+  '"ondisk_replay_decision":"deny"' "$(cat "$LOG")"
+
 # (7r) empty replay (no sentinel, no deny) => incomplete + capture_error (NOT a false drift signal).
 _stub "$HOME/stub-empty.sh" 'exit 0'
 : > "$LOG"
@@ -109,6 +133,13 @@ out="$(_grun 'git push origin HEAD' '')"
 assert_contains "guard still denies" '"deny"' "${out:-<empty>}"
 assert_file_exists "capture record written on deny" "$GLOG"
 assert_contains "record marks a deny gate" '"decision":"deny:' "$(cat "$GLOG")"
+# END-TO-END drift assertion: this is the one that would have caught the
+# compact-vs-pretty mismatch. The stub cases above can only prove the classifier
+# agrees with the TEST's idea of guard output; only here does the REAL guard
+# produce the bytes. A live deny whose on-disk replay also denies must classify
+# "deny" — reading "allow" here is the false drift signal (24/24 in the field).
+assert_contains "real deny replays as deny (not a false drift signal)" \
+  '"ondisk_replay_decision":"deny"' "$(cat "$GLOG")"
 
 # (9) stdout hygiene: guard stdout is EXACTLY one JSON object (no sentinel/capture leak live).
 assert_equals "exactly one json object on stdout" "1" "$(printf '%s' "${out}" | jq -s 'length' 2>/dev/null)"
