@@ -170,7 +170,36 @@ assert_equals "record_ids are distinct" "2" \
 # Spec says the leg applies to a push OR merge; the code gated it on push only,
 # so gh-merge events were structurally missing from the sample.
 : > "$IMPLEMENT_SHADOW_LOG"
+
+# Contrast control: the SAME unsatisfied-evidence fixture state, invoked as a
+# PUSH (identical precondition to the assertion at line ~106 above), MUST
+# surface "IMPLEMENT:" in stdout. This proves the fixture genuinely produces a
+# would-block for this state, so the merge case's empty stdout below is
+# attributable to the known advisory-flush gap and not to the leg silently
+# failing to fire at all.
+out_push_contrast="$(run_guard)"
+assert_contains "contrast control: push DOES surface IMPLEMENT advisory" "IMPLEMENT:" "${out_push_contrast:-<empty>}"
+
+: > "$IMPLEMENT_SHADOW_LOG"
 out="$(run_guard 'gh pr merge 7 --squash')"
+
+# KNOWN GAP — issue #161, deliberately NOT fixed here: _flush_push_advisories()
+# (hooks/openspec-guard.sh:604) gates the advisory-text FLUSH on _gc_is_push
+# only, so the IMPLEMENT advisory computed for a merge (Check 0 itself DOES
+# fire for merges per the widened condition at line ~398-399, as the shadow
+# record below proves) never reaches stdout. That function is shared with
+# staleness/bridge/evaluator-surface advisories too, so widening it has a
+# bigger blast radius than this leg and is out of scope for this fix.
+#
+# This assertion PINS the current (gapped) behavior on purpose: merge stdout
+# does NOT carry "IMPLEMENT:" today. When #161 ships push-advisory flushing
+# for gh-merge, this assertion MUST BE INVERTED to assert_contains — its
+# presence here is a tripwire for that fix, not an endorsement of the gap.
+assert_not_contains "KNOWN GAP #161: merge stdout omits IMPLEMENT advisory text (invert on fix)" "IMPLEMENT:" "${out:-}"
+# Paired with the above so "no deny" is non-vacuous: stdout for this case is
+# expected to be empty outright (nothing to flush), not merely deny-free.
+assert_equals "merge stdout is empty (advisory computed but not flushed, per #161 gap)" "" "${out:-}"
+
 assert_not_contains "merge path stays advisory (no deny from this leg)" '"deny"' "${out:-}"
 assert_equals "one shadow record written on a merge warn" "1" \
     "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
