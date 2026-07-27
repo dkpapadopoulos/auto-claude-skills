@@ -31,10 +31,36 @@ Then invoke `Skill(superpowers:verification-before-completion)` before continuin
 
 ## Session State
 
-When this skill starts, populate the session state file with linkage information:
-1. Read `~/.claude/.skill-session-token` for the session token.
+### Resolving the session token
+
+Every read and write of `~/.claude/.skill-openspec-state-<token>` in this skill uses the token resolved by these two lines. **Shell state does not persist between Bash tool calls** — re-run them in *each* call that needs `$TOKEN`, never rely on a `$TOKEN` set by an earlier call (an empty token makes every `openspec_state_*` helper return silently, writing nothing).
+
+```bash
+# Resolve OWN-SESSION-FIRST (issue #157). ~/.claude/.skill-session-token is a
+# shared last-writer-wins singleton: under concurrent sessions it names a
+# DIFFERENT conversation, so state stored under it scatters into a file the
+# PLAN design guard (hooks/skill-activation-hook.sh, payload-first per #51)
+# never opens — the DESIGN->PLAN completeness hint then silently never fires.
+# resolve_own_session_token derives THIS conversation's token from
+# CLAUDE_CODE_SESSION_ID, which IS the transcript basename readers derive their
+# token from, and trusts it only when that transcript exists on disk (stale,
+# foreign, injected and path-unsafe ids fall through). Do NOT re-derive
+# `session-<id>` by hand — hooks/lib/session-token.sh owns that format. The
+# `|| cat` tail is the last resort: a missing lib degrades to the pre-#157
+# behaviour instead of failing.
+PR="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}"
+TOKEN="$(. "$PR/hooks/lib/session-token.sh" 2>/dev/null && resolve_own_session_token || cat ~/.claude/.skill-session-token 2>/dev/null)"
+echo "session token: ${TOKEN:-<unresolved>}"   # a scatter is then visible in-session
+```
+
+Unlike `project-verification`, there is deliberately **no `SKILL_SESSION_TOKEN` override** here: nothing sets it for this family and no openspec-state reader honors it (there is no cross-token bridge as there is for the verdict), so wiring it in would only add a way to write state nobody reads.
+
+### Populating state
+
+When this skill starts, populate the session state file with linkage information — as ONE Bash call:
+1. Resolve the session token with the two lines above.
 2. Source `hooks/lib/openspec-state.sh` from the auto-claude-skills plugin root.
-3. Call `openspec_state_upsert_change "<token>" "<change_slug>" "<plan_path>" "<spec_path>" "<capability_slug>"`.
+3. Call `openspec_state_upsert_change "$TOKEN" "<change_slug>" "<plan_path>" "<spec_path>" "<capability_slug>"`.
 4. If the state file doesn't exist yet (verification-before-completion hasn't run), the helper creates it with `verification_seen: false`.
 
 ## Input
@@ -60,7 +86,7 @@ Based on the detected surface:
 
 ### Step 2: Derive Slugs
 
-**Session state (primary):** Read `~/.claude/.skill-session-token` to get the session token. Then read `~/.claude/.skill-openspec-state-<token>` for pre-populated linkage:
+**Session state (primary):** Resolve the session token with the block in [Resolving the session token](#resolving-the-session-token) — reading the singleton directly finds a foreign session's state, or none. Then read `~/.claude/.skill-openspec-state-<token>` for pre-populated linkage:
 - `changes.<slug>.design_path` — path to the design artifact (e.g., `docs/plans/2026-04-15-feature-design.md`)
 - `changes.<slug>.plan_path` — path to the implementation plan (e.g., `docs/plans/2026-04-15-feature-plan.md`); legacy alias: `sp_plan_path`
 - `changes.<slug>.spec_path` — path to the acceptance spec (e.g., `docs/plans/2026-04-15-feature-spec.md`); legacy alias: `sp_spec_path`
@@ -281,7 +307,7 @@ If `plan_path` is not provided: skip SP artifact archival. Log: `"No Superpowers
 **Write provenance metadata:**
 
 After the archive path exists and SP artifacts (if any) have been moved:
-1. Read `~/.claude/.skill-session-token` for the session token.
+1. Resolve the session token with the block in [Resolving the session token](#resolving-the-session-token).
 2. Run the `openspec_write_provenance` helper (source `hooks/lib/openspec-state.sh` from the auto-claude-skills plugin root, then call `openspec_write_provenance "<archive_path>" "<token>" "<change_slug>"`).
 3. This creates `<archive_path>/superpowers/source.json` with schema_version, paths, branch, commit, surface, and timestamp.
 4. If the write fails, log a warning but do not fail the archive.
@@ -301,8 +327,12 @@ If `discovery_path` exists in session state AND the file at that path is readabl
 3. Persist hypotheses and mark the change archived. Source the state helpers from the auto-claude-skills plugin, then call them:
 
 ```bash
-TOKEN="$(cat ~/.claude/.skill-session-token 2>/dev/null)"
-. "$CLAUDE_PLUGIN_ROOT/hooks/lib/openspec-state.sh"
+# Self-contained: re-resolve the token here (see "Resolving the session token")
+# — a $TOKEN set in an earlier Bash call is NOT in scope, and an empty token
+# makes both helpers below return silently, losing hypotheses and archived_at.
+PR="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}"
+TOKEN="$(. "$PR/hooks/lib/session-token.sh" 2>/dev/null && resolve_own_session_token || cat ~/.claude/.skill-session-token 2>/dev/null)"
+. "$PR/hooks/lib/openspec-state.sh"
 
 HYPS='[{"id":"H1","description":"...","metric":"...","baseline":"...","target":"...","window":"..."}]'
 openspec_state_set_hypotheses "$TOKEN" "<slug>" "$HYPS"

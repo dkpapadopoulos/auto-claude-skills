@@ -243,6 +243,44 @@ test_openspec_ship_capability_heuristic() {
 test_openspec_ship_capability_heuristic
 
 # ---------------------------------------------------------------------------
+# Issue #157: session-token resolution must be own-session-first
+# ---------------------------------------------------------------------------
+# This skill both WRITES ~/.claude/.skill-openspec-state-<token> and READS it
+# back, from the model's Bash turn. The PLAN design guard in
+# skill-activation-hook.sh resolves its token payload-first (#51), while
+# ~/.claude/.skill-session-token is a shared last-writer-wins singleton — under
+# concurrent sessions it names a DIFFERENT conversation, so a singleton-resolved
+# write scatters into a file the guard never opens. The fix is doc-only, so it
+# regresses silently without these pins.
+test_openspec_ship_session_token_resolution() {
+    echo "-- test: session token resolved own-session-first (#157) --"
+
+    local content
+    content="$(cat "${SKILL_FILE}")"
+
+    assert_contains "ship: uses the shared own-session resolver (#157)" \
+        "resolve_own_session_token" "$content"
+    assert_contains "ship: sources session-token.sh, not a hand-rolled shape (#157)" \
+        "hooks/lib/session-token.sh" "$content"
+
+    # Every prose instruction must route through the resolver block, not tell
+    # the model to read the singleton directly.
+    assert_not_contains "ship: no prose 'read the singleton for the token' (#157)" \
+        'Read `~/.claude/.skill-session-token`' "$content"
+
+    # The singleton may only survive as the LAST-RESORT fallback (`... || cat ...`),
+    # never as a primary `TOKEN=$(cat ...)` assignment — in ANY quoting style, so a
+    # regression written with backticks or without quotes is caught too. grep -E,
+    # not a substring match: the fallback legitimately names the same path.
+    local naked="absent"
+    grep -Eq 'TOKEN=[^|]*(\$\(|`)[[:space:]]*cat[[:space:]]+~?/?[^|]*\.skill-session-token' "${SKILL_FILE}" \
+        && naked="present"
+    assert_equals "ship: singleton only as fallback, never first assignment (#157)" \
+        "absent" "$naked"
+}
+test_openspec_ship_session_token_resolution
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo ""

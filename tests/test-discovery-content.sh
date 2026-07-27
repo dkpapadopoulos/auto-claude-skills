@@ -55,6 +55,27 @@ assert_contains "SKILL runs the deterministic checker before presenting the brie
 assert_contains "SKILL points to the references schema" "references/assumption-audit.md" "${SKILL_CONTENT}"
 assert_contains "SKILL confirms criteria/weights before scores (two-step validation)" "BEFORE any scores" "${SKILL_CONTENT}"
 
+# --- Issue #157: openspec-state writer must resolve own-session-first ---
+# The PLAN design guard reads ~/.claude/.skill-openspec-state-<token> with a
+# payload-first token (#51); the shared singleton is last-writer-wins, so a
+# singleton-resolved write scatters into a file that reader never opens. The
+# fix is doc-only here, so without these pins it regresses silently.
+assert_contains "Step 5 resolves the token own-session-first (#157)" \
+    "resolve_own_session_token" "${SKILL_CONTENT}"
+assert_contains "Step 5 sources the shared resolver, not a hand-rolled shape (#157)" \
+    "hooks/lib/session-token.sh" "${SKILL_CONTENT}"
+# The singleton may only appear as the LAST-RESORT fallback (`... || cat ...`),
+# never as a primary `TOKEN=$(cat ...)` assignment — in ANY quoting style, so a
+# regression written with backticks or without quotes is caught too. grep -E,
+# not a substring match, because the fallback legitimately names the same path.
+if grep -Eq 'TOKEN=[^|]*(\$\(|`)[[:space:]]*cat[[:space:]]+~?/?[^|]*\.skill-session-token' "${SKILL_FILE}"; then
+    NAKED_SINGLETON="present"
+else
+    NAKED_SINGLETON="absent"
+fi
+assert_equals "singleton only as fallback, never the first assignment (#157)" \
+    "absent" "${NAKED_SINGLETON}"
+
 REF_FILE="${PROJECT_ROOT}/skills/product-discovery/references/assumption-audit.md"
 assert_file_exists "assumption-audit references schema exists" "${REF_FILE}"
 REF_CONTENT="$(cat "${REF_FILE}" 2>/dev/null)"
