@@ -78,6 +78,13 @@ assert_equals "attest did NOT scatter into the foreign singleton token" "absent"
 _rc=0; /bin/bash -c ". '${ATTEST_LIB}' && phase_attested '${_OWN_TOKEN}' openspec-ship" || _rc=$?
 assert_equals "gate-side read under own token sees the attestation" "0" "$_rc"
 
+# Derivation yielding an empty token must fall through to the singleton, not
+# return success with no output (that surfaces as "no session token" and denies
+# the attestation outright — the one leg here that did not degrade uniformly).
+rm -f "$_FOREIGN_FILE"
+CLAUDE_CODE_SESSION_ID="$_OWN_ID" /bin/bash -c ". '${ATTEST_LIB}'; session_token_from_transcript() { :; }; phase_attest openspec-ship 'empty derive'" 2>/dev/null
+assert_file_exists "empty derived token falls back to singleton" "$_FOREIGN_FILE"
+
 # Session id with no transcript on disk = stale/foreign/injected -> singleton.
 rm -f "$_FOREIGN_FILE"
 CLAUDE_CODE_SESSION_ID="psg-nosuch-22222222" /bin/bash -c ". '${ATTEST_LIB}' && phase_attest openspec-ship 'unverifiable env'" 2>/dev/null

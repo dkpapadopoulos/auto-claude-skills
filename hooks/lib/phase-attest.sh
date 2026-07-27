@@ -28,15 +28,19 @@ _PHASE_ATTEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # values, and keeps sandboxes with a synthetic HOME (this repo's own tests
 # included) on the singleton path.
 _phase_attest_token() {
-    local _id="${CLAUDE_CODE_SESSION_ID:-}" _t
+    local _id="${CLAUDE_CODE_SESSION_ID:-}" _t _tok
     case "$_id" in
         ""|*[!A-Za-z0-9_-]*) ;;
         *)
             for _t in "${HOME}"/.claude/projects/*/"${_id}.jsonl"; do
                 [ -f "$_t" ] || continue
                 command -v session_token_from_transcript >/dev/null 2>&1 || break
-                session_token_from_transcript "$_t"
-                return 0
+                # An empty derive must fall through like every other leg here —
+                # returning 0 with no output would surface as "no session token"
+                # instead of the singleton fallback the rest of this path grants.
+                _tok="$(session_token_from_transcript "$_t")"
+                [ -n "$_tok" ] && { printf '%s' "$_tok"; return 0; }
+                break
             done
             ;;
     esac
