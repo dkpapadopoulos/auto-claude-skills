@@ -392,7 +392,11 @@ EOF
             for _slot in executing-plans subagent-driven-development agent-team-execution; do
                 jq -e --arg s "$_slot" '.chain | index($s)' "${_COMP_STATE}" >/dev/null 2>&1 && _impl_in_chain=true
             done
-            if [ "${_impl_in_chain}" = "true" ] && [ "${_gc_is_push}" = "true" ]; then
+            # Spec requires this leg on a push OR merge; gating on push alone
+            # made the sampled population narrower than the declared one.
+            # Advisory-only, so this widens an advisory and never a deny.
+            if [ "${_impl_in_chain}" = "true" ] && \
+               { [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; }; then
                 for _slot in executing-plans subagent-driven-development agent-team-execution; do
                     [ "${_impl_ok}" = "false" ] && _ledger_has "$_slot" && _impl_ok=true
                     [ "${_impl_ok}" = "false" ] && _invoc_ok "$_slot" && _impl_ok=true
@@ -404,8 +408,10 @@ EOF
                 if [ "${_impl_ok}" = "false" ] && _diff_touches_material_source "${_proot}"; then
                     _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: phase_attest executing-plans \"<reason>\". (advisory; will become a deny after backtest)"
                     command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "push" "executing-plans"
+                    _impl_action="push"
+                    [ "${_gc_is_push}" != "true" ] && _impl_action="gh-merge"
                     if command -v implement_shadow_record >/dev/null 2>&1; then
-                        implement_shadow_record "push" "${_proot}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" || true
+                        implement_shadow_record "${_impl_action}" "${_proot}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" || true
                     fi
                 fi
             fi

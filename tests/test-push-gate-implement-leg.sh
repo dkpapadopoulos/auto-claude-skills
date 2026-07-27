@@ -91,13 +91,13 @@ branch_ledger_record "requesting-code-review"        "${_REPO}"
 branch_ledger_record "verification-before-completion" "${_REPO}"
 
 _mkinput() {
-    jq -n --arg tp "$_TPATH" \
-        '{"transcript_path":$tp,"tool_input":{"command":"git push origin HEAD"}}'
+    jq -n --arg tp "$_TPATH" --arg c "${1:-git push origin HEAD}" \
+        '{"transcript_path":$tp,"tool_input":{"command":$c}}'
 }
 # Guard runs with cwd = the fixture repo so _proot (git rev-parse --show-toplevel)
 # resolves to it and the material-source diff is computed as
 # merge-base(HEAD,main)..HEAD (i.e. the src/app.py commit on feat/impl).
-run_guard() { ( cd "${_REPO}" && _mkinput | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null ); }
+run_guard() { ( cd "${_REPO}" && _mkinput "${1:-}" | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null ); }
 
 # (a) IMPLEMENT in chain, material source in diff, no impl evidence ->
 #     advisory present, and NOT a deny attributable to IMPLEMENT (no deny at
@@ -165,6 +165,17 @@ assert_equals "second warn appends a second record" "2" \
     "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
 assert_equals "record_ids are distinct" "2" \
     "$(jq -r '.record_id' "$IMPLEMENT_SHADOW_LOG" | sort -u | wc -l | tr -d ' ')"
+
+# --- Stage C1: merge coverage (population fix) ----------------------------
+# Spec says the leg applies to a push OR merge; the code gated it on push only,
+# so gh-merge events were structurally missing from the sample.
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(run_guard 'gh pr merge 7 --squash')"
+assert_not_contains "merge path stays advisory (no deny from this leg)" '"deny"' "${out:-}"
+assert_equals "one shadow record written on a merge warn" "1" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+assert_contains "merge record carries action gh-merge" '"action":"gh-merge"' \
+    "$(cat "$IMPLEMENT_SHADOW_LOG")"
 
 export HOME="$_OLDHOME"
 rm -rf "${_REPO}" "${_THOME}" 2>/dev/null
