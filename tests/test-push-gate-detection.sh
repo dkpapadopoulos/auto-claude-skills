@@ -115,6 +115,35 @@ _assert_pred "git push still detected"            0 command_invokes_git_write 'g
 _assert_pred "git -C push still detected"         0 command_invokes_git_write 'git -C /tmp/x push'
 _assert_pred "phrase-in-echo still not detected"  1 command_invokes_git_write 'echo "git push"'
 
+# --- issue #155: newline inside a QUOTED argument is not a command boundary ---
+# _gc_split_segments is quote-aware for ; | & but emits segments newline-delimited,
+# and callers iterate with IFS=$'\n'. A newline inside quotes therefore survived the
+# quote-aware scan and became a boundary anyway, so a multi-line quoted payload with
+# a git-write-shaped LINE was classified as a real push. Measured in production: 5
+# of 26 deny records were `node .../codex-companion.mjs "<multi-line prompt>"`
+# invocations that push nothing (one of them deny:routing-governance, a push-only leg).
+_MLQ='node /x/codex.mjs task "review this
+git push origin main
+and tell me why"'
+_assert_pred "newline in quoted arg is not a boundary"   1 command_invokes_git_write "${_MLQ}"
+_MLQ_SQ="node /x/codex.mjs task 'steps:
+git push origin main
+done'"
+_assert_pred "newline in single-quoted arg either"       1 command_invokes_git_write "${_MLQ_SQ}"
+_MLQ_MUT='node /x/c.mjs task "plan:
+git commit -am x
+git push"'
+_assert_pred "quoted multi-line is not mutate-then-push" 1 command_git_mutate_before_push "${_MLQ_MUT}"
+
+# ...but a REAL newline-separated compound (outside quotes) MUST still be detected —
+# newline is a legitimate shell command separator; this is the other side of the fix.
+_REAL='cd /tmp/x
+git push origin HEAD'
+_assert_pred "unquoted newline compound still detected"  0 command_invokes_git_write "${_REAL}"
+_REAL_MUT='git commit -am x
+git push'
+_assert_pred "unquoted newline mutate-then-push caught"  0 command_git_mutate_before_push "${_REAL_MUT}"
+
 export HOME="$_OLDHOME"
 print_summary
 exit $?
