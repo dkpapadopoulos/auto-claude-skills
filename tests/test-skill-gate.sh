@@ -57,6 +57,63 @@ _rc=0; /bin/bash -c ". '${ATTEST_LIB}' && phase_attest openspec-ship 'array reco
 assert_equals "attest recovers from non-object JSON file (exit 0)" "0" "$_rc"
 assert_contains "attest recorded after array recovery" "array recovery" "$(cat "$ATTEST_FILE" 2>/dev/null)"
 
+# --- attest token resolution: own-session-first, singleton fallback (issue #151) ---
+# The writer used to read ONLY the last-writer-wins singleton while every
+# reader (skill-gate, guard, activation hook) resolves payload-first, so under
+# concurrent sessions attestations landed in a FOREIGN session's file and the
+# gate never saw them (live repro: 3 attests, 3 token files, 1 conversation).
+# CLAUDE_CODE_SESSION_ID names this conversation and equals the transcript
+# basename the readers derive their token from.
+_OWN_ID="psg-own-11111111"
+_OWN_TOKEN="session-${_OWN_ID}"
+_FOREIGN_FILE="$HOME/.claude/.skill-phase-attest-session-psg-foreign"
+mkdir -p "$HOME/.claude/projects/-psg-proj"
+: > "$HOME/.claude/projects/-psg-proj/${_OWN_ID}.jsonl"
+printf '%s' "session-psg-foreign" > "$HOME/.claude/.skill-session-token"
+rm -f "$HOME/.claude/.skill-phase-attest-${_OWN_TOKEN}" "$_FOREIGN_FILE"
+CLAUDE_CODE_SESSION_ID="$_OWN_ID" /bin/bash -c ". '${ATTEST_LIB}' && phase_attest openspec-ship 'token resolution'" 2>/dev/null
+assert_file_exists "attest writes under own session id, not the singleton" "$HOME/.claude/.skill-phase-attest-${_OWN_TOKEN}"
+assert_equals "attest did NOT scatter into the foreign singleton token" "absent" \
+    "$([ -f "$_FOREIGN_FILE" ] && echo present || echo absent)"
+_rc=0; /bin/bash -c ". '${ATTEST_LIB}' && phase_attested '${_OWN_TOKEN}' openspec-ship" || _rc=$?
+assert_equals "gate-side read under own token sees the attestation" "0" "$_rc"
+
+# Derivation yielding an empty token must fall through to the singleton, not
+# return success with no output (that surfaces as "no session token" and denies
+# the attestation outright — the one leg here that did not degrade uniformly).
+rm -f "$_FOREIGN_FILE"
+CLAUDE_CODE_SESSION_ID="$_OWN_ID" /bin/bash -c ". '${ATTEST_LIB}'; session_token_from_transcript() { :; }; phase_attest openspec-ship 'empty derive'" 2>/dev/null
+assert_file_exists "empty derived token falls back to singleton" "$_FOREIGN_FILE"
+
+# Session id with no transcript on disk = stale/foreign/injected -> singleton.
+rm -f "$_FOREIGN_FILE"
+CLAUDE_CODE_SESSION_ID="psg-nosuch-22222222" /bin/bash -c ". '${ATTEST_LIB}' && phase_attest openspec-ship 'unverifiable env'" 2>/dev/null
+assert_file_exists "unverifiable session id falls back to singleton" "$_FOREIGN_FILE"
+
+# Path-unsafe session id is rejected on charset before it can reach a filename.
+rm -f "$_FOREIGN_FILE"
+CLAUDE_CODE_SESSION_ID="../../evil" /bin/bash -c ". '${ATTEST_LIB}' && phase_attest openspec-ship 'path safety'" 2>/dev/null
+assert_file_exists "path-unsafe session id falls back to singleton" "$_FOREIGN_FILE"
+assert_equals "path-unsafe session id escaped no file out of ~/.claude" "absent" \
+    "$([ -f "$HOME/evil" ] && echo present || echo absent)"
+
+# No session id in the environment -> pre-fix behaviour, unchanged.
+rm -f "$_FOREIGN_FILE"
+env -u CLAUDE_CODE_SESSION_ID /bin/bash -c ". '${ATTEST_LIB}' && phase_attest openspec-ship 'no env'" 2>/dev/null
+assert_file_exists "absent session id falls back to singleton" "$_FOREIGN_FILE"
+
+# session-token.sh missing (it owns the token FORMAT) -> degrade to singleton,
+# never to a locally re-derived shape that could drift from the readers'.
+rm -f "$_FOREIGN_FILE"
+_LONE_DIR="$(mktemp -d /tmp/psg-lone-XXXXXX)"
+cp "$ATTEST_LIB" "$_LONE_DIR/phase-attest.sh"
+CLAUDE_CODE_SESSION_ID="$_OWN_ID" /bin/bash -c ". '${_LONE_DIR}/phase-attest.sh' && phase_attest openspec-ship 'lone lib'" 2>/dev/null
+assert_file_exists "missing session-token.sh degrades to singleton" "$_FOREIGN_FILE"
+rm -rf "$_LONE_DIR"
+
+rm -rf "$HOME/.claude/projects" "$HOME/.claude/.skill-phase-attest-${_OWN_TOKEN}" "$_FOREIGN_FILE"
+printf '%s' "$TOKEN" > "$HOME/.claude/.skill-session-token"
+
 # --- evidence predicate: invocation-record / ledger / attested / NEVER .completed ---
 # NOTE: the 0-byte/whitespace/array recovery asserts above each overwrite
 # $ATTEST_FILE, so the product-discovery + forged requesting-code-review

@@ -12,6 +12,11 @@ VAR="${REPO_ROOT}/scripts/verify-and-record.sh"
 
 setup_test_env
 export CLAUDE_PLUGIN_ROOT="${REPO_ROOT}"   # script resolves gate-gaming-check from the plugin root
+# The script honors an inherited SKILL_SESSION_TOKEN over the token file (#122),
+# and the project-verification skill tells callers to pass exactly that (#51) —
+# so running this suite from inside such a verification run redirected every
+# verdict away from $ARTIFACT and failed 20 asserts. T11 sets it per-invocation.
+unset SKILL_SESSION_TOKEN
 printf 'session-vartest' > "${TEST_HOME}/.claude/.skill-session-token"
 ARTIFACT="${TEST_HOME}/.claude/.skill-project-verified-session-vartest"
 
