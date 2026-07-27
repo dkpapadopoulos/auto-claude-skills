@@ -65,13 +65,23 @@ GG="$(git -c diff.mnemonicPrefix=false -c diff.noprefix=false diff "$BASE"...HEA
 
 ## Step 3: Emit evidence
 
-Write `~/.claude/.skill-project-verified-<token>` (resolve `<token>` from `~/.claude/.skill-session-token`, same namespace as `runtime-validation`'s marker):
+Write `~/.claude/.skill-project-verified-<token>` (same namespace as `runtime-validation`'s marker). Resolve `<token>` **own-session-first** — `~/.claude/.skill-session-token` is a shared last-writer-wins singleton, so under concurrent sessions it names a *different* conversation and the verdict lands where the push gate will never look (issue #156):
 
 ```bash
-TOKEN="$(cat ~/.claude/.skill-session-token 2>/dev/null || echo default)"
+TOKEN="${SKILL_SESSION_TOKEN:-}"                       # explicit override wins (#122)
+# CLAUDE_CODE_SESSION_ID IS the transcript basename the gate derives its token
+# from — trusted only when that transcript exists (stale/foreign/injected ids
+# and path-unsafe ones fall through to the singleton).
+if [ -z "$TOKEN" ] && printf '%s' "${CLAUDE_CODE_SESSION_ID:-}" | grep -qE '^[A-Za-z0-9_-]+$' \
+   && ls ~/.claude/projects/*/"${CLAUDE_CODE_SESSION_ID}.jsonl" >/dev/null 2>&1; then
+    TOKEN="session-${CLAUDE_CODE_SESSION_ID}"
+fi
+[ -n "$TOKEN" ] || TOKEN="$(cat ~/.claude/.skill-session-token 2>/dev/null || echo default)"
 SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 # write the JSON below to ~/.claude/.skill-project-verified-${TOKEN} (include "sha": "$SHA")
 ```
+
+Print the resolved `${TOKEN}` alongside the artifact path — a scattered write is then visible in-session instead of surfacing later as an unexplained push deny.
 
 ```json
 {

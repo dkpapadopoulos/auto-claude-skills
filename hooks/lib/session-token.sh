@@ -34,6 +34,37 @@ resolve_session_token_from_transcript() {
     printf '%s' "${_token}"
 }
 
+# resolve_own_session_token
+# For writers running in the MODEL's Bash turn (phase_attest, verify-and-record):
+# they have no hook payload, and the singleton is last-writer-wins across
+# concurrent sessions — so reading it back names a DIFFERENT conversation and
+# the write scatters into a token file the payload-first reader never opens
+# (issues #151, #156). CLAUDE_CODE_SESSION_ID names THIS conversation and IS
+# the transcript basename readers derive their token from, so the two resolve
+# identically. The env value is trusted only when a transcript for it exists at
+# ~/.claude/projects/*/<id>.jsonl: that rejects stale, foreign, and injected
+# values, and keeps synthetic-HOME sandboxes (this repo's own tests included)
+# on the singleton path. Path-unsafe ids are rejected on charset first.
+# Falls back to the singleton — never to a locally re-derived shape.
+resolve_own_session_token() {
+    local _id="${CLAUDE_CODE_SESSION_ID:-}" _t="" _tok=""
+    case "${_id}" in
+        ""|*[!A-Za-z0-9_-]*) ;;
+        *)
+            for _t in "${HOME}"/.claude/projects/*/"${_id}.jsonl"; do
+                [ -f "${_t}" ] || continue
+                # An empty derive falls through to the singleton like every
+                # other leg here — returning success with no output would
+                # surface to callers as "no session token" instead.
+                _tok="$(session_token_from_transcript "${_t}")"
+                [ -n "${_tok}" ] && { printf '%s' "${_tok}"; return 0; }
+                break
+            done
+            ;;
+    esac
+    cat "${HOME}/.claude/.skill-session-token" 2>/dev/null
+}
+
 # resolve_session_token <stdin-json>
 # Extracts transcript_path itself (one jq fork). Prefer the
 # *_from_transcript variant when the caller already has a jq call to batch into.

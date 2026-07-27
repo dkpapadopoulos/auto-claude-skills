@@ -52,9 +52,30 @@ PAIRS="$(awk '
 # the shared last-writer-wins singleton (~/.claude/.skill-session-token), and a
 # post-run read would bind the verdict to the SIBLING's token — the writer would
 # then measure PASS but the push gate, reading the own-token file, would still
-# deny. An explicit SKILL_SESSION_TOKEN (e.g. the invoking skill's hook-payload
-# token, per issue #51 payload-first resolution) wins over the file.
+# deny.
+#
+# Precedence, highest first:
+#   1. SKILL_SESSION_TOKEN — the explicit override contract (issue #122; e.g.
+#      the invoking skill's hook-payload token, per #51 payload-first).
+#   2. THIS conversation's own token, derived from CLAUDE_CODE_SESSION_ID and
+#      trusted only when a transcript for it exists (issue #156, shared with
+#      phase_attest via session-token.sh). Capturing the singleton alone was
+#      not enough: it is last-writer-wins ACROSS sessions, so a concurrent
+#      session stamping it before this run binds the verdict to a FOREIGN
+#      token. The push gate then finds nothing under its own token and can only
+#      be rescued by the cross-token bridge, which is EXACT-HEAD only — so the
+#      own-token ancestor acceptance that routing-governance relies on is
+#      silently lost, and one further commit turns a designed accept into a
+#      deny (measured live during PR #154: the singleton rotated through three
+#      foreign sessions in one conversation).
+#   3. The singleton — unchanged pre-fix behaviour, and the degradation path
+#      when the lib is unavailable or the session id is stale/unsafe/absent.
 TOKEN="${SKILL_SESSION_TOKEN:-}"
+if [ -z "$TOKEN" ] && [ -f "${PLUGIN_ROOT}/hooks/lib/session-token.sh" ]; then
+    # shellcheck source=../hooks/lib/session-token.sh
+    . "${PLUGIN_ROOT}/hooks/lib/session-token.sh" 2>/dev/null || true
+    command -v resolve_own_session_token >/dev/null 2>&1 && TOKEN="$(resolve_own_session_token)"
+fi
 [ -n "$TOKEN" ] || TOKEN="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null || echo default)"
 
 PASSED=""; FAILED=""; CNV=""; CMDS=""

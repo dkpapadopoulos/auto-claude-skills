@@ -23,27 +23,15 @@ _PHASE_ATTEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # sessions and regularly names a DIFFERENT conversation: pre-fix, three attests
 # minutes apart in one session landed in three token files and the gate — which
 # resolves payload-first — saw none of them (issue #151, reproduced live).
-# The env value is trusted only when a transcript for it exists at
-# ~/.claude/projects/*/<id>.jsonl: that rejects stale, foreign, or injected
-# values, and keeps sandboxes with a synthetic HOME (this repo's own tests
-# included) on the singleton path.
+# The resolution itself lives in session-token.sh (which owns the token format
+# and is shared with the other Bash-turn writer, issue #156); when that lib is
+# unavailable this degrades to the singleton, never to a locally re-derived
+# shape that could drift from the readers'.
 _phase_attest_token() {
-    local _id="${CLAUDE_CODE_SESSION_ID:-}" _t _tok
-    case "$_id" in
-        ""|*[!A-Za-z0-9_-]*) ;;
-        *)
-            for _t in "${HOME}"/.claude/projects/*/"${_id}.jsonl"; do
-                [ -f "$_t" ] || continue
-                command -v session_token_from_transcript >/dev/null 2>&1 || break
-                # An empty derive must fall through like every other leg here —
-                # returning 0 with no output would surface as "no session token"
-                # instead of the singleton fallback the rest of this path grants.
-                _tok="$(session_token_from_transcript "$_t")"
-                [ -n "$_tok" ] && { printf '%s' "$_tok"; return 0; }
-                break
-            done
-            ;;
-    esac
+    if command -v resolve_own_session_token >/dev/null 2>&1; then
+        resolve_own_session_token
+        return 0
+    fi
     cat "${HOME}/.claude/.skill-session-token" 2>/dev/null
 }
 
