@@ -12,8 +12,12 @@ _GC_SEP=$'\037'
 # Split a command into segments on UNQUOTED ; | & and NEWLINE boundaries
 # (covers ; | && || and multi-line scripts). Quote-aware: operators inside
 # '...' or "..." are literal, not boundaries. Emits segments separated by
-# ${_GC_SEP}. Backslash-escaping is not interpreted (rare here; a stray escaped
-# quote at worst mis-splits toward a false negative, the safe direction).
+# ${_GC_SEP}. Backslash escapes, `#` comments and heredoc bodies are NOT
+# interpreted, so this scanner's quoting model diverges from the shell's.
+# A false negative here is a gate BYPASS, i.e. the UNSAFE direction — the
+# opposite of what this comment claimed before #155. Callers must not rely on
+# the precise predicates when `command_parse_balanced` reports an unbalanced
+# parse; see `_gc_precise` in openspec-guard.sh.
 #
 # ISSUE #155 — two coupled requirements, BOTH needed:
 #  (1) Newline is a boundary HERE, in the quote-aware scanner, so a newline
@@ -33,6 +37,10 @@ _gc_split_segments() {
     local _s="$1" _seg="" _sq=0 _dq=0 _i=0 _n _c _out="" _nl
     _nl='
 '
+    # An empty separator would make IFS="" disable splitting in every caller —
+    # the whole command becomes one segment and a real `git add -A && git push`
+    # goes undetected. Re-assert it here so the fail direction stays CLOSED.
+    [ -n "${_GC_SEP:-}" ] || _GC_SEP=$'\037'
     _n=${#_s}
     while [ "${_i}" -lt "${_n}" ]; do
         _c="${_s:${_i}:1}"
@@ -52,7 +60,25 @@ _gc_split_segments() {
         esac
         _i=$((_i+1))
     done
+    # #155 follow-up — publish whether the scan ended INSIDE a quote. Making
+    # newline a boundary above put this scanner's quote state on the enforcement
+    # path for multi-line commands, and its model diverges from the shell's: it
+    # does not interpret backslash escapes, `#` comments, or heredoc bodies. An
+    # apostrophe in any of those (`# don't forget` + NL + a real push) leaves
+    # _sq set, so the newline is consumed literally and the push never becomes
+    # its own segment — an under-detect, i.e. a gate BYPASS. Callers must treat
+    # an unbalanced parse as untrustworthy and fail CLOSED.
+    if [ "${_sq}" -eq 1 ] || [ "${_dq}" -eq 1 ]; then _GC_UNBALANCED=1; else _GC_UNBALANCED=0; fi
     printf '%s' "${_out}${_seg}"
+}
+
+# command_parse_balanced <command>
+#   0 when the quote-aware scan of <command> ended with all quotes closed, i.e.
+#   the segmentation is trustworthy. 1 otherwise — callers should then use their
+#   fail-CLOSED substring path instead of the precise predicates.
+command_parse_balanced() {
+    _gc_split_segments "$1" >/dev/null
+    [ "${_GC_UNBALANCED:-1}" -eq 0 ]
 }
 
 # _gc_segment_git_sub <segment>

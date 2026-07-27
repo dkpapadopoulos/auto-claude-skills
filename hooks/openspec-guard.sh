@@ -43,7 +43,15 @@ _gc_precise() {
     # loaded, an unbound call would ERR-trap the whole gate open. Check both.
     [ "${#_COMMAND}" -le "${_GC_MAX}" ] && \
         command -v command_invokes_git_write >/dev/null 2>&1 && \
-        command -v command_invokes_gh_merge >/dev/null 2>&1
+        command -v command_invokes_gh_merge >/dev/null 2>&1 || return 1
+    # #155 follow-up: an UNBALANCED quote parse means the segmentation cannot be
+    # trusted (the scanner has no backslash/comment/heredoc model, so an
+    # apostrophe in `# don't forget` swallows the newline before a real push).
+    # Precise detection would UNDER-detect there — a gate bypass — so drop to
+    # the fail-closed substring path below. Older libs without the predicate
+    # keep the previous behaviour rather than failing open on `command -v`.
+    command -v command_parse_balanced >/dev/null 2>&1 || return 0
+    command_parse_balanced "${_COMMAND}"
 }
 
 # Fast path: only proceed for a REAL git commit/push or gh-merge invocation.
