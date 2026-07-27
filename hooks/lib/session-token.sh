@@ -50,15 +50,33 @@ resolve_session_token_from_transcript() {
 # SUBAGENT IDENTITY (measured 2026-07-28, issue #164 — closed as not-a-bug):
 # a local Task subagent does NOT get its own identity here. Its Bash calls are
 # children of the same `claude` process and inherit CLAUDE_CODE_SESSION_ID
-# verbatim, so a writer invoked inside a subagent resolves to the PARENT's
-# token — delegating phase_attest or a verdict write to a subagent is safe.
-# Structurally so, not incidentally: subagent transcripts live at
+# verbatim, so a writer invoked inside one resolves to the PARENT's token.
+# The env inheritance is the load-bearing fact, and it is an implementation
+# behavior of how subagent Bash is spawned — not a guarantee. The glob shape is
+# an independent backstop, not a second proof of parent-binding: subagent
+# transcripts live at
 # ~/.claude/projects/<proj>/<parent-session-id>/subagents/agent-<agentId>.jsonl,
-# keyed by agentId and three levels deeper than the single-wildcard glob below,
-# which therefore cannot match one even if a subagent did carry its own id.
-# (#164 originally asserted the opposite on a subagent's own say-so; two repros
-# — general-purpose/foreground and Explore/background — refuted it. NOT tested
-# for remote-isolation agents, which run elsewhere and may well differ.)
+# keyed by agentId and two directory levels deeper than the single-wildcard
+# glob's file position, so even if a subagent DID carry its own id the loop
+# below could not bind to it — it would fall through to the singleton (the
+# pre-#156 scatter hazard), never to a subagent-scoped file.
+#
+# What that does and does NOT license. `phase_attest` binds to nothing but the
+# token (no cwd, no git), so delegating it to a subagent is safe — with one
+# caveat: parallel subagents now share ONE attest file, and the read-modify-
+# write in phase-attest.sh can lose an entry under concurrent calls. A VERDICT
+# write is NOT equivalent: verify-and-record.sh takes ROOT from the caller's cwd
+# and binds `sha` to THAT tree's HEAD, while verdict_covers_head accepts an
+# ANCESTOR — so a worktree-isolated agent would write under the parent's token
+# but bound to the worktree's HEAD, and a clean verdict measured against a
+# different tree could gate a push it never ran against. Run verdict writes in
+# the same worktree as the push they cover.
+#
+# (#164 originally asserted the opposite of all this, on a subagent's own
+# say-so; two repros — general-purpose/foreground and Explore/background —
+# refuted it. Both ran in the parent's cwd: worktree- and remote-isolation
+# agents are UNTESTED here, and worktree isolation is exactly the case the
+# verdict caveat above is about.)
 resolve_own_session_token() {
     local _id="${CLAUDE_CODE_SESSION_ID:-}" _t="" _tok=""
     case "${_id}" in
