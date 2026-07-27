@@ -45,10 +45,18 @@ verdict_covers_head() {
 
 # verdict_resolve_token <session_token> <proj_root> — pick the token whose verdict
 # is authoritative for the CURRENT push. The verdict is bound to the COMMIT (sha),
-# NOT the session: the project-verification SKILL has no stdin payload and can only
-# derive its token from the shared singleton, while this hook resolves payload-first
-# (issue #51). Concurrent sessions clobber the singleton (last-writer-wins) so the two
-# tokens diverge and a token-scoped read would never find the verdict — a live deadlock.
+# NOT the session: the project-verification writer has no stdin payload, while this
+# hook resolves payload-first (issue #51). Concurrent sessions clobber the shared
+# singleton (last-writer-wins) so the two tokens diverge and a token-scoped read
+# would never find the verdict — a live deadlock.
+#
+# As of issue #156 the writer no longer *depends* on the singleton — it resolves
+# own-session-first via session-token.sh::resolve_own_session_token, the same
+# identity this hook derives — so the common case is now leg 1, not the bridge.
+# The bridge is still required and NOT redundant: it covers the degraded writer
+# paths (no CLAUDE_CODE_SESSION_ID, no transcript on disk, lib unavailable, an
+# explicit SKILL_SESSION_TOKEN) and genuinely cross-session verification. Do not
+# read this bridge as evidence that a Bash-turn writer cannot do better.
 #
 # Precedence (issue #123 — an EXACT-HEAD verdict, ANY token, outranks an own ANCESTOR one):
 #   1. Own token's verdict at EXACT HEAD -> use it (strongest own evidence; byte-identical

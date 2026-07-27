@@ -148,6 +148,70 @@ assert_file_exists "explicit env token binds the verdict" "${EXPLICIT_ARTIFACT}"
     || _record_fail "file token ignored when env token given" "verdict written under the file token"
 printf 'session-vartest' > "${TEST_HOME}/.claude/.skill-session-token"   # restore
 
+echo "== T12 (issue #156): own-session token beats the shared singleton =="
+# The singleton is last-writer-wins across concurrent sessions, so a verdict
+# bound to it lands under a FOREIGN conversation's token. The push gate reads
+# payload-first, finds nothing under its own token, and can then only be
+# rescued by the cross-token bridge — which is EXACT-HEAD only, silently
+# downgrading the own-token ancestor acceptance the routing-governance leg
+# depends on. CLAUDE_CODE_SESSION_ID names this conversation and equals the
+# transcript basename readers derive their token from.
+_OWN_ID="var-own-11111111"
+_OWN_ARTIFACT="${TEST_HOME}/.claude/.skill-project-verified-session-${_OWN_ID}"
+_SINGLETON_ARTIFACT="${TEST_HOME}/.claude/.skill-project-verified-session-foreign"
+R12="$(mkrepo "${TEST_TMPDIR}/r12")"
+printf 'substrate: local\ncommands:\n  - name: tests\n    run: echo ok\n' > "${R12}/.verify.yml"
+mkdir -p "${TEST_HOME}/.claude/projects/-var-proj"
+: > "${TEST_HOME}/.claude/projects/-var-proj/${_OWN_ID}.jsonl"
+printf 'session-foreign' > "${TEST_HOME}/.claude/.skill-session-token"
+rm -f "${_OWN_ARTIFACT}" "${_SINGLETON_ARTIFACT}"
+( cd "${R12}" && CLAUDE_CODE_SESSION_ID="${_OWN_ID}" /bin/bash "${VAR}" >/dev/null 2>&1 )
+assert_file_exists "verdict binds to the OWN session token" "${_OWN_ARTIFACT}"
+[ ! -f "${_SINGLETON_ARTIFACT}" ] && _record_pass "verdict did NOT scatter into the foreign singleton token" \
+    || _record_fail "verdict did NOT scatter into the foreign singleton token" "verdict written under the singleton"
+
+echo "== T13 (issue #156): unverifiable / unsafe / absent session id falls back to the singleton =="
+# A session id with no transcript on disk is stale, foreign, or injected —
+# it must never bind a verdict. Same degradation for a path-unsafe id and for
+# no id at all (pre-fix behaviour, unchanged).
+rm -f "${_SINGLETON_ARTIFACT}"
+( cd "${R12}" && CLAUDE_CODE_SESSION_ID="var-nosuch-22222222" /bin/bash "${VAR}" >/dev/null 2>&1 )
+assert_file_exists "session id with no transcript falls back to the singleton" "${_SINGLETON_ARTIFACT}"
+
+rm -f "${_SINGLETON_ARTIFACT}"
+( cd "${R12}" && CLAUDE_CODE_SESSION_ID="../../evil" /bin/bash "${VAR}" >/dev/null 2>&1 )
+assert_file_exists "path-unsafe session id falls back to the singleton" "${_SINGLETON_ARTIFACT}"
+[ ! -f "${TEST_HOME}/evil" ] && [ ! -f "${TEST_HOME}/.claude/projects/evil" ] \
+    && _record_pass "path-unsafe session id escaped no file out of ~/.claude" \
+    || _record_fail "path-unsafe session id escaped no file out of ~/.claude" "artifact written outside ~/.claude"
+
+rm -f "${_SINGLETON_ARTIFACT}"
+( cd "${R12}" && env -u CLAUDE_CODE_SESSION_ID /bin/bash "${VAR}" >/dev/null 2>&1 )
+assert_file_exists "absent session id falls back to the singleton" "${_SINGLETON_ARTIFACT}"
+
+echo "== T14 (issue #156): SKILL_SESSION_TOKEN still outranks the own-session id =="
+# The explicit override is the #122 contract and must stay highest precedence.
+_T14_ARTIFACT="${TEST_HOME}/.claude/.skill-project-verified-explicit-tok"
+rm -f "${_T14_ARTIFACT}" "${_OWN_ARTIFACT}" "${_SINGLETON_ARTIFACT}"
+( cd "${R12}" && CLAUDE_CODE_SESSION_ID="${_OWN_ID}" SKILL_SESSION_TOKEN=explicit-tok /bin/bash "${VAR}" >/dev/null 2>&1 )
+assert_file_exists "explicit env token outranks the own-session id" "${_T14_ARTIFACT}"
+[ ! -f "${_OWN_ARTIFACT}" ] && _record_pass "own-session id ignored when an explicit token is given" \
+    || _record_fail "own-session id ignored when an explicit token is given" "verdict written under the derived token"
+
+echo "== T15 (issue #156): missing session-token.sh degrades to the singleton =="
+# session-token.sh owns the token FORMAT; without it the script must fall back
+# to the singleton, never to a locally re-derived shape that could drift.
+_LONE_ROOT="${TEST_TMPDIR}/lone-plugin"
+mkdir -p "${_LONE_ROOT}/hooks/lib"
+rm -f "${_OWN_ARTIFACT}" "${_SINGLETON_ARTIFACT}"
+( cd "${R12}" && CLAUDE_PLUGIN_ROOT="${_LONE_ROOT}" CLAUDE_CODE_SESSION_ID="${_OWN_ID}" /bin/bash "${VAR}" >/dev/null 2>&1 )
+assert_file_exists "missing session-token.sh degrades to the singleton" "${_SINGLETON_ARTIFACT}"
+[ ! -f "${_OWN_ARTIFACT}" ] && _record_pass "no locally re-derived token shape when the lib is absent" \
+    || _record_fail "no locally re-derived token shape when the lib is absent" "verdict written under a re-derived token"
+
+rm -rf "${TEST_HOME}/.claude/projects"
+printf 'session-vartest' > "${TEST_HOME}/.claude/.skill-session-token"   # restore
+
 cd "${REPO_ROOT}" || true
 teardown_test_env
 print_summary

@@ -90,5 +90,15 @@ assert_contains "documents adequacy unverified semantics" "coverage-adequacy-che
 assert_contains "adequacy accepted only when exactly clean" "exactly clean" "${skill}"
 assert_contains "adequacy limits: coverage != effectiveness" "coverage is not effectiveness" "${skill}"
 
+# Issue #156: the manual (non-.verify.yml) verdict path must resolve the token
+# own-session-first. Telling the model to read the shared last-writer-wins
+# singleton was one of the two root causes — the doc half of the bug regresses
+# silently without a pin, and it must reuse the resolver rather than re-derive
+# the `session-<id>` format that session-token.sh owns.
+assert_contains "manual verdict path resolves own-session-first (#156)" \
+    "resolve_own_session_token" "${skill}"
+assert_contains "manual verdict path honors the explicit override first (#122)" \
+    "SKILL_SESSION_TOKEN" "${skill}"
+
 print_summary
 exit $?

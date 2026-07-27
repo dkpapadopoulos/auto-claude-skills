@@ -56,6 +56,21 @@ if [ -f "${LIB}" ]; then
     # GNU prints help text) — `--` pins identical fail-safe output on both.
     U5="$(session_token_from_transcript "-A.jsonl")"
     assert_equals "U5: dash-leading transcript basename handled via --" "session--A" "${U5}"
+
+    # U6–U9 (issues #151, #156): resolve_own_session_token is the Bash-turn
+    # writers' resolver (phase_attest, verify-and-record) — they have no
+    # payload, so they derive from CLAUDE_CODE_SESSION_ID instead, trusting it
+    # only when a transcript for that id exists on disk.
+    mkdir -p "${HOME}/.claude/projects/-own-proj"
+    : > "${HOME}/.claude/projects/-own-proj/conv-OWN.jsonl"
+    U6="$(CLAUDE_CODE_SESSION_ID="conv-OWN"; resolve_own_session_token)"
+    assert_equals "U6: own session id beats the singleton" "session-conv-OWN" "${U6}"
+    U7="$(CLAUDE_CODE_SESSION_ID="conv-NOSUCH"; resolve_own_session_token)"
+    assert_equals "U7: session id with no transcript -> singleton" "singleton-token" "${U7}"
+    U8="$(CLAUDE_CODE_SESSION_ID="../../evil"; resolve_own_session_token)"
+    assert_equals "U8: path-unsafe session id -> singleton" "singleton-token" "${U8}"
+    U9="$(unset CLAUDE_CODE_SESSION_ID; resolve_own_session_token)"
+    assert_equals "U9: absent session id -> singleton" "singleton-token" "${U9}"
 else
     _record_fail "U1: hooks/lib/session-token.sh exists" "missing ${LIB}"
 fi

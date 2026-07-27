@@ -65,13 +65,26 @@ GG="$(git -c diff.mnemonicPrefix=false -c diff.noprefix=false diff "$BASE"...HEA
 
 ## Step 3: Emit evidence
 
-Write `~/.claude/.skill-project-verified-<token>` (resolve `<token>` from `~/.claude/.skill-session-token`, same namespace as `runtime-validation`'s marker):
+Write `~/.claude/.skill-project-verified-<token>` (same namespace as `runtime-validation`'s marker). Resolve `<token>` **own-session-first** — `~/.claude/.skill-session-token` is a shared last-writer-wins singleton, so under concurrent sessions it names a *different* conversation and the verdict lands where the push gate will never look (issue #156):
 
 ```bash
-TOKEN="$(cat ~/.claude/.skill-session-token 2>/dev/null || echo default)"
+TOKEN="${SKILL_SESSION_TOKEN:-}"                       # explicit override wins (#122)
+# resolve_own_session_token derives this conversation's own token from
+# CLAUDE_CODE_SESSION_ID (which IS the transcript basename the gate derives
+# its token from), trusting it only when that transcript exists — stale,
+# foreign, injected, and path-unsafe ids fall through to the singleton. Do NOT
+# re-derive `session-<id>` by hand here: session-token.sh owns that format.
+STL="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}/hooks/lib/session-token.sh"
+if [ -z "$TOKEN" ] && [ -f "$STL" ]; then
+    . "$STL" 2>/dev/null || true
+    command -v resolve_own_session_token >/dev/null 2>&1 && TOKEN="$(resolve_own_session_token)"
+fi
+[ -n "$TOKEN" ] || TOKEN="$(cat ~/.claude/.skill-session-token 2>/dev/null || echo default)"
 SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 # write the JSON below to ~/.claude/.skill-project-verified-${TOKEN} (include "sha": "$SHA")
 ```
+
+Print the resolved `${TOKEN}` alongside the artifact path — a scattered write is then visible in-session instead of surfacing later as an unexplained push deny.
 
 ```json
 {
