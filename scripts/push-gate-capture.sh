@@ -76,7 +76,15 @@ case "${_decision}" in
       _rout="$(PUSH_GATE_CAPTURE_DISABLE=1 PUSH_GATE_CAPTURE_REPLAY=1 CLAUDE_PLUGIN_ROOT="${_proot}" bash "${_guard}" <<<"${_input}" 2>"${_rerr}")"
       _replay_len="${#_rout}"
       _replay_stderr="$(cut -c1-1000 < "${_rerr}" 2>/dev/null | tr '\n' ' ')"; rm -f "${_rerr}" 2>/dev/null
-      case "${_rout}" in
+      # The guard emits its deny JSON via `jq -n`, which PRETTY-PRINTS
+      # ("permissionDecision": "deny" — space after the colon, own line), so a
+      # compact needle matched against raw stdout can NEVER hit a real deny.
+      # Pre-fix that mismatch silently classified every live deny as "allow",
+      # i.e. "drift confirmed" on 24/24 field records. Strip whitespace first so
+      # classification is format-agnostic (compact or pretty). The sentinel has
+      # no whitespace, so it is unaffected. Pure bash — no fork in the trap.
+      _rnorm="${_rout//[[:space:]]/}"
+      case "${_rnorm}" in
         *'"permissionDecision":"deny"'*) _replay_decision="deny" ;;
         *__PGC_EVALUATED__*)             _replay_decision="allow" ;;
         *) _replay_decision="incomplete"; _err="${_err}${_err:+;}replay_incomplete" ;;
