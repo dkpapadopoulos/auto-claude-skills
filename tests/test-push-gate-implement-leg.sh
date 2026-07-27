@@ -206,6 +206,25 @@ assert_equals "one shadow record written on a merge warn" "1" \
 assert_contains "merge record carries action gh-merge" '"action":"gh-merge"' \
     "$(cat "$IMPLEMENT_SHADOW_LOG")"
 
+# --- Stage C1: an unwritable shadow log must not change the decision -------
+# The recorder is diagnostic. If it cannot write, the guard's stdout must be
+# byte-identical to a healthy run and the exit code must stay 0.
+: > "$IMPLEMENT_SHADOW_LOG"
+_healthy="$(run_guard)"
+export IMPLEMENT_SHADOW_LOG="/nonexistent-dir-$$/shadow.jsonl"
+_broken="$(run_guard)"; _brc=$?
+assert_equals "unwritable shadow log leaves stdout byte-identical" "${_healthy}" "${_broken}"
+assert_equals "unwritable shadow log still exits 0" "0" "${_brc}"
+export IMPLEMENT_SHADOW_LOG="$HOME/.claude/.push-implement-shadow.jsonl"
+
+# Satisfied IMPLEMENT evidence must emit nothing at all.
+: > "$IMPLEMENT_SHADOW_LOG"
+source "${PROJECT_ROOT}/hooks/lib/phase-attest.sh" 2>/dev/null
+phase_attest executing-plans "shadow-negative-test" >/dev/null 2>&1
+out="$(run_guard)"
+assert_equals "no shadow record when IMPLEMENT evidence exists" "0" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | tr -d ' ')"
+
 export HOME="$_OLDHOME"
 rm -rf "${_REPO}" "${_THOME}" 2>/dev/null
 print_summary
