@@ -32,6 +32,10 @@ case "${_COMMAND}" in *git*|*gh*) ;; *) exit 0 ;; esac
 _GC_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 [ -f "${_GC_ROOT}/hooks/lib/git-command.sh" ] && \
     . "${_GC_ROOT}/hooks/lib/git-command.sh" 2>/dev/null || true
+# Diagnostic-only shadow recorder (Stage C1). Guarded source: absence must not
+# affect the gate, and it is deliberately absent from _GATE_ENFORCE_LIBS.
+[ -f "${_GC_ROOT}/hooks/lib/implement-shadow.sh" ] && \
+    . "${_GC_ROOT}/hooks/lib/implement-shadow.sh" 2>/dev/null || true
 
 # Bound the worst case: the precise detector is an O(n^2) char-scan parser, so
 # only use it below a size cap; above it, fall back to the (fail-closed)
@@ -388,7 +392,11 @@ EOF
             for _slot in executing-plans subagent-driven-development agent-team-execution; do
                 jq -e --arg s "$_slot" '.chain | index($s)' "${_COMP_STATE}" >/dev/null 2>&1 && _impl_in_chain=true
             done
-            if [ "${_impl_in_chain}" = "true" ] && [ "${_gc_is_push}" = "true" ]; then
+            # Spec requires this leg on a push OR merge; gating on push alone
+            # made the sampled population narrower than the declared one.
+            # Advisory-only, so this widens an advisory and never a deny.
+            if [ "${_impl_in_chain}" = "true" ] && \
+               { [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; }; then
                 for _slot in executing-plans subagent-driven-development agent-team-execution; do
                     [ "${_impl_ok}" = "false" ] && _ledger_has "$_slot" && _impl_ok=true
                     [ "${_impl_ok}" = "false" ] && _invoc_ok "$_slot" && _impl_ok=true
@@ -399,7 +407,10 @@ EOF
                 done
                 if [ "${_impl_ok}" = "false" ] && _diff_touches_material_source "${_proot}"; then
                     _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: phase_attest executing-plans \"<reason>\". (advisory; will become a deny after backtest)"
-                    command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "push" "executing-plans"
+                    command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "${_pe_action}" "executing-plans"
+                    if command -v implement_shadow_record >/dev/null 2>&1; then
+                        implement_shadow_record "${_pe_action}" "${_proot}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" || true
+                    fi
                 fi
             fi
 
