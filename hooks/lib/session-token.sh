@@ -47,15 +47,18 @@ resolve_session_token_from_transcript() {
 # on the singleton path. Path-unsafe ids are rejected on charset first.
 # Falls back to the singleton — never to a locally re-derived shape.
 #
-# KNOWN LIMIT (subagent identity): a Task subagent gets its own
-# CLAUDE_CODE_SESSION_ID and its own transcript on disk, so a writer called
-# INSIDE a subagent resolves to the SUBAGENT's token, which the main session's
-# UserPromptSubmit-side readers never open. Pre-#156 the singleton happened to
-# cover that case, since the main session re-stamps it on every prompt. This is
-# still the right trade: the singleton's coverage was accidental and cost
-# correctness under concurrent sessions, the far more common case. State that
-# must reach the main session's readers should be written from the main turn,
-# not delegated to a subagent.
+# SUBAGENT IDENTITY (measured 2026-07-28, issue #164 — closed as not-a-bug):
+# a local Task subagent does NOT get its own identity here. Its Bash calls are
+# children of the same `claude` process and inherit CLAUDE_CODE_SESSION_ID
+# verbatim, so a writer invoked inside a subagent resolves to the PARENT's
+# token — delegating phase_attest or a verdict write to a subagent is safe.
+# Structurally so, not incidentally: subagent transcripts live at
+# ~/.claude/projects/<proj>/<parent-session-id>/subagents/agent-<agentId>.jsonl,
+# keyed by agentId and three levels deeper than the single-wildcard glob below,
+# which therefore cannot match one even if a subagent did carry its own id.
+# (#164 originally asserted the opposite on a subagent's own say-so; two repros
+# — general-purpose/foreground and Explore/background — refuted it. NOT tested
+# for remote-isolation agents, which run elsewhere and may well differ.)
 resolve_own_session_token() {
     local _id="${CLAUDE_CODE_SESSION_ID:-}" _t="" _tok=""
     case "${_id}" in
