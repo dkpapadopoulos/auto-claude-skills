@@ -131,6 +131,41 @@ out="$(run_guard)"
 assert_not_contains "no impl-slot in chain => no IMPLEMENT advisory" "IMPLEMENT:" "${out:-}"
 assert_not_contains "no impl-slot in chain => no deny"                '"deny"'    "${out:-}"
 
+# --- Stage C1: shadow record on a push warn -------------------------------
+# The warn branch must leave an adjudicable JSONL record. Uses the same seeded
+# HOME/chain as the advisory assertions above (IMPLEMENT unsatisfied, REVIEW and
+# VERIFY pre-satisfied), so a record here is attributable to the IMPLEMENT leg.
+# Restore that precondition: (c) narrowed .chain to exclude the impl-slot skill
+# for its own assertion, and (b) left an executing-plans attestation on disk —
+# either alone would keep the leg from firing here, so both are reset.
+printf '%s' '{"chain":["requesting-code-review","verification-before-completion","executing-plans"],"current_index":0,"completed":[]}' \
+    > "${_COMP}"
+rm -f "$HOME/.claude/.skill-phase-attest-${_TOK}"
+export IMPLEMENT_SHADOW_LOG="$HOME/.claude/.push-implement-shadow.jsonl"
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(run_guard)"
+assert_not_contains "shadow emission does not turn the leg into a deny" '"deny"' "${out:-}"
+assert_equals "one shadow record written on a push warn" "1" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+_rec="$(cat "$IMPLEMENT_SHADOW_LOG")"
+assert_json_valid "shadow record is valid json" "$IMPLEMENT_SHADOW_LOG"
+assert_contains "record names the gate"        '"gate":"push-implement"' "${_rec}"
+assert_contains "record marks a would-block"   '"would_block":true'      "${_rec}"
+assert_contains "record carries action push"   '"action":"push"'         "${_rec}"
+assert_contains "record carries schema_version"    '"schema_version":1'    "${_rec}"
+assert_contains "record carries predicate_version" '"predicate_version":1' "${_rec}"
+assert_contains "record carries a record_id"   '"record_id":'            "${_rec}"
+assert_contains "record carries a ts"          '"ts":'                   "${_rec}"
+assert_contains "record carries the transcript pointer" '"transcript_path":' "${_rec}"
+assert_not_contains "record never carries raw command text" '"command":' "${_rec}"
+
+# record_id must be unique across events, not a repeat of a constant.
+out="$(run_guard)"
+assert_equals "second warn appends a second record" "2" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+assert_equals "record_ids are distinct" "2" \
+    "$(jq -r '.record_id' "$IMPLEMENT_SHADOW_LOG" | sort -u | wc -l | tr -d ' ')"
+
 export HOME="$_OLDHOME"
 rm -rf "${_REPO}" "${_THOME}" 2>/dev/null
 print_summary

@@ -32,6 +32,10 @@ case "${_COMMAND}" in *git*|*gh*) ;; *) exit 0 ;; esac
 _GC_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 [ -f "${_GC_ROOT}/hooks/lib/git-command.sh" ] && \
     . "${_GC_ROOT}/hooks/lib/git-command.sh" 2>/dev/null || true
+# Diagnostic-only shadow recorder (Stage C1). Guarded source: absence must not
+# affect the gate, and it is deliberately absent from _GATE_ENFORCE_LIBS.
+[ -f "${_GC_ROOT}/hooks/lib/implement-shadow.sh" ] && \
+    . "${_GC_ROOT}/hooks/lib/implement-shadow.sh" 2>/dev/null || true
 
 # Bound the worst case: the precise detector is an O(n^2) char-scan parser, so
 # only use it below a size cap; above it, fall back to the (fail-closed)
@@ -400,6 +404,9 @@ EOF
                 if [ "${_impl_ok}" = "false" ] && _diff_touches_material_source "${_proot}"; then
                     _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: phase_attest executing-plans \"<reason>\". (advisory; will become a deny after backtest)"
                     command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "push" "executing-plans"
+                    if command -v implement_shadow_record >/dev/null 2>&1; then
+                        implement_shadow_record "push" "${_proot}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" || true
+                    fi
                 fi
             fi
 
