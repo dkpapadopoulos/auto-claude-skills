@@ -5,12 +5,42 @@
 # a parse it cannot handle returns 1 (not a write) — callers that need
 # fail-CLOSED behavior keep a substring fallback.
 
-# Split a command into segments on UNQUOTED ; | & boundaries (covers ; | && ||).
-# Quote-aware: operators inside '...' or "..." are literal, not boundaries. Emits
-# one segment per line. Backslash-escaping is not interpreted (rare here; a stray
-# escaped quote at worst mis-splits toward a false negative, the safe direction).
+# Segment record separator: US (\x1f), per the repo's field-separator
+# convention. MUST NOT be newline — see issue #155 below.
+_GC_SEP=$'\037'
+
+# Split a command into segments on UNQUOTED ; | & and NEWLINE boundaries
+# (covers ; | && || and multi-line scripts). Quote-aware: operators inside
+# '...' or "..." are literal, not boundaries. Emits segments separated by
+# ${_GC_SEP}. Backslash escapes, `#` comments and heredoc bodies are NOT
+# interpreted, so this scanner's quoting model diverges from the shell's.
+# A false negative here is a gate BYPASS, i.e. the UNSAFE direction — the
+# opposite of what this comment claimed before #155. Callers must not rely on
+# the precise predicates when `command_parse_balanced` reports an unbalanced
+# parse; see `_gc_precise` in openspec-guard.sh.
+#
+# ISSUE #155 — two coupled requirements, BOTH needed:
+#  (1) Newline is a boundary HERE, in the quote-aware scanner, so a newline
+#      inside quotes is consumed literally by the _sq/_dq branches while an
+#      unquoted one still splits a genuine multi-line compound.
+#  (2) The emitted record separator is US, NOT newline. A quoted segment
+#      legitimately CONTAINS newlines, so a newline-delimited output format is
+#      re-split by the callers' IFS loop no matter how careful this scanner is —
+#      which is exactly how the original bug survived (1) alone.
+# Pre-fix, a payload like
+#   node x.mjs task "review this<NL>git push origin main<NL>and tell me why"
+# yielded a bare `git push origin main` segment and was classified as a real
+# push. Measured in production: 5 of 26 deny records were Codex invocations
+# that push nothing (one was deny:routing-governance, a push-only leg).
+# PAIRED: every caller iterating this output must use IFS="${_GC_SEP}".
 _gc_split_segments() {
-    local _s="$1" _seg="" _sq=0 _dq=0 _i=0 _n _c _out=""
+    local _s="$1" _seg="" _sq=0 _dq=0 _i=0 _n _c _out="" _nl
+    _nl='
+'
+    # An empty separator would make IFS="" disable splitting in every caller —
+    # the whole command becomes one segment and a real `git add -A && git push`
+    # goes undetected. Re-assert it here so the fail direction stays CLOSED.
+    [ -n "${_GC_SEP:-}" ] || _GC_SEP=$'\037'
     _n=${#_s}
     while [ "${_i}" -lt "${_n}" ]; do
         _c="${_s:${_i}:1}"
@@ -25,13 +55,30 @@ _gc_split_segments() {
         case "${_c}" in
             "'") _sq=1; _seg="${_seg}${_c}" ;;
             '"') _dq=1; _seg="${_seg}${_c}" ;;
-            ';'|'|'|'&') _out="${_out}${_seg}
-"; _seg="" ;;
+            ';'|'|'|'&'|"${_nl}") _out="${_out}${_seg}${_GC_SEP}"; _seg="" ;;
             *) _seg="${_seg}${_c}" ;;
         esac
         _i=$((_i+1))
     done
-    printf '%s\n' "${_out}${_seg}"
+    # #155 follow-up — publish whether the scan ended INSIDE a quote. Making
+    # newline a boundary above put this scanner's quote state on the enforcement
+    # path for multi-line commands, and its model diverges from the shell's: it
+    # does not interpret backslash escapes, `#` comments, or heredoc bodies. An
+    # apostrophe in any of those (`# don't forget` + NL + a real push) leaves
+    # _sq set, so the newline is consumed literally and the push never becomes
+    # its own segment — an under-detect, i.e. a gate BYPASS. Callers must treat
+    # an unbalanced parse as untrustworthy and fail CLOSED.
+    if [ "${_sq}" -eq 1 ] || [ "${_dq}" -eq 1 ]; then _GC_UNBALANCED=1; else _GC_UNBALANCED=0; fi
+    printf '%s' "${_out}${_seg}"
+}
+
+# command_parse_balanced <command>
+#   0 when the quote-aware scan of <command> ended with all quotes closed, i.e.
+#   the segmentation is trustworthy. 1 otherwise — callers should then use their
+#   fail-CLOSED substring path instead of the precise predicates.
+command_parse_balanced() {
+    _gc_split_segments "$1" >/dev/null
+    [ "${_GC_UNBALANCED:-1}" -eq 0 ]
 }
 
 # _gc_segment_git_sub <segment>
@@ -111,8 +158,7 @@ command_invokes_git_write() {
     _gc_want="${2:-push commit}"
     _gc_segs="$(_gc_split_segments "${_gc_cmd}")"
     _gc_oldifs="$IFS"
-    IFS='
-'
+    IFS="${_GC_SEP}"
     for _gc_seg in ${_gc_segs}; do
         IFS="${_gc_oldifs}"
         _gc_sub="$(_gc_segment_git_sub "${_gc_seg}")"
@@ -124,8 +170,7 @@ command_invokes_git_write() {
                 fi
             done
         fi
-        IFS='
-'
+        IFS="${_GC_SEP}"
     done
     IFS="${_gc_oldifs}"
     return 1
@@ -142,8 +187,7 @@ command_invokes_gh_merge() {
     local _gc_segs _gc_oldifs _gc_seg _gc_w1 _gc_w2 _gc_t
     _gc_segs="$(_gc_split_segments "$1")"
     _gc_oldifs="$IFS"
-    IFS='
-'
+    IFS="${_GC_SEP}"
     for _gc_seg in ${_gc_segs}; do
         IFS="${_gc_oldifs}"
         # shellcheck disable=SC2086
@@ -224,8 +268,7 @@ command_invokes_gh_merge() {
                     ;;
             esac
         fi
-        IFS='
-'
+        IFS="${_GC_SEP}"
     done
     IFS="${_gc_oldifs}"
     return 1
@@ -243,8 +286,7 @@ command_git_mutate_before_push() {
     _gc_segs="$(_gc_split_segments "$1")"
     _gc_seen=0
     _gc_oldifs="$IFS"
-    IFS='
-'
+    IFS="${_GC_SEP}"
     for _gc_seg in ${_gc_segs}; do
         IFS="${_gc_oldifs}"
         _gc_sub="$(_gc_segment_git_sub "${_gc_seg}")"
@@ -255,8 +297,7 @@ command_git_mutate_before_push() {
                     IFS="${_gc_oldifs}"; return 0
                 fi ;;
         esac
-        IFS='
-'
+        IFS="${_GC_SEP}"
     done
     IFS="${_gc_oldifs}"
     return 1
