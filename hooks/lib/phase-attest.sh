@@ -8,17 +8,38 @@
 
 PHASE_ATTEST_GATING_EXCLUDE="requesting-code-review verification-before-completion"
 
-# _phase_attest_token: singleton read (attest is invoked from the model's
-# Bash turn, which has no hook payload; the singleton was re-stamped by the
-# activation hook this prompt — issue #51 narrowing applies).
-# CONCURRENCY NOTE (PR #120 review R3): under concurrent sessions the
-# singleton is last-writer-wins, so an attestation can land under the
-# sibling session's token within the one-prompt race window. Attestations
-# are therefore advisory evidence, not authoritative gating signals — the
-# reader-side lock already guarantees the gating milestones
-# (requesting-code-review, verification-before-completion) can never be
-# satisfied this way regardless of token mixups.
+# session-token.sh owns the `session-<transcript-basename>` format ("defined
+# HERE and only here") — source it rather than re-deriving the shape below.
+# Guarded: if it is unavailable, token resolution degrades to the singleton.
+_PHASE_ATTEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[ -f "${_PHASE_ATTEST_DIR}/session-token.sh" ] && . "${_PHASE_ATTEST_DIR}/session-token.sh" 2>/dev/null || true
+
+# _phase_attest_token: resolve OUR conversation's token the same way every
+# reader does (payload-first, issue #51) rather than trusting the singleton.
+# attest runs in the model's Bash turn, which has no hook payload — but it does
+# carry CLAUDE_CODE_SESSION_ID, and the reader-side token is
+# session-<transcript basename> where that basename IS the session id, so the
+# two resolve identically. The singleton is last-writer-wins across concurrent
+# sessions and regularly names a DIFFERENT conversation: pre-fix, three attests
+# minutes apart in one session landed in three token files and the gate — which
+# resolves payload-first — saw none of them (issue #151, reproduced live).
+# The env value is trusted only when a transcript for it exists at
+# ~/.claude/projects/*/<id>.jsonl: that rejects stale, foreign, or injected
+# values, and keeps sandboxes with a synthetic HOME (this repo's own tests
+# included) on the singleton path.
 _phase_attest_token() {
+    local _id="${CLAUDE_CODE_SESSION_ID:-}" _t
+    case "$_id" in
+        ""|*[!A-Za-z0-9_-]*) ;;
+        *)
+            for _t in "${HOME}"/.claude/projects/*/"${_id}.jsonl"; do
+                [ -f "$_t" ] || continue
+                command -v session_token_from_transcript >/dev/null 2>&1 || break
+                session_token_from_transcript "$_t"
+                return 0
+            done
+            ;;
+    esac
     cat "${HOME}/.claude/.skill-session-token" 2>/dev/null
 }
 
@@ -44,9 +65,11 @@ phase_attest() {
         '. + {($s): {reason: $r, ts: (now | todate)}}' 2>/dev/null)" || return 1
     [ -z "$tmp" ] && { echo "[phase-attest] internal: merge produced no output" >&2; return 1; }
     printf '%s\n' "$tmp" > "${f}.tmp.$$" 2>/dev/null && mv "${f}.tmp.$$" "$f" 2>/dev/null || return 1
-    printf '%s gate=attest decision=recorded step=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$step" \
+    # Token is logged and echoed: a scattered write is then visible in the
+    # telemetry and to the model, instead of failing silently at the gate (#151).
+    printf '%s gate=attest decision=recorded step=%s token=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$step" "$token" \
         >> "${HOME}/.claude/.phase-gate-events.log" 2>/dev/null || true
-    echo "[phase-attest] recorded skip of '$step' — visible at REVIEW" >&2
+    echo "[phase-attest] recorded skip of '$step' under ${token} — visible at REVIEW" >&2
     return 0
 }
 
