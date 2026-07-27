@@ -41,11 +41,15 @@ Three homes were considered; two are wrong:
   "material_source": true,
   "impl_evidence_kind": "none",
   "session_token": "<token>",
-  "transcript_path": "<path>",
-  "guard_cksum": "<cksum>",
-  "plugin_version": "<version>"
+  "transcript_path": "<path>"
 }
 ```
+
+`guard_cksum` and `plugin_version` were considered for the schema but are
+**deferred, not emitted by v1** — `hooks/lib/implement-shadow.sh`'s
+`implement_shadow_record` does not construct or write either field today.
+Add them in a follow-up if drift-across-guard-versions turns out to matter
+for adjudication.
 
 - **`record_id`** is a content hash over `ts + pid + session_token +
   command_sha + action + nonce`. A first draft used only `ts + pid +
@@ -55,9 +59,12 @@ Three homes were considered; two are wrong:
   predicate changes, this increments, and records from an older predicate MUST
   NOT be pooled with newer ones. Without it a future refactor silently mixes
   populations.
-- **`impl_evidence_kind`** records which evidence checks were tried and missed
-  (ledger / invocation / bridge / attestation), so an adjudicator can see *why*
-  the leg fired without re-deriving it.
+- **`impl_evidence_kind`** is intended to record which evidence checks were
+  tried and missed (ledger / invocation / bridge / attestation), so an
+  adjudicator can see *why* the leg fired without re-deriving it. **As built,
+  the Check-0 call site hardcodes the literal `"none"`** — by construction
+  that is the only value v1 can ever produce, not a summary of which checks
+  ran. Deriving the real per-check outcome is future work.
 - **`transcript_path`** is the adjudication pointer. Raw command text stays
   unlogged — the existing secret-safety posture is unchanged, and the transcript
   carries richer context than a command line anyway.
@@ -74,7 +81,23 @@ facts before dropping them.
 
 Check 0 currently requires `_gc_is_push = true`. The spec requires the leg on a
 push **or merge**. Extend the condition to accept `_gc_is_ghmerge`. The leg stays
-advisory, so this widens an advisory, never a deny.
+advisory, so this widens an advisory, never a deny. Widening the leg only makes
+the record get *written*; it does not make the advisory text reach the user on
+a merge outside SHIP phase — `_flush_push_advisories` is still push-gated, so
+that half of the population fix is issue #161, tracked and deliberately
+deferred, not shipped here.
+
+**Diff-base caveat.** `_diff_touches_material_source` resolves `material_source`
+via `_branch_diff_names` — the same branch-local `merge-base(mainline,HEAD)..HEAD`
+delta that routing-governance, `_flush_push_advisories`, and the evaluator
+surface all use, each with an explicit comment that this delta is unrelated to
+the PR actually being merged for `gh pr merge <other-branch>`. A merge record's
+`material_source`, `branch`, and `head_sha` therefore describe the invoking
+session's *local* branch state, not the merged PR's diff — the two can name
+different content entirely (merging someone else's PR from a session sitting on
+an unrelated branch). Merge records must be segmented at adjudication time on
+this basis; a `diff_base` field that names what was actually diffed is a
+follow-up, not built here.
 
 ### Failure posture
 

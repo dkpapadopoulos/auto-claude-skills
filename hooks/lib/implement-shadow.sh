@@ -32,6 +32,10 @@ implement_shadow_record() {
     [ -n "${_ts}" ] || return 0
     # Nonce keeps record_id unique when ts, pid and token all repeat.
     _nonce="${RANDOM:-0}${RANDOM:-0}$$"
+    # If BOTH shasum and cksum are absent (neither on PATH), the pipeline's
+    # stdout is empty, _rid ends up empty, and the next line returns 0 — the
+    # event is silently skipped. Deliberate: this is the same fail-open
+    # posture as every other failure mode in this recorder, not a bug.
     _rid="$(printf '%s|%s|%s|%s|%s' "${_ts}" "$$" "${_tok}" "${_act}" "${_nonce}" \
         | { shasum -a 256 2>/dev/null || cksum; } | tr -dc 'a-f0-9' | cut -c1-16)"
     [ -n "${_rid}" ] || return 0

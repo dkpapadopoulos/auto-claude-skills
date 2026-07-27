@@ -407,11 +407,9 @@ EOF
                 done
                 if [ "${_impl_ok}" = "false" ] && _diff_touches_material_source "${_proot}"; then
                     _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: phase_attest executing-plans \"<reason>\". (advisory; will become a deny after backtest)"
-                    command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "push" "executing-plans"
-                    _impl_action="push"
-                    [ "${_gc_is_push}" != "true" ] && _impl_action="gh-merge"
+                    command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "${_pe_action}" "executing-plans"
                     if command -v implement_shadow_record >/dev/null 2>&1; then
-                        implement_shadow_record "${_impl_action}" "${_proot}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" || true
+                        implement_shadow_record "${_pe_action}" "${_proot}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" || true
                     fi
                 fi
             fi

@@ -106,6 +106,7 @@ out="$(run_guard)"
 assert_contains     "no impl evidence => IMPLEMENT advisory"     "IMPLEMENT:"  "${out:-<empty>}"
 assert_contains     "advisory surfaces as additionalContext"     "additionalContext" "${out:-<empty>}"
 assert_not_contains "IMPLEMENT leg does not deny"                 '"deny"'     "${out:-}"
+assert_not_contains "IMPLEMENT leg emits no permissionDecision at all" "permissionDecision" "${out:-}"
 
 # (a2) The warn must ALSO write a telemetry line — phase_gate_log is defined in
 # phase-evidence.sh, which must be sourced BEFORE Check 0 (regression: it was
@@ -145,6 +146,7 @@ export IMPLEMENT_SHADOW_LOG="$HOME/.claude/.push-implement-shadow.jsonl"
 : > "$IMPLEMENT_SHADOW_LOG"
 out="$(run_guard)"
 assert_not_contains "shadow emission does not turn the leg into a deny" '"deny"' "${out:-}"
+assert_not_contains "shadow emission emits no permissionDecision at all" "permissionDecision" "${out:-}"
 assert_equals "one shadow record written on a push warn" "1" \
     "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
 _rec="$(cat "$IMPLEMENT_SHADOW_LOG")"
@@ -201,6 +203,7 @@ assert_not_contains "KNOWN GAP #161: merge stdout omits IMPLEMENT advisory text 
 assert_equals "merge stdout is empty (advisory computed but not flushed, per #161 gap)" "" "${out:-}"
 
 assert_not_contains "merge path stays advisory (no deny from this leg)" '"deny"' "${out:-}"
+assert_not_contains "merge path emits no permissionDecision at all" "permissionDecision" "${out:-}"
 assert_equals "one shadow record written on a merge warn" "1" \
     "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
 assert_contains "merge record carries action gh-merge" '"action":"gh-merge"' \
@@ -211,10 +214,30 @@ assert_contains "merge record carries action gh-merge" '"action":"gh-merge"' \
 # byte-identical to a healthy run and the exit code must stay 0.
 : > "$IMPLEMENT_SHADOW_LOG"
 _healthy="$(run_guard)"
-export IMPLEMENT_SHADOW_LOG="/nonexistent-dir-$$/shadow.jsonl"
+# Non-vacuous baseline: _healthy must actually carry the advisory and the
+# healthy run must actually have written a record, or the byte-identical
+# comparison below would trivially hold for two empty strings.
+assert_contains "healthy run surfaces the IMPLEMENT advisory (non-vacuous baseline)" \
+    "IMPLEMENT:" "${_healthy:-<empty>}"
+assert_equals "healthy run wrote exactly one shadow record" "1" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+# IMPLEMENT_SHADOW_LOG has been byte-identical to the lib's own default path
+# since it was set above, so this IS the default log; snapshot its count
+# before pointing the override at a guaranteed-unwritable path.
+_default_count_before="$(wc -l < "$HOME/.claude/.push-implement-shadow.jsonl" 2>/dev/null | tr -d ' ')"
+[ -n "${_default_count_before}" ] || _default_count_before=0
+# $HOME/.claude/.skill-session-token is a regular FILE (written near the top
+# of this test), so using it as a directory component of the log path
+# guarantees `mkdir -p` fails for every user, including root — unlike
+# /nonexistent-dir-$$, which only fails because of ambient FS permissions.
+export IMPLEMENT_SHADOW_LOG="$HOME/.claude/.skill-session-token/s.jsonl"
 _broken="$(run_guard)"; _brc=$?
 assert_equals "unwritable shadow log leaves stdout byte-identical" "${_healthy}" "${_broken}"
 assert_equals "unwritable shadow log still exits 0" "0" "${_brc}"
+_default_count_after="$(wc -l < "$HOME/.claude/.push-implement-shadow.jsonl" 2>/dev/null | tr -d ' ')"
+[ -n "${_default_count_after}" ] || _default_count_after=0
+assert_equals "default shadow log gained no record while the override was unwritable" \
+    "${_default_count_before}" "${_default_count_after}"
 export IMPLEMENT_SHADOW_LOG="$HOME/.claude/.push-implement-shadow.jsonl"
 
 # Satisfied IMPLEMENT evidence must emit nothing at all.

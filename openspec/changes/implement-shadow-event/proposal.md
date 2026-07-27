@@ -61,6 +61,10 @@ mistake that produced items 1–3 above.
   changed, no deny path is touched. All writes are best-effort and fail open.
 - **Behaviour change:** the advisory will now also appear on `gh pr merge` when
   the predicate matches. This is a widening of an advisory, not of a deny.
+  **Caveat (issue #161, deliberately not fixed here):** `_flush_push_advisories`
+  is gated on `_gc_is_push` only, so on a merge outside SHIP phase the shadow
+  record and telemetry are written but the advisory text itself never reaches
+  the user's stdout — only the push case is currently user-visible.
 - **New local artifact:** one JSONL file. No network egress, no new authority.
 - **Payoff is deferred by design.** At the observed rate (~0.4 events/day) this
   produces no usable rate for weeks. Its entire value is that the clock starts
