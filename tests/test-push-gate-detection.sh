@@ -115,6 +115,77 @@ _assert_pred "git push still detected"            0 command_invokes_git_write 'g
 _assert_pred "git -C push still detected"         0 command_invokes_git_write 'git -C /tmp/x push'
 _assert_pred "phrase-in-echo still not detected"  1 command_invokes_git_write 'echo "git push"'
 
+# --- issue #155: newline inside a QUOTED argument is not a command boundary ---
+# _gc_split_segments is quote-aware for ; | & but emits segments newline-delimited,
+# and callers iterate with IFS=$'\n'. A newline inside quotes therefore survived the
+# quote-aware scan and became a boundary anyway, so a multi-line quoted payload with
+# a git-write-shaped LINE was classified as a real push. Measured in production: 5
+# of 26 deny records were `node .../codex-companion.mjs "<multi-line prompt>"`
+# invocations that push nothing (one of them deny:routing-governance, a push-only leg).
+_MLQ='node /x/codex.mjs task "review this
+git push origin main
+and tell me why"'
+_assert_pred "newline in quoted arg is not a boundary"   1 command_invokes_git_write "${_MLQ}"
+_MLQ_SQ="node /x/codex.mjs task 'steps:
+git push origin main
+done'"
+_assert_pred "newline in single-quoted arg either"       1 command_invokes_git_write "${_MLQ_SQ}"
+# NOTE: a "quoted multi-line is not mutate-then-push" assertion was deliberately
+# NOT added here. It passes on UNFIXED code for an unrelated reason — the final
+# segment is `git push"` and _gc_segment_git_sub strips trailing )/} but not `"`,
+# so the sub is `push"` != `push`. It would exert zero regression pressure while
+# reading as coverage. Review caught it; the real guarantee is the e2e block below.
+
+# ...but a REAL newline-separated compound (outside quotes) MUST still be detected —
+# newline is a legitimate shell command separator; this is the other side of the fix.
+_REAL='cd /tmp/x
+git push origin HEAD'
+_assert_pred "unquoted newline compound still detected"  0 command_invokes_git_write "${_REAL}"
+_REAL_MUT='git commit -am x
+git push'
+_assert_pred "unquoted newline mutate-then-push caught"  0 command_git_mutate_before_push "${_REAL_MUT}"
+
+# --- #155 follow-up: UNBALANCED-quote parses must never under-detect ----------
+# Making newline a boundary inside the quote scanner made that scanner's quote
+# state load-bearing for multi-line commands. Its model diverges from the
+# shell's: it does not interpret backslash escapes, `#` comments, or heredoc
+# bodies. An apostrophe in any of those leaves it falsely "inside a quote", the
+# newline is consumed literally, and a following REAL push never becomes its own
+# segment -> gate bypass. bash genuinely executes the push in every case below.
+# The scanner must report the unbalanced parse so callers fail CLOSED.
+# The lib predicates are DOCUMENTED fail-open and still miss these (they have no
+# backslash/comment/heredoc model). The guarantee lives one layer up: the guard's
+# _gc_precise rejects an unbalanced parse and drops to its fail-CLOSED substring
+# path, so the push is still DENIED end-to-end. Assert the balance predicate at
+# the lib layer and the deny at the guard layer.
+_UB_COMMENT="# don't forget
+git push origin HEAD"
+_UB_ESC="echo it\\'s
+git push origin HEAD"
+_UB_HEREDOC="cat <<EOF
+it's here
+EOF
+git push origin HEAD"
+
+# Balance predicate: #155 payloads stay BALANCED (precise path preserved);
+# bypass payloads are UNBALANCED (force the fail-closed fallback).
+_assert_pred "quoted-newline payload parses balanced"    0 command_parse_balanced "${_MLQ}"
+_assert_pred "awk-style single quotes parse balanced"    0 command_parse_balanced "awk '{print \$1}' f"
+_assert_pred "nested quotes parse balanced"              0 command_parse_balanced "echo \"a 'b' c\""
+_assert_pred "apostrophe comment parses unbalanced"      1 command_parse_balanced "${_UB_COMMENT}"
+_assert_pred "heredoc apostrophe parses unbalanced"      1 command_parse_balanced "${_UB_HEREDOC}"
+
+# END-TO-END: unbalanced-quote payloads carrying a real push must still DENY.
+out="$(_run "${_UB_COMMENT}")"
+assert_contains "apostrophe-comment push still denied" '"deny"' "${out:-<empty>}"
+out="$(_run "${_UB_ESC}")"
+assert_contains "escaped-quote push still denied"      '"deny"' "${out:-<empty>}"
+out="$(_run "${_UB_HEREDOC}")"
+assert_contains "heredoc-apostrophe push still denied" '"deny"' "${out:-<empty>}"
+# ...and the #155 false-block payload must still be ALLOWED (fix not undone).
+out="$(_run "${_MLQ}")"
+assert_not_contains "quoted-newline payload still allowed" '"deny"' "${out:-}"
+
 export HOME="$_OLDHOME"
 print_summary
 exit $?
