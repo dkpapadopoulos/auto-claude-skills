@@ -64,10 +64,11 @@ assert_contains "Step 5 resolves the token own-session-first (#157)" \
     "resolve_own_session_token" "${SKILL_CONTENT}"
 assert_contains "Step 5 sources the shared resolver, not a hand-rolled shape (#157)" \
     "hooks/lib/session-token.sh" "${SKILL_CONTENT}"
-# The singleton may only appear as the LAST-RESORT fallback (`... || TOKEN=`),
-# never as a bare `TOKEN=$(cat ...)` first assignment. grep -E, not a substring
-# match, because the fallback line legitimately contains the singleton path.
-if grep -Eq '^[[:space:]]*TOKEN="\$\(cat ~/\.claude/\.skill-session-token' "${SKILL_FILE}"; then
+# The singleton may only appear as the LAST-RESORT fallback (`... || cat ...`),
+# never as a primary `TOKEN=$(cat ...)` assignment — in ANY quoting style, so a
+# regression written with backticks or without quotes is caught too. grep -E,
+# not a substring match, because the fallback legitimately names the same path.
+if grep -Eq 'TOKEN=[^|]*(\$\(|`)[[:space:]]*cat[[:space:]]+~?/?[^|]*\.skill-session-token' "${SKILL_FILE}"; then
     NAKED_SINGLETON="present"
 else
     NAKED_SINGLETON="absent"

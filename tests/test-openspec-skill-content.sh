@@ -268,10 +268,12 @@ test_openspec_ship_session_token_resolution() {
     assert_not_contains "ship: no prose 'read the singleton for the token' (#157)" \
         'Read `~/.claude/.skill-session-token`' "$content"
 
-    # The singleton may only survive as the LAST-RESORT fallback (`... || TOKEN=`).
-    # grep -E, not a substring match: the fallback line legitimately names it.
+    # The singleton may only survive as the LAST-RESORT fallback (`... || cat ...`),
+    # never as a primary `TOKEN=$(cat ...)` assignment — in ANY quoting style, so a
+    # regression written with backticks or without quotes is caught too. grep -E,
+    # not a substring match: the fallback legitimately names the same path.
     local naked="absent"
-    grep -Eq '^[[:space:]]*TOKEN="\$\(cat ~/\.claude/\.skill-session-token' "${SKILL_FILE}" \
+    grep -Eq 'TOKEN=[^|]*(\$\(|`)[[:space:]]*cat[[:space:]]+~?/?[^|]*\.skill-session-token' "${SKILL_FILE}" \
         && naked="present"
     assert_equals "ship: singleton only as fallback, never first assignment (#157)" \
         "absent" "$naked"

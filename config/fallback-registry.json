@@ -1167,7 +1167,7 @@
           "when": "installed"
         },
         {
-          "text": "PERSIST DISCOVERY: After product-discovery completes and the user approves the brief, save it to `docs/plans/YYYY-MM-DD-<slug>-discovery.md`. Then run: source hooks/lib/openspec-state.sh && openspec_state_set_discovery_path \"$TOKEN\" \"$SLUG\" \"$DISCOVERY_PATH\" to set discovery_path in session state.",
+          "text": "PERSIST DISCOVERY: After product-discovery completes and the user approves the brief, save it to `docs/plans/YYYY-MM-DD-<slug>-discovery.md`. Then run, in ONE Bash call (shell state does not persist between tool calls): PR=\"${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)}\"; TOKEN=\"$(. \"$PR/hooks/lib/session-token.sh\" 2>/dev/null && resolve_own_session_token || cat ~/.claude/.skill-session-token 2>/dev/null)\"; . \"$PR/hooks/lib/openspec-state.sh\"; openspec_state_set_discovery_path \"$TOKEN\" \"$SLUG\" \"$DISCOVERY_PATH\" to set discovery_path in session state. Resolve $TOKEN exactly that way — never by reading ~/.claude/.skill-session-token directly: it is a shared last-writer-wins singleton that under concurrent sessions names a DIFFERENT conversation, so the state lands in a file the payload-first readers (the PLAN design guard) never open (issue #157).",
           "when": "always"
         }
       ]
@@ -1209,7 +1209,7 @@
           "when": "always"
         },
         {
-          "text": "PERSIST DESIGN: After brainstorming (or design-debate) completes, save the design artifact to `docs/plans/YYYY-MM-DD-<slug>-design.md` with sections: Problem, Capabilities Affected, Out-of-Scope, Approach, Acceptance Scenarios, Decision. Then run: source hooks/lib/openspec-state.sh && openspec_state_upsert_change \"$TOKEN\" \"$SLUG\" \"\" \"\" \"\" \"$DESIGN_PATH\" to set design_path in session state.",
+          "text": "PERSIST DESIGN: After brainstorming (or design-debate) completes, save the design artifact to `docs/plans/YYYY-MM-DD-<slug>-design.md` with sections: Problem, Capabilities Affected, Out-of-Scope, Approach, Acceptance Scenarios, Decision. Then run, in ONE Bash call (shell state does not persist between tool calls): PR=\"${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)}\"; TOKEN=\"$(. \"$PR/hooks/lib/session-token.sh\" 2>/dev/null && resolve_own_session_token || cat ~/.claude/.skill-session-token 2>/dev/null)\"; . \"$PR/hooks/lib/openspec-state.sh\"; openspec_state_upsert_change \"$TOKEN\" \"$SLUG\" \"\" \"\" \"\" \"$DESIGN_PATH\" to set design_path in session state. Resolve $TOKEN exactly that way — never by reading ~/.claude/.skill-session-token directly: it is a shared last-writer-wins singleton that under concurrent sessions names a DIFFERENT conversation, so the state lands in a file the payload-first readers (the PLAN design guard) never open (issue #157).",
           "when": "always"
         },
         {

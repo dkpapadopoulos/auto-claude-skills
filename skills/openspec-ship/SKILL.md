@@ -33,7 +33,7 @@ Then invoke `Skill(superpowers:verification-before-completion)` before continuin
 
 ### Resolving the session token
 
-Every read and write of `~/.claude/.skill-openspec-state-<token>` in this skill uses the token resolved by this block. Run it once, then reuse `$TOKEN`.
+Every read and write of `~/.claude/.skill-openspec-state-<token>` in this skill uses the token resolved by these two lines. **Shell state does not persist between Bash tool calls** — re-run them in *each* call that needs `$TOKEN`, never rely on a `$TOKEN` set by an earlier call (an empty token makes every `openspec_state_*` helper return silently, writing nothing).
 
 ```bash
 # Resolve OWN-SESSION-FIRST (issue #157). ~/.claude/.skill-session-token is a
@@ -45,26 +45,22 @@ Every read and write of `~/.claude/.skill-openspec-state-<token>` in this skill 
 # CLAUDE_CODE_SESSION_ID, which IS the transcript basename readers derive their
 # token from, and trusts it only when that transcript exists on disk (stale,
 # foreign, injected and path-unsafe ids fall through). Do NOT re-derive
-# `session-<id>` by hand — hooks/lib/session-token.sh owns that format.
-STL="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}/hooks/lib/session-token.sh"
-TOKEN=""
-if [ -f "$STL" ]; then
-    . "$STL" 2>/dev/null || true
-    command -v resolve_own_session_token >/dev/null 2>&1 && TOKEN="$(resolve_own_session_token)"
-fi
-# Last resort only — the pre-#157 behaviour, kept so a missing lib degrades
-# rather than fails.
-[ -n "$TOKEN" ] || TOKEN="$(cat ~/.claude/.skill-session-token 2>/dev/null)"
+# `session-<id>` by hand — hooks/lib/session-token.sh owns that format. The
+# `|| cat` tail is the last resort: a missing lib degrades to the pre-#157
+# behaviour instead of failing.
+PR="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}"
+TOKEN="$(. "$PR/hooks/lib/session-token.sh" 2>/dev/null && resolve_own_session_token || cat ~/.claude/.skill-session-token 2>/dev/null)"
+echo "session token: ${TOKEN:-<unresolved>}"   # a scatter is then visible in-session
 ```
 
-Unlike `project-verification`, there is deliberately **no `SKILL_SESSION_TOKEN` override** here: the openspec-state reader is strictly token-scoped with no cross-token bridge, so an override would scatter the state instead of relocating it.
+Unlike `project-verification`, there is deliberately **no `SKILL_SESSION_TOKEN` override** here: nothing sets it for this family and no openspec-state reader honors it (there is no cross-token bridge as there is for the verdict), so wiring it in would only add a way to write state nobody reads.
 
 ### Populating state
 
-When this skill starts, populate the session state file with linkage information:
-1. Resolve the session token with the block above.
+When this skill starts, populate the session state file with linkage information — as ONE Bash call:
+1. Resolve the session token with the two lines above.
 2. Source `hooks/lib/openspec-state.sh` from the auto-claude-skills plugin root.
-3. Call `openspec_state_upsert_change "<token>" "<change_slug>" "<plan_path>" "<spec_path>" "<capability_slug>"`.
+3. Call `openspec_state_upsert_change "$TOKEN" "<change_slug>" "<plan_path>" "<spec_path>" "<capability_slug>"`.
 4. If the state file doesn't exist yet (verification-before-completion hasn't run), the helper creates it with `verification_seen: false`.
 
 ## Input
@@ -331,8 +327,12 @@ If `discovery_path` exists in session state AND the file at that path is readabl
 3. Persist hypotheses and mark the change archived. Source the state helpers from the auto-claude-skills plugin, then call them:
 
 ```bash
-# $TOKEN from "Resolving the session token" above — own-session-first (#157).
-. "$CLAUDE_PLUGIN_ROOT/hooks/lib/openspec-state.sh"
+# Self-contained: re-resolve the token here (see "Resolving the session token")
+# — a $TOKEN set in an earlier Bash call is NOT in scope, and an empty token
+# makes both helpers below return silently, losing hypotheses and archived_at.
+PR="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}"
+TOKEN="$(. "$PR/hooks/lib/session-token.sh" 2>/dev/null && resolve_own_session_token || cat ~/.claude/.skill-session-token 2>/dev/null)"
+. "$PR/hooks/lib/openspec-state.sh"
 
 HYPS='[{"id":"H1","description":"...","metric":"...","baseline":"...","target":"...","window":"..."}]'
 openspec_state_set_hypotheses "$TOKEN" "<slug>" "$HYPS"

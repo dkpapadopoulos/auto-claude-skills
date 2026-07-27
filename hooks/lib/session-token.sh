@@ -46,6 +46,16 @@ resolve_session_token_from_transcript() {
 # values, and keeps synthetic-HOME sandboxes (this repo's own tests included)
 # on the singleton path. Path-unsafe ids are rejected on charset first.
 # Falls back to the singleton — never to a locally re-derived shape.
+#
+# KNOWN LIMIT (subagent identity): a Task subagent gets its own
+# CLAUDE_CODE_SESSION_ID and its own transcript on disk, so a writer called
+# INSIDE a subagent resolves to the SUBAGENT's token, which the main session's
+# UserPromptSubmit-side readers never open. Pre-#156 the singleton happened to
+# cover that case, since the main session re-stamps it on every prompt. This is
+# still the right trade: the singleton's coverage was accidental and cost
+# correctness under concurrent sessions, the far more common case. State that
+# must reach the main session's readers should be written from the main turn,
+# not delegated to a subagent.
 resolve_own_session_token() {
     local _id="${CLAUDE_CODE_SESSION_ID:-}" _t="" _tok=""
     case "${_id}" in
