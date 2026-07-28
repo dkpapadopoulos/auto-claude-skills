@@ -37,7 +37,7 @@ A `precondition` string on the `executing-plans` composition entry in both confi
 
 1. Gate at the push/merge boundary, not Write/Edit. (D-1)
 2. IMPLEMENT accepts attestation; REVIEW/VERIFY never do. (D-2)
-3. Warn-first; deny only after `phase-gate-backtest.sh` <10% false-block, this-repo-only. (D-3)
+3. Warn-first; deny only after the forward shadow corpus meets the pre-registered rule in `implement-shadow-event/design.md` (Pre-registration), this-repo-only. Originally named `phase-gate-backtest.sh` — corrected per issue #160; that script measures the skill-sequencing gate. (D-3)
 4. `test_delta` advisory in v1; deny-wiring is a separate future change behind its own backtest. (D-4)
 5. Reuse the existing implementation-slot alias set and evidence helpers; add no parallel machinery; `.completed` stays untrusted. (D-5)
 
@@ -45,7 +45,7 @@ A `precondition` string on the `executing-plans` composition entry in both confi
 
 - **Units A & C are deterministic** → TDD + the acceptance scenarios in the delta spec. Red tests first.
 - **Unit B is behavioral** → control-vs-treatment A/B eval: metric = fraction of implementation-phase prompts where the model invokes an implementation-slot skill before the first source edit; ship only if treatment materially beats control with no safety regression (#104 precedent: 0/5 → 5/5).
-- **Unit A deny-flip is backtested** → `phase-gate-backtest.sh` over recent transcripts/PRs; human-classify each would-fire as true-catch vs false-block; flip only at <10% (pre-registered).
+- **Unit A deny-flip is evidence-gated** → the forward shadow corpus (`~/.claude/.push-implement-shadow.jsonl`), human-adjudicated per the Pre-registration in `implement-shadow-event/design.md`; flip only when that rule is met. Originally specified as a `phase-gate-backtest.sh` run — corrected per issue #160 (wrong gate), and a *retrospective* replay is separately infeasible: the leg's predicate needs evidence state as it stood at each historical push, and the ledger is overwritten in place rather than appended.
 - **Unit C fire-rate** measured on the same backtest corpus before any future deny-wiring.
 
 ## Autonomy / governance
