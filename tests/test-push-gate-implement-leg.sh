@@ -303,8 +303,7 @@ rm -rf "${_GHSTUB}"
 
 # --- #161 RESOLVED: a resolved merge now surfaces the advisory ------------
 # PR #163 pinned the gap with an assert_not_contains and an "invert on fix"
-# comment. This is that inversion. The OLD pin (search for "KNOWN GAP #161")
-# MUST be deleted in this step — leaving both would assert both directions.
+# comment; this is that inversion (the old pin has since been deleted).
 _GHSTUB2="$(mktemp -d /tmp/pg-ghstub2-XXXXXX)"
 cat > "${_GHSTUB2}/gh" <<'STUB'
 #!/bin/bash
@@ -321,6 +320,52 @@ assert_not_contains "resolved merge is still not a deny" "permissionDecision" "$
 out="$(PATH="${_GHSTUB2}:$PATH" run_guard 'gh pr merge 404 --squash')"
 assert_not_contains "unresolved merge stays silent" "IMPLEMENT:" "${out:-}"
 rm -rf "${_GHSTUB2}"
+
+# --- I2: the pr:* flush gate must be exercised by a NON-empty, NON-IMPLEMENT
+# _STALE_MSG, or removing the gate is invisible to the suite ---------------
+# Review finding: the assertion above ("unresolved merge stays silent")
+# passes for the wrong reason — on an unresolved merge _impl_material is
+# false, so _STALE_MSG is empty there too, and the gate at
+# openspec-guard.sh's `_flush_push_advisories` is never actually exercised.
+# Manufacture a genuinely non-empty, non-IMPLEMENT _STALE_MSG by advancing
+# feat/impl's HEAD past the SHA the branch-ledger recorded above (lines
+# ~90-91): _ledger_has then appends "<milestone> stale: recorded at ..."
+# text for requesting-code-review/verification-before-completion on every
+# subsequent guard run, regardless of push vs merge or IMPLEMENT status.
+echo "print('y')" >> "${_REPO}/src/app.py"
+git -C "${_REPO}" add src/app.py
+git -C "${_REPO}" commit -qm "feat: advance local HEAD past the ledger record (non-IMPLEMENT staleness bait)"
+
+_GHSTUB4="$(mktemp -d /tmp/pg-ghstub4-XXXXXX)"
+cat > "${_GHSTUB4}/gh" <<'STUB'
+#!/bin/bash
+for a in "$@"; do case "$a" in 404) exit 1 ;; esac; done
+printf 'src/app.py\n'
+STUB
+chmod +x "${_GHSTUB4}/gh"
+
+# (a) UNRESOLVED merge must stay FULLY silent even though _STALE_MSG is now
+# non-empty (ledger staleness). Mutation-verified: widening
+# _flush_push_advisories's gate away from a `_impl_db`-scoped select onto
+# "always use _STALE_MSG for any merge" flips this and the "does not leak"
+# assertion below from pass to fail; restoring the gate flips them back.
+out="$(PATH="${_GHSTUB4}:$PATH" run_guard 'gh pr merge 404 --squash')"
+assert_not_contains "unresolved merge with pending staleness stays fully silent" \
+    "additionalContext" "${out:-}"
+assert_not_contains "unresolved merge does not leak ledger staleness text" \
+    "stale:" "${out:-}"
+
+# (b) RESOLVED merge (#161 I1): must flush ONLY the IMPLEMENT text, never the
+# ledger staleness text also sitting in _STALE_MSG. Pre-fix, the flush was
+# gated on _impl_db alone and leaked the ENTIRE _STALE_MSG — including notes
+# about milestones that have nothing to do with the merged PR — onto `gh pr
+# merge` of unrelated PRs.
+out="$(PATH="${_GHSTUB4}:$PATH" run_guard 'gh pr merge 7 --squash')"
+assert_contains "resolved merge with pending staleness still surfaces IMPLEMENT" \
+    "IMPLEMENT:" "${out:-<empty>}"
+assert_not_contains "resolved merge does not leak ledger staleness text" \
+    "stale:" "${out:-}"
+rm -rf "${_GHSTUB4}"
 
 # --- Negative-case coverage: record-write condition, false branches --------
 # Task 2 review finding: only the TRUE branches of the write gate (materially

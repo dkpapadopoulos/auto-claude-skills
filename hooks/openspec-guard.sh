@@ -235,6 +235,16 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             [ -z "${_VERDICT_TOKEN}" ] && _VERDICT_TOKEN="${_SESSION_TOKEN}"
         fi
         _STALE_MSG=""
+        # IMPLEMENT-only subset of _STALE_MSG (issue #161 I1). _STALE_MSG has
+        # FIVE other writers (ledger staleness below, invocation-evidence /
+        # bridge-acceptance notes, routing-delta, evaluator-surface) that are
+        # ALL computed from the LOCAL branch — never true of the merged PR a
+        # `gh pr merge` names. _flush_push_advisories must be able to flush
+        # ONLY the IMPLEMENT text on a merge; this variable is that subset.
+        # Always ALSO appended wherever _STALE_MSG gets the IMPLEMENT text
+        # (line ~455 below), so the push path (which flushes _STALE_MSG in
+        # full, unchanged) stays byte-identical.
+        _IMPL_MSG=""
         # _ledger_has MILESTONE — returns 0 if ledger satisfies; accumulates stale
         # warning text in _STALE_MSG when the recorded SHA differs from HEAD.
         _ledger_has() {
@@ -452,7 +462,9 @@ EOF
                 if [ "${_impl_ok}" = "false" ] && \
                    { [ "${_impl_material}" = "true" ] || [ "${_pe_action}" = "gh-merge" ]; }; then
                     if [ "${_impl_material}" = "true" ]; then
-                        _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: phase_attest executing-plans \"<reason>\". (advisory; will become a deny after backtest)"
+                        _IMPL_TEXT="IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: phase_attest executing-plans \"<reason>\". (advisory; will become a deny after backtest)"
+                        _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }${_IMPL_TEXT}"
+                        _IMPL_MSG="${_IMPL_MSG}${_IMPL_MSG:+; }${_IMPL_TEXT}"
                         command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "${_pe_action}" "executing-plans"
                     fi
                     if command -v implement_shadow_record >/dev/null 2>&1; then
@@ -653,23 +665,34 @@ _flush_push_advisories() {
     # preserved (SHIP-phase merges still get the _WARNINGS fold-in below,
     # unchanged).
     #
-    # Merges flush ONLY when the subject resolved (#161). The original
-    # push-only gate existed because _STALE_MSG is computed from the LOCAL
-    # branch, which is the wrong delta for `gh pr merge <other>` — that
-    # reasoning is preserved: silence stays wherever the subject is unknown.
+    # Merges flush ONLY when the subject resolved (#161), and ONLY the
+    # IMPLEMENT text (_IMPL_MSG), never the full _STALE_MSG (issue #161 I1
+    # review finding). _STALE_MSG accumulates FIVE other writers — ledger
+    # staleness, invocation-evidence / bridge-acceptance notes, routing-delta,
+    # evaluator-surface — that are ALL computed from the LOCAL branch, which
+    # for `gh pr merge <other>` is unrelated to the merged PR; flushing the
+    # whole variable leaked branch-local advisory text onto merges of
+    # unrelated PRs. _IMPL_MSG is a strict subset of _STALE_MSG (every
+    # IMPLEMENT append also lands in _STALE_MSG), so this preserves the
+    # original reasoning — silence stays wherever the subject is unknown —
+    # while narrowing what a KNOWN-subject merge is allowed to surface.
+    #
+    # The push branch below is untouched: it still flushes _STALE_MSG in
+    # full, byte-identical to before this change.
+    local _msg="${_STALE_MSG:-}"
     if [ "${_gc_is_push:-false}" != "true" ]; then
         case "${_impl_db:-unresolved}" in
-            pr:*) : ;;
+            pr:*) _msg="${_IMPL_MSG:-}" ;;
             *) return 0 ;;
         esac
     fi
-    [ -n "${_STALE_MSG:-}" ] || return 0
+    [ -n "${_msg}" ] || return 0
     if command -v jq >/dev/null 2>&1; then
-        jq -n --arg msg "PUSH GATE (advisory): ${_STALE_MSG}" \
+        jq -n --arg msg "PUSH GATE (advisory): ${_msg}" \
             '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":$msg}}'
     else
         printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' \
-            "$(printf 'PUSH GATE (advisory): %s' "${_STALE_MSG}" | tr '\n"' ' ')"
+            "$(printf 'PUSH GATE (advisory): %s' "${_msg}" | tr '\n"' ' ')"
     fi
 }
 

@@ -19,7 +19,7 @@ merges (`hooks/lib/git-command.sh` `command_invokes_gh_merge`):
 | `gh pr merge 7 --squash` | `7` |
 | `gh pr merge --squash 7` | `7` |
 | `gh api repos/o/r/pulls/7/merge` | `7` |
-| `gh pr merge` (bare) | none — resolved from the current branch (below) |
+| `gh pr merge` (bare) | none — v1 records this `unresolved`; see Out-of-Scope |
 | `gh api graphql … mergePullRequest` | none — node id, not a number |
 
 **Validation is a security boundary, not a nicety.** The command is
@@ -28,9 +28,11 @@ yields nothing. Without this, a crafted command could inject `--repo other/org`
 or a flag into the `gh` invocation. The ref is passed as a single argument,
 never interpolated into a shell string.
 
-**Bare `gh pr merge`** means "the current branch's PR". Resolving it needs a
-second `gh` call. v1 resolves it with `gh pr view --json number` (no ref
-argument, so no injection surface); if that fails, `unresolved`.
+**Bare `gh pr merge`** means "the current branch's PR". Resolving it would need
+a second `gh pr view --json number` call (no ref argument, so no injection
+surface) — v1 does NOT implement that call; `pr_ref_from_command` returns
+empty for a bare `gh pr merge` and the record is `unresolved`. See
+Out-of-Scope.
 
 **`pr_changed_files`** runs `gh pr view <ref> --json files --jq '.files[].path'`
 with a hard timeout. Any failure — `gh` absent, unauthenticated, offline,
@@ -89,8 +91,10 @@ purpose, exercised for the first time.
   path is untouched and stays fully local.
 - **~620ms on merges.** Acceptable against a multi-second network operation;
   unacceptable on pushes, which is why the split is strict.
-- **Bare `gh pr merge` costs a second call.** Accepted; it is the common
-  interactive form and dropping it would leave a large hole in the corpus.
+- **Bare `gh pr merge` records `unresolved` in v1.** It is the common
+  interactive form, so this leaves a real hole in the corpus; resolving it via
+  a second `gh pr view --json number` call is moved to Out-of-Scope rather than
+  built speculatively.
 - **`unresolved` records dilute the corpus.** Preferred over silently dropping
   events, which would bias toward well-configured hosts. They are excluded from
   rates, not from the log.
@@ -124,3 +128,9 @@ purpose, exercised for the first time.
 - The `<10%` threshold and the spec's wrong instrument reference (issue #160).
 - Mapping GraphQL node ids to PR numbers.
 - Backfilling or reinterpreting `predicate_version: 1` records.
+- **Resolving bare `gh pr merge` via a second `gh pr view --json number`
+  call.** Verified absent from v1: `pr_ref_from_command` returns empty for a
+  bare `gh pr merge`, so it always records `unresolved`, never a false
+  `pr:<n>`. A follow-up would add that call, validate the returned number the
+  same way as an explicit ref, and stay within the same timeout budget as
+  `pr_changed_files`.

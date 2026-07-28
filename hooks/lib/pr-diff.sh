@@ -1,6 +1,11 @@
 #!/bin/bash
 # pr-diff.sh — resolve the file list of the PR a merge command targets.
 #
+# BASH-ONLY: pr_ref_from_command relies on unquoted word-splitting + `set -f`
+# over the raw command text; under zsh it returns empty for every input, so a
+# future model-side caller (model Bash turns run zsh) would silently degrade
+# every merge to "unresolved" rather than erroring. Source from bash only.
+#
 # ADVISORY-PATH ONLY. Never influences a gate decision; every failure returns
 # empty. Deliberately NOT in _GATE_ENFORCE_LIBS (same posture as
 # implement-shadow.sh and push-gate-capture.sh).
