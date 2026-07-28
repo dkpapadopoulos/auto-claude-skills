@@ -88,8 +88,18 @@ anchored at the first record, not rolling between consecutive records: a rolling
 gap would chain an entire day's work into a single episode, driving the
 denominator below the real number of decision points.
 
-An episode's verdict MUST resolve worst-verdict-wins: any `false_block` among its
-records makes the episode `false_block`; otherwise any `unknown` makes it
+A record whose `ts` cannot be parsed MUST be excluded from every episode and its
+count reported. Such records MUST NOT be grouped together: an unparseable
+timestamp yields a sentinel value, so two corrupt records sharing a key would
+appear zero seconds apart and merge on a time relation nothing verified.
+
+Where a record has more than one adjudication, the LATEST MUST win, for both the
+verdict and the claimant. Earlier adjudications MUST be retained as an audit
+trail. Without this a correction is a silent no-op — the tool reports success
+while the superseded verdict continues to determine the rate.
+
+An episode's verdict MUST then resolve worst-verdict-wins across its records: any
+`false_block` makes the episode `false_block`; otherwise any `unknown` makes it
 `unknown`; otherwise `true_catch`.
 
 `--status` MUST exclude `unknown` episodes, agent-claimed episodes, and records
@@ -135,6 +145,21 @@ readout is informational and MUST NOT be wired into an enforcement decision.
   exceeds 0.05
 - **AND** at 9 `false_block` episodes the band MUST be `ADVISORY-ONLY`, because
   `P(X ≥ 9 | 23, 0.20) = 0.0273` does not
+
+#### Scenario: a correction supersedes the verdict it replaces
+
+- **GIVEN** record `x` adjudicated `false_block`, then re-adjudicated `true_catch`
+- **WHEN** the episode verdict is resolved
+- **THEN** it MUST be `true_catch`
+- **AND** both adjudications MUST remain in the sidecar as an audit trail
+
+#### Scenario: malformed timestamps are excluded, not merged
+
+- **GIVEN** two records sharing `(repo, branch, session_token)` whose `ts` values
+  are both unparseable
+- **WHEN** episodes are grouped
+- **THEN** they MUST contribute zero episodes
+- **AND** `--status` MUST report the excluded count
 
 #### Scenario: a mixed episode resolves to its worst verdict
 

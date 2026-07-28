@@ -92,7 +92,17 @@ _episodes() {
       ' "${SHADOW_LOG}" 2>/dev/null \
     | while IFS="$(printf '\t')" read -r _repo _branch _tok _ts _rid; do
           [ -z "${_rid:-}" ] && continue
-          printf '%s\t%s\t%s\t%s\t%s\n' "$_repo" "$_branch" "$_tok" "$(_iso_epoch "$_ts")" "$_rid"
+          _ep="$(_iso_epoch "$_ts")"
+          # A malformed ts is EXCLUDED, not merged. _iso_epoch returns -1 for
+          # every unparseable value, so two corrupt records sharing a key would
+          # satisfy (-1) - (-1) = 0 <= window and collapse into one episode on a
+          # time relation nothing verified. Excluding keeps corrupt data from
+          # moving the denominator in either direction — deflating it by merging
+          # or inflating it by counting each separately, and inflation is the
+          # dangerous direction because it makes the floor easier to reach.
+          # C1 always writes `date -u` output, so this is defensive.
+          [ "${_ep}" = "-1" ] && continue
+          printf '%s\t%s\t%s\t%s\t%s\n' "$_repo" "$_branch" "$_tok" "${_ep}" "$_rid"
       done \
     | sort -t "$(printf '\t')" -k1,1 -k2,2 -k3,3 -k4,4n \
     | awk -F'\t' -v w="${EPISODE_WINDOW_SEC}" '
@@ -131,8 +141,12 @@ _episodes() {
 # The mitigation is not that forgery is impossible; it is that a forged clean
 # rate requires a deliberate lie about provenance rather than merely running the
 # tool. Output says human-CLAIMED, never human-verified.
+# CLAUDE_CODE_SESSION_ID is the repo's established "inside a Claude Code turn"
+# marker (session-token.sh, phase-attest.sh, verify-and-record.sh, gate-status.sh);
+# CLAUDECODE is set alongside it. Both are checked so this stays consistent with
+# the rest of the codebase rather than relying on one of the pair.
 _claimant() {
-    if [ -n "${CLAUDECODE:-}" ]; then echo agent; return; fi
+    if [ -n "${CLAUDECODE:-}" ] || [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then echo agent; return; fi
     case "$(ps -o comm= -p "$PPID" 2>/dev/null)" in *claude*) echo agent; return;; esac
     echo human
 }
@@ -163,9 +177,13 @@ cmd_adjudicate() {
     chmod 600 "${ADJ_LOG}" 2>/dev/null
     _ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)"
     _claim="$(_claimant)"
+    # `tty` prints "not a tty" to STDOUT and ALSO exits 1, so `$(tty || echo X)`
+    # captures BOTH strings — a two-line value in every non-interactive run,
+    # which is nearly all of them. Branch on the exit status instead.
+    if _tty="$(tty 2>/dev/null)"; then :; else _tty="not-a-tty"; fi
     jq -cn --arg rid "${_rid}" --arg ts "${_ts}" --arg v "${_verdict}" \
            --arg r "${_reason}" --arg c "${_claim}" \
-           --arg u "${USER:-unknown}" --arg tty "$(tty 2>/dev/null || echo not-a-tty)" \
+           --arg u "${USER:-unknown}" --arg tty "${_tty}" \
            --arg par "$(ps -o comm= -p "$PPID" 2>/dev/null || echo unknown)" \
            --arg head "$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
            --arg agentenv "$([ -n "${CLAUDECODE:-}" ] && echo present || echo absent)" \
@@ -175,7 +193,9 @@ cmd_adjudicate() {
     echo "recorded: ${_rid}  ${_verdict}  (${_claim}-claimed)"
     [ "${_claim}" = "agent" ] && \
         echo "note: agent-claimed — excluded from the rate until a human re-confirms."
-    echo "label: HUMAN-CLAIMED, not human-verified."
+    # Must reflect the ACTUAL claimant. Hardcoding "HUMAN-CLAIMED" printed
+    # "(agent-claimed)" and "HUMAN-CLAIMED" two lines apart on the same run.
+    echo "label: $(printf '%s' "${_claim}" | tr '[:lower:]' '[:upper:]')-CLAIMED, not human-verified."
     return 0
 }
 
@@ -250,20 +270,33 @@ cmd_next() {
 # episode — a human re-confirmation re-includes it.
 _episode_verdict() {
     local _ids="${1:-}" _v="unlabeled" _claim="agent" _has_human=0 _id _rows
-    if [ ! -f "${ADJ_LOG}" ]; then echo "unlabeled"; echo "agent"; return; fi
+    local _latest _rv _rc
+    if [ ! -f "${ADJ_LOG}" ]; then printf 'unlabeled\nagent\n'; return; fi
     _rows="$(jq -r '[.record_id,.verdict,.claimant] | @tsv' "${ADJ_LOG}" 2>/dev/null)"
     for _id in $(printf '%s' "${_ids}" | tr ',' ' '); do
-        while IFS="$(printf '\t')" read -r rid rv rc; do
-            [ "${rid}" = "${_id}" ] || continue
-            [ "${rc}" = "human" ] && _has_human=1
-            case "${rv}" in
-                false_block) _v="false_block" ;;
-                unknown)     [ "${_v}" = "false_block" ] || _v="unknown" ;;
-                true_catch)  [ "${_v}" = "unlabeled" ] && _v="true_catch" ;;
-            esac
-        done <<EOF
-${_rows}
-EOF
+        # LATEST adjudication per record wins. The sidecar is append-only, so the
+        # last matching row is the most recent one. Folding over ALL rows instead
+        # makes a correction a silent no-op: re-adjudicating a fat-fingered
+        # false_block to true_catch would print success while the earlier verdict
+        # continued to win, permanently poisoning a rate that gates a deny-flip.
+        # Claimant comes from the same latest row, so an agent overwriting a
+        # human's label correctly reverts the episode to excluded.
+        _latest="$(printf '%s\n' "${_rows}" \
+                   | awk -F'\t' -v id="${_id}" '$1 == id { v = $2; c = $3 }
+                                                END { if (v != "") print v "\t" c }')"
+        [ -z "${_latest}" ] && continue
+        _rv="$(printf '%s' "${_latest}" | cut -f1)"
+        _rc="$(printf '%s' "${_latest}" | cut -f2)"
+        [ "${_rc}" = "human" ] && _has_human=1
+        # `if` rather than `[ … ] && …`: this repo's CLAUDE.md documents the
+        # &&-as-last-statement form as a recurring bug class (it yields exit 1
+        # and can flip an enclosing function's return code). Harmless in this
+        # position today, but this variable feeds a deny-flip decision.
+        case "${_rv}" in
+            false_block) _v="false_block" ;;
+            unknown)     if [ "${_v}" != "false_block" ]; then _v="unknown"; fi ;;
+            true_catch)  if [ "${_v}" = "unlabeled" ];    then _v="true_catch"; fi ;;
+        esac
     done
     [ "${_has_human}" -eq 1 ] && _claim="human"
     printf '%s\n%s\n' "${_v}" "${_claim}"
@@ -274,10 +307,17 @@ cmd_status() {
     local _tot=0 _lab=0 _fb=0 _tc=0 _unk=0 _agent=0 _unlab=0 _v1=0
     local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
     local _den _wc_k _wc_n _band_hdl _band_wc
+    local _badts=0
     if [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1; then
         _v1="$(jq -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
                  'select(.predicate_version != $pv) | .record_id' \
                  "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
+        # v2 records whose ts cannot be parsed are dropped by _episodes; report
+        # the count so the exclusion is visible rather than a silent shortfall.
+        _badts="$(jq -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
+                    'select(.predicate_version == $pv)
+                     | select(.ts | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$") | not)
+                     | .record_id' "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
     fi
     while IFS="$(printf '\t')" read -r _eid _repo _branch _tok _ids; do
         [ -z "${_eid:-}" ] && continue
@@ -288,10 +328,14 @@ cmd_status() {
         if [ "${_v}" = "unlabeled" ]; then _unlab=$(( _unlab + 1 )); continue; fi
         if [ "${_c}" = "agent" ];    then _agent=$(( _agent + 1 )); continue; fi
         _lab=$(( _lab + 1 ))
-        case "${_repos}" in
-            *"|${_repo}|"*) ;;
-            *) _repos="${_repos}|${_repo}|" ;;
-        esac
+        # Newline-separated with an exact whole-line match. An ad-hoc "|"
+        # delimiter false-matches any repo path containing a literal "|"
+        # (filesystem-legal), undercounting _nrepos and so weakening the
+        # diversity floor. Same delimiter-collision class as the episode key.
+        if [ -z "${_repos}" ] || ! printf '%s\n' "${_repos}" | grep -qxF "${_repo}"; then
+            _repos="${_repos}${_repo}
+"
+        fi
         case "${_v}" in
             false_block) _fb=$((  _fb  + 1 )) ;;
             unknown)     _unk=$(( _unk + 1 )) ;;
@@ -300,18 +344,20 @@ cmd_status() {
     done <<EOF
 $(_episodes)
 EOF
-    _nrepos="$(printf '%s' "${_repos}" | tr '|' '\n' | grep -c . )"
+    _nrepos="$(printf '%s' "${_repos}" | grep -c . )"
     echo "IMPLEMENT shadow corpus — predicate_version ${REQUIRED_PREDICATE_VERSION}"
     printf '  episodes          %s\n' "${_tot}"
     printf '  adjudicated       %s   (human-claimed)\n' "${_lab}"
     printf '  agent-claimed     %s   <- excluded until a human re-confirms\n' "${_agent}"
     printf '  unadjudicated     %s\n' "${_unlab}"
     printf '  v1 records        %s   <- unpoolable, excluded\n' "${_v1}"
+    [ "${_badts}" -gt 0 ] && \
+        printf '  malformed ts      %s   <- excluded: unparseable timestamp, cannot be placed in an episode\n' "${_badts}"
     printf '  true_catch        %s\n' "${_tc}"
     printf '  false_block       %s\n' "${_fb}"
     printf '  unknown           %s   <- excluded from the headline rate\n' "${_unk}"
     printf '  repos             %s' "${_nrepos}"
-    [ "${_nrepos}" -gt 0 ] && printf '   %s' "$(printf '%s' "${_repos}" | tr '|' ' ' | tr -s ' ')"
+    [ "${_nrepos}" -gt 0 ] && printf '   %s' "$(printf '%s' "${_repos}" | tr '\n' ' ')"
     printf '\n\n'
     _den=$(( _tc + _fb ))
     if [ "${_lab}" -lt "${FLOOR_EPISODES}" ] || [ "${_nrepos}" -lt "${FLOOR_REPOS}" ]; then
