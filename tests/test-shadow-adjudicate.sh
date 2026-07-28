@@ -107,6 +107,17 @@ CLAUDECODE=1 "$SCRIPT" old --verdict unknown --reason seen >/dev/null 2>&1
 eq "fully adjudicated corpus reports done"  "1" "$("$SCRIPT" --next 2>&1 | grep -ci 'nothing outstanding')"
 eq "and still exits 0"                      "0" "$("$SCRIPT" --next >/dev/null 2>&1; echo $?)"
 
+# An empty v2 corpus is NOT the same as a fully-adjudicated one. Caught by
+# dogfooding against the real log: 11 v1 records and 0 v2 records reported
+# "every v2 record is adjudicated", which reads as "work done" when in fact
+# nothing is countable yet.
+: > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
+rec only_v1 "2026-07-28T10:00:00Z" "/repo/A" "feat/x" "tok1" 1
+eq "an empty v2 corpus is not 'adjudicated'" "0" "$("$SCRIPT" --next 2>&1 | grep -ci 'is adjudicated')"
+eq "it says there are no v2 records"         "1" "$("$SCRIPT" --next 2>&1 | grep -ci 'no v2 records')"
+eq "and it surfaces the excluded v1 count"   "1" "$("$SCRIPT" --next 2>&1 | grep -c '1 v1')"
+eq "empty-v2 --next still exits 0"           "0" "$("$SCRIPT" --next >/dev/null 2>&1; echo $?)"
+
 # --- Task 5: --status ---
 seed()  { : > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"; }
 mkrec() { rec "$1" "2026-07-28T$2:00Z" "$3" "br-$1" "tok-$1"; }

@@ -202,7 +202,26 @@ cmd_next() {
                   printf '%s\n' "${_row}"; break
               done)"
     if [ -z "${_line}" ]; then
-        echo "nothing outstanding — every v${REQUIRED_PREDICATE_VERSION} record is adjudicated."
+        # "no v2 records exist" and "all v2 records adjudicated" are different
+        # states and must not share a message: the first means nothing is
+        # countable yet, the second means the work is done. Conflating them
+        # reports an empty corpus as complete.
+        local _n_v2 _n_v1
+        _n_v2="$(jq -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
+                   'select(.predicate_version == $pv) | .record_id' \
+                   "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
+        _n_v1="$(jq -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
+                   'select(.predicate_version != $pv) | .record_id' \
+                   "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
+        if [ "${_n_v2}" -eq 0 ]; then
+            printf 'no v%s records yet — nothing is adjudicable.\n' "${REQUIRED_PREDICATE_VERSION}"
+            [ "${_n_v1}" -gt 0 ] && \
+                printf '  %s v1 record(s) present, excluded: v1 measured a different subject and is unpoolable with v2.\n' "${_n_v1}"
+            printf '  The corpus grows as the IMPLEMENT leg fires; see --status for the floor.\n'
+            return 0
+        fi
+        printf 'nothing outstanding — all %s v%s record(s) are adjudicated.\n' \
+               "${_n_v2}" "${REQUIRED_PREDICATE_VERSION}"
         return 0
     fi
     printf '%s\n' "${_line}" | while IFS="$(printf '\t')" read -r id ts repo branch action db chain mat ev tp; do
