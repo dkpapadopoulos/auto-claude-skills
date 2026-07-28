@@ -36,6 +36,10 @@ _GC_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 # affect the gate, and it is deliberately absent from _GATE_ENFORCE_LIBS.
 [ -f "${_GC_ROOT}/hooks/lib/implement-shadow.sh" ] && \
     . "${_GC_ROOT}/hooks/lib/implement-shadow.sh" 2>/dev/null || true
+# Advisory-path PR-diff resolver (#161). Guarded source: absence must not
+# affect the gate, and it is deliberately absent from _GATE_ENFORCE_LIBS.
+[ -f "${_GC_ROOT}/hooks/lib/pr-diff.sh" ] && \
+    . "${_GC_ROOT}/hooks/lib/pr-diff.sh" 2>/dev/null || true
 
 # Bound the worst case: the precise detector is an O(n^2) char-scan parser, so
 # only use it below a size cap; above it, fall back to the (fail-closed)
@@ -333,6 +337,18 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }$1 accepted via cross-location branch-ledger evidence recorded at ${_bsha:-unknown} on this branch (issue #131 bridge). Rerun if later commits changed reviewed content."
             return 0
         }
+        # One exclusion rule, two subjects (#161). The push path measures the
+        # branch-local delta; the merge path measures the merged PR's files.
+        _names_touch_material_source() {
+            local _f
+            while IFS= read -r _f; do
+                [ -n "$_f" ] || continue
+                case "$_f" in docs/*|openspec/*|*.md) continue ;; *) return 0 ;; esac
+            done <<EOF
+$1
+EOF
+            return 1
+        }
         # _diff_touches_material_source <proj_root> — 0 iff the branch diff
         # (mainline merge-base..HEAD) touches anything outside docs/openspec/*.md.
         # Reuses _branch_diff_names (verdict.sh, sourced above) so the IMPLEMENT
@@ -341,16 +357,21 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # unresolvable base / verdict.sh unavailable => 1 (no advisory, never a
         # false-fire).
         _diff_touches_material_source() {
-            local _names _f
+            local _names
             command -v _branch_diff_names >/dev/null 2>&1 || return 1
             _names="$(_branch_diff_names "${1:-}")" || return 1
-            while IFS= read -r _f; do
-                [ -n "$_f" ] || continue
-                case "$_f" in docs/*|openspec/*|*.md) continue ;; *) return 0 ;; esac
-            done <<EOF
-$_names
-EOF
-            return 1
+            _names_touch_material_source "${_names}"
+        }
+        # _pr_touches_material_source <pr_ref> <repo> — 0 iff the merged PR's
+        # own file list (Task 1's pr_changed_files) touches anything outside
+        # docs/openspec/*.md. Fail-open: unresolvable PR / lib unavailable /
+        # empty file list => 1 (no advisory, never a false-fire).
+        _pr_touches_material_source() {
+            local _names
+            command -v pr_changed_files >/dev/null 2>&1 || return 1
+            _names="$(pr_changed_files "${1:-}" "${2:-}")" || return 1
+            [ -n "${_names}" ] || return 1
+            _names_touch_material_source "${_names}"
         }
         if [ "${_PUSHGATE_SKIP}" != "true" ] && [ -f "${_COMP_STATE}" ] && command -v jq >/dev/null 2>&1; then
             # Check 1: REVIEW in chain but not completed — deny with REVIEW message
@@ -405,11 +426,26 @@ EOF
                         phase_attested "${_SESSION_TOKEN}" "$_slot" && _impl_ok=true
                     fi
                 done
-                if [ "${_impl_ok}" = "false" ] && _diff_touches_material_source "${_proot}"; then
-                    _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: phase_attest executing-plans \"<reason>\". (advisory; will become a deny after backtest)"
-                    command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "${_pe_action}" "executing-plans"
+                _impl_db="branch-local"; _impl_material=false
+                if [ "${_pe_action}" = "gh-merge" ]; then
+                    _impl_db="unresolved"
+                    _impl_pr=""
+                    command -v pr_ref_from_command >/dev/null 2>&1 && \
+                        _impl_pr="$(pr_ref_from_command "${_COMMAND}")"
+                    if [ -n "${_impl_pr}" ] && _pr_touches_material_source "${_impl_pr}" "${_proot}"; then
+                        _impl_db="pr:${_impl_pr}"; _impl_material=true
+                    fi
+                elif _diff_touches_material_source "${_proot}"; then
+                    _impl_material=true
+                fi
+                if [ "${_impl_ok}" = "false" ] && \
+                   { [ "${_impl_material}" = "true" ] || [ "${_impl_db}" = "unresolved" ]; }; then
+                    if [ "${_impl_material}" = "true" ]; then
+                        _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: phase_attest executing-plans \"<reason>\". (advisory; will become a deny after backtest)"
+                        command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "${_pe_action}" "executing-plans"
+                    fi
                     if command -v implement_shadow_record >/dev/null 2>&1; then
-                        implement_shadow_record "${_pe_action}" "${_proot}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" || true
+                        implement_shadow_record "${_pe_action}" "${_proot}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" "${_impl_db}" "${_impl_material}" || true
                     fi
                 fi
             fi

@@ -155,7 +155,7 @@ assert_contains "record names the gate"        '"gate":"push-implement"' "${_rec
 assert_contains "record marks a would-block"   '"would_block":true'      "${_rec}"
 assert_contains "record carries action push"   '"action":"push"'         "${_rec}"
 assert_contains "record carries schema_version"    '"schema_version":1'    "${_rec}"
-assert_contains "record carries predicate_version" '"predicate_version":1' "${_rec}"
+assert_contains "record carries predicate_version" '"predicate_version":2' "${_rec}"
 assert_contains "record carries a record_id"   '"record_id":'            "${_rec}"
 assert_contains "record carries a ts"          '"ts":'                   "${_rec}"
 assert_contains "record carries the transcript pointer" '"transcript_path":' "${_rec}"
@@ -247,6 +247,54 @@ phase_attest executing-plans "shadow-negative-test" >/dev/null 2>&1
 out="$(run_guard)"
 assert_equals "no shadow record when IMPLEMENT evidence exists" "0" \
     "$(wc -l < "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | tr -d ' ')"
+
+# --- #161: merges are measured against the PR, not the local branch -------
+# gh is stubbed on PATH: no test may touch the network. The stub reports a PR
+# whose diff edits src/app.py, while the fixture branch's own delta is what the
+# pre-#161 code would have measured.
+#
+# Precondition: the previous block (line ~246) left an executing-plans
+# attestation on disk, which would satisfy _impl_ok and suppress the whole
+# leg (no record at all) regardless of push vs merge. Clear it so this block's
+# fixture state matches what the brief assumes: impl-slot in chain, no impl
+# evidence. (_COMP already has executing-plans in .chain since line ~142, and
+# REVIEW/VERIFY ledger records from lines ~90-91 are untouched, so only the
+# IMPLEMENT leg is under test here.)
+rm -f "$HOME/.claude/.skill-phase-attest-${_TOK}"
+
+_GHSTUB="$(mktemp -d /tmp/pg-ghstub-XXXXXX)"
+cat > "${_GHSTUB}/gh" <<'STUB'
+#!/bin/bash
+for a in "$@"; do case "$a" in 404) exit 1 ;; esac; done
+printf 'src/app.py\n'
+STUB
+chmod +x "${_GHSTUB}/gh"
+
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(PATH="${_GHSTUB}:$PATH" run_guard 'gh pr merge 7 --squash')"
+_rec="$(cat "$IMPLEMENT_SHADOW_LOG")"
+assert_equals "merge writes one record" "1" "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+assert_contains "merge record names the PR as its subject" '"diff_base":"pr:7"' "${_rec}"
+assert_contains "merge record still marks material source"  '"material_source":true' "${_rec}"
+assert_contains "predicate_version bumped to 2"             '"predicate_version":2' "${_rec}"
+assert_not_contains "merge did not become a deny" "permissionDecision" "${out:-}"
+
+# Unresolvable PR -> unresolved, record still written, still no deny.
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(PATH="${_GHSTUB}:$PATH" run_guard 'gh pr merge 404 --squash')"
+assert_equals "unresolvable merge still writes a record" "1" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+assert_contains "unresolvable merge is marked unresolved" '"diff_base":"unresolved"' \
+    "$(cat "$IMPLEMENT_SHADOW_LOG")"
+assert_not_contains "unresolvable merge did not become a deny" "permissionDecision" "${out:-}"
+
+# PUSH PATH UNCHANGED — this is a Global Constraint, asserted not assumed.
+: > "$IMPLEMENT_SHADOW_LOG"
+out_push="$(run_guard)"
+assert_contains "push record is branch-local" '"diff_base":"branch-local"' \
+    "$(cat "$IMPLEMENT_SHADOW_LOG")"
+assert_contains "push still surfaces the IMPLEMENT advisory" "IMPLEMENT:" "${out_push:-<empty>}"
+rm -rf "${_GHSTUB}"
 
 export HOME="$_OLDHOME"
 rm -rf "${_REPO}" "${_THOME}" 2>/dev/null
