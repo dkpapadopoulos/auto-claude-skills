@@ -5,6 +5,35 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 . "${SCRIPT_DIR}/test-helpers.sh"
 echo "=== test-push-gate-implement-leg.sh ==="
 
+# --- Unit: implement_shadow_record's would_block parameter (#169) ----------
+# Direct-call unit block. The 8th parameter defaults to true so the guard's
+# existing call site is unchanged; passing false is how an attestation-resolved
+# episode is recorded.
+(
+    _u_home="$(mktemp -d /tmp/pg-impl-unit-XXXXXX)"
+    export IMPLEMENT_SHADOW_LOG="${_u_home}/shadow.jsonl"
+    # shellcheck disable=SC1090
+    . "${PROJECT_ROOT}/hooks/lib/implement-shadow.sh"
+
+    assert_equals "schema_version is 2" "2" "${IMPLEMENT_SHADOW_SCHEMA_VERSION}"
+    assert_equals "predicate_version is unchanged at 2" "2" \
+        "${IMPLEMENT_SHADOW_PREDICATE_VERSION}"
+
+    implement_shadow_record push "${PROJECT_ROOT}" tok /tmp/t.jsonl none branch-local true
+    assert_contains "omitted would_block defaults to true" '"would_block":true' \
+        "$(cat "${IMPLEMENT_SHADOW_LOG}")"
+
+    : > "${IMPLEMENT_SHADOW_LOG}"
+    implement_shadow_record push "${PROJECT_ROOT}" tok /tmp/t.jsonl attested branch-local true false
+    _u_rec="$(cat "${IMPLEMENT_SHADOW_LOG}")"
+    assert_contains "explicit false is recorded as a json boolean" '"would_block":false' "${_u_rec}"
+    assert_contains "evidence kind is carried through" '"impl_evidence_kind":"attested"' "${_u_rec}"
+    assert_equals "record is still valid json" "0" \
+        "$(jq -e . "${IMPLEMENT_SHADOW_LOG}" >/dev/null 2>&1; echo $?)"
+
+    rm -rf "${_u_home}"
+)
+
 # The IMPLEMENT-evidence leg (Check 0, WARN-FIRST) advises — never denies — when
 # an implementation-slot skill (executing-plans / subagent-driven-development /
 # agent-team-execution) is in the composition chain, the push diff touches
@@ -154,7 +183,7 @@ assert_json_valid "shadow record is valid json" "$IMPLEMENT_SHADOW_LOG"
 assert_contains "record names the gate"        '"gate":"push-implement"' "${_rec}"
 assert_contains "record marks a would-block"   '"would_block":true'      "${_rec}"
 assert_contains "record carries action push"   '"action":"push"'         "${_rec}"
-assert_contains "record carries schema_version"    '"schema_version":1'    "${_rec}"
+assert_contains "record carries schema_version"    '"schema_version":2'    "${_rec}"
 assert_contains "record carries predicate_version" '"predicate_version":2' "${_rec}"
 assert_contains "record carries a record_id"   '"record_id":'            "${_rec}"
 assert_contains "record carries a ts"          '"ts":'                   "${_rec}"
