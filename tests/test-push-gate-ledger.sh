@@ -40,14 +40,16 @@ jq -nc --arg s "${_PVHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"
     > "$HOME/.claude/.skill-project-verified-${_TOK}"
 
 _mkinput() {
-    # Use jq to build JSON safely so any path characters are properly escaped
-    jq -n --arg tp "$_TPATH" \
-        '{"transcript_path":$tp,"tool_input":{"command":"git push origin HEAD"}}'
+    # Use jq to build JSON safely so any path characters are properly escaped.
+    # Optional $1 overrides the command; empty/unset keeps the historic default
+    # so every existing bare `run_guard` call site is unaffected.
+    jq -n --arg tp "$_TPATH" --arg c "${1:-git push origin HEAD}" \
+        '{"transcript_path":$tp,"tool_input":{"command":$c}}'
 }
 # jq outputs pretty-printed JSON; deny appears as the quoted string "deny" in
 # the permissionDecision field, so we use "deny" (with surrounding quotes) as
 # the needle -- compact enough to be distinctive, works with pretty-printed output.
-run_guard() { _mkinput | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null; }
+run_guard() { _mkinput "${1:-}" | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null; }
 
 # (a) No ledger entries, completed empty -> DENY (baseline preserved)
 out="$(run_guard)"
@@ -79,6 +81,20 @@ assert_contains     "stale ledger => staleness advisory" "stale"        "${out:-
 assert_contains     "staleness emitted as additionalContext" "additionalContext" "${out:-<empty>}"
 assert_not_contains "stale ledger => no deny"            '"deny"'        "${out:-}"
 assert_not_contains "stale path no longer auto-approves" '"permissionDecision"' "${out:-}"
+
+# (c2) issue #166 — the SAME stale fixture, but a MERGE. The staleness text above
+# is computed from the LOCAL branch HEAD, which for `gh pr merge <other-PR>` is
+# unrelated to what is being merged. #161 fixed the non-SHIP flush
+# (_flush_push_advisories) to emit only the IMPLEMENT subset on a resolved
+# merge, but the SHIP-phase _WARNINGS fold-in is a DIFFERENT mechanism and was
+# left ungated — so during SHIP a merge still surfaced branch-local text as
+# though it described the merged PR. The push case above is the control: it
+# MUST keep showing staleness.
+out="$(run_guard 'gh pr merge 7 --squash')"
+assert_not_contains "SHIP merge does not leak branch-local staleness" "stale" "${out:-}"
+assert_not_contains "SHIP merge stays advisory (no deny)" '"deny"' "${out:-}"
+out="$(run_guard)"
+assert_contains "control: SHIP push still shows staleness" "stale" "${out:-<empty>}"
 
 export HOME="$_OLDHOME"
 print_summary

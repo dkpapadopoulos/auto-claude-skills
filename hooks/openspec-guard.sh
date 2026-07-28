@@ -658,6 +658,31 @@ fi
 # silently dropped advisories for non-SHIP pushes (latent since the staleness
 # advisory landed). Advisory channel only — no permissionDecision here (one
 # would auto-approve and suppress downstream warnings; documented bug shape).
+# _advisory_text_for_action — the SINGLE rule for what advisory text an action
+# is allowed to surface. Echoes the text; returns 1 when nothing may be emitted.
+#
+# Issue #166 exists because this rule lived in TWO places. #161 narrowed the
+# non-SHIP flush (_flush_push_advisories) so a resolved merge surfaces only the
+# IMPLEMENT subset, but the SHIP-phase _WARNINGS fold-in is a separate mechanism
+# and was left emitting the full _STALE_MSG — so the same branch-local staleness
+# text still leaked onto `gh pr merge <other-PR>` during SHIP. Both callers now
+# share this function; a future third caller must call it too rather than
+# re-deriving the rule, which is how the divergence happened the first time.
+#
+# push  -> the full _STALE_MSG (unchanged, byte-identical to pre-#161)
+# merge -> _IMPL_MSG only, and only when the PR subject resolved (diff_base pr:*)
+# else  -> nothing: silence stays wherever the subject is unknown
+_advisory_text_for_action() {
+    if [ "${_gc_is_push:-false}" = "true" ]; then
+        printf '%s' "${_STALE_MSG:-}"
+        return 0
+    fi
+    case "${_impl_db:-unresolved}" in
+        pr:*) printf '%s' "${_IMPL_MSG:-}"; return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 _flush_push_advisories() {
     # PUSH-only, historically: _STALE_MSG staleness text is computed from the
     # LOCAL branch HEAD, which for `gh pr merge <other>` is the wrong delta —
@@ -679,13 +704,8 @@ _flush_push_advisories() {
     #
     # The push branch below is untouched: it still flushes _STALE_MSG in
     # full, byte-identical to before this change.
-    local _msg="${_STALE_MSG:-}"
-    if [ "${_gc_is_push:-false}" != "true" ]; then
-        case "${_impl_db:-unresolved}" in
-            pr:*) _msg="${_IMPL_MSG:-}" ;;
-            *) return 0 ;;
-        esac
-    fi
+    local _msg
+    _msg="$(_advisory_text_for_action)" || return 0
     [ -n "${_msg}" ] || return 0
     if command -v jq >/dev/null 2>&1; then
         jq -n --arg msg "PUSH GATE (advisory): ${_msg}" \
@@ -807,10 +827,16 @@ fi
 # Fold in the push-gate's soft staleness advisory (set during the git-push case above),
 # so it emits together with the other SHIP advisories instead of via an early-exit
 # permissionDecision that would auto-approve and suppress them.
-if [ -n "${_STALE_MSG:-}" ]; then
+# Issue #166: this fold-in used _STALE_MSG unconditionally, so a SHIP-phase
+# `gh pr merge <other-PR>` surfaced branch-local staleness text as though it
+# described the merged PR — the same defect #161 fixed in the non-SHIP flush,
+# surviving here because this is a different mechanism. Both now share
+# _advisory_text_for_action so the rule cannot diverge again.
+_SHIP_ADVISORY="$(_advisory_text_for_action)" || _SHIP_ADVISORY=""
+if [ -n "${_SHIP_ADVISORY}" ]; then
     [ -n "${_WARNINGS}" ] && _WARNINGS="${_WARNINGS}
 "
-    _WARNINGS="${_WARNINGS}PUSH GATE (advisory): ${_STALE_MSG}"
+    _WARNINGS="${_WARNINGS}PUSH GATE (advisory): ${_SHIP_ADVISORY}"
 fi
 
 # --- Emit combined warnings ---
