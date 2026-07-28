@@ -13,6 +13,22 @@ assert_equals "number after flags"           "7" "$(pr_ref_from_command 'gh pr m
 assert_equals "rest api merge path"          "7" "$(pr_ref_from_command 'gh api repos/o/r/pulls/7/merge')"
 assert_equals "delete-branch flag ignored"  "12" "$(pr_ref_from_command 'gh pr merge 12 --squash --delete-branch')"
 
+# Fix round 1, IMPORTANT 1a: a digit-leading token BEFORE the literal `merge`
+# token (e.g. a flag value like `--org 42`) must never be mistaken for the PR
+# ref -- the loop must gate the digit test on having seen `merge` first.
+assert_equals "digit-leading token before merge is not the ref" "7" \
+    "$(pr_ref_from_command 'gh --org 42 pr merge --squash 7')"
+
+# Fix round 1, IMPORTANT 1b: the token loop uses an unquoted `for tok in $cmd`,
+# which performs pathname expansion as well as word-splitting -- a bare `*`
+# token in the command text must stay a literal asterisk, never expand
+# against files in the caller's cwd.
+_GLOBTEST_DIR="$(mktemp -d /tmp/prdiff-globtest-XXXXXX)"
+( cd "${_GLOBTEST_DIR}" && mkdir 42 && touch 99 )
+assert_equals "unquoted loop token is not glob-expanded" "999" \
+    "$(cd "${_GLOBTEST_DIR}" && pr_ref_from_command 'gh pr merge * 999')"
+rm -rf "${_GLOBTEST_DIR}"
+
 # --- SECURITY: a non-integer token must never be returned ----------------
 # The command is model-authored. Returning anything but a bare integer would let
 # a crafted command inject flags (e.g. --repo other/org) into the gh call.
@@ -49,9 +65,38 @@ printf 'src/app.py\n'
 STUB
 chmod +x "${_STUB}/gh"
 export PRDIFF_ARGV_LOG="${_STUB}/argv.log"; : > "${PRDIFF_ARGV_LOG}"
-_bad="$(pr_ref_from_command 'gh pr merge --repo other/org')"
+# Fix round 1, IMPORTANT 2: this input is deliberately chosen so the loop DOES
+# capture a candidate ("7;rm", since the loop's [0-9]* test only checks a
+# token's first character) before the final all-digits boundary strips it.
+# `gh pr merge --repo other/org` (the original input here) never exercises
+# the final boundary case at all -- the loop's own digit test already yields
+# an empty candidate for it, so a mutation that deletes the final boundary
+# case still passes trivially (mutation-proved: see task-1-report.md "Fix
+# round 1"). The direct assert_equals below on `_bad` is the load-bearing
+# check -- it fails if the final boundary case is removed. The argv-log
+# assertion after it is a secondary, defense-in-depth confirmation.
+_bad="$(pr_ref_from_command 'gh pr merge 7;rm -rf / --squash')"
+assert_equals "captured-but-non-integer candidate is rejected" "" "${_bad}"
 [ -n "${_bad}" ] && PATH="${_STUB}:$PATH" pr_changed_files "${_bad}" "$PWD" >/dev/null
 assert_equals "rejected ref never reaches gh" "0" "$(wc -l < "${PRDIFF_ARGV_LOG}" | tr -d ' ')"
+
+# --- timeout: a hanging gh must not block indefinitely --------------------
+# Fix round 1, IMPORTANT 3: PR_DIFF_GH_TIMEOUT must actually bound the gh
+# call. Use a short override (not the 10s default) to keep this test fast.
+_STUB_SLOW="$(mktemp -d /tmp/prdiff-slow-XXXXXX)"
+cat > "${_STUB_SLOW}/gh" <<'STUB'
+#!/bin/bash
+sleep 5
+printf 'src/app.py\n'
+STUB
+chmod +x "${_STUB_SLOW}/gh"
+SECONDS=0
+_out="$(PATH="${_STUB_SLOW}:$PATH" PR_DIFF_GH_TIMEOUT=1 pr_changed_files 7 "$PWD")"
+_elapsed="${SECONDS}"
+assert_equals "slow gh is cut off, yields empty (not the eventual output)" "" "${_out}"
+assert_equals "slow gh is cut off promptly, not left to hang" "1" \
+    "$( [ "${_elapsed}" -le 3 ] && echo 1 || echo 0 )"
+rm -rf "${_STUB_SLOW}"
 
 rm -rf "${_STUB}" "${_EMPTY}"
 print_summary
