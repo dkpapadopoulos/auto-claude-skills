@@ -64,12 +64,19 @@ assert_contains "arm shows first unsatisfied step (brainstorming)" \
     "Step 'brainstorming' has no invocation evidence" "${_op_prompt}"
 assert_not_contains "arm contains no unsubstituted placeholders" \
     "<step>" "${_op_prompt}"
-assert_contains "arm shows the three outstanding steps visibly" \
-    "Step 1: Skill(superpowers:brainstorming)" "${_op_prompt}"
-assert_contains "arm shows composition has writing-plans step" \
-    "Step 2: Skill(superpowers:writing-plans)" "${_op_prompt}"
-assert_contains "arm shows composition has executing-plans step" \
-    "Step 3: Skill(superpowers:executing-plans)" "${_op_prompt}"
+assert_contains "arm shows step 1 with DONE? marker (not invoked yet)" \
+    "[DONE?] Step 1: Skill(superpowers:brainstorming)" "${_op_prompt}"
+assert_contains "arm shows step 2 with DONE? marker" \
+    "[DONE?] Step 2: Skill(superpowers:writing-plans)" "${_op_prompt}"
+assert_contains "arm shows step 3 with DONE? marker" \
+    "[DONE?] Step 3: Skill(superpowers:executing-plans)" "${_op_prompt}"
+assert_contains "arm shows CURRENT step 4 (requesting-code-review)" \
+    "[CURRENT] Step 4: Skill(superpowers:requesting-code-review)" "${_op_prompt}"
+
+# Structural check: all step lines in composition must start with [MARKER]
+# Count lines matching "  Step " (without brackets) — should be 0
+_bracket_less_steps=$(printf '%s' "${_op_prompt}" | grep -c '^  Step ' 2>/dev/null) || _bracket_less_steps=0
+assert_equals "arm has no bracket-less step lines" "0" "${_bracket_less_steps}"
 assert_contains "arm makes the phase_attest remedy salient" \
     "phase_attest brainstorming" "${_op_prompt}"
 assert_contains "arm names the gating milestones as non-attestable" \
