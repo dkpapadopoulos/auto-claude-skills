@@ -27,11 +27,41 @@ promoting it to a **hard block** requires a one-time GitHub Settings change.
 - No `openspec/changes/` directory → exits 0, no-op (default-mode repos).
 - Only `openspec/changes/archive/` exists → exits 0, no-op.
 
+## Done Gates workflow
+
+`.github/workflows/done-gates.yml` runs the repo's two **owned done-gates** on
+every PR and on pushes to `main`:
+
+- `tests/test-fixture-coverage.sh` — every owned, trigger-routed skill has a
+  routing fixture with a MATCH line and a verbatim-borrowed NO_MATCH decoy.
+- `tests/test-skill-content-coverage.sh` — every such skill is referenced by some
+  `tests/*.sh` content assertion.
+
+**Why it exists.** These gates were previously described as "CI-blocking via
+`.verify.yml`" in both `CLAUDE.md` and `docs/enforcement-map.md`. That was false:
+`.verify.yml` is `substrate: local` and no workflow reads it. Enforcement lived
+only in the local push gate, which cannot see a merge performed through the GitHub
+web UI, has documented human bypasses, and whose routing-governance leg is scoped
+to `skills/|config/|hooks/` — so a `tests/`-only PR weakening a coverage gate
+evaded it entirely. `tests/test-done-gate-ci.sh` pins this workflow so the claim
+cannot rot again.
+
+**Scope note.** Only those two gates run here. The full `tests/run-tests.sh` suite
+(116 files, 10+ minutes, with known shared-state and stdin-hang traps) is
+deliberately **not** wired into CI: making a slow or flaky check Required invites
+admin-override habits, which weakens the gate rather than strengthening it.
+
+To make it hard-blocking, follow the steps below and type **`Done Gates`** in the
+status-check search box (step 6). It is independent of `OpenSpec Validate` — you
+can require either, both, or neither.
+
 ## Making the gate a required check (hard block)
 
-The workflow produces a check that **must be manually required** in branch
-protection rules for it to actually block merges. Without this step, PRs can
-merge even when the check is red.
+Applies to **both** workflows — `OpenSpec Validate` and `Done Gates`. Each produces
+a check that **must be manually required** in branch protection rules for it to
+actually block merges. Without this step, PRs can merge even when the check is red.
+
+In step 6 below, add the check you want: `OpenSpec Validate`, `Done Gates`, or both.
 
 1. Go to **Settings → Branches** in the GitHub repo.
 2. Under **Branch protection rules**, click **Add rule** (or edit the existing rule for `main`).
