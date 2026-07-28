@@ -109,5 +109,94 @@ _episodes() {
         END { if (NR > 0) print eid "\t" erepo "\t" ebranch "\t" etok "\t" ids }'
 }
 
-# Allow tests to source the helpers without executing a command.
-[ "${1:-}" = "--source-only" ] && return 0 2>/dev/null
+# _claimant -> human | agent
+# Deliberately biased toward "agent": a human using `!` inside a session is
+# misclassified and pays one re-confirmation, whereas an agent's self-label
+# counted silently would corrupt the rate. This leg governs agent pushes, so the
+# subject has a live incentive to grade its own gate.
+# All three signals are forgeable — the output says human-CLAIMED, never verified.
+_claimant() {
+    if [ -n "${CLAUDECODE:-}" ]; then echo agent; return; fi
+    if [ ! -t 1 ]; then echo agent; return; fi
+    case "$(ps -o comm= -p "$PPID" 2>/dev/null)" in *claude*) echo agent; return;; esac
+    echo human
+}
+
+_record_field() { # _record_field <record_id> <field>
+    jq -r --arg id "${1:-}" --arg f "${2:-}" \
+       'select(.record_id == $id) | .[$f] // empty' "${SHADOW_LOG}" 2>/dev/null | head -1
+}
+
+cmd_adjudicate() {
+    local _rid="${1:-}" _verdict="${2:-}" _reason="${3:-}" _pv _ts _claim
+    case "${_verdict}" in
+        true_catch|false_block|unknown) ;;
+        *) echo "error: --verdict must be true_catch, false_block, or unknown" >&2; return 1;;
+    esac
+    [ -f "${SHADOW_LOG}" ] || { echo "error: no shadow log at ${SHADOW_LOG}" >&2; return 1; }
+    command -v jq >/dev/null 2>&1 || { echo "error: jq required" >&2; return 1; }
+    _pv="$(_record_field "${_rid}" predicate_version)"
+    [ -z "${_pv}" ] && { echo "error: no record '${_rid}' in ${SHADOW_LOG}" >&2; return 1; }
+    if [ "${_pv}" != "${REQUIRED_PREDICATE_VERSION}" ]; then
+        echo "error: record '${_rid}' is predicate_version ${_pv}; only v${REQUIRED_PREDICATE_VERSION} is adjudicable." >&2
+        echo "       v1 measured a different subject for merges and MUST NOT be pooled with v2." >&2
+        return 1
+    fi
+    if [ ! -f "${ADJ_LOG}" ]; then
+        : > "${ADJ_LOG}" 2>/dev/null || { echo "error: cannot write ${ADJ_LOG}" >&2; return 1; }
+    fi
+    chmod 600 "${ADJ_LOG}" 2>/dev/null
+    _ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)"
+    _claim="$(_claimant)"
+    jq -cn --arg rid "${_rid}" --arg ts "${_ts}" --arg v "${_verdict}" \
+           --arg r "${_reason}" --arg c "${_claim}" \
+           --arg u "${USER:-unknown}" --arg tty "$(tty 2>/dev/null || echo not-a-tty)" \
+           --arg par "$(ps -o comm= -p "$PPID" 2>/dev/null || echo unknown)" \
+           --arg head "$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
+           --arg agentenv "$([ -n "${CLAUDECODE:-}" ] && echo present || echo absent)" \
+       '{schema_version:1,record_id:$rid,ts:$ts,verdict:$v,reason:$r,claimant:$c,
+         provenance:{user:$u,tty:$tty,parent:$par,repo_head:$head,agent_env:$agentenv}}' \
+       >> "${ADJ_LOG}" 2>/dev/null || { echo "error: append to ${ADJ_LOG} failed" >&2; return 1; }
+    echo "recorded: ${_rid}  ${_verdict}  (${_claim}-claimed)"
+    [ "${_claim}" = "agent" ] && \
+        echo "note: agent-claimed — excluded from the rate until a human re-confirms."
+    echo "label: HUMAN-CLAIMED, not human-verified."
+    return 0
+}
+
+_usage() {
+    cat <<'HELP'
+shadow-adjudicate.sh — label IMPLEMENT-leg shadow records and report the rate.
+
+  --next                       show the oldest unadjudicated record + how to label it
+  <record_id> --verdict <v> --reason "<why>"
+                               record a verdict: true_catch | false_block | unknown
+  --status                     episodes, exclusions, rate, band, distance to floor
+
+Diagnostic only. Exits 0 for observational commands. Never wire the output of
+--status into an enforcement decision: the push gate is the only decider.
+HELP
+}
+
+# Allow tests to source the helpers without executing a command. `return` is
+# valid here only because this branch is reached solely via `. script --source-only`;
+# the 2>/dev/null covers the executed case, where the case below runs instead.
+case "${1:-}" in
+    --source-only) return 0 2>/dev/null ;;
+    --next)        cmd_next; exit $? ;;
+    --status)      cmd_status; exit $? ;;
+    -h|--help)     _usage; exit 0 ;;
+    "")            _usage; exit 1 ;;
+    *)
+        _RID="$1"; shift
+        _V=""; _R=""
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --verdict) _V="${2:-}"; shift 2 ;;
+                --reason)  _R="${2:-}"; shift 2 ;;
+                *) echo "error: unexpected argument '$1'" >&2; exit 1 ;;
+            esac
+        done
+        cmd_adjudicate "${_RID}" "${_V}" "${_R}"; exit $?
+        ;;
+esac

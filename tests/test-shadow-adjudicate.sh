@@ -59,6 +59,37 @@ eq "distinct session tokens are distinct episodes" "2" "$(episodes | wc -l | tr 
 rec f "2026-07-28T10:00:00Z" "/repo/A" "feat/x" "tok1" 1
 eq "v1 records are not episodes" "0" "$(episodes | wc -l | tr -d ' ')"
 
+# --- Task 3: adjudication write ---
+adj() { ( unset CLAUDECODE; "$SCRIPT" "$1" --verdict "$2" --reason "$3" >/dev/null 2>&1; echo $?; ); }
+
+: > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
+rec g "2026-07-28T10:00:00Z" "/repo/A" "feat/x" "tok1"
+rec h "2026-07-28T10:00:00Z" "/repo/B" "feat/y" "tok2" 1
+BEFORE="$(cksum < "$IMPLEMENT_SHADOW_LOG")"
+
+eq "adjudicating a v2 record succeeds" "0" "$(adj g true_catch 'resolved by attest')"
+eq "one adjudication was appended"     "1" "$(wc -l < "$IMPLEMENT_ADJUDICATION_LOG" | tr -d ' ')"
+eq "shadow log is untouched"           "$BEFORE" "$(cksum < "$IMPLEMENT_SHADOW_LOG")"
+eq "verdict was recorded"              "true_catch" "$(jq -r '.verdict' "$IMPLEMENT_ADJUDICATION_LOG")"
+eq "a v1 record is refused"            "1" "$(adj h true_catch 'nope')"
+eq "refusal wrote nothing"             "1" "$(wc -l < "$IMPLEMENT_ADJUDICATION_LOG" | tr -d ' ')"
+eq "an unknown record id is refused"   "1" "$(adj nosuch true_catch 'nope')"
+eq "an invalid verdict is refused"     "1" "$(adj g bogus_verdict 'nope')"
+
+: > "$IMPLEMENT_ADJUDICATION_LOG"
+CLAUDECODE=1 "$SCRIPT" g --verdict unknown --reason "agent run" >/dev/null 2>&1
+eq "CLAUDECODE marks the claimant agent" "agent" "$(jq -r '.claimant' "$IMPLEMENT_ADJUDICATION_LOG")"
+eq "provenance records agent_env"        "present" "$(jq -r '.provenance.agent_env' "$IMPLEMENT_ADJUDICATION_LOG")"
+# The output must DISCLAIM verification, not merely avoid the word: an earlier
+# version of this test grepped for 'human-verified' expecting zero hits, which
+# the correct disclaimer ("not human-verified") also fails. Assert both halves.
+eq "output carries the human-claimed label" "1" \
+   "$(CLAUDECODE=1 "$SCRIPT" g --verdict unknown --reason x 2>&1 | grep -ci 'HUMAN-CLAIMED')"
+eq "output disclaims verification"          "1" \
+   "$(CLAUDECODE=1 "$SCRIPT" g --verdict unknown --reason x 2>&1 | grep -ci 'not human-verified')"
+eq "agent runs say they are excluded"       "1" \
+   "$(CLAUDECODE=1 "$SCRIPT" g --verdict unknown --reason x 2>&1 | grep -ci 'excluded from the rate')"
+
 echo
 echo "Tests run: $(( PASS + FAIL ))  passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
