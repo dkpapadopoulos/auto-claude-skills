@@ -362,17 +362,6 @@ EOF
             _names="$(_branch_diff_names "${1:-}")" || return 1
             _names_touch_material_source "${_names}"
         }
-        # _pr_touches_material_source <pr_ref> <repo> — 0 iff the merged PR's
-        # own file list (Task 1's pr_changed_files) touches anything outside
-        # docs/openspec/*.md. Fail-open: unresolvable PR / lib unavailable /
-        # empty file list => 1 (no advisory, never a false-fire).
-        _pr_touches_material_source() {
-            local _names
-            command -v pr_changed_files >/dev/null 2>&1 || return 1
-            _names="$(pr_changed_files "${1:-}" "${2:-}")" || return 1
-            [ -n "${_names}" ] || return 1
-            _names_touch_material_source "${_names}"
-        }
         if [ "${_PUSHGATE_SKIP}" != "true" ] && [ -f "${_COMP_STATE}" ] && command -v jq >/dev/null 2>&1; then
             # Check 1: REVIEW in chain but not completed — deny with REVIEW message
             _review_in_chain=false
@@ -426,20 +415,42 @@ EOF
                         phase_attested "${_SESSION_TOKEN}" "$_slot" && _impl_ok=true
                     fi
                 done
+                # Resolution and materiality are DISTINCT outcomes (#161 fix
+                # round 1): a PR that resolved (gh returned a file list) but is
+                # docs-only must record diff_base:"pr:<n>" with
+                # material_source:false, NOT "unresolved" — "unresolved" is
+                # reserved for "we couldn't look" (no ref, no gh, unauthed,
+                # unknown PR, timeout), never for "we looked and it was
+                # non-material". Fetch pr_changed_files exactly ONCE: its
+                # non-emptiness alone decides resolved vs unresolved; its
+                # content (tested via _names_touch_material_source, already
+                # fetched, no second network call) decides materiality.
                 _impl_db="branch-local"; _impl_material=false
                 if [ "${_pe_action}" = "gh-merge" ]; then
                     _impl_db="unresolved"
                     _impl_pr=""
                     command -v pr_ref_from_command >/dev/null 2>&1 && \
                         _impl_pr="$(pr_ref_from_command "${_COMMAND}")"
-                    if [ -n "${_impl_pr}" ] && _pr_touches_material_source "${_impl_pr}" "${_proot}"; then
-                        _impl_db="pr:${_impl_pr}"; _impl_material=true
+                    if [ -n "${_impl_pr}" ] && command -v pr_changed_files >/dev/null 2>&1; then
+                        _impl_pr_files="$(pr_changed_files "${_impl_pr}" "${_proot}")"
+                        if [ -n "${_impl_pr_files}" ]; then
+                            _impl_db="pr:${_impl_pr}"
+                            _names_touch_material_source "${_impl_pr_files}" && _impl_material=true
+                        fi
                     fi
                 elif _diff_touches_material_source "${_proot}"; then
                     _impl_material=true
                 fi
+                # Any gh-merge outcome records (material, resolved-non-material,
+                # or unresolved) so the corpus isn't silently missing the
+                # resolved-non-material case (fix round 1, #161 review finding:
+                # gating the write on _impl_db="unresolved" dropped that case
+                # entirely once it started resolving to the correct pr:<n>
+                # label instead of being mislabeled unresolved). Push keeps its
+                # original, narrower gate (material-only) — this branch never
+                # widens what a push records.
                 if [ "${_impl_ok}" = "false" ] && \
-                   { [ "${_impl_material}" = "true" ] || [ "${_impl_db}" = "unresolved" ]; }; then
+                   { [ "${_impl_material}" = "true" ] || [ "${_pe_action}" = "gh-merge" ]; }; then
                     if [ "${_impl_material}" = "true" ]; then
                         _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: phase_attest executing-plans \"<reason>\". (advisory; will become a deny after backtest)"
                         command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "${_pe_action}" "executing-plans"

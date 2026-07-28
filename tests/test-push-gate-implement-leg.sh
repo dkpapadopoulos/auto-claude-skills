@@ -288,6 +288,28 @@ assert_contains "unresolvable merge is marked unresolved" '"diff_base":"unresolv
     "$(cat "$IMPLEMENT_SHADOW_LOG")"
 assert_not_contains "unresolvable merge did not become a deny" "permissionDecision" "${out:-}"
 
+# Resolved-but-non-material PR -> record names the PR (NOT "unresolved"), with
+# material_source:false and no advisory. Fix round 1 (#161 review finding):
+# gh resolves fine but the PR touches only docs/CHANGELOG.md, so the merge is
+# a distinct outcome from "we couldn't look" and must be labeled as such.
+_GHSTUB_DOCS="$(mktemp -d /tmp/pg-ghstub-docs-XXXXXX)"
+cat > "${_GHSTUB_DOCS}/gh" <<'STUB'
+#!/bin/bash
+printf 'docs/CHANGELOG.md\n'
+STUB
+chmod +x "${_GHSTUB_DOCS}/gh"
+
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(PATH="${_GHSTUB_DOCS}:$PATH" run_guard 'gh pr merge 9 --squash')"
+_rec="$(cat "$IMPLEMENT_SHADOW_LOG")"
+assert_equals "resolved non-material merge writes one record" "1" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+assert_contains "resolved non-material merge names the PR, not unresolved" '"diff_base":"pr:9"' "${_rec}"
+assert_contains "resolved non-material merge marks material_source false" '"material_source":false' "${_rec}"
+assert_not_contains "resolved non-material merge does not become a deny" "permissionDecision" "${out:-}"
+assert_not_contains "resolved non-material merge surfaces no IMPLEMENT advisory" "IMPLEMENT:" "${out:-}"
+rm -rf "${_GHSTUB_DOCS}"
+
 # PUSH PATH UNCHANGED — this is a Global Constraint, asserted not assumed.
 : > "$IMPLEMENT_SHADOW_LOG"
 out_push="$(run_guard)"
