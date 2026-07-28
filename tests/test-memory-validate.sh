@@ -285,4 +285,25 @@ else
     _record_fail "prefix-stripped hyphenated [[link]] resolves (no WARN)" "rc=${rc} out=${out}"
 fi
 
+# --- anchor beginning with '-' must not crash basename (BSD/macOS) ---
+# The anchor regex admits [A-Za-z0-9_./-], so a backticked token like `-design.md`
+# (real: several memories cite bare suffixes) reaches basename as its FIRST operand.
+# BSD basename then parses "-d" as an option and errors to stderr, and the anchor is
+# silently skipped — the scan under-reports rather than fails loudly.
+_reset_mem
+_mem dashanchor.md "---
+name: dashanchor
+description: d
+metadata:
+  type: project
+---
+cites a bare suffix anchor \`-design.md\` and a short flag \`-a\`"
+printf '%s\n' "- [Dash](dashanchor.md) — x" >> "${MEM}/MEMORY.md"
+out="$("${VALIDATE}" "${MEM}" "${REPO}" 2>&1)"; rc=$?
+if [ "${rc}" -eq 0 ] && ! printf '%s' "${out}" | grep -qF "illegal option"; then
+    _record_pass "an anchor starting with '-' does not crash basename"
+else
+    _record_fail "an anchor starting with '-' does not crash basename" "rc=${rc} out=${out}"
+fi
+
 print_summary

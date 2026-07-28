@@ -110,10 +110,15 @@ for f in "${MEM}"/*.md; do
     for a in ${anchors}; do
         # cross-memory-file reference (points at a sibling memory .md, not a repo
         # path) — out of scope for repo-staleness; the [[link]] check owns those.
-        [ -e "${MEM}/$(basename "${a}")" ] && continue
+        # `--` is load-bearing: anchors are untrusted memory text and the extraction
+        # regex admits a leading '-' (e.g. a cited suffix `-design.md`). BSD basename
+        # parses that as an option, errors, and the anchor is SILENTLY skipped — the
+        # scan under-reports instead of failing loudly. GNU basename tolerates it, so
+        # this only bites on macOS. Same reason on the /* branch below.
+        [ -e "${MEM}/$(basename -- "${a}")" ] && continue
         case "${a}" in
             /*)  # absolute path (or /tmp scratch): not repo-relative — resolve by basename only
-                printf '%s\n' "${HEADFILES}" | awk -F/ -v b="$(basename "${a}")" '$NF==b{hit=1} END{exit !hit}' && continue ;;
+                printf '%s\n' "${HEADFILES}" | awk -F/ -v b="$(basename -- "${a}")" '$NF==b{hit=1} END{exit !hit}' && continue ;;
             */*) # path anchor: exact OR suffix match at HEAD (memories cite partial paths)
                 printf '%s\n' "${HEADFILES}" | grep -qxF "${a}" && continue
                 printf '%s\n' "${HEADFILES}" | grep -qF "/${a}" && continue ;;
