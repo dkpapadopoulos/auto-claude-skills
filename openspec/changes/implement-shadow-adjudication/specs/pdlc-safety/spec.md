@@ -1,0 +1,176 @@
+# Spec delta: pdlc-safety — shadow-corpus adjudication (Stage C2)
+
+## ADDED Requirements
+
+### Requirement: Adjudication of IMPLEMENT shadow records
+
+`scripts/shadow-adjudicate.sh` MUST record a verdict for a shadow record without
+mutating `~/.claude/.push-implement-shadow.jsonl`. Adjudications MUST be appended
+to a separate sidecar log, `~/.claude/.push-implement-adjudication.jsonl`,
+overridable via `IMPLEMENT_ADJUDICATION_LOG`, created `0600` before first write.
+
+Each adjudication MUST carry `schema_version`, the target `record_id`, a UTC
+ISO-8601 `ts`, a `verdict` of exactly `true_catch`, `false_block`, or `unknown`, a
+free-text `reason`, a `claimant` of `human` or `agent`, and captured provenance.
+
+`claimant` MUST be `agent` when ANY of `CLAUDECODE` or `CLAUDE_CODE_SESSION_ID`
+is set, or the parent process is `claude`. The two environment markers are the
+load-bearing signals; the parent-process check is inert in the Claude Code
+harness (the script runs under an intermediate shell, so `claude` is the
+grandparent) and is retained only because it costs nothing.
+
+A "stdout is not a tty" signal MUST NOT be used. It misfires whenever a human
+redirects or pipes output, and because human-claimed episodes are the only ones
+counted toward the rate, that false positive does not merely cost a
+re-confirmation — it makes the n=29 floor unreachable for anyone who pipes. It
+also adds no integrity, since every available signal is forgeable regardless.
+
+Output MUST describe results as **human-claimed**, and MUST NOT describe them as
+human-verified.
+
+Adjudicating a record whose `predicate_version` is not 2 MUST be refused with a
+non-zero exit and an explanation. The script MUST NOT be sourced by
+`hooks/openspec-guard.sh`, MUST NOT be added to `_GATE_ENFORCE_LIBS`, and MUST NOT
+write any gate state or emit a `permissionDecision`.
+
+#### Scenario: a human-claimed adjudication is recorded to the sidecar
+
+- **GIVEN** a shadow log containing a `predicate_version: 2` record `rec_a`
+- **WHEN** the operator runs `shadow-adjudicate.sh rec_a --verdict true_catch --reason "resolved by one truthful attest"`
+- **THEN** exactly one object MUST be appended to the sidecar with
+  `record_id: "rec_a"`, `verdict: "true_catch"`, and captured provenance
+- **AND** the shadow log MUST be byte-identical to its prior contents
+
+#### Scenario: a v1 record cannot be adjudicated
+
+- **GIVEN** a shadow log whose record `rec_v1` carries `predicate_version: 1`
+- **WHEN** the operator attempts to adjudicate `rec_v1`
+- **THEN** the command MUST exit non-zero, MUST explain that v1 measured a
+  different subject, and MUST NOT append to the sidecar
+
+#### Scenario: an agent-run adjudication is marked and segregated
+
+- **GIVEN** an environment where `CLAUDECODE` is set
+- **WHEN** any record is adjudicated
+- **THEN** the recorded `claimant` MUST be `agent`
+- **AND** that episode MUST be excluded from the headline rate reported by
+  `--status` until a `human`-claimed adjudication of the same record exists
+
+### Requirement: Surfacing the next unadjudicated record
+
+`--next` MUST print the oldest `predicate_version: 2` shadow record that has no
+adjudication in the sidecar, together with the facts that caused the leg to fire
+(`impl_in_chain`, `material_source`, `impl_evidence_kind`), its `repo`, `branch`,
+`action`, `diff_base`, its `transcript_path` as the adjudication pointer, and the
+exact command needed to label it.
+
+When every v2 record is already adjudicated, `--next` MUST say so and exit 0.
+`--next` MUST NOT append to the sidecar or modify any state.
+
+#### Scenario: the oldest unadjudicated record is surfaced with its pointer
+
+- **GIVEN** two v2 records, `rec_old` and `rec_new`, of which only `rec_new` has
+  an adjudication in the sidecar
+- **WHEN** the operator runs `--next`
+- **THEN** the output MUST identify `rec_old`, MUST include its `transcript_path`,
+  and MUST include a labeling command naming `rec_old`
+- **AND** the sidecar MUST be byte-identical to its prior contents
+
+#### Scenario: a fully adjudicated corpus reports nothing to do
+
+- **GIVEN** a corpus where every v2 record has an adjudication
+- **WHEN** the operator runs `--next`
+- **THEN** it MUST report that nothing is outstanding and exit 0
+
+### Requirement: Episode-level rate and band readout
+
+`--status` MUST report over independent **episodes**, not records. Records MUST be
+grouped into one episode when they share `(repo, branch, session_token)` AND their
+`ts` falls within 30 minutes of that episode's FIRST record. The window is
+anchored at the first record, not rolling between consecutive records: a rolling
+gap would chain an entire day's work into a single episode, driving the
+denominator below the real number of decision points.
+
+A record whose `ts` cannot be parsed MUST be excluded from every episode and its
+count reported. Such records MUST NOT be grouped together: an unparseable
+timestamp yields a sentinel value, so two corrupt records sharing a key would
+appear zero seconds apart and merge on a time relation nothing verified.
+
+Where a record has more than one adjudication, the LATEST MUST win, for both the
+verdict and the claimant. Earlier adjudications MUST be retained as an audit
+trail. Without this a correction is a silent no-op — the tool reports success
+while the superseded verdict continues to determine the rate.
+
+An episode's verdict MUST then resolve worst-verdict-wins across its records: any
+`false_block` makes the episode `false_block`; otherwise any `unknown` makes it
+`unknown`; otherwise `true_catch`.
+
+`--status` MUST exclude `unknown` episodes, agent-claimed episodes, and records
+whose `predicate_version` is not 2 from the headline rate, and MUST report each
+excluded population alongside it rather than dropping it silently. It MUST also
+print the rate recomputed with every `unknown` counted as a `false_block`.
+
+A line the JSON parser cannot read MUST NOT abort the read of the whole corpus,
+and the count of such lines MUST be reported.
+
+When fewer than 29 rate-bearing episodes exist (`true_catch` + `false_block`,
+i.e. the rate's own denominator, NOT merely the labelled count), or when they
+span fewer than 2 distinct repos, `--status` MUST print `insufficient data` in
+place of a rate.
+Repo diversity is measured on the `repo` field verbatim, and `--status` MUST list
+the contributing repos rather than only counting them, so that two clones of one
+project satisfying the requirement are visible to a reader.
+
+When a rate is printed it MUST carry a one-sided 95% **exact Clopper–Pearson**
+interval and a band: `DENY` when the upper bound is below 10%, `ADVISORY-ONLY`
+when the lower bound is at or above 20%, and `NARROWED` otherwise. Equivalently
+and as implemented, `DENY` requires `P(X ≤ k | n, 0.10) < 0.05` and
+`ADVISORY-ONLY` requires `P(X ≥ k | n, 0.20) ≤ 0.05`.
+
+A normal approximation MUST NOT be substituted for the exact interval. The
+readout is informational and MUST NOT be wired into an enforcement decision.
+
+#### Scenario: a retry burst counts as one episode
+
+- **GIVEN** 11 shadow records sharing one `repo`, `branch`, and `session_token`,
+  all within a 9-minute window
+- **WHEN** `--status` groups them
+- **THEN** they MUST resolve to exactly 1 episode
+
+#### Scenario: the floor suppresses a premature rate
+
+- **GIVEN** 3 adjudicated episodes, all `true_catch`, all in one repo
+- **WHEN** `--status` runs
+- **THEN** it MUST print `insufficient data` rather than `0%`
+- **AND** it MUST report the distance to the 29-episode floor and the 2-repo
+  diversity requirement
+
+#### Scenario: the exact interval is used, not a normal approximation
+
+- **GIVEN** 23 adjudicated episodes across ≥2 repos, of which 8 are `false_block`
+- **WHEN** `--status` computes the band
+- **THEN** the band MUST be `NARROWED`, because `P(X ≥ 8 | 23, 0.20) = 0.0715`
+  exceeds 0.05
+- **AND** at 9 `false_block` episodes the band MUST be `ADVISORY-ONLY`, because
+  `P(X ≥ 9 | 23, 0.20) = 0.0273` does not
+
+#### Scenario: a correction supersedes the verdict it replaces
+
+- **GIVEN** record `x` adjudicated `false_block`, then re-adjudicated `true_catch`
+- **WHEN** the episode verdict is resolved
+- **THEN** it MUST be `true_catch`
+- **AND** both adjudications MUST remain in the sidecar as an audit trail
+
+#### Scenario: malformed timestamps are excluded, not merged
+
+- **GIVEN** two records sharing `(repo, branch, session_token)` whose `ts` values
+  are both unparseable
+- **WHEN** episodes are grouped
+- **THEN** they MUST contribute zero episodes
+- **AND** `--status` MUST report the excluded count
+
+#### Scenario: a mixed episode resolves to its worst verdict
+
+- **GIVEN** one episode whose records carry both `true_catch` and `false_block`
+- **WHEN** `--status` resolves that episode
+- **THEN** the episode MUST count as `false_block`
