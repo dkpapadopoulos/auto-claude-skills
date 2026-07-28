@@ -59,6 +59,44 @@ eq "distinct session tokens are distinct episodes" "2" "$(episodes | wc -l | tr 
 rec f "2026-07-28T10:00:00Z" "/repo/A" "feat/x" "tok1" 1
 eq "v1 records are not episodes" "0" "$(episodes | wc -l | tr -d ' ')"
 
+# --- episode edge cases ---
+: > "$IMPLEMENT_SHADOW_LOG"; rec s1 "2026-07-28T10:00:00Z" "/repo/A" "b" "t"
+eq "a single record is one episode" "1" "$(episodes | wc -l | tr -d ' ')"
+
+# window boundary: 1800s is inside (not > w), 1801s is outside
+: > "$IMPLEMENT_SHADOW_LOG"
+rec w1 "2026-07-28T10:00:00Z" "/repo/A" "b" "t"; rec w2 "2026-07-28T10:30:00Z" "/repo/A" "b" "t"
+eq "exactly 1800s stays in the episode" "1" "$(episodes | wc -l | tr -d ' ')"
+: > "$IMPLEMENT_SHADOW_LOG"
+rec w3 "2026-07-28T10:00:00Z" "/repo/A" "b" "t"; rec w4 "2026-07-28T10:30:01Z" "/repo/A" "b" "t"
+eq "1801s starts a new episode" "2" "$(episodes | wc -l | tr -d ' ')"
+
+# an unparseable ts must not silently merge unrelated branches
+: > "$IMPLEMENT_SHADOW_LOG"
+rec g1 "garbage" "/repo/A" "b1" "t1"; rec g2 "also-garbage" "/repo/A" "b2" "t2"
+eq "unparseable ts keeps branches distinct" "2" "$(episodes | wc -l | tr -d ' ')"
+
+# a separator byte inside a field must not collide two distinct episodes.
+# Concatenating key fields with \001 made branch="x\001y"+token="t1" equal to
+# branch="x"+token="y\001t1", silently merging them and shrinking the denominator.
+# NOTE: this fixture MUST be built with jq, not printf. A raw \001 inside a JSON
+# string is invalid (control chars U+0000-U+001F must be escaped), so a
+# printf-built record is silently dropped by jq and the test would pass for the
+# wrong reason -- it would never exercise the collision at all.
+jrec() { # jrec <id> <ts> <repo> <branch> <token>
+  jq -cn --arg id "$1" --arg ts "$2" --arg repo "$3" --arg br "$4" --arg tok "$5" \
+    '{record_id:$id,ts:$ts,repo:$repo,branch:$br,session_token:$tok,
+      predicate_version:2,action:"push",diff_base:"branch-local",
+      impl_in_chain:true,material_source:true,impl_evidence_kind:"none",
+      transcript_path:"/tmp/t.jsonl",gate:"push-implement",would_block:true,
+      schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"
+}
+: > "$IMPLEMENT_SHADOW_LOG"
+jrec c1 "2026-07-28T10:00:00Z" "/repo/A" "$(printf 'x\001y')" "t1"
+jrec c2 "2026-07-28T10:01:00Z" "/repo/A" "x" "$(printf 'y\001t1')"
+eq "both collision fixtures are valid JSON" "2" "$(jq -r '.record_id' "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | grep -c .)"
+eq "a \\001 inside a field cannot collide keys" "2" "$(episodes | wc -l | tr -d ' ')"
+
 # --- Task 3: adjudication write ---
 adj() { ( unset CLAUDECODE; "$SCRIPT" "$1" --verdict "$2" --reason "$3" >/dev/null 2>&1; echo $?; ); }
 

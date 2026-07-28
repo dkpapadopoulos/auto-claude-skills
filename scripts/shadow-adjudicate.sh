@@ -96,12 +96,17 @@ _episodes() {
       done \
     | sort -t "$(printf '\t')" -k1,1 -k2,2 -k3,3 -k4,4n \
     | awk -F'\t' -v w="${EPISODE_WINDOW_SEC}" '
+        # Compare the three key fields DIRECTLY rather than concatenating them
+        # with a separator. A concatenated key collides whenever a field
+        # contains the separator byte: branch="x\001y" + token="t1" builds the
+        # same key as branch="x" + token="y\001t1", silently merging unrelated
+        # episodes and shrinking the denominator. Field-wise comparison has no
+        # such class of bug and is simpler.
         {
-          key = $1 "\001" $2 "\001" $3
-          if (NR == 1 || key != prev_key || ($4 - anchor) > w) {
+          if (NR == 1 || $1 != p1 || $2 != p2 || $3 != p3 || ($4 - anchor) > w) {
             if (NR > 1) print eid "\t" erepo "\t" ebranch "\t" etok "\t" ids
             eid = $5; erepo = $1; ebranch = $2; etok = $3; ids = $5
-            anchor = $4; prev_key = key
+            anchor = $4; p1 = $1; p2 = $2; p3 = $3
           } else {
             ids = ids "," $5
           }
