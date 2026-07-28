@@ -149,8 +149,16 @@ requires better. The loop is therefore restructured into two passes:
 
 `_impl_ok` is a disjunction over the same set of predicates, so its final value
 is unchanged for every input — the reordering is decision-preserving by
-construction, and is asserted as such rather than assumed. What changes is only
-which class gets *named*.
+construction **for `_impl_ok` specifically**, and is asserted as such rather
+than assumed. What changes is only which class gets *named*.
+
+This is not fully side-effect-preserving, though: in the old single loop, once
+a slot's attestation satisfied `_impl_ok`, later slots' `_ledger_has`/
+`_invoc_ok`/`_bridge_has` checks were never reached. In the two-pass form,
+pass 1 walks all three slots' real-evidence checks before attestation is
+tried, so a later slot's stale-or-bridged ledger entry can now append advisory
+text to the shared `_STALE_MSG` where the old code short-circuited first. This
+is advisory-only, arguably more truthful, and changes no decision.
 
 ### Why attested-only, and not all three outcomes
 
