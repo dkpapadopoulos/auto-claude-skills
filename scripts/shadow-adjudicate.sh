@@ -110,14 +110,24 @@ _episodes() {
 }
 
 # _claimant -> human | agent
-# Deliberately biased toward "agent": a human using `!` inside a session is
-# misclassified and pays one re-confirmation, whereas an agent's self-label
-# counted silently would corrupt the rate. This leg governs agent pushes, so the
-# subject has a live incentive to grade its own gate.
-# All three signals are forgeable — the output says human-CLAIMED, never verified.
+# Biased toward "agent": a human using `!` inside a session is misclassified and
+# pays one re-confirmation, whereas an agent's self-label counted silently would
+# corrupt the rate. This leg governs agent pushes, so the subject has a live
+# incentive to grade its own gate.
+#
+# Signals are DIRECT evidence of an agent context only: CLAUDECODE, and a parent
+# process named claude. A "stdout is not a tty" check was specified originally
+# and is deliberately NOT used — it misfires on a human redirecting or piping
+# output, and because human-claimed episodes are the ONLY ones that count toward
+# the rate, that false positive does not merely cost a re-confirmation: it makes
+# the n=29 floor unreachable for anyone who habitually pipes. It also buys no
+# integrity, since every signal here is forgeable regardless.
+#
+# The mitigation is not that forgery is impossible; it is that a forged clean
+# rate requires a deliberate lie about provenance rather than merely running the
+# tool. Output says human-CLAIMED, never human-verified.
 _claimant() {
     if [ -n "${CLAUDECODE:-}" ]; then echo agent; return; fi
-    if [ ! -t 1 ]; then echo agent; return; fi
     case "$(ps -o comm= -p "$PPID" 2>/dev/null)" in *claude*) echo agent; return;; esac
     echo human
 }
@@ -204,6 +214,99 @@ cmd_next() {
         printf 'to label:\n  %s %s --verdict <true_catch|false_block|unknown> --reason "..."\n' \
                "$0" "$id"
     done
+    return 0
+}
+
+# _episode_verdict <record_ids_csv>
+# Prints two lines: the episode verdict, then human|agent.
+# Worst-verdict-wins: any false_block -> false_block; else any unknown ->
+# unknown; else true_catch; else unlabeled. Deny-bias, consistent with the
+# verdict layer, and it biases AGAINST flipping the gate.
+# Claimant is "agent" only when NO human-claimed adjudication exists for the
+# episode — a human re-confirmation re-includes it.
+_episode_verdict() {
+    local _ids="${1:-}" _v="unlabeled" _claim="agent" _has_human=0 _id _rows
+    if [ ! -f "${ADJ_LOG}" ]; then echo "unlabeled"; echo "agent"; return; fi
+    _rows="$(jq -r '[.record_id,.verdict,.claimant] | @tsv' "${ADJ_LOG}" 2>/dev/null)"
+    for _id in $(printf '%s' "${_ids}" | tr ',' ' '); do
+        while IFS="$(printf '\t')" read -r rid rv rc; do
+            [ "${rid}" = "${_id}" ] || continue
+            [ "${rc}" = "human" ] && _has_human=1
+            case "${rv}" in
+                false_block) _v="false_block" ;;
+                unknown)     [ "${_v}" = "false_block" ] || _v="unknown" ;;
+                true_catch)  [ "${_v}" = "unlabeled" ] && _v="true_catch" ;;
+            esac
+        done <<EOF
+${_rows}
+EOF
+    done
+    [ "${_has_human}" -eq 1 ] && _claim="human"
+    printf '%s\n%s\n' "${_v}" "${_claim}"
+}
+
+# cmd_status — episode-level readout. Observational; always exits 0.
+cmd_status() {
+    local _tot=0 _lab=0 _fb=0 _tc=0 _unk=0 _agent=0 _unlab=0 _v1=0
+    local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
+    local _den _wc_k _wc_n _band_hdl _band_wc
+    if [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1; then
+        _v1="$(jq -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
+                 'select(.predicate_version != $pv) | .record_id' \
+                 "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
+    fi
+    while IFS="$(printf '\t')" read -r _eid _repo _branch _tok _ids; do
+        [ -z "${_eid:-}" ] && continue
+        _tot=$(( _tot + 1 ))
+        _vc="$(_episode_verdict "${_ids}")"
+        _v="$(printf '%s' "${_vc}" | sed -n 1p)"
+        _c="$(printf '%s' "${_vc}" | sed -n 2p)"
+        if [ "${_v}" = "unlabeled" ]; then _unlab=$(( _unlab + 1 )); continue; fi
+        if [ "${_c}" = "agent" ];    then _agent=$(( _agent + 1 )); continue; fi
+        _lab=$(( _lab + 1 ))
+        case "${_repos}" in
+            *"|${_repo}|"*) ;;
+            *) _repos="${_repos}|${_repo}|" ;;
+        esac
+        case "${_v}" in
+            false_block) _fb=$((  _fb  + 1 )) ;;
+            unknown)     _unk=$(( _unk + 1 )) ;;
+            true_catch)  _tc=$((  _tc  + 1 )) ;;
+        esac
+    done <<EOF
+$(_episodes)
+EOF
+    _nrepos="$(printf '%s' "${_repos}" | tr '|' '\n' | grep -c . )"
+    echo "IMPLEMENT shadow corpus — predicate_version ${REQUIRED_PREDICATE_VERSION}"
+    printf '  episodes          %s\n' "${_tot}"
+    printf '  adjudicated       %s   (human-claimed)\n' "${_lab}"
+    printf '  agent-claimed     %s   <- excluded until a human re-confirms\n' "${_agent}"
+    printf '  unadjudicated     %s\n' "${_unlab}"
+    printf '  v1 records        %s   <- unpoolable, excluded\n' "${_v1}"
+    printf '  true_catch        %s\n' "${_tc}"
+    printf '  false_block       %s\n' "${_fb}"
+    printf '  unknown           %s   <- excluded from the headline rate\n' "${_unk}"
+    printf '  repos             %s' "${_nrepos}"
+    [ "${_nrepos}" -gt 0 ] && printf '   %s' "$(printf '%s' "${_repos}" | tr '|' ' ' | tr -s ' ')"
+    printf '\n\n'
+    _den=$(( _tc + _fb ))
+    if [ "${_lab}" -lt "${FLOOR_EPISODES}" ] || [ "${_nrepos}" -lt "${FLOOR_REPOS}" ]; then
+        echo "  rate              insufficient data"
+        printf '  need              %s adjudicated episodes (have %s) across >=%s repos (have %s)\n' \
+               "${FLOOR_EPISODES}" "${_lab}" "${FLOOR_REPOS}" "${_nrepos}"
+        echo "  horizon           ~2026-09-08 (pre-registered 2026-07-28)"
+    else
+        _wc_k=$(( _fb + _unk )); _wc_n=$(( _den + _unk ))
+        _band_hdl="$(_band "${_fb}" "${_den}")"
+        _band_wc="$(_band "${_wc_k}" "${_wc_n}")"
+        printf '  rate              %s/%s false blocks\n' "${_fb}" "${_den}"
+        printf '  band              %s\n' "${_band_hdl}"
+        printf '  worst case        %s/%s -> %s   (every unknown counted as a false block)\n' \
+               "${_wc_k}" "${_wc_n}" "${_band_wc}"
+    fi
+    echo
+    echo "  Informational only — NOT an enforcement decision. The push gate decides."
+    echo "  Verdicts are HUMAN-CLAIMED, not human-verified."
     return 0
 }
 

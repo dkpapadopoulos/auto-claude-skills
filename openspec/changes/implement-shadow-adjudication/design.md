@@ -96,9 +96,18 @@ cleared by leaving hard cases unlabeled.
 
 ## Claimant detection
 
-`claimant: "agent"` when ANY of: `CLAUDECODE` is set, stdout is not a tty, or the
-parent process is `claude`. Measured as present in this harness (all three fire
-inside a Claude Code Bash call; a human at a real terminal trips none).
+`claimant: "agent"` when EITHER `CLAUDECODE` is set OR the parent process is
+`claude`. Both were measured present inside a Claude Code Bash call; a human at a
+terminal trips neither.
+
+**A tty check was specified and then removed during implementation.** It was
+caught by its own test: `[ ! -t 1 ]` fires whenever stdout is redirected, so every
+adjudication made from a script, a pipe, or `> file` was recorded as
+agent-claimed. Because human-claimed episodes are the only ones that count, that
+is not a cosmetic false positive — it makes the n=29 floor unreachable for anyone
+who pipes output, silently. And it buys nothing: the two remaining signals are
+direct evidence of an agent context, whereas tty is a proxy, and all of them are
+forgeable regardless.
 
 Agent-claimed adjudications are recorded in full and EXCLUDED from the headline
 rate until re-confirmed by a human-claimed adjudication of the same record.

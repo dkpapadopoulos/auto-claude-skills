@@ -107,6 +107,55 @@ CLAUDECODE=1 "$SCRIPT" old --verdict unknown --reason seen >/dev/null 2>&1
 eq "fully adjudicated corpus reports done"  "1" "$("$SCRIPT" --next 2>&1 | grep -ci 'nothing outstanding')"
 eq "and still exits 0"                      "0" "$("$SCRIPT" --next >/dev/null 2>&1; echo $?)"
 
+# --- Task 5: --status ---
+seed()  { : > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"; }
+mkrec() { rec "$1" "2026-07-28T$2:00Z" "$3" "br-$1" "tok-$1"; }
+label() { ( unset CLAUDECODE; "$SCRIPT" "$1" --verdict "$2" --reason t >/dev/null 2>&1 ); }
+status() { "$SCRIPT" --status 2>&1; }
+
+# floor: 3 clean episodes in 1 repo must NOT print a rate
+seed
+mkrec e1 "10:01" /repo/A; mkrec e2 "10:02" /repo/A; mkrec e3 "10:03" /repo/A
+label e1 true_catch; label e2 true_catch; label e3 true_catch
+eq "below the floor prints insufficient data" "1" "$(status | grep -ci 'insufficient data')"
+eq "and prints no percentage rate"            "0" "$(status | grep -c '%')"
+eq "and names the 29-episode floor"           "1" "$(status | grep -c '29')"
+
+# worst-verdict-wins within one episode
+seed
+rec m1 "2026-07-28T10:00:00Z" /repo/A feat/x tok1
+rec m2 "2026-07-28T10:05:00Z" /repo/A feat/x tok1
+label m1 true_catch; label m2 false_block
+eq "the two records form one episode" "1" "$(( $(status | grep -E '^  episodes' | awk '{print $2}') ))"
+eq "a mixed episode resolves false_block" "1" "$(status | grep -E '^  false_block' | awk '{print $2}')"
+eq "and does not also count as true_catch" "0" "$(status | grep -E '^  true_catch' | awk '{print $2}')"
+
+# agent-claimed is segregated, then re-included by a human adjudication
+seed
+mkrec a1 "10:01" /repo/A
+CLAUDECODE=1 "$SCRIPT" a1 --verdict true_catch --reason t >/dev/null 2>&1
+eq "agent-claimed episode is excluded" "1" "$(status | grep -E '^  agent-claimed' | awk '{print $2}')"
+eq "and is not counted as adjudicated" "0" "$(status | grep -E '^  adjudicated' | awk '{print $2}')"
+label a1 true_catch
+eq "human re-confirmation counts it"   "1" "$(status | grep -E '^  adjudicated' | awk '{print $2}')"
+
+# repos are listed, not merely counted
+seed
+mkrec p1 "10:01" /repo/A; mkrec p2 "10:02" /repo/B
+label p1 true_catch; label p2 true_catch
+eq "status lists contributing repos" "1" "$(status | grep -c '/repo/B')"
+
+# v1 records are reported but excluded
+seed
+mkrec q1 "10:01" /repo/A
+rec q2 "2026-07-28T10:02:00Z" /repo/A feat/z tokz 1
+label q1 true_catch
+eq "v1 records are reported separately" "1" "$(status | grep -E '^  v1 records' | awk '{print $3}')"
+
+# posture
+eq "status disclaims enforcement"       "1" "$(status | grep -ci 'informational only')"
+eq "status exits 0 on an empty corpus"  "0" "$(seed; "$SCRIPT" --status >/dev/null 2>&1; echo $?)"
+
 echo
 echo "Tests run: $(( PASS + FAIL ))  passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

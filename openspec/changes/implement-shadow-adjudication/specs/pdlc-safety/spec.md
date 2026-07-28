@@ -13,9 +13,17 @@ Each adjudication MUST carry `schema_version`, the target `record_id`, a UTC
 ISO-8601 `ts`, a `verdict` of exactly `true_catch`, `false_block`, or `unknown`, a
 free-text `reason`, a `claimant` of `human` or `agent`, and captured provenance.
 
-`claimant` MUST be `agent` when ANY of the following holds: `CLAUDECODE` is set,
-stdout is not a tty, or the parent process is `claude`. Output MUST describe
-results as **human-claimed**, and MUST NOT describe them as human-verified.
+`claimant` MUST be `agent` when EITHER `CLAUDECODE` is set OR the parent process
+is `claude`. These are direct evidence of an agent context.
+
+A "stdout is not a tty" signal MUST NOT be used. It misfires whenever a human
+redirects or pipes output, and because human-claimed episodes are the only ones
+counted toward the rate, that false positive does not merely cost a
+re-confirmation — it makes the n=29 floor unreachable for anyone who pipes. It
+also adds no integrity, since every available signal is forgeable regardless.
+
+Output MUST describe results as **human-claimed**, and MUST NOT describe them as
+human-verified.
 
 Adjudicating a record whose `predicate_version` is not 2 MUST be refused with a
 non-zero exit and an explanation. The script MUST NOT be sourced by
