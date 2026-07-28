@@ -47,17 +47,51 @@ resolve_session_token_from_transcript() {
 # on the singleton path. Path-unsafe ids are rejected on charset first.
 # Falls back to the singleton — never to a locally re-derived shape.
 #
-# KNOWN LIMIT (subagent identity): a Task subagent gets its own
-# CLAUDE_CODE_SESSION_ID and its own transcript on disk, so a writer called
-# INSIDE a subagent resolves to the SUBAGENT's token, which the main session's
-# UserPromptSubmit-side readers never open. Pre-#156 the singleton happened to
-# cover that case, since the main session re-stamps it on every prompt. This is
-# still the right trade: the singleton's coverage was accidental and cost
-# correctness under concurrent sessions, the far more common case. State that
-# must reach the main session's readers should be written from the main turn,
-# not delegated to a subagent.
+# SUBAGENT IDENTITY (measured 2026-07-28, issue #164 — closed as not-a-bug):
+# a local Task subagent does NOT get its own identity here. Its Bash calls are
+# children of the same `claude` process and inherit CLAUDE_CODE_SESSION_ID
+# verbatim, so a writer invoked inside one resolves to the PARENT's token.
+# The env inheritance is the load-bearing fact, and it is an implementation
+# behavior of how subagent Bash is spawned — not a guarantee. The glob shape is
+# an independent backstop, not a second proof of parent-binding: subagent
+# transcripts live at
+# ~/.claude/projects/<proj>/<parent-session-id>/subagents/agent-<agentId>.jsonl,
+# keyed by agentId and two directory levels deeper than the single-wildcard
+# glob's file position, so even if a subagent DID carry its own id the loop
+# below could not bind to it — it would fall through to the singleton (the
+# pre-#156 scatter hazard), never to a subagent-scoped file.
+#
+# What that does and does NOT license. A `phase_attest` record binds to nothing
+# but the token — no cwd, no git — so delegating it to a subagent is safe, with
+# two caveats: parallel subagents now share ONE attest file, and the read-
+# modify-write in phase-attest.sh can lose an entry under concurrent calls; and
+# that lib must be able to FIND this one to resolve the token at all (see its
+# shell-portable self-location — under zsh it could not, and every model-turn
+# attest silently used the singleton instead; a shell providing neither
+# BASH_SOURCE nor a path-valued $0 still degrades that way by design). A VERDICT
+# write is NOT equivalent: verify-and-record.sh takes ROOT from the caller's cwd
+# and binds `sha` to THAT tree's HEAD, while verdict_covers_head accepts an
+# ANCESTOR — so a worktree-isolated agent would write under the parent's token
+# but bound to the worktree's HEAD, and a clean verdict measured against a
+# different tree could gate a push it never ran against. Run verdict writes in
+# the same worktree as the push they cover.
+#
+# (#164 originally asserted the opposite of all this, on a subagent's own
+# say-so; two repros — general-purpose/foreground and Explore/background —
+# refuted it. Both ran in the parent's cwd: worktree- and remote-isolation
+# agents are UNTESTED here, and worktree isolation is exactly the case the
+# verdict caveat above is about.)
 resolve_own_session_token() {
     local _id="${CLAUDE_CODE_SESSION_ID:-}" _t="" _tok=""
+    # zsh treats an unmatched glob as a FATAL error and unwinds the enclosing
+    # function, so the singleton fallback on the last line would never run and
+    # callers would get an empty token instead of the documented degradation.
+    # This matters because model-turn callers source this from zsh. Guarded so
+    # bash (where the loop's `[ -f ] || continue` already handles a miss) is
+    # byte-identical, and scoped with local_options so we restore on return.
+    if [ -n "${ZSH_VERSION:-}" ]; then
+        setopt local_options no_nomatch 2>/dev/null
+    fi
     case "${_id}" in
         ""|*[!A-Za-z0-9_-]*) ;;
         *)
