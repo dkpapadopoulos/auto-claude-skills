@@ -155,7 +155,7 @@ assert_contains "record names the gate"        '"gate":"push-implement"' "${_rec
 assert_contains "record marks a would-block"   '"would_block":true'      "${_rec}"
 assert_contains "record carries action push"   '"action":"push"'         "${_rec}"
 assert_contains "record carries schema_version"    '"schema_version":1'    "${_rec}"
-assert_contains "record carries predicate_version" '"predicate_version":1' "${_rec}"
+assert_contains "record carries predicate_version" '"predicate_version":2' "${_rec}"
 assert_contains "record carries a record_id"   '"record_id":'            "${_rec}"
 assert_contains "record carries a ts"          '"ts":'                   "${_rec}"
 assert_contains "record carries the transcript pointer" '"transcript_path":' "${_rec}"
@@ -184,23 +184,6 @@ assert_contains "contrast control: push DOES surface IMPLEMENT advisory" "IMPLEM
 
 : > "$IMPLEMENT_SHADOW_LOG"
 out="$(run_guard 'gh pr merge 7 --squash')"
-
-# KNOWN GAP — issue #161, deliberately NOT fixed here: _flush_push_advisories()
-# (hooks/openspec-guard.sh:604) gates the advisory-text FLUSH on _gc_is_push
-# only, so the IMPLEMENT advisory computed for a merge (Check 0 itself DOES
-# fire for merges per the widened condition at line ~398-399, as the shadow
-# record below proves) never reaches stdout. That function is shared with
-# staleness/bridge/evaluator-surface advisories too, so widening it has a
-# bigger blast radius than this leg and is out of scope for this fix.
-#
-# This assertion PINS the current (gapped) behavior on purpose: merge stdout
-# does NOT carry "IMPLEMENT:" today. When #161 ships push-advisory flushing
-# for gh-merge, this assertion MUST BE INVERTED to assert_contains — its
-# presence here is a tripwire for that fix, not an endorsement of the gap.
-assert_not_contains "KNOWN GAP #161: merge stdout omits IMPLEMENT advisory text (invert on fix)" "IMPLEMENT:" "${out:-}"
-# Paired with the above so "no deny" is non-vacuous: stdout for this case is
-# expected to be empty outright (nothing to flush), not merely deny-free.
-assert_equals "merge stdout is empty (advisory computed but not flushed, per #161 gap)" "" "${out:-}"
 
 assert_not_contains "merge path stays advisory (no deny from this leg)" '"deny"' "${out:-}"
 assert_not_contains "merge path emits no permissionDecision at all" "permissionDecision" "${out:-}"
@@ -247,6 +230,180 @@ phase_attest executing-plans "shadow-negative-test" >/dev/null 2>&1
 out="$(run_guard)"
 assert_equals "no shadow record when IMPLEMENT evidence exists" "0" \
     "$(wc -l < "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | tr -d ' ')"
+
+# --- #161: merges are measured against the PR, not the local branch -------
+# gh is stubbed on PATH: no test may touch the network. The stub reports a PR
+# whose diff edits src/app.py, while the fixture branch's own delta is what the
+# pre-#161 code would have measured.
+#
+# Precondition: the previous block (line ~246) left an executing-plans
+# attestation on disk, which would satisfy _impl_ok and suppress the whole
+# leg (no record at all) regardless of push vs merge. Clear it so this block's
+# fixture state matches what the brief assumes: impl-slot in chain, no impl
+# evidence. (_COMP already has executing-plans in .chain since line ~142, and
+# REVIEW/VERIFY ledger records from lines ~90-91 are untouched, so only the
+# IMPLEMENT leg is under test here.)
+rm -f "$HOME/.claude/.skill-phase-attest-${_TOK}"
+
+_GHSTUB="$(mktemp -d /tmp/pg-ghstub-XXXXXX)"
+cat > "${_GHSTUB}/gh" <<'STUB'
+#!/bin/bash
+for a in "$@"; do case "$a" in 404) exit 1 ;; esac; done
+printf 'src/app.py\n'
+STUB
+chmod +x "${_GHSTUB}/gh"
+
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(PATH="${_GHSTUB}:$PATH" run_guard 'gh pr merge 7 --squash')"
+_rec="$(cat "$IMPLEMENT_SHADOW_LOG")"
+assert_equals "merge writes one record" "1" "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+assert_contains "merge record names the PR as its subject" '"diff_base":"pr:7"' "${_rec}"
+assert_contains "merge record still marks material source"  '"material_source":true' "${_rec}"
+assert_contains "predicate_version bumped to 2"             '"predicate_version":2' "${_rec}"
+assert_not_contains "merge did not become a deny" "permissionDecision" "${out:-}"
+
+# Unresolvable PR -> unresolved, record still written, still no deny.
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(PATH="${_GHSTUB}:$PATH" run_guard 'gh pr merge 404 --squash')"
+assert_equals "unresolvable merge still writes a record" "1" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+assert_contains "unresolvable merge is marked unresolved" '"diff_base":"unresolved"' \
+    "$(cat "$IMPLEMENT_SHADOW_LOG")"
+assert_not_contains "unresolvable merge did not become a deny" "permissionDecision" "${out:-}"
+
+# Resolved-but-non-material PR -> record names the PR (NOT "unresolved"), with
+# material_source:false and no advisory. Fix round 1 (#161 review finding):
+# gh resolves fine but the PR touches only docs/CHANGELOG.md, so the merge is
+# a distinct outcome from "we couldn't look" and must be labeled as such.
+_GHSTUB_DOCS="$(mktemp -d /tmp/pg-ghstub-docs-XXXXXX)"
+cat > "${_GHSTUB_DOCS}/gh" <<'STUB'
+#!/bin/bash
+printf 'docs/CHANGELOG.md\n'
+STUB
+chmod +x "${_GHSTUB_DOCS}/gh"
+
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(PATH="${_GHSTUB_DOCS}:$PATH" run_guard 'gh pr merge 9 --squash')"
+_rec="$(cat "$IMPLEMENT_SHADOW_LOG")"
+assert_equals "resolved non-material merge writes one record" "1" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+assert_contains "resolved non-material merge names the PR, not unresolved" '"diff_base":"pr:9"' "${_rec}"
+assert_contains "resolved non-material merge marks material_source false" '"material_source":false' "${_rec}"
+assert_not_contains "resolved non-material merge does not become a deny" "permissionDecision" "${out:-}"
+assert_not_contains "resolved non-material merge surfaces no IMPLEMENT advisory" "IMPLEMENT:" "${out:-}"
+rm -rf "${_GHSTUB_DOCS}"
+
+# PUSH PATH UNCHANGED — this is a Global Constraint, asserted not assumed.
+: > "$IMPLEMENT_SHADOW_LOG"
+out_push="$(run_guard)"
+assert_contains "push record is branch-local" '"diff_base":"branch-local"' \
+    "$(cat "$IMPLEMENT_SHADOW_LOG")"
+assert_contains "push still surfaces the IMPLEMENT advisory" "IMPLEMENT:" "${out_push:-<empty>}"
+rm -rf "${_GHSTUB}"
+
+# --- #161 RESOLVED: a resolved merge now surfaces the advisory ------------
+# PR #163 pinned the gap with an assert_not_contains and an "invert on fix"
+# comment; this is that inversion (the old pin has since been deleted).
+_GHSTUB2="$(mktemp -d /tmp/pg-ghstub2-XXXXXX)"
+cat > "${_GHSTUB2}/gh" <<'STUB'
+#!/bin/bash
+for a in "$@"; do case "$a" in 404) exit 1 ;; esac; done
+printf 'src/app.py\n'
+STUB
+chmod +x "${_GHSTUB2}/gh"
+
+out="$(PATH="${_GHSTUB2}:$PATH" run_guard 'gh pr merge 7 --squash')"
+assert_contains "resolved merge surfaces the IMPLEMENT advisory" "IMPLEMENT:" "${out:-<empty>}"
+assert_not_contains "resolved merge is still not a deny" "permissionDecision" "${out:-}"
+
+# Unresolved merge stays SILENT — the original suppression was protective.
+out="$(PATH="${_GHSTUB2}:$PATH" run_guard 'gh pr merge 404 --squash')"
+assert_not_contains "unresolved merge stays silent" "IMPLEMENT:" "${out:-}"
+rm -rf "${_GHSTUB2}"
+
+# --- I2: the pr:* flush gate must be exercised by a NON-empty, NON-IMPLEMENT
+# _STALE_MSG, or removing the gate is invisible to the suite ---------------
+# Review finding: the assertion above ("unresolved merge stays silent")
+# passes for the wrong reason — on an unresolved merge _impl_material is
+# false, so _STALE_MSG is empty there too, and the gate at
+# openspec-guard.sh's `_flush_push_advisories` is never actually exercised.
+# Manufacture a genuinely non-empty, non-IMPLEMENT _STALE_MSG by advancing
+# feat/impl's HEAD past the SHA the branch-ledger recorded above (lines
+# ~90-91): _ledger_has then appends "<milestone> stale: recorded at ..."
+# text for requesting-code-review/verification-before-completion on every
+# subsequent guard run, regardless of push vs merge or IMPLEMENT status.
+echo "print('y')" >> "${_REPO}/src/app.py"
+git -C "${_REPO}" add src/app.py
+git -C "${_REPO}" commit -qm "feat: advance local HEAD past the ledger record (non-IMPLEMENT staleness bait)"
+
+_GHSTUB4="$(mktemp -d /tmp/pg-ghstub4-XXXXXX)"
+cat > "${_GHSTUB4}/gh" <<'STUB'
+#!/bin/bash
+for a in "$@"; do case "$a" in 404) exit 1 ;; esac; done
+printf 'src/app.py\n'
+STUB
+chmod +x "${_GHSTUB4}/gh"
+
+# (a) UNRESOLVED merge must stay FULLY silent even though _STALE_MSG is now
+# non-empty (ledger staleness). Mutation-verified: widening
+# _flush_push_advisories's gate away from a `_impl_db`-scoped select onto
+# "always use _STALE_MSG for any merge" flips this and the "does not leak"
+# assertion below from pass to fail; restoring the gate flips them back.
+out="$(PATH="${_GHSTUB4}:$PATH" run_guard 'gh pr merge 404 --squash')"
+assert_not_contains "unresolved merge with pending staleness stays fully silent" \
+    "additionalContext" "${out:-}"
+assert_not_contains "unresolved merge does not leak ledger staleness text" \
+    "stale:" "${out:-}"
+
+# (b) RESOLVED merge (#161 I1): must flush ONLY the IMPLEMENT text, never the
+# ledger staleness text also sitting in _STALE_MSG. Pre-fix, the flush was
+# gated on _impl_db alone and leaked the ENTIRE _STALE_MSG — including notes
+# about milestones that have nothing to do with the merged PR — onto `gh pr
+# merge` of unrelated PRs.
+out="$(PATH="${_GHSTUB4}:$PATH" run_guard 'gh pr merge 7 --squash')"
+assert_contains "resolved merge with pending staleness still surfaces IMPLEMENT" \
+    "IMPLEMENT:" "${out:-<empty>}"
+assert_not_contains "resolved merge does not leak ledger staleness text" \
+    "stale:" "${out:-}"
+rm -rf "${_GHSTUB4}"
+
+# --- Negative-case coverage: record-write condition, false branches --------
+# Task 2 review finding: only the TRUE branches of the write gate (materially
+# true, or gh-merge) had explicit assertions. Pin both FALSE branches too.
+
+# (a) gh pr merge WITH implement evidence present -> _impl_ok short-circuits
+# before the write gate, so no shadow record and no advisory, even though the
+# PR resolves and touches material source.
+rm -f "$HOME/.claude/.skill-phase-attest-${_TOK}"
+# shellcheck disable=SC1090
+. "${PROJECT_ROOT}/hooks/lib/phase-attest.sh"
+phase_attest executing-plans "negative-case-merge" >/dev/null 2>&1
+: > "$IMPLEMENT_SHADOW_LOG"
+_GHSTUB3="$(mktemp -d /tmp/pg-ghstub3-XXXXXX)"
+cat > "${_GHSTUB3}/gh" <<'STUB'
+#!/bin/bash
+printf 'src/app.py\n'
+STUB
+chmod +x "${_GHSTUB3}/gh"
+out="$(PATH="${_GHSTUB3}:$PATH" run_guard 'gh pr merge 11 --squash')"
+assert_equals "attested merge writes no shadow record" "0" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | tr -d ' ')"
+assert_not_contains "attested merge surfaces no IMPLEMENT advisory" "IMPLEMENT:" "${out:-}"
+rm -rf "${_GHSTUB3}"
+rm -f "$HOME/.claude/.skill-phase-attest-${_TOK}"
+
+# (b) git push whose branch diff is non-material (docs-only) -> the write gate
+# never sees _impl_material=true and this is not a merge, so no shadow record.
+git -C "${_REPO}" checkout -qb feat/docsonly main
+echo "docs change" >> "${_REPO}/README.md"
+git -C "${_REPO}" add README.md
+git -C "${_REPO}" commit -qm "docs: non-material change"
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(run_guard)"
+assert_equals "non-material push writes no shadow record" "0" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | tr -d ' ')"
+assert_not_contains "non-material push surfaces no IMPLEMENT advisory" "IMPLEMENT:" "${out:-}"
+git -C "${_REPO}" checkout -q feat/impl
 
 export HOME="$_OLDHOME"
 rm -rf "${_REPO}" "${_THOME}" 2>/dev/null

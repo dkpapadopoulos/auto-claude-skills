@@ -36,6 +36,10 @@ _GC_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 # affect the gate, and it is deliberately absent from _GATE_ENFORCE_LIBS.
 [ -f "${_GC_ROOT}/hooks/lib/implement-shadow.sh" ] && \
     . "${_GC_ROOT}/hooks/lib/implement-shadow.sh" 2>/dev/null || true
+# Advisory-path PR-diff resolver (#161). Guarded source: absence must not
+# affect the gate, and it is deliberately absent from _GATE_ENFORCE_LIBS.
+[ -f "${_GC_ROOT}/hooks/lib/pr-diff.sh" ] && \
+    . "${_GC_ROOT}/hooks/lib/pr-diff.sh" 2>/dev/null || true
 
 # Bound the worst case: the precise detector is an O(n^2) char-scan parser, so
 # only use it below a size cap; above it, fall back to the (fail-closed)
@@ -231,6 +235,16 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             [ -z "${_VERDICT_TOKEN}" ] && _VERDICT_TOKEN="${_SESSION_TOKEN}"
         fi
         _STALE_MSG=""
+        # IMPLEMENT-only subset of _STALE_MSG (issue #161 I1). _STALE_MSG has
+        # FIVE other writers (ledger staleness below, invocation-evidence /
+        # bridge-acceptance notes, routing-delta, evaluator-surface) that are
+        # ALL computed from the LOCAL branch — never true of the merged PR a
+        # `gh pr merge` names. _flush_push_advisories must be able to flush
+        # ONLY the IMPLEMENT text on a merge; this variable is that subset.
+        # Always ALSO appended wherever _STALE_MSG gets the IMPLEMENT text
+        # (line ~455 below), so the push path (which flushes _STALE_MSG in
+        # full, unchanged) stays byte-identical.
+        _IMPL_MSG=""
         # _ledger_has MILESTONE — returns 0 if ledger satisfies; accumulates stale
         # warning text in _STALE_MSG when the recorded SHA differs from HEAD.
         _ledger_has() {
@@ -333,6 +347,18 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }$1 accepted via cross-location branch-ledger evidence recorded at ${_bsha:-unknown} on this branch (issue #131 bridge). Rerun if later commits changed reviewed content."
             return 0
         }
+        # One exclusion rule, two subjects (#161). The push path measures the
+        # branch-local delta; the merge path measures the merged PR's files.
+        _names_touch_material_source() {
+            local _f
+            while IFS= read -r _f; do
+                [ -n "$_f" ] || continue
+                case "$_f" in docs/*|openspec/*|*.md) continue ;; *) return 0 ;; esac
+            done <<EOF
+$1
+EOF
+            return 1
+        }
         # _diff_touches_material_source <proj_root> — 0 iff the branch diff
         # (mainline merge-base..HEAD) touches anything outside docs/openspec/*.md.
         # Reuses _branch_diff_names (verdict.sh, sourced above) so the IMPLEMENT
@@ -341,16 +367,10 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # unresolvable base / verdict.sh unavailable => 1 (no advisory, never a
         # false-fire).
         _diff_touches_material_source() {
-            local _names _f
+            local _names
             command -v _branch_diff_names >/dev/null 2>&1 || return 1
             _names="$(_branch_diff_names "${1:-}")" || return 1
-            while IFS= read -r _f; do
-                [ -n "$_f" ] || continue
-                case "$_f" in docs/*|openspec/*|*.md) continue ;; *) return 0 ;; esac
-            done <<EOF
-$_names
-EOF
-            return 1
+            _names_touch_material_source "${_names}"
         }
         if [ "${_PUSHGATE_SKIP}" != "true" ] && [ -f "${_COMP_STATE}" ] && command -v jq >/dev/null 2>&1; then
             # Check 1: REVIEW in chain but not completed — deny with REVIEW message
@@ -405,11 +425,50 @@ EOF
                         phase_attested "${_SESSION_TOKEN}" "$_slot" && _impl_ok=true
                     fi
                 done
-                if [ "${_impl_ok}" = "false" ] && _diff_touches_material_source "${_proot}"; then
-                    _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: phase_attest executing-plans \"<reason>\". (advisory; will become a deny after backtest)"
-                    command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "${_pe_action}" "executing-plans"
+                # Resolution and materiality are DISTINCT outcomes (#161 fix
+                # round 1): a PR that resolved (gh returned a file list) but is
+                # docs-only must record diff_base:"pr:<n>" with
+                # material_source:false, NOT "unresolved" — "unresolved" is
+                # reserved for "we couldn't look" (no ref, no gh, unauthed,
+                # unknown PR, timeout), never for "we looked and it was
+                # non-material". Fetch pr_changed_files exactly ONCE: its
+                # non-emptiness alone decides resolved vs unresolved; its
+                # content (tested via _names_touch_material_source, already
+                # fetched, no second network call) decides materiality.
+                _impl_db="branch-local"; _impl_material=false
+                if [ "${_pe_action}" = "gh-merge" ]; then
+                    _impl_db="unresolved"
+                    _impl_pr=""
+                    command -v pr_ref_from_command >/dev/null 2>&1 && \
+                        _impl_pr="$(pr_ref_from_command "${_COMMAND}")"
+                    if [ -n "${_impl_pr}" ] && command -v pr_changed_files >/dev/null 2>&1; then
+                        _impl_pr_files="$(pr_changed_files "${_impl_pr}" "${_proot}")"
+                        if [ -n "${_impl_pr_files}" ]; then
+                            _impl_db="pr:${_impl_pr}"
+                            _names_touch_material_source "${_impl_pr_files}" && _impl_material=true
+                        fi
+                    fi
+                elif _diff_touches_material_source "${_proot}"; then
+                    _impl_material=true
+                fi
+                # Any gh-merge outcome records (material, resolved-non-material,
+                # or unresolved) so the corpus isn't silently missing the
+                # resolved-non-material case (fix round 1, #161 review finding:
+                # gating the write on _impl_db="unresolved" dropped that case
+                # entirely once it started resolving to the correct pr:<n>
+                # label instead of being mislabeled unresolved). Push keeps its
+                # original, narrower gate (material-only) — this branch never
+                # widens what a push records.
+                if [ "${_impl_ok}" = "false" ] && \
+                   { [ "${_impl_material}" = "true" ] || [ "${_pe_action}" = "gh-merge" ]; }; then
+                    if [ "${_impl_material}" = "true" ]; then
+                        _IMPL_TEXT="IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: phase_attest executing-plans \"<reason>\". (advisory; will become a deny after backtest)"
+                        _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }${_IMPL_TEXT}"
+                        _IMPL_MSG="${_IMPL_MSG}${_IMPL_MSG:+; }${_IMPL_TEXT}"
+                        command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "${_pe_action}" "executing-plans"
+                    fi
                     if command -v implement_shadow_record >/dev/null 2>&1; then
-                        implement_shadow_record "${_pe_action}" "${_proot}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" || true
+                        implement_shadow_record "${_pe_action}" "${_proot}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" "${_impl_db}" "${_impl_material}" || true
                     fi
                 fi
             fi
@@ -600,18 +659,40 @@ fi
 # advisory landed). Advisory channel only — no permissionDecision here (one
 # would auto-approve and suppress downstream warnings; documented bug shape).
 _flush_push_advisories() {
-    # PUSH-only: _STALE_MSG staleness text is computed from the LOCAL branch
-    # HEAD, which for `gh pr merge <other>` is the wrong delta — pre-flush
-    # behavior for gh-merge outside SHIP was silence, and that is preserved
-    # (SHIP-phase merges still get the _WARNINGS fold-in below, unchanged).
-    [ "${_gc_is_push:-false}" = "true" ] || return 0
-    [ -n "${_STALE_MSG:-}" ] || return 0
+    # PUSH-only, historically: _STALE_MSG staleness text is computed from the
+    # LOCAL branch HEAD, which for `gh pr merge <other>` is the wrong delta —
+    # pre-flush behavior for gh-merge outside SHIP was silence, and that is
+    # preserved (SHIP-phase merges still get the _WARNINGS fold-in below,
+    # unchanged).
+    #
+    # Merges flush ONLY when the subject resolved (#161), and ONLY the
+    # IMPLEMENT text (_IMPL_MSG), never the full _STALE_MSG (issue #161 I1
+    # review finding). _STALE_MSG accumulates FIVE other writers — ledger
+    # staleness, invocation-evidence / bridge-acceptance notes, routing-delta,
+    # evaluator-surface — that are ALL computed from the LOCAL branch, which
+    # for `gh pr merge <other>` is unrelated to the merged PR; flushing the
+    # whole variable leaked branch-local advisory text onto merges of
+    # unrelated PRs. _IMPL_MSG is a strict subset of _STALE_MSG (every
+    # IMPLEMENT append also lands in _STALE_MSG), so this preserves the
+    # original reasoning — silence stays wherever the subject is unknown —
+    # while narrowing what a KNOWN-subject merge is allowed to surface.
+    #
+    # The push branch below is untouched: it still flushes _STALE_MSG in
+    # full, byte-identical to before this change.
+    local _msg="${_STALE_MSG:-}"
+    if [ "${_gc_is_push:-false}" != "true" ]; then
+        case "${_impl_db:-unresolved}" in
+            pr:*) _msg="${_IMPL_MSG:-}" ;;
+            *) return 0 ;;
+        esac
+    fi
+    [ -n "${_msg}" ] || return 0
     if command -v jq >/dev/null 2>&1; then
-        jq -n --arg msg "PUSH GATE (advisory): ${_STALE_MSG}" \
+        jq -n --arg msg "PUSH GATE (advisory): ${_msg}" \
             '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":$msg}}'
     else
         printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' \
-            "$(printf 'PUSH GATE (advisory): %s' "${_STALE_MSG}" | tr '\n"' ' ')"
+            "$(printf 'PUSH GATE (advisory): %s' "${_msg}" | tr '\n"' ' ')"
     fi
 }
 
