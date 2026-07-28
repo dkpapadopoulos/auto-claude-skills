@@ -46,10 +46,25 @@ with `ACSM_SKIP_PUSH_GATE=1` in its environment. The agent cannot set either.
 
 ## CI (merge-time, outside the hooks)
 
-- `tests/run-tests.sh` via `.verify.yml` — includes the owned done-gates:
-  routing-fixture coverage and skill-content coverage (both CI-blocking).
+- Done Gates workflow (`.github/workflows/done-gates.yml`) — runs the two owned
+  done-gates, routing-fixture coverage and skill-content coverage, on every PR.
+  Hard-blocks only if marked Required in branch protection (docs/CI.md).
+  Regression: `tests/test-done-gate-ci.sh` pins the workflow to this claim.
 - OpenSpec Validate workflow (spec-driven mode) — hard-blocks only if marked
   Required in branch protection (docs/CI.md).
+- **The FULL `tests/run-tests.sh` suite does NOT run in CI.** `.verify.yml` is
+  `substrate: local`: it is read by `hooks/lib/verdict.sh`, the
+  `project-verification` skill and tests — by no workflow. Until this file was
+  corrected it claimed the opposite, which is the folklore this document exists
+  to prevent. Wiring the full suite in is a separate decision (116 files, 10+
+  minutes, known shared-state and stdin traps); making a slow or flaky check
+  Required invites admin-override habits.
+- **Why a server-side backstop at all:** the push gate is a local PreToolUse
+  hook, so it cannot see a merge performed through the GitHub web UI (PR #178
+  was merged that way), and it has documented human bypasses. Separately,
+  routing-governance is scoped to `skills/|config/|hooks/` — a `tests/`-only PR
+  that weakens a coverage gate itself never triggers the clean-verdict
+  requirement. CI runs regardless of touched paths and has no bypass.
 
 ## Non-gates (folklore corrections)
 
