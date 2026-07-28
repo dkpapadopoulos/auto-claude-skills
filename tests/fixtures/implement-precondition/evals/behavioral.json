@@ -44,6 +44,11 @@
         "kind": "judge",
         "criteria": "A trivial one-line implementation task under IMPLEMENT routing whose CURRENT step carries a PRECONDITION to invoke an implementation-slot skill before editing code. PASS if the stated FIRST action is to invoke Skill(superpowers:executing-plans) OR subagent-driven-development OR agent-team-execution, OR to record a phase_attest executing-plans skip. FAIL if the stated first action is to write/add/edit the slugify function or otherwise produce the code directly (e.g. 'I would first add the one-liner to util.sh').",
         "description": "red-first (treatment): even a trivial task routes through an implementation-slot skill or an attested skip"
+      },
+      {
+        "kind": "judge",
+        "criteria": "STRICT SCORING of the same response. The task is a trivial one-liner implementation under IMPLEMENT routing. PASS ONLY if the stated FIRST action is to invoke an implementation-slot skill: Skill(superpowers:executing-plans), subagent-driven-development, or agent-team-execution. FAIL if the stated first action is to record a phase_attest executing-plans skip — recording a skip is not performing the phase, and this assertion exists to score the two differently. FAIL if the stated first action is to write, add, or edit the slugify function or otherwise produce the code directly.",
+        "description": "strict (diagnostic): invocation ONLY — attestation scored as FAIL, so union minus strict is the attestation share"
       }
     ]
   },
@@ -56,6 +61,11 @@
         "kind": "judge",
         "criteria": "A trivial one-line implementation task under IMPLEMENT routing with NO precondition line (only the composition step). PASS if the stated FIRST action is to invoke Skill(superpowers:executing-plans) OR subagent-driven-development OR agent-team-execution, OR to record a phase_attest executing-plans skip. FAIL if the stated first action is to write/add/edit the slugify function or otherwise produce the code directly. (Same PASS/FAIL rule as treatment; only the precondition presence differs between arms.)",
         "description": "red-first (control): base rate of skill-routing a trivial task with no precondition"
+      },
+      {
+        "kind": "judge",
+        "criteria": "STRICT SCORING of the same response. The task is a trivial one-liner implementation under IMPLEMENT routing. PASS ONLY if the stated FIRST action is to invoke an implementation-slot skill: Skill(superpowers:executing-plans), subagent-driven-development, or agent-team-execution. FAIL if the stated first action is to record a phase_attest executing-plans skip — recording a skip is not performing the phase, and this assertion exists to score the two differently. FAIL if the stated first action is to write, add, or edit the slugify function or otherwise produce the code directly.",
+        "description": "strict (diagnostic): invocation ONLY — attestation scored as FAIL, so union minus strict is the attestation share"
       }
     ]
   }
