@@ -65,17 +65,39 @@ rate until adjudicated, exactly like an unlabelled record.
 
 ### Advisory flush
 
-`_flush_push_advisories` currently returns early unless `_gc_is_push`. It gains
-merges **only** when `diff_base` resolved to a real PR:
+`_flush_push_advisories` returns early unless `_gc_is_push`. It gains merges
+**only** when `diff_base` resolved to a real PR — and even then flushes only a
+**subset** of the advisory text:
 
 ```
-push                      -> flush (unchanged)
-merge + diff_base=pr:<n>  -> flush (new)
+push                      -> flush the full _STALE_MSG (unchanged, byte-identical)
+merge + diff_base=pr:<n>  -> flush ONLY _IMPL_MSG (the IMPLEMENT text)
 merge + unresolved        -> silent (today's behaviour, preserved)
 ```
 
-The existing comment's reasoning is honoured rather than overridden: silence
-stays wherever the subject is unknown.
+**Why a subset, not the whole message.** `_STALE_MSG` has five writers —
+ledger-staleness, bridge-acceptance, two acceptance notes, and the IMPLEMENT
+leg. Resolving the PR validates the **IMPLEMENT** subject only; every other
+writer still computes from the LOCAL branch. An earlier draft of this design
+gated the whole flush on `_impl_db`, which re-opened the exact defect the
+push-only gate was added to fix: a resolved `gh pr merge 7` emitted
+`"requesting-code-review stale: … HEAD is c7ef102…"` — text about the invoking
+session's branch, presented as though it described PR 7. Review caught it.
+
+The IMPLEMENT text is therefore tracked in its own `_IMPL_MSG` variable,
+appended to `_STALE_MSG` as well so the push path stays byte-identical, and
+selected alone on the merge path.
+
+So the original push-only reasoning is honoured in the only sense that holds:
+**text is emitted on a merge only where the PR is the subject it describes.**
+Silence remains wherever the subject is unknown.
+
+**Known gap, filed as issue #166 rather than fixed here.** The SHIP-phase
+`_WARNINGS` fold-in is a *different* mechanism from `_flush_push_advisories`,
+is ungated, and still emits the full `_STALE_MSG` on a merge. It predates this
+change (traced to `64b45f3`, #81) and is untouched by it, so extending the
+`_IMPL_MSG` split into it is a deliberate change deserving its own review.
+Until #166 lands, the subset guarantee above holds for the non-SHIP path only.
 
 ### Version bump
 
