@@ -1,0 +1,81 @@
+name: Done Gates
+
+# Server-side backstop for the repo's two OWNED done-gates:
+#   1. routing-fixture coverage  (tests/test-fixture-coverage.sh)
+#   2. skill-content coverage    (tests/test-skill-content-coverage.sh)
+#
+# WHY THIS EXISTS. CLAUDE.md and docs/enforcement-map.md both claimed these gates
+# were "CI-blocking via .verify.yml". They were not: .verify.yml is
+# `substrate: local` and is read only by hooks/lib/verdict.sh, the
+# project-verification skill, and tests — no workflow read it, and none ran
+# tests/run-tests.sh. Enforcement lived entirely in the local PreToolUse push
+# gate, which by construction cannot see a merge performed through the GitHub web
+# UI. PR #178 was merged exactly that way, so that is an observed gap, not a
+# hypothetical one. Two further holes this closes:
+#   - routing-governance (hooks/openspec-guard.sh) is scoped to
+#     `skills/|config/|hooks/`; a `tests/`-only PR that weakens a coverage gate
+#     itself never triggers the clean-verdict requirement.
+#   - The push gate has documented human bypasses; CI has none.
+# Regression: tests/test-done-gate-ci.sh pins this file's existence and contents,
+# so the claim cannot silently rot again.
+#
+# SCOPE IS DELIBERATELY NARROW. Only these two gates run here. They are pure
+# content-grep tests — no ~/.claude state, no subprocess hooks, no network — so
+# they are fast and near-flake-free. The FULL suite (116 files, 10+ minutes, with
+# known shared-state and stdin traps) is deliberately NOT wired in: making a slow
+# or flaky check required invites admin-override habits, which would weaken the
+# gate rather than strengthen it. Wiring the full suite is a separate decision
+# that needs its own burn-in.
+#
+# For true hard-blocking this check must be marked Required in GitHub Branch
+# Protection — same manual step as OpenSpec Validate; see docs/CI.md.
+#
+# Security note: no untrusted PR input reaches any `run:` command — every command
+# is a static string. See
+# https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+
+# Read-only: this workflow only reads checked-out files and uses no secrets.
+# Explicit grant guards against a future org-level default permission change.
+permissions:
+  contents: read
+
+concurrency:
+  group: done-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  done-gates:
+    name: Done Gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # `< /dev/null` is REQUIRED on every invocation, not decorative: these
+      # suites hang when stdin is a socket rather than a terminal, which on a
+      # runner surfaces only as a timeout with no useful output. Removing it is
+      # the most likely way this workflow breaks unnoticed, so
+      # tests/test-done-gate-ci.sh asserts the redirect is present.
+      - name: Routing-fixture coverage gate
+        run: bash tests/test-fixture-coverage.sh < /dev/null
+
+      - name: Skill-content coverage gate
+        run: bash tests/test-skill-content-coverage.sh < /dev/null
+
+      # The regression that pins this workflow to the documentation claim.
+      - name: Done-gate CI claim is accurate
+        run: bash tests/test-done-gate-ci.sh < /dev/null
+
+      # DO NOT add a `git diff --exit-code` working-tree-cleanliness step here.
+      # tests/test-registry.sh mutates a git-tracked file at runtime
+      # (config/fallback-registry.json — it strips the trailing newline). That is
+      # harmless in an ephemeral CI checkout, but a naive cleanliness check would
+      # turn it into a spurious red for reasons unrelated to the change under test.
