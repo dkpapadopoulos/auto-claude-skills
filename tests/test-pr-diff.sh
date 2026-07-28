@@ -37,6 +37,27 @@ assert_equals "path-shaped ref rejected"        "" "$(pr_ref_from_command 'gh pr
 assert_equals "semicolon injection rejected"    "" "$(pr_ref_from_command 'gh pr merge 7;rm -rf /')"
 assert_equals "graphql node id not a number"    "" "$(pr_ref_from_command 'gh api graphql -f query=mergePullRequest')"
 assert_equals "bare merge has no explicit ref"  "" "$(pr_ref_from_command 'gh pr merge')"
+
+# --- AMBIGUITY: prefer no answer over a confidently wrong one -------------
+# This scanner splits raw command TEXT; it cannot tell a flag's value from a
+# positional. `gh pr merge --title "PR 42 notes" 99` used to return 42 — a real
+# but UNRELATED PR — so the record would read diff_base:"pr:42" while PR 99 was
+# merged. In a corpus whose whole purpose is stating what each event was
+# measured against, a plausible wrong label is strictly worse than "unresolved":
+# unresolved is a known-unknown an adjudicator can exclude, pr:42 is a lie they
+# cannot detect. So when MORE THAN ONE digit-leading token follows `merge`, the
+# reference is ambiguous and we return nothing.
+assert_equals "ambiguous ref (number in --title) rejected"  "" \
+    "$(pr_ref_from_command 'gh pr merge --title "PR 42 notes" 99')"
+assert_equals "ambiguous ref (number in --body) rejected"   "" \
+    "$(pr_ref_from_command 'gh pr merge --body "fixes 7" 99')"
+assert_equals "ambiguous ref (two positionals) rejected"    "" \
+    "$(pr_ref_from_command 'gh pr merge 42 99')"
+# ...and the unambiguous cases must be untouched by that rule.
+assert_equals "single ref with trailing flags still works" "12" \
+    "$(pr_ref_from_command 'gh pr merge 12 --squash --delete-branch')"
+assert_equals "numeric flag BEFORE merge still ignored"     "7" \
+    "$(pr_ref_from_command 'gh --org 42 pr merge --squash 7')"
 assert_equals "a push is not a merge"           "" "$(pr_ref_from_command 'git push origin HEAD')"
 
 # --- fetch: hermetic, gh is stubbed; NO test may hit the network ---------

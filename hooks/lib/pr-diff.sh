@@ -24,7 +24,7 @@ PR_DIFF_GH_TIMEOUT="${PR_DIFF_GH_TIMEOUT:-10}"
 
 # pr_ref_from_command <command> -> bare PR number, or nothing
 pr_ref_from_command() {
-    local _cmd="${1:-}" _cand="" _tok _seen_merge="" _restore_glob=1
+    local _cmd="${1:-}" _cand="" _tok _seen_merge="" _restore_glob=1 _ndigit=0
     case "${_cmd}" in
         *pulls/*/merge*)
             # gh api repos/o/r/pulls/7/merge
@@ -59,10 +59,22 @@ pr_ref_from_command() {
                     esac
                     continue
                 fi
+                # AMBIGUITY: do NOT break on the first digit-leading token —
+                # count them all. This scanner splits raw command TEXT and
+                # cannot tell a flag's value from a positional, so
+                #   gh pr merge --title "PR 42 notes" 99
+                # yields both `42` and `99`. Breaking early returned 42: a real
+                # but UNRELATED PR, recorded as diff_base:"pr:42" while PR 99
+                # was merged. For a corpus whose purpose is stating what each
+                # event was measured against, a plausible wrong label is worse
+                # than none — "unresolved" is a known-unknown an adjudicator can
+                # exclude; "pr:42" is a lie they cannot detect. Two or more
+                # candidates ⇒ ambiguous ⇒ return nothing.
                 case "${_tok}" in
-                    [0-9]*) _cand="${_tok}"; break ;;
+                    [0-9]*) _ndigit=$((_ndigit + 1)); _cand="${_tok}" ;;
                 esac
             done
+            if [ "${_ndigit}" -gt 1 ]; then _cand=""; fi
             [ "${_restore_glob}" = 1 ] && set +f
             ;;
         *) return 0 ;;
