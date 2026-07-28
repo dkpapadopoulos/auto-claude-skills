@@ -96,8 +96,10 @@ the PR actually being merged for `gh pr merge <other-branch>`. A merge record's
 session's *local* branch state, not the merged PR's diff — the two can name
 different content entirely (merging someone else's PR from a session sitting on
 an unrelated branch). Merge records must be segmented at adjudication time on
-this basis; a `diff_base` field that names what was actually diffed is a
-follow-up, not built here.
+this basis; a `diff_base` field that names what was actually diffed shipped
+later in PR #168, which measures a merge's `material_source` against the merged
+PR's file list and bumped `predicate_version` to 2 — so v1 merge records are
+unpoolable with v2 (CLAUDE.md), and the v1 log is dead weight for this rate.
 
 ### Failure posture
 
@@ -118,9 +120,69 @@ The shadow log is diagnostic and is deliberately NOT added to
 > correct because the threshold is directional — we care only whether the rate
 > is below 10%, not about a symmetric interval.
 > **Unadjudicated records are excluded from the rate and reported alongside it.**
+>
+> **All three bands read off the same interval.** `phase-gate-backtest.sh:7`
+> pre-registers three bands (`<10%` deny / `10-20%` narrowed / `>20%` advisory);
+> applying an interval to only the first would leave a rigorous test for DENY and
+> point estimates for the other two. Instead:
+> - **DENY** — one-sided 95% **upper** bound < 10%.
+> - **NARROWED** — upper ≥ 10% AND lower < 20%. The honest inconclusive zone:
+>   cannot rule out <10%, cannot rule out ≥20%.
+> - **ADVISORY-ONLY** — one-sided 95% **lower** bound ≥ 20%. Note this requires
+>   *positive* evidence the rate is bad, not merely failure to prove it good; at
+>   n=23 that needs 8 false blocks (34.8%), where the point estimate alone would
+>   have called it at 5 (21.7%). The gap between those two numbers is the whole
+>   reason the bands are expressed as bounds.
+>
+> **Denominator = independent episodes, not records.** Collapse records sharing
+> `(repo, branch, session_token)` within a 30-minute window into ONE episode
+> before counting. Measured basis: the entire v1 log is 11 records from a single
+> repo+branch inside one 9-minute window (6 `gh-merge` + 5 `push`, interleaved) —
+> one episode retried eleven times, not eleven trials. Across 33 days of local
+> transcripts the same clustering holds at ~4.4 events per repo+branch, so a
+> record-level denominator overstates n by roughly 4x.
+>
+> **Sample-size floor.** Arithmetic implied by the decision rule above, not a new
+> bar. With zero adjudicated false blocks the rule requires **n = 29 independent
+> episodes** (one-sided Clopper–Pearson exact; Wilson at z=1.645 gives 25 — exact
+> is the conservative choice for a warn→deny flip and costs four episodes).
+> 1 false block ⇒ 46; 2 ⇒ 61; 3 ⇒ 76. A point estimate never clears this gate:
+> "0/3 = 0%" is not below 10%, it is unmeasured.
+>
+> **Diversity requirement.** The floor additionally requires episodes from
+> **≥2 distinct repos**. Raw count is not enough: n=29 accumulated entirely
+> inside one repo's sprint reproduces the single-branch correlation this
+> denominator exists to prevent, just at a larger number.
+>
+> **Dated horizon (pre-registered 2026-07-28, before the data exists).** At the
+> measured 0.697 independent-units/day, n=29 lands ≈ **2026-09-08**. That rate is
+> the *transcript-proxy* rate for any candidate push/merge; the v2 log records
+> only events where the leg actually fires, a strict subset — so treat the date
+> as an optimistic lower bound, not a due date. Recording it now is what makes
+> "wait for the forward corpus" falsifiable rather than open-ended: if
+> 2026-09-08 passes with n well short, the accumulation assumption was wrong and
+> the leg's population is rarer than the predicate's design assumed — itself a
+> finding, and grounds to revisit whether `<10%` is the right threshold at all
+> (the Dissenting-views item below).
+>
+> **Unknowns also get a worst-case bound** — the rate recomputed counting every
+> `unknown` as a `false_block`, reported next to the headline rate. Excluding
+> them from the numerator alone lets the gate clear 10% by leaving hard cases
+> unlabeled.
 
 Recording this now is the point: defining the bar after seeing the data is the
 post-hoc fitting this repo's discipline warns against.
+
+**Amendment 2026-07-28 (denominator, floor, unknowns).** The three clauses above
+were added after C1 shipped. They are not fitted to data, on three checks a
+reviewer can verify: (1) the v2 corpus governed by this rule is **empty** —
+recording began 2026-07-28T08:31Z with PR #168, and the 11 pre-existing records
+are `predicate_version:1`, which CLAUDE.md forbids pooling with v2; (2) the floor
+is derived from the already-committed one-sided-95%-below-10% rule by arithmetic,
+so it changes no bar; (3) all three clauses move the bar **stricter** — a ~4x
+smaller denominator, an explicit floor, and a worst-case unknowns rate — and none
+loosens it. Direction-of-change is the auditable guard here: post-hoc fitting is
+what makes a gate easier to clear after seeing the data.
 
 ## Trade-offs
 
@@ -145,9 +207,26 @@ post-hoc fitting this repo's discipline warns against.
   first-deny on a legitimate no-implementation push is often forced explicit
   intent, not a hard false block." Accepted — it is the basis for the
   pre-registered `false_block` definition above.
+- **Codex (2026-07-28):** the retroactive transcript corpus should be rebuilt as
+  a one-directional **kill switch** — too weak a proxy to authorize the flip, but
+  good enough to detect a catastrophic false-block rate early (the asymmetric
+  stopping-boundary precedent from interim trial monitoring). **Principle
+  accepted, build DECLINED**, on three grounds it did not weigh. (1) The leg is
+  **warn-only**: a bad false-block rate today blocks nobody, so the kill switch
+  guards a harm that cannot yet occur. (2) Under the three-band scheme adopted
+  above, the retro corpus returns ADVISORY-ONLY only at **8/23** adjudicated
+  false blocks — 23 human counterfactual adjudications for a verdict that needs
+  a third of them to come back bad. (3) The forward v2 corpus yields *faithful*
+  records rather than a proxy on roughly the same horizon (~2026-09-08). Codex's
+  own point (b) compounds this: the proxy miscounts an **errored** Skill
+  `tool_use` as evidence and substitutes "edited non-docs source in-session" for
+  `_diff_touches_material_source`'s merge-base diff, so its error profile is
+  unquantified in both directions. **Revisit if** the dated horizon passes with n
+  well short — at that point the forward corpus is not arriving and a coarse
+  early signal becomes worth its adjudication cost.
 - **Unresolved:** whether `<10%` is the right threshold at all. Not settled
-  here; this change only makes it *measurable*. Revisit once ~10 real events
-  exist.
+  here; this change only makes it *measurable*. Revisit once ~10 real
+  **episodes** (per the denominator above, not 10 raw records) exist.
 
 ## Decisions
 
