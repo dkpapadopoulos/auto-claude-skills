@@ -352,7 +352,15 @@ cmd_status() {
         _unparsed=$(( _lines - _parsed ))
         [ "${_unparsed}" -lt 0 ] && _unparsed=0
     fi
-    while IFS="$(printf '\t')" read -r _eid _repo _branch _tok _ids; do
+    # Re-split on \x1f (US), NOT tab. Tab is an IFS *whitespace* character, so
+    # `IFS=$'\t' read` collapses consecutive tabs: an empty `branch` shifted
+    # session_token into branch and left _ids EMPTY, so _episode_verdict ""
+    # returned unlabeled and the episode was silently counted unadjudicated —
+    # a human's labelling work would vanish from the count. \x1f is not IFS
+    # whitespace, so empty fields survive. (This is the repo's declared field
+    # separator; _episodes still emits tab for its own consumers.)
+    # The heredoc keeps the loop in THIS shell so the counters survive.
+    while IFS="$(printf '\037')" read -r _eid _repo _branch _tok _ids; do
         [ -z "${_eid:-}" ] && continue
         _tot=$(( _tot + 1 ))
         _vc="$(_episode_verdict "${_ids}")"
@@ -375,7 +383,7 @@ cmd_status() {
             true_catch)  _tc=$((  _tc  + 1 )) ;;
         esac
     done <<EOF
-$(_episodes)
+$(_episodes | tr '\t' '\037')
 EOF
     _nrepos="$(printf '%s' "${_repos}" | grep -c . )"
     echo "IMPLEMENT shadow corpus — predicate_version ${REQUIRED_PREDICATE_VERSION}"

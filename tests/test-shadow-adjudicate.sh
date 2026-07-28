@@ -367,6 +367,26 @@ build_floor 14 0 20
 eq "34 labelled but only 14 rate-bearing stays below the floor" "1" \
    "$(status | grep -ci 'insufficient data')"
 
+# --- cmd_status must survive an EMPTY field too ---
+# _episodes was fixed to preserve empty fields, but cmd_status re-split its
+# output with `IFS=$'\t' read`, which collapses consecutive tabs: an empty
+# `branch` shifted session_token into branch and left record_ids EMPTY, so
+# _episode_verdict "" returned unlabeled and the episode was counted
+# unadjudicated. A human could label 29 episodes and watch the count stay 0.
+seed
+jrecf2() { jq -cn --arg id "$1" --arg br "$2" --arg tok "$3" \
+  '{record_id:$id,ts:"2026-07-28T10:00:00Z",repo:"/repo/A",branch:$br,
+    session_token:$tok,predicate_version:2,action:"push",diff_base:"branch-local",
+    impl_in_chain:true,material_source:true,impl_evidence_kind:"none",
+    transcript_path:"/tmp/t.jsonl",gate:"push-implement",would_block:true,
+    schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"; }
+jrecf2 s1 "" tokA; jrecf2 s2 "" tokB
+label s1 true_catch; label s2 true_catch
+eq "empty-branch episodes are seen by --status"      "2" "$(status | grep -E '^  episodes' | awk '{print $2}')"
+eq "and their adjudications are COUNTED"             "2" "$(status | grep -E '^  adjudicated' | awk '{print $2}')"
+eq "and none are reported unadjudicated"             "0" "$(status | grep -E '^  unadjudicated' | awk '{print $2}')"
+eq "and the repo is still attributed"                "1" "$(status | grep -c '/repo/A')"
+
 # posture
 eq "status disclaims enforcement"       "1" "$(status | grep -ci 'informational only')"
 eq "status exits 0 on an empty corpus"  "0" "$(seed; "$SCRIPT" --status >/dev/null 2>&1; echo $?)"
