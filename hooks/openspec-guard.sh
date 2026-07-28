@@ -417,14 +417,30 @@ EOF
             # Advisory-only, so this widens an advisory and never a deny.
             if [ "${_impl_in_chain}" = "true" ] && \
                { [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; }; then
+                # Two passes, NOT one (#169). The single loop short-circuited on
+                # the first slot-then-class hit, so an attested executing-plans
+                # beat a genuinely invoked agent-team-execution purely by check
+                # order — and the recorded evidence class would have been wrong.
+                # _impl_ok is a disjunction over the same predicates either way,
+                # so the leg's DECISION is unchanged for every input; only the
+                # label differs. Pass 1: real evidence across all slots.
+                _impl_ev="none"
                 for _slot in executing-plans subagent-driven-development agent-team-execution; do
                     [ "${_impl_ok}" = "false" ] && _ledger_has "$_slot" && _impl_ok=true
                     [ "${_impl_ok}" = "false" ] && _invoc_ok "$_slot" && _impl_ok=true
                     [ "${_impl_ok}" = "false" ] && _bridge_has "$_slot" && _impl_ok=true
-                    if [ "${_impl_ok}" = "false" ] && command -v phase_attested >/dev/null 2>&1; then
-                        phase_attested "${_SESSION_TOKEN}" "$_slot" && _impl_ok=true
-                    fi
                 done
+                # Pass 2: attestation, only once real evidence is ruled out for
+                # EVERY slot. Reaching here with a hit means attestation alone
+                # satisfied the leg, which is exactly what #169 wants counted.
+                if [ "${_impl_ok}" = "false" ] && command -v phase_attested >/dev/null 2>&1; then
+                    for _slot in executing-plans subagent-driven-development agent-team-execution; do
+                        if [ "${_impl_ok}" = "false" ] && phase_attested "${_SESSION_TOKEN}" "$_slot"; then
+                            _impl_ok=true
+                            _impl_ev="attested"
+                        fi
+                    done
+                fi
                 # Resolution and materiality are DISTINCT outcomes (#161 fix
                 # round 1): a PR that resolved (gh returned a file list) but is
                 # docs-only must record diff_base:"pr:<n>" with
@@ -469,6 +485,19 @@ EOF
                     fi
                     if command -v implement_shadow_record >/dev/null 2>&1; then
                         implement_shadow_record "${_pe_action}" "${_proot}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" "${_impl_db}" "${_impl_material}" || true
+                    fi
+                fi
+                # Attestation-resolved episodes are recorded too, as
+                # would_block:false — otherwise the deny-flip corpus can never
+                # observe how often attestation, rather than work, satisfied
+                # this leg (#169). Same population gate as the would-block
+                # record above, so the two are directly comparable. Advisory
+                # region: no permissionDecision, no exit, no new network call
+                # (_impl_db/_impl_material are already computed above).
+                if [ "${_impl_ev}" = "attested" ] && \
+                   { [ "${_impl_material}" = "true" ] || [ "${_pe_action}" = "gh-merge" ]; }; then
+                    if command -v implement_shadow_record >/dev/null 2>&1; then
+                        implement_shadow_record "${_pe_action}" "${_proot}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "attested" "${_impl_db}" "${_impl_material}" "false" || true
                     fi
                 fi
             fi
