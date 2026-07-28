@@ -5,6 +5,43 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 . "${SCRIPT_DIR}/test-helpers.sh"
 echo "=== test-push-gate-implement-leg.sh ==="
 
+# --- Unit: implement_shadow_record's would_block parameter (#169) ----------
+# Direct-call unit block. The 8th parameter defaults to true so the guard's
+# existing call site is unchanged; passing false is how an attestation-resolved
+# episode is recorded.
+# NOT wrapped in a subshell: test-helpers.sh's assert_* increment plain global
+# counters (TESTS_RUN/TESTS_PASSED/TESTS_FAILED), and a subshell's writes to
+# those are discarded on exit — the FAIL text would print but never flip the
+# suite's exit code. Isolation is instead scoped via the _u_-prefixed names
+# (no collision with anything used later in this file) and explicit cleanup;
+# sourcing the lib into this shell only defines implement_shadow_record() and
+# two version vars, and IMPLEMENT_SHADOW_LOG is unconditionally re-exported to
+# its real default path below (before any assertion that depends on it), so
+# nothing here leaks into the rest of the suite.
+_u_home="$(mktemp -d /tmp/pg-impl-unit-XXXXXX)"
+export IMPLEMENT_SHADOW_LOG="${_u_home}/shadow.jsonl"
+# shellcheck disable=SC1090
+. "${PROJECT_ROOT}/hooks/lib/implement-shadow.sh"
+
+assert_equals "schema_version is 2" "2" "${IMPLEMENT_SHADOW_SCHEMA_VERSION}"
+assert_equals "predicate_version is unchanged at 2" "2" \
+    "${IMPLEMENT_SHADOW_PREDICATE_VERSION}"
+
+implement_shadow_record push "${PROJECT_ROOT}" tok /tmp/t.jsonl none branch-local true
+assert_contains "omitted would_block defaults to true" '"would_block":true' \
+    "$(cat "${IMPLEMENT_SHADOW_LOG}")"
+
+: > "${IMPLEMENT_SHADOW_LOG}"
+implement_shadow_record push "${PROJECT_ROOT}" tok /tmp/t.jsonl attested branch-local true false
+_u_rec="$(cat "${IMPLEMENT_SHADOW_LOG}")"
+assert_contains "explicit false is recorded as a json boolean" '"would_block":false' "${_u_rec}"
+assert_contains "evidence kind is carried through" '"impl_evidence_kind":"attested"' "${_u_rec}"
+assert_equals "record is still valid json" "0" \
+    "$(jq -e . "${IMPLEMENT_SHADOW_LOG}" >/dev/null 2>&1; echo $?)"
+
+rm -rf "${_u_home}"
+unset IMPLEMENT_SHADOW_LOG
+
 # The IMPLEMENT-evidence leg (Check 0, WARN-FIRST) advises — never denies — when
 # an implementation-slot skill (executing-plans / subagent-driven-development /
 # agent-team-execution) is in the composition chain, the push diff touches
@@ -115,13 +152,47 @@ assert_not_contains "IMPLEMENT leg emits no permissionDecision at all" "permissi
 _pglog="${HOME}/.claude/.phase-gate-events.log"
 assert_contains "IMPLEMENT warn writes a phase-gate telemetry line" "push-implement" "$(cat "${_pglog}" 2>/dev/null || echo '<no log>')"
 
-# (b) After phase_attest executing-plans "test" -> no IMPLEMENT advisory.
+# (b) After phase_attest executing-plans "test" -> no IMPLEMENT advisory, but
+# the episode IS recorded as would_block:false / attested, so the deny-flip
+# corpus can measure how often attestation rather than work satisfied the leg
+# (#169). The shadow log override is set HERE (it used to be set later) so this
+# case can assert on it.
+export IMPLEMENT_SHADOW_LOG="$HOME/.claude/.push-implement-shadow.jsonl"
+: > "$IMPLEMENT_SHADOW_LOG"
 # shellcheck disable=SC1090
 . "${PROJECT_ROOT}/hooks/lib/phase-attest.sh"
 phase_attest "executing-plans" "test" >/dev/null 2>&1
+_pglog_before="$(wc -l < "${HOME}/.claude/.phase-gate-events.log" 2>/dev/null | tr -d ' ')"
 out="$(run_guard)"
 assert_not_contains "attested executing-plans => no IMPLEMENT advisory" "IMPLEMENT:" "${out:-}"
 assert_not_contains "attested path still does not deny"                 '"deny"'     "${out:-}"
+assert_not_contains "attested path emits no permissionDecision"  "permissionDecision" "${out:-}"
+
+assert_equals "attested episode writes exactly one shadow record" "1" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+_arec="$(cat "$IMPLEMENT_SHADOW_LOG")"
+assert_json_valid "attested record is valid json" "$IMPLEMENT_SHADOW_LOG"
+assert_contains "attested record is not a would-block" '"would_block":false'          "${_arec}"
+assert_contains "attested record names the evidence class" '"impl_evidence_kind":"attested"' "${_arec}"
+assert_contains "attested record names the gate"      '"gate":"push-implement"'       "${_arec}"
+
+# The warn telemetry line must NOT fire on a satisfied leg — the advisory and
+# phase_gate_log stay gated on _impl_ok=false.
+_pglog_after="$(wc -l < "${HOME}/.claude/.phase-gate-events.log" 2>/dev/null | tr -d ' ')"
+assert_equals "attested episode writes no push-implement warn line" \
+    "${_pglog_before:-0}" "${_pglog_after:-0}"
+
+# (b2) Real invocation evidence must still record NOTHING — the shipped
+# implement-shadow-event scenario "satisfied IMPLEMENT evidence emits nothing"
+# is deliberately preserved for the non-attested classes (#169 design, Unit E).
+rm -f "$HOME/.claude/.skill-phase-attest-${_TOK}"
+: > "$IMPLEMENT_SHADOW_LOG"
+printf '%s\n' '["executing-plans"]' > "$HOME/.claude/.skill-invocation-evidence-${_TOK}"
+out="$(run_guard)"
+assert_not_contains "invocation-satisfied => no IMPLEMENT advisory" "IMPLEMENT:" "${out:-}"
+assert_equals "invocation-satisfied writes no shadow record" "0" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+rm -f "$HOME/.claude/.skill-invocation-evidence-${_TOK}"
 
 # (c) Chain without any implementation-slot member -> no IMPLEMENT advisory,
 #     even though the diff still touches material source and no impl evidence
@@ -154,7 +225,7 @@ assert_json_valid "shadow record is valid json" "$IMPLEMENT_SHADOW_LOG"
 assert_contains "record names the gate"        '"gate":"push-implement"' "${_rec}"
 assert_contains "record marks a would-block"   '"would_block":true'      "${_rec}"
 assert_contains "record carries action push"   '"action":"push"'         "${_rec}"
-assert_contains "record carries schema_version"    '"schema_version":1'    "${_rec}"
+assert_contains "record carries schema_version"    '"schema_version":2'    "${_rec}"
 assert_contains "record carries predicate_version" '"predicate_version":2' "${_rec}"
 assert_contains "record carries a record_id"   '"record_id":'            "${_rec}"
 assert_contains "record carries a ts"          '"ts":'                   "${_rec}"
@@ -223,26 +294,31 @@ assert_equals "default shadow log gained no record while the override was unwrit
     "${_default_count_before}" "${_default_count_after}"
 export IMPLEMENT_SHADOW_LOG="$HOME/.claude/.push-implement-shadow.jsonl"
 
-# Satisfied IMPLEMENT evidence must emit nothing at all.
+# Satisfied IMPLEMENT evidence must emit nothing at all -- for REAL (non-
+# attestation) evidence. This used to exercise phase_attest, but #169 made
+# attestation-satisfied episodes recordable (case (b) above), so the "emits
+# nothing" invariant now only holds for the non-attested classes (#169
+# design, Unit E) -- exercise invocation evidence here instead.
 : > "$IMPLEMENT_SHADOW_LOG"
-source "${PROJECT_ROOT}/hooks/lib/phase-attest.sh" 2>/dev/null
-phase_attest executing-plans "shadow-negative-test" >/dev/null 2>&1
+printf '%s\n' '["executing-plans"]' > "$HOME/.claude/.skill-invocation-evidence-${_TOK}"
 out="$(run_guard)"
 assert_equals "no shadow record when IMPLEMENT evidence exists" "0" \
     "$(wc -l < "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | tr -d ' ')"
+rm -f "$HOME/.claude/.skill-invocation-evidence-${_TOK}"
 
 # --- #161: merges are measured against the PR, not the local branch -------
 # gh is stubbed on PATH: no test may touch the network. The stub reports a PR
 # whose diff edits src/app.py, while the fixture branch's own delta is what the
 # pre-#161 code would have measured.
 #
-# Precondition: the previous block (line ~246) left an executing-plans
-# attestation on disk, which would satisfy _impl_ok and suppress the whole
-# leg (no record at all) regardless of push vs merge. Clear it so this block's
-# fixture state matches what the brief assumes: impl-slot in chain, no impl
-# evidence. (_COMP already has executing-plans in .chain since line ~142, and
-# REVIEW/VERIFY ledger records from lines ~90-91 are untouched, so only the
-# IMPLEMENT leg is under test here.)
+# Precondition: the previous block already removed its invocation-evidence
+# fixture, and no phase_attest record is left on disk either, so _impl_ok is
+# false again here. This rm is a defensive no-op kept in case a future edit
+# reintroduces an attestation fixture above without its own cleanup. Fixture
+# state matches what the brief assumes: impl-slot in chain, no impl evidence.
+# (_COMP already has executing-plans in .chain since line ~142, and REVIEW/
+# VERIFY ledger records from lines ~90-91 are untouched, so only the IMPLEMENT
+# leg is under test here.)
 rm -f "$HOME/.claude/.skill-phase-attest-${_TOK}"
 
 _GHSTUB="$(mktemp -d /tmp/pg-ghstub-XXXXXX)"
@@ -372,8 +448,11 @@ rm -rf "${_GHSTUB4}"
 # true, or gh-merge) had explicit assertions. Pin both FALSE branches too.
 
 # (a) gh pr merge WITH implement evidence present -> _impl_ok short-circuits
-# before the write gate, so no shadow record and no advisory, even though the
-# PR resolves and touches material source.
+# before the would-block write gate, so the would-block record (would_block:
+# true) is never written and no advisory fires, even though the PR resolves
+# and touches material source. This case is satisfied by attestation alone,
+# so per #169 it DOES still write the attested record (would_block:false) --
+# asserted explicitly below rather than just "no record at all".
 rm -f "$HOME/.claude/.skill-phase-attest-${_TOK}"
 # shellcheck disable=SC1090
 . "${PROJECT_ROOT}/hooks/lib/phase-attest.sh"
@@ -386,8 +465,11 @@ printf 'src/app.py\n'
 STUB
 chmod +x "${_GHSTUB3}/gh"
 out="$(PATH="${_GHSTUB3}:$PATH" run_guard 'gh pr merge 11 --squash')"
-assert_equals "attested merge writes no shadow record" "0" \
+_arec_merge="$(cat "$IMPLEMENT_SHADOW_LOG" 2>/dev/null)"
+assert_not_contains "attested merge writes no would-block record" '"would_block":true' "${_arec_merge}"
+assert_equals "attested merge writes exactly one record (the attested one, #169)" "1" \
     "$(wc -l < "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | tr -d ' ')"
+assert_contains "attested merge record names the evidence class" '"impl_evidence_kind":"attested"' "${_arec_merge}"
 assert_not_contains "attested merge surfaces no IMPLEMENT advisory" "IMPLEMENT:" "${out:-}"
 rm -rf "${_GHSTUB3}"
 rm -f "$HOME/.claude/.skill-phase-attest-${_TOK}"

@@ -190,6 +190,21 @@ smaller denominator, an explicit floor, and a worst-case unknowns rate — and n
 loosens it. Direction-of-change is the auditable guard here: post-hoc fitting is
 what makes a gate easier to clear after seeing the data.
 
+**Denominator filter (amended #169).** The shadow log now also carries
+`would_block: false` records, for episodes the IMPLEMENT leg resolved via
+attestation alone. Any false-block rate computed over the log MUST first filter
+`select(.would_block == true)`. Schema-1 records are uniformly `would_block:
+true`, so the filter is correct across both schema versions. Counting raw lines
+would dilute the rate with episodes that were never blocks.
+
+This is strictness-neutral for the pre-registered rule — the would-block
+population it measures is unchanged — and additive for interpretation: the
+attested records give `attested / (attested + would_block:true)`, i.e. of the
+episodes where the leg found no real evidence, how many were attested away
+rather than left unresolved. It does NOT give `attested / all-eligible`;
+evidence-backed episodes are deliberately still not recorded (see
+`attestation-measurement/design.md`, Unit E).
+
 ## Trade-offs
 
 - **Deferred payoff.** No usable rate for weeks. Accepted because the
