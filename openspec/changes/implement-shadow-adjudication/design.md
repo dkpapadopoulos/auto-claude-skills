@@ -85,10 +85,16 @@ Wilson MUST NOT be substituted. It is anti-conservative in the tail and disagree
 at real boundaries (it calls 8/23 ADVISORY-ONLY where exact says NARROWED), which
 is why that case is a pinned test.
 
-**Floor gate.** Below n=29 adjudicated episodes, or fewer than 2 distinct repos,
+**Floor gate.** Below n=29 rate-bearing episodes, or fewer than 2 distinct repos,
 `--status` MUST print `insufficient data` in place of a rate. A point estimate
 over 3 episodes is not a low rate, it is an unmeasured one, and printing one
 invites exactly the misreading the floor exists to prevent.
+
+The floor is applied to the rate's own denominator (`true_catch + false_block`),
+NOT to the count of adjudicated episodes. `unknown` episodes are adjudicated but
+excluded from the headline rate, so gating on the labelled count would let 29
+labelled episodes of which 15 were `unknown` print a band computed over n=14 —
+below the pre-registered floor.
 
 **Worst-case bound.** Alongside the headline rate, `--status` prints the rate
 recomputed with every `unknown` counted as a `false_block`, so the gate cannot be
@@ -116,10 +122,36 @@ The bias is deliberate and one-directional: a human using `!` inside a session i
 misclassified as agent, costing a re-confirmation. The reverse error — an
 agent's self-label silently counted — is the one that corrupts the rate.
 
-All three signals are forgeable. That is stated in the output, which labels
-results **human-claimed, never human-verified**. The mitigation is not that
-forgery is impossible; it is that a forged clean rate now requires a deliberate
-lie about provenance rather than merely running the tool.
+`CLAUDE_CODE_SESSION_ID` is checked alongside `CLAUDECODE` — it is the repo's
+established "inside a Claude Code turn" marker (`session-token.sh`,
+`phase-attest.sh`, `verify-and-record.sh`, `gate-status.sh`).
+
+**The `claude`-parent signal is inert in this harness.** A Claude Code Bash call
+runs the script under an intermediate shell, so `ps -o comm= -p $PPID` reports
+`/bin/zsh` and `claude` is only the grandparent. It is kept because it costs
+nothing and catches a direct-parent case, but it carries no weight in practice.
+Walking several ancestors *would* fire — and ancestry survives `env -u`, so it
+genuinely hardens the bypass below — but it was tried and reverted: inside any
+Claude Code session every ancestry contains `claude`, which makes the human path
+unreachable in-session and untestable. Buying marginal hardening by making the
+only countable claimant untestable is the wrong trade.
+
+**Honest bound on what this buys.** Every signal is forgeable, and the bypass is
+one token:
+
+```
+env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID shadow-adjudicate.sh <id> --verdict true_catch --reason x
+→ recorded: <id>  true_catch  (human-claimed)
+```
+
+The resulting provenance is indistinguishable from a human piping from a zsh
+script, so the audit trail cannot catch it after the fact either. This model is
+therefore sound against the *realistic* failure — an agent working through
+`--next` and labelling as it goes, self-grading without noticing — and is not a
+control against a motivated bypass. That is an acceptable trade for a diagnostic
+whose output is advisory, but it must not be described as more than it is. The
+output labels results **human-claimed, never human-verified**, which is the
+accurate framing.
 
 ## Error handling
 
@@ -146,7 +178,22 @@ diff-dependent assertions need a harness-built corpus anyway.
   DENY (pins the floor); 9/23 → ADVISORY-ONLY; 8/23 → NARROWED; 5/23 → NARROWED.
   The 8/23 case is load-bearing: Wilson would call it ADVISORY-ONLY and exact does
   not, so it pins that the implementation is exact rather than an approximation.
-- Floor: 29 episodes in 1 repo fails diversity; the same across 2 repos passes.
+- Floor: 30 episodes in 1 repo fails diversity; 30 across 2 repos passes and
+  prints a rate, band, and worst-case line. The above-floor branch is exercised
+  end-to-end — 0/30 → DENY, 15/29 → ADVISORY-ONLY, and 30 clean + 5 unknown →
+  headline `0/30` with worst case `5/35` → NARROWED, which is the clause that
+  stops the gate being cleared by leaving hard cases unlabelled.
+- Floor binds on the rate's denominator: 14 rate-bearing + 20 unknown (34
+  labelled) stays below the floor.
+- An EMPTY field must not drop a record: `IFS=$'\t' read` collapses consecutive
+  tabs, so a record with an empty `branch` — which `implement-shadow.sh` writes
+  whenever `git rev-parse --abbrev-ref HEAD` fails — silently vanished from the
+  denominator. Fixtures cover empty `branch` and empty `session_token`, plus
+  `--next` rendering.
+- One unparseable JSON line must not truncate the corpus, and must be reported.
+- A record with a null/missing `ts` is excluded AND counted.
+- A truncated command line (`--verdict` with no value) exits non-zero rather than
+  looping forever; bounded by `ulimit -t` so a regression fails fast.
 - v1 record refused with a non-zero exit.
 - Bash 3.2: `/bin/bash -n` clean and exercised under `/bin/bash`.
 

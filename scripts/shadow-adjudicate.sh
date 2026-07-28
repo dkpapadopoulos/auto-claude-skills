@@ -55,11 +55,10 @@ _band() {
     }'
 }
 
-# _iso_epoch <iso8601-utc> -> epoch seconds, or -1 if unparseable.
-# Implemented in awk rather than via `date`, because `date -d` (GNU) and
-# `date -j -f` (BSD/macOS) are mutually incompatible and this must run on both.
-_iso_epoch() {
-    awk -v s="${1:-}" '
+# _AWK_EPOCH — shared awk prelude converting ISO-8601 UTC to epoch seconds,
+# returning -1 when unparseable. In awk rather than `date` because `date -d`
+# (GNU) and `date -j -f` (BSD/macOS) are mutually incompatible.
+_AWK_EPOCH='
     function days_from_civil(y, m, d,   era, yoe, doy, doe) {
         if (m <= 2) y = y - 1
         era = int((y >= 0 ? y : y - 399) / 400)
@@ -68,12 +67,21 @@ _iso_epoch() {
         doe = yoe * 365 + int(yoe / 4) - int(yoe / 100) + doy
         return era * 146097 + doe - 719468
     }
-    BEGIN {
-        if (s !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$/) { print -1; exit }
+    function iso_epoch(s,   y, mo, d, hh, mi, ss) {
+        if (s !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$/) return -1
         y  = substr(s,1,4)+0;  mo = substr(s,6,2)+0;  d  = substr(s,9,2)+0
         hh = substr(s,12,2)+0; mi = substr(s,15,2)+0; ss = substr(s,18,2)+0
-        print days_from_civil(y, mo, d) * 86400 + hh * 3600 + mi * 60 + ss
+        return days_from_civil(y, mo, d) * 86400 + hh * 3600 + mi * 60 + ss
     }'
+
+# _shadow_tsv <jq-array-expr> — emit TSV for v2 records, tolerating malformed
+# lines. `jq` ABORTS on the first parse error, so a single truncated line would
+# silently truncate the whole corpus (and `2>/dev/null` hid it). `-R` + `fromjson?`
+# skips only the bad line. Unparseable lines are counted and reported by --status.
+_shadow_tsv() {
+    jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
+       "fromjson? // empty | select(.predicate_version == \$pv) | ${1} | @tsv" \
+       "${SHADOW_LOG}" 2>/dev/null
 }
 
 # _episodes — group v2 shadow records into independent episodes.
@@ -83,27 +91,30 @@ _iso_epoch() {
 # EPISODE_WINDOW_SEC of the episode's FIRST record — anchored, not rolling.
 # A rolling gap would chain a whole day of intermittent pushes into one episode
 # and drive the denominator below the real number of decision points.
+#
+# Field splitting is done ENTIRELY in awk. `IFS=$'\t' read` treats tab as IFS
+# WHITESPACE, so consecutive tabs collapse and every field after an empty one
+# shifts left — a record with an empty branch (which implement-shadow.sh writes
+# whenever `git rev-parse --abbrev-ref HEAD` fails) silently vanished from the
+# denominator with no exclusion row. awk with an explicit -F'\t' preserves
+# empty fields.
 _episodes() {
     [ -f "${SHADOW_LOG}" ] || return 0
     command -v jq >/dev/null 2>&1 || return 0
-    jq -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" '
-        select(.predicate_version == $pv)
-        | [.repo, .branch, .session_token, .ts, .record_id] | @tsv
-      ' "${SHADOW_LOG}" 2>/dev/null \
-    | while IFS="$(printf '\t')" read -r _repo _branch _tok _ts _rid; do
-          [ -z "${_rid:-}" ] && continue
-          _ep="$(_iso_epoch "$_ts")"
-          # A malformed ts is EXCLUDED, not merged. _iso_epoch returns -1 for
+    _shadow_tsv '[.repo, .branch, .session_token, .ts, .record_id]' \
+    | awk -F'\t' "${_AWK_EPOCH}"'
+        {
+          # A malformed ts is EXCLUDED, not merged: iso_epoch returns -1 for
           # every unparseable value, so two corrupt records sharing a key would
-          # satisfy (-1) - (-1) = 0 <= window and collapse into one episode on a
+          # satisfy (-1)-(-1)=0 <= window and collapse into one episode on a
           # time relation nothing verified. Excluding keeps corrupt data from
-          # moving the denominator in either direction — deflating it by merging
-          # or inflating it by counting each separately, and inflation is the
-          # dangerous direction because it makes the floor easier to reach.
-          # C1 always writes `date -u` output, so this is defensive.
-          [ "${_ep}" = "-1" ] && continue
-          printf '%s\t%s\t%s\t%s\t%s\n' "$_repo" "$_branch" "$_tok" "${_ep}" "$_rid"
-      done \
+          # moving the denominator either way, and inflation is the dangerous
+          # direction because it makes the floor easier to reach.
+          if ($5 == "") next
+          e = iso_epoch($4)
+          if (e < 0) next
+          print $1 "\t" $2 "\t" $3 "\t" e "\t" $5
+        }' \
     | sort -t "$(printf '\t')" -k1,1 -k2,2 -k3,3 -k4,4n \
     | awk -F'\t' -v w="${EPISODE_WINDOW_SEC}" '
         # Compare the three key fields DIRECTLY rather than concatenating them
@@ -147,6 +158,18 @@ _episodes() {
 # the rest of the codebase rather than relying on one of the pair.
 _claimant() {
     if [ -n "${CLAUDECODE:-}" ] || [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then echo agent; return; fi
+    # NOTE: this $PPID check is INERT in the Claude Code harness — a Bash tool
+    # call runs the script under an intermediate shell, so the parent is
+    # /bin/zsh and `claude` is only the GRANDparent. It fires only for a direct
+    # `claude` parent. It is kept because it costs nothing and catches that case.
+    #
+    # Walking several ancestors WAS tried and reverted: ancestry survives
+    # `env -u`, so it does harden the env-stripping bypass — but inside any
+    # Claude Code session every ancestry contains `claude`, which makes the
+    # human path unreachable in-session and, critically, untestable. Buying
+    # marginal hardening (the docs already concede forgeability) by making the
+    # only countable claimant untestable is the wrong trade. Do not re-add it
+    # without an answer for how `label()` simulates a human.
     case "$(ps -o comm= -p "$PPID" 2>/dev/null)" in *claude*) echo agent; return;; esac
     echo human
 }
@@ -211,12 +234,12 @@ cmd_next() {
     [ -f "${SHADOW_LOG}" ] || { echo "no shadow log at ${SHADOW_LOG} — nothing outstanding."; return 0; }
     command -v jq >/dev/null 2>&1 || { echo "jq required — cannot read the corpus."; return 0; }
     _seen="$(_adjudicated_ids)"
-    _line="$(jq -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" '
-              select(.predicate_version == $pv)
+    # Records whose ts is unparseable are skipped here too — --status can never
+    # count them, so offering one for adjudication wastes the operator's time.
+    _line="$(_shadow_tsv 'select((.ts // "") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
               | [.record_id,.ts,.repo,.branch,.action,.diff_base,
                  (.impl_in_chain|tostring),(.material_source|tostring),
-                 .impl_evidence_kind,.transcript_path] | @tsv' \
-              "${SHADOW_LOG}" 2>/dev/null \
+                 .impl_evidence_kind,.transcript_path]' \
             | sort -t "$(printf '\t')" -k2,2 \
             | while IFS= read -r _row; do
                   _id="$(printf '%s' "${_row}" | cut -f1)"
@@ -232,11 +255,9 @@ cmd_next() {
         # countable yet, the second means the work is done. Conflating them
         # reports an empty corpus as complete.
         local _n_v2 _n_v1
-        _n_v2="$(jq -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
-                   'select(.predicate_version == $pv) | .record_id' \
-                   "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
-        _n_v1="$(jq -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
-                   'select(.predicate_version != $pv) | .record_id' \
+        _n_v2="$(_shadow_tsv '[.record_id]' | grep -c . )"
+        _n_v1="$(jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
+                   'fromjson? // empty | select(.predicate_version != $pv) | .record_id' \
                    "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
         if [ "${_n_v2}" -eq 0 ]; then
             printf 'no v%s records yet — nothing is adjudicable.\n' "${REQUIRED_PREDICATE_VERSION}"
@@ -249,15 +270,18 @@ cmd_next() {
                "${_n_v2}" "${REQUIRED_PREDICATE_VERSION}"
         return 0
     fi
-    printf '%s\n' "${_line}" | while IFS="$(printf '\t')" read -r id ts repo branch action db chain mat ev tp; do
-        printf '%s   %s\n' "$id" "$ts"
-        printf '  repo    %s\n  branch  %s\n' "$repo" "$branch"
-        printf '  action  %s   diff_base %s\n' "$action" "$db"
-        printf '  why     impl_in_chain=%s, material_source=%s, evidence=%s\n' "$chain" "$mat" "$ev"
-        printf '  read    %s\n\n' "$tp"
-        printf 'to label:\n  %s %s --verdict <true_catch|false_block|unknown> --reason "..."\n' \
-               "$0" "$id"
-    done
+    # Rendered by awk, not `IFS=$'\t' read`: tab is IFS whitespace, so an empty
+    # field (e.g. a record with no branch) collapses and shifts every later
+    # column left — which mislabels `action` as `branch` and blanks the
+    # spec-mandated transcript_path pointer.
+    printf '%s\n' "${_line}" | awk -F'\t' -v self="$0" '{
+        printf "%s   %s\n", $1, $2
+        printf "  repo    %s\n  branch  %s\n", $3, $4
+        printf "  action  %s   diff_base %s\n", $5, $6
+        printf "  why     impl_in_chain=%s, material_source=%s, evidence=%s\n", $7, $8, $9
+        printf "  read    %s\n\n", $10
+        printf "to label:\n  %s %s --verdict <true_catch|false_block|unknown> --reason \"...\"\n", self, $1
+    }'
     return 0
 }
 
@@ -307,17 +331,26 @@ cmd_status() {
     local _tot=0 _lab=0 _fb=0 _tc=0 _unk=0 _agent=0 _unlab=0 _v1=0
     local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
     local _den _wc_k _wc_n _band_hdl _band_wc
-    local _badts=0
+    local _badts=0 _unparsed=0 _lines=0 _parsed=0
     if [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1; then
-        _v1="$(jq -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
-                 'select(.predicate_version != $pv) | .record_id' \
+        _v1="$(jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
+                 'fromjson? // empty | select(.predicate_version != $pv) | .record_id' \
                  "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
         # v2 records whose ts cannot be parsed are dropped by _episodes; report
         # the count so the exclusion is visible rather than a silent shortfall.
-        _badts="$(jq -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
-                    'select(.predicate_version == $pv)
-                     | select(.ts | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$") | not)
-                     | .record_id' "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
+        # `.ts // ""` is required: `null | test(...)` is a jq RUNTIME error, and
+        # jq then skips that input entirely — so a record with a missing ts was
+        # excluded from episodes AND counted zero here, silently.
+        _badts="$(_shadow_tsv 'select(((.ts // "") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) | not) | [.record_id]' \
+                  | grep -c . )"
+        # Lines jq could not parse at all. Reported rather than swallowed: a
+        # single truncated line used to abort the whole read and silently
+        # truncate the corpus.
+        _lines="$(grep -c . "${SHADOW_LOG}" 2>/dev/null)"; [ -n "${_lines}" ] || _lines=0
+        _parsed="$(jq -R -r 'fromjson? // empty | .record_id // "?"' "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
+        [ -n "${_parsed}" ] || _parsed=0
+        _unparsed=$(( _lines - _parsed ))
+        [ "${_unparsed}" -lt 0 ] && _unparsed=0
     fi
     while IFS="$(printf '\t')" read -r _eid _repo _branch _tok _ids; do
         [ -z "${_eid:-}" ] && continue
@@ -353,6 +386,8 @@ EOF
     printf '  v1 records        %s   <- unpoolable, excluded\n' "${_v1}"
     [ "${_badts}" -gt 0 ] && \
         printf '  malformed ts      %s   <- excluded: unparseable timestamp, cannot be placed in an episode\n' "${_badts}"
+    [ "${_unparsed}" -gt 0 ] && \
+        printf '  unparseable lines %s   <- excluded: not valid JSON\n' "${_unparsed}"
     printf '  true_catch        %s\n' "${_tc}"
     printf '  false_block       %s\n' "${_fb}"
     printf '  unknown           %s   <- excluded from the headline rate\n' "${_unk}"
@@ -360,10 +395,14 @@ EOF
     [ "${_nrepos}" -gt 0 ] && printf '   %s' "$(printf '%s' "${_repos}" | tr '\n' ' ')"
     printf '\n\n'
     _den=$(( _tc + _fb ))
-    if [ "${_lab}" -lt "${FLOOR_EPISODES}" ] || [ "${_nrepos}" -lt "${FLOOR_REPOS}" ]; then
+    # The floor is applied to _den — the population the rate is actually computed
+    # over — not to _lab. `unknown` episodes are adjudicated but excluded from
+    # the headline rate, so gating on _lab would let 29 labeled episodes of which
+    # 15 were unknown print a band over n=14, below the pre-registered floor.
+    if [ "${_den}" -lt "${FLOOR_EPISODES}" ] || [ "${_nrepos}" -lt "${FLOOR_REPOS}" ]; then
         echo "  rate              insufficient data"
         printf '  need              %s adjudicated episodes (have %s) across >=%s repos (have %s)\n' \
-               "${FLOOR_EPISODES}" "${_lab}" "${FLOOR_REPOS}" "${_nrepos}"
+               "${FLOOR_EPISODES}" "${_den}" "${FLOOR_REPOS}" "${_nrepos}"
         echo "  horizon           ~2026-09-08 (pre-registered 2026-07-28)"
     else
         _wc_k=$(( _fb + _unk )); _wc_n=$(( _den + _unk ))
@@ -406,10 +445,19 @@ case "${1:-}" in
     *)
         _RID="$1"; shift
         _V=""; _R=""
+        # Arity MUST be checked before `shift 2`: in bash 3.2 `shift 2` with
+        # only one positional left FAILS and shifts NOTHING, so the loop never
+        # terminates — `shadow-adjudicate.sh <id> --verdict` spun at 100% CPU
+        # until killed. A truncated command line is an ordinary typo, and an
+        # agent that types it wedges its shell.
         while [ $# -gt 0 ]; do
             case "$1" in
-                --verdict) _V="${2:-}"; shift 2 ;;
-                --reason)  _R="${2:-}"; shift 2 ;;
+                --verdict)
+                    [ $# -ge 2 ] || { echo "error: --verdict requires a value" >&2; exit 1; }
+                    _V="$2"; shift 2 ;;
+                --reason)
+                    [ $# -ge 2 ] || { echo "error: --reason requires a value" >&2; exit 1; }
+                    _R="$2"; shift 2 ;;
                 *) echo "error: unexpected argument '$1'" >&2; exit 1 ;;
             esac
         done

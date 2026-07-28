@@ -13,8 +13,11 @@ Each adjudication MUST carry `schema_version`, the target `record_id`, a UTC
 ISO-8601 `ts`, a `verdict` of exactly `true_catch`, `false_block`, or `unknown`, a
 free-text `reason`, a `claimant` of `human` or `agent`, and captured provenance.
 
-`claimant` MUST be `agent` when EITHER `CLAUDECODE` is set OR the parent process
-is `claude`. These are direct evidence of an agent context.
+`claimant` MUST be `agent` when ANY of `CLAUDECODE` or `CLAUDE_CODE_SESSION_ID`
+is set, or the parent process is `claude`. The two environment markers are the
+load-bearing signals; the parent-process check is inert in the Claude Code
+harness (the script runs under an intermediate shell, so `claude` is the
+grandparent) and is retained only because it costs nothing.
 
 A "stdout is not a tty" signal MUST NOT be used. It misfires whenever a human
 redirects or pipes output, and because human-claimed episodes are the only ones
@@ -107,8 +110,13 @@ whose `predicate_version` is not 2 from the headline rate, and MUST report each
 excluded population alongside it rather than dropping it silently. It MUST also
 print the rate recomputed with every `unknown` counted as a `false_block`.
 
-When fewer than 29 adjudicated episodes exist, or when they span fewer than 2
-distinct repos, `--status` MUST print `insufficient data` in place of a rate.
+A line the JSON parser cannot read MUST NOT abort the read of the whole corpus,
+and the count of such lines MUST be reported.
+
+When fewer than 29 rate-bearing episodes exist (`true_catch` + `false_block`,
+i.e. the rate's own denominator, NOT merely the labelled count), or when they
+span fewer than 2 distinct repos, `--status` MUST print `insufficient data` in
+place of a rate.
 Repo diversity is measured on the `repo` field verbatim, and `--status` MUST list
 the contributing repos rather than only counting them, so that two clones of one
 project satisfying the requirement are visible to a reader.

@@ -88,6 +88,50 @@ rec v9 "2026-07-28T10:00:00Z" "/repo/A" "b1" "t1"; rec g5 "garbage" "/repo/A" "b
 eq "a valid record survives alongside a malformed one" "1" "$(episodes | wc -l | tr -d ' ')"
 eq "and the episode contains ONLY the valid record" "v9" "$(episodes | cut -f5)"
 
+# --- C1 regression: an EMPTY field must not drop the record ---
+# `IFS=$'\t' read` treats tab as IFS whitespace, so consecutive tabs collapse and
+# every field after an empty one shifts left, dropping the record entirely.
+# implement-shadow.sh writes branch="" whenever `git rev-parse --abbrev-ref HEAD`
+# fails, so this is a shape the guard really produces.
+jrecf() { # jrecf <id> <branch> <token>
+  jq -cn --arg id "$1" --arg br "$2" --arg tok "$3" \
+    '{record_id:$id,ts:"2026-07-28T10:00:00Z",repo:"/repo/A",branch:$br,
+      session_token:$tok,predicate_version:2,action:"push",diff_base:"branch-local",
+      impl_in_chain:true,material_source:true,impl_evidence_kind:"none",
+      transcript_path:"/tmp/t.jsonl",gate:"push-implement",would_block:true,
+      schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"
+}
+: > "$IMPLEMENT_SHADOW_LOG"; jrecf n1 "" tokA; jrecf n2 "" tokB
+eq "records with an EMPTY branch still count"        "2" "$(episodes | wc -l | tr -d ' ')"
+: > "$IMPLEMENT_SHADOW_LOG"; jrecf n3 "feat/x" ""
+eq "a record with an EMPTY session_token counts"     "1" "$(episodes | wc -l | tr -d ' ')"
+# and --next must not mis-render: transcript_path is the spec-mandated pointer
+: > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"; jrecf n4 "" tokC
+eq "--next keeps the transcript pointer with an empty field" "1" \
+   "$("$SCRIPT" --next 2>&1 | grep -c '^  read    /tmp/t.jsonl$')"
+eq "--next does not shift action into branch"        "1" \
+   "$("$SCRIPT" --next 2>&1 | grep -c '^  action  push')"
+
+# --- I1 regression: one unparseable line must not truncate the corpus ---
+: > "$IMPLEMENT_SHADOW_LOG"
+jrecf p1 b1 t1; printf '{"truncated": \n' >> "$IMPLEMENT_SHADOW_LOG"; jrecf p2 b2 t2; jrecf p3 b3 t3
+eq "a malformed line does not truncate the read" "3" "$(episodes | wc -l | tr -d ' ')"
+eq "and unparseable lines are reported"          "1" \
+   "$("$SCRIPT" --status 2>&1 | grep -E '^  unparseable lines' | awk '{print $3}')"
+
+# --- I2 regression: a null/missing ts must be COUNTED, not silently dropped ---
+# `null | test(...)` is a jq runtime error; jq then skips that input, so the
+# record was excluded from episodes AND contributed 0 to the malformed count.
+: > "$IMPLEMENT_SHADOW_LOG"; jrecf q1 b1 t1
+jq -cn '{record_id:"nots",repo:"/repo/A",branch:"b",session_token:"t2",
+         predicate_version:2,action:"push",diff_base:"branch-local",
+         impl_in_chain:true,material_source:true,impl_evidence_kind:"none",
+         transcript_path:"/tmp/t",gate:"push-implement",would_block:true,
+         schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"
+eq "a record with NO ts field is excluded"  "1" "$(episodes | wc -l | tr -d ' ')"
+eq "and is reported as malformed"           "1" \
+   "$("$SCRIPT" --status 2>&1 | grep -E '^  malformed ts' | awk '{print $3}')"
+
 # a separator byte inside a field must not collide two distinct episodes.
 # Concatenating key fields with \001 made branch="x\001y"+token="t1" equal to
 # branch="x"+token="y\001t1", silently merging them and shrinking the denominator.
@@ -219,7 +263,10 @@ seed
 mkrec e1 "10:01" /repo/A; mkrec e2 "10:02" /repo/A; mkrec e3 "10:03" /repo/A
 label e1 true_catch; label e2 true_catch; label e3 true_catch
 eq "below the floor prints insufficient data" "1" "$(status | grep -ci 'insufficient data')"
-eq "and prints no percentage rate"            "0" "$(status | grep -c '%')"
+# The tool prints no literal '%' in ANY branch, so grepping for one pinned
+# nothing. Assert the rate/band lines are genuinely absent instead.
+eq "and prints no rate line"                  "0" "$(status | grep -cE '^  rate +[0-9]+/[0-9]+')"
+eq "and prints no band line"                  "0" "$(status | grep -cE '^  band ')"
 # Exact-field, not `grep -c '29'`: a bare substring match would also pass if
 # FLOOR_EPISODES were mistyped to 129, 290 or 2900.
 eq "and names the exact 29-episode floor"     "29" "$(status | grep -E '^  need ' | awk '{print $2}')"
@@ -277,6 +324,49 @@ eq "30 episodes in ONE repo still fails on diversity" "1" "$(status | grep -ci '
 eq "and it reports 30 adjudicated episodes"           "30" "$(status | grep -E '^  adjudicated' | awk '{print $2}')"
 eq "and reports only 1 repo"                          "1"  "$(status | grep -E '^  repos' | awk '{print $2}')"
 
+# --- ABOVE the floor: the rate/band/worst-case branch (previously never executed) ---
+# Build 30 rate-contributing episodes across 2 repos. Each gets its own
+# session_token, so each is an independent episode.
+build_floor() { # build_floor <n_true_catch> <n_false_block> <n_unknown>
+  seed
+  local i=0
+  # Alternate repos WITHIN each verdict group: putting a whole group in one repo
+  # made the diversity floor depend on the mix, so `build_floor 30 0 0` had only
+  # one repo and failed for a reason the test wasn't probing.
+  while [ "$i" -lt "$1" ]; do jrec2 "tc$i" "$( [ $((i%2)) -eq 0 ] && echo /repo/A || echo /repo/B )"; label "tc$i" true_catch;  i=$((i+1)); done
+  i=0; while [ "$i" -lt "$2" ]; do jrec2 "fb$i" "$( [ $((i%2)) -eq 0 ] && echo /repo/A || echo /repo/B )"; label "fb$i" false_block; i=$((i+1)); done
+  i=0; while [ "$i" -lt "$3" ]; do jrec2 "uk$i" "$( [ $((i%2)) -eq 0 ] && echo /repo/A || echo /repo/B )"; label "uk$i" unknown;     i=$((i+1)); done
+}
+jrec2() { # jrec2 <id> <repo> — unique branch+token so each record is its own episode
+  jq -cn --arg id "$1" --arg repo "$2" \
+    '{record_id:$id,ts:"2026-07-28T10:00:00Z",repo:$repo,branch:("br-"+$id),
+      session_token:("tok-"+$id),predicate_version:2,action:"push",
+      diff_base:"branch-local",impl_in_chain:true,material_source:true,
+      impl_evidence_kind:"none",transcript_path:"/tmp/t.jsonl",
+      gate:"push-implement",would_block:true,schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"
+}
+
+build_floor 30 0 0
+eq "30 clean episodes across 2 repos print a rate" "0" "$(status | grep -ci 'insufficient data')"
+eq "the rate line shows 0 false blocks of 30"      "0/30" "$(status | grep -E '^  rate ' | awk '{print $2}')"
+eq "0/30 clean resolves to DENY"                   "DENY" "$(status | grep -E '^  band ' | awk '{print $2}')"
+eq "the worst-case bound is printed"               "1"    "$(status | grep -c 'worst case')"
+
+# unknowns must not silently clear the gate: worst case counts them as false blocks
+build_floor 30 0 5
+eq "unknowns are excluded from the headline rate" "0/30" "$(status | grep -E '^  rate ' | awk '{print $2}')"
+eq "but included in the worst case"               "5/35" "$(status | grep -E '^  worst case ' | awk '{print $3}')"
+eq "and the worst case downgrades the band"       "NARROWED" "$(status | grep -E '^  worst case ' | awk '{print $5}')"
+
+# a genuinely bad rate must reach ADVISORY-ONLY (exact CP: 9/23, not Wilson's 8)
+build_floor 14 15 0
+eq "15/29 false blocks is ADVISORY-ONLY" "ADVISORY-ONLY" "$(status | grep -E '^  band ' | awk '{print $2}')"
+
+# the floor applies to the RATE's denominator, not merely to labelled episodes
+build_floor 14 0 20
+eq "34 labelled but only 14 rate-bearing stays below the floor" "1" \
+   "$(status | grep -ci 'insufficient data')"
+
 # posture
 eq "status disclaims enforcement"       "1" "$(status | grep -ci 'informational only')"
 eq "status exits 0 on an empty corpus"  "0" "$(seed; "$SCRIPT" --status >/dev/null 2>&1; echo $?)"
@@ -298,8 +388,18 @@ eq "never uses set -e"                       "0" \
    "$(grep -cE '^[[:space:]]*set -e' "$SCRIPT")"
 eq "never writes the shadow log"             "0" \
    "$(grep -cE '>[>]?[[:space:]]*"\$\{SHADOW_LOG\}"' "$SCRIPT")"
-eq "never reads stdin"                       "0" \
-   "$(grep -cE '^[[:space:]]*(read|cat)[[:space:]]*$' "$SCRIPT")"
+# Behavioural, not a grep for a bare `read`/`cat` line that no real
+# stdin-consuming implementation would contain: close stdin entirely and the
+# tool must still work.
+eq "runs with stdin CLOSED"                  "0" "$("$SCRIPT" --status 0<&- >/dev/null 2>&1; echo $?)"
+eq "--next runs with stdin closed too"       "0" "$("$SCRIPT" --next 0<&- >/dev/null 2>&1; echo $?)"
+
+# --- C2 regression: a truncated command line must fail, not hang ---
+# ulimit bounds it so a regression fails fast instead of wedging the suite.
+eq "a missing --verdict value exits non-zero" "1" \
+   "$( ( ulimit -t 5; "$SCRIPT" someid --verdict >/dev/null 2>&1 ); echo $? )"
+eq "a missing --reason value exits non-zero"  "1" \
+   "$( ( ulimit -t 5; "$SCRIPT" someid --verdict true_catch --reason >/dev/null 2>&1 ); echo $? )"
 
 echo
 echo "Tests run: $(( PASS + FAIL ))  passed: $PASS  failed: $FAIL"
