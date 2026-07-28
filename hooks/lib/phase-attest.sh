@@ -11,8 +11,36 @@ PHASE_ATTEST_GATING_EXCLUDE="requesting-code-review verification-before-completi
 # session-token.sh owns the `session-<transcript-basename>` format ("defined
 # HERE and only here") — source it rather than re-deriving the shape below.
 # Guarded: if it is unavailable, token resolution degrades to the singleton.
-_PHASE_ATTEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-[ -f "${_PHASE_ATTEST_DIR}/session-token.sh" ] && . "${_PHASE_ATTEST_DIR}/session-token.sh" 2>/dev/null || true
+#
+# SELF-LOCATION MUST BE SHELL-PORTABLE. This lib is sourced BY THE MODEL in its
+# Bash turn, and that shell is not always bash — on macOS it is zsh, where
+# `${BASH_SOURCE[0]}` is EMPTY. The former one-liner then computed
+# `dirname ""` = `.` = the CWD, found no sibling session-token.sh, skipped the
+# source, left resolve_own_session_token undefined, and fell through to the
+# shared singleton — silently making the own-session-first fix of #151/#156
+# INERT on the exact path it was written for (measured live: an attestation
+# landed in a concurrent conversation's file). The whole test suite runs under
+# bash, so nothing caught it. Regression: tests/test-phase-attest-shell-portability.sh.
+#
+# zsh sets $0 to the sourced file's path; bash sets it to the shell name — so
+# trust $0 only when it names THIS file. Deliberately NO install-root fallback
+# (CLAUDE_PLUGIN_ROOT / git toplevel): those resolve from the environment or
+# the CWD, so a copy of this lib sitting anywhere would silently bind to
+# whichever repo the process happens to be in, and the documented "lib absent
+# => degrade to the singleton" contract would no longer hold (pinned by
+# tests/test-skill-gate.sh's lone-lib case, which caught exactly that). A shell
+# that provides neither BASH_SOURCE nor a path-valued $0 degrades as before.
+_PHASE_ATTEST_SELF="${BASH_SOURCE[0]:-}"
+if [ -z "${_PHASE_ATTEST_SELF}" ]; then
+    case "$0" in
+        */phase-attest.sh|phase-attest.sh) _PHASE_ATTEST_SELF="$0" ;;
+    esac
+fi
+_PHASE_ATTEST_DIR=""
+if [ -n "${_PHASE_ATTEST_SELF}" ]; then
+    _PHASE_ATTEST_DIR="$(cd "$(dirname "${_PHASE_ATTEST_SELF}")" 2>/dev/null && pwd)" || _PHASE_ATTEST_DIR=""
+fi
+[ -f "${_PHASE_ATTEST_DIR:-}/session-token.sh" ] && . "${_PHASE_ATTEST_DIR}/session-token.sh" 2>/dev/null || true
 
 # _phase_attest_token: resolve OUR conversation's token the same way every
 # reader does (payload-first, issue #51) rather than trusting the singleton.

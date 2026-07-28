@@ -61,10 +61,14 @@ resolve_session_token_from_transcript() {
 # below could not bind to it — it would fall through to the singleton (the
 # pre-#156 scatter hazard), never to a subagent-scoped file.
 #
-# What that does and does NOT license. `phase_attest` binds to nothing but the
-# token (no cwd, no git), so delegating it to a subagent is safe — with one
-# caveat: parallel subagents now share ONE attest file, and the read-modify-
-# write in phase-attest.sh can lose an entry under concurrent calls. A VERDICT
+# What that does and does NOT license. A `phase_attest` record binds to nothing
+# but the token — no cwd, no git — so delegating it to a subagent is safe, with
+# two caveats: parallel subagents now share ONE attest file, and the read-
+# modify-write in phase-attest.sh can lose an entry under concurrent calls; and
+# that lib must be able to FIND this one to resolve the token at all (see its
+# shell-portable self-location — under zsh it could not, and every model-turn
+# attest silently used the singleton instead; a shell providing neither
+# BASH_SOURCE nor a path-valued $0 still degrades that way by design). A VERDICT
 # write is NOT equivalent: verify-and-record.sh takes ROOT from the caller's cwd
 # and binds `sha` to THAT tree's HEAD, while verdict_covers_head accepts an
 # ANCESTOR — so a worktree-isolated agent would write under the parent's token
