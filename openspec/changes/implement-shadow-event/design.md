@@ -159,9 +159,11 @@ post-hoc fitting this repo's discipline warns against.
 4. Merge coverage added, so the sample matches the spec.
 5. Adjudication tooling (C2) and the backtest reader (C3) deliberately deferred
    until real events exist.
-6. Spec reconciliation (the spec names `scripts/phase-gate-backtest.sh`, which
-   measures the skill-sequencing gate, not this leg) is **out of scope** and
-   filed as a follow-up issue rather than silently corrected here.
+6. Spec reconciliation (the spec named `scripts/phase-gate-backtest.sh`, which
+   measures the skill-sequencing gate, not this leg) was **out of scope here**
+   and filed as issue #160 rather than silently corrected. RESOLVED 2026-07-28:
+   `implement-evidence-gate`'s spec, proposal, and design now point at this
+   file's Pre-registration instead.
 
 ## Out-of-Scope
 
