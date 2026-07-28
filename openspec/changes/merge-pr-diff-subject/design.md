@@ -21,6 +21,19 @@ merges (`hooks/lib/git-command.sh` `command_invokes_gh_merge`):
 | `gh api repos/o/r/pulls/7/merge` | `7` |
 | `gh pr merge` (bare) | none — v1 records this `unresolved`; see Out-of-Scope |
 | `gh api graphql … mergePullRequest` | none — node id, not a number |
+| `gh pr merge --title "PR 42 notes" 99` | none — **ambiguous**, see below |
+
+**Ambiguity yields nothing, deliberately.** The scanner splits raw command
+text and cannot distinguish a flag's value from a positional argument, so a
+number inside `--title`/`--body` is indistinguishable from the PR ref. Breaking
+on the first digit-leading token returned `42` there — a real but *unrelated*
+PR, stamped `diff_base:"pr:42"` while PR 99 was actually merged. When two or
+more digit-leading tokens follow `merge`, the reference is treated as
+unresolvable. For a corpus whose entire purpose is stating what each event was
+measured against, a plausible wrong label is strictly worse than none:
+`unresolved` is a known-unknown an adjudicator can exclude, `pr:42` is a lie
+they cannot detect. This is the same "silence beats a wrong subject" principle
+that governs the advisory flush.
 
 **Validation is a security boundary, not a nicety.** The command is
 model-authored text. The extracted ref MUST match `^[0-9]+$`; anything else
@@ -35,7 +48,16 @@ empty for a bare `gh pr merge` and the record is `unresolved`. See
 Out-of-Scope.
 
 **`pr_changed_files`** runs `gh pr view <ref> --json files --jq '.files[].path'`
-with a hard timeout. Any failure — `gh` absent, unauthenticated, offline,
+bounded by **`PR_DIFF_GH_TIMEOUT` (default 10s, overridable)**. That cap is a
+worst case, not a routine cost: the measured happy path is ~620ms, and the
+full 10s is only reached when `gh` genuinely hangs — a network stall or an
+interactive auth prompt. It is deliberately not lowered to 5s: a shorter cap
+converts *merely slow* networks into `unresolved` records, corrupting the
+corpus in exactly the direction this change exists to protect. Users on a
+persistently slow link should lower it themselves and accept that trade
+knowingly. The bound applies only to the merge path; `git push` never calls out.
+
+Any failure — `gh` absent, unauthenticated, offline,
 unknown PR, timeout — returns nothing.
 
 ### Predicate split
