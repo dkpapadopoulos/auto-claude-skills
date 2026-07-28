@@ -156,6 +156,26 @@ eq "v1 records are reported separately" "1" "$(status | grep -E '^  v1 records' 
 eq "status disclaims enforcement"       "1" "$(status | grep -ci 'informational only')"
 eq "status exits 0 on an empty corpus"  "0" "$(seed; "$SCRIPT" --status >/dev/null 2>&1; echo $?)"
 
+# --- Task 6: the tool must never become a gate component ---
+# These pin properties, not behaviour. If one fails, the implementation drifted
+# into the enforcement path and the IMPLEMENTATION must be fixed, not the test.
+# `grep -c` prints "0" AND exits 1 on no-match, so a `|| echo 0` fallback emits
+# TWO lines. Count via a helper that distinguishes no-match from missing-file.
+count() { local n; n="$(grep -cE "$1" "$2" 2>/dev/null)"; [ -n "$n" ] || n=0; echo "$n"; }
+
+eq "not in the gate-enforcement canary list" "0" \
+   "$(count 'shadow-adjudicate' "$ROOT/hooks/session-start-hook.sh")"
+eq "not sourced by the push guard"           "0" \
+   "$(count 'shadow-adjudicate' "$ROOT/hooks/openspec-guard.sh")"
+eq "never emits a permissionDecision"        "0" \
+   "$(grep -c 'permissionDecision' "$SCRIPT")"
+eq "never uses set -e"                       "0" \
+   "$(grep -cE '^[[:space:]]*set -e' "$SCRIPT")"
+eq "never writes the shadow log"             "0" \
+   "$(grep -cE '>[>]?[[:space:]]*"\$\{SHADOW_LOG\}"' "$SCRIPT")"
+eq "never reads stdin"                       "0" \
+   "$(grep -cE '^[[:space:]]*(read|cat)[[:space:]]*$' "$SCRIPT")"
+
 echo
 echo "Tests run: $(( PASS + FAIL ))  passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
