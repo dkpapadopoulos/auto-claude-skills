@@ -164,6 +164,49 @@ cmd_adjudicate() {
     return 0
 }
 
+_adjudicated_ids() {
+    [ -f "${ADJ_LOG}" ] || return 0
+    jq -r '.record_id // empty' "${ADJ_LOG}" 2>/dev/null | sort -u
+}
+
+# cmd_next — oldest v2 record with no adjudication, plus how to label it.
+# Read-only: never touches the sidecar. Always exits 0 (observational).
+cmd_next() {
+    local _seen _line
+    [ -f "${SHADOW_LOG}" ] || { echo "no shadow log at ${SHADOW_LOG} — nothing outstanding."; return 0; }
+    command -v jq >/dev/null 2>&1 || { echo "jq required — cannot read the corpus."; return 0; }
+    _seen="$(_adjudicated_ids)"
+    _line="$(jq -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" '
+              select(.predicate_version == $pv)
+              | [.record_id,.ts,.repo,.branch,.action,.diff_base,
+                 (.impl_in_chain|tostring),(.material_source|tostring),
+                 .impl_evidence_kind,.transcript_path] | @tsv' \
+              "${SHADOW_LOG}" 2>/dev/null \
+            | sort -t "$(printf '\t')" -k2,2 \
+            | while IFS= read -r _row; do
+                  _id="$(printf '%s' "${_row}" | cut -f1)"
+                  [ -z "${_id}" ] && continue
+                  if [ -n "${_seen}" ] && printf '%s\n' "${_seen}" | grep -qxF "${_id}"; then
+                      continue
+                  fi
+                  printf '%s\n' "${_row}"; break
+              done)"
+    if [ -z "${_line}" ]; then
+        echo "nothing outstanding — every v${REQUIRED_PREDICATE_VERSION} record is adjudicated."
+        return 0
+    fi
+    printf '%s\n' "${_line}" | while IFS="$(printf '\t')" read -r id ts repo branch action db chain mat ev tp; do
+        printf '%s   %s\n' "$id" "$ts"
+        printf '  repo    %s\n  branch  %s\n' "$repo" "$branch"
+        printf '  action  %s   diff_base %s\n' "$action" "$db"
+        printf '  why     impl_in_chain=%s, material_source=%s, evidence=%s\n' "$chain" "$mat" "$ev"
+        printf '  read    %s\n\n' "$tp"
+        printf 'to label:\n  %s %s --verdict <true_catch|false_block|unknown> --reason "..."\n' \
+               "$0" "$id"
+    done
+    return 0
+}
+
 _usage() {
     cat <<'HELP'
 shadow-adjudicate.sh — label IMPLEMENT-leg shadow records and report the rate.
