@@ -14,24 +14,32 @@
 # Raw command text is never written here — the transcript_path pointer is the
 # adjudication surface, which keeps the secret posture identical to capture.
 
-IMPLEMENT_SHADOW_SCHEMA_VERSION=1
+# 2 (#169): records may now carry would_block:false for episodes the IMPLEMENT
+# leg resolved via attestation alone. Readers computing a false-block rate MUST
+# filter `select(.would_block == true)` — schema 1 records are uniformly true,
+# so that filter is correct across both versions.
+IMPLEMENT_SHADOW_SCHEMA_VERSION=2
 # 2 (#161): merge-path material_source is now measured against the merged PR's
 # file list, not the branch-local delta. v1 merge records measured a different
 # subject and MUST NOT be pooled with v2.
 IMPLEMENT_SHADOW_PREDICATE_VERSION=2
 
-# implement_shadow_record <action> <repo> <session_token> <transcript_path> <evidence_kind> <diff_base> <material_source>
+# implement_shadow_record <action> <repo> <session_token> <transcript_path> <evidence_kind> <diff_base> <material_source> [would_block]
 #   action: push | gh-merge
 #   evidence_kind: which evidence classes were tried and missed (e.g. "none")
 #   diff_base: what the material-source check was measured against
 #              (branch-local | pr:<n> | unresolved); defaults to branch-local
 #   material_source: whether the measured subject touched material source
 #              (true | false); defaults to true
+#   would_block: whether the leg would have blocked (true | false); defaults to
+#              true. false marks an episode the leg resolved via attestation
+#              alone — recorded so the deny-flip corpus can measure how often
+#              attestation, rather than work, satisfied the leg (#169).
 # Always returns 0. Compact JSONL (jq -cn) because this is a line format.
 implement_shadow_record() {
     command -v jq >/dev/null 2>&1 || return 0
     local _act="${1:-unknown}" _repo="${2:-}" _tok="${3:-}" _tp="${4:-}" _ev="${5:-none}" _db="${6:-branch-local}"
-    local _ms="${7:-true}"
+    local _ms="${7:-true}" _wb="${8:-true}"
     local _log _dir _ts _nonce _rid _branch _head
     _log="${IMPLEMENT_SHADOW_LOG:-${HOME}/.claude/.push-implement-shadow.jsonl}"
     _dir="$(dirname "${_log}" 2>/dev/null)" || return 0
@@ -57,9 +65,9 @@ implement_shadow_record() {
         --arg rid "${_rid}" --arg ts "${_ts}" --arg act "${_act}" \
         --arg repo "${_repo}" --arg branch "${_branch}" --arg head "${_head}" \
         --arg tok "${_tok}" --arg tp "${_tp}" --arg ev "${_ev}" --arg db "${_db}" \
-        --argjson ms "${_ms}" \
+        --argjson ms "${_ms}" --argjson wb "${_wb}" \
         '{schema_version:$sv,record_id:$rid,ts:$ts,predicate_version:$pv,
-          gate:"push-implement",would_block:true,action:$act,
+          gate:"push-implement",would_block:$wb,action:$act,
           repo:$repo,branch:$branch,head_sha:$head,
           impl_in_chain:true,material_source:$ms,impl_evidence_kind:$ev,diff_base:$db,
           session_token:$tok,transcript_path:$tp}' \
