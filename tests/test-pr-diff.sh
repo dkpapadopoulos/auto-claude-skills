@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -u
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+. "${SCRIPT_DIR}/test-helpers.sh"
+echo "=== test-pr-diff.sh ==="
+
+. "${PROJECT_ROOT}/hooks/lib/pr-diff.sh"
+
+# --- ref extraction -------------------------------------------------------
+assert_equals "plain merge with number"      "7" "$(pr_ref_from_command 'gh pr merge 7 --squash')"
+assert_equals "number after flags"           "7" "$(pr_ref_from_command 'gh pr merge --squash 7')"
+assert_equals "rest api merge path"          "7" "$(pr_ref_from_command 'gh api repos/o/r/pulls/7/merge')"
+assert_equals "delete-branch flag ignored"  "12" "$(pr_ref_from_command 'gh pr merge 12 --squash --delete-branch')"
+
+# --- SECURITY: a non-integer token must never be returned ----------------
+# The command is model-authored. Returning anything but a bare integer would let
+# a crafted command inject flags (e.g. --repo other/org) into the gh call.
+assert_equals "flag in ref position rejected"   "" "$(pr_ref_from_command 'gh pr merge --repo other/org --squash')"
+assert_equals "path-shaped ref rejected"        "" "$(pr_ref_from_command 'gh pr merge ../../etc/passwd')"
+assert_equals "semicolon injection rejected"    "" "$(pr_ref_from_command 'gh pr merge 7;rm -rf /')"
+assert_equals "graphql node id not a number"    "" "$(pr_ref_from_command 'gh api graphql -f query=mergePullRequest')"
+assert_equals "bare merge has no explicit ref"  "" "$(pr_ref_from_command 'gh pr merge')"
+assert_equals "a push is not a merge"           "" "$(pr_ref_from_command 'git push origin HEAD')"
+
+# --- fetch: hermetic, gh is stubbed; NO test may hit the network ---------
+_STUB="$(mktemp -d /tmp/prdiff-stub-XXXXXX)"
+cat > "${_STUB}/gh" <<'STUB'
+#!/bin/bash
+# Emulates: gh pr view <n> --json files --jq '.files[].path'
+for a in "$@"; do case "$a" in 404) exit 1 ;; esac; done
+printf 'src/app.py\ndocs/readme.md\n'
+STUB
+chmod +x "${_STUB}/gh"
+
+_out="$(PATH="${_STUB}:$PATH" pr_changed_files 7 "$PWD")"
+assert_contains "fetch returns the PR's paths" "src/app.py" "${_out}"
+assert_equals   "unknown PR yields nothing"  "" "$(PATH="${_STUB}:$PATH" pr_changed_files 404 "$PWD")"
+
+# gh absent entirely -> empty, never an error
+_EMPTY="$(mktemp -d /tmp/prdiff-empty-XXXXXX)"
+assert_equals "gh absent yields nothing" "" "$(PATH="${_EMPTY}" pr_changed_files 7 "$PWD" 2>/dev/null)"
+
+# A rejected ref must never reach the subprocess: the stub records its argv.
+cat > "${_STUB}/gh" <<'STUB'
+#!/bin/bash
+printf '%s\n' "$*" >> "${PRDIFF_ARGV_LOG}"
+printf 'src/app.py\n'
+STUB
+chmod +x "${_STUB}/gh"
+export PRDIFF_ARGV_LOG="${_STUB}/argv.log"; : > "${PRDIFF_ARGV_LOG}"
+_bad="$(pr_ref_from_command 'gh pr merge --repo other/org')"
+[ -n "${_bad}" ] && PATH="${_STUB}:$PATH" pr_changed_files "${_bad}" "$PWD" >/dev/null
+assert_equals "rejected ref never reaches gh" "0" "$(wc -l < "${PRDIFF_ARGV_LOG}" | tr -d ' ')"
+
+rm -rf "${_STUB}" "${_EMPTY}"
+print_summary
+exit $?
