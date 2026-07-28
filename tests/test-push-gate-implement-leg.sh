@@ -185,23 +185,6 @@ assert_contains "contrast control: push DOES surface IMPLEMENT advisory" "IMPLEM
 : > "$IMPLEMENT_SHADOW_LOG"
 out="$(run_guard 'gh pr merge 7 --squash')"
 
-# KNOWN GAP — issue #161, deliberately NOT fixed here: _flush_push_advisories()
-# (hooks/openspec-guard.sh:604) gates the advisory-text FLUSH on _gc_is_push
-# only, so the IMPLEMENT advisory computed for a merge (Check 0 itself DOES
-# fire for merges per the widened condition at line ~398-399, as the shadow
-# record below proves) never reaches stdout. That function is shared with
-# staleness/bridge/evaluator-surface advisories too, so widening it has a
-# bigger blast radius than this leg and is out of scope for this fix.
-#
-# This assertion PINS the current (gapped) behavior on purpose: merge stdout
-# does NOT carry "IMPLEMENT:" today. When #161 ships push-advisory flushing
-# for gh-merge, this assertion MUST BE INVERTED to assert_contains — its
-# presence here is a tripwire for that fix, not an endorsement of the gap.
-assert_not_contains "KNOWN GAP #161: merge stdout omits IMPLEMENT advisory text (invert on fix)" "IMPLEMENT:" "${out:-}"
-# Paired with the above so "no deny" is non-vacuous: stdout for this case is
-# expected to be empty outright (nothing to flush), not merely deny-free.
-assert_equals "merge stdout is empty (advisory computed but not flushed, per #161 gap)" "" "${out:-}"
-
 assert_not_contains "merge path stays advisory (no deny from this leg)" '"deny"' "${out:-}"
 assert_not_contains "merge path emits no permissionDecision at all" "permissionDecision" "${out:-}"
 assert_equals "one shadow record written on a merge warn" "1" \
@@ -317,6 +300,65 @@ assert_contains "push record is branch-local" '"diff_base":"branch-local"' \
     "$(cat "$IMPLEMENT_SHADOW_LOG")"
 assert_contains "push still surfaces the IMPLEMENT advisory" "IMPLEMENT:" "${out_push:-<empty>}"
 rm -rf "${_GHSTUB}"
+
+# --- #161 RESOLVED: a resolved merge now surfaces the advisory ------------
+# PR #163 pinned the gap with an assert_not_contains and an "invert on fix"
+# comment. This is that inversion. The OLD pin (search for "KNOWN GAP #161")
+# MUST be deleted in this step — leaving both would assert both directions.
+_GHSTUB2="$(mktemp -d /tmp/pg-ghstub2-XXXXXX)"
+cat > "${_GHSTUB2}/gh" <<'STUB'
+#!/bin/bash
+for a in "$@"; do case "$a" in 404) exit 1 ;; esac; done
+printf 'src/app.py\n'
+STUB
+chmod +x "${_GHSTUB2}/gh"
+
+out="$(PATH="${_GHSTUB2}:$PATH" run_guard 'gh pr merge 7 --squash')"
+assert_contains "resolved merge surfaces the IMPLEMENT advisory" "IMPLEMENT:" "${out:-<empty>}"
+assert_not_contains "resolved merge is still not a deny" "permissionDecision" "${out:-}"
+
+# Unresolved merge stays SILENT — the original suppression was protective.
+out="$(PATH="${_GHSTUB2}:$PATH" run_guard 'gh pr merge 404 --squash')"
+assert_not_contains "unresolved merge stays silent" "IMPLEMENT:" "${out:-}"
+rm -rf "${_GHSTUB2}"
+
+# --- Negative-case coverage: record-write condition, false branches --------
+# Task 2 review finding: only the TRUE branches of the write gate (materially
+# true, or gh-merge) had explicit assertions. Pin both FALSE branches too.
+
+# (a) gh pr merge WITH implement evidence present -> _impl_ok short-circuits
+# before the write gate, so no shadow record and no advisory, even though the
+# PR resolves and touches material source.
+rm -f "$HOME/.claude/.skill-phase-attest-${_TOK}"
+# shellcheck disable=SC1090
+. "${PROJECT_ROOT}/hooks/lib/phase-attest.sh"
+phase_attest executing-plans "negative-case-merge" >/dev/null 2>&1
+: > "$IMPLEMENT_SHADOW_LOG"
+_GHSTUB3="$(mktemp -d /tmp/pg-ghstub3-XXXXXX)"
+cat > "${_GHSTUB3}/gh" <<'STUB'
+#!/bin/bash
+printf 'src/app.py\n'
+STUB
+chmod +x "${_GHSTUB3}/gh"
+out="$(PATH="${_GHSTUB3}:$PATH" run_guard 'gh pr merge 11 --squash')"
+assert_equals "attested merge writes no shadow record" "0" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | tr -d ' ')"
+assert_not_contains "attested merge surfaces no IMPLEMENT advisory" "IMPLEMENT:" "${out:-}"
+rm -rf "${_GHSTUB3}"
+rm -f "$HOME/.claude/.skill-phase-attest-${_TOK}"
+
+# (b) git push whose branch diff is non-material (docs-only) -> the write gate
+# never sees _impl_material=true and this is not a merge, so no shadow record.
+git -C "${_REPO}" checkout -qb feat/docsonly main
+echo "docs change" >> "${_REPO}/README.md"
+git -C "${_REPO}" add README.md
+git -C "${_REPO}" commit -qm "docs: non-material change"
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(run_guard)"
+assert_equals "non-material push writes no shadow record" "0" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | tr -d ' ')"
+assert_not_contains "non-material push surfaces no IMPLEMENT advisory" "IMPLEMENT:" "${out:-}"
+git -C "${_REPO}" checkout -q feat/impl
 
 export HOME="$_OLDHOME"
 rm -rf "${_REPO}" "${_THOME}" 2>/dev/null
