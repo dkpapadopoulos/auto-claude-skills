@@ -83,6 +83,15 @@ resolve_session_token_from_transcript() {
 # verdict caveat above is about.)
 resolve_own_session_token() {
     local _id="${CLAUDE_CODE_SESSION_ID:-}" _t="" _tok=""
+    # zsh treats an unmatched glob as a FATAL error and unwinds the enclosing
+    # function, so the singleton fallback on the last line would never run and
+    # callers would get an empty token instead of the documented degradation.
+    # This matters because model-turn callers source this from zsh. Guarded so
+    # bash (where the loop's `[ -f ] || continue` already handles a miss) is
+    # byte-identical, and scoped with local_options so we restore on return.
+    if [ -n "${ZSH_VERSION:-}" ]; then
+        setopt local_options no_nomatch 2>/dev/null
+    fi
     case "${_id}" in
         ""|*[!A-Za-z0-9_-]*) ;;
         *)
