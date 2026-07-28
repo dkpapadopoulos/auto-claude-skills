@@ -21,6 +21,27 @@ Prove-before-deny evidence per the plan's Task 4. Everything in this change ship
   - **Control 1/5 PASS (20% strict; 2/5=40% lenient on a borderline "re-read then edit" run)** — c4 invokes; c2,c3,c5 edit raw.
   - **Measurable lift ≈ +40pp (60% vs 20%)**, direction clear. **Caveat: n=5 is directional, not statistically powered** (a firm number needs n≥10–20); and treatment isn't at ceiling, so the precondition helps on the margin but doesn't fully prevent raw editing of trivial tasks. Judge-scored by inspection (responses mostly unambiguous: explicit "Edit tool" = FAIL, explicit "invoke executing-plans" = PASS); one borderline control run noted.
 - **Disposition:** the precondition **ships and is RETAINED on real evidence** — 0 safety regression AND a measurable +~40pp invoke-first lift on the temptation case it targets (trivial plan-scoped edits, exactly where a model is most likely to skip the skill). The earlier "gate is load-bearing, nudge is marginal" read was a ceiling artifact and is retracted: the nudge has genuine behavioral value where control would otherwise edit raw. Both remain true — the gate (Unit A) is the enforcement backstop; the precondition (Unit B) measurably reduces the raw-edit rate up front. Follow-up if a publishable number is wanted: rerun at n≥15 per arm with an independent judge pass.
+- **Attestation re-derivation (#169, 2026-07-28) — a RE-READ OF RECORDS, not a re-measurement.**
+  Issue #169 observed that both red-first arms' judge criteria pass on "invoke
+  ... OR record a `phase_attest` skip", so the pack cannot report an invocation
+  rate, and concluded the +40pp lift could not distinguish the two. The
+  *criteria* cannot — but this run was scored by inspection, and the
+  per-sample notes above name every passing sample: treatment `t1,t2,t5`
+  ("invoke executing-plans first") and control `c4` ("invokes"). No attestation
+  appears in any of the ten runs. **The +40pp lift therefore survives excluding
+  attestation, and #169's Finding 6 is narrowed: the recorded number is clean;
+  the instrument was what needed fixing.**
+  - **This is not a fresh measurement and must not be cited as one.** The
+    subject responses were never written to `tests/artifacts/` (the run used
+    direct authenticated `claude -p`, because the runner's subject sandbox
+    strips auth), so they cannot be re-scored. What is re-derived is the
+    classification recorded at the time.
+  - Going forward the instrument reports both rates: each red-first arm now
+    carries a strict assertion scoring the same response with attestation as a
+    FAIL, so `union − strict` is the attestation share on paired samples. See
+    `openspec/changes/attestation-measurement/`.
+  - The `n≥15` rerun noted above stays **retracted** as underpowered; this
+    change does not revive it.
 
 ## Summary
 
