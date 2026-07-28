@@ -95,10 +95,14 @@ Repo diversity is measured on the `repo` field verbatim, and `--status` MUST lis
 the contributing repos rather than only counting them, so that two clones of one
 project satisfying the requirement are visible to a reader.
 
-When a rate is printed it MUST carry a one-sided 95% Clopper–Pearson interval and
-a band: `DENY` when the upper bound is below 10%, `ADVISORY-ONLY` when the lower
-bound is at or above 20%, and `NARROWED` otherwise. The readout is informational
-and MUST NOT be wired into an enforcement decision.
+When a rate is printed it MUST carry a one-sided 95% **exact Clopper–Pearson**
+interval and a band: `DENY` when the upper bound is below 10%, `ADVISORY-ONLY`
+when the lower bound is at or above 20%, and `NARROWED` otherwise. Equivalently
+and as implemented, `DENY` requires `P(X ≤ k | n, 0.10) < 0.05` and
+`ADVISORY-ONLY` requires `P(X ≥ k | n, 0.20) ≤ 0.05`.
+
+A normal approximation MUST NOT be substituted for the exact interval. The
+readout is informational and MUST NOT be wired into an enforcement decision.
 
 #### Scenario: a retry burst counts as one episode
 
@@ -114,6 +118,15 @@ and MUST NOT be wired into an enforcement decision.
 - **THEN** it MUST print `insufficient data` rather than `0%`
 - **AND** it MUST report the distance to the 29-episode floor and the 2-repo
   diversity requirement
+
+#### Scenario: the exact interval is used, not a normal approximation
+
+- **GIVEN** 23 adjudicated episodes across ≥2 repos, of which 8 are `false_block`
+- **WHEN** `--status` computes the band
+- **THEN** the band MUST be `NARROWED`, because `P(X ≥ 8 | 23, 0.20) = 0.0715`
+  exceeds 0.05
+- **AND** at 9 `false_block` episodes the band MUST be `ADVISORY-ONLY`, because
+  `P(X ≥ 9 | 23, 0.20) = 0.0273` does not
 
 #### Scenario: a mixed episode resolves to its worst verdict
 

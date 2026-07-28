@@ -68,11 +68,22 @@ rate with its interval, the band, distance to the floor, and the horizon.
 
 **Bands** (from `implement-shadow-event/design.md`, unchanged here):
 
-| band | condition |
-|---|---|
-| DENY | upper bound < 10% |
-| NARROWED | upper ≥ 10% AND lower < 20% |
-| ADVISORY-ONLY | lower bound ≥ 20% |
+| band | condition | computed as |
+|---|---|---|
+| DENY | upper bound < 10% | `P(X ≤ k \| n, 0.10) < 0.05` |
+| ADVISORY-ONLY | lower bound ≥ 20% | `P(X ≥ k \| n, 0.20) ≤ 0.05` |
+| NARROWED | neither of the above | — |
+
+**No interval inversion is needed.** The binomial CDF is monotone in `p`, so
+"upper bound < 0.10" is equivalent to evaluating the CDF once at `p = 0.10`, and
+likewise for the lower bound at `p = 0.20`. This matters for bash 3.2: a direct
+CDF evaluation is a single `awk` loop over `k+1` terms, whereas inverting for the
+bound would need bisection. The two forms are mathematically identical — this is
+exact Clopper–Pearson, not an approximation of it.
+
+Wilson MUST NOT be substituted. It is anti-conservative in the tail and disagrees
+at real boundaries (it calls 8/23 ADVISORY-ONLY where exact says NARROWED), which
+is why that case is a pinned test.
 
 **Floor gate.** Below n=29 adjudicated episodes, or fewer than 2 distinct repos,
 `--status` MUST print `insufficient data` in place of a rate. A point estimate
@@ -122,8 +133,10 @@ diff-dependent assertions need a harness-built corpus anyway.
 - Agent-claimed excluded from the rate; a later human-claimed adjudication of the
   same record re-includes it.
 - `unknown` excluded from headline, present in the worst-case bound.
-- Band boundaries: 0/29 → DENY; 8/23 → ADVISORY-ONLY; 5/23 → NARROWED (the
-  point-estimate/bound gap that motivates expressing bands as bounds).
+- Band boundaries under **exact Clopper–Pearson**: 0/29 → DENY and 0/28 → NOT
+  DENY (pins the floor); 9/23 → ADVISORY-ONLY; 8/23 → NARROWED; 5/23 → NARROWED.
+  The 8/23 case is load-bearing: Wilson would call it ADVISORY-ONLY and exact does
+  not, so it pins that the implementation is exact rather than an approximation.
 - Floor: 29 episodes in 1 repo fails diversity; the same across 2 repos passes.
 - v1 record refused with a non-zero exit.
 - Bash 3.2: `/bin/bash -n` clean and exercised under `/bin/bash`.

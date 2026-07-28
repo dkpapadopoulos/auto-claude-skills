@@ -130,9 +130,15 @@ The shadow log is diagnostic and is deliberately NOT added to
 >   cannot rule out <10%, cannot rule out ≥20%.
 > - **ADVISORY-ONLY** — one-sided 95% **lower** bound ≥ 20%. Note this requires
 >   *positive* evidence the rate is bad, not merely failure to prove it good; at
->   n=23 that needs 8 false blocks (34.8%), where the point estimate alone would
->   have called it at 5 (21.7%). The gap between those two numbers is the whole
->   reason the bands are expressed as bounds.
+>   n=23 that needs **9** false blocks (39.1%), where the point estimate alone
+>   would have called it at 5 (21.7%). The gap between those two numbers is the
+>   whole reason the bands are expressed as bounds.
+>
+> Both bounds are **exact Clopper–Pearson**, matching the floor above. Stated as
+> a direct comparison so no interval inversion is needed:
+> DENY ⟺ `P(X ≤ k | n, 0.10) < 0.05`; ADVISORY-ONLY ⟺ `P(X ≥ k | n, 0.20) ≤ 0.05`.
+> Do not substitute Wilson here — it is anti-conservative in the tail and would
+> call ADVISORY-ONLY at 8/23 where the exact rule says 9.
 >
 > **Denominator = independent episodes, not records.** Collapse records sharing
 > `(repo, branch, session_token)` within a 30-minute window into ONE episode
