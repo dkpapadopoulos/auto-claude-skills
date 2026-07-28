@@ -100,4 +100,19 @@ assert_contains "safety assertion covers requesting-code-review" \
 assert_contains "safety assertion covers verification-before-completion" \
     "verification-before-completion" "${_op_safe}"
 
+# --- Unit D: the precondition-render proof (real check for a phantom citation)
+# CLAUDE.md and implement-evidence-gate/validation-results.md cited a claimed
+# check that did not exist in the repo. The underlying claim was true and
+# hand-verified; this is that real check, so the citations resolve.
+# Deterministic hook render — no model call, no API cost.
+_ctx="$(jq -n '{"prompt":"execute the plan"}' \
+    | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+      bash "${PROJECT_ROOT}/hooks/skill-activation-hook.sh" 2>/dev/null \
+    | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)"
+assert_not_empty "IMPLEMENT prompt produces routing guidance" "${_ctx}"
+assert_contains "precondition render offers the phase_attest remedy" \
+    "phase_attest executing-plans" "${_ctx}"
+assert_contains "precondition render names the implementation slot" \
+    "executing-plans" "${_ctx}"
+
 print_summary

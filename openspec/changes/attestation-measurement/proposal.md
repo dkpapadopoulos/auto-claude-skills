@@ -69,11 +69,10 @@ Measurement only. No gate decision, no `permissionDecision`, no change to what
 3. **Record the re-derivation** of the PR #141 lift, labelled as a re-read of
    records rather than a fresh measurement.
 4. **Make a phantom citation real.** `CLAUDE.md` and
-   `implement-evidence-gate/validation-results.md` both cite
-   `smoke-hook-renders-precondition` as the proof that the precondition
-   renders. `grep` across the repo finds no such scenario. The underlying claim
-   is true and hand-verified; this adds the deterministic scenario so the
-   citation stops being a claimed proof that isn't there.
+   `implement-evidence-gate/validation-results.md` both cite a claimed proof
+   that the precondition renders. `grep` across the repo finds no such scenario.
+   The underlying claim is true and hand-verified; this adds the deterministic
+   scenario so the citation stops being a claimed proof that isn't there.
 5. **Close the shadow blind spot.** When `phase_attested` is the *sole* reason
    the IMPLEMENT leg is satisfied, append a shadow record with
    `would_block: false` and `impl_evidence_kind: "attested"`.

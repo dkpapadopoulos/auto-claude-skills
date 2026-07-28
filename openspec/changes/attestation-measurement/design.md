@@ -104,10 +104,10 @@ effect). This change does not revive it.
 
 ## Unit D — the phantom citation
 
-`CLAUDE.md` and `validation-results.md` both cite
-`smoke-hook-renders-precondition` as the regression proving the `executing-plans`
-precondition renders. The pack contains five scenarios and that is not one of
-them; the string appears nowhere in the repo.
+`CLAUDE.md` and `validation-results.md` both cite a claimed regression proving the
+`executing-plans` precondition renders. The pack contains five scenarios and that
+scenario does not exist among them; the claimed check name appears nowhere in
+the repo.
 
 The underlying claim is true — `validation-results.md` records the render being
 verified by hand via `printf '{"prompt":"execute the plan"}' |
