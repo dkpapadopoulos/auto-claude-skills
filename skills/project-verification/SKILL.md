@@ -104,7 +104,8 @@ Print the resolved `${TOKEN}` alongside the artifact path — a scattered write 
   "failed": [],
   "could_not_verify": ["types"],
   "gate_gaming_status": "clean",
-  "sha": "<git rev-parse HEAD — the commit this verdict covers>",
+  "worktree_dirty": false,
+  "sha": "<PRE-gate sha from Step 2 — the commit the gate actually ran against>",
   "command": "ruff check . && pyright && uv run pytest -m \"not slow\"",
   "output_excerpt": "pyright: command not found …",
   "ts": "<UTC ISO-8601>"
@@ -114,6 +115,8 @@ Print the resolved `${TOKEN}` alongside the artifact path — a scattered write 
 The example above is a **field-shape illustration**, not an accepted-evidence sample: because its `could_not_verify` is non-empty (the `types` gate could not run), `deploy-gate` correctly does **not** accept it as local verification of record. A fully-accepted evidence file has `failed` and `could_not_verify` both empty and `gate_gaming_status: "clean"`.
 
 `sha` records the HEAD the gate actually **ran against** — the pre-gate value captured in Step 2, never a post-run `git rev-parse HEAD`; the push gate honors a verdict only when this `sha` covers the pushed HEAD (equal, or an ancestor on the branch), so a stale or cross-branch verdict is ignored rather than causing a false block.
+
+**Limit:** if a repo's declared gate itself commits (auto-format-and-commit, a release check that runs `npm version`), every run straddles by construction and the verdict is permanently unclean — honest, since such a gate never measures one tree, but it means `deploy-gate` and routing-governance will not accept local evidence there. Split the committing step out of the declared gate.
 
 If the pre- and post-gate shas **differ**, a commit landed while the gate ran: the verdict covers no single commit, so keep the pre-gate `sha` AND add `"gate-run-straddled-commit"` to `could_not_verify` (issue #181). Never pick the post-gate sha — it names a tree nothing was measured against, and the gate's ancestor acceptance would treat it as covered. Also record `"worktree_dirty": true|false` from Step 2; it is advisory only (verifying uncommitted work and committing after is a supported workflow) and must NOT be added to `could_not_verify`.
 

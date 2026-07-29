@@ -83,8 +83,23 @@ New field, not a changed one — `hooks/lib/verdict.sh` reads named keys with
 
 - Any locking, or refusing to run on a dirty tree (see proposal Non-goals).
 - Deny-wiring `worktree_dirty`.
-- Re-basing the gate-gaming diff / `test_delta` on `SHA_BEFORE`.
+- Re-basing the gate-gaming diff / `test_delta` on `SHA_BEFORE`. Does not
+  affect gating: a straddle forces `could_not_verify[]` non-empty, so every
+  `verdict_is_clean` consumer rejects the record before those advisory fields
+  are read.
 - Backfilling or invalidating verdicts already on disk.
+- **Two residual mid-run tree changes this predicate cannot see** (named here
+  so they are not mistaken for coverage): a *tracked-file edit* made during the
+  run with no commit, and a commit followed by `reset --hard HEAD~1` — both
+  leave `SHA_BEFORE == SHA_AFTER`, and `worktree_dirty` describes a tree that
+  no longer exists (it is sampled once, at gate start). Both are rarer than the
+  case fixed here, neither is a regression, and closing them means the
+  status-based predicate rejected in D3.
+- **Repos whose declared gate legitimately commits** (auto-format-and-commit,
+  `npm version` in a release check) will now produce permanently-unclean
+  verdicts. Arguably correct — such a gate genuinely never measures a single
+  tree — but it is a new class of "this repo cannot get a clean local verdict",
+  recorded in the skill's limits prose rather than special-cased here.
 
 ## Acceptance Scenarios
 
@@ -104,8 +119,17 @@ New field, not a changed one — `hooks/lib/verdict.sh` reads named keys with
 
 ## Regression
 
-`tests/test-verify-and-record.sh` — new cases T16 (straddle), T17 (dirty
-advisory), asserted against the real script in an isolated fixture repo under
-`TEST_HOME`, with `verdict_is_clean` from `hooks/lib/verdict.sh` used as the
-end-to-end consumer assertion rather than re-deriving the predicate in the
-test.
+`tests/test-verify-and-record.sh` — T16 (straddle), T17 (non-straddled
+control: still clean and HEAD-bound), T18 (dirty advisory, must NOT gate),
+T19 (untracked-only is neither dirty nor a straddle — pins D3), T20 (straddle
++ FAILING gate: the one case where an enforcement outcome changes, see the D2
+table). All assert against the real script in an isolated fixture repo under
+`TEST_HOME`, using `verdict_is_clean` / `verdict_sha_is_head` from
+`hooks/lib/verdict.sh` as the end-to-end consumer assertions rather than
+re-deriving the predicates in the test. T16 and T20 were both measured RED
+against the pre-fix script.
+
+`tests/test-project-verification.sh` — content asserts pinning the manual
+path's half (capture before the gate, keep the pre-gate value, disclose the
+straddle), including an `assert_not_contains` on the old JSON placeholder,
+because the copied example — not the prose — is what the model transcribes.

@@ -231,7 +231,14 @@ assert_equals "straddled run recorded in could_not_verify[]" "true" \
     "$(jq -r '((.could_not_verify // []) | index("gate-run-straddled-commit")) != null' "${ARTIFACT}")"
 assert_equals "sha names the TESTED (pre-gate) commit, not the mid-run one" "${_PRE_SHA}" "$(jq -r '.sha' "${ARTIFACT}")"
 # End-to-end consumer assertion: the real predicate the push gate keys on, not a
-# re-derivation of it in the test.
+# re-derivation of it in the test. Guarded first — an unsourceable lib would make
+# the NEGATIVE assertion below pass on exit 127 rather than on the predicate.
+if ( . "${REPO_ROOT}/hooks/lib/verdict.sh" >/dev/null 2>&1; command -v verdict_is_clean >/dev/null 2>&1 ); then
+    _record_pass "verdict.sh sourced and verdict_is_clean is defined (guards the negatives below)"
+else
+    _record_fail "verdict.sh sourced and verdict_is_clean is defined (guards the negatives below)" \
+        "lib unsourceable — every verdict_is_clean negative below would pass on exit 127"
+fi
 if ( . "${REPO_ROOT}/hooks/lib/verdict.sh" >/dev/null 2>&1; verdict_is_clean session-vartest ); then
     _record_fail "straddled verdict does not satisfy verdict_is_clean" "verdict_is_clean accepted a straddled run"
 else
@@ -271,9 +278,11 @@ else
     _record_fail "dirty worktree keeps the verdict clean (advisory only)" "worktree_dirty was deny-wired"
 fi
 
-echo "== T19 (issue #181): untracked files alone are not 'dirty' =="
-# Gate commands routinely leave untracked build/test artifacts; counting them
-# would make the field near-constantly true and the signal worthless.
+echo "== T19 (issue #181): untracked files alone are not 'dirty', and are not a straddle =="
+# worktree_dirty is tracked-files-only, so an untracked file present at gate
+# start does not set it. The second assertion is the one that pins D3: a gate
+# that WRITES an untracked artifact must not be read as a straddle — that is
+# exactly why the straddle predicate is HEAD-sha-only rather than status-based.
 R19="$(mkrepo "${TEST_TMPDIR}/r19")"
 printf 'substrate: local\ncommands:\n  - name: tests\n    run: echo ok > build-artifact.tmp\n' > "${R19}/.verify.yml"
 echo scratch > "${R19}/untracked.txt"
@@ -281,6 +290,37 @@ rm -f "${ARTIFACT}"
 ( cd "${R19}" && /bin/bash "${VAR}" >/dev/null 2>&1 )
 assert_equals "untracked-only worktree is not dirty" "false" "$(jq -r '.worktree_dirty' "${ARTIFACT}")"
 assert_equals "gate-created untracked artifact is not a straddle" '[]' "$(jq -c '.could_not_verify' "${ARTIFACT}")"
+
+echo "== T20 (issue #181): a straddled run whose gate FAILED is no longer authoritative at HEAD =="
+# The one case where the fix changes an ENFORCEMENT outcome, so it gets a
+# contract pin rather than being left implicit. Pre-fix, a failing straddled run
+# recorded the mid-run commit, so verdict_sha_is_head was TRUE and
+# verify-hardening denied a push at that HEAD — on the strength of a failure
+# measured against a different tree. Post-fix the sha is the pre-gate commit, so
+# the failure is authoritative only for the commit it was measured at (the repo's
+# stated rule; an ancestor-FAIL blocking a fixed HEAD was a real false block).
+# The run is NOT laundered: it stays in failed[] and could_not_verify[], so
+# routing-governance and deploy-gate both still reject it.
+R20="$(mkrepo "${TEST_TMPDIR}/r20")"
+printf 'substrate: local\ncommands:\n  - name: tests\n    run: git commit -q --allow-empty -m mid-run; exit 3\n' > "${R20}/.verify.yml"
+_R20_PRE="$(git -C "${R20}" rev-parse HEAD)"
+rm -f "${ARTIFACT}"
+( cd "${R20}" && /bin/bash "${VAR}" >/dev/null 2>&1 )
+assert_equals "straddled failure is still recorded as a failure" '["tests"]' "$(jq -c '.failed' "${ARTIFACT}")"
+assert_equals "straddled failure also recorded as unverifiable" "true" \
+    "$(jq -r '((.could_not_verify // []) | index("gate-run-straddled-commit")) != null' "${ARTIFACT}")"
+assert_equals "straddled failure binds to the commit it was MEASURED at" "${_R20_PRE}" "$(jq -r '.sha' "${ARTIFACT}")"
+if ( cd "${R20}" && . "${REPO_ROOT}/hooks/lib/verdict.sh" >/dev/null 2>&1; verdict_sha_is_head session-vartest "${R20}" ); then
+    _record_fail "straddled failure is not authoritative for the untested HEAD" \
+        "verdict_sha_is_head true — verify-hardening would deny on a failure measured against another tree"
+else
+    _record_pass "straddled failure is not authoritative for the untested HEAD"
+fi
+if ( cd "${R20}" && . "${REPO_ROOT}/hooks/lib/verdict.sh" >/dev/null 2>&1; verdict_is_clean session-vartest ); then
+    _record_fail "straddled failure is never laundered to clean" "verdict_is_clean accepted a failing straddled run"
+else
+    _record_pass "straddled failure is never laundered to clean"
+fi
 
 cd "${REPO_ROOT}" || true
 teardown_test_env

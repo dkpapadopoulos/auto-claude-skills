@@ -110,8 +110,14 @@ assert_contains "manual path keeps the pre-gate sha, not the post-run one (#181)
     "never a post-run" "${skill}"
 assert_contains "manual path discloses a straddled run (#181)" \
     "gate-run-straddled-commit" "${skill}"
+# The JSON block is the artifact the model COPIES, so it — not just the prose —
+# has to carry the fix. A bare "worktree_dirty" needle is satisfied by the
+# corrective prose alone (the repo's whole-file-needle trap), so pin the
+# field-shaped form and assert the pre-fix placeholder is GONE.
 assert_contains "manual path records worktree_dirty as advisory (#181)" \
-    "worktree_dirty" "${skill}"
+    '"worktree_dirty":' "${skill}"
+assert_not_contains "the copied JSON example no longer instructs a post-run rev-parse (#181)" \
+    "git rev-parse HEAD — the commit this verdict covers" "${skill}"
 
 print_summary
 exit $?
