@@ -325,7 +325,7 @@ _gc_publish_verb() {
 }
 
 command_invokes_gh_publish() {
-    local _segs _oldifs _seg
+    local _segs _oldifs _seg _w1 _w2 _t
     _segs="$(_gc_split_segments "$1")"
     _oldifs="$IFS"
     IFS="${_GC_SEP}"
@@ -333,18 +333,63 @@ command_invokes_gh_publish() {
         IFS="${_oldifs}"
         # shellcheck disable=SC2086
         set -- ${_seg}
+        # Unwrap leading group openers (see _gc_segment_git_sub).
+        # PAIRED: command_invokes_gh_merge carries a structural copy of this
+        # unwrap — update both.
         while [ "$#" -gt 0 ]; do
             case "$1" in
                 '('|'{') shift ;;
+                '('*|'{'*)
+                    _t="$1"
+                    while :; do
+                        case "${_t}" in
+                            '('*) _t="${_t#\(}" ;;
+                            '{'*) _t="${_t#\{}" ;;
+                            *) break ;;
+                        esac
+                    done
+                    shift
+                    set -- "${_t}" "$@"
+                    break ;;
+                *) break ;;
+            esac
+        done
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
                 env) shift ;;
                 [A-Za-z_]*=*) shift ;;
                 *) break ;;
             esac
         done
-        if [ "$#" -ge 3 ]; then
+        if [ "$#" -gt 0 ]; then
             case "$1" in
                 gh|*/gh)
-                    if _gc_publish_verb "$2" "$3"; then
+                    shift
+                    # Collect the first two non-flag words, skipping
+                    # value-taking global flags in any position.
+                    _w1=""; _w2=""
+                    while [ "$#" -gt 0 ]; do
+                        case "$1" in
+                            -R|--repo|--hostname)
+                                if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                            -*) shift ;;
+                            *)
+                                # Strip trailing group closers.
+                                _t="$1"
+                                while :; do
+                                    case "${_t}" in
+                                        *')') _t="${_t%\)}" ;;
+                                        *'}') _t="${_t%\}}" ;;
+                                        *) break ;;
+                                    esac
+                                done
+                                if [ -z "${_w1}" ]; then _w1="${_t}"
+                                elif [ -z "${_w2}" ]; then _w2="${_t}"; break
+                                fi
+                                shift ;;
+                        esac
+                    done
+                    if _gc_publish_verb "${_w1}" "${_w2}"; then
                         IFS="${_oldifs}"; return 0
                     fi ;;
             esac
@@ -361,7 +406,7 @@ gh_publish_body_files() {
     # word-splits, so `--body "two words"` arrives as `"two` / `words"` and any
     # reconstruction under-detects — a bypass. The hook instead scans the WHOLE
     # command string, which covers inline bodies conservatively.
-    local _segs _oldifs _seg _out _p
+    local _segs _oldifs _seg _out _p _w1 _w2 _t
     _out=""
     _segs="$(_gc_split_segments "$1")"
     _oldifs="$IFS"
@@ -370,17 +415,60 @@ gh_publish_body_files() {
         IFS="${_oldifs}"
         # shellcheck disable=SC2086
         set -- ${_seg}
+        # Unwrap leading group openers (see _gc_segment_git_sub).
         while [ "$#" -gt 0 ]; do
             case "$1" in
-                '('|'{') shift ;; env) shift ;; [A-Za-z_]*=*) shift ;;
+                '('|'{') shift ;;
+                '('*|'{'*)
+                    _t="$1"
+                    while :; do
+                        case "${_t}" in
+                            '('*) _t="${_t#\(}" ;;
+                            '{'*) _t="${_t#\{}" ;;
+                            *) break ;;
+                        esac
+                    done
+                    shift
+                    set -- "${_t}" "$@"
+                    break ;;
+                *) break ;;
+            esac
+        done
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                env) shift ;;
+                [A-Za-z_]*=*) shift ;;
                 *) break ;;
             esac
         done
         case "${1:-}" in gh|*/gh) ;; *) IFS="${_GC_SEP}"; continue ;; esac
-        if [ "$#" -lt 3 ] || ! _gc_publish_verb "${2:-}" "${3:-}"; then
+        shift
+        # Collect the first two non-flag words, skipping value-taking global flags.
+        _w1=""; _w2=""
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                -R|--repo|--hostname)
+                    if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                -*) shift ;;
+                *)
+                    # Strip trailing group closers.
+                    _t="$1"
+                    while :; do
+                        case "${_t}" in
+                            *')') _t="${_t%\)}" ;;
+                            *'}') _t="${_t%\}}" ;;
+                            *) break ;;
+                        esac
+                    done
+                    if [ -z "${_w1}" ]; then _w1="${_t}"
+                    elif [ -z "${_w2}" ]; then _w2="${_t}"; break
+                    fi
+                    shift ;;
+            esac
+        done
+        if ! _gc_publish_verb "${_w1}" "${_w2}"; then
             IFS="${_GC_SEP}"; continue
         fi
-        shift 3
         while [ "$#" -gt 0 ]; do
             _p=""
             case "$1" in
@@ -389,6 +477,15 @@ gh_publish_body_files() {
                 *) shift ;;
             esac
             if [ -n "${_p}" ]; then
+                # Strip trailing group closers (from paren-wrapped commands).
+                while :; do
+                    case "${_p}" in
+                        *')') _p="${_p%\)}" ;;
+                        *'}') _p="${_p%\}}" ;;
+                        *) break ;;
+                    esac
+                done
+                # Strip surrounding quotes.
                 _p="${_p%\"}"; _p="${_p#\"}"; _p="${_p%\'}"; _p="${_p#\'}"
                 _out="${_out}${_p}
 "

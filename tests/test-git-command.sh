@@ -70,5 +70,40 @@ assert_equals "inline --body yields no file (scanned via the command string)" ""
 assert_equals "non-publish yields nothing" "" \
     "$(gh_publish_body_files 'gh issue list')"
 
+# --- Critical 1: glued-paren wrap; Critical 2: gh global flags ---
+# Paren-wrapped gh commands (glued token `(gh` from single segment)
+assert_equals "paren-wrapped gh issue create detected" "yes" \
+    "$(_pub '(gh issue create --body-file /tmp/b.md)')"
+assert_equals "brace-wrapped gh issue create detected" "yes" \
+    "$(_pub '{ gh issue create --body-file /tmp/b.md; }')"
+assert_equals "paren-wrapped gh comment detected" "yes" \
+    "$(_pub '(gh issue comment 5 --body-file /tmp/b.md)')"
+
+# Paren-wrapped with body-file extraction
+assert_equals "paren-wrapped extraction" "/tmp/b.md" \
+    "$(gh_publish_body_files '(gh issue create --body-file /tmp/b.md)')"
+assert_equals "brace-wrapped extraction" "/tmp/e.md" \
+    "$(gh_publish_body_files '{ gh issue create --body-file=/tmp/e.md; }')"
+
+# gh global flags before noun/verb
+assert_equals "gh --repo before issue create" "yes" \
+    "$(_pub 'gh --repo owner/repo issue create --body-file /tmp/b.md')"
+assert_equals "gh -R before issue comment" "yes" \
+    "$(_pub 'gh -R owner/repo issue comment 5 --body-file /tmp/b.md')"
+assert_equals "gh --hostname before pr create" "yes" \
+    "$(_pub 'gh --hostname github.com pr create --body-file /tmp/b.md')"
+
+# Global flags with body-file extraction
+assert_equals "extract with --repo prefix" "/tmp/b.md" \
+    "$(gh_publish_body_files 'gh --repo owner/repo issue create --body-file /tmp/b.md')"
+assert_equals "extract with -R prefix" "/tmp/f.md" \
+    "$(gh_publish_body_files 'gh -R o/r issue comment 5 --body-file /tmp/f.md')"
+
+# Controls: these should NOT match
+assert_equals "paren-wrapped gh issue list NOT a publish" "no" \
+    "$(_pub '(gh issue list --limit 5)')"
+assert_equals "gh --repo before pr merge NOT a publish" "no" \
+    "$(_pub 'gh --repo owner/repo pr merge 3 --squash')"
+
 print_summary
 exit $?
