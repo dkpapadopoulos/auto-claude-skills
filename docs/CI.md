@@ -77,7 +77,11 @@ So the steps below are correct GitHub mechanics but are **not currently in effec
 Before following them, do one of:
 
 - convert `version-bump.yml` to open a PR instead of pushing to `main`, or
-- grant that workflow an explicit bypass on the protection rule, or
+- grant that workflow an explicit bypass — **use a repository ruleset, not classic
+  branch protection**. A ruleset's bypass list can name the single GitHub App
+  (`github-actions[bot]`); classic protection's only lever is "include
+  administrators", which exempts *every* admin from *every* rule. Very different
+  blast radius for the same stated goal.
 - accept that version bumps stop and handle them by hand.
 
 Treat enabling protection as its own change with the bot fix included — not a
