@@ -501,6 +501,24 @@ test_skill_md_content() {
     assert_contains "revival boolean consumed" "revival" "${body}"
 }
 
+test_citation_contract_174() {
+    echo "-- test: citation contract (#174) --"
+    local skill="${REPO_ROOT}/skills/improvement-miner/SKILL.md"
+    assert_file_exists "SKILL.md exists" "${skill}"
+    if [ ! -f "${skill}" ]; then
+        return
+    fi
+    local body; body="$(cat "${skill}")"
+    assert_contains "SKILL.md mandates path:line citation" \
+        "memory/<file>.md:<line>" "${body}"
+    assert_contains "SKILL.md keeps the verbatim quote in the in-session report" \
+        "not a publication surface" "${body}"
+    assert_contains "SKILL.md corrects the --body-file misreading" \
+        "not a confidentiality control" "${body}"
+    assert_not_contains "SKILL.md no longer asks for a verbatim quote in the candidate contract" \
+        "verbatim source quote + provenance" "${body}"
+}
+
 test_fingerprint_stable_and_distinct
 test_missing_gh_fails_loud
 test_gh_runtime_failure_fails_loud
@@ -526,5 +544,6 @@ test_select_cap_and_end_user_warning
 test_select_null_grade_degrades
 test_select_meta_tie_keeps_earlier
 test_skill_md_content
+test_citation_contract_174
 
 print_summary
