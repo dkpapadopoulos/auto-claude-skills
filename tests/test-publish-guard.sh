@@ -82,6 +82,92 @@ printf '%s\n' "${LONG_CLEAN}" > "${WORK}/long-clean.md"
 out="$(_run "gh issue create --title t --body-file ${WORK}/long-clean.md")"
 assert_equals "long clean body with citation and topic prose is allowed" "" "${out:-}"
 
+# --- Fix round 1/5 (#174): inability-to-check paths must ANNOUNCE, never
+# silently allow. Stage broken plugin roots that mirror the real one but with
+# one required file removed, so the hook's own CLAUDE_PLUGIN_ROOT-relative
+# lookups miss it while the guard script itself still runs from its real path.
+
+BROKEN_NO_GITCMD="${WORK}/broken-no-gitcmd"
+mkdir -p "${BROKEN_NO_GITCMD}/hooks/lib" "${BROKEN_NO_GITCMD}/scripts"
+cp "${PROJECT_ROOT}/scripts/memory-leak-check.sh" "${BROKEN_NO_GITCMD}/scripts/memory-leak-check.sh"
+# hooks/lib/git-command.sh deliberately absent.
+
+BROKEN_NO_ENGINE="${WORK}/broken-no-engine"
+mkdir -p "${BROKEN_NO_ENGINE}/hooks/lib" "${BROKEN_NO_ENGINE}/scripts"
+cp "${PROJECT_ROOT}/hooks/lib/git-command.sh" "${BROKEN_NO_ENGINE}/hooks/lib/git-command.sh"
+# scripts/memory-leak-check.sh deliberately absent.
+
+_run_with_root() {  # _run_with_root <plugin-root> <command>
+    jq -n --arg c "$2" '{"tool_input":{"command":$c}}' \
+    | ( cd "${REPO}" && MEMORY_LEAK_CHECK_MEMORY_DIR="${MEM}" \
+        CLAUDE_PLUGIN_ROOT="$1" /bin/bash "${GUARD}" 2>/dev/null )
+}
+
+out="$(_run_with_root "${BROKEN_NO_GITCMD}" "gh issue create --title t --body-file ${WORK}/leaky.md")"
+assert_contains "missing git-command.sh announces instead of silently allowing" "could not check" "${out:-<empty>}"
+assert_not_contains "missing git-command.sh does not deny" '"deny"' "${out:-}"
+
+out="$(_run_with_root "${BROKEN_NO_ENGINE}" "gh issue create --title t --body-file ${WORK}/leaky.md")"
+assert_contains "missing memory-leak-check.sh announces instead of silently allowing" "could not check" "${out:-<empty>}"
+assert_not_contains "missing memory-leak-check.sh does not deny" '"deny"' "${out:-}"
+
+# Control: even with a broken plugin root, a command that never mentions "gh"
+# at all must stay completely silent — the "not applicable" filter runs
+# BEFORE the library is ever touched, so a broken root cannot cause noise on
+# irrelevant commands.
+out="$(_run_with_root "${BROKEN_NO_GITCMD}" "ls -la")"
+assert_equals "non-gh command stays silent even with a broken plugin root" "" "${out:-}"
+
+# Controls under the normal (working) root: now that inability-to-check paths
+# announce, confirm the genuinely-not-this-hook's-business paths still don't.
+out="$(_run "gh issue list --limit 5")"
+assert_equals "non-publish gh command still emits nothing after the fix" "" "${out:-}"
+
+out="$(_run "gh issue create --title t --body-file ${WORK}/clean.md")"
+assert_equals "clean body still emits nothing after the fix" "" "${out:-}"
+
+# jq unavailable: the announce path here must be the jq-free emitter (jq
+# itself is what's missing), so build the JSON payload with jq BEFORE
+# stripping it from PATH, then invoke the guard without jq in PATH.
+NOJQ_BIN="${WORK}/nojq-bin"
+mkdir -p "${NOJQ_BIN}"
+ln -sf "$(command -v cat)" "${NOJQ_BIN}/cat"
+
+_leaky_payload="$(jq -n --arg c "gh issue create --title t --body-file ${WORK}/leaky.md" '{"tool_input":{"command":$c}}')"
+out="$( printf '%s' "${_leaky_payload}" \
+        | ( cd "${REPO}" && MEMORY_LEAK_CHECK_MEMORY_DIR="${MEM}" \
+            CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" PATH="${NOJQ_BIN}" /bin/bash "${GUARD}" 2>/dev/null ) )"
+assert_contains "jq unavailable announces instead of silently allowing" "could not check" "${out:-<empty>}"
+assert_not_contains "jq unavailable does not deny" '"deny"' "${out:-}"
+
+_ls_payload="$(jq -n --arg c "ls -la" '{"tool_input":{"command":$c}}')"
+out="$( printf '%s' "${_ls_payload}" \
+        | ( cd "${REPO}" && MEMORY_LEAK_CHECK_MEMORY_DIR="${MEM}" \
+            CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" PATH="${NOJQ_BIN}" /bin/bash "${GUARD}" 2>/dev/null ) )"
+assert_equals "non-gh command with jq missing still stays silent" "" "${out:-}"
+
+# mktemp -d failure: shim ONLY the guard's own pubguard.* template so the
+# engine's internal mlc.* mktemp call (used during the corpus probe) still
+# succeeds via the real binary — otherwise both calls share TMPDIR and fail
+# together, tripping the (separately deferred) unguarded probe-line ERR trap
+# instead of exercising this specific guard.
+FAKEBIN="${WORK}/fakebin"
+mkdir -p "${FAKEBIN}"
+cat > "${FAKEBIN}/mktemp" <<'SHIM'
+#!/bin/bash
+case "$*" in
+    *pubguard.*) echo "mktemp: SIMULATED failure" >&2; exit 1 ;;
+    *) exec /usr/bin/mktemp "$@" ;;
+esac
+SHIM
+chmod +x "${FAKEBIN}/mktemp"
+
+out="$( jq -n --arg c "gh issue create --title t --body-file ${WORK}/leaky.md" '{"tool_input":{"command":$c}}' \
+        | ( cd "${REPO}" && MEMORY_LEAK_CHECK_MEMORY_DIR="${MEM}" \
+            CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" PATH="${FAKEBIN}:${PATH}" /bin/bash "${GUARD}" 2>/dev/null ) )"
+assert_contains "mktemp -d failure announces instead of silently allowing" "could not check" "${out:-<empty>}"
+assert_not_contains "mktemp -d failure does not deny" '"deny"' "${out:-}"
+
 rm -rf "${WORK}"
 print_summary
 exit $?

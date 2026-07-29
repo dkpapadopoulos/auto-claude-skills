@@ -4,26 +4,58 @@
 # push gate's fail-open ERR trap and lib-sourcing order are load-bearing.
 #
 # Detection is FAIL-CLOSED (a match always denies). Inability to check is
-# FAIL-OPEN and announced (absent corpus, missing jq, unreadable body).
+# FAIL-OPEN and ANNOUNCED — absent corpus, missing jq, missing/unsourceable
+# git-command.sh (or its functions undefined after sourcing), missing engine,
+# mktemp failure, unreadable body — never silently (#174 round 1).
 
 trap 'exit 0' ERR
 
+# jq-free emitter: some inability-to-check paths fire before jq is confirmed
+# available (or while sourcing may have failed), so they cannot build JSON
+# with jq. $1 MUST be a fixed literal string this file controls — never
+# runtime data (a path, the command, matched text) — printf does no JSON
+# escaping, so anything else would be an injection risk.
+_announce() {
+    printf '{"systemMessage":"publish-guard: could not check for private-memory text (%s) — allowing, but the #174 leak gate did NOT run."}\n' "$1"
+}
+
 _INPUT="$(cat)"
-command -v jq >/dev/null 2>&1 || exit 0
+
+# Cheap pre-filter, no jq required: the overwhelming majority of Bash calls
+# never mention "gh" at all, so they exit here, silently, even if jq itself
+# is broken below. This does not replace the precise jq-based filter further
+# down — it only bounds how often the jq-unavailable announce can fire.
+case "${_INPUT}" in *gh*) ;; *) exit 0 ;; esac
+
+if ! command -v jq >/dev/null 2>&1; then
+    _announce "jq unavailable"
+    exit 0
+fi
 
 _COMMAND="$(printf '%s' "${_INPUT}" | jq -r '.tool_input.command // ""' 2>/dev/null)" || exit 0
 case "${_COMMAND}" in *gh*) ;; *) exit 0 ;; esac
 
 _ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-[ -f "${_ROOT}/hooks/lib/git-command.sh" ] || exit 0
-. "${_ROOT}/hooks/lib/git-command.sh" 2>/dev/null || exit 0
-command -v command_invokes_gh_publish >/dev/null 2>&1 || exit 0
-command -v gh_publish_body_files      >/dev/null 2>&1 || exit 0
+if [ ! -f "${_ROOT}/hooks/lib/git-command.sh" ]; then
+    _announce "git-command.sh unavailable"
+    exit 0
+fi
+if ! . "${_ROOT}/hooks/lib/git-command.sh" 2>/dev/null; then
+    _announce "git-command.sh unavailable"
+    exit 0
+fi
+if ! command -v command_invokes_gh_publish >/dev/null 2>&1 || ! command -v gh_publish_body_files >/dev/null 2>&1; then
+    _announce "git-command.sh unavailable"
+    exit 0
+fi
 
 command_invokes_gh_publish "${_COMMAND}" || exit 0
 
 _ENGINE="${_ROOT}/scripts/memory-leak-check.sh"
-[ -f "${_ENGINE}" ] || exit 0
+if [ ! -f "${_ENGINE}" ]; then
+    _announce "leak engine unavailable"
+    exit 0
+fi
 
 # Announced degradation: when no corpus resolves there is nothing to leak, but
 # silence would be indistinguishable from a clean check. Probe once, on the
@@ -36,7 +68,10 @@ case "${_MEMPROBE}" in
         exit 0 ;;
 esac
 
-_TMP="$(mktemp -d "${TMPDIR:-/tmp}/pubguard.XXXXXXXX")" || exit 0
+if ! _TMP="$(mktemp -d "${TMPDIR:-/tmp}/pubguard.XXXXXXXX")"; then
+    _announce "no temp dir"
+    exit 0
+fi
 trap 'rm -rf "${_TMP}"' EXIT
 
 _FINDINGS=""
