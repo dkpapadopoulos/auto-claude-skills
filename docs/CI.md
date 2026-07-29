@@ -55,11 +55,45 @@ To make it hard-blocking, follow the steps below and type **`Done Gates`** in th
 status-check search box (step 6). It is independent of `OpenSpec Validate` — you
 can require either, both, or neither.
 
+## Current state: `main` is NOT protected (deliberately)
+
+As of 2026-07-29, `main` has **no branch protection rule** — verified via
+`gh api repos/<owner>/<repo>/branches/main/protection` → `404 Branch not protected`.
+Neither `OpenSpec Validate` nor `Done Gates` is a required check. Both run on every
+PR and go red on a violation, but **nothing blocks a merge**.
+
+**This is a deliberate trade-off, not an oversight, and enabling protection is not a
+one-click step.** `.github/workflows/version-bump.yml` pushes **directly to `main`**
+after every merge (`git push`, with `permissions: contents: write`), and its own
+comment states the assumption plainly: *"no branch protection; `permissions:
+contents: write` is declared."* Its commits carry `[skip ci]`, so required status
+checks would never report on them, and required checks block direct pushes to a
+protected branch. `GITHUB_TOKEN` runs as `github-actions[bot]` with no admin bypass.
+
+**Turning on required checks would therefore break every version bump — silently.**
+Nothing fails loudly; the plugin version simply stops moving until someone notices.
+
+So the steps below are correct GitHub mechanics but are **not currently in effect**.
+Before following them, do one of:
+
+- convert `version-bump.yml` to open a PR instead of pushing to `main`, or
+- grant that workflow an explicit bypass — **use a repository ruleset, not classic
+  branch protection**. A ruleset's bypass list can name the single GitHub App
+  (`github-actions[bot]`); classic protection's only lever is "include
+  administrators", which exempts *every* admin from *every* rule. Very different
+  blast radius for the same stated goal.
+- accept that version bumps stop and handle them by hand.
+
+Treat enabling protection as its own change with the bot fix included — not a
+settings toggle.
+
 ## Making the gate a required check (hard block)
 
 Applies to **both** workflows — `OpenSpec Validate` and `Done Gates`. Each produces
 a check that **must be manually required** in branch protection rules for it to
 actually block merges. Without this step, PRs can merge even when the check is red.
+
+Read the section above first — on this repo today, doing this breaks the release bot.
 
 In step 6 below, add the check you want: `OpenSpec Validate`, `Done Gates`, or both.
 
