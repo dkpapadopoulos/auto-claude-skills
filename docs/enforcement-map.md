@@ -46,12 +46,20 @@ with `ACSM_SKIP_PUSH_GATE=1` in its environment. The agent cannot set either.
 
 ## CI (merge-time, outside the hooks)
 
+- **NOTHING IN CI HARD-BLOCKS A MERGE TODAY.** `main` has no branch protection
+  rule at all (verified 2026-07-29:
+  `gh api repos/<owner>/<repo>/branches/main/protection` → `404 Branch not
+  protected`). Both workflows below run and go red on a violation, but a red
+  check does not stop a merge. Treat them as visible signals, not gates.
+  Enabling protection is NOT a settings toggle here: `version-bump.yml` pushes
+  directly to `main` with `[skip ci]`, so required checks would block it and
+  version bumps would stop silently. See docs/CI.md before changing this.
 - Done Gates workflow (`.github/workflows/done-gates.yml`) — runs the two owned
   done-gates, routing-fixture coverage and skill-content coverage, on every PR.
-  Hard-blocks only if marked Required in branch protection (docs/CI.md).
+  Would hard-block only if marked Required (see the caveat above).
   Regression: `tests/test-done-gate-ci.sh` pins the workflow to this claim.
-- OpenSpec Validate workflow (spec-driven mode) — hard-blocks only if marked
-  Required in branch protection (docs/CI.md).
+- OpenSpec Validate workflow (spec-driven mode) — same: runs on every PR, not
+  currently Required, so it does not block.
 - **The FULL `tests/run-tests.sh` suite does NOT run in CI.** `.verify.yml` is
   `substrate: local`: it is read by `hooks/lib/verdict.sh`, the
   `project-verification` skill and tests — by no workflow. Until this file was
