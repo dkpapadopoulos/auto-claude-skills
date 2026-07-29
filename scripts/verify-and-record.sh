@@ -9,7 +9,9 @@
 #
 # HONEST BY CONSTRUCTION: failures (non-zero exit) go to failed[], unrunnable
 # commands (exit 127) to could_not_verify[], an unrunnable gate-gaming check
-# is recorded as unverified — nothing is asserted, only measured. This is NOT
+# is recorded as unverified, and the recorded sha is the HEAD the gate actually
+# ran against (a run that straddles a commit covers no single commit and says
+# so, issue #181) — nothing is asserted, only measured. This is NOT
 # a trust boundary (the artifact stays shell-writable; external CI is the
 # boundary, per the skill's own disclaimer) — it is provenance + ergonomics.
 #
@@ -78,6 +80,28 @@ if [ -z "$TOKEN" ] && [ -f "${PLUGIN_ROOT}/hooks/lib/session-token.sh" ]; then
 fi
 [ -n "$TOKEN" ] || TOKEN="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null || echo default)"
 
+# Capture the commit under test BEFORE the gate loop (issue #181) — same window
+# and same hazard as the token above. This repo's suite runs 10+ minutes and
+# running it in the background while continuing to work is the normal pattern,
+# so a post-run read silently adopts any commit made meanwhile: the verdict then
+# names a tree no gate ever executed against, and verdict.sh's HEAD-or-ancestor
+# acceptance treats that commit as covered. Observed live while shipping #180.
+# sha was the ONE field in this record measured at a different time from
+# everything it describes.
+SHA_BEFORE="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+
+# worktree_dirty — ADVISORY ONLY, never deny-wired. A clean sha on a dirty tree
+# has the same "tested something else" problem and the record should say so, but
+# verifying uncommitted work and committing afterwards is a supported workflow;
+# promoting it to could_not_verify[] would false-block routine pushes. Tracked
+# modifications only: gate commands routinely leave untracked build/test
+# artifacts, which would make this near-constantly true and the signal worthless.
+if [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    WORKTREE_DIRTY=true
+else
+    WORKTREE_DIRTY=false
+fi
+
 PASSED=""; FAILED=""; CNV=""; CMDS=""
 LOG="$(mktemp "${TMPDIR:-/tmp}/verify-and-record.XXXXXX")" || exit 1
 trap 'rm -f "$LOG"' EXIT
@@ -137,7 +161,22 @@ if [ -n "$BASE" ] && [ -f "$GGC" ]; then
 fi
 [ "$GG_STATUS" = "unverified" ] && CNV="${CNV}${CNV:+,}gate-gaming-check"
 
-SHA="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+# A commit landing while the gate ran means the run covers NO single commit, so
+# neither sha is honest — record it as unverifiable rather than picking one
+# (issue #181). Same fail-toward-not-clean posture as an unrunnable gate-gaming
+# check: verdict_is_clean requires could_not_verify[] empty, so a straddled run
+# stops satisfying routing-governance instead of silently claiming a result for
+# an untested tree. The recorded sha stays the PRE-gate one — the commit whose
+# tree the gate actually began measuring.
+#
+# HEAD-sha-only by design: a status-based straddle predicate would fire on every
+# gate that writes a build artifact, converting a rare true signal into noise.
+SHA="$SHA_BEFORE"
+SHA_AFTER="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+if [ "$SHA_BEFORE" != "$SHA_AFTER" ]; then
+    CNV="${CNV}${CNV:+,}gate-run-straddled-commit"
+    echo "gate run STRADDLED a commit: ${SHA_BEFORE} -> ${SHA_AFTER} — the run covers no single commit (recorded as could-not-verify; re-run against the settled HEAD)"
+fi
 TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 EXCERPT="$(tail -c 600 "$LOG" 2>/dev/null | tr -d '\000-\010\013-\037' | tr '\n' ' ')"
 OUT="${HOME}/.claude/.skill-project-verified-${TOKEN}"
@@ -180,16 +219,17 @@ elif [ "$_TD_TEST" -eq 1 ]; then TEST_DELTA="covered"
 else TEST_DELTA="missing"; fi
 
 jq -n --arg sha "$SHA" --arg ts "$TS" --arg ex "$EXCERPT" --arg cmd "$CMDS" \
-      --arg p "$PASSED" --arg f "$FAILED" --arg c "$CNV" --arg gg "$GG_STATUS" --arg td "$TEST_DELTA" '
+      --arg p "$PASSED" --arg f "$FAILED" --arg c "$CNV" --arg gg "$GG_STATUS" --arg td "$TEST_DELTA" \
+      --arg wd "$WORKTREE_DIRTY" '
   def csv($s): if $s == "" then [] else ($s | split(",")) end;
   {substrate:"local", discovery_source:"verify-yml",
    passed:csv($p), failed:csv($f), could_not_verify:csv($c),
    gate_gaming_status:$gg, coverage_adequacy_status:"unverified",
-   test_delta:$td,
+   test_delta:$td, worktree_dirty:($wd == "true"),
    sha:$sha, command:$cmd, output_excerpt:$ex, ts:$ts,
    writer:"verify-and-record.sh"}
 ' > "${OUT}.tmp.$$" || { rm -f "${OUT}.tmp.$$"; echo "verify-and-record: verdict write failed" >&2; exit 1; }
 mv "${OUT}.tmp.$$" "$OUT" || { rm -f "${OUT}.tmp.$$"; echo "verify-and-record: verdict write failed" >&2; exit 1; }
 
 echo "verdict written: $OUT"
-jq -c '{passed,failed,could_not_verify,gate_gaming_status,test_delta,sha}' "$OUT"
+jq -c '{passed,failed,could_not_verify,gate_gaming_status,test_delta,worktree_dirty,sha}' "$OUT"

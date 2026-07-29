@@ -100,5 +100,18 @@ assert_contains "manual verdict path resolves own-session-first (#156)" \
 assert_contains "manual verdict path honors the explicit override first (#122)" \
     "SKILL_SESSION_TOKEN" "${skill}"
 
+# Issue #181: the manual path is the SECOND writer of `sha` and had the same
+# defect as the script — capturing HEAD after the gate ran, so a straddling run
+# named a tree nothing was measured against. Pin all three halves of the fix:
+# capture BEFORE the gate, keep the pre-gate value, and disclose the straddle.
+assert_contains "manual path captures the sha BEFORE the gate runs (#181)" \
+    "BEFORE the first gate command" "${skill}"
+assert_contains "manual path keeps the pre-gate sha, not the post-run one (#181)" \
+    "never a post-run" "${skill}"
+assert_contains "manual path discloses a straddled run (#181)" \
+    "gate-run-straddled-commit" "${skill}"
+assert_contains "manual path records worktree_dirty as advisory (#181)" \
+    "worktree_dirty" "${skill}"
+
 print_summary
 exit $?

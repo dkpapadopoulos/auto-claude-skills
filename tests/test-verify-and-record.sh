@@ -210,7 +210,77 @@ assert_file_exists "missing session-token.sh degrades to the singleton" "${_SING
     || _record_fail "no locally re-derived token shape when the lib is absent" "verdict written under a re-derived token"
 
 rm -rf "${TEST_HOME}/.claude/projects"
-printf 'session-vartest' > "${TEST_HOME}/.claude/.skill-session-token"   # restore
+printf 'session-vartest' > "${TEST_HOME}/.claude/.skill-session-token"   # restore: T12-T15 rebound it
+
+echo "== T16 (issue #181): a run that straddles a commit is recorded as unverifiable =="
+# The gate's sha was read AFTER the gate loop, so a commit landing mid-run was
+# silently adopted: the verdict named a commit whose tree no gate ever ran
+# against, and the push gate's ancestor acceptance then covered it. Simulate the
+# window with a gate command that commits in the fixture repo mid-run.
+R16="$(mkrepo "${TEST_TMPDIR}/r16")"
+printf 'substrate: local\ncommands:\n  - name: tests\n    run: git commit -q --allow-empty -m mid-run; echo ok\n' > "${R16}/.verify.yml"
+_PRE_SHA="$(git -C "${R16}" rev-parse HEAD)"
+rm -f "${ARTIFACT}"
+( cd "${R16}" && /bin/bash "${VAR}" >/dev/null 2>&1 )
+_POST_SHA="$(git -C "${R16}" rev-parse HEAD)"
+[ "${_PRE_SHA}" != "${_POST_SHA}" ] && _record_pass "fixture genuinely straddled a commit (precondition)" \
+    || _record_fail "fixture genuinely straddled a commit (precondition)" "HEAD did not move; the case proves nothing"
+# Guards the negative assertion below from passing vacuously on a missing artifact.
+assert_file_exists "straddled run still WRITES a verdict (recording is the script's job)" "${ARTIFACT}"
+assert_equals "straddled run recorded in could_not_verify[]" "true" \
+    "$(jq -r '((.could_not_verify // []) | index("gate-run-straddled-commit")) != null' "${ARTIFACT}")"
+assert_equals "sha names the TESTED (pre-gate) commit, not the mid-run one" "${_PRE_SHA}" "$(jq -r '.sha' "${ARTIFACT}")"
+# End-to-end consumer assertion: the real predicate the push gate keys on, not a
+# re-derivation of it in the test.
+if ( . "${REPO_ROOT}/hooks/lib/verdict.sh" >/dev/null 2>&1; verdict_is_clean session-vartest ); then
+    _record_fail "straddled verdict does not satisfy verdict_is_clean" "verdict_is_clean accepted a straddled run"
+else
+    _record_pass "straddled verdict does not satisfy verdict_is_clean"
+fi
+
+echo "== T17 (issue #181): an ordinary run stays clean and HEAD-bound =="
+# The control for T16: nothing about the non-straddled path may change, or the
+# fix would trade a silent mislabel for a routine false block.
+R17="$(mkrepo "${TEST_TMPDIR}/r17")"
+printf 'substrate: local\ncommands:\n  - name: tests\n    run: echo ok\n' > "${R17}/.verify.yml"
+rm -f "${ARTIFACT}"
+( cd "${R17}" && /bin/bash "${VAR}" >/dev/null 2>&1 )
+assert_equals "unstraddled run still binds to HEAD" "$(git -C "${R17}" rev-parse HEAD)" "$(jq -r '.sha' "${ARTIFACT}")"
+assert_equals "unstraddled run records nothing unverifiable" '[]' "$(jq -c '.could_not_verify' "${ARTIFACT}")"
+assert_equals "clean worktree recorded as not dirty" "false" "$(jq -r '.worktree_dirty' "${ARTIFACT}")"
+if ( . "${REPO_ROOT}/hooks/lib/verdict.sh" >/dev/null 2>&1; verdict_is_clean session-vartest ); then
+    _record_pass "unstraddled verdict still satisfies verdict_is_clean"
+else
+    _record_fail "unstraddled verdict still satisfies verdict_is_clean" "the fix false-blocks an ordinary run"
+fi
+
+echo "== T18 (issue #181): a dirty worktree is disclosed but never gates =="
+# A clean sha on a dirty tree has the same "tested something else" problem, so
+# the record must say so — but verifying uncommitted work and committing
+# afterwards is a supported workflow, so it must NOT reach could_not_verify[].
+R18="$(mkrepo "${TEST_TMPDIR}/r18")"
+printf 'substrate: local\ncommands:\n  - name: tests\n    run: echo ok\n' > "${R18}/.verify.yml"
+echo modified > "${R18}/f.txt"                     # tracked file, uncommitted
+rm -f "${ARTIFACT}"
+( cd "${R18}" && /bin/bash "${VAR}" >/dev/null 2>&1 )
+assert_equals "modified tracked file recorded as worktree_dirty" "true" "$(jq -r '.worktree_dirty' "${ARTIFACT}")"
+assert_equals "dirty worktree adds nothing to could_not_verify[]" '[]' "$(jq -c '.could_not_verify' "${ARTIFACT}")"
+if ( . "${REPO_ROOT}/hooks/lib/verdict.sh" >/dev/null 2>&1; verdict_is_clean session-vartest ); then
+    _record_pass "dirty worktree keeps the verdict clean (advisory only)"
+else
+    _record_fail "dirty worktree keeps the verdict clean (advisory only)" "worktree_dirty was deny-wired"
+fi
+
+echo "== T19 (issue #181): untracked files alone are not 'dirty' =="
+# Gate commands routinely leave untracked build/test artifacts; counting them
+# would make the field near-constantly true and the signal worthless.
+R19="$(mkrepo "${TEST_TMPDIR}/r19")"
+printf 'substrate: local\ncommands:\n  - name: tests\n    run: echo ok > build-artifact.tmp\n' > "${R19}/.verify.yml"
+echo scratch > "${R19}/untracked.txt"
+rm -f "${ARTIFACT}"
+( cd "${R19}" && /bin/bash "${VAR}" >/dev/null 2>&1 )
+assert_equals "untracked-only worktree is not dirty" "false" "$(jq -r '.worktree_dirty' "${ARTIFACT}")"
+assert_equals "gate-created untracked artifact is not a straddle" '[]' "$(jq -c '.could_not_verify' "${ARTIFACT}")"
 
 cd "${REPO_ROOT}" || true
 teardown_test_env
