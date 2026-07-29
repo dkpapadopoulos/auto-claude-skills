@@ -124,13 +124,18 @@ A `memory/<file>.md:<line>` citation publishes the slug. Some slugs name an
 organization, so the fix does not reduce exposure to zero.
 
 Measured 2026-07-29 across all 164 files, by tokenizing each filename and
-subtracting every token present in the repo's tracked content: the survivors are
+subtracting every token present in the repo's tracked content. The survivors are
 dominated by ordinary English (`anonymize`, `validators`, `forbid`) and by
-open-source project names already public in this repo (`grain`, `terrashark`,
-`flywheel`). `oviva` and `scoutflo` do **not** survive — both already appear in
-tracked content, so they are public already. The one clear private-org slug is
-`project_zs_laguna_triage_parked`. Exposure is therefore roughly **1 file in
+open-source project names already public in this repo. Two of the org names the
+check was meant to catch do **not** survive the subtraction at all — they already
+appear in tracked content, so they are public regardless. Exactly one slug is a
+genuinely private client codename. Exposure is therefore roughly **1 file in
 164**.
+
+The names themselves are deliberately not reproduced here: this document is
+committed to a public repo, and `tests/test-no-internal-references.sh` screens
+tracked files for exactly that. Naming them would be the leak this section
+describes. (It caught a first draft of this paragraph that did name one.)
 
 Accepted rather than closed, for two reasons. A filename is a single short token
 reviewed at the Step 6 human gate — the failure mode in #174 was paragraphs of
