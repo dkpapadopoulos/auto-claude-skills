@@ -78,7 +78,10 @@ Each candidate MUST carry:
 - source citation + provenance: for memory evidence, `memory/<file>.md:<line>`
   plus the observed-at date; for non-private evidence (eval-report bodies,
   gate output, shas, issue numbers) a verbatim quote is still fine. Source sha
-  or issue number, observed-at date, run id when citing workflow output.
+  or issue number, observed-at date, run id when citing workflow output. For
+  memory evidence, also retain the verbatim line text in the candidate object
+  for the in-session report only (Step 5) — never copy it into a published
+  body (Steps 7/8); the citation above is what gets published.
 - evidence grade A–F under the assumption-audit ceilings (direct=A/B max,
   analogous=C max, expert-judgment=D max, none=F).
 - `meta` flag: true when the primary artifact is gate/loop/plugin-internals

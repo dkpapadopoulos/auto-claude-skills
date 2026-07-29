@@ -517,6 +517,8 @@ test_citation_contract_174() {
         "not a confidentiality control" "${body}"
     assert_not_contains "SKILL.md no longer asks for a verbatim quote in the candidate contract" \
         "verbatim source quote + provenance" "${body}"
+    assert_contains "SKILL.md candidate contract retains the verbatim line for the in-session report" \
+        "for the in-session report only" "${body}"
 }
 
 test_fingerprint_stable_and_distinct
