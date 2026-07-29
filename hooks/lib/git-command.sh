@@ -302,3 +302,101 @@ command_git_mutate_before_push() {
     IFS="${_gc_oldifs}"
     return 1
 }
+
+# --- gh publication predicates (issue #174) ---------------------------------
+# A publication is any gh subcommand that writes prose to the tracker:
+#   gh issue create|comment|edit, gh pr create|comment|edit.
+# `gh pr merge` is deliberately excluded — it publishes no body, and it is
+# already covered by the push gate's outbound legs.
+#
+# PAIRED: both functions iterate _gc_split_segments output with
+# IFS="${_GC_SEP}". Newline-splitting is wrong here — a quoted --body
+# legitimately contains newlines (issue #155).
+_gc_publish_verb() {
+    # $1=noun $2=verb -> 0 when this pair publishes a body
+    case "$1" in
+        issue|pr) ;;
+        *) return 1 ;;
+    esac
+    case "$2" in
+        create|comment|edit) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+command_invokes_gh_publish() {
+    local _segs _oldifs _seg
+    _segs="$(_gc_split_segments "$1")"
+    _oldifs="$IFS"
+    IFS="${_GC_SEP}"
+    for _seg in ${_segs}; do
+        IFS="${_oldifs}"
+        # shellcheck disable=SC2086
+        set -- ${_seg}
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                '('|'{') shift ;;
+                env) shift ;;
+                [A-Za-z_]*=*) shift ;;
+                *) break ;;
+            esac
+        done
+        if [ "$#" -ge 3 ]; then
+            case "$1" in
+                gh|*/gh)
+                    if _gc_publish_verb "$2" "$3"; then
+                        IFS="${_oldifs}"; return 0
+                    fi ;;
+            esac
+        fi
+        IFS="${_GC_SEP}"
+    done
+    IFS="${_oldifs}"
+    return 1
+}
+
+gh_publish_body_files() {
+    # Prints one --body-file/-F path per line (surrounding quotes stripped).
+    # Inline --body text is deliberately NOT parsed here: `set -- ${_seg}`
+    # word-splits, so `--body "two words"` arrives as `"two` / `words"` and any
+    # reconstruction under-detects — a bypass. The hook instead scans the WHOLE
+    # command string, which covers inline bodies conservatively.
+    local _segs _oldifs _seg _out _p
+    _out=""
+    _segs="$(_gc_split_segments "$1")"
+    _oldifs="$IFS"
+    IFS="${_GC_SEP}"
+    for _seg in ${_segs}; do
+        IFS="${_oldifs}"
+        # shellcheck disable=SC2086
+        set -- ${_seg}
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                '('|'{') shift ;; env) shift ;; [A-Za-z_]*=*) shift ;;
+                *) break ;;
+            esac
+        done
+        case "${1:-}" in gh|*/gh) ;; *) IFS="${_GC_SEP}"; continue ;; esac
+        if [ "$#" -lt 3 ] || ! _gc_publish_verb "${2:-}" "${3:-}"; then
+            IFS="${_GC_SEP}"; continue
+        fi
+        shift 3
+        while [ "$#" -gt 0 ]; do
+            _p=""
+            case "$1" in
+                --body-file|-F) _p="${2:-}"; shift 2 ;;
+                --body-file=*)  _p="${1#--body-file=}"; shift ;;
+                *) shift ;;
+            esac
+            if [ -n "${_p}" ]; then
+                _p="${_p%\"}"; _p="${_p#\"}"; _p="${_p%\'}"; _p="${_p#\'}"
+                _out="${_out}${_p}
+"
+            fi
+        done
+        IFS="${_GC_SEP}"
+    done
+    IFS="${_oldifs}"
+    [ -n "${_out}" ] && printf '%s' "${_out}"
+    return 0
+}

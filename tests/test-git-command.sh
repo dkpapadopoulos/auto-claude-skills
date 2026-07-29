@@ -41,5 +41,34 @@ _no  "semicolon inside squotes"   "printf 'log; git commit '"
 _yes "chained with && still true" "cd /repo && git push origin x"
 _yes "real cmd then piped grep"   "git commit -m x | tee log"
 
+# --- gh publish predicates (#174) -------------------------------------------
+_pub() { command_invokes_gh_publish "$1" && echo yes || echo no; }
+
+assert_equals "gh issue create is a publish" "yes" "$(_pub 'gh issue create --title t --body-file /tmp/b.md')"
+assert_equals "gh issue comment is a publish" "yes" "$(_pub 'gh issue comment 12 --body-file /tmp/b.md')"
+assert_equals "gh issue edit is a publish"    "yes" "$(_pub 'gh issue edit 12 --body-file /tmp/b.md')"
+assert_equals "gh pr create is a publish"     "yes" "$(_pub 'gh pr create --body hello')"
+assert_equals "gh pr comment is a publish"    "yes" "$(_pub 'gh pr comment 3 -b hi')"
+assert_equals "gh pr merge is NOT a publish"  "no"  "$(_pub 'gh pr merge 3 --squash')"
+assert_equals "gh issue list is NOT a publish" "no" "$(_pub 'gh issue list --limit 5')"
+assert_equals "git push is NOT a publish"     "no"  "$(_pub 'git push origin main')"
+assert_equals "echo mentioning gh is NOT a publish" "no" "$(_pub 'echo "gh issue create later"')"
+assert_equals "publish in a compound segment is detected" "yes" \
+    "$(_pub 'cd /tmp && gh issue create --body-file b.md')"
+
+# body-file extraction
+assert_equals "body-file path is captured" "/tmp/b.md" \
+    "$(gh_publish_body_files 'gh issue create --title t --body-file /tmp/b.md')"
+assert_equals "-F short form is captured" "/tmp/x.md" \
+    "$(gh_publish_body_files 'gh issue create -F /tmp/x.md')"
+assert_equals "quoted path is unquoted" "/tmp/b.md" \
+    "$(gh_publish_body_files 'gh issue create --body-file "/tmp/b.md"')"
+assert_equals "--body-file=path form is captured" "/tmp/e.md" \
+    "$(gh_publish_body_files 'gh issue create --body-file=/tmp/e.md')"
+assert_equals "inline --body yields no file (scanned via the command string)" "" \
+    "$(gh_publish_body_files 'gh pr comment 3 --body "hello world"')"
+assert_equals "non-publish yields nothing" "" \
+    "$(gh_publish_body_files 'gh issue list')"
+
 print_summary
 exit $?
