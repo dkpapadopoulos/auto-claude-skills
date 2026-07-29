@@ -46,6 +46,15 @@ and may require per-instance user approval for the evidence write.
 
 ## Step 2: Run locally (fallback — no `.verify.yml`)
 
+**BEFORE the first gate command**, record the commit under test (issue #181) — a suite can run for many minutes, and reading HEAD afterwards silently binds the verdict to any commit made meanwhile, i.e. to a tree no gate ever ran against:
+
+```bash
+git rev-parse HEAD 2>/dev/null || echo unknown                     # pre-gate sha — the commit actually measured
+git status --porcelain --untracked-files=no 2>/dev/null | head -1  # non-empty => worktree_dirty: true
+```
+
+Read both values out of this output when writing the verdict in Step 3 — Bash tool calls do NOT share shell state, so a variable set here is gone by then.
+
 Run each discovered command in the working tree. Capture each command's exit code and the last ~4 KB of combined stdout/stderr (replace newlines with the two-character sequence \n so the excerpt is valid inside JSON; truncate to ~4 KB). Substrate is the literal `local` in this version; a `.verify.yml` declaring any other `substrate` value is an ERROR — report it, do not silently run locally.
 
 After running the gates, capture the diff under verification and classify gate-gaming deterministically:
@@ -80,8 +89,9 @@ if [ -z "$TOKEN" ] && [ -f "$STL" ]; then
     command -v resolve_own_session_token >/dev/null 2>&1 && TOKEN="$(resolve_own_session_token)"
 fi
 [ -n "$TOKEN" ] || TOKEN="$(cat ~/.claude/.skill-session-token 2>/dev/null || echo default)"
-SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
-# write the JSON below to ~/.claude/.skill-project-verified-${TOKEN} (include "sha": "$SHA")
+git rev-parse HEAD 2>/dev/null || echo unknown   # post-gate sha — compare with the pre-gate one from Step 2
+# write the JSON below to ~/.claude/.skill-project-verified-${TOKEN}, using the
+# PRE-gate sha from Step 2 as "sha" (NOT this one)
 ```
 
 Print the resolved `${TOKEN}` alongside the artifact path — a scattered write is then visible in-session instead of surfacing later as an unexplained push deny.
@@ -94,7 +104,8 @@ Print the resolved `${TOKEN}` alongside the artifact path — a scattered write 
   "failed": [],
   "could_not_verify": ["types"],
   "gate_gaming_status": "clean",
-  "sha": "<git rev-parse HEAD — the commit this verdict covers>",
+  "worktree_dirty": false,
+  "sha": "<PRE-gate sha from Step 2 — the commit the gate actually ran against>",
   "command": "ruff check . && pyright && uv run pytest -m \"not slow\"",
   "output_excerpt": "pyright: command not found …",
   "ts": "<UTC ISO-8601>"
@@ -103,7 +114,11 @@ Print the resolved `${TOKEN}` alongside the artifact path — a scattered write 
 
 The example above is a **field-shape illustration**, not an accepted-evidence sample: because its `could_not_verify` is non-empty (the `types` gate could not run), `deploy-gate` correctly does **not** accept it as local verification of record. A fully-accepted evidence file has `failed` and `could_not_verify` both empty and `gate_gaming_status: "clean"`.
 
-`sha` records the HEAD commit the verdict was produced against (`git rev-parse HEAD`); the push gate honors a verdict only when this `sha` covers the pushed HEAD (equal, or an ancestor on the branch), so a stale or cross-branch verdict is ignored rather than causing a false block.
+`sha` records the HEAD the gate actually **ran against** — the pre-gate value captured in Step 2, never a post-run `git rev-parse HEAD`; the push gate honors a verdict only when this `sha` covers the pushed HEAD (equal, or an ancestor on the branch), so a stale or cross-branch verdict is ignored rather than causing a false block.
+
+**Limit:** if a repo's declared gate itself commits (auto-format-and-commit, a release check that runs `npm version`), every run straddles by construction and the verdict is permanently unclean — honest, since such a gate never measures one tree, but it means `deploy-gate` and routing-governance will not accept local evidence there. Split the committing step out of the declared gate.
+
+If the pre- and post-gate shas **differ**, a commit landed while the gate ran: the verdict covers no single commit, so keep the pre-gate `sha` AND add `"gate-run-straddled-commit"` to `could_not_verify` (issue #181). Never pick the post-gate sha — it names a tree nothing was measured against, and the gate's ancestor acceptance would treat it as covered. Also record `"worktree_dirty": true|false` from Step 2; it is advisory only (verifying uncommitted work and committing after is a supported workflow) and must NOT be added to `could_not_verify`.
 
 `passed`/`failed` are the command *names*. A command that could not execute (missing tool, runner error — distinct from a test failure) goes in `could_not_verify`, never silently omitted. `gate_gaming_status` is one of `clean` | `suspect` | `unverified` (the check could not run); if `suspect`, the verdict is SUSPECT, not PASS; if `unverified`, the gate-gaming check is also added to `could_not_verify`. The field is always written — `deploy-gate` accepts local evidence only when it is exactly `clean`. Then print a short human summary table (name, command, PASS/FAIL, excerpt) so the result is visible in-session. This evidence is advisory; `deploy-gate` may read it as local verification of record when hosted CI is absent.
 
