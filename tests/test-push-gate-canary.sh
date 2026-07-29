@@ -73,6 +73,18 @@ else
 fi
 rm -rf "$NOJQ_BIN"
 
+# (e) Missing publish-guard.sh (#174 leak gate) => canary names it.
+rm -f "${_TROOT}/hooks/publish-guard.sh"
+out="$(_run_hook)"
+assert_contains "missing publish-guard.sh trips the canary" "publish-guard.sh (missing)" "${out:-<empty>}"
+cp "${PROJECT_ROOT}/hooks/publish-guard.sh" "${_TROOT}/hooks/publish-guard.sh"
+
+# (f) Unparseable publish-guard.sh => canary names it.
+printf 'if [ \n' > "${_TROOT}/hooks/publish-guard.sh"
+out="$(_run_hook)"
+assert_contains "unparseable publish-guard.sh trips the canary" "publish-guard.sh (unparseable)" "${out:-<empty>}"
+cp "${PROJECT_ROOT}/hooks/publish-guard.sh" "${_TROOT}/hooks/publish-guard.sh"
+
 rm -rf "${_TROOT}"
 export HOME="$_OLDHOME"
 print_summary
