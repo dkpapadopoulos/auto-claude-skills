@@ -406,7 +406,7 @@ gh_publish_body_files() {
     # word-splits, so `--body "two words"` arrives as `"two` / `words"` and any
     # reconstruction under-detects — a bypass. The hook instead scans the WHOLE
     # command string, which covers inline bodies conservatively.
-    local _segs _oldifs _seg _out _p _w1 _w2 _t
+    local _segs _oldifs _seg _out _p _w1 _w2 _t _opener_count _i
     _out=""
     _segs="$(_gc_split_segments "$1")"
     _oldifs="$IFS"
@@ -416,15 +416,17 @@ gh_publish_body_files() {
         # shellcheck disable=SC2086
         set -- ${_seg}
         # Unwrap leading group openers (see _gc_segment_git_sub).
+        # Count how many openers we consume — this bounds the later closer strip.
+        _opener_count=0
         while [ "$#" -gt 0 ]; do
             case "$1" in
-                '('|'{') shift ;;
+                '('|'{') _opener_count=$((_opener_count+1)); shift ;;
                 '('*|'{'*)
                     _t="$1"
                     while :; do
                         case "${_t}" in
-                            '('*) _t="${_t#\(}" ;;
-                            '{'*) _t="${_t#\{}" ;;
+                            '('*) _opener_count=$((_opener_count+1)); _t="${_t#\(}" ;;
+                            '{'*) _opener_count=$((_opener_count+1)); _t="${_t#\{}" ;;
                             *) break ;;
                         esac
                     done
@@ -478,10 +480,17 @@ gh_publish_body_files() {
             esac
             if [ -n "${_p}" ]; then
                 # Strip trailing group closers (from paren-wrapped commands).
-                while :; do
+                # Strip AT MOST _opener_count closers, to avoid corrupting
+                # legitimate paths like /tmp/report(v2) or /tmp/set{a}.
+                _i=0
+                while [ "${_i}" -lt "${_opener_count}" ]; do
                     case "${_p}" in
-                        *')') _p="${_p%\)}" ;;
-                        *'}') _p="${_p%\}}" ;;
+                        *')')
+                            _p="${_p%\)}"
+                            _i=$((_i+1)) ;;
+                        *'}')
+                            _p="${_p%\}}"
+                            _i=$((_i+1)) ;;
                         *) break ;;
                     esac
                 done

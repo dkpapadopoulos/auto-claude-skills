@@ -105,5 +105,18 @@ assert_equals "paren-wrapped gh issue list NOT a publish" "no" \
 assert_equals "gh --repo before pr merge NOT a publish" "no" \
     "$(_pub 'gh --repo owner/repo pr merge 3 --squash')"
 
+# --- Important: trailing-closer strip must be opener-counted ---
+# Paths can legitimately end in ) or }; strip only consumed openers' closers
+assert_equals "path with paren preserved (no wrap)" "/tmp/report(v2)" \
+    "$(gh_publish_body_files 'gh issue create --body-file /tmp/report(v2)')"
+assert_equals "path with brace preserved (no wrap)" "/tmp/set{a}" \
+    "$(gh_publish_body_files 'gh issue create --body-file /tmp/set{a}')"
+assert_equals "paren-wrapped path: one opener consumed, one closer stripped" "/tmp/b.md" \
+    "$(gh_publish_body_files '(gh issue create --body-file /tmp/b.md)')"
+assert_equals "double-paren-wrapped path: two openers, two closers stripped" "/tmp/b.md" \
+    "$(gh_publish_body_files '((gh issue create --body-file /tmp/b.md))')"
+assert_equals "wrapped path with paren in name: one opener, one closer stripped" "/tmp/report(v2)" \
+    "$(gh_publish_body_files '(gh issue create --body-file /tmp/report(v2))')"
+
 print_summary
 exit $?
