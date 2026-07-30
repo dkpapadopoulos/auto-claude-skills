@@ -302,3 +302,336 @@ command_git_mutate_before_push() {
     IFS="${_gc_oldifs}"
     return 1
 }
+
+# --- gh publication predicates (issue #174) ---------------------------------
+# A publication is any gh subcommand that writes prose to the tracker:
+#   gh issue create|comment|edit, gh pr create|comment|edit.
+# `gh pr merge` is deliberately excluded — it publishes no body, and it is
+# already covered by the push gate's outbound legs.
+#
+# PAIRED: both functions iterate _gc_split_segments output with
+# IFS="${_GC_SEP}". Newline-splitting is wrong here — a quoted --body
+# legitimately contains newlines (issue #155).
+_gc_publish_verb() {
+    # $1=noun $2=verb -> 0 when this pair publishes a body
+    case "$1" in
+        issue|pr) ;;
+        *) return 1 ;;
+    esac
+    case "$2" in
+        create|comment|edit) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# _gc_api_publish_endpoint <rest-path>
+#   0 when <rest-path> (the first non-flag arg after `gh api`) is an
+#   issue/PR-body write surface: issue creation/edit, issue or PR comments,
+#   PR creation. `pulls/*/merge` is excluded FIRST (case tests top-down) —
+#   it publishes no body and is already command_invokes_gh_merge's territory;
+#   without the exclusion the broader `*/pulls/*` pattern below would also
+#   match it.
+_gc_api_publish_endpoint() {
+    case "$1" in
+        */pulls/*/merge) return 1 ;;
+        */issues|*/issues/*|*/pulls|*/pulls/*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# _gc_api_is_write <method> <has-fields 0|1>
+#   0 when the `gh api` call actually sends a body: an explicit
+#   --method/-X of POST or PATCH, OR no explicit method but at least one
+#   -f/-F/--field/--raw-field/--input (gh's own default-to-POST-when-fields
+#   rule). A bare read (`gh api repos/o/r/issues`, no method, no fields)
+#   sends nothing and is deliberately NOT a write — same
+#   over-gating-breeds-evasion discipline as command_invokes_gh_merge's
+#   bare-merge-status-read exclusion.
+_gc_api_is_write() {
+    local _m
+    _m="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
+    case "${_m}" in
+        POST|PATCH) return 0 ;;
+    esac
+    [ -z "$1" ] && [ "$2" = "1" ] && return 0
+    return 1
+}
+
+command_invokes_gh_publish() {
+    local _segs _oldifs _seg _w1 _w2 _t _api_method _api_has_fields
+    _segs="$(_gc_split_segments "$1")"
+    _oldifs="$IFS"
+    IFS="${_GC_SEP}"
+    for _seg in ${_segs}; do
+        IFS="${_oldifs}"
+        # shellcheck disable=SC2086
+        set -- ${_seg}
+        # Unwrap leading group openers (see _gc_segment_git_sub).
+        # PAIRED: command_invokes_gh_merge carries a structural copy of this
+        # unwrap — update both.
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                '('|'{') shift ;;
+                '('*|'{'*)
+                    _t="$1"
+                    while :; do
+                        case "${_t}" in
+                            '('*) _t="${_t#\(}" ;;
+                            '{'*) _t="${_t#\{}" ;;
+                            *) break ;;
+                        esac
+                    done
+                    shift
+                    set -- "${_t}" "$@"
+                    break ;;
+                *) break ;;
+            esac
+        done
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                env) shift ;;
+                [A-Za-z_]*=*) shift ;;
+                *) break ;;
+            esac
+        done
+        if [ "$#" -gt 0 ]; then
+            case "$1" in
+                gh|*/gh)
+                    shift
+                    # Collect the first two non-flag words, skipping
+                    # value-taking global flags in any position. `gh api`'s
+                    # --method/-X and field flags (-f/-F/--field/--raw-field/
+                    # --input) are recognized here too — as plain "-*"
+                    # catch-alls they would each swallow only ONE token,
+                    # leaving the flag's value to be mis-collected as _w2
+                    # in place of the real REST endpoint when they precede it
+                    # (e.g. `gh api --method POST repos/o/r/issues/1/comments`).
+                    # PAIRED: publish-w1w2-collector — gh_publish_body_files
+                    # carries the same skip list under this anchor
+                    # (`grep -n publish-w1w2-collector`).
+                    _w1=""; _w2=""; _api_method=""; _api_has_fields=0
+                    while [ "$#" -gt 0 ]; do
+                        case "$1" in
+                            -R|--repo|--hostname)
+                                if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                            --method|-X)
+                                _api_method="${2:-}"
+                                if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                            --method=*)
+                                _api_method="${1#--method=}"; shift ;;
+                            -f|-F|--field|--raw-field|--input)
+                                _api_has_fields=1
+                                if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                            -*) shift ;;
+                            *)
+                                # Strip trailing group closers.
+                                _t="$1"
+                                while :; do
+                                    case "${_t}" in
+                                        *')') _t="${_t%\)}" ;;
+                                        *'}') _t="${_t%\}}" ;;
+                                        *) break ;;
+                                    esac
+                                done
+                                if [ -z "${_w1}" ]; then _w1="${_t}"
+                                elif [ -z "${_w2}" ]; then _w2="${_t}"; break
+                                fi
+                                shift ;;
+                        esac
+                    done
+                    if _gc_publish_verb "${_w1}" "${_w2}"; then
+                        IFS="${_oldifs}"; return 0
+                    fi
+                    if [ "${_w1}" = "api" ] && [ -n "${_w2}" ]; then
+                        # The collection loop above breaks the instant _w2 is
+                        # set, WITHOUT shifting it off — so $1 here is still
+                        # the endpoint itself. Drop it, then scan whatever
+                        # follows for --method/-X/field flags that came AFTER
+                        # the endpoint (the common
+                        # `gh api <path> -f body=...` shape).
+                        shift
+                        while [ "$#" -gt 0 ]; do
+                            case "$1" in
+                                --method|-X)
+                                    _api_method="${2:-}"
+                                    if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                                --method=*)
+                                    _api_method="${1#--method=}"; shift ;;
+                                -f|-F|--field|--raw-field|--input)
+                                    _api_has_fields=1
+                                    if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                                *) shift ;;
+                            esac
+                        done
+                        if _gc_api_publish_endpoint "${_w2}" \
+                            && _gc_api_is_write "${_api_method}" "${_api_has_fields}"; then
+                            IFS="${_oldifs}"; return 0
+                        fi
+                    fi ;;
+            esac
+        fi
+        IFS="${_GC_SEP}"
+    done
+    IFS="${_oldifs}"
+    return 1
+}
+
+gh_publish_body_files() {
+    # Prints one --body-file/-F path per line (surrounding quotes stripped).
+    # Inline --body text is deliberately NOT parsed here: `set -- ${_seg}`
+    # word-splits, so `--body "two words"` arrives as `"two` / `words"` and any
+    # reconstruction under-detects — a bypass. The hook instead scans the WHOLE
+    # command string, which covers inline bodies conservatively.
+    local _segs _oldifs _seg _out _p _w1 _w2 _t _opener_count _i
+    _out=""
+    _segs="$(_gc_split_segments "$1")"
+    _oldifs="$IFS"
+    IFS="${_GC_SEP}"
+    for _seg in ${_segs}; do
+        IFS="${_oldifs}"
+        # shellcheck disable=SC2086
+        set -- ${_seg}
+        # Unwrap leading group openers (see _gc_segment_git_sub).
+        # Count how many openers we consume — this bounds the later closer strip.
+        _opener_count=0
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                '('|'{') _opener_count=$((_opener_count+1)); shift ;;
+                '('*|'{'*)
+                    _t="$1"
+                    while :; do
+                        case "${_t}" in
+                            '('*) _opener_count=$((_opener_count+1)); _t="${_t#\(}" ;;
+                            '{'*) _opener_count=$((_opener_count+1)); _t="${_t#\{}" ;;
+                            *) break ;;
+                        esac
+                    done
+                    shift
+                    set -- "${_t}" "$@"
+                    break ;;
+                *) break ;;
+            esac
+        done
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                env) shift ;;
+                [A-Za-z_]*=*) shift ;;
+                *) break ;;
+            esac
+        done
+        case "${1:-}" in gh|*/gh) ;; *) IFS="${_GC_SEP}"; continue ;; esac
+        shift
+        # Collect the first two non-flag words, skipping value-taking global flags.
+        _w1=""; _w2=""
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                -R|--repo|--hostname)
+                    if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                # PAIRED: publish-w1w2-collector — keep this skip list in sync
+                # with the identically-anchored collector in
+                # command_invokes_gh_publish (`grep -n publish-w1w2-collector`).
+                # Without it, a value-taking `gh api` flag appearing BEFORE the
+                # endpoint (e.g. `gh api -X POST repos/o/r/issues --input f`)
+                # is swallowed as a plain "-*" and its VALUE ("POST") is
+                # mis-collected as _w2 in place of the real endpoint, so the
+                # api branch below never finds the endpoint and never
+                # resolves the payload path (issue #174 round).
+                --method|-X|-f|-F|--field|--raw-field|--input)
+                    if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                --method=*) shift ;;
+                -*) shift ;;
+                *)
+                    # Strip trailing group closers.
+                    _t="$1"
+                    while :; do
+                        case "${_t}" in
+                            *')') _t="${_t%\)}" ;;
+                            *'}') _t="${_t%\}}" ;;
+                            *) break ;;
+                        esac
+                    done
+                    if [ -z "${_w1}" ]; then _w1="${_t}"
+                    elif [ -z "${_w2}" ]; then _w2="${_t}"; break
+                    fi
+                    shift ;;
+            esac
+        done
+        if ! _gc_publish_verb "${_w1}" "${_w2}"; then
+            # gh api: `--input <path>` and `-f|-F|--field|--raw-field name=@<path>`
+            # carry the body in a FILE gh reads directly, same as --body-file
+            # for issue/pr (issue #174 round: this branch used to `continue`
+            # for every `api` verb, so those paths were never scanned or
+            # announced). command_invokes_gh_publish already gated this
+            # segment as a write to an issue/pr endpoint before this function
+            # runs, so this only widens WHICH file gets scanned, not WHETHER.
+            if [ "${_w1}" = "api" ] && _gc_api_publish_endpoint "${_w2}"; then
+                shift  # endpoint token is still unshifted here (see command_invokes_gh_publish)
+                while [ "$#" -gt 0 ]; do
+                    _p=""
+                    case "$1" in
+                        --method|-X)
+                            if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                        --method=*) shift ;;
+                        --input)
+                            _p="${2:-}"
+                            if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                        --input=*) _p="${1#--input=}"; shift ;;
+                        -f|-F|--field|--raw-field)
+                            case "${2:-}" in *=@*) _p="${2#*=@}" ;; esac
+                            if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                        *) shift ;;
+                    esac
+                    if [ -n "${_p}" ]; then
+                        _i=0
+                        while [ "${_i}" -lt "${_opener_count}" ]; do
+                            case "${_p}" in
+                                *')') _p="${_p%\)}"; _i=$((_i+1)) ;;
+                                *'}') _p="${_p%\}}"; _i=$((_i+1)) ;;
+                                *) break ;;
+                            esac
+                        done
+                        _p="${_p%\"}"; _p="${_p#\"}"; _p="${_p%\'}"; _p="${_p#\'}"
+                        _out="${_out}${_p}
+"
+                    fi
+                done
+            fi
+            IFS="${_GC_SEP}"; continue
+        fi
+        while [ "$#" -gt 0 ]; do
+            _p=""
+            case "$1" in
+                --body-file|-F)
+                    _p="${2:-}"
+                    if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                --body-file=*)  _p="${1#--body-file=}"; shift ;;
+                *) shift ;;
+            esac
+            if [ -n "${_p}" ]; then
+                # Strip trailing group closers (from paren-wrapped commands).
+                # Strip AT MOST _opener_count closers, to avoid corrupting
+                # legitimate paths like /tmp/report(v2) or /tmp/set{a}.
+                _i=0
+                while [ "${_i}" -lt "${_opener_count}" ]; do
+                    case "${_p}" in
+                        *')')
+                            _p="${_p%\)}"
+                            _i=$((_i+1)) ;;
+                        *'}')
+                            _p="${_p%\}}"
+                            _i=$((_i+1)) ;;
+                        *) break ;;
+                    esac
+                done
+                # Strip surrounding quotes.
+                _p="${_p%\"}"; _p="${_p#\"}"; _p="${_p%\'}"; _p="${_p#\'}"
+                _out="${_out}${_p}
+"
+            fi
+        done
+        IFS="${_GC_SEP}"
+    done
+    IFS="${_oldifs}"
+    [ -n "${_out}" ] && printf '%s' "${_out}"
+    return 0
+}

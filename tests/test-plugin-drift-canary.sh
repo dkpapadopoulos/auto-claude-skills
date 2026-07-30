@@ -62,6 +62,18 @@ assert_contains "gate-file drift => canary emitted"  "PLUGIN DRIFT CANARY" "${ou
 assert_contains "canary names the drifted file"      "verdict.sh" "${out:-<empty>}"
 cp "${PROJECT_ROOT}/hooks/lib/verdict.sh" "${_SRC}/hooks/lib/verdict.sh"
 
+# (d-bis) same version, publish-guard.sh (#174 leak gate) drifted in source =>
+# canary names it. Mirrors case (d) — same cksum-manifest mechanism, applied
+# to the drift file list's directly-named entry rather than a
+# _GATE_ENFORCE_LIBS member. Run BEFORE case (f), which removes _TROOT's
+# manifest and never restores it — the drift block short-circuits silently
+# without a manifest, so this case would false-pass-as-silent placed after.
+printf '\n# drift\n' >> "${_SRC}/hooks/publish-guard.sh"
+out="$(_run_hook "${_SRC}")"
+assert_contains "publish-guard.sh drift => canary emitted" "PLUGIN DRIFT CANARY" "${out:-<empty>}"
+assert_contains "canary names the drifted publish-guard.sh" "publish-guard.sh" "${out:-<empty>}"
+cp "${PROJECT_ROOT}/hooks/publish-guard.sh" "${_SRC}/hooks/publish-guard.sh"
+
 # (e) different plugin name in cwd manifest => not OUR source repo => silent.
 printf '{"name":"some-other-plugin","version":"9.9.9"}\n' \
     > "${_SRC}/.claude-plugin/plugin.json"
