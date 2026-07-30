@@ -406,6 +406,9 @@ command_invokes_gh_publish() {
                     # leaving the flag's value to be mis-collected as _w2
                     # in place of the real REST endpoint when they precede it
                     # (e.g. `gh api --method POST repos/o/r/issues/1/comments`).
+                    # PAIRED: publish-w1w2-collector — gh_publish_body_files
+                    # carries the same skip list under this anchor
+                    # (`grep -n publish-w1w2-collector`).
                     _w1=""; _w2=""; _api_method=""; _api_has_fields=0
                     while [ "$#" -gt 0 ]; do
                         case "$1" in
@@ -524,8 +527,9 @@ gh_publish_body_files() {
             case "$1" in
                 -R|--repo|--hostname)
                     if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
-                # PAIRED: keep this skip list in sync with
-                # command_invokes_gh_publish's own w1/w2 collector (~line 410).
+                # PAIRED: publish-w1w2-collector — keep this skip list in sync
+                # with the identically-anchored collector in
+                # command_invokes_gh_publish (`grep -n publish-w1w2-collector`).
                 # Without it, a value-taking `gh api` flag appearing BEFORE the
                 # endpoint (e.g. `gh api -X POST repos/o/r/issues --input f`)
                 # is swallowed as a plain "-*" and its VALUE ("POST") is

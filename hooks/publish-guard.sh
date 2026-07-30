@@ -64,6 +64,11 @@ fi
 # the engine's — a broken TMPDIR (etc.) would otherwise trip the blanket ERR
 # trap right here and exit silently, before the properly-announced `_TMP`
 # mktemp guard a few lines down ever runs (issue #174 round, M4).
+# `2>&1 >/dev/null` is stderr-only capture, and the order is deliberate: the
+# engine writes its diagnostics (the "no memory corpus" notice this case
+# matches) to >&2, while stdout carries LEAK findings we do not want here.
+# Reversing to `>/dev/null 2>&1` would discard both and the probe would never
+# match — do not "tidy" it.
 _MEMPROBE="$(/bin/bash "${_ENGINE}" /dev/null 2>&1 >/dev/null)" || _MEMPROBE=""
 case "${_MEMPROBE}" in
     *"no memory corpus"*)
