@@ -32,10 +32,23 @@ if ! command -v jq >/dev/null 2>&1; then
     exit 0
 fi
 
-_COMMAND="$(printf '%s' "${_INPUT}" | jq -r '.tool_input.command // ""' 2>/dev/null)" || exit 0
+# jq availability is confirmed above, so reaching this `||` means jq ERRORED —
+# that is an inability to check and must announce like every sibling path,
+# not exit silently (the input still matched `*gh*`).
+_COMMAND="$(printf '%s' "${_INPUT}" | jq -r '.tool_input.command // ""' 2>/dev/null)" \
+    || { _announce "hook input unparseable"; exit 0; }
 case "${_COMMAND}" in *gh*) ;; *) exit 0 ;; esac
 
-_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+# Split, not a `${VAR:-$(...)}` default: the command substitution runs INSIDE
+# the assignment, so a failing `cd` makes the whole assignment return non-zero
+# and the blanket `trap 'exit 0' ERR` fires HERE — before any of the three
+# announce paths below exist. Same hazard the `|| _MEMPROBE=""` guard covers
+# at the corpus probe; this was its one unguarded sibling. An empty _ROOT
+# falls through to the announced `[ ! -f ]` check immediately below.
+_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
+if [ -z "${_ROOT}" ]; then
+    _ROOT="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)" || _ROOT=""
+fi
 if [ ! -f "${_ROOT}/hooks/lib/git-command.sh" ]; then
     _announce "git-command.sh unavailable"
     exit 0
@@ -95,8 +108,17 @@ _check() {  # _check <file> <label>
     _out="$(/bin/bash "${_ENGINE}" "$1" 2>/dev/null)"
     _rc=$?
     case "${_rc}" in
-        1) _FINDINGS="${_FINDINGS}${_FINDINGS:+
-}${_out}" ;;
+        # rc=1 means "leak found" AND is what bash returns for a fatal engine
+        # error (e.g. an unbound variable under `set -u`). With empty stdout
+        # there is nothing to put in _FINDINGS, so the deny below would never
+        # fire and the whole thing would collapse to a silent allow. Treat a
+        # detail-less finding as inability to check, which is announced.
+        1) if [ -n "${_out}" ]; then
+               _FINDINGS="${_FINDINGS}${_FINDINGS:+
+}${_out}"
+           else
+               _UNCHECKED="${_UNCHECKED}${_UNCHECKED:+; }$2 engine reported a finding with no detail"
+           fi ;;
         0) : ;;
         *) _UNCHECKED="${_UNCHECKED}${_UNCHECKED:+; }$2 engine exit ${_rc}" ;;
     esac
@@ -133,12 +155,39 @@ if [ "${_N}" -eq 0 ]; then
     esac
 fi
 
+# Shell-expansion backstop. The whole-command scan at step 1 only ever sees
+# LITERAL text, so `--body "$(cat leaky.md)"` presents no private words at
+# scan time and carries no body-file token — pre-fix that was a COMPLETE,
+# SILENT bypass, and it is in-repo idiom rather than an exotic shape
+# (improvement-miner/SKILL.md itself uses `--title "$(cat ...)"`).
+# Deliberately OUTSIDE the `_N -eq 0` branch above: a command may resolve one
+# --body-file AND carry a second, expanded --body, and that second body is
+# just as unchecked. Announce-only — the expansion is not evidence of a leak,
+# just evidence we could not look.
+# `*'$'[A-Za-z_]*` covers a BARE `$BODY` — the brace-less form is the common
+# one and `*'${'*` alone misses it. A literal `$` not followed by an
+# identifier character (prices, `$1` in quoted prose) does NOT match, so
+# ordinary bodies stay silent.
+case "${_COMMAND}" in
+    *'$('*|*'`'*|*'${'*|*'<('*|*'$'[A-Za-z_]*)
+        _UNCHECKED="${_UNCHECKED}${_UNCHECKED:+; }body may be shell-expanded at run time — its text was not visible to the gate" ;;
+esac
+
 if [ -n "${_FINDINGS}" ]; then
     _MSG="PUBLICATION BLOCKED (#174): this publication reproduces private local-memory text verbatim, and the tracker is public.
 
 ${_FINDINGS}
 
 Cite the evidence as memory/<file>.md:<line> instead of quoting it. The citation is auditable by anyone holding the corpus, and publishes no private text."
+    # A deny must not swallow a co-occurring inability-to-check: otherwise the
+    # author fixes the flagged body, re-runs, and only THEN discovers a second
+    # body was never checked at all. Folded into the same message to keep the
+    # one-JSON-object contract.
+    if [ -n "${_UNCHECKED}" ]; then
+        _MSG="${_MSG}
+
+Additionally, part of this command could not be checked (${_UNCHECKED}) — fixing the block above does not mean the rest was scanned."
+    fi
     jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
     exit 0
 fi

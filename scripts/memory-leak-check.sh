@@ -67,11 +67,32 @@ trap 'rm -rf "${TMP}"' EXIT
 
 set -- "${MEMDIR}"/*.md
 [ -e "$1" ] || { echo "NOTE: no memory corpus files in '${MEMDIR}' — nothing to leak" >&2; exit 0; }
+
+# A directory (or anything awk cannot read) passes the -r test above, and an
+# awk read failure is invisible downstream, so it would surface as a CLEAN
+# result on a body that was never compared. Checked HERE rather than beside
+# the -r test because publish-guard.sh probes corpus presence by running this
+# engine against /dev/null — a character device, not a regular file — and that
+# probe must still reach the corpus notices above.
+[ -f "${BODY}" ] || { echo "ERROR: body is not a regular file: ${BODY}" >&2; exit 3; }
+# PIPESTATUS[0], not $?: both pipelines end in `sort`, so the pipeline's own
+# status is sort's and a read failure in the leading awk is DISCARDED. That
+# yields an empty shingle set, which is indistinguishable from "no shingles",
+# so the `[ -s hits ] || exit 0` below returns CLEAN on a body that was never
+# actually compared. An unreadable corpus file (restrictive mode, dangling
+# symlink, removed between the glob and the read) is ordinary, so this is a
+# reachable silent-clean, not a theoretical one. Cannot-check is exit 3.
 shingle_files "$@" | awk -F'\t' '{ n = split($1, p, "/"); print $3 "\t" p[n] "\t" $2 }' \
     | sort -t"$(printf '\t')" -k1,1 > "${TMP}/mem"
+_mem_rc=${PIPESTATUS[0]}
+[ "${_mem_rc}" -eq 0 ] || {
+    echo "ERROR: corpus shingling failed (exit ${_mem_rc}) — cannot check" >&2; exit 3; }
 
 shingle_files "${BODY}" | awk -F'\t' '{ print $3 "\t" $2 }' \
     | sort -t"$(printf '\t')" -k1,1 > "${TMP}/body"
+_body_rc=${PIPESTATUS[0]}
+[ "${_body_rc}" -eq 0 ] || {
+    echo "ERROR: body shingling failed (exit ${_body_rc}) — cannot check" >&2; exit 3; }
 
 # candidate hits: <shingle>\t<body-line>\t<mem-file>\t<mem-line>
 join -t"$(printf '\t')" -1 1 -2 1 -o 0,1.2,2.2,2.3 "${TMP}/body" "${TMP}/mem" \
@@ -86,6 +107,14 @@ join -t"$(printf '\t')" -1 1 -2 1 -o 0,1.2,2.2,2.3 "${TMP}/body" "${TMP}/mem" \
 # round: without it, `git ls-files -z` is scoped to the current directory, so
 # running from a subdirectory shrinks the exemption to that subtree and a
 # publication restating tracked content elsewhere in the repo false-blocks).
+# NEVER truncate a partially built exemption. The previous `|| : > repo` did
+# exactly that: one unreadable tracked path (an ordinary mid-development
+# `rm` of a tracked file, or a sparse checkout) made awk fail, wiped the
+# exemption, and `[ -s repo ]` below then skipped the exemption entirely so
+# EVERY candidate was emitted as a leak — a false DENY asserting a leak that
+# does not exist, indistinguishable from a true positive. An exemption that
+# cannot be built completely means we cannot classify: exit 3, not "deny".
+: > "${TMP}/repo"
 git ls-files -z -- :/ 2>/dev/null \
     | xargs -0 awk '
         function flush() { if (buf != "") print buf; buf = "" }
@@ -93,7 +122,12 @@ git ls-files -z -- :/ 2>/dev/null \
         { gsub(/[^a-zA-Z0-9]/, " "); $0 = tolower($0)
           for (i = 1; i <= NF; i++) buf = buf (buf == "" ? "" : " ") $i }
         END { flush() }
-      ' 2>/dev/null > "${TMP}/repo" || : > "${TMP}/repo"
+      ' 2>/dev/null >> "${TMP}/repo"
+_repo_rc=${PIPESTATUS[1]}
+if [ "${_repo_rc}" -ne 0 ] || [ ! -s "${TMP}/repo" ]; then
+    echo "ERROR: public-content exemption incomplete (exit ${_repo_rc}) — cannot classify" >&2
+    exit 3
+fi
 
 # Overlapping shingles from one passage all resolve to the same (body line,
 # source line) pair — a single 20-word run yields 5 hits. Dedupe so the report
