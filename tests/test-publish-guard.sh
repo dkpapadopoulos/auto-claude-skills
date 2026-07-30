@@ -250,6 +250,79 @@ out="$( jq -n --arg c "gh issue create --title t --body-file ${WORK}/leaky.md" '
 assert_contains "corpus-probe mktemp failure announces instead of silently allowing" "could not check" "${out:-<empty>}"
 assert_not_contains "corpus-probe mktemp failure does not deny" '"deny"' "${out:-}"
 
+# --- S2: shell-expanded body is invisible to the gate ------------------------
+# The whole-command scan only ever sees LITERAL text. `--body "$(cat leaky)"`
+# presents no private words at scan time, and carries no body-file token, so
+# the structural backstop does not fire either => a silent allow of a real
+# leak. This is in-repo idiom, not a hypothetical: improvement-miner/SKILL.md
+# already instructs `--title "$(cat /tmp/mine-title.txt)"`.
+# The contract says inability-to-check must be ANNOUNCED, never silent.
+out="$(_run "gh issue create --title t --body \"\$(cat ${WORK}/leaky.md)\"")"
+assert_contains "command-substituted --body announces it could not be checked" "could not check" "${out:-<empty>}"
+
+out="$(_run 'gh issue create --title t --body "$BODY"')"
+assert_contains "variable-expanded --body announces it could not be checked" "could not check" "${out:-<empty>}"
+
+out="$(_run "gh issue comment 12 --body \"\`cat ${WORK}/leaky.md\`\"")"
+assert_contains "backtick-substituted --body announces it could not be checked" "could not check" "${out:-<empty>}"
+
+# Control: a fully literal body must NOT trip the expansion announcement,
+# or every ordinary publication would carry a spurious warning.
+out="$(_run "gh issue create --title t --body-file ${WORK}/clean.md")"
+assert_equals "literal clean body stays silent (no spurious expansion warning)" "" "${out:-}"
+
+# A resolved --body-file PLUS an expanded --body must still announce: the
+# expansion check must not sit behind the "zero files resolved" branch.
+out="$(_run "gh issue create --title t --body-file ${WORK}/clean.md --body \"\$(cat ${WORK}/leaky.md)\"")"
+assert_contains "expansion announced even when a body-file also resolved" "could not check" "${out:-<empty>}"
+
+# --- S4: unguarded _ROOT assignment silently exits before any announce -------
+# `_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"` returns
+# non-zero when the cd fails, which trips `trap 'exit 0' ERR` BEFORE any of the
+# three announce paths below it exist. Same hazard the `|| _MEMPROBE=""` guard
+# at the corpus probe was added for; this was its one unguarded sibling.
+out="$( jq -n --arg c "gh issue create --title t --body-file ${WORK}/leaky.md" '{"tool_input":{"command":$c}}' \
+        | ( cd "${REPO}" && MEMORY_LEAK_CHECK_MEMORY_DIR="${MEM}" \
+            env -u CLAUDE_PLUGIN_ROOT /bin/bash -c '. "$1"' /no/such/dir/publish-guard.sh "${GUARD}" 2>/dev/null ) )"
+assert_contains "unresolvable plugin root announces instead of silently allowing" "could not check" "${out:-<empty>}"
+
+# --- S5: unparseable hook input exits unannounced -----------------------------
+# Reaching the `||` on the jq extraction means jq ERRORED (its availability is
+# confirmed above), i.e. inability to check — which must announce like every
+# sibling path, not exit silently.
+out="$( printf '{"tool_input":{"command":"gh issue create --body-file /x/leaky.md"' \
+        | ( cd "${REPO}" && MEMORY_LEAK_CHECK_MEMORY_DIR="${MEM}" \
+            CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "${GUARD}" 2>/dev/null ) )"
+assert_contains "unparseable hook input announces instead of silently allowing" "could not check" "${out:-<empty>}"
+
+# --- S6: engine exit 1 with empty stdout collapses to a silent allow ---------
+# rc=1 is treated as leak-found, but if stdout is empty _FINDINGS stays empty
+# and nothing lands in _UNCHECKED either => silent allow. rc=1 is also what
+# bash returns for a fatal engine error, so it is not exclusively "leak".
+FAKEENGINE="${WORK}/fake-engine"
+mkdir -p "${FAKEENGINE}/scripts" "${FAKEENGINE}/hooks/lib"
+cp "${PROJECT_ROOT}/hooks/lib/git-command.sh" "${FAKEENGINE}/hooks/lib/"
+cat > "${FAKEENGINE}/scripts/memory-leak-check.sh" <<'SHIM'
+#!/bin/bash
+# Silent failure: exit 1 (the "leak" code) with no stdout at all.
+exit 1
+SHIM
+chmod +x "${FAKEENGINE}/scripts/memory-leak-check.sh"
+
+out="$( jq -n --arg c "gh issue create --title t --body-file ${WORK}/clean.md" '{"tool_input":{"command":$c}}' \
+        | ( cd "${REPO}" && MEMORY_LEAK_CHECK_MEMORY_DIR="${MEM}" \
+            CLAUDE_PLUGIN_ROOT="${FAKEENGINE}" /bin/bash "${GUARD}" 2>/dev/null ) )"
+assert_contains "engine rc=1 with no detail announces instead of silently allowing" "could not check" "${out:-<empty>}"
+
+# --- S10: a deny must not swallow a co-occurring cannot-check ----------------
+# Pre-fix the deny returned before the _UNCHECKED emit, so an author who fixed
+# the flagged body would re-run and only then learn a second body was never
+# scanned. Must stay ONE JSON object.
+out="$(_run "gh issue create --title t --body-file ${WORK}/leaky.md --body \"\$(cat ${WORK}/other.md)\"")"
+assert_contains "deny still fires when a cannot-check co-occurs" '"deny"' "${out:-<empty>}"
+assert_contains "deny also reports the co-occurring cannot-check" "could not be checked" "${out:-<empty>}"
+assert_equals "deny+cannot-check is still exactly one JSON object" "1" "$(printf '%s' "${out}" | jq -s 'length' 2>/dev/null)"
+
 rm -rf "${WORK}"
 print_summary
 exit $?

@@ -106,6 +106,70 @@ OUT3="$( cd "${REPO}/other" && MEMORY_LEAK_CHECK_MEMORY_DIR="${MEM}" \
 rc3=$?
 assert_equals "public run tracked in a subdirectory is not a leak, even from a sibling subtree" "0" "${rc3}"
 
+# --- S1: an unreadable corpus file must not report CLEAN ---------------------
+# Both shingling pipelines end in `sort`, so the pipeline's exit status is
+# sort's and awk's read failure is discarded. The shingle set comes out empty,
+# which is indistinguishable from "no shingles", so the engine falls through
+# `[ -s hits ] || exit 0` and returns 0 = CLEAN on a body that DOES leak.
+# Contract: inability to check is exit 3, never a clean 0.
+S1MEM="${WORK}/s1-memory"; mkdir -p "${S1MEM}"
+S1RUN="a private run that must never reach the public tracker under any circumstances whatsoever and stays local"
+printf 'name: s1\n---\n\n%s\n' "${S1RUN}" > "${S1MEM}/feedback_s1.md"
+printf '%s\n' "${S1RUN}" > "${WORK}/s1-body.md"
+
+# Control first: readable corpus => this body is a genuine leak (exit 1).
+( cd "${REPO}" && MEMORY_LEAK_CHECK_MEMORY_DIR="${S1MEM}" \
+  /bin/bash "${ENGINE}" "${WORK}/s1-body.md" >/dev/null 2>&1 )
+assert_equals "S1 control: readable corpus detects the leak" "1" "$?"
+
+chmod 000 "${S1MEM}/feedback_s1.md"
+( cd "${REPO}" && MEMORY_LEAK_CHECK_MEMORY_DIR="${S1MEM}" \
+  /bin/bash "${ENGINE}" "${WORK}/s1-body.md" >/dev/null 2>&1 )
+s1rc=$?
+chmod 644 "${S1MEM}/feedback_s1.md"
+assert_equals "unreadable corpus file reports cannot-check (3), not clean (0)" "3" "${s1rc}"
+
+# Body side: a --body-file naming a DIRECTORY passes `[ -r ]` but awk cannot
+# read it, so the same silent-clean applies.
+mkdir -p "${WORK}/s1-dir-body"
+( cd "${REPO}" && MEMORY_LEAK_CHECK_MEMORY_DIR="${S1MEM}" \
+  /bin/bash "${ENGINE}" "${WORK}/s1-dir-body" >/dev/null 2>&1 )
+assert_equals "a directory as body reports cannot-check (3), not clean (0)" "3" "$?"
+
+# --- S3: a partially unbuildable public exemption must not become a LEAK -----
+# `git ls-files -z | xargs -0 awk ... > repo || : > repo` TRUNCATES an already
+# built exemption when any tracked path is unreadable. `[ -s repo ]` is then
+# false, the exemption is skipped entirely, and every candidate is emitted as
+# a leak — a false DENY asserting a leak that does not exist.
+S3MEM="${WORK}/s3-memory"; mkdir -p "${S3MEM}"
+S3RUN="this sentence is public because it is committed to the repository and therefore cannot possibly be a private leak"
+printf 'name: s3\n---\n\n%s\n' "${S3RUN}" > "${S3MEM}/project_s3_public.md"
+printf '%s\n' "${S3RUN}" > "${WORK}/s3-body.md"
+( cd "${REPO}" && printf '%s\n' "${S3RUN}" > s3_public.md \
+  && printf 'filler\n' > s3_extra.md && git add s3_public.md s3_extra.md \
+  && git -c user.email=t@t -c user.name=t commit -q -m "add s3 public content" )
+
+# Control: clean worktree => text is public => exempt => clean (0).
+( cd "${REPO}" && MEMORY_LEAK_CHECK_MEMORY_DIR="${S3MEM}" \
+  /bin/bash "${ENGINE}" "${WORK}/s3-body.md" >/dev/null 2>&1 )
+assert_equals "S3 control: public text is exempt when the exemption builds" "0" "$?"
+
+# One tracked-but-deleted file (an ordinary mid-development state) makes awk
+# fail, which truncated the whole exemption pre-fix.
+rm -f "${REPO}/s3_extra.md"
+( cd "${REPO}" && MEMORY_LEAK_CHECK_MEMORY_DIR="${S3MEM}" \
+  /bin/bash "${ENGINE}" "${WORK}/s3-body.md" >/dev/null 2>&1 )
+s3rc=$?
+( cd "${REPO}" && git checkout -q -- s3_extra.md 2>/dev/null )
+# Acceptable outcomes: 0 (exemption still built, text public) or 3 (announced
+# cannot-check). 1 means it asserted a leak that does not exist.
+case "${s3rc}" in
+    1) s3verdict="FALSE-LEAK (rc=1)" ;;
+    0|3) s3verdict="not-a-leak" ;;
+    *) s3verdict="unexpected rc=${s3rc}" ;;
+esac
+assert_equals "a deleted tracked file must not turn public text into a LEAK" "not-a-leak" "${s3verdict}"
+
 rm -rf "${WORK}"
 print_summary
 exit $?
