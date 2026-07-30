@@ -542,6 +542,43 @@ gh_publish_body_files() {
             esac
         done
         if ! _gc_publish_verb "${_w1}" "${_w2}"; then
+            # gh api: `--input <path>` and `-f|-F|--field|--raw-field name=@<path>`
+            # carry the body in a FILE gh reads directly, same as --body-file
+            # for issue/pr (issue #174 round: this branch used to `continue`
+            # for every `api` verb, so those paths were never scanned or
+            # announced). command_invokes_gh_publish already gated this
+            # segment as a write to an issue/pr endpoint before this function
+            # runs, so this only widens WHICH file gets scanned, not WHETHER.
+            if [ "${_w1}" = "api" ] && _gc_api_publish_endpoint "${_w2}"; then
+                shift  # endpoint token is still unshifted here (see command_invokes_gh_publish)
+                while [ "$#" -gt 0 ]; do
+                    _p=""
+                    case "$1" in
+                        --method|-X)
+                            if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                        --method=*) shift ;;
+                        --input) _p="${2:-}"; shift 2 ;;
+                        --input=*) _p="${1#--input=}"; shift ;;
+                        -f|-F|--field|--raw-field)
+                            case "${2:-}" in *=@*) _p="${2#*=@}" ;; esac
+                            if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                        *) shift ;;
+                    esac
+                    if [ -n "${_p}" ]; then
+                        _i=0
+                        while [ "${_i}" -lt "${_opener_count}" ]; do
+                            case "${_p}" in
+                                *')') _p="${_p%\)}"; _i=$((_i+1)) ;;
+                                *'}') _p="${_p%\}}"; _i=$((_i+1)) ;;
+                                *) break ;;
+                            esac
+                        done
+                        _p="${_p%\"}"; _p="${_p#\"}"; _p="${_p%\'}"; _p="${_p#\'}"
+                        _out="${_out}${_p}
+"
+                    fi
+                done
+            fi
             IFS="${_GC_SEP}"; continue
         fi
         while [ "$#" -gt 0 ]; do

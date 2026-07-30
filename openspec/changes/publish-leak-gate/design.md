@@ -63,8 +63,14 @@ the established pattern (`Grep` has two).
 - Prefilter `case "$_COMMAND" in *gh*) ;; *) exit 0 ;; esac`.
 - Segment with `_gc_split_segments`, iterating with `IFS="${_GC_SEP}"` — the
   paired requirement for every caller of that splitter (#155).
-- Match `gh issue create|comment|edit` and `gh pr create|comment|edit`; extract
-  `--body-file`/`-F` and `--body`/`-b`.
+- Match `gh issue create|comment|edit`, `gh pr create|comment|edit`, and a
+  `gh api` POST/PATCH (or field-bearing, method-omitted) call against an
+  issue/PR endpoint (`*/pulls/*/merge` excluded — no body, already the push
+  gate's territory). Extract `--body-file`/`-F` (issue/pr) and
+  `--input`/`-f|-F|--field|--raw-field name=@<path>` (`gh api`) when they name a
+  FILE; an inline `--body`/`-b`/`-f name=value` is deliberately NOT parsed —
+  word-splitting a quoted value would under-detect — and is instead covered by
+  scanning the whole command string, which is strictly broader.
 - Flagged → `permissionDecision: deny`, naming the citation to use instead.
 
 ### Failure posture
@@ -78,8 +84,9 @@ The two failure directions are deliberately opposite:
   to act on. Both allow, and both say so — degradation is announced, matching the
   push-gate canary's posture rather than passing silently.
 
-Documented string-detection ceiling, identical to the push gate's: heredocs,
-`--body "$(cat f)"`, and `bash -c` indirection are not detected.
+Documented string-detection ceiling, identical to the push gate's:
+`--body "$(cat f)"` and `bash -c` indirection are not detected (heredocs ARE —
+the heredoc text is part of the command string the hook scans).
 
 ## Threshold: why 16
 
@@ -161,6 +168,12 @@ Revisit if a client-named slug is ever actually published.
   it fails silently when stale.
 - **CI enforcement.** Publication is a local act; a CI check would run after the
   fact.
+- **Outbound surfaces other than the gated `gh` verbs.** `gh pr review`,
+  `gh release`, `gh gist`, `gh api graphql` mutations, and every non-Bash
+  outbound channel (e.g. Jira/Confluence MCP writes) are not covered by this
+  gate. "Publication is a separate trust boundary from intake" describes the
+  boundary this gate enforces, not a general guarantee across all outbound
+  channels — the matcher is `Bash` only, over a specific verb/endpoint list.
 
 ## Acceptance Scenarios
 
@@ -214,10 +227,12 @@ Revisit if a client-named slug is ever actually published.
    from sessions that never load the miner — which is how #131 happened.
 3. **Separate hook, not a leg in `openspec-guard.sh`.** Single purpose,
    independently testable, and no risk to the push gate's fail-open trap.
-4. **Remediate all 8 flagged bodies**, including human-authored #131. A rule the
-   repo's own tracker violates is not a rule; and scoping remediation to the
-   miner would imply the policy is about the tool rather than the surface.
-   GitHub edit history preserves the originals — nothing is erased.
+4. **Remediate all 9 flagged bodies** (the original 8, plus #51, found in the
+   tracker-wide sweep and approved as an extension), including human-authored
+   #131. A rule the repo's own tracker violates is not a rule; and scoping
+   remediation to the miner would imply the policy is about the tool rather
+   than the surface. GitHub edit history preserves the originals — nothing is
+   erased.
 5. **`publish-guard.sh` joins the drift-canary manifest** as a parse-checked
    entry, on the same terms as `openspec-guard.sh`. It is a new enforcement
    surface; silent staleness is the failure mode the canary exists for.

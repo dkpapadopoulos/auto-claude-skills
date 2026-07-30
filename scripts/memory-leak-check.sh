@@ -82,7 +82,11 @@ join -t"$(printf '\t')" -1 1 -2 1 -o 0,1.2,2.2,2.3 "${TMP}/body" "${TMP}/mem" \
 # --- public exemption --------------------------------------------------------
 # Only built once a candidate exists, so the cost lands on the deny path.
 # One normalized line PER TRACKED FILE, so a grep -F match cannot span files.
-git ls-files -z 2>/dev/null \
+# `-- :/` pins the pathspec to the repo ROOT regardless of CWD (issue #174
+# round: without it, `git ls-files -z` is scoped to the current directory, so
+# running from a subdirectory shrinks the exemption to that subtree and a
+# publication restating tracked content elsewhere in the repo false-blocks).
+git ls-files -z -- :/ 2>/dev/null \
     | xargs -0 awk '
         function flush() { if (buf != "") print buf; buf = "" }
         FNR == 1 && NR > 1 { flush() }

@@ -154,5 +154,25 @@ assert_equals "gh api graphql mergePullRequest is NOT a publish" "no" \
 assert_equals "gh api issues read with no fields/method is NOT a publish (bare GET)" "no" \
     "$(_pub 'gh api repos/o/r/issues')"
 
+# --- gh api body-FILE extraction (issue #174 round: I1) ---------------------
+# --input <path> and -f/-F/--field/--raw-field name=@<path> carry the body in
+# a file gh reads directly, exactly like --body-file for issue/pr. Before this
+# fix, gh_publish_body_files emitted NOTHING for any `api` verb, so these
+# files were never scanned and never announced -- a silent unchecked publish.
+assert_equals "gh api --input path is captured" "/tmp/pg-body.md" \
+    "$(gh_publish_body_files 'gh api repos/o/r/issues --method POST --input /tmp/pg-body.md')"
+assert_equals "gh api -F name=@path is captured" "/tmp/pg-body.md" \
+    "$(gh_publish_body_files 'gh api repos/o/r/issues -X POST -F body=@/tmp/pg-body.md')"
+assert_equals "gh api -f name=@path is captured" "/tmp/pg-body.md" \
+    "$(gh_publish_body_files 'gh api repos/o/r/issues -f body=@/tmp/pg-body.md')"
+assert_equals "gh api --input=path form is captured" "/tmp/pg-body.md" \
+    "$(gh_publish_body_files 'gh api repos/o/r/issues --input=/tmp/pg-body.md')"
+assert_equals "gh api merge endpoint --input is NOT captured" "" \
+    "$(gh_publish_body_files 'gh api repos/o/r/pulls/3/merge --input /tmp/x.md')"
+assert_equals "gh api inline field value (no @) yields no file" "" \
+    "$(gh_publish_body_files 'gh api repos/o/r/issues -f body=inline')"
+assert_equals "gh api graphql -F name=@path is NOT captured (not an issue/pr endpoint)" "" \
+    "$(gh_publish_body_files 'gh api graphql -F query=@/tmp/q.gql')"
+
 print_summary
 exit $?

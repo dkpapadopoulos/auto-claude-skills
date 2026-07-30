@@ -5,8 +5,14 @@
 ### Requirement: Private memory text MUST NOT reach a published body
 
 A PreToolUse gate MUST evaluate every Bash command that invokes
-`gh issue create|comment|edit` or `gh pr create|comment|edit`, resolving the body
-from `--body-file`/`-F` or `--body`/`-b`.
+`gh issue create|comment|edit`, `gh pr create|comment|edit`, or a `gh api`
+POST/PATCH (or field-bearing, method-omitted) call against an issue/PR
+endpoint (`*/issues`, `*/issues/*`, `*/pulls`, `*/pulls/*`; `*/pulls/*/merge`
+is excluded — it publishes no body). The body is resolved from
+`--body-file`/`-F` (issue/pr) or `--input`/`-f|-F|--field|--raw-field
+name=@<path>` (`gh api`) when present as a FILE path, and otherwise from the
+whole command string, which conservatively covers any inline `--body`/`-b`/`-f`
+value without parsing it.
 
 The gate MUST emit `permissionDecision: deny` when the body contains a run of 16
 or more consecutive normalized words that appears in the local memory corpus and

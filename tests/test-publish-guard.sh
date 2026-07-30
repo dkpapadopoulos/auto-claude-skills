@@ -72,6 +72,19 @@ assert_equals "gh api pulls merge is not this hook's business" "" "${out:-}"
 out="$(_run 'gh api repos/o/r/issues')"
 assert_equals "gh api bare read (no fields/method) is untouched" "" "${out:-}"
 
+# gh api --input / -F name=@path: the body lives in a FILE gh reads directly,
+# not inline in the command string. Before this fix (issue #174 round, I1)
+# gh_publish_body_files emitted no path for ANY `api` verb, so these forms
+# passed with the body never read and nothing announced.
+out="$(_run "gh api repos/o/r/issues --method POST --input ${WORK}/leaky.md")"
+assert_contains "leaky gh api --input file is denied" '"deny"' "${out:-<empty>}"
+
+out="$(_run "gh api repos/o/r/issues -X POST -F body=@${WORK}/leaky.md")"
+assert_contains "leaky gh api -F name=@path is denied" '"deny"' "${out:-<empty>}"
+
+out="$(_run "gh api repos/o/r/issues --method POST --input ${WORK}/clean.md")"
+assert_equals "clean gh api --input file is allowed silently" "" "${out:-}"
+
 # Absent corpus: allow, and say so.
 out="$( jq -n --arg c "gh issue create --body-file ${WORK}/leaky.md" '{"tool_input":{"command":$c}}' \
         | ( cd "${REPO}" && MEMORY_LEAK_CHECK_MEMORY_DIR="${WORK}/nope" \
@@ -185,6 +198,29 @@ out="$( jq -n --arg c "gh issue create --title t --body-file ${WORK}/leaky.md" '
             CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" PATH="${FAKEBIN}:${PATH}" /bin/bash "${GUARD}" 2>/dev/null ) )"
 assert_contains "mktemp -d failure announces instead of silently allowing" "could not check" "${out:-<empty>}"
 assert_not_contains "mktemp -d failure does not deny" '"deny"' "${out:-}"
+
+# M4: the OTHER direction -- the corpus probe's OWN mktemp (mlc.*, inside
+# memory-leak-check.sh) failing must also announce, not silently allow. This
+# is the opposite shim from above: only mlc.* fails, pubguard.* still succeeds
+# via the real binary. Before the `|| _MEMPROBE=""` guard, this tripped the
+# blanket `trap 'exit 0' ERR` on the unguarded top-level assignment and the
+# hook exited silently before the guarded mktemp check above ever ran.
+FAKEBIN2="${WORK}/fakebin2"
+mkdir -p "${FAKEBIN2}"
+cat > "${FAKEBIN2}/mktemp" <<'SHIM'
+#!/bin/bash
+case "$*" in
+    *mlc.*) echo "mktemp: SIMULATED failure" >&2; exit 1 ;;
+    *) exec /usr/bin/mktemp "$@" ;;
+esac
+SHIM
+chmod +x "${FAKEBIN2}/mktemp"
+
+out="$( jq -n --arg c "gh issue create --title t --body-file ${WORK}/leaky.md" '{"tool_input":{"command":$c}}' \
+        | ( cd "${REPO}" && MEMORY_LEAK_CHECK_MEMORY_DIR="${MEM}" \
+            CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" PATH="${FAKEBIN2}:${PATH}" /bin/bash "${GUARD}" 2>/dev/null ) )"
+assert_contains "corpus-probe mktemp failure announces instead of silently allowing" "could not check" "${out:-<empty>}"
+assert_not_contains "corpus-probe mktemp failure does not deny" '"deny"' "${out:-}"
 
 rm -rf "${WORK}"
 print_summary

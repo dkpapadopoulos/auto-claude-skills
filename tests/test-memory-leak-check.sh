@@ -87,6 +87,25 @@ assert_equals "no argument is a usage error" "2" "$?"
 /bin/bash "${ENGINE}" "${WORK}/does-not-exist.md" >/dev/null 2>&1
 assert_equals "unreadable body cannot be checked" "3" "$?"
 
+
+# (j) I3: the public-content exemption must be repo-wide, not CWD-scoped.
+# Put a public run in a tracked file inside a SUBDIRECTORY, then check the
+# same body from a SIBLING subtree that never sees that file directly --
+# `git ls-files -z` (unpatched) is scoped to CWD, so from `other/` the
+# exemption corpus is empty and a legitimate publication false-blocks.
+SUBTREE_RUN="the public exemption resolves every tracked file at head into one normalized line per file so a match cannot span files by accident"
+printf 'name: s\n---\n\n%s\n' "${SUBTREE_RUN}" > "${MEM}/project_subtree_run.md"
+mkdir -p "${REPO}/sub" "${REPO}/other"
+( cd "${REPO}" && printf '%s\n' "${SUBTREE_RUN}" > sub/tracked.md \
+  && git add sub/tracked.md \
+  && git -c user.email=t@t -c user.name=t commit -q -m "add sub/tracked.md" )
+printf '%s\n' "${SUBTREE_RUN}" > "${WORK}/subtree.md"
+
+OUT3="$( cd "${REPO}/other" && MEMORY_LEAK_CHECK_MEMORY_DIR="${MEM}" \
+         /bin/bash "${ENGINE}" "${WORK}/subtree.md" 2>/dev/null )"
+rc3=$?
+assert_equals "public run tracked in a subdirectory is not a leak, even from a sibling subtree" "0" "${rc3}"
+
 rm -rf "${WORK}"
 print_summary
 exit $?

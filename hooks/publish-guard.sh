@@ -60,7 +60,11 @@ fi
 # Announced degradation: when no corpus resolves there is nothing to leak, but
 # silence would be indistinguishable from a clean check. Probe once, on the
 # publish path only, so ordinary Bash calls stay quiet.
-_MEMPROBE="$(/bin/bash "${_ENGINE}" /dev/null 2>&1 >/dev/null)"
+# `|| _MEMPROBE=""` keeps this assignment's own exit status 0 regardless of
+# the engine's — a broken TMPDIR (etc.) would otherwise trip the blanket ERR
+# trap right here and exit silently, before the properly-announced `_TMP`
+# mktemp guard a few lines down ever runs (issue #174 round, M4).
+_MEMPROBE="$(/bin/bash "${_ENGINE}" /dev/null 2>&1 >/dev/null)" || _MEMPROBE=""
 case "${_MEMPROBE}" in
     *"no memory corpus"*)
         jq -n --arg msg "publish-guard: could not check — no local memory corpus resolved for this repo. Allowing (nothing to leak)." \
