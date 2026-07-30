@@ -524,6 +524,17 @@ gh_publish_body_files() {
             case "$1" in
                 -R|--repo|--hostname)
                     if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                # PAIRED: keep this skip list in sync with
+                # command_invokes_gh_publish's own w1/w2 collector (~line 410).
+                # Without it, a value-taking `gh api` flag appearing BEFORE the
+                # endpoint (e.g. `gh api -X POST repos/o/r/issues --input f`)
+                # is swallowed as a plain "-*" and its VALUE ("POST") is
+                # mis-collected as _w2 in place of the real endpoint, so the
+                # api branch below never finds the endpoint and never
+                # resolves the payload path (issue #174 round).
+                --method|-X|-f|-F|--field|--raw-field|--input)
+                    if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                --method=*) shift ;;
                 -*) shift ;;
                 *)
                     # Strip trailing group closers.
@@ -557,7 +568,9 @@ gh_publish_body_files() {
                         --method|-X)
                             if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
                         --method=*) shift ;;
-                        --input) _p="${2:-}"; shift 2 ;;
+                        --input)
+                            _p="${2:-}"
+                            if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
                         --input=*) _p="${1#--input=}"; shift ;;
                         -f|-F|--field|--raw-field)
                             case "${2:-}" in *=@*) _p="${2#*=@}" ;; esac
@@ -584,7 +597,9 @@ gh_publish_body_files() {
         while [ "$#" -gt 0 ]; do
             _p=""
             case "$1" in
-                --body-file|-F) _p="${2:-}"; shift 2 ;;
+                --body-file|-F)
+                    _p="${2:-}"
+                    if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
                 --body-file=*)  _p="${1#--body-file=}"; shift ;;
                 *) shift ;;
             esac

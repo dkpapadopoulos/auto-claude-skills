@@ -85,6 +85,34 @@ assert_contains "leaky gh api -F name=@path is denied" '"deny"' "${out:-<empty>}
 out="$(_run "gh api repos/o/r/issues --method POST --input ${WORK}/clean.md")"
 assert_equals "clean gh api --input file is allowed silently" "" "${out:-}"
 
+# Flag-order robustness (final review round 2): a value-taking flag BEFORE the
+# endpoint -- ordinary gh usage -- used to leave gh_publish_body_files unable
+# to find the endpoint at all, so it resolved nothing even though
+# command_invokes_gh_publish correctly said this WAS a publish. All four
+# reproduced-silent shapes from the review must now deny.
+out="$(_run "gh api -X POST repos/o/r/issues --input ${WORK}/leaky.md")"
+assert_contains "leaky gh api -X POST BEFORE endpoint, --input AFTER is denied" '"deny"' "${out:-<empty>}"
+
+out="$(_run "gh api --method POST repos/o/r/issues --input ${WORK}/leaky.md")"
+assert_contains "leaky gh api --method POST BEFORE endpoint, --input AFTER is denied" '"deny"' "${out:-<empty>}"
+
+out="$(_run "gh api -X POST repos/o/r/issues -F body=@${WORK}/leaky.md")"
+assert_contains "leaky gh api -X POST BEFORE endpoint, -F name=@path AFTER is denied" '"deny"' "${out:-<empty>}"
+
+out="$(_run "gh api --method POST repos/o/r/issues -f body=@${WORK}/leaky.md")"
+assert_contains "leaky gh api --method POST BEFORE endpoint, -f name=@path AFTER is denied" '"deny"' "${out:-<empty>}"
+
+# Structural backstop: a detected gh api publication carrying --input whose
+# value is DANGLING (no path at all) is a genuine resolver gap -- the
+# predicate still says "publish" (gh's own default-to-POST-when-fields rule
+# applies to a bare --input too), but gh_publish_body_files resolves nothing,
+# and there is no body text to find via the whole-command-string scan either.
+# This must ANNOUNCE, never pass silently -- proving the backstop itself,
+# independent of the flag-order fix above.
+out="$(_run 'gh api repos/o/r/issues --input')"
+assert_not_contains "dangling --input (resolver gap) does not deny" '"deny"' "${out:-}"
+assert_contains "dangling --input (resolver gap) announces instead of silently allowing" "could not check" "${out:-<empty>}"
+
 # Absent corpus: allow, and say so.
 out="$( jq -n --arg c "gh issue create --body-file ${WORK}/leaky.md" '{"tool_input":{"command":$c}}' \
         | ( cd "${REPO}" && MEMORY_LEAK_CHECK_MEMORY_DIR="${WORK}/nope" \

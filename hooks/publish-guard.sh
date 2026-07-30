@@ -114,6 +114,20 @@ while IFS= read -r _bf; do
     _check "${_bf}" "body-file ${_N}"
 done < "${_TMP}/files"
 
+# Structural backstop (issue #174 round): command_invokes_gh_publish already
+# confirmed (above) this command IS a publication. If the resolver just above
+# found ZERO body files, yet the command string still carries a token that
+# names a body FILE, that is exactly the "cannot check" case the Global
+# Constraint requires be ANNOUNCED, not passed silently — a catch-all for
+# this resolver's known shapes AND any future flag/order gh_publish_body_files
+# doesn't yet parse.
+if [ "${_N}" -eq 0 ]; then
+    case "${_COMMAND}" in
+        *--input*|*=@*|*--body-file*|*-F*)
+            _UNCHECKED="${_UNCHECKED}${_UNCHECKED:+; }body-file token present but no file resolved" ;;
+    esac
+fi
+
 if [ -n "${_FINDINGS}" ]; then
     _MSG="PUBLICATION BLOCKED (#174): this publication reproduces private local-memory text verbatim, and the tracker is public.
 

@@ -174,5 +174,48 @@ assert_equals "gh api inline field value (no @) yields no file" "" \
 assert_equals "gh api graphql -F name=@path is NOT captured (not an issue/pr endpoint)" "" \
     "$(gh_publish_body_files 'gh api graphql -F query=@/tmp/q.gql')"
 
+# --- flag-order robustness: value-taking flags BEFORE the endpoint (final
+# review round 2) -- gh_publish_body_files' own w1/w2 collector used to have
+# no special case for --method/-X/-f/-F/--field/--raw-field/--input, so any
+# of them appearing before the endpoint token made the collector mis-set _w2
+# to the FLAG'S VALUE (e.g. "POST") instead of the real endpoint, and the api
+# branch never found a matching endpoint -- resolving nothing even though
+# command_invokes_gh_publish correctly said this WAS a publish. Ordinary gh
+# usage (`gh api -X POST <endpoint> ...`), not an exotic shape.
+assert_equals "gh api -X POST BEFORE endpoint, --input AFTER is captured" "/tmp/pg-body.md" \
+    "$(gh_publish_body_files 'gh api -X POST repos/o/r/issues --input /tmp/pg-body.md')"
+assert_equals "gh api --method POST BEFORE endpoint, --input AFTER is captured" "/tmp/pg-body.md" \
+    "$(gh_publish_body_files 'gh api --method POST repos/o/r/issues --input /tmp/pg-body.md')"
+assert_equals "gh api -X POST BEFORE endpoint, -F name=@path AFTER is captured" "/tmp/pg-body.md" \
+    "$(gh_publish_body_files 'gh api -X POST repos/o/r/issues -F body=@/tmp/pg-body.md')"
+assert_equals "gh api --method POST BEFORE endpoint, -f name=@path AFTER is captured" "/tmp/pg-body.md" \
+    "$(gh_publish_body_files 'gh api --method POST repos/o/r/issues -f body=@/tmp/pg-body.md')"
+# Control: merge exclusion and issue/pr paths are unaffected by the collector
+# fix (the noun+verb are always the first two positional tokens for those,
+# so the new skip-cases are never reached before _w2 is already set).
+assert_equals "gh api pulls merge with -X BEFORE endpoint still NOT captured" "" \
+    "$(gh_publish_body_files 'gh api -X PUT repos/o/r/pulls/3/merge --input /tmp/x.md')"
+
+# --- dangling value-taking flags must not HANG (found while adding the
+# backstop synthetic case above) ---------------------------------------------
+# Several `case` arms did an UNCONDITIONAL `shift 2` for a flag whose value is
+# the LAST token on the command line (no $2 to consume). In bash, `shift 2`
+# with fewer than 2 positional params left fails WITHOUT shifting anything, so
+# the enclosing `while [ "$#" -gt 0 ]` loop never terminates -- a real hang,
+# reproduced live (had to `kill -9` a spinning publish-guard.sh). Every one of
+# these must return promptly (if this test file hangs, that IS the failure).
+assert_equals "dangling --body-file does not hang, yields no path" "" \
+    "$(gh_publish_body_files 'gh issue create --title t --body-file')"
+assert_equals "dangling -F (issue/pr alias) does not hang, yields no path" "" \
+    "$(gh_publish_body_files 'gh issue create --title t -F')"
+assert_equals "dangling --input (gh api) does not hang, yields no path" "" \
+    "$(gh_publish_body_files 'gh api repos/o/r/issues --input')"
+assert_equals "dangling -F (gh api field flag) does not hang, yields no path" "" \
+    "$(gh_publish_body_files 'gh api repos/o/r/issues -F')"
+assert_equals "dangling -f (gh api field flag) does not hang, yields no path" "" \
+    "$(gh_publish_body_files 'gh api repos/o/r/issues -f')"
+assert_equals "dangling -X in the w1/w2 collector does not hang, yields no path" "" \
+    "$(gh_publish_body_files 'gh api -X')"
+
 print_summary
 exit $?
