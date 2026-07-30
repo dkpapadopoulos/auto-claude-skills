@@ -118,5 +118,41 @@ assert_equals "double-paren-wrapped path: two openers, two closers stripped" "/t
 assert_equals "wrapped path with paren in name: one opener, one closer stripped" "/tmp/report(v2)" \
     "$(gh_publish_body_files '(gh issue create --body-file /tmp/report(v2))')"
 
+# --- gh api publish predicates (issue #174 gap: gh api was unguarded) ------
+# `gh api` defaults to POST when fields are supplied with no explicit
+# --method, so a bare `-f body=...` against an issues/comments/pulls write
+# endpoint is a publish exactly like an explicit --method POST/PATCH.
+assert_equals "gh api issues create with fields (implicit POST) is a publish" "yes" \
+    "$(_pub 'gh api repos/o/r/issues -f body=leaky text here')"
+assert_equals "gh api issue comment with --method POST before endpoint is a publish" "yes" \
+    "$(_pub 'gh api --method POST repos/o/r/issues/1/comments -f body=leaky text')"
+assert_equals "gh api pr comments with --method PATCH is a publish" "yes" \
+    "$(_pub 'gh api repos/o/r/pulls/3/comments --method PATCH -f body=leaky')"
+assert_equals "gh api pulls creation with fields is a publish" "yes" \
+    "$(_pub 'gh api repos/o/r/pulls -f title=t -f body=leaky')"
+assert_equals "gh api -X POST short form is a publish" "yes" \
+    "$(_pub 'gh api repos/o/r/issues -X POST -f body=leaky')"
+
+# Controls: merge endpoint / graphql mergePullRequest must NEVER become a
+# publish here — that is command_invokes_gh_merge's territory, and this
+# predicate must not overlap it.
+assert_equals "gh api pulls merge PUT is NOT a publish" "no" \
+    "$(_pub 'gh api repos/o/r/pulls/3/merge --method PUT')"
+# PUT isn't in the write-method set, so the above passes even with the
+# `*/pulls/*/merge` exclusion deleted -- it proves nothing about the
+# exclusion itself. --method POST *is* in the write set, so this one only
+# stays "no" because the exclusion fires first; delete the exclusion line
+# and this assertion goes red (mutation-verified).
+assert_equals "gh api pulls merge with --method POST is still NOT a publish" "no" \
+    "$(_pub 'gh api --method POST repos/o/r/pulls/3/merge')"
+assert_equals "gh api graphql mergePullRequest is NOT a publish" "no" \
+    "$(_pub 'gh api graphql -f query=mergePullRequest')"
+
+# A bare read (no --method, no fields) sends no body at all, so it is
+# deliberately NOT treated as a publish -- same over-gating-breeds-evasion
+# discipline as command_invokes_gh_merge's bare-merge-status-read exclusion.
+assert_equals "gh api issues read with no fields/method is NOT a publish (bare GET)" "no" \
+    "$(_pub 'gh api repos/o/r/issues')"
+
 print_summary
 exit $?

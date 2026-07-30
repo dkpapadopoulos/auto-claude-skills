@@ -54,6 +54,24 @@ assert_equals "unrelated command is untouched" "" "${out:-}"
 out="$(_run 'gh pr merge 3 --squash')"
 assert_equals "gh pr merge is not this hook's business" "" "${out:-}"
 
+# gh api is a publication path too (issue #174 gap: it carried zero scan).
+# The engine scans the WHOLE command string, so an inline -f body=... on a
+# gh api write endpoint is caught with no body-file parsing needed.
+out="$(_run "gh api repos/o/r/issues -f body=\"${PRIVATE_RUN}\"")"
+assert_contains "leaky gh api issues create (-f, implicit POST) is denied" '"deny"' "${out:-<empty>}"
+
+out="$(_run "gh api --method POST repos/o/r/issues/1/comments -f body=\"${PRIVATE_RUN}\"")"
+assert_contains "leaky gh api issue comment (--method POST before endpoint) is denied" '"deny"' "${out:-<empty>}"
+
+out="$(_run 'gh api repos/o/r/issues -f body="clean text, nothing private here"')"
+assert_equals "clean gh api issues create is allowed silently" "" "${out:-}"
+
+out="$(_run 'gh api repos/o/r/pulls/3/merge --method PUT')"
+assert_equals "gh api pulls merge is not this hook's business" "" "${out:-}"
+
+out="$(_run 'gh api repos/o/r/issues')"
+assert_equals "gh api bare read (no fields/method) is untouched" "" "${out:-}"
+
 # Absent corpus: allow, and say so.
 out="$( jq -n --arg c "gh issue create --body-file ${WORK}/leaky.md" '{"tool_input":{"command":$c}}' \
         | ( cd "${REPO}" && MEMORY_LEAK_CHECK_MEMORY_DIR="${WORK}/nope" \
