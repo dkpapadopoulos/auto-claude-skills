@@ -4,7 +4,7 @@
 
 Two layers, both deterministic:
 
-1. **Static classification.** For every `hooks/*.sh` matching `trap 'exit 0' ERR`, each line matching `^\s*(\.|source)\s+` is guarded iff it contains `&&` or `||` — i.e. iff the source is a non-final operand of a list, where a non-zero status cannot trip the ERR trap. Everything else is a violation.
+1. **Static classification.** For every `hooks/*.sh` matching `trap 'exit 0' ERR`, each line matching `^\s*(\.|source)\s+` is guarded iff it contains `&&` or `||` — i.e. iff the source is a non-final operand of a list, where a non-zero **source status** cannot trip the ERR trap. Everything else is a violation. A trailing comment is stripped before classifying, so `. lib  # see foo && bar` cannot read as guarded on its comment.
 2. **Behavioural fixtures.** A committed red hook (unguarded source of a lib that `return 1`s mid-source) and its guarded twin, plus an end-to-end leg that runs the *real* `openspec-guard.sh` against a deliberately broken `session-token.sh`.
 
 The second layer exists because the first is a line-grep and could drift into agreeing only with itself. The fixtures make the detector's own failure visible.
@@ -45,6 +45,24 @@ The new test against the pre-fix tree — 3 of 10 assertions red, including both
 
 Gate-adjacent suites, all green after the guard change: `test-push-gate-failclosed` (23), `test-push-gate-canary` (10), `test-push-gate-detection` (56), `test-push-gate-verdict` (20), `test-push-gate-ledger` (12), `test-skill-gate` (84), `test-session-token-race` (18), `test-evaluator-surface` (39).
 
+## Known residual gap (found in review, measured)
+
+The `&&`/`||` exemption suppresses the ERR trap for the `.` builtin's own **return status**. It does **not** suppress it when a command *inside* the sourced file fails — that trap fires during the sourced file's execution and still exits the hook. Measured against the guard as shipped here:
+
+| `hooks/lib/session-token.sh` failure mode | Result |
+|---|---|
+| `return 1` mid-source | deny — covered |
+| sources clean, resolver undefined | deny — covered |
+| runs `false` mid-source | **silent allow** |
+| command-not-found mid-source | **silent allow** |
+| `X="$(cd /nope && pwd)"` mid-source | **silent allow** |
+
+The last shape is live in this repo: `hooks/lib/phase-evidence.sh:10` is `_PHASE_EVID_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"`.
+
+Closing it needs `trap - ERR` around the whole lib-loading region at **every** source site — one site is not enough, because a downstream lib re-sources and re-arms the trap (`hooks/lib/phase-attest.sh:56` re-sources `session-token.sh`). That is a materially larger change to a live gate than this one, so it is tracked as issue #192 rather than folded in here.
+
+The consequence for readers is recorded in the lint's header, the spec, and `CLAUDE.md`: a green run means "no source line can be tripped by its own exit status", **not** "no sourced lib can exit this hook".
+
 ## Out of scope
 
-The five allowlisted sites in `consolidation-stop.sh`, `compact-recovery-hook.sh`, and `skill-completion-hook.sh`. They are advisory paths, not deny paths, so their early exit loses a hint rather than opening a gate. Guarding them is mechanical but each needs its own reachability review of the `else` branch it would newly expose.
+Issue #192, above. Also the five allowlisted sites in `consolidation-stop.sh`, `compact-recovery-hook.sh`, and `skill-completion-hook.sh`. They are advisory paths, not deny paths, so their early exit loses a hint rather than opening a gate. Guarding them is mechanical but each needs its own reachability review of the `else` branch it would newly expose.

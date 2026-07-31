@@ -17,6 +17,32 @@
 #     . lib && _FLAG=true
 #     . lib 2>/dev/null && _FLAG=true || true
 #
+# SCOPE — WHAT THIS LINT DOES **NOT** COVER. Read before trusting a green run.
+#
+# The &&/|| exemption suppresses the ERR trap for the `.` builtin's own RETURN
+# STATUS. It does NOT suppress the trap when a command *inside* the sourced
+# file fails: that trap fires during the sourced file's execution and still
+# exits the hook. Measured against the real guard (2026-07-31):
+#
+#   lib does `return 1` mid-source          -> deny        (covered here)
+#   lib sources clean, function undefined   -> deny        (covered here)
+#   lib runs `false` mid-source             -> SILENT ALLOW  <-- NOT covered
+#   lib hits command-not-found mid-source   -> SILENT ALLOW  <-- NOT covered
+#   lib does `X="$(cd /nope && pwd)"`       -> SILENT ALLOW  <-- NOT covered
+#
+# That last shape is live in this repo: hooks/lib/phase-evidence.sh:10 is
+# `_PHASE_EVID_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"`. Closing it
+# needs `trap - ERR` around the whole lib-loading region at EVERY source site
+# (one site is not enough — a re-source downstream re-arms the trap), which is
+# a larger change to a live gate than #137's scope. Tracked as issue #192.
+#
+# So: a green run here means "no source line can be tripped by its own exit
+# status", NOT "no sourced lib can exit this hook".
+#
+# Population is hooks/*.sh carrying a LOCAL ERR trap. hooks/lib/*.sh are
+# deliberately excluded: they carry no trap of their own but execute under the
+# caller's, so they are in scope for issue #192, not for this status-only lint.
+#
 # Bash 3.2 compatible (macOS default). No associative arrays.
 
 set -u
@@ -55,12 +81,17 @@ _unguarded_sources() {
     local file="$1" base line trimmed
     base="$(basename "${file}")"
     grep -E '^[[:space:]]*(\.|source)[[:space:]]+' "${file}" 2>/dev/null | while IFS= read -r line; do
+        # Strip a trailing comment BEFORE classifying: `. lib  # see foo && bar`
+        # would otherwise read as guarded on the comment's `&&`. Stripping for
+        # the key too means adding a comment cannot silently invalidate an
+        # allowlist entry.
+        trimmed="$(printf '%s' "${line}" | sed 's/[[:space:]]#.*$//; s/^[[:space:]]*//; s/[[:space:]]*$//')"
         # A source that is a non-final operand of an && / || list cannot trip
-        # the ERR trap, so it is guarded.
-        case "${line}" in
+        # the ERR trap with its own exit status, so it is guarded. See the SCOPE
+        # note in the header for what this does NOT prove.
+        case "${trimmed}" in
             *'&&'*|*'||'*) continue ;;
         esac
-        trimmed="$(printf '%s' "${line}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
         printf '%s|%s\n' "${base}" "${trimmed}"
     done
 }
@@ -229,21 +260,49 @@ BROKEN
         echo x > f.txt; git add f.txt; git commit -qm init 2>/dev/null
     )
 
-    e2e_out="$(cd "${E2E_TMP}/repo" && printf '%s' \
-        '{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}' \
-        | HOME="${E2E_TMP}/home" CLAUDE_PLUGIN_ROOT="${E2E_TMP}/root" \
-          bash "${GUARD}" 2>/dev/null)"
+    _run_guard() {
+        (cd "${E2E_TMP}/repo" && printf '%s' \
+            '{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}' \
+            | HOME="${E2E_TMP}/home" CLAUDE_PLUGIN_ROOT="${E2E_TMP}/root" \
+              bash "${GUARD}" 2>/dev/null)
+    }
+
+    e2e_out="$(_run_guard)"
 
     # Pre-fix, the unguarded source tripped the ERR trap here and the hook
     # exited 0 with EMPTY stdout — indistinguishable from "allow".
     assert_contains "guard still reaches its push decision when the token lib fails mid-source" \
         "permissionDecision" "${e2e_out}"
-    assert_contains "guard denies rather than falling open on a broken token lib" \
-        "deny" "${e2e_out}"
 
-    rm -rf "${E2E_TMP}" 2>/dev/null
+    # Match the REAL producer's bytes, not the bare word: the guard emits deny
+    # JSON via `jq -n`, which PRETTY-prints (space after the colon, own line).
+    # A bare "deny" needle is satisfied by the ALLOW path too — the IMPLEMENT
+    # advisory at openspec-guard.sh:493 contains the literal text
+    # "will become a deny after backtest", so the old assertion could pass on
+    # an allow. Same lesson as the push-gate-capture classifier.
+    assert_contains "guard denies rather than falling open on a broken token lib" \
+        '"permissionDecision": "deny"' "${e2e_out}"
+
+    # The `command -v` leg is load-bearing, so it needs its own pin: a lib that
+    # sources CLEANLY but never defines the resolver. Without this assertion the
+    # `command -v` clause can be deleted and the whole suite still passes, while
+    # the bypass silently reopens (verified: that mutant passed 10/10).
+    cat > "${E2E_TMP}/root/hooks/lib/session-token.sh" <<'NOFUNC'
+#!/bin/bash
+# Sources cleanly, exit status 0, but never defines the resolver.
+_SESSION_TOKEN_LIB_LOADED=true
+NOFUNC
+    nofunc_out="$(_run_guard)"
+    assert_contains "guard reaches its decision when the lib omits the resolver" \
+        '"permissionDecision": "deny"' "${nofunc_out}"
 else
-    _record_fail "e2e broken-lib fixture builds" "could not create ${E2E_TMP:-<empty>}"
+    if [ -n "${E2E_TMP}" ] && [ -d "${E2E_TMP}" ]; then
+        _record_fail "e2e broken-lib fixture builds" "guard not found at ${GUARD}"
+    else
+        _record_fail "e2e broken-lib fixture builds" "mktemp failed"
+    fi
 fi
+# Unconditional: the success branch is not the only path that created the dir.
+[ -n "${E2E_TMP}" ] && [ -d "${E2E_TMP}" ] && rm -rf "${E2E_TMP}" 2>/dev/null
 
 print_summary
