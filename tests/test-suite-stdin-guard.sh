@@ -33,10 +33,33 @@ RUNNER="${SCRIPT_DIR}/run-tests.sh"
 echo "=== test-suite-stdin-guard.sh ==="
 echo ""
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/acs-stdin-guard.XXXXXXXX")"
+# The canonical guard, as one pattern used for all three purposes below:
+# stripping it for the red control, and locating it for the ordering check.
+# Tolerant of `exec 0</dev/null` and spacing, which are the same redirect —
+# a static check stricter than the behaviour it stands for reports a
+# functionally identical reformat as a bug.
+GUARD_RE='^exec[[:space:]]+0?<[[:space:]]*/dev/null'
+
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/acs-stdin-guard.XXXXXXXX")" || WORK=""
+if [ -z "${WORK}" ] || [ ! -d "${WORK}" ]; then
+    echo "FATAL: could not create a temp dir; refusing to run" >&2
+    exit 1
+fi
 cleanup() {
-    # Kill anything still holding the FIFOs before removing the tree, so a
-    # watchdog-killed run cannot leave an orphaned `cat` behind.
+    # `set -u` does not protect this: a failed mktemp assigns an EMPTY string,
+    # and `pkill -9 -f ""` is rejected by BSD pgrep but matches EVERY process
+    # owned by the user under glibc — i.e. it would SIGKILL the developer's
+    # session or the whole CI runner. Refuse to pkill on anything that is not
+    # recognisably our own temp dir.
+    case "${WORK:-}" in
+        */acs-stdin-guard.*) ;;
+        *) return ;;
+    esac
+    # Belt-and-braces sweep for anything still naming our temp tree. The actual
+    # reaper for a watchdog-killed run is `kill -9 "${holder}"` in
+    # run_with_fifo_stdin: closing the FIFO's write end delivers EOF to the
+    # blocked `cat`. This pkill cannot match that `cat` (its argv is just
+    # "cat") — it is here for the runner copy, which does carry the path.
     pkill -9 -f "${WORK}" 2>/dev/null
     rm -rf "${WORK}" 2>/dev/null
 }
@@ -57,7 +80,7 @@ build_fixture() {
         # Red control: the same runner with the #142 guard removed. This proves
         # the harness can actually observe the hang — without it, a test that
         # silently stopped reproducing would still report PASS.
-        grep -v '^exec < /dev/null' "${RUNNER}" > "${dir}/run-tests.sh" || return 1
+        grep -vE "${GUARD_RE}" "${RUNNER}" > "${dir}/run-tests.sh" || return 1
     else
         cp "${RUNNER}" "${dir}/run-tests.sh" || return 1
     fi
@@ -118,7 +141,11 @@ run_with_fifo_stdin() {
 }
 
 # The fixture suite is a single trivial test — it completes in well under a
-# second when stdin is not blocking, so this is a very wide margin.
+# second when stdin is not blocking, so this is a very wide margin. The red
+# control below is DESIGNED to hang, so it always spends this budget in full:
+# ~10s of the suite's runtime is inherent to proving the test is not vacuous,
+# not slack to be optimised away. The loop counts `sleep 1` iterations rather
+# than wall clock, which errs long under load rather than short.
 WATCHDOG_SECS=10
 
 # ---------------------------------------------------------------------------
@@ -150,9 +177,17 @@ STRIPPED="${WORK}/stripped"
 if build_fixture "${STRIPPED}" "yes"; then
     # Guard against the strip silently no-opping (e.g. after a reformat) — that
     # would make the control pass for the wrong reason.
-    if grep -q '^exec < /dev/null' "${STRIPPED}/run-tests.sh" 2>/dev/null; then
+    #
+    # Asserting only "the pattern is absent from the stripped copy" does NOT do
+    # this: that is equally true when the strip worked and when the pattern
+    # never matched the runner at all, so it passes even with the guard deleted
+    # from main. Assert instead that the strip actually CHANGED something.
+    if ! grep -qE "${GUARD_RE}" "${RUNNER}" 2>/dev/null; then
         _record_fail "red control actually removes the guard" \
-            "guard line still present in stripped copy — control is vacuous"
+            "guard pattern not found in the real runner — nothing to strip"
+    elif cmp -s "${RUNNER}" "${STRIPPED}/run-tests.sh"; then
+        _record_fail "red control actually removes the guard" \
+            "stripped copy is byte-identical to the runner — control is vacuous"
     else
         _record_pass "red control actually removes the guard"
     fi
@@ -168,7 +203,7 @@ fi
 # 3. The guard must sit above the test-execution loop — a redirect placed after
 #    the loop would satisfy a naive grep but fix nothing.
 # ---------------------------------------------------------------------------
-guard_line="$(grep -n '^exec < /dev/null' "${RUNNER}" 2>/dev/null | head -1 | cut -d: -f1)"
+guard_line="$(grep -nE "${GUARD_RE}" "${RUNNER}" 2>/dev/null | head -1 | cut -d: -f1)"
 loop_line="$(grep -n '^for test_file in' "${RUNNER}" 2>/dev/null | head -1 | cut -d: -f1)"
 if [ -n "${guard_line}" ] && [ -n "${loop_line}" ] && [ "${guard_line}" -lt "${loop_line}" ]; then
     _record_pass "stdin guard precedes the test-execution loop"
