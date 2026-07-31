@@ -81,9 +81,21 @@ fi
 # across concurrent sessions (last-writer-wins) and may name ANOTHER session.
 _PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 _SESSION_TOKEN=""
+# The source is guarded (`&& … || true`) because an UNguarded `. lib` here trips
+# `trap 'exit 0' ERR` ABOVE the deny checks below — the hook exits 0 and the push
+# is silently allowed, which is the dangerous direction for a safety gate (#137).
+# Confirming the function exists is part of the same guard, not belt-and-braces:
+# `|| true` alone leaves a partially-sourced lib with the resolver undefined, and
+# the command-not-found on the next line trips the very same ERR trap. The flag
+# is what makes the `else` fallback reachable on a failed source.
+_TOKEN_LIB_OK=false
 if [ -f "${_PLUGIN_ROOT}/hooks/lib/session-token.sh" ]; then
     # shellcheck source=lib/session-token.sh
-    . "${_PLUGIN_ROOT}/hooks/lib/session-token.sh"
+    . "${_PLUGIN_ROOT}/hooks/lib/session-token.sh" 2>/dev/null && \
+        command -v resolve_session_token_from_transcript >/dev/null 2>&1 && \
+        _TOKEN_LIB_OK=true || true
+fi
+if [ "${_TOKEN_LIB_OK}" = true ]; then
     _SESSION_TOKEN="$(resolve_session_token_from_transcript "${_TRANSCRIPT}")"
 else
     [ -f "${HOME}/.claude/.skill-session-token" ] && \
@@ -782,9 +794,18 @@ fi
 # of the same repo); path-based fallback when no remote is configured.
 # (_PLUGIN_ROOT is resolved once, above, alongside token resolution.)
 _consol_marker=""
+# Source-guarded for the same reason as the token lib above (#137): an unguarded
+# `. lib` trips `trap 'exit 0' ERR` and exits the hook early. This block sits
+# below the push-gate deny checks, so a failure here is less severe than at the
+# token lib — but it still silently skips the consolidation advisory, and the
+# `else` branch exists precisely to cover a missing lib.
+_CONSOL_LIB_OK=false
 if [ -f "${_PLUGIN_ROOT}/hooks/lib/consol-marker.sh" ]; then
     # shellcheck source=lib/consol-marker.sh
-    . "${_PLUGIN_ROOT}/hooks/lib/consol-marker.sh"
+    . "${_PLUGIN_ROOT}/hooks/lib/consol-marker.sh" 2>/dev/null && \
+        command -v consol_marker_path >/dev/null 2>&1 && _CONSOL_LIB_OK=true || true
+fi
+if [ "${_CONSOL_LIB_OK}" = true ]; then
     _consol_marker="$(consol_marker_path "${_proj_root}")"
 else
     _proj_hash="$(printf '%s' "${_proj_root}" | shasum | cut -d' ' -f1)"
