@@ -32,10 +32,20 @@ for f in "${DIR}"/*.md; do
     done
 done
 
-# index.md ↔ disk: every fact appears in index
+# index.md ↔ disk: every fact must have an entry the session-start hook will actually
+# INJECT. Checking that the slug appears somewhere in index.md is too loose: an entry the
+# injector drops (bold-wrapped, indented, numbered) is a fact that is committed, validated,
+# and never reaches a single session — silent in both directions.
+# So filter index.md through the injector's own predicate FIRST, then look for the slug in
+# what survives — i.e. validate against what the consumer actually receives.
+# PAIRED: '^- \[' is the injection predicate in hooks/session-start-hook.sh; if that changes,
+# change it here too. tests/test-knowledge.sh extracts the pattern from the hook and fails
+# on drift, so the two cannot diverge silently.
 if [ -e "${DIR}/index.md" ]; then
+    INJECTABLE="$(grep -E '^- \[' "${DIR}/index.md" 2>/dev/null)"
     for slug in ${SLUGS}; do
-        grep -qF "(${slug}.md)" "${DIR}/index.md" || _err "index.md missing entry for ${slug}.md"
+        printf '%s\n' "${INJECTABLE}" | grep -qF "(${slug}.md)" \
+            || _err "index.md has no injectable entry for ${slug}.md — needs a '- [Title](${slug}.md) — desc' bullet at line start; run scripts/knowledge-rebuild-index.sh"
     done
 fi
 

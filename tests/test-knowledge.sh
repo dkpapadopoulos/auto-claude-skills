@@ -87,9 +87,48 @@ test_validate_noop_when_absent() {
         _record_fail "validate no-ops when dir absent" "exit 0" "non-zero"
     fi
 }
+# session-start injects ONLY index lines matching its own grep predicate, so an entry
+# the validator accepts but the injector drops is a silently invisible fact — committed,
+# validated, and never reaching any session. The validator must therefore enforce the
+# INJECTOR's contract, not a looser "slug appears somewhere" one.
+# The predicate is extracted from the real hook, never hardcoded, so the two cannot
+# drift apart silently — see .claude/knowledge/classifier-fixtures-from-real-producer.md.
+test_validate_enforces_injector_contract() {
+    local hook="${PROJECT_ROOT}/hooks/session-start-hook.sh"
+    local raw pat
+    raw="$(grep -F '"${_KB_INDEX}"' "${hook}" | grep -o "grep -E '[^']*'" | head -1)"
+    pat="${raw#grep -E \'}"; pat="${pat%\'}"
+    if [ -z "${pat}" ]; then
+        _record_fail "extract injector predicate from session-start-hook.sh" \
+            "a grep -E pattern" "empty — extraction broke, test cannot prove anything"
+        return
+    fi
+    _record_pass "extracted injector predicate from the real hook: ${pat}"
+
+    local tmp; tmp="$(mktemp -d)"
+    cp "${PROJECT_ROOT}/tests/fixtures/knowledge/valid/sample-decision.md" "${tmp}/"
+    # Bold-wrapped title: contains "(sample-decision.md)" so a substring predicate accepts
+    # it, but it does not match the injector's line anchor, so it is never injected.
+    printf '<!-- schema_version: okf-0.1 -->\n# Knowledge Index\n\n- **[Sample decision](sample-decision.md)** — bold-wrapped.\n' > "${tmp}/index.md"
+
+    # Ground truth first: prove the REAL injector predicate actually drops this entry.
+    if grep -E "${pat}" "${tmp}/index.md" 2>/dev/null | grep -qF "(sample-decision.md)"; then
+        _record_fail "fixture entry is dropped by the real injector" "not injected" "injected"
+        rm -rf "${tmp}"; return
+    fi
+    _record_pass "fixture entry is genuinely dropped by the real injector predicate"
+
+    local out rc
+    out="$(cd "${PROJECT_ROOT}" && bash scripts/knowledge-validate.sh "${tmp}" 2>&1)"; rc=$?
+    assert_equals "validator rejects an index entry the injector would drop" "1" "${rc}"
+    assert_contains "validator names the offending slug" "sample-decision.md" "${out}"
+    rm -rf "${tmp}"
+}
+
 test_validate_passes_on_valid_fixture
 test_validate_flags_dangling_link
 test_validate_noop_when_absent
+test_validate_enforces_injector_contract
 
 test_forgetful_map_roundtrip() {
     local tmp; tmp="$(mktemp -d)"; local m="${tmp}/map.tsv"; : > "${m}"
