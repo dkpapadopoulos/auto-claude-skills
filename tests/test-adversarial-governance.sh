@@ -57,7 +57,11 @@ assert_contains "agent-team-review: doubt-theater meaning" "validating, not revi
 # deliberate fail-open hooks, bridges and canaries).
 # Scoped to the quality-reviewer block on purpose: the same words under another lens would be a
 # different contract, and a whole-file needle cannot tell the two apart.
-QUALITY_BLOCK="$(awk '/name: "quality-reviewer"/{f=1} f && /name: "adversarial-reviewer"/{exit} f' "${TEAM_SKILL}")"
+# The range STOPS AT THE NEXT reviewer header generically, not at a hardcoded one: `spec-reviewer`
+# sits between quality- and adversarial-reviewer, so terminating on "adversarial-reviewer" silently
+# swallowed the spec block too and a bullet misplaced there would have passed. Anchored with `^\s*name:`
+# so the sibling `team_name:` line cannot terminate the range early.
+QUALITY_BLOCK="$(awk '/^[[:space:]]*name: "quality-reviewer"/{f=1;next} f && /^[[:space:]]*name: "/{exit} f' "${TEAM_SKILL}")"
 if [ -z "${QUALITY_BLOCK}" ]; then
     _record_fail "agent-team-review: quality-reviewer block extracted" "non-empty block" "empty — anchors moved, assertions below prove nothing"
 fi

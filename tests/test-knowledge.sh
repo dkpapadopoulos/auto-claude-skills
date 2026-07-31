@@ -125,10 +125,32 @@ test_validate_enforces_injector_contract() {
     rm -rf "${tmp}"
 }
 
+# The example-based test above proves the validator rejects ONE non-injectable shape. It does not
+# prove the two predicates are the SAME — if the hook's pattern were loosened, the validator would
+# silently become STRICTER than the injector and false-block legitimate bundles with every
+# example-based assertion still green. Assert the literals are equal, which is the drift check the
+# validator's own comment promises.
+_extract_grep_pattern() {  # <file> <fixed-string anchor on the same line>
+    local raw; raw="$(grep -F "$2" "$1" | grep -o "grep -E '[^']*'" | head -1)"
+    raw="${raw#grep -E \'}"; printf '%s' "${raw%\'}"
+}
+test_validator_and_injector_predicates_are_identical() {
+    local hook_pat val_pat
+    hook_pat="$(_extract_grep_pattern "${PROJECT_ROOT}/hooks/session-start-hook.sh" '"${_KB_INDEX}"')"
+    val_pat="$(_extract_grep_pattern "${PROJECT_ROOT}/scripts/knowledge-validate.sh" '"${DIR}/index.md"')"
+    if [ -z "${hook_pat}" ] || [ -z "${val_pat}" ]; then
+        _record_fail "extract both index predicates" "two non-empty patterns" \
+            "hook='${hook_pat}' validator='${val_pat}' — extraction broke, comparison proves nothing"
+        return
+    fi
+    assert_equals "validator's index predicate is byte-identical to session-start's" "${hook_pat}" "${val_pat}"
+}
+
 test_validate_passes_on_valid_fixture
 test_validate_flags_dangling_link
 test_validate_noop_when_absent
 test_validate_enforces_injector_contract
+test_validator_and_injector_predicates_are_identical
 
 test_forgetful_map_roundtrip() {
     local tmp; tmp="$(mktemp -d)"; local m="${tmp}/map.tsv"; : > "${m}"

@@ -182,7 +182,7 @@ Task tool (general-purpose):
     - Edge cases not covered
     - DRY violations
     - YAGNI violations (over-engineering)
-    - Proportionality and root cause: is the diff proportional to the defect, and does each added conditional correct the root cause — or route around one that stays unfixed? A compensating layer (bridge, fallback, sidecar) is legitimate when the root cause is ALSO fixed and the residual gap it closes is stated; treat "the root cause is still unfixed and this survives it" as the finding, not the layer's existence.
+    - Proportionality and root cause: is the diff proportional to the defect, and does each added conditional correct the root cause — or route around one that stays unfixed? A compensating layer (bridge, fallback, sidecar) is legitimate when the root cause is ALSO fixed and the residual gap it closes is stated; treat "the root cause is still unfixed and this survives it" as the finding, not the layer's existence — and name the input that still fails, which is the observable failure path the severity floor requires, so a real finding survives triage and a speculative one is correctly floored.
     - Simplification opportunities (logic expressible more simply or with less code, no behavior change)
     - Readability (nesting depth, control flow clarity, intent legibility)
     - Performance concerns
