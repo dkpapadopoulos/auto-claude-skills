@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": null,
+  "plan_path": null,
+  "spec_path": null,
+  "sp_plan_path": null,
+  "sp_spec_path": null,
+  "change_slug": "knowledge-index-injector-contract",
+  "capability_slug": null,
+  "source_branch": "fix/knowledge-index-injector-contract",
+  "base_commit": "73aed2fa2024f455b2e36f61c8c8a9f51a3e6253",
+  "openspec_surface": "none",
+  "archived_at": "2026-07-31T08:34:59Z"
+}
