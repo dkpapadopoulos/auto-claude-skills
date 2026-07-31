@@ -52,6 +52,19 @@ assert_contains "agent-team-review: implementer self-summary excluded" "self-sum
 assert_contains "agent-team-review: doubt-theater red flag" "doubt theater" "${TEAM_CONTENT}"
 assert_contains "agent-team-review: doubt-theater meaning" "validating, not reviewing" "${TEAM_CONTENT}"
 
+# --- agent-team-review: proportionality / root-cause question (narrowed claude-mem merge-rubric
+# adoption; the rubric itself is NOT imported — as written it would condemn this repo's
+# deliberate fail-open hooks, bridges and canaries).
+# Scoped to the quality-reviewer block on purpose: the same words under another lens would be a
+# different contract, and a whole-file needle cannot tell the two apart.
+QUALITY_BLOCK="$(awk '/name: "quality-reviewer"/{f=1} f && /name: "adversarial-reviewer"/{exit} f' "${TEAM_SKILL}")"
+if [ -z "${QUALITY_BLOCK}" ]; then
+    _record_fail "agent-team-review: quality-reviewer block extracted" "non-empty block" "empty — anchors moved, assertions below prove nothing"
+fi
+assert_contains "agent-team-review: quality lens asks proportionality" "proportional to the defect" "${QUALITY_BLOCK}"
+assert_contains "agent-team-review: quality lens asks root cause vs route-around" "route around one that stays unfixed" "${QUALITY_BLOCK}"
+assert_contains "agent-team-review: compensating layer legitimate when root cause also fixed" "residual gap it closes is stated" "${QUALITY_BLOCK}"
+
 # --- agent-team-review: finding evidence + confidence + severity floor (v1 false-positive discipline) ---
 # Cheapest-alternative controls that any future adversarial-refute gate must beat.
 assert_contains "agent-team-review: confidence field in FINDING" "Confidence: high | medium | low" "${TEAM_CONTENT}"
