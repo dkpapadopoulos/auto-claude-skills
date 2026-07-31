@@ -4,6 +4,18 @@
 
 set -u
 
+# Self-guard stdin (#142). No test in this suite reads the runner's stdin, but
+# several invoke hooks that do — hooks/session-start-hook.sh reads its payload
+# with `$(cat)` behind a `[ ! -t 0 ]` check, and a TTY check is not an "input
+# available" check. When the caller's fd 0 is a socket or FIFO (routine in agent
+# sessions) that `cat` blocks forever waiting for an EOF that never arrives, and
+# the suite parks mid-run at near-zero CPU with no error — one observed run sat
+# idle roughly two hours. Relying on callers to pass `< /dev/null` failed: a
+# fresh session or CI path that forgets it re-hangs. Redirecting here is
+# inherited by every discovered test file at once.
+# Regression: tests/test-suite-stdin-guard.sh
+exec < /dev/null
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 TOTAL_FILES=0
