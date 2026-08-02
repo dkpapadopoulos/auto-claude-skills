@@ -1,6 +1,8 @@
 .idea/
 .claude/settings.json
 .claude/settings.local.json
+.claude/.cozempic-init.lock
+.codex/
 docs/plans/
 docs/postmortems/
 docs/reports/
