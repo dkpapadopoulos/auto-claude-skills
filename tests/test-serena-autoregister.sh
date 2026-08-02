@@ -394,7 +394,38 @@ test_setup_md_documents_abspath_registration() {
     teardown_test_env
 }
 
+test_selfheal_bare_reg_with_empty_args_still_readds() {
+    echo "-- test: self-heal survives an empty args[] (set -u empty-array guard) --"
+    setup_test_env
+    _setup_mocks
+    mkdir -p "${HOME}/.claude"
+    # Degenerate bare reg: command "serena", empty args[]. Under session-start's
+    # `set -u`, an unguarded "${args[@]}" would abort AFTER the destructive
+    # remove, leaving no registration at all.
+    jq -n --arg p "${PWD}" \
+        '{projects:{($p):{mcpServers:{serena:{command:"serena",args:[]}}}}}' \
+        >"${HOME}/.claude.json"
+    . "${LIB}"
+    # Emulate the caller's shell options so the guard is actually exercised.
+    set -u
+    serena_maybe_migrate_bare_registration
+    set +u
+    assert_file_exists "migrate marker written (empty args)" "$(_migrate_marker_path)"
+    if grep -qF "claude mcp remove serena -s local" "${MOCK_LOG}" \
+       && grep -qF "claude mcp add serena -s local -- ${MOCK_BIN}/serena" "${MOCK_LOG}"; then
+        echo "  PASS: re-added with abs path despite empty args[]"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo "  FAIL: expected remove+add to still fire with empty args[]"
+        echo "  log: $(cat "${MOCK_LOG}")"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+    _teardown_mocks
+    teardown_test_env
+}
+
 echo "=== test-serena-autoregister.sh ==="
+test_selfheal_bare_reg_with_empty_args_still_readds
 test_setup_md_documents_abspath_registration
 test_selfheal_rewrites_bare_local_registration
 test_selfheal_marker_present_is_noop

@@ -145,7 +145,10 @@ serena_maybe_migrate_bare_registration() {
 
     local scope_flag="-s ${scope}"
     claude mcp remove serena ${scope_flag} >/dev/null 2>&1 || true
-    if claude mcp add serena ${scope_flag} -- "${serena_bin}" "${args[@]}" >/dev/null 2>&1; then
+    # Guarded empty-array expansion: the caller (session-start-hook.sh) runs under
+    # `set -u`, where a bare "${args[@]}" on an empty array is a fatal unbound-var
+    # error — which, after the destructive remove above, would leave NO reg at all.
+    if claude mcp add serena ${scope_flag} -- "${serena_bin}" "${args[@]+"${args[@]}"}" >/dev/null 2>&1; then
         [ "${SKILL_EXPLAIN:-0}" = "1" ] && echo "[serena-autoregister] migrated bare reg to ${serena_bin} (${scope})" >&2
     else
         printf '%s\tclaude mcp add failed during abspath migration\n' \
