@@ -88,3 +88,29 @@ by the same `. lib && fn || true` form (never the bare-source bypass shape).
 
 - Forgetful MCP registration, LSP plugins, changing the Serena install method,
   and any general MCP-registration refactor.
+
+## Implementation Notes (synced at ship time)
+
+Built as designed. Additions surfaced during verification/review, all inside the
+same three units:
+
+- **`set -u` empty-array guard.** The caller `session-start-hook.sh` runs under
+  `set -uo pipefail`; a bare `"${args[@]}"` on an empty array is fatal there and,
+  after the destructive `remove`, would leave no registration. The self-heal add
+  uses the guarded form `"${args[@]+"${args[@]}"}"`. Regression test added.
+- **Restore-on-failure (code review).** If `remove` succeeds but the abs-path
+  `add` fails, the self-heal now best-effort re-adds the ORIGINAL registration
+  before writing the breadcrumb, so a failed migration never leaves the user
+  worse than they started.
+- **User-scope self-heal coverage (code review).** Added a test for the
+  `-s user` detection/rewrite path (was local-scope only).
+- **Test isolation fix (unrelated, required to green the gate).** Pre-existing
+  capability-detection tests in `tests/test-registry.sh` leaked host tools
+  (openspec/chub share `/opt/homebrew/bin` with jq) because they preserved jq by
+  exposing its whole directory. Added `isolated_tool_path` in `test-helpers.sh`
+  that symlinks jq alone. Not part of the Serena capability, but the local
+  `.verify.yml` gate could not pass without it.
+
+Capability-taxonomy note: `serena-mcp-registration` is declared as a new
+capability; the canonical-spec placement (new vs. extending
+`mcp-context-integration`) is deferred to merge time.
