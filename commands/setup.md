@@ -254,14 +254,18 @@ If the user declines to auto-write, give the same manual-edit guidance with the 
 
 3. Register the MCP server — choose one:
 
+Register the **absolute** path (`command -v serena`), not a bare `serena` — Claude Code launched from a GUI (Dock/Spotlight) has a PATH that lacks `~/.local/bin`, so a bare command fails to connect (`serena_connected=false`).
+
 Per-project (recommended, captures current working directory):
 ```bash
-claude mcp add serena -- serena start-mcp-server --context claude-code --project "$(pwd)"
+SERENA_BIN="$(command -v serena)"
+claude mcp add serena -- "$SERENA_BIN" start-mcp-server --context claude-code --project "$(pwd)"
 ```
 
 Global (uses working directory at runtime):
 ```bash
-claude mcp add --scope user serena -- serena start-mcp-server --context claude-code --project-from-cwd
+SERENA_BIN="$(command -v serena)"
+claude mcp add --scope user serena -- "$SERENA_BIN" start-mcp-server --context claude-code --project-from-cwd
 ```
 
 **Auto-registration and recovery:**
@@ -293,8 +297,9 @@ claude mcp remove serena
 # Install via PyPI (replaces the old git-based approach)
 uv tool install -p 3.13 serena-agent@latest --prerelease=allow
 
-# Re-register with new binary
-claude mcp add serena -- serena start-mcp-server --context claude-code --project "$(pwd)"
+# Re-register with new binary (absolute path — a bare `serena` fails under a GUI launch)
+SERENA_BIN="$(command -v serena)"
+claude mcp add serena -- "$SERENA_BIN" start-mcp-server --context claude-code --project "$(pwd)"
 ```
 
 To upgrade an existing PyPI-based install to the latest version:

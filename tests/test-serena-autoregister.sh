@@ -378,7 +378,24 @@ EOF
     teardown_test_env
 }
 
+test_setup_md_documents_abspath_registration() {
+    echo "-- test: setup.md registers serena via an absolute path --"
+    setup_test_env
+    local setup_md="${PROJECT_ROOT}/commands/setup.md"
+    # Every documented `claude mcp add serena ... -- ... serena start-mcp-server`
+    # must use an absolute path (command -v serena / $HOME/... ), never a bare `serena`.
+    if grep -nE 'claude mcp add.*-- +serena start-mcp-server' "${setup_md}"; then
+        echo "  FAIL: setup.md still documents a bare 'serena' command after --"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    else
+        echo "  PASS: no bare-serena 'claude mcp add' snippet in setup.md"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    fi
+    teardown_test_env
+}
+
 echo "=== test-serena-autoregister.sh ==="
+test_setup_md_documents_abspath_registration
 test_selfheal_rewrites_bare_local_registration
 test_selfheal_marker_present_is_noop
 test_selfheal_abspath_registration_is_noop
