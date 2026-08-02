@@ -89,3 +89,68 @@ serena_maybe_autoregister() {
 
     return 0
 }
+
+# serena_maybe_migrate_bare_registration — one-time self-heal of an existing
+# Serena registration whose command is a bare `serena` (fails under a launch
+# whose PATH lacks the uv-tool bin dir). Detects via a read-only jq read of
+# ~/.claude.json (current-project/local scope takes precedence over user scope),
+# rewrites to the absolute path via the claude CLI preserving scope + args.
+# Marker-guarded; fail-open in all branches; NEVER returns non-zero.
+serena_maybe_migrate_bare_registration() {
+    local marker="${HOME}/.claude/.auto-claude-skills-serena-abspath-migrated"
+    local err="${HOME}/.claude/.auto-claude-skills-serena-abspath-migrate-error"
+    local cfg="${HOME}/.claude.json"
+
+    [ -e "${marker}" ] && return 0
+    command -v claude >/dev/null 2>&1 || return 0   # no CLI → retry a later session
+    command -v jq >/dev/null 2>&1 || return 0       # no jq → cannot detect; retry later
+    [ -f "${cfg}" ] || return 0
+
+    # Locate the effective serena entry: local (current project) wins over user.
+    local scope cmd
+    cmd="$(jq -r --arg p "${PWD}" '.projects[$p].mcpServers.serena.command // empty' "${cfg}" 2>/dev/null)"
+    if [ -n "${cmd}" ]; then
+        scope="local"
+    else
+        cmd="$(jq -r '.mcpServers.serena.command // empty' "${cfg}" 2>/dev/null)"
+        [ -n "${cmd}" ] && scope="user"
+    fi
+    [ -n "${cmd:-}" ] || return 0                   # no serena reg anywhere → nothing to heal
+
+    # Already absolute → healthy; stop re-checking.
+    case "${cmd}" in
+        */*) : >"${marker}" 2>/dev/null || true; return 0 ;;
+    esac
+
+    # Bare command → attempt rewrite. From here on, an attempt was made: write
+    # the marker on every exit so we don't retry every session.
+    local serena_bin
+    if ! serena_bin="$(serena_resolve_bin)"; then
+        printf '%s\tserena unresolvable; left bare reg intact\n' \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)" >"${err}" 2>/dev/null || true
+        : >"${marker}" 2>/dev/null || true
+        return 0
+    fi
+
+    # Read args (may contain spaces in a --project path) into an array.
+    local args=()
+    local a
+    if [ "${scope}" = "local" ]; then
+        while IFS= read -r a; do args+=("${a}"); done \
+            < <(jq -r --arg p "${PWD}" '.projects[$p].mcpServers.serena.args[]? // empty' "${cfg}" 2>/dev/null)
+    else
+        while IFS= read -r a; do args+=("${a}"); done \
+            < <(jq -r '.mcpServers.serena.args[]? // empty' "${cfg}" 2>/dev/null)
+    fi
+
+    local scope_flag="-s ${scope}"
+    claude mcp remove serena ${scope_flag} >/dev/null 2>&1 || true
+    if claude mcp add serena ${scope_flag} -- "${serena_bin}" "${args[@]}" >/dev/null 2>&1; then
+        [ "${SKILL_EXPLAIN:-0}" = "1" ] && echo "[serena-autoregister] migrated bare reg to ${serena_bin} (${scope})" >&2
+    else
+        printf '%s\tclaude mcp add failed during abspath migration\n' \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)" >"${err}" 2>/dev/null || true
+    fi
+    : >"${marker}" 2>/dev/null || true
+    return 0
+}
