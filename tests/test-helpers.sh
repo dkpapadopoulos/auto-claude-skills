@@ -42,6 +42,22 @@ teardown_test_env() {
     unset TEST_REGISTRY_CACHE TEST_USER_CONFIG
 }
 
+# isolated_tool_path — echo a PATH that exposes ONLY jq (via a private symlink)
+# plus the system dirs. Use this in "nothing installed" capability tests instead
+# of prepending `dirname "$(command -v jq)"`: on a dev machine jq commonly shares
+# a directory (e.g. /opt/homebrew/bin) with openspec/chub/other CLI tools, so
+# exposing jq's whole directory LEAKS those siblings and the detection sees them
+# as installed. Symlinking jq alone keeps jq available while masking the rest.
+# Requires TEST_TMPDIR (set by setup_test_env).
+isolated_tool_path() {
+    local _bin="${TEST_TMPDIR}/isolated-bin"
+    mkdir -p "${_bin}"
+    local _jq
+    _jq="$(command -v jq 2>/dev/null)"
+    [ -n "${_jq}" ] && ln -sf "${_jq}" "${_bin}/jq" 2>/dev/null
+    printf '%s' "${_bin}:/usr/bin:/bin:/usr/sbin:/sbin"
+}
+
 # ---------------------------------------------------------------------------
 # Assertion helpers
 # ---------------------------------------------------------------------------

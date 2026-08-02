@@ -19,6 +19,30 @@
 # Bash 3.2 compatible. jq NOT required on this path.
 # Design: docs/plans/2026-05-23-serena-auto-register-design.md
 
+# serena_resolve_bin — echo an absolute, executable serena path (rc 0), or
+# echo nothing and return 1. Tries PATH first, then a fixed probe list so the
+# path resolves even when the caller's PATH lacks the uv-tool bin dir (the
+# exact GUI-launch failure this lib repairs). Bash 3.2; no external deps.
+serena_resolve_bin() {
+    local p
+    p="$(command -v serena 2>/dev/null)"
+    if [ -n "${p}" ] && [ -x "${p}" ]; then
+        printf '%s\n' "${p}"
+        return 0
+    fi
+    local cand
+    for cand in \
+        "${HOME}/.local/bin/serena" \
+        "${HOME}/.local/share/uv/tools/serena-agent/bin/serena" \
+        "${HOME}/.cargo/bin/serena"; do
+        if [ -x "${cand}" ]; then
+            printf '%s\n' "${cand}"
+            return 0
+        fi
+    done
+    return 1
+}
+
 serena_maybe_autoregister() {
     local marker="${HOME}/.claude/.auto-claude-skills-serena-registered"
     local err_breadcrumb="${HOME}/.claude/.auto-claude-skills-serena-register-error"
@@ -46,8 +70,10 @@ serena_maybe_autoregister() {
     #    --open-web-dashboard false suppresses the per-session browser tab that
     #    Serena opens by default; the dashboard remains reachable at
     #    http://localhost:24282/dashboard/ for users who want it.
+    local serena_bin
+    serena_bin="$(serena_resolve_bin)" || serena_bin="serena"
     local add_output add_rc
-    add_output="$(claude mcp add --scope user serena -- serena start-mcp-server --context claude-code --project-from-cwd --open-web-dashboard false 2>&1)"
+    add_output="$(claude mcp add --scope user serena -- "${serena_bin}" start-mcp-server --context claude-code --project-from-cwd --open-web-dashboard false 2>&1)"
     add_rc=$?
 
     if [ "${add_rc}" -eq 0 ]; then
@@ -61,5 +87,82 @@ serena_maybe_autoregister() {
         [ "${SKILL_EXPLAIN:-0}" = "1" ] && echo "[serena-autoregister] claude mcp add failed (rc=${add_rc}); marker + error breadcrumb written" >&2
     fi
 
+    return 0
+}
+
+# serena_maybe_migrate_bare_registration — one-time self-heal of an existing
+# Serena registration whose command is a bare `serena` (fails under a launch
+# whose PATH lacks the uv-tool bin dir). Detects via a read-only jq read of
+# ~/.claude.json (current-project/local scope takes precedence over user scope),
+# rewrites to the absolute path via the claude CLI preserving scope + args.
+# Marker-guarded; fail-open in all branches; NEVER returns non-zero.
+serena_maybe_migrate_bare_registration() {
+    local marker="${HOME}/.claude/.auto-claude-skills-serena-abspath-migrated"
+    local err="${HOME}/.claude/.auto-claude-skills-serena-abspath-migrate-error"
+    local cfg="${HOME}/.claude.json"
+
+    [ -e "${marker}" ] && return 0
+    command -v claude >/dev/null 2>&1 || return 0   # no CLI → retry a later session
+    command -v jq >/dev/null 2>&1 || return 0       # no jq → cannot detect; retry later
+    [ -f "${cfg}" ] || return 0
+
+    # Locate the effective serena entry: local (current project) wins over user.
+    # Trade-off (design "marker = once"): if a healthy absolute LOCAL reg shadows a
+    # bare USER reg, precedence picks local, the marker is written, and the bare user
+    # reg (effective in OTHER projects) is never healed. Bounded and accepted.
+    local scope cmd
+    cmd="$(jq -r --arg p "${PWD}" '.projects[$p].mcpServers.serena.command // empty' "${cfg}" 2>/dev/null)"
+    if [ -n "${cmd}" ]; then
+        scope="local"
+    else
+        cmd="$(jq -r '.mcpServers.serena.command // empty' "${cfg}" 2>/dev/null)"
+        [ -n "${cmd}" ] && scope="user"
+    fi
+    [ -n "${cmd:-}" ] || return 0                   # no serena reg anywhere → nothing to heal
+
+    # Already absolute → healthy; stop re-checking.
+    case "${cmd}" in
+        */*) : >"${marker}" 2>/dev/null || true; return 0 ;;
+    esac
+
+    # Bare command → attempt rewrite. From here on, an attempt was made: write
+    # the marker on every exit so we don't retry every session.
+    local serena_bin
+    if ! serena_bin="$(serena_resolve_bin)"; then
+        printf '%s\tserena unresolvable; left bare reg intact\n' \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)" >"${err}" 2>/dev/null || true
+        : >"${marker}" 2>/dev/null || true
+        return 0
+    fi
+
+    # Read args (may contain spaces in a --project path) into an array.
+    local args=()
+    local a
+    if [ "${scope}" = "local" ]; then
+        while IFS= read -r a; do args+=("${a}"); done \
+            < <(jq -r --arg p "${PWD}" '.projects[$p].mcpServers.serena.args[]? // empty' "${cfg}" 2>/dev/null)
+    else
+        while IFS= read -r a; do args+=("${a}"); done \
+            < <(jq -r '.mcpServers.serena.args[]? // empty' "${cfg}" 2>/dev/null)
+    fi
+
+    local scope_flag="-s ${scope}"
+    claude mcp remove serena ${scope_flag} >/dev/null 2>&1 || true
+    # Guarded empty-array expansion: the caller (session-start-hook.sh) runs under
+    # `set -u`, where a bare "${args[@]}" on an empty array is a fatal unbound-var
+    # error — which, after the destructive remove above, would leave NO reg at all.
+    if claude mcp add serena ${scope_flag} -- "${serena_bin}" "${args[@]+"${args[@]}"}" >/dev/null 2>&1; then
+        [ "${SKILL_EXPLAIN:-0}" = "1" ] && echo "[serena-autoregister] migrated bare reg to ${serena_bin} (${scope})" >&2
+    else
+        # The abs-path add failed AFTER the destructive remove above. In the exact
+        # no-PATH scenario this lib targets, a later serena_maybe_autoregister
+        # won't re-add (its `command -v serena` gate fails) and this marker blocks
+        # retry — so a best-effort restore of the ORIGINAL reg keeps the user no
+        # worse than they started. "${cmd}" is the original bare command string.
+        claude mcp add serena ${scope_flag} -- "${cmd}" "${args[@]+"${args[@]}"}" >/dev/null 2>&1 || true
+        printf '%s\tclaude mcp add failed during abspath migration; restored original reg\n' \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)" >"${err}" 2>/dev/null || true
+    fi
+    : >"${marker}" 2>/dev/null || true
     return 0
 }

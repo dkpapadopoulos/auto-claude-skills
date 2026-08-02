@@ -66,6 +66,30 @@ _error_path() {
     printf '%s/.claude/.auto-claude-skills-serena-register-error' "${HOME}"
 }
 
+_migrate_marker_path() {
+    printf '%s/.claude/.auto-claude-skills-serena-abspath-migrated' "${HOME}"
+}
+
+_migrate_error_path() {
+    printf '%s/.claude/.auto-claude-skills-serena-abspath-migrate-error' "${HOME}"
+}
+
+# Write a ~/.claude.json with a serena entry under the given scope+command.
+# $1 = scope: "user" | "local"; $2 = command string; project key = $PWD.
+_write_claude_json_serena() {
+    local scope="$1" cmd="$2"
+    mkdir -p "${HOME}"
+    if [ "${scope}" = "user" ]; then
+        jq -n --arg c "${cmd}" \
+            '{mcpServers:{serena:{command:$c,args:["start-mcp-server","--context","claude-code","--project-from-cwd"]}}}' \
+            >"${HOME}/.claude.json"
+    else
+        jq -n --arg c "${cmd}" --arg p "${PWD}" \
+            '{projects:{($p):{mcpServers:{serena:{command:$c,args:["start-mcp-server","--context","claude-code","--project",$p]}}}}}' \
+            >"${HOME}/.claude.json"
+    fi
+}
+
 test_eligible_and_not_registered_runs_mcp_add_and_writes_marker() {
     echo "-- test: eligible + not registered → mcp add + marker written --"
     setup_test_env
@@ -76,11 +100,11 @@ test_eligible_and_not_registered_runs_mcp_add_and_writes_marker() {
     serena_maybe_autoregister
 
     assert_file_exists "marker file written" "$(_marker_path)"
-    if grep -qF 'claude mcp add --scope user serena' "${MOCK_LOG}"; then
-        echo "  PASS: claude mcp add invoked with --scope user"
+    if grep -qF "claude mcp add --scope user serena -- ${MOCK_BIN}/serena start-mcp-server" "${MOCK_LOG}"; then
+        echo "  PASS: mcp add uses the absolute serena path"
         TESTS_PASSED=$((TESTS_PASSED + 1))
     else
-        echo "  FAIL: expected 'claude mcp add --scope user serena' in mock log"
+        echo "  FAIL: expected absolute serena path in 'claude mcp add' command"
         echo "  log: $(cat "${MOCK_LOG}")"
         TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
@@ -220,7 +244,252 @@ test_function_exit_code_is_always_zero() {
     teardown_test_env
 }
 
+test_resolve_bin_prefers_path() {
+    echo "-- test: serena_resolve_bin returns command -v path when on PATH --"
+    setup_test_env
+    _setup_mocks               # puts mock serena at ${MOCK_BIN}/serena on PATH
+    . "${LIB}"
+    local got; got="$(serena_resolve_bin)"; local rc=$?
+    assert_equals "rc 0 when on PATH" "0" "${rc}"
+    assert_equals "returns the on-PATH abs path" "${MOCK_BIN}/serena" "${got}"
+    _teardown_mocks
+    teardown_test_env
+}
+
+test_resolve_bin_probes_local_bin_when_off_path() {
+    echo "-- test: serena_resolve_bin probes ~/.local/bin when serena off PATH --"
+    setup_test_env
+    export PATH="/usr/bin:/bin"            # serena NOT on PATH
+    mkdir -p "${HOME}/.local/bin"
+    cat >"${HOME}/.local/bin/serena" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "${HOME}/.local/bin/serena"
+    . "${LIB}"
+    local got; got="$(serena_resolve_bin)"; local rc=$?
+    assert_equals "rc 0 via probe" "0" "${rc}"
+    assert_equals "returns probed ~/.local/bin path" "${HOME}/.local/bin/serena" "${got}"
+    teardown_test_env
+}
+
+test_resolve_bin_fails_when_absent_everywhere() {
+    echo "-- test: serena_resolve_bin fails (rc1, empty) when serena absent --"
+    setup_test_env
+    export PATH="/usr/bin:/bin"            # not on PATH and no probe files created
+    . "${LIB}"
+    local got; got="$(serena_resolve_bin)"; local rc=$?
+    assert_equals "rc 1 when absent" "1" "${rc}"
+    assert_equals "empty output when absent" "" "${got}"
+    teardown_test_env
+}
+
+test_selfheal_rewrites_bare_local_registration() {
+    echo "-- test: self-heal rewrites a bare local serena reg to abs path --"
+    setup_test_env
+    _setup_mocks                          # mock serena on PATH at ${MOCK_BIN}/serena
+    mkdir -p "${HOME}/.claude"
+    _write_claude_json_serena "local" "serena"
+    . "${LIB}"
+    serena_maybe_migrate_bare_registration
+    assert_file_exists "migrate marker written" "$(_migrate_marker_path)"
+    if grep -qF "claude mcp remove serena -s local" "${MOCK_LOG}" \
+       && grep -qF "claude mcp add serena -s local -- ${MOCK_BIN}/serena start-mcp-server" "${MOCK_LOG}"; then
+        echo "  PASS: bare reg rewritten to abs path, scope preserved"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo "  FAIL: expected remove+add with abs path at local scope"
+        echo "  log: $(cat "${MOCK_LOG}")"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+    _teardown_mocks
+    teardown_test_env
+}
+
+test_selfheal_rewrites_bare_user_registration() {
+    echo "-- test: self-heal rewrites a bare USER-scope serena reg to abs path --"
+    setup_test_env
+    _setup_mocks
+    mkdir -p "${HOME}/.claude"
+    _write_claude_json_serena "user" "serena"
+    . "${LIB}"
+    serena_maybe_migrate_bare_registration
+    assert_file_exists "migrate marker written (user)" "$(_migrate_marker_path)"
+    if grep -qF "claude mcp remove serena -s user" "${MOCK_LOG}" \
+       && grep -qF "claude mcp add serena -s user -- ${MOCK_BIN}/serena start-mcp-server" "${MOCK_LOG}"; then
+        echo "  PASS: bare user-scope reg rewritten to abs path, scope preserved"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo "  FAIL: expected remove+add with abs path at user scope"
+        echo "  log: $(cat "${MOCK_LOG}")"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+    _teardown_mocks
+    teardown_test_env
+}
+
+test_selfheal_add_failure_restores_original_reg() {
+    echo "-- test: self-heal restores the original reg when the abs-path add fails --"
+    setup_test_env
+    _setup_mocks
+    mkdir -p "${HOME}/.claude"
+    _write_claude_json_serena "local" "serena"
+    export MOCK_CLAUDE_ADD_FAILS=1     # every `claude mcp add` fails
+    . "${LIB}"
+    serena_maybe_migrate_bare_registration
+    # The destructive remove ran; the abs-path add failed. The code must attempt
+    # to restore the ORIGINAL bare command so the user is never left with no reg.
+    if grep -qF "claude mcp add serena -s local -- serena start-mcp-server" "${MOCK_LOG}"; then
+        echo "  PASS: original bare reg restore attempted after add failure"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo "  FAIL: expected a restore 'claude mcp add ... -- serena start-mcp-server' after add failure"
+        echo "  log: $(cat "${MOCK_LOG}")"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+    assert_file_exists "breadcrumb written on add failure" "$(_migrate_error_path)"
+    assert_file_exists "marker written on add failure" "$(_migrate_marker_path)"
+    _teardown_mocks
+    teardown_test_env
+}
+
+test_selfheal_marker_present_is_noop() {
+    echo "-- test: self-heal is a no-op when migrate marker exists --"
+    setup_test_env
+    _setup_mocks
+    mkdir -p "${HOME}/.claude"
+    _write_claude_json_serena "local" "serena"
+    : >"$(_migrate_marker_path)"
+    . "${LIB}"
+    serena_maybe_migrate_bare_registration
+    if [ -s "${MOCK_LOG}" ]; then
+        echo "  FAIL: no claude calls expected when marker present"
+        echo "  log: $(cat "${MOCK_LOG}")"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    else
+        echo "  PASS: fully no-op when marker present"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    fi
+    _teardown_mocks
+    teardown_test_env
+}
+
+test_selfheal_abspath_registration_is_noop() {
+    echo "-- test: self-heal skips a reg that already uses an abs path --"
+    setup_test_env
+    _setup_mocks
+    mkdir -p "${HOME}/.claude"
+    _write_claude_json_serena "local" "${MOCK_BIN}/serena"   # already absolute
+    . "${LIB}"
+    serena_maybe_migrate_bare_registration
+    if grep -qF "claude mcp remove" "${MOCK_LOG}"; then
+        echo "  FAIL: should not rewrite an already-absolute registration"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    else
+        echo "  PASS: no rewrite for already-absolute reg"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    fi
+    _teardown_mocks
+    teardown_test_env
+}
+
+test_selfheal_unresolvable_serena_fails_open() {
+    echo "-- test: self-heal fails open when serena cannot be resolved --"
+    setup_test_env
+    # claude present (for detection) but serena NOT resolvable anywhere
+    MOCK_BIN="${TEST_TMPDIR}/bin"; MOCK_LOG="${TEST_TMPDIR}/mock-calls.log"
+    mkdir -p "${MOCK_BIN}"; : >"${MOCK_LOG}"
+    cat >"${MOCK_BIN}/claude" <<'EOF'
+#!/usr/bin/env bash
+echo "claude $*" >>"${MOCK_LOG}"
+[ "$1" = "mcp" ] && [ "$2" = "remove" ] && exit 0
+[ "$1" = "mcp" ] && [ "$2" = "add" ] && exit 0
+exit 0
+EOF
+    chmod +x "${MOCK_BIN}/claude"
+    export MOCK_LOG
+    export PATH="${MOCK_BIN}:/usr/bin:/bin"    # no serena on PATH or probes
+    mkdir -p "${HOME}/.claude"
+    _write_claude_json_serena "local" "serena"
+    . "${LIB}"
+    serena_maybe_migrate_bare_registration; local rc=$?   # file uses set -u, not set -e; no toggle needed
+    assert_equals "fail-open rc 0" "0" "${rc}"
+    if grep -qF "claude mcp remove" "${MOCK_LOG}"; then
+        echo "  FAIL: must NOT remove the reg when serena unresolvable"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    else
+        echo "  PASS: reg left intact when serena unresolvable"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    fi
+    assert_file_exists "breadcrumb written on unresolved" "$(_migrate_error_path)"
+    teardown_test_env
+}
+
+test_setup_md_documents_abspath_registration() {
+    echo "-- test: setup.md registers serena via an absolute path --"
+    setup_test_env
+    local setup_md="${PROJECT_ROOT}/commands/setup.md"
+    # Every documented `claude mcp add serena ... -- ... serena start-mcp-server`
+    # must use an absolute path (command -v serena / $HOME/... ), never a bare `serena`.
+    # Absence of the bare form is necessary but not sufficient: it passes vacuously
+    # if the snippets were deleted. Also require the positive absolute-path form so
+    # this test can't silently degrade to a no-op.
+    if grep -nE 'claude mcp add.*-- +serena start-mcp-server' "${setup_md}"; then
+        echo "  FAIL: setup.md still documents a bare 'serena' command after --"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    elif grep -qF 'command -v serena' "${setup_md}" \
+         && grep -qF -- '-- "$SERENA_BIN" start-mcp-server' "${setup_md}"; then
+        echo "  PASS: setup.md registers serena via an absolute path (\$SERENA_BIN)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo "  FAIL: setup.md lacks the absolute-path registration form (\$SERENA_BIN)"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+    teardown_test_env
+}
+
+test_selfheal_bare_reg_with_empty_args_still_readds() {
+    echo "-- test: self-heal survives an empty args[] (set -u empty-array guard) --"
+    setup_test_env
+    _setup_mocks
+    mkdir -p "${HOME}/.claude"
+    # Degenerate bare reg: command "serena", empty args[]. Under session-start's
+    # `set -u`, an unguarded "${args[@]}" would abort AFTER the destructive
+    # remove, leaving no registration at all.
+    jq -n --arg p "${PWD}" \
+        '{projects:{($p):{mcpServers:{serena:{command:"serena",args:[]}}}}}' \
+        >"${HOME}/.claude.json"
+    . "${LIB}"
+    # Emulate the caller's shell options so the guard is actually exercised.
+    set -u
+    serena_maybe_migrate_bare_registration
+    set +u
+    assert_file_exists "migrate marker written (empty args)" "$(_migrate_marker_path)"
+    if grep -qF "claude mcp remove serena -s local" "${MOCK_LOG}" \
+       && grep -qF "claude mcp add serena -s local -- ${MOCK_BIN}/serena" "${MOCK_LOG}"; then
+        echo "  PASS: re-added with abs path despite empty args[]"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo "  FAIL: expected remove+add to still fire with empty args[]"
+        echo "  log: $(cat "${MOCK_LOG}")"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+    _teardown_mocks
+    teardown_test_env
+}
+
 echo "=== test-serena-autoregister.sh ==="
+test_selfheal_bare_reg_with_empty_args_still_readds
+test_setup_md_documents_abspath_registration
+test_selfheal_rewrites_bare_local_registration
+test_selfheal_rewrites_bare_user_registration
+test_selfheal_add_failure_restores_original_reg
+test_selfheal_marker_present_is_noop
+test_selfheal_abspath_registration_is_noop
+test_selfheal_unresolvable_serena_fails_open
+test_resolve_bin_prefers_path
+test_resolve_bin_probes_local_bin_when_off_path
+test_resolve_bin_fails_when_absent_everywhere
 test_eligible_and_not_registered_runs_mcp_add_and_writes_marker
 test_already_registered_skips_add_but_writes_marker
 test_marker_exists_is_noop

@@ -1059,7 +1059,13 @@ OPENSPEC_CAPS="$(jq -n \
 # DOES exercise this path sets _SKILL_TEST_AUTOREG=1 to opt back in.
 if [ "${_SKILL_TEST_MODE:-0}" != "1" ] || [ "${_SKILL_TEST_AUTOREG:-0}" = "1" ]; then
     # shellcheck source=lib/serena-autoregister.sh
-    . "$(dirname "$0")/lib/serena-autoregister.sh" 2>/dev/null && serena_maybe_autoregister || true
+    if . "$(dirname "$0")/lib/serena-autoregister.sh" 2>/dev/null; then
+        serena_maybe_autoregister || true
+        # Self-heal a pre-existing bare-command serena registration (fails under
+        # a GUI launch whose PATH lacks the uv-tool bin dir). One-time,
+        # marker-guarded, fail-open. See the lib for the full contract.
+        serena_maybe_migrate_bare_registration || true
+    fi
 fi
 
 # Canonical context_capabilities keys. Single source of truth consumed by:
