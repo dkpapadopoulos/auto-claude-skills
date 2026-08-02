@@ -306,6 +306,53 @@ test_selfheal_rewrites_bare_local_registration() {
     teardown_test_env
 }
 
+test_selfheal_rewrites_bare_user_registration() {
+    echo "-- test: self-heal rewrites a bare USER-scope serena reg to abs path --"
+    setup_test_env
+    _setup_mocks
+    mkdir -p "${HOME}/.claude"
+    _write_claude_json_serena "user" "serena"
+    . "${LIB}"
+    serena_maybe_migrate_bare_registration
+    assert_file_exists "migrate marker written (user)" "$(_migrate_marker_path)"
+    if grep -qF "claude mcp remove serena -s user" "${MOCK_LOG}" \
+       && grep -qF "claude mcp add serena -s user -- ${MOCK_BIN}/serena start-mcp-server" "${MOCK_LOG}"; then
+        echo "  PASS: bare user-scope reg rewritten to abs path, scope preserved"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo "  FAIL: expected remove+add with abs path at user scope"
+        echo "  log: $(cat "${MOCK_LOG}")"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+    _teardown_mocks
+    teardown_test_env
+}
+
+test_selfheal_add_failure_restores_original_reg() {
+    echo "-- test: self-heal restores the original reg when the abs-path add fails --"
+    setup_test_env
+    _setup_mocks
+    mkdir -p "${HOME}/.claude"
+    _write_claude_json_serena "local" "serena"
+    export MOCK_CLAUDE_ADD_FAILS=1     # every `claude mcp add` fails
+    . "${LIB}"
+    serena_maybe_migrate_bare_registration
+    # The destructive remove ran; the abs-path add failed. The code must attempt
+    # to restore the ORIGINAL bare command so the user is never left with no reg.
+    if grep -qF "claude mcp add serena -s local -- serena start-mcp-server" "${MOCK_LOG}"; then
+        echo "  PASS: original bare reg restore attempted after add failure"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo "  FAIL: expected a restore 'claude mcp add ... -- serena start-mcp-server' after add failure"
+        echo "  log: $(cat "${MOCK_LOG}")"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+    assert_file_exists "breadcrumb written on add failure" "$(_migrate_error_path)"
+    assert_file_exists "marker written on add failure" "$(_migrate_marker_path)"
+    _teardown_mocks
+    teardown_test_env
+}
+
 test_selfheal_marker_present_is_noop() {
     echo "-- test: self-heal is a no-op when migrate marker exists --"
     setup_test_env
@@ -384,12 +431,19 @@ test_setup_md_documents_abspath_registration() {
     local setup_md="${PROJECT_ROOT}/commands/setup.md"
     # Every documented `claude mcp add serena ... -- ... serena start-mcp-server`
     # must use an absolute path (command -v serena / $HOME/... ), never a bare `serena`.
+    # Absence of the bare form is necessary but not sufficient: it passes vacuously
+    # if the snippets were deleted. Also require the positive absolute-path form so
+    # this test can't silently degrade to a no-op.
     if grep -nE 'claude mcp add.*-- +serena start-mcp-server' "${setup_md}"; then
         echo "  FAIL: setup.md still documents a bare 'serena' command after --"
         TESTS_FAILED=$((TESTS_FAILED + 1))
-    else
-        echo "  PASS: no bare-serena 'claude mcp add' snippet in setup.md"
+    elif grep -qF 'command -v serena' "${setup_md}" \
+         && grep -qF -- '-- "$SERENA_BIN" start-mcp-server' "${setup_md}"; then
+        echo "  PASS: setup.md registers serena via an absolute path (\$SERENA_BIN)"
         TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo "  FAIL: setup.md lacks the absolute-path registration form (\$SERENA_BIN)"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
     teardown_test_env
 }
@@ -428,6 +482,8 @@ echo "=== test-serena-autoregister.sh ==="
 test_selfheal_bare_reg_with_empty_args_still_readds
 test_setup_md_documents_abspath_registration
 test_selfheal_rewrites_bare_local_registration
+test_selfheal_rewrites_bare_user_registration
+test_selfheal_add_failure_restores_original_reg
 test_selfheal_marker_present_is_noop
 test_selfheal_abspath_registration_is_noop
 test_selfheal_unresolvable_serena_fails_open

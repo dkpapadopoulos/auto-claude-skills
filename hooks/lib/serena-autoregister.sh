@@ -107,6 +107,9 @@ serena_maybe_migrate_bare_registration() {
     [ -f "${cfg}" ] || return 0
 
     # Locate the effective serena entry: local (current project) wins over user.
+    # Trade-off (design "marker = once"): if a healthy absolute LOCAL reg shadows a
+    # bare USER reg, precedence picks local, the marker is written, and the bare user
+    # reg (effective in OTHER projects) is never healed. Bounded and accepted.
     local scope cmd
     cmd="$(jq -r --arg p "${PWD}" '.projects[$p].mcpServers.serena.command // empty' "${cfg}" 2>/dev/null)"
     if [ -n "${cmd}" ]; then
@@ -151,7 +154,13 @@ serena_maybe_migrate_bare_registration() {
     if claude mcp add serena ${scope_flag} -- "${serena_bin}" "${args[@]+"${args[@]}"}" >/dev/null 2>&1; then
         [ "${SKILL_EXPLAIN:-0}" = "1" ] && echo "[serena-autoregister] migrated bare reg to ${serena_bin} (${scope})" >&2
     else
-        printf '%s\tclaude mcp add failed during abspath migration\n' \
+        # The abs-path add failed AFTER the destructive remove above. In the exact
+        # no-PATH scenario this lib targets, a later serena_maybe_autoregister
+        # won't re-add (its `command -v serena` gate fails) and this marker blocks
+        # retry — so a best-effort restore of the ORIGINAL reg keeps the user no
+        # worse than they started. "${cmd}" is the original bare command string.
+        claude mcp add serena ${scope_flag} -- "${cmd}" "${args[@]+"${args[@]}"}" >/dev/null 2>&1 || true
+        printf '%s\tclaude mcp add failed during abspath migration; restored original reg\n' \
             "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)" >"${err}" 2>/dev/null || true
     fi
     : >"${marker}" 2>/dev/null || true
