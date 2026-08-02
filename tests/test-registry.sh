@@ -695,14 +695,10 @@ test_context_capabilities_all_false() {
     rm -rf "${HOME}/.claude/plugins"
 
     # Mask CLI tools (chub, openspec) from PATH so they appear uninstalled.
-    # Keep only essential binaries (bash, jq, git, etc.) by using a minimal PATH.
-    local _minimal_path="/usr/bin:/bin:/usr/sbin:/sbin"
-    # Preserve jq location if it's outside the minimal path
-    local _jq_path
-    _jq_path="$(command -v jq 2>/dev/null)"
-    if [ -n "${_jq_path}" ]; then
-        _minimal_path="$(dirname "${_jq_path}"):${_minimal_path}"
-    fi
+    # Isolate jq alone; do NOT expose jq's whole directory (it commonly holds
+    # openspec/chub siblings on dev machines, which would leak as "installed").
+    local _minimal_path
+    _minimal_path="$(isolated_tool_path)"
 
     local output
     output="$(PATH="${_minimal_path}" run_hook)"
@@ -1151,12 +1147,10 @@ test_openspec_binary_absent() {
     setup_test_env
 
     # Mask CLI tools from PATH so openspec appears uninstalled.
-    local _minimal_path="/usr/bin:/bin:/usr/sbin:/sbin"
-    local _jq_path
-    _jq_path="$(command -v jq 2>/dev/null)"
-    if [ -n "${_jq_path}" ]; then
-        _minimal_path="$(dirname "${_jq_path}"):${_minimal_path}"
-    fi
+    # Isolate jq alone; do NOT expose jq's whole directory (it commonly holds
+    # openspec/chub siblings on dev machines, which would leak as "installed").
+    local _minimal_path
+    _minimal_path="$(isolated_tool_path)"
 
     local output
     output="$(PATH="${_minimal_path}" run_hook)"
@@ -1267,12 +1261,10 @@ test_openspec_commands_without_binary() {
     setup_test_env
 
     # Mask CLI tools from PATH so openspec appears uninstalled.
-    local _minimal_path="/usr/bin:/bin:/usr/sbin:/sbin"
-    local _jq_path
-    _jq_path="$(command -v jq 2>/dev/null)"
-    if [ -n "${_jq_path}" ]; then
-        _minimal_path="$(dirname "${_jq_path}"):${_minimal_path}"
-    fi
+    # Isolate jq alone; do NOT expose jq's whole directory (it commonly holds
+    # openspec/chub siblings on dev machines, which would leak as "installed").
+    local _minimal_path
+    _minimal_path="$(isolated_tool_path)"
 
     # No binary, but create commands
     local ws_dir="${HOME}/workspace"
