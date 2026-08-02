@@ -19,6 +19,30 @@
 # Bash 3.2 compatible. jq NOT required on this path.
 # Design: docs/plans/2026-05-23-serena-auto-register-design.md
 
+# serena_resolve_bin — echo an absolute, executable serena path (rc 0), or
+# echo nothing and return 1. Tries PATH first, then a fixed probe list so the
+# path resolves even when the caller's PATH lacks the uv-tool bin dir (the
+# exact GUI-launch failure this lib repairs). Bash 3.2; no external deps.
+serena_resolve_bin() {
+    local p
+    p="$(command -v serena 2>/dev/null)"
+    if [ -n "${p}" ] && [ -x "${p}" ]; then
+        printf '%s\n' "${p}"
+        return 0
+    fi
+    local cand
+    for cand in \
+        "${HOME}/.local/bin/serena" \
+        "${HOME}/.local/share/uv/tools/serena-agent/bin/serena" \
+        "${HOME}/.cargo/bin/serena"; do
+        if [ -x "${cand}" ]; then
+            printf '%s\n' "${cand}"
+            return 0
+        fi
+    done
+    return 1
+}
+
 serena_maybe_autoregister() {
     local marker="${HOME}/.claude/.auto-claude-skills-serena-registered"
     local err_breadcrumb="${HOME}/.claude/.auto-claude-skills-serena-register-error"

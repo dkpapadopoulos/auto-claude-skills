@@ -220,7 +220,50 @@ test_function_exit_code_is_always_zero() {
     teardown_test_env
 }
 
+test_resolve_bin_prefers_path() {
+    echo "-- test: serena_resolve_bin returns command -v path when on PATH --"
+    setup_test_env
+    _setup_mocks               # puts mock serena at ${MOCK_BIN}/serena on PATH
+    . "${LIB}"
+    local got; got="$(serena_resolve_bin)"; local rc=$?
+    assert_equals "rc 0 when on PATH" "0" "${rc}"
+    assert_equals "returns the on-PATH abs path" "${MOCK_BIN}/serena" "${got}"
+    _teardown_mocks
+    teardown_test_env
+}
+
+test_resolve_bin_probes_local_bin_when_off_path() {
+    echo "-- test: serena_resolve_bin probes ~/.local/bin when serena off PATH --"
+    setup_test_env
+    export PATH="/usr/bin:/bin"            # serena NOT on PATH
+    mkdir -p "${HOME}/.local/bin"
+    cat >"${HOME}/.local/bin/serena" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "${HOME}/.local/bin/serena"
+    . "${LIB}"
+    local got; got="$(serena_resolve_bin)"; local rc=$?
+    assert_equals "rc 0 via probe" "0" "${rc}"
+    assert_equals "returns probed ~/.local/bin path" "${HOME}/.local/bin/serena" "${got}"
+    teardown_test_env
+}
+
+test_resolve_bin_fails_when_absent_everywhere() {
+    echo "-- test: serena_resolve_bin fails (rc1, empty) when serena absent --"
+    setup_test_env
+    export PATH="/usr/bin:/bin"            # not on PATH and no probe files created
+    . "${LIB}"
+    local got; got="$(serena_resolve_bin)"; local rc=$?
+    assert_equals "rc 1 when absent" "1" "${rc}"
+    assert_equals "empty output when absent" "" "${got}"
+    teardown_test_env
+}
+
 echo "=== test-serena-autoregister.sh ==="
+test_resolve_bin_prefers_path
+test_resolve_bin_probes_local_bin_when_off_path
+test_resolve_bin_fails_when_absent_everywhere
 test_eligible_and_not_registered_runs_mcp_add_and_writes_marker
 test_already_registered_skips_add_but_writes_marker
 test_marker_exists_is_noop
