@@ -70,8 +70,10 @@ serena_maybe_autoregister() {
     #    --open-web-dashboard false suppresses the per-session browser tab that
     #    Serena opens by default; the dashboard remains reachable at
     #    http://localhost:24282/dashboard/ for users who want it.
+    local serena_bin
+    serena_bin="$(serena_resolve_bin)" || serena_bin="serena"
     local add_output add_rc
-    add_output="$(claude mcp add --scope user serena -- serena start-mcp-server --context claude-code --project-from-cwd --open-web-dashboard false 2>&1)"
+    add_output="$(claude mcp add --scope user serena -- "${serena_bin}" start-mcp-server --context claude-code --project-from-cwd --open-web-dashboard false 2>&1)"
     add_rc=$?
 
     if [ "${add_rc}" -eq 0 ]; then

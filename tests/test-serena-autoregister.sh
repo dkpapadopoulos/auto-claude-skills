@@ -76,11 +76,11 @@ test_eligible_and_not_registered_runs_mcp_add_and_writes_marker() {
     serena_maybe_autoregister
 
     assert_file_exists "marker file written" "$(_marker_path)"
-    if grep -qF 'claude mcp add --scope user serena' "${MOCK_LOG}"; then
-        echo "  PASS: claude mcp add invoked with --scope user"
+    if grep -qF "claude mcp add --scope user serena -- ${MOCK_BIN}/serena start-mcp-server" "${MOCK_LOG}"; then
+        echo "  PASS: mcp add uses the absolute serena path"
         TESTS_PASSED=$((TESTS_PASSED + 1))
     else
-        echo "  FAIL: expected 'claude mcp add --scope user serena' in mock log"
+        echo "  FAIL: expected absolute serena path in 'claude mcp add' command"
         echo "  log: $(cat "${MOCK_LOG}")"
         TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
