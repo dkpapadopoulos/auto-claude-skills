@@ -453,6 +453,60 @@ EOF
                         fi
                     done
                 fi
+                # Per-leg evidence detail for the shadow record (corpus-validity
+                # audit, F2). Derived from the SAME preconditions the predicates
+                # use, but WITHOUT re-invoking them: _ledger_has / _invoc_ok /
+                # _bridge_has also serve the REVIEW and VERIFY legs and several
+                # of them APPEND TO _STALE_MSG on acceptance, so calling them
+                # again for a diagnostic would duplicate user-visible advisories
+                # and widen a diagnostic's blast radius onto the enforcement
+                # path. Reaching here means every leg was consulted for every
+                # slot and none matched, so each leg is "missing" unless its
+                # precondition made the check impossible — which is exactly the
+                # distinction the record needs: a cannot_check leg means the
+                # constant advisory below names the WRONG remedy (the
+                # pre-registered false_block condition), not that the push
+                # lacked implementation work.
+                _impl_det_ledger=missing
+                _impl_det_invoc=missing
+                _impl_det_bridge=missing
+                _impl_det_attest=missing
+                # Both ledger legs bottom out in branch_ledger_dir, which returns
+                # non-zero when the branch KEY cannot be resolved (not a git repo,
+                # unresolvable HEAD) — indistinguishable at the predicate's return
+                # code from "no record on this branch". Probing the key here is
+                # what separates them. branch_ledger_dir is pure (it prints a path;
+                # it does not mkdir), so this adds no side effect to the gate path.
+                # Under-reporting cannot_check as missing is the DANGEROUS
+                # direction: it makes a false_block look like a true_catch and so
+                # biases the pre-registered rate toward clearing the deny-flip.
+                _impl_det_key_ok=false
+                if [ "${_LEDGER_OK}" = "true" ] && \
+                   command -v branch_ledger_dir >/dev/null 2>&1; then
+                    if [ -n "$(branch_ledger_dir "${_proot}" 2>/dev/null)" ]; then
+                        _impl_det_key_ok=true
+                    fi
+                fi
+                if [ "${_impl_det_key_ok}" != "true" ]; then
+                    _impl_det_ledger=cannot_check
+                fi
+                if [ "${_impl_det_key_ok}" != "true" ] || \
+                   ! command -v branch_ledger_bridge_has >/dev/null 2>&1; then
+                    _impl_det_bridge=cannot_check
+                fi
+                # An ABSENT evidence file is genuinely "missing" (nothing was
+                # recorded); only an unresolvable token or a missing jq means
+                # _invoc_has could not look at all.
+                if [ -z "${_SESSION_TOKEN:-}" ] || ! command -v jq >/dev/null 2>&1; then
+                    _impl_det_invoc=cannot_check
+                fi
+                if ! command -v phase_attested >/dev/null 2>&1; then
+                    _impl_det_attest=cannot_check
+                fi
+                if [ "${_impl_ev}" = "attested" ]; then
+                    _impl_det_attest=present
+                fi
+                _impl_detail="ledger:${_impl_det_ledger} invocation:${_impl_det_invoc} bridge:${_impl_det_bridge} attestation:${_impl_det_attest}"
                 # Resolution and materiality are DISTINCT outcomes (#161 fix
                 # round 1): a PR that resolved (gh returned a file list) but is
                 # docs-only must record diff_base:"pr:<n>" with
@@ -496,7 +550,7 @@ EOF
                         command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "${_pe_action}" "executing-plans"
                     fi
                     if command -v implement_shadow_record >/dev/null 2>&1; then
-                        implement_shadow_record "${_pe_action}" "${_proot}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" "${_impl_db}" "${_impl_material}" || true
+                        implement_shadow_record "${_pe_action}" "${_proot}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" "${_impl_db}" "${_impl_material}" "true" "${_impl_detail}" || true
                     fi
                 fi
                 # Attestation-resolved episodes are recorded too, as
@@ -509,7 +563,7 @@ EOF
                 if [ "${_impl_ev}" = "attested" ] && \
                    { [ "${_impl_material}" = "true" ] || [ "${_pe_action}" = "gh-merge" ]; }; then
                     if command -v implement_shadow_record >/dev/null 2>&1; then
-                        implement_shadow_record "${_pe_action}" "${_proot}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "attested" "${_impl_db}" "${_impl_material}" "false" || true
+                        implement_shadow_record "${_pe_action}" "${_proot}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "attested" "${_impl_db}" "${_impl_material}" "false" "${_impl_detail}" || true
                     fi
                 fi
             fi

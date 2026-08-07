@@ -45,6 +45,45 @@ Three homes were considered; two are wrong:
 }
 ```
 
+**Schema 3 adds** (corpus-validity audit, 2026-08-06):
+
+```json
+  "impl_evidence_detail": {
+    "ledger":      "present | missing | cannot_check",
+    "invocation":  "...",
+    "bridge":      "...",
+    "attestation": "..."
+  }
+```
+
+`not_evaluated` is reserved but has **no producer**: both record sites fire only
+after every leg has been consulted for every slot, so no leg is ever skipped in
+a written record. It is named so a future short-circuiting caller has an honest
+value available, but a `not_evaluated` filter over this corpus returns empty
+because nothing emits it — not because every leg ran.
+
+The distinction it carries is the one the pre-registered `false_block`
+definition turns on. Each of the four predicates returns 1 for BOTH "checked,
+no evidence" and "could not check" — `_bridge_has` alone collapses three
+causes (branch-ledger lib unsourceable, `branch_ledger_bridge_has` undefined,
+genuinely no record). Only the last means "no implementation work"; the other
+two are infrastructure failures where the constant advisory names the **wrong
+remedy**, which is a `false_block` by the definition below.
+
+This could not be deferred to adjudication time. `hooks/session-start-hook.sh`
+GCs `.skill-composition-state-*`, `.skill-invocation-evidence-*` (the glob also
+matches the `-sha-` sidecar) and `.skill-phase-attest-*` at **7 days**, and
+`branch_ledger_record` overwrites in place — so every input needed to re-derive
+the per-leg outcome is gone long before the corpus reaches n=29. Measured
+2026-08-06: 2 episodes over 9 days = 0.22/day against the pre-registered
+0.697/day, putting n=29 nearer 2026-12 than the 2026-09-08 horizon, i.e. the
+adjudication inputs for the earliest records expire roughly four months before
+the rate is computable.
+
+`null` is a meaningful value here: an omitted or malformed detail records null,
+never a fabricated all-missing object, because "not recorded" and "checked and
+absent" are different states.
+
 `guard_cksum` and `plugin_version` were considered for the schema but are
 **deferred, not emitted by v1** — `hooks/lib/implement-shadow.sh`'s
 `implement_shadow_record` does not construct or write either field today.
@@ -65,6 +104,14 @@ for adjudication.
   the Check-0 call site hardcodes the literal `"none"`** — by construction
   that is the only value v1 can ever produce, not a summary of which checks
   ran. Deriving the real per-check outcome is future work.
+  **RESOLVED in schema 3** (corpus-validity audit, 2026-08-06): the per-leg
+  outcome now lands in a NEW field, `impl_evidence_detail`, rather than by
+  widening `impl_evidence_kind` — that field's `"none"`/`"attested"` literals
+  are asserted in `tests/test-push-gate-implement-leg.sh` and
+  `tests/test-shadow-adjudicate.sh` and pinned in three specs under
+  `openspec/changes/`, so it is format-frozen. `predicate_version` stays **2**:
+  this changes what a record DESCRIBES, not when the leg fires, so the corpus
+  stays poolable and the horizon does not restart.
 - **`transcript_path`** is the adjudication pointer. Raw command text stays
   unlogged — the existing secret-safety posture is unchanged, and the transcript
   carries richer context than a command line anyway.

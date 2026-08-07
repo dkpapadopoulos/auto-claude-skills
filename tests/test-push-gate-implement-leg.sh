@@ -23,7 +23,7 @@ export IMPLEMENT_SHADOW_LOG="${_u_home}/shadow.jsonl"
 # shellcheck disable=SC1090
 . "${PROJECT_ROOT}/hooks/lib/implement-shadow.sh"
 
-assert_equals "schema_version is 2" "2" "${IMPLEMENT_SHADOW_SCHEMA_VERSION}"
+assert_equals "schema_version is 3" "3" "${IMPLEMENT_SHADOW_SCHEMA_VERSION}"
 assert_equals "predicate_version is unchanged at 2" "2" \
     "${IMPLEMENT_SHADOW_PREDICATE_VERSION}"
 
@@ -42,6 +42,57 @@ assert_equals "record is still valid json" "0" \
 rm -rf "${_u_home}"
 unset IMPLEMENT_SHADOW_LOG
 
+# --- Unit: impl_evidence_detail (corpus-validity audit, F2) ----------------
+# impl_evidence_kind is format-frozen ("none"/"attested" are asserted here and
+# pinned in three openspec specs), so the per-leg outcome lands in a NEW field
+# rather than by widening that one. The 9th parameter is a space-separated
+# "<leg>:<status>" string; the lib builds the object in jq, so the guard never
+# constructs JSON in bash 3.2.
+#
+# The distinction this exists for: _bridge_has returns 1 for THREE different
+# reasons (branch-ledger lib unsourceable, function undefined, no evidence).
+# Only the last one means "no implementation work"; the first two are
+# infrastructure failures where the constant advisory names the WRONG remedy,
+# which is the pre-registered false_block condition. Without this field an
+# adjudicator has to re-derive that from ~/.claude state that session-start GC
+# deletes after 7 days, while the corpus needs months to reach n=29.
+_d_home="$(mktemp -d /tmp/pg-impl-detail-XXXXXX)"
+export IMPLEMENT_SHADOW_LOG="${_d_home}/shadow.jsonl"
+
+implement_shadow_record push "${PROJECT_ROOT}" tok /tmp/t.jsonl none branch-local true true \
+    "ledger:missing invocation:missing bridge:cannot_check attestation:missing"
+assert_json_valid "detailed record is valid json" "${IMPLEMENT_SHADOW_LOG}"
+assert_equals "detail is an object, not an opaque string" "object" \
+    "$(jq -r '.impl_evidence_detail | type' "${IMPLEMENT_SHADOW_LOG}")"
+assert_equals "cannot_check is preserved per leg" "cannot_check" \
+    "$(jq -r '.impl_evidence_detail.bridge' "${IMPLEMENT_SHADOW_LOG}")"
+assert_equals "missing is distinguishable from cannot_check" "missing" \
+    "$(jq -r '.impl_evidence_detail.ledger' "${IMPLEMENT_SHADOW_LOG}")"
+assert_equals "schema_version on a detailed record is 3" "3" \
+    "$(jq -r '.schema_version' "${IMPLEMENT_SHADOW_LOG}")"
+assert_equals "predicate_version stays 2 so v2 records remain poolable" "2" \
+    "$(jq -r '.predicate_version' "${IMPLEMENT_SHADOW_LOG}")"
+
+# An omitted detail must be null, NOT a fabricated all-missing object. "not
+# recorded" and "checked and absent" are different states; conflating them is
+# the same silence-as-success class the audit exists to close.
+: > "${IMPLEMENT_SHADOW_LOG}"
+implement_shadow_record push "${PROJECT_ROOT}" tok /tmp/t.jsonl none branch-local true
+assert_equals "omitted detail is null, never a fabricated object" "null" \
+    "$(jq -r '.impl_evidence_detail | type' "${IMPLEMENT_SHADOW_LOG}")"
+assert_json_valid "record with no detail is still valid json" "${IMPLEMENT_SHADOW_LOG}"
+
+# A malformed detail string must not corrupt the record or abort the write.
+: > "${IMPLEMENT_SHADOW_LOG}"
+implement_shadow_record push "${PROJECT_ROOT}" tok /tmp/t.jsonl none branch-local true true \
+    "garbage-with-no-colon"
+assert_json_valid "malformed detail still yields valid json" "${IMPLEMENT_SHADOW_LOG}"
+assert_equals "malformed detail degrades to null, not a partial object" "null" \
+    "$(jq -r '.impl_evidence_detail | type' "${IMPLEMENT_SHADOW_LOG}")"
+
+rm -rf "${_d_home}"
+unset IMPLEMENT_SHADOW_LOG
+
 # The IMPLEMENT-evidence leg (Check 0, WARN-FIRST) advises — never denies — when
 # an implementation-slot skill (executing-plans / subagent-driven-development /
 # agent-team-execution) is in the composition chain, the push diff touches
@@ -58,6 +109,16 @@ g="$(cat "${GUARD}")"
 assert_contains "gate has an IMPLEMENT leg"            "IMPLEMENT"                       "${g}"
 assert_contains "gate checks executing-plans slot"     "executing-plans"                 "${g}"
 assert_contains "gate accepts phase_attested evidence" "phase_attested"                  "${g}"
+# Wiring only. Both ledger legs bottom out in branch_ledger_dir, which returns
+# non-zero for an unresolvable branch KEY as well as for "no record" — probing
+# the key is what keeps a cannot_check from being under-reported as missing,
+# which is the direction that biases the pre-registered rate toward clearing the
+# deny-flip. This is only the WIRING assertion — the behavioral coverage is the
+# "unresolvable branch key" block at the END of this file, which drives the
+# guard against a plugin root whose branch_ledger_key fails. Both are kept: this
+# one fails if the probe is deleted outright, that one fails if it is defeated.
+assert_contains "detail probes branch-ledger key resolvability" \
+    "_impl_det_key_ok" "${g}"
 assert_contains "leg is documented as warn-first (no deny yet)" "will become a deny after backtest" "${g}"
 
 # --- Behavioral setup (mirrors test-push-gate-ledger.sh verbatim) ---
@@ -175,6 +236,13 @@ assert_json_valid "attested record is valid json" "$IMPLEMENT_SHADOW_LOG"
 assert_contains "attested record is not a would-block" '"would_block":false'          "${_arec}"
 assert_contains "attested record names the evidence class" '"impl_evidence_kind":"attested"' "${_arec}"
 assert_contains "attested record names the gate"      '"gate":"push-implement"'       "${_arec}"
+# The attested record is the one case where a leg reads `present`. Paired with
+# the would-block assertions above, this is what proves the detail tracks the
+# actual outcome rather than emitting a constant.
+assert_equals "attested record marks the attestation leg present" "present" \
+    "$(jq -r '.impl_evidence_detail.attestation' "$IMPLEMENT_SHADOW_LOG" | head -1)"
+assert_equals "attested record still shows ledger as checked-and-absent" "missing" \
+    "$(jq -r '.impl_evidence_detail.ledger' "$IMPLEMENT_SHADOW_LOG" | head -1)"
 
 # The warn telemetry line must NOT fire on a satisfied leg — the advisory and
 # phase_gate_log stay gated on _impl_ok=false.
@@ -225,12 +293,29 @@ assert_json_valid "shadow record is valid json" "$IMPLEMENT_SHADOW_LOG"
 assert_contains "record names the gate"        '"gate":"push-implement"' "${_rec}"
 assert_contains "record marks a would-block"   '"would_block":true'      "${_rec}"
 assert_contains "record carries action push"   '"action":"push"'         "${_rec}"
-assert_contains "record carries schema_version"    '"schema_version":2'    "${_rec}"
+assert_contains "record carries schema_version"    '"schema_version":3'    "${_rec}"
 assert_contains "record carries predicate_version" '"predicate_version":2' "${_rec}"
 assert_contains "record carries a record_id"   '"record_id":'            "${_rec}"
 assert_contains "record carries a ts"          '"ts":'                   "${_rec}"
 assert_contains "record carries the transcript pointer" '"transcript_path":' "${_rec}"
 assert_not_contains "record never carries raw command text" '"command":' "${_rec}"
+
+# The guard must populate the per-leg detail, not leave it null. A would-block
+# means every leg was consulted and every one came back empty, so each leg is
+# recorded explicitly rather than inferred from impl_evidence_kind:"none".
+assert_equals "guard populates the per-leg detail" "object" \
+    "$(jq -r '.impl_evidence_detail | type' "$IMPLEMENT_SHADOW_LOG" | head -1)"
+_detail="$(jq -rc '.impl_evidence_detail' "$IMPLEMENT_SHADOW_LOG" | head -1)"
+assert_not_contains "no leg is left null by the guard" "null" "${_detail}"
+# Exact values, not merely "present": this harness is healthy (branch-ledger
+# sources, jq on PATH, token resolved, phase_attested defined), so every leg
+# must read `missing` — it was checked and found nothing. A `cannot_check` here
+# would mean the probe is reporting infrastructure failure inside a working
+# harness, which is the one reading that must never be silently wrong.
+for _leg in ledger invocation bridge attestation; do
+    assert_equals "guard records ${_leg} as checked-and-absent" "missing" \
+        "$(jq -r --arg l "${_leg}" '.impl_evidence_detail[$l]' "$IMPLEMENT_SHADOW_LOG" | head -1)"
+done
 
 # record_id must be unique across events, not a repeat of a constant.
 out="$(run_guard)"
@@ -486,6 +571,48 @@ assert_equals "non-material push writes no shadow record" "0" \
     "$(wc -l < "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | tr -d ' ')"
 assert_not_contains "non-material push surfaces no IMPLEMENT advisory" "IMPLEMENT:" "${out:-}"
 git -C "${_REPO}" checkout -q feat/impl
+
+# --- cannot_check vs missing: an UNRESOLVABLE BRANCH KEY -------------------
+# The two ledger legs bottom out in branch_ledger_dir, which returns non-zero
+# both when there is no record AND when the branch key cannot be resolved. Only
+# the first means "no implementation work"; the second is an infrastructure
+# failure where the advisory names the wrong remedy. Under-reporting it as
+# `missing` biases the pre-registered rate toward CLEARING the deny-flip, so
+# this distinction is asserted behaviorally, not just as wiring.
+#
+# The fixture keeps _LEDGER_OK=true (the lib sources fine) but makes
+# branch_ledger_key fail, which is the only way to isolate key-resolution from
+# lib-availability. REVIEW/VERIFY are re-satisfied via invocation evidence
+# because the ledger they normally use is exactly what this fixture breaks —
+# without that they would deny before Check 0 is ever reached.
+_FAKEROOT="$(mktemp -d /tmp/pg-fakeroot-XXXXXX)"
+cp -R "${PROJECT_ROOT}/hooks" "${_FAKEROOT}/" 2>/dev/null
+[ -d "${PROJECT_ROOT}/config" ] && cp -R "${PROJECT_ROOT}/config" "${_FAKEROOT}/" 2>/dev/null
+printf '\nbranch_ledger_key() { return 1; }\n' >> "${_FAKEROOT}/hooks/lib/branch-ledger.sh"
+
+git -C "${_REPO}" checkout -q feat/impl
+printf '%s' '{"chain":["requesting-code-review","verification-before-completion","executing-plans"],"current_index":0,"completed":[]}' > "${_COMP}"
+printf '%s\n' '["requesting-code-review","verification-before-completion"]' \
+    > "$HOME/.claude/.skill-invocation-evidence-${_TOK}"
+rm -f "$HOME/.claude/.skill-phase-attest-${_TOK}"
+: > "$IMPLEMENT_SHADOW_LOG"
+
+_kout="$( cd "${_REPO}" && _mkinput "" | CLAUDE_PLUGIN_ROOT="${_FAKEROOT}" bash "${_FAKEROOT}/hooks/openspec-guard.sh" 2>/dev/null )"
+assert_not_contains "unresolvable-key run still never denies from this leg" \
+    "permissionDecision" "${_kout:-}"
+assert_equals "unresolvable key still writes a shadow record" "1" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | tr -d ' ')"
+assert_equals "unresolvable branch key records ledger as cannot_check" "cannot_check" \
+    "$(jq -r '.impl_evidence_detail.ledger' "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | head -1)"
+assert_equals "unresolvable branch key records bridge as cannot_check" "cannot_check" \
+    "$(jq -r '.impl_evidence_detail.bridge' "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | head -1)"
+# Control: the invocation leg does NOT depend on the branch key, so it must
+# still read `missing`. Without this, a mutation that hardcoded every leg to
+# cannot_check would pass the two assertions above.
+assert_equals "invocation leg is unaffected by the branch key" "missing" \
+    "$(jq -r '.impl_evidence_detail.invocation' "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | head -1)"
+rm -rf "${_FAKEROOT}"
+rm -f "$HOME/.claude/.skill-invocation-evidence-${_TOK}"
 
 export HOME="$_OLDHOME"
 rm -rf "${_REPO}" "${_THOME}" 2>/dev/null
