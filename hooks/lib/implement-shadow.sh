@@ -64,7 +64,20 @@ IMPLEMENT_SHADOW_PREDICATE_VERSION=2
 #              short-circuiting caller has a value that is not a lie, but do not
 #              write a query expecting it to appear: a `not_evaluated` filter
 #              over the current corpus returns empty because no producer exists,
-#              not because every leg ran. Parsed into an object BY JQ, never
+#              not because every leg ran. CONSTRAINT on future vocabulary: a
+#              status value must contain NO colon and NO space. Both fail
+#              SILENTLY, and differently (measured against the jq below, not
+#              assumed): a colon-bearing value (`cannot_check:no_token`, a URL)
+#              splits into 3 elements, fails `length == 2`, and the key is
+#              DROPPED from the object — "invocation:cannot_check:no_token"
+#              yields an object with no `invocation` key at all, and a string
+#              whose every pair is colon-bearing degrades the whole field to
+#              null. A space-bearing value is instead TRUNCATED at the space
+#              ("invocation:has space" => `"invocation":"has"`), because the
+#              outer split(" ") cuts it first and the orphan tail carries no
+#              colon. Neither errors. Encode any sub-reason as a new flat value
+#              or a separate key, never as a suffix.
+#              Parsed into an object BY JQ, never
 #              by bash — the caller is a hook running under Bash 3.2 and must
 #              not hand-build JSON. Omitted or malformed => the field is null,
 #              NOT a fabricated all-missing object: "not recorded" and "checked
