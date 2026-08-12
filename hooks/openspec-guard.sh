@@ -27,11 +27,70 @@ fi
 # invocation (bare, */path, env-prefixed, -C/-R form) contains the substring.
 case "${_COMMAND}" in *git*|*gh*) ;; *) exit 0 ;; esac
 
+_GC_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+
+# --- Degradation advisory (issue #198) -------------------------------------
+# This gate is deliberately fail-OPEN on infrastructure error: a leg whose lib
+# did not load is skipped rather than denied, because a check that cannot run
+# must never block. What was wrong is that it happened in SILENCE. Measured at
+# da651b5, four distinct lib-load faults produced EMPTY stdout, which the
+# harness cannot tell apart from a deliberate allow — so a permanently
+# degraded install looks exactly like a gate that keeps passing.
+#
+# _DEGRADED_MSG accumulates one note per gate-enforcement lib that failed to
+# load. It is ADVISORY ONLY and never carries a permissionDecision: a decision
+# on this channel would auto-approve the command and suppress every downstream
+# warning. It also never changes a decision — where a deny fires, the deny wins
+# and the note is dropped (the guard emits at most one JSON object).
+#
+# Defined HERE, above the first lib source, because git-command.sh is the one
+# whose loss actually removes a deny (the mutate-then-push check) — measured:
+# with every other gate satisfied, `git commit -m x && git push` denies with
+# the lib present and is ALLOWED without it. An inventory of "what stopped
+# being enforced" that omits the only entry costing a deny is a false
+# all-clear on its most severe item.
+_DEGRADED_MSG=""
+# One dead root is ONE fault, not N. When hooks/lib is not a directory at all,
+# every per-lib note would describe the same cause and the most severe state
+# (nothing enforced) would read identically to the mildest (one leg off), with
+# the same long path repeated per note. Collapse to a single accurate note.
+_DEG_ROOT_DEAD=false
+[ -d "${_GC_ROOT}/hooks/lib" ] || _DEG_ROOT_DEAD=true
+_degraded_note() {
+    if [ "${_DEG_ROOT_DEAD}" = "true" ]; then
+        [ -n "${_DEGRADED_MSG}" ] && return 0
+        _DEGRADED_MSG="GATE DEGRADED: no plugin libraries found at ${_GC_ROOT} (hooks/lib is missing), so NONE of the push-gate checks ran for this command — it was not gated at all. Repair or reinstall the plugin, or set CLAUDE_PLUGIN_ROOT to the real plugin directory."
+        return 0
+    fi
+    _DEGRADED_MSG="${_DEGRADED_MSG}${_DEGRADED_MSG:+ }GATE DEGRADED: $1"
+    return 0
+}
+# _emit_advisory <text> — the ONE place that knows how to put advisory text on
+# stdout. Factored out rather than duplicated: issue #166 exists because the
+# rule for what an action may surface lived in two places and diverged.
+_emit_advisory() {
+    [ -n "${1:-}" ] || return 0
+    if command -v jq >/dev/null 2>&1; then
+        jq -n --arg msg "PUSH GATE (advisory): $1" \
+            '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":$msg}}'
+    else
+        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' \
+            "$(printf 'PUSH GATE (advisory): %s' "$1" | tr '\n"' ' ')"
+    fi
+    return 0
+}
+
 # Precise git-write detection (fail-open): source the predicate. If unavailable,
 # the substring fallbacks below preserve the original (fail-closed) behavior.
-_GC_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-[ -f "${_GC_ROOT}/hooks/lib/git-command.sh" ] && \
-    . "${_GC_ROOT}/hooks/lib/git-command.sh" 2>/dev/null || true
+# The `command -v` confirmation is for the ADVISORY only — _gc_precise does its
+# own check, so this adds no gating and cannot change a decision.
+_GC_LIB_OK=false
+if [ -f "${_GC_ROOT}/hooks/lib/git-command.sh" ]; then
+    . "${_GC_ROOT}/hooks/lib/git-command.sh" 2>/dev/null && \
+        command -v command_parse_balanced >/dev/null 2>&1 && \
+        _GC_LIB_OK=true || true
+fi
+[ "${_GC_LIB_OK}" = "true" ] || _degraded_note "git-command.sh did not load from ${_GC_ROOT}, so command detection fell back to substring matching and the mutate-then-push check did NOT run — a combined commit-and-push was not gated."
 # Diagnostic-only shadow recorder (Stage C1). Guarded source: absence must not
 # affect the gate, and it is deliberately absent from _GATE_ENFORCE_LIBS.
 [ -f "${_GC_ROOT}/hooks/lib/implement-shadow.sh" ] && \
@@ -81,39 +140,6 @@ fi
 # across concurrent sessions (last-writer-wins) and may name ANOTHER session.
 _PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 _SESSION_TOKEN=""
-
-# --- Degradation advisory (issue #198) -------------------------------------
-# This gate is deliberately fail-OPEN on infrastructure error: a leg whose lib
-# did not load is skipped rather than denied, because a check that cannot run
-# must never block. What was wrong is that it happened in SILENCE. Measured at
-# da651b5, four distinct lib-load faults produced EMPTY stdout, which the
-# harness cannot tell apart from a deliberate allow — so a permanently
-# degraded install looks exactly like a gate that keeps passing.
-#
-# _DEGRADED_MSG accumulates one note per gate-enforcement lib that failed to
-# load. It is ADVISORY ONLY and never carries a permissionDecision: a decision
-# on this channel would auto-approve the command and suppress every downstream
-# warning. It also never changes a decision — where a deny fires, the deny wins
-# and the note is dropped (the guard emits at most one JSON object).
-_DEGRADED_MSG=""
-_degraded_note() {
-    _DEGRADED_MSG="${_DEGRADED_MSG}${_DEGRADED_MSG:+ }GATE DEGRADED: $1"
-    return 0
-}
-# _emit_advisory <text> — the ONE place that knows how to put advisory text on
-# stdout. Factored out rather than duplicated: issue #166 exists because the
-# rule for what an action may surface lived in two places and diverged.
-_emit_advisory() {
-    [ -n "${1:-}" ] || return 0
-    if command -v jq >/dev/null 2>&1; then
-        jq -n --arg msg "PUSH GATE (advisory): $1" \
-            '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":$msg}}'
-    else
-        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' \
-            "$(printf 'PUSH GATE (advisory): %s' "$1" | tr '\n"' ' ')"
-    fi
-    return 0
-}
 # The source is guarded (`&& … || true`) because an UNguarded `. lib` here trips
 # `trap 'exit 0' ERR` ABOVE the deny checks below — the hook exits 0 and the push
 # is silently allowed, which is the dangerous direction for a safety gate (#137).
@@ -139,7 +165,18 @@ fi
 # bare `exit 0` here, i.e. the silent allow that issue #198 is about. Only
 # announced when the token LIB itself failed: an empty token with a healthy lib
 # is the ordinary "not a driven session" case, not a degraded install.
+#
+# The note recorded above says the identity "fell back to the singleton", which
+# is only true when that fallback FOUND something — in which case the guard
+# continues and the gates still run. Reaching here means it found nothing, so
+# the accurate statement is stronger: no token at all, nothing was gated.
+# Correcting it here, where the distinction is known, rather than weakening the
+# note above (caught in review: the advisory understated a total bypass as an
+# identity mix-up, in exactly the unresolvable-root shape this targets).
 if [ -z "${_SESSION_TOKEN}" ]; then
+    if [ "${_TOKEN_LIB_OK}" != true ] && [ "${_DEG_ROOT_DEAD}" != "true" ]; then
+        _DEGRADED_MSG="${_DEGRADED_MSG} No session token could be resolved at all (no singleton either), so the ENTIRE push gate was skipped and this command was not gated."
+    fi
     _emit_advisory "${_DEGRADED_MSG}"
     exit 0
 fi
@@ -263,8 +300,17 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             . "${_PLUGIN_ROOT}/hooks/lib/verdict.sh" 2>/dev/null && _VERDICT_OK=true || true
         fi
         # #198: verify-hardening and routing-governance are both conditioned on
-        # _VERDICT_OK, so a failed load silently unenforces both.
-        [ "${_VERDICT_OK}" = "true" ] || _degraded_note "verdict.sh did not load from ${_PLUGIN_ROOT}, so verify-hardening and routing-governance did NOT run for this command."
+        # _VERDICT_OK, so a failed load silently unenforces both. Routing
+        # governance is push-only (it is gated on _gc_is_push further below), so
+        # naming it on a merge would assert that a gate which never applies to
+        # merges had been disabled — caught in review.
+        if [ "${_VERDICT_OK}" != "true" ]; then
+            if [ "${_gc_is_push}" = "true" ]; then
+                _degraded_note "verdict.sh did not load from ${_PLUGIN_ROOT}, so verify-hardening and routing-governance did NOT run for this command."
+            else
+                _degraded_note "verdict.sh did not load from ${_PLUGIN_ROOT}, so verify-hardening did NOT run for this command."
+            fi
+        fi
         # phase-attest: lets the IMPLEMENT leg (below) accept an explicit,
         # logged skip attestation as evidence. Source-guarded like every other
         # lib here — a bad source must not trip the fail-open ERR trap into a

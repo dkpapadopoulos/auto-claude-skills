@@ -141,12 +141,40 @@ _restore_ledger
 # branch-ledger.sh would leave THIS case silent, which is why the token path is
 # in scope.
 # ---------------------------------------------------------------------------
+#
+# One dead root is ONE fault. Per-lib notes would describe the same cause four
+# times, repeat the same long path four times, and make the MOST severe state
+# (nothing ran at all) read exactly like the mildest (one leg off). The
+# collapsed note must therefore name the root and say plainly that nothing was
+# gated — asserted here so a regression to per-lib spam fails.
 _EMPTY_ROOT="$(mktemp -d /tmp/pgd-empty-XXXXXX)"
 out="$(run_stable "${_EMPTY_ROOT}")"; adv="$(_advisory_text "${out}")"
-assert_contains "unresolvable plugin root => degradation advisory" "GATE DEGRADED"    "${adv:-<empty>}"
-assert_contains "advisory names the token lib"                     "session-token.sh" "${adv:-<empty>}"
+assert_contains "unresolvable plugin root => degradation advisory" "GATE DEGRADED"  "${adv:-<empty>}"
+assert_contains "collapsed note names the dead root"               "${_EMPTY_ROOT}" "${adv:-<empty>}"
+assert_contains "collapsed note says nothing was gated"            "not gated at all" "${adv:-<empty>}"
+assert_not_contains "one cause is reported once, not per lib"      "branch-ledger.sh" "${adv:-}"
 assert_equals   "unresolvable plugin root still falls OPEN"        "false" "$(_has_decision "${out}")"
 rm -rf "${_EMPTY_ROOT}"
+
+# ---------------------------------------------------------------------------
+# Cell 1b — session-token.sh alone is unloadable, hooks/lib otherwise intact,
+# and no singleton exists. The per-lib note still applies here (the root is not
+# dead), AND the message must state the real consequence.
+#
+# The generic note says the identity "fell back to the shared singleton", which
+# is only true when that fallback found something — in which case the guard
+# CONTINUES and the gates still run. Reaching the empty-token exit means it
+# found nothing: no token, no gate, nothing enforced. Pinning the stronger
+# wording because the weaker one understated a total bypass (review finding).
+# ---------------------------------------------------------------------------
+rm -f "${_TROOT}/hooks/lib/session-token.sh"
+rm -f "${HOME}/.claude/.skill-session-token"
+out="$(run_stable)"; adv="$(_advisory_text "${out}")"
+assert_contains "absent token lib => degradation advisory"   "GATE DEGRADED"     "${adv:-<empty>}"
+assert_contains "advisory names the token lib"               "session-token.sh"  "${adv:-<empty>}"
+assert_contains "advisory states the ENTIRE gate was skipped" "ENTIRE push gate was skipped" "${adv:-<empty>}"
+assert_equals   "absent token lib still falls OPEN"          "false" "$(_has_decision "${out}")"
+cp "${PROJECT_ROOT}/hooks/lib/session-token.sh" "${_TROOT}/hooks/lib/session-token.sh"
 
 # ---------------------------------------------------------------------------
 # Cell 7 — verdict.sh absent while the gate otherwise PASSES. Cell 6 below
@@ -165,6 +193,34 @@ assert_contains "advisory names the verdict lib"                   "verdict.sh" 
 assert_contains "advisory names what stopped being enforced"       "routing-governance" "${adv:-<empty>}"
 assert_equals   "absent verdict lib still falls OPEN"              "false" "$(_has_decision "${out}")"
 _restore_verdict
+
+# ---------------------------------------------------------------------------
+# Cell 8 — git-command.sh. This is the ONLY gate-enforcement lib whose loss
+# actually removes a DENY: without it `command_git_mutate_before_push` is
+# undefined and the mutate-then-push check (a combined `git commit && git push`,
+# which pre-exec evidence can never cover) silently stops firing. Measured with
+# every other gate satisfied: deny with the lib present, ALLOW without it.
+#
+# It was missed in the first cut of this change, which is worse than an
+# ordinary gap — an advisory that presents itself as the inventory of what
+# stopped being enforced, while omitting the one entry that costs a deny, is a
+# false all-clear on its most severe item.
+# ---------------------------------------------------------------------------
+_MUTATE_CMD='git commit -m x && git push origin main'
+out="$(run "" )" # keep evidence seeded; measure the mutate-then-push pair below
+out_with="$( ( cd "${PROJECT_ROOT}" && _input "${_MUTATE_CMD}" | \
+    CLAUDE_PLUGIN_ROOT="${_TROOT}" bash "${_TROOT}/hooks/openspec-guard.sh" 2>/dev/null ) )"
+assert_equals "mutate-then-push DENIES while git-command.sh is present" \
+    "true" "$(_has_decision "${out_with}")"
+rm -f "${_TROOT}/hooks/lib/git-command.sh"
+out_without="$( ( cd "${PROJECT_ROOT}" && _input "${_MUTATE_CMD}" | \
+    CLAUDE_PLUGIN_ROOT="${_TROOT}" bash "${_TROOT}/hooks/openspec-guard.sh" 2>/dev/null ) )"
+adv="$(_advisory_text "${out_without}")"
+assert_equals   "removing git-command.sh drops that deny (the reason this must be announced)" \
+    "false" "$(_has_decision "${out_without}")"
+assert_contains "advisory names git-command.sh"                  "git-command.sh"  "${adv:-<empty>}"
+assert_contains "advisory names the check that stopped running"  "mutate-then-push" "${adv:-<empty>}"
+cp "${PROJECT_ROOT}/hooks/lib/git-command.sh" "${_TROOT}/hooks/lib/git-command.sh"
 
 # Drop the seeded evidence again for the deny-direction pins below.
 _bl_dir="$(branch_ledger_dir "${PROJECT_ROOT}" 2>/dev/null || true)"
