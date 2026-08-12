@@ -81,6 +81,39 @@ fi
 # across concurrent sessions (last-writer-wins) and may name ANOTHER session.
 _PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 _SESSION_TOKEN=""
+
+# --- Degradation advisory (issue #198) -------------------------------------
+# This gate is deliberately fail-OPEN on infrastructure error: a leg whose lib
+# did not load is skipped rather than denied, because a check that cannot run
+# must never block. What was wrong is that it happened in SILENCE. Measured at
+# da651b5, four distinct lib-load faults produced EMPTY stdout, which the
+# harness cannot tell apart from a deliberate allow — so a permanently
+# degraded install looks exactly like a gate that keeps passing.
+#
+# _DEGRADED_MSG accumulates one note per gate-enforcement lib that failed to
+# load. It is ADVISORY ONLY and never carries a permissionDecision: a decision
+# on this channel would auto-approve the command and suppress every downstream
+# warning. It also never changes a decision — where a deny fires, the deny wins
+# and the note is dropped (the guard emits at most one JSON object).
+_DEGRADED_MSG=""
+_degraded_note() {
+    _DEGRADED_MSG="${_DEGRADED_MSG}${_DEGRADED_MSG:+ }GATE DEGRADED: $1"
+    return 0
+}
+# _emit_advisory <text> — the ONE place that knows how to put advisory text on
+# stdout. Factored out rather than duplicated: issue #166 exists because the
+# rule for what an action may surface lived in two places and diverged.
+_emit_advisory() {
+    [ -n "${1:-}" ] || return 0
+    if command -v jq >/dev/null 2>&1; then
+        jq -n --arg msg "PUSH GATE (advisory): $1" \
+            '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":$msg}}'
+    else
+        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' \
+            "$(printf 'PUSH GATE (advisory): %s' "$1" | tr '\n"' ' ')"
+    fi
+    return 0
+}
 # The source is guarded (`&& … || true`) because an UNguarded `. lib` here trips
 # `trap 'exit 0' ERR` ABOVE the deny checks below — the hook exits 0 and the push
 # is silently allowed, which is the dangerous direction for a safety gate (#137).
@@ -98,10 +131,18 @@ fi
 if [ "${_TOKEN_LIB_OK}" = true ]; then
     _SESSION_TOKEN="$(resolve_session_token_from_transcript "${_TRANSCRIPT}")"
 else
+    _degraded_note "session-token.sh did not load from ${_PLUGIN_ROOT}, so this session's identity fell back to the shared last-writer-wins singleton and may name another conversation."
     [ -f "${HOME}/.claude/.skill-session-token" ] && \
         _SESSION_TOKEN="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null)"
 fi
-[ -z "${_SESSION_TOKEN}" ] && exit 0
+# No token => no state to check => every gate below is skipped. Historically a
+# bare `exit 0` here, i.e. the silent allow that issue #198 is about. Only
+# announced when the token LIB itself failed: an empty token with a healthy lib
+# is the ordinary "not a driven session" case, not a degraded install.
+if [ -z "${_SESSION_TOKEN}" ]; then
+    _emit_advisory "${_DEGRADED_MSG}"
+    exit 0
+fi
 
 # --- Push gate (fires on all git push, independent of phase) ---
 # Replaces hookify require-review-before-push rule with state-aware checks.
@@ -210,6 +251,9 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             # shellcheck source=lib/branch-ledger.sh
             . "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" && _LEDGER_OK=true
         fi
+        # #198: the ledger legs AND the whole global fail-closed gate below are
+        # conditioned on _LEDGER_OK, so a failed load silently unenforces them.
+        [ "${_LEDGER_OK}" = "true" ] || _degraded_note "branch-ledger.sh did not load from ${_PLUGIN_ROOT}, so the durable branch-ledger evidence legs and the global fail-closed gate did NOT run for this command."
         # Verdict layer: STATUS (a gating Skill returned, tracked above) is NOT a
         # passing VERDICT. verdict.sh reads the owned SHA-fresh verification verdict.
         # `|| true` so a non-zero source cannot trip `trap 'exit 0' ERR`.
@@ -218,6 +262,9 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             # shellcheck source=lib/verdict.sh
             . "${_PLUGIN_ROOT}/hooks/lib/verdict.sh" 2>/dev/null && _VERDICT_OK=true || true
         fi
+        # #198: verify-hardening and routing-governance are both conditioned on
+        # _VERDICT_OK, so a failed load silently unenforces both.
+        [ "${_VERDICT_OK}" = "true" ] || _degraded_note "verdict.sh did not load from ${_PLUGIN_ROOT}, so verify-hardening and routing-governance did NOT run for this command."
         # phase-attest: lets the IMPLEMENT leg (below) accept an explicit,
         # logged skip attestation as evidence. Source-guarded like every other
         # lib here — a bad source must not trip the fail-open ERR trap into a
@@ -806,15 +853,27 @@ fi
 # push  -> the full _STALE_MSG (unchanged, byte-identical to pre-#161)
 # merge -> _IMPL_MSG only, and only when the PR subject resolved (diff_base pr:*)
 # else  -> nothing: silence stays wherever the subject is unknown
+#
+# _DEGRADED_MSG (issue #198) is added to ALL of the above, because it is the one
+# advisory here that is action-INDEPENDENT. Every other writer computes from the
+# LOCAL branch, which is why a `gh pr merge <other-PR>` must stay silent about
+# them; "this lib did not load" describes the running guard itself and is
+# equally true of the merged PR. It is therefore also the only text that may be
+# emitted when the subject is unknown.
 _advisory_text_for_action() {
+    local _deg _act
+    _deg="${_DEGRADED_MSG:-}"
+    _act=""
     if [ "${_gc_is_push:-false}" = "true" ]; then
-        printf '%s' "${_STALE_MSG:-}"
-        return 0
+        _act="${_STALE_MSG:-}"
+    else
+        case "${_impl_db:-unresolved}" in
+            pr:*) _act="${_IMPL_MSG:-}" ;;
+            *) [ -n "${_deg}" ] || return 1 ;;
+        esac
     fi
-    case "${_impl_db:-unresolved}" in
-        pr:*) printf '%s' "${_IMPL_MSG:-}"; return 0 ;;
-        *) return 1 ;;
-    esac
+    printf '%s' "${_deg}${_deg:+${_act:+ }}${_act}"
+    return 0
 }
 
 _flush_push_advisories() {
@@ -841,13 +900,9 @@ _flush_push_advisories() {
     local _msg
     _msg="$(_advisory_text_for_action)" || return 0
     [ -n "${_msg}" ] || return 0
-    if command -v jq >/dev/null 2>&1; then
-        jq -n --arg msg "PUSH GATE (advisory): ${_msg}" \
-            '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":$msg}}'
-    else
-        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' \
-            "$(printf 'PUSH GATE (advisory): %s' "${_msg}" | tr '\n"' ' ')"
-    fi
+    # Emission itself lives in _emit_advisory (defined near the top, because the
+    # #198 token-exit path needs it long before this function is reachable).
+    _emit_advisory "${_msg}"
 }
 
 # Check if we're in SHIP phase (signal file is JSON: {"skill":"...","phase":"..."})
