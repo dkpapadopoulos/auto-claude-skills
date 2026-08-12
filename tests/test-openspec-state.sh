@@ -326,6 +326,17 @@ test_non_ship_phase_skips_guard
 # ---------------------------------------------------------------------------
 
 # Helper: run the guard hook with a git push command and given state files
+# NOTE (#198): test-helpers.sh:31 exports CLAUDE_PLUGIN_ROOT="${TEST_HOME}/.claude",
+# a directory that contains no plugin — so the guard invoked here loads NONE of its
+# gate-enforcement libs and no gate actually runs. The "allows" cases below therefore
+# exercise a fully DEGRADED guard, not the allow path of a working one. That is a
+# pre-existing weakness of this harness, left as-is because pointing the root at the
+# real tree would change what every setup_test_env test exercises.
+#
+# What changed with #198 is only that the degradation is now ANNOUNCED, so the string
+# "PUSH GATE" legitimately appears on an allow. The property these cases mean to pin
+# is the DECISION, so they assert on the decision channel: an advisory never carries a
+# permissionDecision, and a block always does.
 run_push_guard() {
     local session_token="$1"
     local phase="$2"
@@ -385,7 +396,7 @@ test_push_gate_allows_verified() {
     local output
     output="$(run_push_guard "test-push-allow-$$" "SHIP" "${comp}")"
 
-    assert_not_contains "push gate allows" "PUSH GATE" "${output}"
+    assert_not_contains "push gate allows" "permissionDecision" "${output}"
     assert_not_contains "push gate no deny" "deny" "${output}"
 
     teardown_test_env
@@ -404,7 +415,7 @@ test_push_gate_allows_no_composition() {
     local output
     output="$(run_push_guard "test-push-adhoc-$$" "IMPLEMENT" "")"
 
-    assert_not_contains "push gate allows ad-hoc" "PUSH GATE" "${output}"
+    assert_not_contains "push gate allows ad-hoc" "permissionDecision" "${output}"
     assert_not_contains "push gate no deny for ad-hoc" "deny" "${output}"
 
     teardown_test_env
@@ -426,7 +437,7 @@ test_push_gate_allows_no_verification_in_chain() {
     local output
     output="$(run_push_guard "test-push-nochain-$$" "PLAN" "${comp}")"
 
-    assert_not_contains "push gate allows no-verification chain" "PUSH GATE" "${output}"
+    assert_not_contains "push gate allows no-verification chain" "permissionDecision" "${output}"
 
     teardown_test_env
 }
@@ -474,7 +485,7 @@ test_push_gate_allows_reviewed_without_verify_in_chain() {
     local output
     output="$(run_push_guard "test-push-reviewonly-$$" "REVIEW" "${comp}")"
 
-    assert_not_contains "push gate allows reviewed" "PUSH GATE" "${output}"
+    assert_not_contains "push gate allows reviewed" "permissionDecision" "${output}"
     assert_not_contains "push gate no deny when reviewed" "deny" "${output}"
 
     teardown_test_env

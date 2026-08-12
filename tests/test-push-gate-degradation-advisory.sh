@@ -19,6 +19,13 @@
 # difference under test. Every run below sets CLAUDE_PLUGIN_ROOT explicitly at
 # a full copied tree.
 #
+# WHY A CLEAN VERDICT IS SEEDED: this repo IS a routing repo and this branch's
+# own diff touches hooks/, so routing-governance denies every push unless a
+# clean verdict covers HEAD. Without the seed, the fault cells below would be
+# masked by that deny instead of showing the advisory — the test would be red
+# for a reason unrelated to what it measures. tests/test-push-gate-ledger.sh
+# carries the same seeding block for the same reason.
+#
 # Bash 3.2 compatible (macOS default). No associative arrays.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -33,6 +40,7 @@ _OLDHOME="$HOME"
 export HOME="$(mktemp -d /tmp/pgd-home-XXXXXX)"
 mkdir -p "$HOME/.claude"
 _TPATH="$HOME/t.jsonl"; touch "$_TPATH"     # basename "t" -> token "session-t"
+_TOK="session-t"
 
 # Disposable plugin root — libs get broken in here, never in the checkout.
 _TROOT="$(mktemp -d /tmp/pgd-root-XXXXXX)"
@@ -41,6 +49,11 @@ cp -R "${PROJECT_ROOT}/config" "${_TROOT}/config" 2>/dev/null || true
 
 _cleanup() { export HOME="$_OLDHOME"; rm -rf "${_TROOT}"; }
 trap _cleanup EXIT
+
+_HEAD="$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null)"
+jq -nc --arg s "${_HEAD}" \
+    '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' \
+    > "${HOME}/.claude/.skill-project-verified-${_TOK}"
 
 _input() {
     jq -n --arg tp "$_TPATH" --arg cmd "${1:-git push origin HEAD}" \
@@ -55,16 +68,28 @@ run() {
 
 # Live ~/.claude state is mutable, so a single run can differ from the next for
 # reasons unrelated to the fault. Every cell runs twice and the pair must agree.
+# The mismatch is recorded as a FAILURE here rather than encoded in the returned
+# string: a marker that no assertion looks for is not a check, and substring
+# assertions over a concatenated "a|b" are asymmetric — `assert_not_contains`
+# gets stricter while `assert_contains` gets looser, so half of them would pass
+# on a mismatch. Caught in review of this file.
 run_stable() {
     local a b
     a="$(run "${1:-${_TROOT}}")"
     b="$(run "${1:-${_TROOT}}")"
     if [ "$a" != "$b" ]; then
-        printf '%s' "NON-DETERMINISTIC:${a}|${b}"
-        return 0
+        _record_fail "guard output is deterministic across two runs" \
+            "run1=[${a}] run2=[${b}]"
     fi
     printf '%s' "$a"
 }
+
+# The advisory's own payload, not merely "some additionalContext exists".
+# _STALE_MSG writers (e.g. EVALUATOR SURFACE) can populate the same field, so a
+# bare `assert_contains "additionalContext"` passes with this feature entirely
+# removed — proven by mutation in review.
+_advisory_text() { printf '%s' "${1:-}" | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null || printf ''; }
+_has_decision()  { printf '%s' "${1:-}" | jq -e '.hookSpecificOutput | has("permissionDecision")' >/dev/null 2>&1 && echo true || echo false; }
 
 _restore_ledger() { cp "${PROJECT_ROOT}/hooks/lib/branch-ledger.sh" "${_TROOT}/hooks/lib/branch-ledger.sh"; }
 _restore_verdict() { cp "${PROJECT_ROOT}/hooks/lib/verdict.sh"       "${_TROOT}/hooks/lib/verdict.sh"; }
@@ -72,28 +97,30 @@ _restore_verdict() { cp "${PROJECT_ROOT}/hooks/lib/verdict.sh"       "${_TROOT}/
 # ---------------------------------------------------------------------------
 # Cell 5 — healthy control. Must be BYTE-IDENTICAL to the recorded baseline and
 # must not mention degradation. This is the no-regression clause of the issue's
-# A/B contract; the fixture is the pinned never-delete artifact.
+# A/B contract; the fixture is the pinned never-delete artifact and is captured
+# from the PRE-change guard under exactly this seeded state.
 # ---------------------------------------------------------------------------
 out="$(run_stable)"
 if [ -f "${FIXTURES}/healthy-control.json" ]; then
-    expected="$(cat "${FIXTURES}/healthy-control.json")"
     assert_equals "healthy control is byte-identical to the pinned baseline" \
-        "${expected}" "${out}"
+        "$(cat "${FIXTURES}/healthy-control.json")" "${out}"
 else
     _record_fail "healthy-control fixture exists" "missing ${FIXTURES}/healthy-control.json"
 fi
 assert_not_contains "healthy control emits no degradation advisory" \
     "GATE DEGRADED" "${out:-}"
+assert_equals "healthy control still reaches a decision" "true" "$(_has_decision "${out}")"
 
 # ---------------------------------------------------------------------------
 # Cell 2 — branch-ledger.sh absent. Every ledger leg and the whole global
 # fail-closed gate stop being enforced. Baseline: empty stdout.
 # ---------------------------------------------------------------------------
 rm -f "${_TROOT}/hooks/lib/branch-ledger.sh"
-out="$(run_stable)"
-assert_contains     "absent ledger lib => degradation advisory" "GATE DEGRADED"     "${out:-<empty>}"
-assert_contains     "advisory names the lib that did not load"  "branch-ledger.sh"  "${out:-<empty>}"
-assert_not_contains "absent ledger lib still falls OPEN"        '"deny"'            "${out:-}"
+out="$(run_stable)"; adv="$(_advisory_text "${out}")"
+assert_contains "absent ledger lib => degradation advisory"   "GATE DEGRADED"    "${adv:-<empty>}"
+assert_contains "advisory names the lib that did not load"    "branch-ledger.sh" "${adv:-<empty>}"
+assert_contains "advisory names what stopped being enforced"  "global fail-closed gate" "${adv:-<empty>}"
+assert_equals   "absent ledger lib still falls OPEN"          "false" "$(_has_decision "${out}")"
 _restore_ledger
 
 # ---------------------------------------------------------------------------
@@ -101,10 +128,10 @@ _restore_ledger
 # the file is fine; the source still fails. Baseline: empty stdout.
 # ---------------------------------------------------------------------------
 printf '\nreturn 1\n' >> "${_TROOT}/hooks/lib/branch-ledger.sh"
-out="$(run_stable)"
-assert_contains     "failing ledger source => degradation advisory" "GATE DEGRADED"    "${out:-<empty>}"
-assert_contains     "advisory names the lib that did not load"      "branch-ledger.sh" "${out:-<empty>}"
-assert_not_contains "failing ledger source still falls OPEN"        '"deny"'           "${out:-}"
+out="$(run_stable)"; adv="$(_advisory_text "${out}")"
+assert_contains "failing ledger source => degradation advisory" "GATE DEGRADED"    "${adv:-<empty>}"
+assert_contains "advisory names the lib that did not load"      "branch-ledger.sh" "${adv:-<empty>}"
+assert_equals   "failing ledger source still falls OPEN"        "false" "$(_has_decision "${out}")"
 _restore_ledger
 
 # ---------------------------------------------------------------------------
@@ -115,10 +142,10 @@ _restore_ledger
 # in scope.
 # ---------------------------------------------------------------------------
 _EMPTY_ROOT="$(mktemp -d /tmp/pgd-empty-XXXXXX)"
-out="$(run_stable "${_EMPTY_ROOT}")"
-assert_contains     "unresolvable plugin root => degradation advisory" "GATE DEGRADED"    "${out:-<empty>}"
-assert_contains     "advisory names the token lib"                     "session-token.sh" "${out:-<empty>}"
-assert_not_contains "unresolvable plugin root still falls OPEN"        '"deny"'           "${out:-}"
+out="$(run_stable "${_EMPTY_ROOT}")"; adv="$(_advisory_text "${out}")"
+assert_contains "unresolvable plugin root => degradation advisory" "GATE DEGRADED"    "${adv:-<empty>}"
+assert_contains "advisory names the token lib"                     "session-token.sh" "${adv:-<empty>}"
+assert_equals   "unresolvable plugin root still falls OPEN"        "false" "$(_has_decision "${out}")"
 rm -rf "${_EMPTY_ROOT}"
 
 # ---------------------------------------------------------------------------
@@ -132,10 +159,11 @@ rm -rf "${_EMPTY_ROOT}"
 branch_ledger_record "requesting-code-review"         "${PROJECT_ROOT}"
 branch_ledger_record "verification-before-completion" "${PROJECT_ROOT}"
 rm -f "${_TROOT}/hooks/lib/verdict.sh"
-out="$(run_stable)"
-assert_contains     "absent verdict lib on a passing push => advisory" "GATE DEGRADED" "${out:-<empty>}"
-assert_contains     "advisory names the verdict lib"                   "verdict.sh"    "${out:-<empty>}"
-assert_not_contains "absent verdict lib still falls OPEN"              '"deny"'        "${out:-}"
+out="$(run_stable)"; adv="$(_advisory_text "${out}")"
+assert_contains "absent verdict lib on a passing push => advisory" "GATE DEGRADED" "${adv:-<empty>}"
+assert_contains "advisory names the verdict lib"                   "verdict.sh"    "${adv:-<empty>}"
+assert_contains "advisory names what stopped being enforced"       "routing-governance" "${adv:-<empty>}"
+assert_equals   "absent verdict lib still falls OPEN"              "false" "$(_has_decision "${out}")"
 _restore_verdict
 
 # Drop the seeded evidence again for the deny-direction pins below.
@@ -151,6 +179,7 @@ _bl_dir="$(branch_ledger_dir "${PROJECT_ROOT}" 2>/dev/null || true)"
 rm -f "${_TROOT}/hooks/lib/verdict.sh"
 out="$(run_stable)"
 assert_contains "absent verdict lib + no evidence still DENIES" '"deny"' "${out:-<empty>}"
+assert_equals   "a deny suppresses the advisory (one JSON object)" "" "$(_advisory_text "${out}")"
 _restore_verdict
 
 # ---------------------------------------------------------------------------
@@ -174,28 +203,33 @@ assert_contains "partially-loaded ledger lib still DENIES (must not weaken)" \
 _restore_ledger
 
 # ---------------------------------------------------------------------------
-# Cell 3b — branch-ledger.sh runs `false` mid-source. KNOWN NOT COVERED: the
-# ERR trap fires DURING the source, so the hook exits before any accumulator
-# could be read. That shape needs `trap - ERR` around every lib-loading region
-# and is tracked as issue #192. Only the fail-open direction is pinned here, so
-# this assertion does not fight #192 when it lands.
+# Cell 3b — branch-ledger.sh runs `false` mid-source. KNOWN NOT COVERED by the
+# advisory: the ERR trap fires DURING the source, so the hook exits before any
+# accumulator could be read. That shape needs `trap - ERR` around every
+# lib-loading region and is tracked as issue #192.
+#
+# Asserted as EMPTY on purpose, so this is a real pin rather than a sentence:
+# it fails the day #192 lands, which is the point — whoever fixes #192 must
+# come here and assert the advisory instead.
 # ---------------------------------------------------------------------------
 printf '\nfalse\n' >> "${_TROOT}/hooks/lib/branch-ledger.sh"
 out="$(run_stable)"
-assert_not_contains "ERR-trap-exiting lib still falls OPEN (#192 boundary)" '"deny"' "${out:-}"
+assert_equals "ERR-trap-exiting lib is still silent (#192 boundary — update when #192 lands)" \
+    "" "${out}"
 _restore_ledger
 
 # ---------------------------------------------------------------------------
 # The advisory must never carry a permissionDecision of its own: a decision on
 # the advisory channel would auto-approve the command and suppress every
-# downstream warning (documented bug shape in the guard).
+# downstream warning (documented bug shape in the guard). Asserted TOGETHER
+# with the advisory being present — the absence check alone passes when there
+# is no advisory at all, which is how a removed feature would sneak through.
 # ---------------------------------------------------------------------------
 rm -f "${_TROOT}/hooks/lib/branch-ledger.sh"
-out="$(run_stable)"
-assert_not_contains "degradation advisory carries no permissionDecision" \
-    "permissionDecision" "${out:-}"
-assert_contains     "degradation advisory rides the additionalContext channel" \
-    "additionalContext" "${out:-<empty>}"
+out="$(run_stable)"; adv="$(_advisory_text "${out}")"
+assert_contains "advisory is present to be judged"              "GATE DEGRADED" "${adv:-<empty>}"
+assert_equals   "degradation advisory carries no permissionDecision" \
+    "false" "$(_has_decision "${out}")"
 _restore_ledger
 
 print_summary
