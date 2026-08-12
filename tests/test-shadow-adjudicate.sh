@@ -252,6 +252,67 @@ eq "it says there are no v2 records"         "1" "$("$SCRIPT" --next 2>&1 | grep
 eq "and it surfaces the exact v1 count"      "1" "$("$SCRIPT" --next 2>&1 | grep -E 'v1 record\(s\) present' | awk '{print $1}')"
 eq "empty-v2 --next still exits 0"           "0" "$("$SCRIPT" --next >/dev/null 2>&1; echo $?)"
 
+# --- impl_evidence_detail rendering (corpus-validity audit, F2) ------------
+# The field exists so an adjudicator can tell "checked and absent" from "could
+# not check" WITHOUT re-deriving it from ~/.claude state that session-start GC
+# deletes at 7 days. If --next does not surface it, recording it is pointless.
+rec3() { # rec3 <id> <ts> <detail-json>
+  printf '{"record_id":"%s","ts":"%s","repo":"/repo/A","branch":"feat/x","session_token":"tok1","predicate_version":2,"action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"none","impl_evidence_detail":%s,"transcript_path":"/tmp/t.jsonl","gate":"push-implement","would_block":true,"schema_version":3}\n' \
+    "$1" "$2" "$3" >> "$IMPLEMENT_SHADOW_LOG"
+}
+
+: > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
+rec3 d_cc "2026-07-28T09:00:00Z" '{"ledger":"missing","invocation":"missing","bridge":"cannot_check","attestation":"missing"}'
+eq "--next renders the per-leg detail"        "1" \
+   "$("$SCRIPT" --next 2>&1 | grep -c 'bridge=cannot_check')"
+eq "a cannot_check leg raises the false_block note" "1" \
+   "$("$SCRIPT" --next 2>&1 | grep -ci 'may have fired on infrastructure failure')"
+
+# The note must be CONDITIONAL. An unconditional note is indistinguishable from
+# a correct one on the cannot_check fixture above, and would train the
+# adjudicator to ignore it.
+: > "$IMPLEMENT_SHADOW_LOG"
+rec3 d_ok "2026-07-28T09:00:00Z" '{"ledger":"missing","invocation":"missing","bridge":"missing","attestation":"missing"}'
+eq "all-missing detail is still rendered"     "1" \
+   "$("$SCRIPT" --next 2>&1 | grep -c 'bridge=missing')"
+eq "all-missing detail raises NO false_block note" "0" \
+   "$("$SCRIPT" --next 2>&1 | grep -ci 'may have fired on infrastructure failure')"
+
+# A pre-schema-3 record has no per-leg data at all. That must be SAID, not left
+# blank: a blank line reads as "all legs fine" when the truth is the outcome is
+# unrecoverable for that record.
+: > "$IMPLEMENT_SHADOW_LOG"
+rec legacy "2026-07-28T09:00:00Z" "/repo/A" "feat/x" "tok1"
+eq "a schema<3 record says the detail is not recorded" "1" \
+   "$("$SCRIPT" --next 2>&1 | grep -ci 'not recorded (schema 1 < 3)')"
+eq "and never renders an empty legs line"      "0" \
+   "$("$SCRIPT" --next 2>&1 | grep -cE '^  legs +$')"
+
+# A schema-3 record CAN carry a null detail (implement-shadow.sh emits null for
+# an omitted or malformed detail), so an empty legs field must NOT be reported
+# as "schema <3" — that is a false claim about the record's own schema. The two
+# causes get distinct messages; this pins that they do not collapse.
+: > "$IMPLEMENT_SHADOW_LOG"
+rec3 d_null "2026-07-28T09:00:00Z" 'null'
+eq "a schema-3 record with null detail is NOT blamed on the schema" "0" \
+   "$("$SCRIPT" --next 2>&1 | grep -ci '< 3')"
+eq "a schema-3 record with null detail says the detail was not written" "1" \
+   "$("$SCRIPT" --next 2>&1 | grep -ci 'schema 3 record carried no per-leg detail')"
+
+# A non-object detail (operator-edited corpus) must not silently drop the whole
+# record from the queue: jq's `to_entries` errors on a string, _shadow_tsv
+# suppresses stderr, and the record would vanish with exit 0.
+: > "$IMPLEMENT_SHADOW_LOG"
+rec3 d_str "2026-07-28T09:00:00Z" '"oops"'
+eq "a non-object detail still renders its record" "1" \
+   "$("$SCRIPT" --next 2>&1 | grep -c '^d_str')"
+
+# Schema 3 must remain adjudicable: predicate_version is deliberately still 2,
+# so the corpus stays poolable and the pre-registered horizon does not restart.
+: > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
+rec3 d_pool "2026-07-28T09:00:00Z" '{"ledger":"missing","invocation":"missing","bridge":"missing","attestation":"missing"}'
+eq "a schema-3 record is still a v2 episode"  "1" "$(episodes | grep -c 'd_pool')"
+
 # --- Task 5: --status ---
 seed()  { : > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"; }
 mkrec() { rec "$1" "2026-07-28T$2:00Z" "$3" "br-$1" "tok-$1"; }

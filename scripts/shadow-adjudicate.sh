@@ -236,10 +236,19 @@ cmd_next() {
     _seen="$(_adjudicated_ids)"
     # Records whose ts is unparseable are skipped here too — --status can never
     # count them, so offering one for adjudication wastes the operator's time.
+    # Field 11 flattens impl_evidence_detail (schema 3+) to "<leg>=<status> ..."
+    # because @tsv rejects objects. An absent field yields the empty string,
+    # which the renderer must report as "not recorded" rather than print blank —
+    # a schema-2 record genuinely has no per-leg data, and that is different
+    # from every leg having been checked.
     _line="$(_shadow_tsv 'select((.ts // "") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
               | [.record_id,.ts,.repo,.branch,.action,.diff_base,
                  (.impl_in_chain|tostring),(.material_source|tostring),
-                 .impl_evidence_kind,.transcript_path]' \
+                 .impl_evidence_kind,.transcript_path,
+                 ((.impl_evidence_detail | if type == "object" then . else {} end)
+                  | to_entries
+                  | map("\(.key)=\(.value)") | join(" ")),
+                 (.schema_version // 0 | tostring)]' \
             | sort -t "$(printf '\t')" -k2,2 \
             | while IFS= read -r _row; do
                   _id="$(printf '%s' "${_row}" | cut -f1)"
@@ -279,6 +288,28 @@ cmd_next() {
         printf "  repo    %s\n  branch  %s\n", $3, $4
         printf "  action  %s   diff_base %s\n", $5, $6
         printf "  why     impl_in_chain=%s, material_source=%s, evidence=%s\n", $7, $8, $9
+        # A `cannot_check` leg is the tell that the advisory named the WRONG
+        # remedy — the pre-registered false_block condition — rather than that
+        # the push lacked implementation work. Surfaced here so the adjudicator
+        # does not have to re-derive it from ~/.claude state that session-start
+        # GC deletes after 7 days.
+        # Branch on the RECORD.s schema_version ($12), never on $11 being empty.
+        # implement-shadow.sh emits impl_evidence_detail:null for an omitted or
+        # malformed detail (pinned by test-push-gate-implement-leg.sh), so a
+        # genuine schema-3 record can arrive here with $11 empty — inferring
+        # "schema <3" from that printed a false claim about the record.s own
+        # schema.
+        if ($11 == "") {
+            if ($12 != "" && $12 + 0 >= 3)
+                printf "  legs    not recorded — schema %s record carried no per-leg detail (omitted or malformed at write time)\n", $12
+            else
+                printf "  legs    not recorded (schema %s < 3) — per-leg outcome is unrecoverable for this record\n", ($12 == "" ? "?" : $12)
+        }
+        else {
+            printf "  legs    %s\n", $11
+            if ($11 ~ /cannot_check/)
+                printf "          NOTE: a cannot_check leg means the check could not run. Weigh false_block:\n          the advisory names executing-plans, but the leg may have fired on infrastructure failure.\n"
+        }
         printf "  read    %s\n\n", $10
         printf "to label:\n  %s %s --verdict <true_catch|false_block|unknown> --reason \"...\"\n", self, $1
     }'
