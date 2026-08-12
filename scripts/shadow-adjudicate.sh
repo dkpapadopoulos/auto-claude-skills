@@ -245,8 +245,10 @@ cmd_next() {
               | [.record_id,.ts,.repo,.branch,.action,.diff_base,
                  (.impl_in_chain|tostring),(.material_source|tostring),
                  .impl_evidence_kind,.transcript_path,
-                 ((.impl_evidence_detail // {}) | to_entries
-                  | map("\(.key)=\(.value)") | join(" "))]' \
+                 ((.impl_evidence_detail | if type == "object" then . else {} end)
+                  | to_entries
+                  | map("\(.key)=\(.value)") | join(" ")),
+                 (.schema_version // 0 | tostring)]' \
             | sort -t "$(printf '\t')" -k2,2 \
             | while IFS= read -r _row; do
                   _id="$(printf '%s' "${_row}" | cut -f1)"
@@ -291,8 +293,18 @@ cmd_next() {
         # the push lacked implementation work. Surfaced here so the adjudicator
         # does not have to re-derive it from ~/.claude state that session-start
         # GC deletes after 7 days.
-        if ($11 == "")
-            printf "  legs    not recorded (schema <3) — per-leg outcome is unrecoverable for this record\n"
+        # Branch on the RECORD.s schema_version ($12), never on $11 being empty.
+        # implement-shadow.sh emits impl_evidence_detail:null for an omitted or
+        # malformed detail (pinned by test-push-gate-implement-leg.sh), so a
+        # genuine schema-3 record can arrive here with $11 empty — inferring
+        # "schema <3" from that printed a false claim about the record.s own
+        # schema.
+        if ($11 == "") {
+            if ($12 != "" && $12 + 0 >= 3)
+                printf "  legs    not recorded — schema %s record carried no per-leg detail (omitted or malformed at write time)\n", $12
+            else
+                printf "  legs    not recorded (schema %s < 3) — per-leg outcome is unrecoverable for this record\n", ($12 == "" ? "?" : $12)
+        }
         else {
             printf "  legs    %s\n", $11
             if ($11 ~ /cannot_check/)

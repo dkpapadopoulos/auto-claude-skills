@@ -614,6 +614,49 @@ assert_equals "invocation leg is unaffected by the branch key" "missing" \
 rm -rf "${_FAKEROOT}"
 rm -f "$HOME/.claude/.skill-invocation-evidence-${_TOK}"
 
+# --- cannot_check vs missing: a CORRUPT STATE FILE -------------------------
+# Same bug class as the unresolvable branch key above, on the other two legs.
+# _invoc_has and phase_attested both END in `jq -e ... "$f" >/dev/null 2>&1`,
+# so a file that EXISTS but does not parse returns 1 — byte-identical at the
+# exit code to "no record". Reporting that as `missing` claims we looked and
+# found nothing when we could not look at all, which biases the pre-registered
+# rate toward CLEARING the deny-flip (the dangerous direction).
+#
+# REVIEW/VERIFY are satisfied via .completed here, NOT via invocation evidence:
+# this fixture corrupts precisely the file those legs would otherwise read, so
+# using it would deny before Check 0 is ever reached.
+git -C "${_REPO}" checkout -q feat/impl
+printf '%s' '{"chain":["requesting-code-review","verification-before-completion","executing-plans"],"current_index":0,"completed":["requesting-code-review","verification-before-completion"]}' > "${_COMP}"
+printf '%s' '{ this is not json' > "$HOME/.claude/.skill-invocation-evidence-${_TOK}"
+printf '%s' 'also not json'      > "$HOME/.claude/.skill-phase-attest-${_TOK}"
+: > "$IMPLEMENT_SHADOW_LOG"
+
+out="$(run_guard)"
+assert_not_contains "corrupt-state run still never denies from this leg" \
+    "permissionDecision" "${out:-}"
+assert_equals "corrupt state still writes a shadow record" "1" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | tr -d ' ')"
+assert_equals "unparseable invocation evidence records cannot_check" "cannot_check" \
+    "$(jq -r '.impl_evidence_detail.invocation' "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | head -1)"
+assert_equals "unparseable attest file records cannot_check" "cannot_check" \
+    "$(jq -r '.impl_evidence_detail.attestation' "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | head -1)"
+# Control: the ledger leg reads neither file, so it must still be `missing`.
+# Without this, hardcoding every leg to cannot_check would pass the two above.
+assert_equals "ledger leg is unaffected by the corrupt state files" "missing" \
+    "$(jq -r '.impl_evidence_detail.ledger' "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | head -1)"
+
+# Control 2: a WELL-FORMED but non-array invocation file is checked-and-rejected
+# (`type=="array"` fails), which is genuinely `missing`, NOT cannot_check. This
+# pins the boundary — without it, "treat every jq failure as cannot_check" would
+# pass, and the field would over-report infrastructure failure.
+printf '%s' '{"not":"an array"}' > "$HOME/.claude/.skill-invocation-evidence-${_TOK}"
+rm -f "$HOME/.claude/.skill-phase-attest-${_TOK}"
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(run_guard)"
+assert_equals "well-formed non-array evidence stays missing, not cannot_check" "missing" \
+    "$(jq -r '.impl_evidence_detail.invocation' "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | head -1)"
+rm -f "$HOME/.claude/.skill-invocation-evidence-${_TOK}"
+
 export HOME="$_OLDHOME"
 rm -rf "${_REPO}" "${_THOME}" 2>/dev/null
 print_summary

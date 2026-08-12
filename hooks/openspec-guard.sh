@@ -455,7 +455,11 @@ EOF
                 fi
                 # Skip the probe when real (non-attested) evidence was found:
                 # neither record site fires on that path, so the detail would be
-                # computed and discarded (the probe below costs one git call).
+                # computed and discarded. The probe below is not free:
+                # branch_ledger_dir -> branch_ledger_key runs `git remote
+                # get-url origin`, `git symbolic-ref`, plus shasum/sha1sum and
+                # cut — roughly 4 processes, not the single git call an earlier
+                # version of this comment claimed.
                 # The gate is deliberately NOT the narrower [ "${_impl_ok}" = "false" ]:
                 # the attested record at the bottom of this block is written with
                 # _impl_ok=true, so that form leaves _impl_detail unset and every
@@ -508,12 +512,33 @@ EOF
                         _impl_det_bridge=cannot_check
                     fi
                     # An ABSENT evidence file is genuinely "missing" (nothing was
-                    # recorded); only an unresolvable token or a missing jq means
-                    # _invoc_has could not look at all.
-                    if [ -z "${_SESSION_TOKEN:-}" ] || ! command -v jq >/dev/null 2>&1; then
+                    # recorded). The cannot_check case is a file that EXISTS but
+                    # cannot be parsed: _invoc_has ends in `jq -e ... "${_f}"
+                    # >/dev/null 2>&1`, so a truncated or corrupt file returns 1
+                    # identically to "no record".
+                    # Do NOT test the token or jq here: both are guaranteed by
+                    # the time this runs (the guard exits at the top when
+                    # _SESSION_TOKEN is empty, and this whole block is inside a
+                    # `command -v jq` gate), so such a check is dead code that
+                    # falsely implies the leg is covered — deleting the previous
+                    # token/jq form changed no test, which is how it was found.
+                    # A non-array parse (`type=="array"` failing) is deliberately
+                    # NOT cannot_check: that is checked-and-rejected, i.e.
+                    # missing. Only unparseable JSON means we could not look.
+                    _impl_det_ief="${HOME}/.claude/.skill-invocation-evidence-${_SESSION_TOKEN}"
+                    if [ -f "${_impl_det_ief}" ] && \
+                       ! jq -e . "${_impl_det_ief}" >/dev/null 2>&1; then
                         _impl_det_invoc=cannot_check
                     fi
+                    # Same class on the attestation leg: phase_attested ends in
+                    # `jq -e --arg s "$step" 'has($s)' "$f" >/dev/null 2>&1`
+                    # (hooks/lib/phase-attest.sh), so an unparseable attest file
+                    # is indistinguishable from "not attested" at its exit code.
+                    _impl_det_paf="${HOME}/.claude/.skill-phase-attest-${_SESSION_TOKEN}"
                     if ! command -v phase_attested >/dev/null 2>&1; then
+                        _impl_det_attest=cannot_check
+                    elif [ -f "${_impl_det_paf}" ] && \
+                         ! jq -e . "${_impl_det_paf}" >/dev/null 2>&1; then
                         _impl_det_attest=cannot_check
                     fi
                     if [ "${_impl_ev}" = "attested" ]; then

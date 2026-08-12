@@ -284,9 +284,28 @@ eq "all-missing detail raises NO false_block note" "0" \
 : > "$IMPLEMENT_SHADOW_LOG"
 rec legacy "2026-07-28T09:00:00Z" "/repo/A" "feat/x" "tok1"
 eq "a schema<3 record says the detail is not recorded" "1" \
-   "$("$SCRIPT" --next 2>&1 | grep -ci 'not recorded (schema <3)')"
+   "$("$SCRIPT" --next 2>&1 | grep -ci 'not recorded (schema 1 < 3)')"
 eq "and never renders an empty legs line"      "0" \
    "$("$SCRIPT" --next 2>&1 | grep -cE '^  legs +$')"
+
+# A schema-3 record CAN carry a null detail (implement-shadow.sh emits null for
+# an omitted or malformed detail), so an empty legs field must NOT be reported
+# as "schema <3" — that is a false claim about the record's own schema. The two
+# causes get distinct messages; this pins that they do not collapse.
+: > "$IMPLEMENT_SHADOW_LOG"
+rec3 d_null "2026-07-28T09:00:00Z" 'null'
+eq "a schema-3 record with null detail is NOT blamed on the schema" "0" \
+   "$("$SCRIPT" --next 2>&1 | grep -ci '< 3')"
+eq "a schema-3 record with null detail says the detail was not written" "1" \
+   "$("$SCRIPT" --next 2>&1 | grep -ci 'schema 3 record carried no per-leg detail')"
+
+# A non-object detail (operator-edited corpus) must not silently drop the whole
+# record from the queue: jq's `to_entries` errors on a string, _shadow_tsv
+# suppresses stderr, and the record would vanish with exit 0.
+: > "$IMPLEMENT_SHADOW_LOG"
+rec3 d_str "2026-07-28T09:00:00Z" '"oops"'
+eq "a non-object detail still renders its record" "1" \
+   "$("$SCRIPT" --next 2>&1 | grep -c '^d_str')"
 
 # Schema 3 must remain adjudicable: predicate_version is deliberately still 2,
 # so the corpus stays poolable and the pre-registered horizon does not restart.
