@@ -54,12 +54,21 @@ _DEGRADED_MSG=""
 # every per-lib note would describe the same cause and the most severe state
 # (nothing enforced) would read identically to the mildest (one leg off), with
 # the same long path repeated per note. Collapse to a single accurate note.
+#
+# The wording is deliberately "every library-backed check", NOT "nothing was
+# gated". The composition-chain REVIEW/VERIFY gates read `.completed` straight
+# out of the state file with jq and need NO lib, so with hooks/lib entirely
+# removed they still run and still deny — measured. Claiming nothing ran would
+# replace the silent under-report this issue is about with a confident
+# over-report, which is worse: it tells the user to distrust a gate that is in
+# fact still holding. Only the empty-token exit below may say nothing ran,
+# because there the hook leaves before any gate is consulted.
 _DEG_ROOT_DEAD=false
 [ -d "${_GC_ROOT}/hooks/lib" ] || _DEG_ROOT_DEAD=true
 _degraded_note() {
     if [ "${_DEG_ROOT_DEAD}" = "true" ]; then
         [ -n "${_DEGRADED_MSG}" ] && return 0
-        _DEGRADED_MSG="GATE DEGRADED: no plugin libraries found at ${_GC_ROOT} (hooks/lib is missing), so NONE of the push-gate checks ran for this command — it was not gated at all. Repair or reinstall the plugin, or set CLAUDE_PLUGIN_ROOT to the real plugin directory."
+        _DEGRADED_MSG="GATE DEGRADED: no plugin libraries found at ${_GC_ROOT} (hooks/lib is missing), so EVERY library-backed push-gate check was skipped for this command — durable branch-ledger evidence, the verification verdict, and mutate-then-push detection. Repair or reinstall the plugin, or set CLAUDE_PLUGIN_ROOT to the real plugin directory."
         return 0
     fi
     _DEGRADED_MSG="${_DEGRADED_MSG}${_DEGRADED_MSG:+ }GATE DEGRADED: $1"
@@ -174,7 +183,11 @@ fi
 # note above (caught in review: the advisory understated a total bypass as an
 # identity mix-up, in exactly the unresolvable-root shape this targets).
 if [ -z "${_SESSION_TOKEN}" ]; then
-    if [ "${_TOKEN_LIB_OK}" != true ] && [ "${_DEG_ROOT_DEAD}" != "true" ]; then
+    # Accurate in BOTH shapes, so it is not gated on _DEG_ROOT_DEAD: this is the
+    # one exit that precedes every gate, including the lib-free composition
+    # `.completed` checks, so "nothing was gated" is literally true here and
+    # nowhere else.
+    if [ "${_TOKEN_LIB_OK}" != true ]; then
         _DEGRADED_MSG="${_DEGRADED_MSG} No session token could be resolved at all (no singleton either), so the ENTIRE push gate was skipped and this command was not gated."
     fi
     _emit_advisory "${_DEGRADED_MSG}"

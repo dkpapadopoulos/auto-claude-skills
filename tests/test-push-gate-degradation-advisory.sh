@@ -151,10 +151,50 @@ _EMPTY_ROOT="$(mktemp -d /tmp/pgd-empty-XXXXXX)"
 out="$(run_stable "${_EMPTY_ROOT}")"; adv="$(_advisory_text "${out}")"
 assert_contains "unresolvable plugin root => degradation advisory" "GATE DEGRADED"  "${adv:-<empty>}"
 assert_contains "collapsed note names the dead root"               "${_EMPTY_ROOT}" "${adv:-<empty>}"
-assert_contains "collapsed note says nothing was gated"            "not gated at all" "${adv:-<empty>}"
 assert_not_contains "one cause is reported once, not per lib"      "branch-ledger.sh" "${adv:-}"
 assert_equals   "unresolvable plugin root still falls OPEN"        "false" "$(_has_decision "${out}")"
+# No token resolved here, so this exit really does precede every gate — the
+# strong claim is licensed on THIS path and only here (see cell 1c).
+assert_contains "no-token exit may say the entire gate was skipped" \
+    "ENTIRE push gate was skipped" "${adv:-<empty>}"
 rm -rf "${_EMPTY_ROOT}"
+
+# ---------------------------------------------------------------------------
+# Cell 1c — the collapsed note must not OVERCLAIM. hooks/lib is gone, but a
+# session token resolves via the singleton and a composition state exists, so
+# the chain REVIEW/VERIFY gates still run: they read `.completed` straight out
+# of the state file with jq and need no lib at all.
+#
+# The paired deny below is the proof, not decoration: with the milestone
+# missing the gate DENIES with hooks/lib absent, so a message claiming nothing
+# was gated would be flatly false. The first cut of this collapse said exactly
+# that. Replacing a silent under-report with a confident over-report is the
+# worse failure — it tells the user to distrust a gate that is still holding.
+# ---------------------------------------------------------------------------
+_DEAD_ROOT="$(mktemp -d /tmp/pgd-dead-XXXXXX)"
+cp -R "${PROJECT_ROOT}/hooks" "${_DEAD_ROOT}/hooks"; rm -rf "${_DEAD_ROOT}/hooks/lib"
+printf 'session-t' > "${HOME}/.claude/.skill-session-token"
+printf '%s' '{"chain":["brainstorming","requesting-code-review","verification-before-completion"],"current_index":1,"completed":["brainstorming"],"updated_at":"2026-08-12T10:00:00Z"}' \
+    > "${HOME}/.claude/.skill-composition-state-session-t"
+out="$( ( cd "${PROJECT_ROOT}" && printf '{"tool_input":{"command":"git push origin HEAD"}}' | \
+    CLAUDE_PLUGIN_ROOT="${_DEAD_ROOT}" bash "${_DEAD_ROOT}/hooks/openspec-guard.sh" 2>/dev/null ) )"
+assert_equals "lib-free chain gate STILL denies with hooks/lib absent" \
+    "true" "$(_has_decision "${out}")"
+# Now satisfy the chain so no deny fires and the advisory is the only output.
+printf '%s' '{"chain":["brainstorming","requesting-code-review","verification-before-completion"],"current_index":2,"completed":["brainstorming","requesting-code-review","verification-before-completion"],"updated_at":"2026-08-12T10:00:00Z"}' \
+    > "${HOME}/.claude/.skill-composition-state-session-t"
+out="$( ( cd "${PROJECT_ROOT}" && printf '{"tool_input":{"command":"git push origin HEAD"}}' | \
+    CLAUDE_PLUGIN_ROOT="${_DEAD_ROOT}" bash "${_DEAD_ROOT}/hooks/openspec-guard.sh" 2>/dev/null ) )"
+adv="$(_advisory_text "${out}")"
+assert_contains     "dead root still announces degradation"          "GATE DEGRADED" "${adv:-<empty>}"
+assert_not_contains "collapsed note must NOT claim nothing was gated" \
+    "not gated at all" "${adv:-}"
+assert_not_contains "collapsed note must NOT claim the entire gate was skipped" \
+    "ENTIRE push gate was skipped" "${adv:-}"
+assert_contains     "collapsed note scopes its claim to library-backed checks" \
+    "library-backed" "${adv:-<empty>}"
+rm -rf "${_DEAD_ROOT}"
+rm -f "${HOME}/.claude/.skill-composition-state-session-t" "${HOME}/.claude/.skill-session-token"
 
 # ---------------------------------------------------------------------------
 # Cell 1b — session-token.sh alone is unloadable, hooks/lib otherwise intact,
