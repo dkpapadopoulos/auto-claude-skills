@@ -193,6 +193,14 @@ assert_not_contains "collapsed note must NOT claim the entire gate was skipped" 
     "ENTIRE push gate was skipped" "${adv:-}"
 assert_contains     "collapsed note scopes its claim to library-backed checks" \
     "library-backed" "${adv:-<empty>}"
+# The collapse must not swallow the identity warning. With hooks/lib gone the
+# token falls back to the shared singleton, which under concurrent sessions
+# names ANOTHER conversation — so a chain check that "passed" may have been
+# satisfied by someone else's state. That is the one degradation here that
+# turns a deny into an allow, and the per-lib note carrying it is exactly what
+# the early-return suppresses. Caught in re-verification.
+assert_contains     "collapsed note keeps the wrong-identity warning" \
+    "another conversation" "${adv:-<empty>}"
 rm -rf "${_DEAD_ROOT}"
 rm -f "${HOME}/.claude/.skill-composition-state-session-t" "${HOME}/.claude/.skill-session-token"
 
@@ -261,6 +269,33 @@ assert_equals   "removing git-command.sh drops that deny (the reason this must b
 assert_contains "advisory names git-command.sh"                  "git-command.sh"  "${adv:-<empty>}"
 assert_contains "advisory names the check that stopped running"  "mutate-then-push" "${adv:-<empty>}"
 cp "${PROJECT_ROOT}/hooks/lib/git-command.sh" "${_TROOT}/hooks/lib/git-command.sh"
+
+# ---------------------------------------------------------------------------
+# Cell 9 — phase-evidence.sh. The SECOND lib whose loss removes a deny, and the
+# one that made this change's original premise ("four faults fall open
+# silently") wrong. It backs the DESIGN/PLAN outbound leg, which is gated on
+# `command -v phase_step_satisfied` and denies when phase_enforcement.outbound
+# is "deny". Measured: with that config and a chain-covered push, removing ONLY
+# this lib turns the deny into an allow.
+#
+# The A/B pair is the proof — without the "present" leg denying, the "removed"
+# leg allowing would prove nothing about this lib.
+# ---------------------------------------------------------------------------
+printf '%s' '{"phase_enforcement":{"outbound":"deny"}}' > "${HOME}/.claude/skill-config.json"
+printf '%s' '{"chain":["brainstorming","writing-plans","requesting-code-review","verification-before-completion"],"current_index":3,"completed":["requesting-code-review","verification-before-completion"],"updated_at":"2026-08-12T10:00:00Z"}' \
+    > "${HOME}/.claude/.skill-composition-state-${_TOK}"
+out_with="$(run)"
+assert_equals "phase-evidence leg DENIES while its lib is present" \
+    "true" "$(_has_decision "${out_with}")"
+rm -f "${_TROOT}/hooks/lib/phase-evidence.sh"
+out_without="$(run)"; adv="$(_advisory_text "${out_without}")"
+assert_equals   "removing phase-evidence.sh drops that deny" \
+    "false" "$(_has_decision "${out_without}")"
+assert_contains "advisory names phase-evidence.sh"           "phase-evidence.sh" "${adv:-<empty>}"
+assert_contains "advisory distinguishes warn mode from deny mode" \
+    "deny" "${adv:-<empty>}"
+cp "${PROJECT_ROOT}/hooks/lib/phase-evidence.sh" "${_TROOT}/hooks/lib/phase-evidence.sh"
+rm -f "${HOME}/.claude/skill-config.json" "${HOME}/.claude/.skill-composition-state-${_TOK}"
 
 # Drop the seeded evidence again for the deny-direction pins below.
 _bl_dir="$(branch_ledger_dir "${PROJECT_ROOT}" 2>/dev/null || true)"

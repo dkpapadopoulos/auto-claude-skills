@@ -68,7 +68,7 @@ _DEG_ROOT_DEAD=false
 _degraded_note() {
     if [ "${_DEG_ROOT_DEAD}" = "true" ]; then
         [ -n "${_DEGRADED_MSG}" ] && return 0
-        _DEGRADED_MSG="GATE DEGRADED: no plugin libraries found at ${_GC_ROOT} (hooks/lib is missing), so EVERY library-backed push-gate check was skipped for this command — durable branch-ledger evidence, the verification verdict, and mutate-then-push detection. Repair or reinstall the plugin, or set CLAUDE_PLUGIN_ROOT to the real plugin directory."
+        _DEGRADED_MSG="GATE DEGRADED: no plugin libraries found at ${_GC_ROOT} (hooks/lib is missing), so EVERY library-backed push-gate check was skipped for this command — the global fail-closed gate, durable branch-ledger evidence, the verification verdict, routing-governance, mutate-then-push detection, and the DESIGN/PLAN phase-evidence leg. Session identity also fell back to the shared last-writer-wins singleton, so any composition-chain check that DID run may have been satisfied by another conversation's state. Repair or reinstall the plugin, or set CLAUDE_PLUGIN_ROOT to the real plugin directory."
         return 0
     fi
     _DEGRADED_MSG="${_DEGRADED_MSG}${_DEGRADED_MSG:+ }GATE DEGRADED: $1"
@@ -337,6 +337,16 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # Re-source there is idempotent. Source-guarded (no ERR-trap bypass).
         [ -f "${_PLUGIN_ROOT}/hooks/lib/phase-evidence.sh" ] && \
             . "${_PLUGIN_ROOT}/hooks/lib/phase-evidence.sh" 2>/dev/null || true
+        # #198: phase-evidence.sh backs a DENY-capable leg (the DESIGN/PLAN
+        # outbound check further below is gated on `command -v
+        # phase_step_satisfied` and denies when phase_enforcement.outbound is
+        # "deny"). Measured: with that config and a chain-covered push, removing
+        # ONLY this lib turns the deny into an allow. It was missed in the first
+        # cut of this change, which made the change's own premise — "four
+        # lib-load faults fall open silently" — one short. The note is worded for
+        # BOTH modes because "warn" is the default: in warn mode losing the leg
+        # costs telemetry, in deny mode it costs a block.
+        command -v phase_step_satisfied >/dev/null 2>&1 || _degraded_note "phase-evidence.sh did not load from ${_PLUGIN_ROOT}, so the DESIGN/PLAN phase-evidence leg did NOT run — telemetry only where phase_enforcement.outbound is \"warn\" (the default), but a skipped BLOCKING gate where it is set to \"deny\"."
         _HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
         # Bind the verdict to the COMMIT, not the session. The payload-less
         # project-verification SKILL writes under the shared singleton's token while
