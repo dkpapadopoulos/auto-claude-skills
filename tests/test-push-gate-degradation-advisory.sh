@@ -157,6 +157,17 @@ assert_equals   "unresolvable plugin root still falls OPEN"        "false" "$(_h
 # strong claim is licensed on THIS path and only here (see cell 1c).
 assert_contains "no-token exit may say the entire gate was skipped" \
     "ENTIRE push gate was skipped" "${adv:-<empty>}"
+# ...and must NOT also claim identity fell back to the singleton. Nothing
+# resolved here, so "fell back" and "any check that DID run" are both false.
+# A regression introduced when the identity clause was hardcoded into the
+# collapsed string: the two sentences then contradicted each other in the same
+# advisory. The clause is now conditional on a token having actually resolved.
+assert_not_contains "no-token exit does not also claim a singleton fallback" \
+    "another conversation" "${adv:-}"
+# push-only gates are not knowable at this exit (it runs before _gc_is_push is
+# resolved), so they must be omitted rather than guessed.
+assert_not_contains "no-token exit does not guess push-only gates" \
+    "routing-governance" "${adv:-}"
 rm -rf "${_EMPTY_ROOT}"
 
 # ---------------------------------------------------------------------------
@@ -201,6 +212,24 @@ assert_contains     "collapsed note scopes its claim to library-backed checks" \
 # the early-return suppresses. Caught in re-verification.
 assert_contains     "collapsed note keeps the wrong-identity warning" \
     "another conversation" "${adv:-<empty>}"
+# A push may name the push-only gates.
+assert_contains     "collapsed note names push-only gates on a PUSH" \
+    "routing-governance" "${adv:-<empty>}"
+
+# ---- 1d: the same dead root, but a MERGE. routing-governance and
+# mutate-then-push are both _gc_is_push-gated, so naming them here would assert
+# that a gate which never applies to merges had been disabled. The per-lib
+# verdict note already splits on this; the collapsed path bypassed that
+# discipline because the text was composed before push/merge was known.
+out="$( ( cd "${PROJECT_ROOT}" && printf '{"tool_input":{"command":"gh pr merge 123 --squash"}}' | \
+    CLAUDE_PLUGIN_ROOT="${_DEAD_ROOT}" bash "${_DEAD_ROOT}/hooks/openspec-guard.sh" 2>/dev/null ) )"
+adv_merge="$(_advisory_text "${out}")"
+assert_contains     "merge still announces degradation"            "GATE DEGRADED"     "${adv_merge:-<empty>}"
+assert_not_contains "merge does NOT name routing-governance"       "routing-governance" "${adv_merge:-}"
+assert_not_contains "merge does NOT name mutate-then-push"         "mutate-then-push"   "${adv_merge:-}"
+# The phase-evidence leg has no _gc_is_push gate and DOES fire on merges, so it
+# must still be named — otherwise the fix would have over-corrected.
+assert_contains     "merge still names the phase-evidence leg"     "phase-evidence"     "${adv_merge:-<empty>}"
 rm -rf "${_DEAD_ROOT}"
 rm -f "${HOME}/.claude/.skill-composition-state-session-t" "${HOME}/.claude/.skill-session-token"
 

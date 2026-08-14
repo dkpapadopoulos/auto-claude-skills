@@ -66,12 +66,42 @@ _DEGRADED_MSG=""
 _DEG_ROOT_DEAD=false
 [ -d "${_GC_ROOT}/hooks/lib" ] || _DEG_ROOT_DEAD=true
 _degraded_note() {
-    if [ "${_DEG_ROOT_DEAD}" = "true" ]; then
-        [ -n "${_DEGRADED_MSG}" ] && return 0
-        _DEGRADED_MSG="GATE DEGRADED: no plugin libraries found at ${_GC_ROOT} (hooks/lib is missing), so EVERY library-backed push-gate check was skipped for this command — the global fail-closed gate, durable branch-ledger evidence, the verification verdict, routing-governance, mutate-then-push detection, and the DESIGN/PLAN phase-evidence leg. Session identity also fell back to the shared last-writer-wins singleton, so any composition-chain check that DID run may have been satisfied by another conversation's state. Repair or reinstall the plugin, or set CLAUDE_PLUGIN_ROOT to the real plugin directory."
+    # Under a dead root the text is built at EMIT time by _degraded_text, not
+    # here: what a dead root actually disabled depends on facts this call site
+    # cannot know. The FIRST _degraded_note fires at the git-command.sh source
+    # (line ~118), while `_gc_is_push` is not resolved until ~212 and the
+    # session token not until ~167 — so a string composed here has to guess,
+    # and guessing is what produced two false clauses in review.
+    [ "${_DEG_ROOT_DEAD}" = "true" ] && return 0
+    _DEGRADED_MSG="${_DEGRADED_MSG}${_DEGRADED_MSG:+ }GATE DEGRADED: $1"
+    return 0
+}
+# _degraded_text — the advisory payload, resolved as late as possible.
+#
+# Two clauses are conditional and both were WRONG when hardcoded:
+#  - routing-governance and mutate-then-push detection are `_gc_is_push`-gated,
+#    so naming them on a `gh pr merge` asserts that a gate which never applies
+#    to merges was disabled. Same defect the per-lib verdict note already
+#    splits on; the collapse bypassed that discipline. When `_gc_is_push` is
+#    not yet resolved (the token exit runs before it), they are OMITTED —
+#    silence beats a claim that may not hold.
+#  - the identity clause is meaningful ONLY if a token actually resolved via
+#    the singleton. At the token exit nothing resolved, so "fell back to the
+#    singleton" and "any check that DID run" are both false there.
+_degraded_text() {
+    if [ "${_DEG_ROOT_DEAD}" != "true" ]; then
+        printf '%s' "${_DEGRADED_MSG}"
         return 0
     fi
-    _DEGRADED_MSG="${_DEGRADED_MSG}${_DEGRADED_MSG:+ }GATE DEGRADED: $1"
+    local _skipped _ident
+    _skipped="the global fail-closed gate, durable branch-ledger evidence, the verification verdict, and the DESIGN/PLAN phase-evidence leg"
+    [ "${_gc_is_push:-unknown}" = "true" ] && \
+        _skipped="${_skipped}, plus routing-governance and mutate-then-push detection"
+    _ident=""
+    [ -n "${_SESSION_TOKEN:-}" ] && \
+        _ident=" Session identity also fell back to the shared last-writer-wins singleton, so any composition-chain check that DID run may have been satisfied by another conversation's state."
+    printf 'GATE DEGRADED: no plugin libraries found at %s (hooks/lib is missing), so EVERY library-backed push-gate check was skipped for this command — %s.%s Repair or reinstall the plugin, or set CLAUDE_PLUGIN_ROOT to the real plugin directory.' \
+        "${_GC_ROOT}" "${_skipped}" "${_ident}"
     return 0
 }
 # _emit_advisory <text> — the ONE place that knows how to put advisory text on
@@ -187,10 +217,11 @@ if [ -z "${_SESSION_TOKEN}" ]; then
     # one exit that precedes every gate, including the lib-free composition
     # `.completed` checks, so "nothing was gated" is literally true here and
     # nowhere else.
-    if [ "${_TOKEN_LIB_OK}" != true ]; then
-        _DEGRADED_MSG="${_DEGRADED_MSG} No session token could be resolved at all (no singleton either), so the ENTIRE push gate was skipped and this command was not gated."
+    _dt="$(_degraded_text)"
+    if [ "${_TOKEN_LIB_OK}" != true ] && [ -n "${_dt}" ]; then
+        _dt="${_dt} No session token could be resolved at all (no singleton either), so the ENTIRE push gate was skipped and this command was not gated."
     fi
-    _emit_advisory "${_DEGRADED_MSG}"
+    _emit_advisory "${_dt}"
     exit 0
 fi
 
@@ -931,7 +962,9 @@ fi
 # emitted when the subject is unknown.
 _advisory_text_for_action() {
     local _deg _act
-    _deg="${_DEGRADED_MSG:-}"
+    # _degraded_text, not _DEGRADED_MSG: under a dead root the payload is
+    # composed here, where push-vs-merge is finally known.
+    _deg="$(_degraded_text)"
     _act=""
     if [ "${_gc_is_push:-false}" = "true" ]; then
         _act="${_STALE_MSG:-}"
