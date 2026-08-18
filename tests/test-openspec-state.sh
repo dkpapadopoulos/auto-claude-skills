@@ -326,17 +326,17 @@ test_non_ship_phase_skips_guard
 # ---------------------------------------------------------------------------
 
 # Helper: run the guard hook with a git push command and given state files
-# NOTE (#198): test-helpers.sh:31 exports CLAUDE_PLUGIN_ROOT="${TEST_HOME}/.claude",
-# a directory that contains no plugin — so the guard invoked here loads NONE of its
-# gate-enforcement libs and no gate actually runs. The "allows" cases below therefore
-# exercise a fully DEGRADED guard, not the allow path of a working one. That is a
-# pre-existing weakness of this harness, left as-is because pointing the root at the
-# real tree would change what every setup_test_env test exercises.
 #
-# What changed with #198 is only that the degradation is now ANNOUNCED, so the string
-# "PUSH GATE" legitimately appears on an allow. The property these cases mean to pin
-# is the DECISION, so they assert on the decision channel: an advisory never carries a
-# permissionDecision, and a block always does.
+# NOTE: test-helpers.sh:31 exports CLAUDE_PLUGIN_ROOT="${TEST_HOME}/.claude", a
+# directory containing no plugin. That is the RIGHT isolation for tests which build
+# fake plugin trees there, and the WRONG root for anything invoking a real hook: the
+# guard then loads none of its gate-enforcement libs and no gate runs at all. The
+# cases below inherited that root and, for months, asserted the behavior of a dead
+# guard. The global export is deliberately left alone — 517 call sites across 36
+# files depend on it — so each real-hook invocation sets the root explicitly instead.
+#
+# The dead root was invisible until the #198 degradation advisory started announcing
+# it out loud, which is the advisory doing its job on this repo's own suite.
 run_push_guard() {
     local session_token="$1"
     local phase="$2"
@@ -438,8 +438,8 @@ test_push_gate_denies_adhoc_push_without_evidence() {
 }
 test_push_gate_denies_adhoc_push_without_evidence
 
-test_push_gate_allows_no_verification_in_chain() {
-    echo "-- test: push gate allows when verification not in chain --"
+test_push_gate_denies_when_verification_not_in_chain() {
+    echo "-- test: push gate denies when verification not in chain --"
     setup_test_env
     mkdir -p "${HOME}/.claude"
 
@@ -463,7 +463,7 @@ test_push_gate_allows_no_verification_in_chain() {
 
     teardown_test_env
 }
-test_push_gate_allows_no_verification_in_chain
+test_push_gate_denies_when_verification_not_in_chain
 
 # Push gate must also enforce REVIEW completion, not just VERIFY. In the canonical
 # SDLC chain REVIEW precedes VERIFY, and memory_feedback_never_skip_review_ship_tdd
@@ -492,8 +492,8 @@ test_push_gate_blocks_unreviewed() {
 }
 test_push_gate_blocks_unreviewed
 
-test_push_gate_allows_reviewed_without_verify_in_chain() {
-    echo "-- test: push gate allows when review done and verification not in chain --"
+test_push_gate_denies_reviewed_without_verify_in_chain() {
+    echo "-- test: push gate denies when review done but verification not in chain --"
     setup_test_env
     mkdir -p "${HOME}/.claude"
 
@@ -514,11 +514,11 @@ test_push_gate_allows_reviewed_without_verify_in_chain() {
     assert_contains     "deny names the missing verify milestone" \
         "verification-before-completion" "${output:-<empty>}"
     assert_not_contains "deny does NOT name the satisfied review milestone" \
-        "requires requesting-code-review" "${output:-}"
+        "requesting-code-review" "${output:-}"
 
     teardown_test_env
 }
-test_push_gate_allows_reviewed_without_verify_in_chain
+test_push_gate_denies_reviewed_without_verify_in_chain
 
 # ---------------------------------------------------------------------------
 # 5. set_discovery_path creates/merges discovery_path
