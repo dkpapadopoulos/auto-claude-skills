@@ -27,11 +27,109 @@ fi
 # invocation (bare, */path, env-prefixed, -C/-R form) contains the substring.
 case "${_COMMAND}" in *git*|*gh*) ;; *) exit 0 ;; esac
 
+_GC_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+
+# --- Degradation advisory (issue #198) -------------------------------------
+# This gate is deliberately fail-OPEN on infrastructure error: a leg whose lib
+# did not load is skipped rather than denied, because a check that cannot run
+# must never block. What was wrong is that it happened in SILENCE. Measured at
+# da651b5, four distinct lib-load faults produced EMPTY stdout, which the
+# harness cannot tell apart from a deliberate allow — so a permanently
+# degraded install looks exactly like a gate that keeps passing.
+#
+# _DEGRADED_MSG accumulates one note per gate-enforcement lib that failed to
+# load. It is ADVISORY ONLY and never carries a permissionDecision: a decision
+# on this channel would auto-approve the command and suppress every downstream
+# warning. It also never changes a decision — where a deny fires, the deny wins
+# and the note is dropped (the guard emits at most one JSON object).
+#
+# Defined HERE, above the first lib source, because git-command.sh is the one
+# whose loss actually removes a deny (the mutate-then-push check) — measured:
+# with every other gate satisfied, `git commit -m x && git push` denies with
+# the lib present and is ALLOWED without it. An inventory of "what stopped
+# being enforced" that omits the only entry costing a deny is a false
+# all-clear on its most severe item.
+_DEGRADED_MSG=""
+# One dead root is ONE fault, not N. When hooks/lib is not a directory at all,
+# every per-lib note would describe the same cause and the most severe state
+# (nothing enforced) would read identically to the mildest (one leg off), with
+# the same long path repeated per note. Collapse to a single accurate note.
+#
+# The wording is deliberately "every library-backed check", NOT "nothing was
+# gated". The composition-chain REVIEW/VERIFY gates read `.completed` straight
+# out of the state file with jq and need NO lib, so with hooks/lib entirely
+# removed they still run and still deny — measured. Claiming nothing ran would
+# replace the silent under-report this issue is about with a confident
+# over-report, which is worse: it tells the user to distrust a gate that is in
+# fact still holding. Only the empty-token exit below may say nothing ran,
+# because there the hook leaves before any gate is consulted.
+_DEG_ROOT_DEAD=false
+[ -d "${_GC_ROOT}/hooks/lib" ] || _DEG_ROOT_DEAD=true
+_degraded_note() {
+    # Under a dead root the text is built at EMIT time by _degraded_text, not
+    # here: what a dead root actually disabled depends on facts this call site
+    # cannot know. The FIRST _degraded_note fires at the git-command.sh source
+    # (line ~118), while `_gc_is_push` is not resolved until ~212 and the
+    # session token not until ~167 — so a string composed here has to guess,
+    # and guessing is what produced two false clauses in review.
+    [ "${_DEG_ROOT_DEAD}" = "true" ] && return 0
+    _DEGRADED_MSG="${_DEGRADED_MSG}${_DEGRADED_MSG:+ }GATE DEGRADED: $1"
+    return 0
+}
+# _degraded_text — the advisory payload, resolved as late as possible.
+#
+# Two clauses are conditional and both were WRONG when hardcoded:
+#  - routing-governance and mutate-then-push detection are `_gc_is_push`-gated,
+#    so naming them on a `gh pr merge` asserts that a gate which never applies
+#    to merges was disabled. Same defect the per-lib verdict note already
+#    splits on; the collapse bypassed that discipline. When `_gc_is_push` is
+#    not yet resolved (the token exit runs before it), they are OMITTED —
+#    silence beats a claim that may not hold.
+#  - the identity clause is meaningful ONLY if a token actually resolved via
+#    the singleton. At the token exit nothing resolved, so "fell back to the
+#    singleton" and "any check that DID run" are both false there.
+_degraded_text() {
+    if [ "${_DEG_ROOT_DEAD}" != "true" ]; then
+        printf '%s' "${_DEGRADED_MSG}"
+        return 0
+    fi
+    local _skipped _ident
+    _skipped="the global fail-closed gate, durable branch-ledger evidence, the verification verdict, and the DESIGN/PLAN phase-evidence leg"
+    [ "${_gc_is_push:-unknown}" = "true" ] && \
+        _skipped="${_skipped}, plus routing-governance and mutate-then-push detection"
+    _ident=""
+    [ -n "${_SESSION_TOKEN:-}" ] && \
+        _ident=" Session identity also fell back to the shared last-writer-wins singleton, so any composition-chain check that DID run may have been satisfied by another conversation's state."
+    printf 'GATE DEGRADED: no plugin libraries found at %s (hooks/lib is missing), so EVERY library-backed push-gate check was skipped for this command — %s.%s Repair or reinstall the plugin, or set CLAUDE_PLUGIN_ROOT to the real plugin directory.' \
+        "${_GC_ROOT}" "${_skipped}" "${_ident}"
+    return 0
+}
+# _emit_advisory <text> — the ONE place that knows how to put advisory text on
+# stdout. Factored out rather than duplicated: issue #166 exists because the
+# rule for what an action may surface lived in two places and diverged.
+_emit_advisory() {
+    [ -n "${1:-}" ] || return 0
+    if command -v jq >/dev/null 2>&1; then
+        jq -n --arg msg "PUSH GATE (advisory): $1" \
+            '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":$msg}}'
+    else
+        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' \
+            "$(printf 'PUSH GATE (advisory): %s' "$1" | tr '\n"' ' ')"
+    fi
+    return 0
+}
+
 # Precise git-write detection (fail-open): source the predicate. If unavailable,
 # the substring fallbacks below preserve the original (fail-closed) behavior.
-_GC_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-[ -f "${_GC_ROOT}/hooks/lib/git-command.sh" ] && \
-    . "${_GC_ROOT}/hooks/lib/git-command.sh" 2>/dev/null || true
+# The `command -v` confirmation is for the ADVISORY only — _gc_precise does its
+# own check, so this adds no gating and cannot change a decision.
+_GC_LIB_OK=false
+if [ -f "${_GC_ROOT}/hooks/lib/git-command.sh" ]; then
+    . "${_GC_ROOT}/hooks/lib/git-command.sh" 2>/dev/null && \
+        command -v command_parse_balanced >/dev/null 2>&1 && \
+        _GC_LIB_OK=true || true
+fi
+[ "${_GC_LIB_OK}" = "true" ] || _degraded_note "git-command.sh did not load from ${_GC_ROOT}, so command detection fell back to substring matching and the mutate-then-push check did NOT run — a combined commit-and-push was not gated."
 # Diagnostic-only shadow recorder (Stage C1). Guarded source: absence must not
 # affect the gate, and it is deliberately absent from _GATE_ENFORCE_LIBS.
 [ -f "${_GC_ROOT}/hooks/lib/implement-shadow.sh" ] && \
@@ -98,10 +196,34 @@ fi
 if [ "${_TOKEN_LIB_OK}" = true ]; then
     _SESSION_TOKEN="$(resolve_session_token_from_transcript "${_TRANSCRIPT}")"
 else
+    _degraded_note "session-token.sh did not load from ${_PLUGIN_ROOT}, so this session's identity fell back to the shared last-writer-wins singleton and may name another conversation."
     [ -f "${HOME}/.claude/.skill-session-token" ] && \
         _SESSION_TOKEN="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null)"
 fi
-[ -z "${_SESSION_TOKEN}" ] && exit 0
+# No token => no state to check => every gate below is skipped. Historically a
+# bare `exit 0` here, i.e. the silent allow that issue #198 is about. Only
+# announced when the token LIB itself failed: an empty token with a healthy lib
+# is the ordinary "not a driven session" case, not a degraded install.
+#
+# The note recorded above says the identity "fell back to the singleton", which
+# is only true when that fallback FOUND something — in which case the guard
+# continues and the gates still run. Reaching here means it found nothing, so
+# the accurate statement is stronger: no token at all, nothing was gated.
+# Correcting it here, where the distinction is known, rather than weakening the
+# note above (caught in review: the advisory understated a total bypass as an
+# identity mix-up, in exactly the unresolvable-root shape this targets).
+if [ -z "${_SESSION_TOKEN}" ]; then
+    # Accurate in BOTH shapes, so it is not gated on _DEG_ROOT_DEAD: this is the
+    # one exit that precedes every gate, including the lib-free composition
+    # `.completed` checks, so "nothing was gated" is literally true here and
+    # nowhere else.
+    _dt="$(_degraded_text)"
+    if [ "${_TOKEN_LIB_OK}" != true ] && [ -n "${_dt}" ]; then
+        _dt="${_dt} No session token could be resolved at all (no singleton either), so the ENTIRE push gate was skipped and this command was not gated."
+    fi
+    _emit_advisory "${_dt}"
+    exit 0
+fi
 
 # --- Push gate (fires on all git push, independent of phase) ---
 # Replaces hookify require-review-before-push rule with state-aware checks.
@@ -210,6 +332,9 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             # shellcheck source=lib/branch-ledger.sh
             . "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" && _LEDGER_OK=true
         fi
+        # #198: the ledger legs AND the whole global fail-closed gate below are
+        # conditioned on _LEDGER_OK, so a failed load silently unenforces them.
+        [ "${_LEDGER_OK}" = "true" ] || _degraded_note "branch-ledger.sh did not load from ${_PLUGIN_ROOT}, so the durable branch-ledger evidence legs and the global fail-closed gate did NOT run for this command."
         # Verdict layer: STATUS (a gating Skill returned, tracked above) is NOT a
         # passing VERDICT. verdict.sh reads the owned SHA-fresh verification verdict.
         # `|| true` so a non-zero source cannot trip `trap 'exit 0' ERR`.
@@ -217,6 +342,18 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         if [ -f "${_PLUGIN_ROOT}/hooks/lib/verdict.sh" ]; then
             # shellcheck source=lib/verdict.sh
             . "${_PLUGIN_ROOT}/hooks/lib/verdict.sh" 2>/dev/null && _VERDICT_OK=true || true
+        fi
+        # #198: verify-hardening and routing-governance are both conditioned on
+        # _VERDICT_OK, so a failed load silently unenforces both. Routing
+        # governance is push-only (it is gated on _gc_is_push further below), so
+        # naming it on a merge would assert that a gate which never applies to
+        # merges had been disabled — caught in review.
+        if [ "${_VERDICT_OK}" != "true" ]; then
+            if [ "${_gc_is_push}" = "true" ]; then
+                _degraded_note "verdict.sh did not load from ${_PLUGIN_ROOT}, so verify-hardening and routing-governance did NOT run for this command."
+            else
+                _degraded_note "verdict.sh did not load from ${_PLUGIN_ROOT}, so verify-hardening did NOT run for this command."
+            fi
         fi
         # phase-attest: lets the IMPLEMENT leg (below) accept an explicit,
         # logged skip attestation as evidence. Source-guarded like every other
@@ -231,6 +368,16 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # Re-source there is idempotent. Source-guarded (no ERR-trap bypass).
         [ -f "${_PLUGIN_ROOT}/hooks/lib/phase-evidence.sh" ] && \
             . "${_PLUGIN_ROOT}/hooks/lib/phase-evidence.sh" 2>/dev/null || true
+        # #198: phase-evidence.sh backs a DENY-capable leg (the DESIGN/PLAN
+        # outbound check further below is gated on `command -v
+        # phase_step_satisfied` and denies when phase_enforcement.outbound is
+        # "deny"). Measured: with that config and a chain-covered push, removing
+        # ONLY this lib turns the deny into an allow. It was missed in the first
+        # cut of this change, which made the change's own premise — "four
+        # lib-load faults fall open silently" — one short. The note is worded for
+        # BOTH modes because "warn" is the default: in warn mode losing the leg
+        # costs telemetry, in deny mode it costs a block.
+        command -v phase_step_satisfied >/dev/null 2>&1 || _degraded_note "phase-evidence.sh did not load from ${_PLUGIN_ROOT}, so the DESIGN/PLAN phase-evidence leg did NOT run — telemetry only where phase_enforcement.outbound is \"warn\" (the default), but a skipped BLOCKING gate where it is set to \"deny\"."
         _HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
         # Bind the verdict to the COMMIT, not the session. The payload-less
         # project-verification SKILL writes under the shared singleton's token while
@@ -806,15 +953,29 @@ fi
 # push  -> the full _STALE_MSG (unchanged, byte-identical to pre-#161)
 # merge -> _IMPL_MSG only, and only when the PR subject resolved (diff_base pr:*)
 # else  -> nothing: silence stays wherever the subject is unknown
+#
+# _DEGRADED_MSG (issue #198) is added to ALL of the above, because it is the one
+# advisory here that is action-INDEPENDENT. Every other writer computes from the
+# LOCAL branch, which is why a `gh pr merge <other-PR>` must stay silent about
+# them; "this lib did not load" describes the running guard itself and is
+# equally true of the merged PR. It is therefore also the only text that may be
+# emitted when the subject is unknown.
 _advisory_text_for_action() {
+    local _deg _act
+    # _degraded_text, not _DEGRADED_MSG: under a dead root the payload is
+    # composed here, where push-vs-merge is finally known.
+    _deg="$(_degraded_text)"
+    _act=""
     if [ "${_gc_is_push:-false}" = "true" ]; then
-        printf '%s' "${_STALE_MSG:-}"
-        return 0
+        _act="${_STALE_MSG:-}"
+    else
+        case "${_impl_db:-unresolved}" in
+            pr:*) _act="${_IMPL_MSG:-}" ;;
+            *) [ -n "${_deg}" ] || return 1 ;;
+        esac
     fi
-    case "${_impl_db:-unresolved}" in
-        pr:*) printf '%s' "${_IMPL_MSG:-}"; return 0 ;;
-        *) return 1 ;;
-    esac
+    printf '%s' "${_deg}${_deg:+${_act:+ }}${_act}"
+    return 0
 }
 
 _flush_push_advisories() {
@@ -841,13 +1002,9 @@ _flush_push_advisories() {
     local _msg
     _msg="$(_advisory_text_for_action)" || return 0
     [ -n "${_msg}" ] || return 0
-    if command -v jq >/dev/null 2>&1; then
-        jq -n --arg msg "PUSH GATE (advisory): ${_msg}" \
-            '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":$msg}}'
-    else
-        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' \
-            "$(printf 'PUSH GATE (advisory): %s' "${_msg}" | tr '\n"' ' ')"
-    fi
+    # Emission itself lives in _emit_advisory (defined near the top, because the
+    # #198 token-exit path needs it long before this function is reachable).
+    _emit_advisory "${_msg}"
 }
 
 # Check if we're in SHIP phase (signal file is JSON: {"skill":"...","phase":"..."})

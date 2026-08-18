@@ -1,0 +1,7 @@
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "deny"
+  },
+  "systemMessage": "PUSH GATE (fail-closed): pushing this branch requires requesting-code-review to have run, but no record exists for it on this branch. Invoke the missing Skill(s) and let them complete, then retry. To bypass intentionally: run the command from your own terminal, or relaunch Claude Code with ACSM_SKIP_PUSH_GATE=1 set in its environment."
+}
