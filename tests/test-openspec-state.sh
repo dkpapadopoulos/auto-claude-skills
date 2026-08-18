@@ -354,9 +354,16 @@ run_push_guard() {
         printf '%s' "${comp_state}" > "${HOME}/.claude/.skill-composition-state-${session_token}"
     fi
 
-    # Feed a git push command to the hook
+    # Feed a git push command to the hook.
+    #
+    # CLAUDE_PLUGIN_ROOT is set EXPLICITLY at the real tree. setup_test_env
+    # exports it at "${TEST_HOME}/.claude", a directory with no plugin in it —
+    # correct for tests that build fake plugin trees there, wrong here: the
+    # guard then loads NONE of its gate-enforcement libs, so these cases were
+    # exercising a fully degraded guard rather than the push gate. Surfaced by
+    # the #198 degradation advisory, which announced the dead root out loud.
     printf '{"tool_input":{"command":"git push"}}' | \
-        bash "${GUARD_HOOK}" 2>/dev/null
+        CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD_HOOK}" 2>/dev/null
 }
 
 test_push_gate_blocks_unverified() {
@@ -403,8 +410,8 @@ test_push_gate_allows_verified() {
 }
 test_push_gate_allows_verified
 
-test_push_gate_allows_no_composition() {
-    echo "-- test: push gate allows ad-hoc push (no composition) --"
+test_push_gate_denies_adhoc_push_without_evidence() {
+    echo "-- test: push gate denies ad-hoc push (no composition, no evidence) --"
     setup_test_env
     mkdir -p "${HOME}/.claude"
 
@@ -415,12 +422,21 @@ test_push_gate_allows_no_composition() {
     local output
     output="$(run_push_guard "test-push-adhoc-$$" "IMPLEMENT" "")"
 
-    assert_not_contains "push gate allows ad-hoc" "permissionDecision" "${output}"
-    assert_not_contains "push gate no deny for ad-hoc" "deny" "${output}"
+    # This case asserted the OPPOSITE until the harness root was fixed: it was
+    # named "allows ad-hoc push" and passed only because the guard ran with no
+    # libs loaded and no gate at all. The global fail-closed gate deliberately
+    # closed that hole — a push from a non-driven session used to be allowed
+    # unconditionally, and is not any more — so the old expectation had been
+    # obsolete since that gate landed, silently.
+    assert_contains "ad-hoc push with no evidence is denied" "deny" "${output:-<empty>}"
+    assert_contains "deny names the missing review milestone" \
+        "requesting-code-review" "${output:-<empty>}"
+    assert_contains "deny names the missing verify milestone" \
+        "verification-before-completion" "${output:-<empty>}"
 
     teardown_test_env
 }
-test_push_gate_allows_no_composition
+test_push_gate_denies_adhoc_push_without_evidence
 
 test_push_gate_allows_no_verification_in_chain() {
     echo "-- test: push gate allows when verification not in chain --"
@@ -437,7 +453,13 @@ test_push_gate_allows_no_verification_in_chain() {
     local output
     output="$(run_push_guard "test-push-nochain-$$" "PLAN" "${comp}")"
 
-    assert_not_contains "push gate allows no-verification chain" "permissionDecision" "${output}"
+    # Leaving verification out of the CHAIN does not exempt the push: the
+    # global fail-closed gate is chain-independent and still requires evidence
+    # for this branch. Previously asserted as an allow, which only held because
+    # the guard was running with no libs.
+    assert_contains "chain without verification is still denied" "deny" "${output:-<empty>}"
+    assert_contains "deny names verification-before-completion" \
+        "verification-before-completion" "${output:-<empty>}"
 
     teardown_test_env
 }
@@ -485,8 +507,14 @@ test_push_gate_allows_reviewed_without_verify_in_chain() {
     local output
     output="$(run_push_guard "test-push-reviewonly-$$" "REVIEW" "${comp}")"
 
-    assert_not_contains "push gate allows reviewed" "permissionDecision" "${output}"
-    assert_not_contains "push gate no deny when reviewed" "deny" "${output}"
+    # A completed REVIEW satisfies its own leg but not the VERIFY leg, so the
+    # deny must name ONLY the missing one. That asymmetry is the useful signal
+    # here and was unobservable while the guard ran with no libs.
+    assert_contains     "review-only chain is still denied" "deny" "${output:-<empty>}"
+    assert_contains     "deny names the missing verify milestone" \
+        "verification-before-completion" "${output:-<empty>}"
+    assert_not_contains "deny does NOT name the satisfied review milestone" \
+        "requires requesting-code-review" "${output:-}"
 
     teardown_test_env
 }
