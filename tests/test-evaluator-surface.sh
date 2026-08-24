@@ -121,7 +121,7 @@ if [ "${_runner_paths_found}" -gt 0 ]; then
     _record_pass "runner path(s) resolved from .verify.yml (${_runner_paths_found})"
 else
     _record_fail "runner path(s) resolved from .verify.yml" \
-        "no run: line yielded an existing repo-relative path. If this repo's gate is legitimately path-less (make/npm/pytest), this check cannot verify it and needs extending -- do NOT read this as drift"
+        "no run: line yielded an existing repo-relative path. If this repo's gate is legitimately path-less (make/npm/pytest) or names an absolute/out-of-tree runner, this check cannot verify it and needs extending -- do NOT read this as drift"
 fi
 fi
 
