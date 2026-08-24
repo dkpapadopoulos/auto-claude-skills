@@ -333,6 +333,47 @@ test_eval_intake_warns_when_search_hits_but_allowlist_admits_none() {
     out="$(_run_eval_intake_fixture gh-title-not-prefix.json)"
     assert_not_contains "no author warning when the TITLE, not the author, rejected it" \
         "failed the author allowlist" "$out"
+    # ...but it must not go SILENT either. Narrowing the denominator to fix the
+    # misattribution deleted the detection for the title-drift case: if the
+    # eval-report generator renames its issue titles (the same upstream-drift
+    # class as #203), nothing was admitted and nothing said so. Closing a
+    # wrong-remedy path by removing the warning is not a fix. Separate message,
+    # because the cause and the remedy are genuinely different.
+    assert_contains "title-shape mismatch still announced, with its own wording" \
+        "none match the expected title prefix" "$out"
+    teardown_test_env
+
+    # A denominator that CANNOT be computed must not read as "nothing to warn
+    # about". `2>/dev/null` on the count turns a jq failure into an empty
+    # string, and ${n:-0} then makes it a confident zero. One null title
+    # anywhere in the response is enough to trip it -- and it silenced a
+    # genuine author-format drift, i.e. #203's exact class, through the code
+    # written to detect #203.
+    setup_test_env; make_fake_gh
+    out="$(_run_eval_intake_fixture gh-null-title-with-drift.json)"
+    assert_equals "nothing admitted (the drifted author is correctly rejected)" "0" \
+        "$(_eval_intake_json gh-null-title-with-drift.json | jq -r '.eval_reports | length')"
+    # Assert the PRECISE message, not merely that something was said. A loose
+    # "did it mention the intake" check passes whether the type-guard works or
+    # has been deleted -- both paths warn -- so it cannot pin the guard, and
+    # mutation testing showed exactly that: removing the guard survived.
+    # With the guard, a null title is counted as a non-match and the accurate
+    # author-allowlist message is what comes out.
+    assert_contains "a null title is tolerated and the ACCURATE cause is named" \
+        "failed the author allowlist" "$out"
+    teardown_test_env
+
+    # ...and when the count genuinely cannot be computed, the cannot-check
+    # branch must fire. A NUMERIC title defeats even `.title? // ""` (the ?
+    # guards the path, not startswith), while the non-matching login lets the
+    # main filter short-circuit -- so the filter succeeds and only the
+    # denominator fails. That is the one shape that reaches this branch.
+    setup_test_env; make_fake_gh
+    out="$(_run_eval_intake_fixture gh-numeric-title.json)"
+    assert_contains "an uncomputable denominator announces itself" \
+        "could not count" "$out"
+    assert_contains "and says the empty result is unverified, not clean" \
+        "UNVERIFIED" "$out"
     teardown_test_env
 }
 

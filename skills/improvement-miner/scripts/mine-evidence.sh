@@ -183,12 +183,38 @@ json_eval_reports() {
     # the fixture). GitHub's `in:title` is phrase-CONTAINS, not prefix, so that
     # is an ordinary issue title away, not a corner case. Counting past the
     # title check makes the message's claim true by construction.
-    local n_titled n_kept
-    n_titled="$(printf '%s' "${raw}" | jq --arg pfx "${EVAL_TITLE_PREFIX}" '[.[] | select(.title | startswith($pfx))] | length' 2>/dev/null)"
+    # `.title? // ""` is load-bearing, not defensive dressing: the FILTER above
+    # never evaluates startswith on a bad title because the login check
+    # short-circuits first, but this count has no such guard and runs over every
+    # element. One null title made jq exit non-zero, `2>/dev/null` swallowed it,
+    # and `${n:-0}` turned "could not count" into a confident zero — silencing
+    # the warning while a genuine author drift was in the response. That is
+    # #203's own class, re-entered through the code written to detect it.
+    local n_raw n_titled n_kept
+    n_raw="$(printf '%s' "${raw}" | jq 'length' 2>/dev/null)"
+    n_titled="$(printf '%s' "${raw}" | jq --arg pfx "${EVAL_TITLE_PREFIX}" '[.[] | select((.title? // "") | startswith($pfx))] | length' 2>/dev/null)"
     n_kept="$(printf '%s' "${filtered}" | jq 'length' 2>/dev/null)"
-    if [ "${n_titled:-0}" -gt 0 ] && [ "${n_kept:-0}" -eq 0 ]; then
-        echo "WARNING: eval-report intake admitted 0 of ${n_titled} correctly-titled issue(s) — every one failed the author allowlist. If gh changed its author login format again, re-capture tests/fixtures/improvement-miner/eval-intake/gh-app-prefixed.json (see #203); do not read this as 'no eval regressions'." >&2
-    fi
+
+    # Never let an uncomputable count read as "nothing to warn about" — the
+    # whole point of these advisories is that a silent zero is indistinguishable
+    # from good news. Not fatal: this is a diagnostic, and the bundle itself is
+    # already built by this point.
+    case "${n_titled}" in
+        ''|*[!0-9]*)
+            echo "WARNING: eval-report intake could not count correctly-titled issues (malformed title in gh's response?) — treat this run's empty eval_reports[] as UNVERIFIED, not as 'no eval regressions'." >&2
+            ;;
+        *)
+            if [ "${n_titled}" -gt 0 ] && [ "${n_kept:-0}" -eq 0 ]; then
+                echo "WARNING: eval-report intake admitted 0 of ${n_titled} correctly-titled issue(s) — every one failed the author allowlist. If gh changed its author login format again, re-capture tests/fixtures/improvement-miner/eval-intake/gh-app-prefixed.json (see #203); do not read this as 'no eval regressions'." >&2
+            elif [ "${n_titled}" -eq 0 ] && [ "${n_raw:-0}" -gt 0 ]; then
+                # Distinct cause, distinct remedy: gh's `in:title` is
+                # phrase-CONTAINS, so this is benign when an unrelated issue
+                # merely mentions the phrase — but it is also what a renamed
+                # eval-report title looks like, and that is silent otherwise.
+                echo "NOTE: eval-report intake matched ${n_raw} issue(s) on title search but none match the expected title prefix \"${EVAL_TITLE_PREFIX}\" — benign if an unrelated issue merely mentions the phrase; if the eval-report generator renamed its titles, this intake is dead and the prefix needs updating." >&2
+            fi
+            ;;
+    esac
     printf '%s' "${filtered}"
 }
 LABEL_RUN="improvement-miner-run"
