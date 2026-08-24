@@ -133,6 +133,14 @@ json_eval_reports() {
     # trailing "[bot]", nothing else — and is ANDed with is_bot, so widening
     # the accepted spellings does not widen the trust boundary: a human
     # account and an unrelated app are both still excluded.
+    #
+    # is_bot must be `== true`, never `!= false`: the "app/" and "[bot]"
+    # spellings are unforgeable (GitHub logins admit neither "/" nor "["), so
+    # bare "github-actions" is the only forgeable one and is_bot is its ONLY
+    # guard. `!= false` would admit an ABSENT field — and this whole issue was
+    # gh changing the shape of .author, so requiring the field is the point.
+    # Failing closed here costs a loud warning; failing open costs an
+    # attacker-authored body reaching the model as trusted evidence.
     # Fixtures, incl. a real capture: tests/fixtures/improvement-miner/eval-intake/
     local BOT_LOGIN="github-actions"
     local EVAL_TITLE_PREFIX="Behavioral eval regression"
@@ -155,7 +163,7 @@ json_eval_reports() {
             | sub("\\[bot\\]$"; "");
         [ .[]
           | select((norm_login == $bot)
-                   and (.author.is_bot != false)
+                   and (.author.is_bot == true)
                    and (.title | startswith($pfx)))
           | {number, title, body} ]')"
     rc=$?
@@ -163,15 +171,23 @@ json_eval_reports() {
         echo "ERROR: eval-report response from gh is not parseable JSON (jq exit ${rc}) — improvement-miner is fail-loud, refusing to degrade to an empty bundle (see jq stderr above)" >&2
         exit 5
     fi
-    # A search that matched issues but an allowlist that admitted none is the
-    # exact observable state the #203 defect produced, and it is indistinguishable
-    # from "no regressions exist" downstream. Say so. Advisory, not fatal: a repo
-    # can legitimately have only human-authored issues under this title prefix.
-    local n_raw n_kept
-    n_raw="$(printf '%s' "${raw}" | jq 'length' 2>/dev/null)"
+    # An intake that admitted nothing while candidates existed is the exact
+    # observable state the #203 defect produced, and it is indistinguishable
+    # from "no regressions exist" downstream. Say so. Advisory, not fatal: a
+    # repo can legitimately have only human-authored issues under this prefix.
+    #
+    # The denominator counts issues that already PASSED the title-prefix check,
+    # not everything gh's search returned. The filter ANDs three predicates, so
+    # a raw-search denominator would let this message blame the author allowlist
+    # for a title-prefix rejection and prescribe the wrong remedy (re-capture
+    # the fixture). GitHub's `in:title` is phrase-CONTAINS, not prefix, so that
+    # is an ordinary issue title away, not a corner case. Counting past the
+    # title check makes the message's claim true by construction.
+    local n_titled n_kept
+    n_titled="$(printf '%s' "${raw}" | jq --arg pfx "${EVAL_TITLE_PREFIX}" '[.[] | select(.title | startswith($pfx))] | length' 2>/dev/null)"
     n_kept="$(printf '%s' "${filtered}" | jq 'length' 2>/dev/null)"
-    if [ "${n_raw:-0}" -gt 0 ] && [ "${n_kept:-0}" -eq 0 ]; then
-        echo "WARNING: eval-report intake admitted 0 of ${n_raw} title-matching issue(s) — every one failed the author allowlist. If gh changed its author login format again, re-capture tests/fixtures/improvement-miner/eval-intake/gh-app-prefixed.json (see #203); do not read this as 'no eval regressions'." >&2
+    if [ "${n_titled:-0}" -gt 0 ] && [ "${n_kept:-0}" -eq 0 ]; then
+        echo "WARNING: eval-report intake admitted 0 of ${n_titled} correctly-titled issue(s) — every one failed the author allowlist. If gh changed its author login format again, re-capture tests/fixtures/improvement-miner/eval-intake/gh-app-prefixed.json (see #203); do not read this as 'no eval regressions'." >&2
     fi
     printf '%s' "${filtered}"
 }

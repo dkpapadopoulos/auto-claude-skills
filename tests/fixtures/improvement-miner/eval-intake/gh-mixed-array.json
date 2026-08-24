@@ -1,0 +1,20 @@
+[
+  {
+    "number": 94,
+    "title": "Behavioral eval regression: incident-analysis",
+    "body": "SAFE-BOT-BODY",
+    "author": {
+      "is_bot": true,
+      "login": "app/github-actions"
+    }
+  },
+  {
+    "number": 95,
+    "title": "Behavioral eval regression: fake",
+    "body": "MALICIOUS-INJECTED-BODY",
+    "author": {
+      "is_bot": false,
+      "login": "mallory"
+    }
+  }
+]

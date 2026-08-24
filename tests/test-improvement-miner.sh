@@ -129,6 +129,13 @@ FAKEGH
     export GH_LOG
 }
 
+# NOTE: this merges stderr into stdout, so ~34 assertions across this file that
+# pipe its result into jq will break if the bundle ever writes routinely to
+# stderr — and they fail with names like "feedback kind" that say nothing about
+# streams, so the diagnosis cost is high. Measured: forcing the eval-intake
+# advisory to fire unconditionally takes the suite from 112/112 to 76/112.
+# For a JSON-shape assertion prefer _eval_intake_json (stdout alone); keep this
+# one for leak assertions, where checking BOTH channels is the point.
 run_bundle() { # runs bundle from the fixture repo with stubbed gh first in PATH
     ( cd "${TEST_TMPDIR}/repo" && \
       IMPROVEMENT_MINER_MEMORY_DIR="${TEST_TMPDIR}/memory" \
@@ -170,22 +177,21 @@ test_bundle_gate_status_present() {
 }
 
 test_eval_reports_author_allowlist() {
-    echo "-- test: non-allowlisted author excluded from eval_reports --"
+    echo "-- test: within ONE response, the bot entry is kept and the third party dropped --"
+    # This test used to hand-write its fixture as {"login": "github-actions"}
+    # with no is_bot key. That made it (a) unable to fail on its own subject —
+    # it passed for the entire life of the #203 defect, and still passed when
+    # that defect was reinstated by mutation — and (b) a silent no-op for the
+    # is_bot clause. Repointed at a committed fixture in gh's REAL author form.
+    # Its unique remaining value is the MULTI-ELEMENT case: per-element
+    # filtering within a single response, which every other fixture (one issue
+    # each) cannot exercise.
     setup_test_env; make_fake_gh
-    mkdir -p "${TEST_TMPDIR}/repo" "${TEST_TMPDIR}/memory"
-    (cd "${TEST_TMPDIR}/repo" && git init -q && git -c user.email="test@example.com" -c user.name="Test" commit -q --allow-empty -m init)
-    FAKE_GH_EVALS="${TEST_TMPDIR}/evals.json"
-    cat > "${FAKE_GH_EVALS}" <<'EOF'
-[
- {"number": 94, "title": "Behavioral eval regression: incident-analysis",
-  "body": "SAFE-BOT-BODY", "author": {"login": "github-actions"}},
- {"number": 95, "title": "Behavioral eval regression: fake",
-  "body": "MALICIOUS-INJECTED-BODY", "author": {"login": "mallory"}}
-]
-EOF
-    local out; out="$(run_bundle)"
+    local out; out="$(_run_eval_intake_fixture gh-mixed-array.json)"
     assert_contains "bot-authored body present" "SAFE-BOT-BODY" "$out"
     assert_not_contains "third-party body excluded" "MALICIOUS-INJECTED-BODY" "$out"
+    assert_equals "exactly one of the two admitted" "1" \
+        "$(_eval_intake_json gh-mixed-array.json | jq -r '.eval_reports | length')"
     teardown_test_env
 }
 
@@ -273,6 +279,29 @@ test_eval_intake_trust_boundary_holds() {
         "$(printf '%s' "$out" | jq -r '.eval_reports | length')"
     assert_not_contains "impersonator body never reaches the bundle on either stream" "IMPERSONATOR-BODY" "$merged"
     teardown_test_env
+
+    # #203 was "gh changed the shape of .author". The NEXT such change could
+    # drop or rename is_bot — so the clause must require the field, not merely
+    # tolerate it. An absent is_bot must fail closed: every committed fixture
+    # carries an explicit boolean, so without this case the whole impersonator
+    # defence silently no-ops the day the field moves, in the admit direction.
+    setup_test_env; make_fake_gh
+    out="$(_eval_intake_json gh-isbot-absent.json)"
+    merged="$(_run_eval_intake_fixture gh-isbot-absent.json)"
+    assert_equals "absent is_bot fails closed" "0" \
+        "$(printf '%s' "$out" | jq -r '.eval_reports | length')"
+    assert_not_contains "is_bot-absent body never reaches the bundle on either stream" "ISBOT-ABSENT-BODY" "$merged"
+    teardown_test_env
+
+    # The title-prefix clause is the only thing narrowing gh's phrase-CONTAINS
+    # search to genuinely eval-shaped reports, and it gates model-consumed body
+    # text. Pin it with a correctly-authored bot issue whose title merely
+    # contains the prefix — without this, deleting the clause changes no test.
+    setup_test_env; make_fake_gh
+    out="$(_eval_intake_json gh-title-not-prefix.json)"
+    assert_equals "correctly-authored bot issue with a non-prefix title excluded" "0" \
+        "$(printf '%s' "$out" | jq -r '.eval_reports | length')"
+    teardown_test_env
 }
 
 test_eval_intake_warns_when_search_hits_but_allowlist_admits_none() {
@@ -292,6 +321,18 @@ test_eval_intake_warns_when_search_hits_but_allowlist_admits_none() {
     FAKE_GH_EVALS=""
     out="$(run_bundle)"
     assert_not_contains "no warning when the search itself was empty" "eval-report intake" "$out"
+    teardown_test_env
+
+    # The warning BLAMES the author allowlist, so it may only fire when the
+    # author allowlist is what rejected the issue. GitHub's `in:title` search
+    # is phrase-CONTAINS, not prefix, so a correctly-authored bot issue whose
+    # title merely contains the prefix is dropped by the startswith() check --
+    # a working intake. Warning there names the wrong remedy ("re-capture the
+    # fixture") for a cause that is not the author at all.
+    setup_test_env; make_fake_gh
+    out="$(_run_eval_intake_fixture gh-title-not-prefix.json)"
+    assert_not_contains "no author warning when the TITLE, not the author, rejected it" \
+        "failed the author allowlist" "$out"
     teardown_test_env
 }
 
