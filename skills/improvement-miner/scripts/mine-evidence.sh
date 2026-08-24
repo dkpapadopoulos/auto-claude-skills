@@ -122,11 +122,18 @@ json_memory_index() {
 }
 
 json_eval_reports() {
-    # github-actions is the CORRECT GraphQL author login for gh's `author`
-    # field — gh returns it WITHOUT the "[bot]" suffix. Do not "fix" this
-    # to "github-actions[bot]"; that value never matches and silently
-    # zeroes the eval-report intake (docs use the display form; this is
-    # the API form).
+    # Author allowlist (issue #203). gh has emitted this login in at least
+    # three shapes — "app/github-actions" (current, gh 2.97.0),
+    # "github-actions" (historical), "github-actions[bot]" (display form used
+    # in docs). Match the NORMALISED login rather than any single literal:
+    # pinning one literal is what killed this intake, and the wrong literal
+    # was defended by a confident comment for the whole life of the defect.
+    #
+    # Normalisation is deliberately narrow — strip a leading "app/" and a
+    # trailing "[bot]", nothing else — and is ANDed with is_bot, so widening
+    # the accepted spellings does not widen the trust boundary: a human
+    # account and an unrelated app are both still excluded.
+    # Fixtures, incl. a real capture: tests/fixtures/improvement-miner/eval-intake/
     local BOT_LOGIN="github-actions"
     local EVAL_TITLE_PREFIX="Behavioral eval regression"
     # NOTE: field list deliberately excludes comments — trust boundary.
@@ -142,11 +149,29 @@ json_eval_reports() {
     # Guard against empty-but-SUCCESSFUL output (e.g., no matching issues).
     [ -z "${raw}" ] && raw='[]'
     local filtered
-    filtered="$(printf '%s' "${raw}" | jq --arg bot "${BOT_LOGIN}" --arg pfx "${EVAL_TITLE_PREFIX}" '[.[] | select((.author.login == $bot) and (.title | startswith($pfx))) | {number, title, body}]')"
+    filtered="$(printf '%s' "${raw}" | jq --arg bot "${BOT_LOGIN}" --arg pfx "${EVAL_TITLE_PREFIX}" '
+        def norm_login: (.author.login // "")
+            | sub("^app/"; "")
+            | sub("\\[bot\\]$"; "");
+        [ .[]
+          | select((norm_login == $bot)
+                   and (.author.is_bot != false)
+                   and (.title | startswith($pfx)))
+          | {number, title, body} ]')"
     rc=$?
     if [ "${rc}" -ne 0 ]; then
         echo "ERROR: eval-report response from gh is not parseable JSON (jq exit ${rc}) — improvement-miner is fail-loud, refusing to degrade to an empty bundle (see jq stderr above)" >&2
         exit 5
+    fi
+    # A search that matched issues but an allowlist that admitted none is the
+    # exact observable state the #203 defect produced, and it is indistinguishable
+    # from "no regressions exist" downstream. Say so. Advisory, not fatal: a repo
+    # can legitimately have only human-authored issues under this title prefix.
+    local n_raw n_kept
+    n_raw="$(printf '%s' "${raw}" | jq 'length' 2>/dev/null)"
+    n_kept="$(printf '%s' "${filtered}" | jq 'length' 2>/dev/null)"
+    if [ "${n_raw:-0}" -gt 0 ] && [ "${n_kept:-0}" -eq 0 ]; then
+        echo "WARNING: eval-report intake admitted 0 of ${n_raw} title-matching issue(s) — every one failed the author allowlist. If gh changed its author login format again, re-capture tests/fixtures/improvement-miner/eval-intake/gh-app-prefixed.json (see #203); do not read this as 'no eval regressions'." >&2
     fi
     printf '%s' "${filtered}"
 }

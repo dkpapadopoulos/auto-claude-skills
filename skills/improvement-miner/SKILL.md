@@ -25,6 +25,13 @@ Fail-loud: if the script errors (missing gh/jq/auth), STOP and report the
 error verbatim. Do not hand-collect evidence as a fallback — the trust
 boundary lives in the script.
 
+If the script emits `WARNING: eval-report intake admitted 0 of N ...` on
+stderr, **surface it in the report and do not treat `eval_reports: []` as
+"no eval regressions"** — it means every title-matching issue failed the
+author allowlist, which is what a changed `gh` author format looks like
+(issue #203, where that state was silent and the channel was dead for the
+skill's entire life). Re-capture the fixture named in the warning.
+
 Print the detected `repo_type` and `repo_type_reason` at the top of the
 report every run — it determines the outbound default (Step 7).
 

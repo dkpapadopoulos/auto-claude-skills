@@ -189,6 +189,112 @@ EOF
     teardown_test_env
 }
 
+# --- #203: the allowlist must be pinned against gh's REAL output, per form. ---
+# The hand-written fixture in test_eval_reports_author_allowlist above passed
+# for the entire life of the defect: it asserted the filter agreed with the
+# test's own idea of gh's format, never with gh's. These cases read committed
+# captures instead — see tests/fixtures/improvement-miner/eval-intake/README.md.
+_run_eval_intake_fixture() { # $1 = fixture basename -> echoes bundle stdout MERGED with stderr
+    mkdir -p "${TEST_TMPDIR}/repo" "${TEST_TMPDIR}/memory"
+    (cd "${TEST_TMPDIR}/repo" && git init -q && git -c user.email="test@example.com" -c user.name="Test" commit -q --allow-empty -m init)
+    FAKE_GH_EVALS="${REPO_ROOT}/tests/fixtures/improvement-miner/eval-intake/$1"
+    [ -f "${FAKE_GH_EVALS}" ] || { _record_fail "fixture present: $1" "missing ${FAKE_GH_EVALS}"; return 1; }
+    run_bundle
+}
+
+# JSON-shape assertions need stdout ALONE: run_bundle merges 2>&1, and the
+# bundle legitimately writes advisories to stderr, which would otherwise be
+# prepended to the JSON and break jq. Keep the merged stream for leak
+# assertions — a body must not reach the user by either channel.
+_eval_intake_json() { # $1 = fixture basename -> echoes bundle stdout only
+    mkdir -p "${TEST_TMPDIR}/repo" "${TEST_TMPDIR}/memory"
+    (cd "${TEST_TMPDIR}/repo" && git init -q && git -c user.email="test@example.com" -c user.name="Test" commit -q --allow-empty -m init)
+    FAKE_GH_EVALS="${REPO_ROOT}/tests/fixtures/improvement-miner/eval-intake/$1"
+    [ -f "${FAKE_GH_EVALS}" ] || { _record_fail "fixture present: $1" "missing ${FAKE_GH_EVALS}"; return 1; }
+    ( cd "${TEST_TMPDIR}/repo" && \
+      IMPROVEMENT_MINER_MEMORY_DIR="${TEST_TMPDIR}/memory" \
+      GH_LOG="${GH_LOG}" FAKE_GH_LEDGER="${FAKE_GH_LEDGER:-}" FAKE_GH_EVALS="${FAKE_GH_EVALS}" \
+      PATH="${TEST_TMPDIR}/stub:${PATH}" /bin/bash "${MINE}" bundle 2>/dev/null )
+}
+
+test_eval_intake_accepts_real_gh_author_form() {
+    echo "-- test (#203): the real gh author form (app/github-actions) is admitted --"
+    setup_test_env; make_fake_gh
+    local out; out="$(_eval_intake_json gh-app-prefixed.json)"
+    assert_equals "real-capture form yields one eval report" "1" \
+        "$(printf '%s' "$out" | jq -r '.eval_reports | length')"
+    assert_equals "the admitted report is issue 94" "94" \
+        "$(printf '%s' "$out" | jq -r '.eval_reports[0].number')"
+    teardown_test_env
+}
+
+test_eval_intake_accepts_legacy_author_forms() {
+    echo "-- test (#203): historical and display author forms stay admitted --"
+    setup_test_env; make_fake_gh
+    local out
+    out="$(_eval_intake_json gh-bare-login.json)"
+    assert_equals "bare github-actions admitted" "1" \
+        "$(printf '%s' "$out" | jq -r '.eval_reports | length')"
+    teardown_test_env
+
+    setup_test_env; make_fake_gh
+    out="$(_eval_intake_json gh-bracket-suffix.json)"
+    assert_equals "github-actions[bot] admitted" "1" \
+        "$(printf '%s' "$out" | jq -r '.eval_reports | length')"
+    teardown_test_env
+}
+
+test_eval_intake_trust_boundary_holds() {
+    echo "-- test (#203): widening the login forms must not widen the trust boundary --"
+    setup_test_env; make_fake_gh
+    local out merged
+    out="$(_eval_intake_json gh-human-author.json)"
+    merged="$(_run_eval_intake_fixture gh-human-author.json)"
+    assert_equals "human author still excluded" "0" \
+        "$(printf '%s' "$out" | jq -r '.eval_reports | length')"
+    assert_not_contains "human body never reaches the bundle on either stream" "MALICIOUS-INJECTED-BODY" "$merged"
+    teardown_test_env
+
+    setup_test_env; make_fake_gh
+    out="$(_eval_intake_json gh-third-party-bot.json)"
+    merged="$(_run_eval_intake_fixture gh-third-party-bot.json)"
+    assert_equals "unrelated bot excluded" "0" \
+        "$(printf '%s' "$out" | jq -r '.eval_reports | length')"
+    assert_not_contains "unrelated bot body never reaches the bundle on either stream" "THIRD-PARTY-BOT-BODY" "$merged"
+    teardown_test_env
+
+    # The case the is_bot clause exists for: a NON-bot account whose login
+    # normalises to the allowlisted name. Without this the is_bot check is an
+    # untested assertion that could be deleted with every test still green.
+    setup_test_env; make_fake_gh
+    out="$(_eval_intake_json gh-impersonator.json)"
+    merged="$(_run_eval_intake_fixture gh-impersonator.json)"
+    assert_equals "human account using the bot's login excluded" "0" \
+        "$(printf '%s' "$out" | jq -r '.eval_reports | length')"
+    assert_not_contains "impersonator body never reaches the bundle on either stream" "IMPERSONATOR-BODY" "$merged"
+    teardown_test_env
+}
+
+test_eval_intake_warns_when_search_hits_but_allowlist_admits_none() {
+    echo "-- test (#203): a silently-zeroed intake must announce itself --"
+    setup_test_env; make_fake_gh
+    local out
+    # search returns a matching issue, allowlist admits nothing: the exact
+    # observable state the defect produced. It must not look like "no regressions".
+    out="$(_run_eval_intake_fixture gh-human-author.json)"
+    assert_contains "stderr warns the intake admitted none" "eval-report intake" "$out"
+    teardown_test_env
+
+    setup_test_env; make_fake_gh
+    # control: a genuinely empty search must NOT warn, or the warning is noise
+    mkdir -p "${TEST_TMPDIR}/repo" "${TEST_TMPDIR}/memory"
+    (cd "${TEST_TMPDIR}/repo" && git init -q && git -c user.email="test@example.com" -c user.name="Test" commit -q --allow-empty -m init)
+    FAKE_GH_EVALS=""
+    out="$(run_bundle)"
+    assert_not_contains "no warning when the search itself was empty" "eval-report intake" "$out"
+    teardown_test_env
+}
+
 test_comments_never_requested() {
     echo "-- test: gh is never asked for comment fields --"
     setup_test_env; make_fake_gh
@@ -534,6 +640,10 @@ test_description_length_cap
 test_repo_type_detection
 test_bundle_gate_status_present
 test_eval_reports_author_allowlist
+test_eval_intake_accepts_real_gh_author_form
+test_eval_intake_accepts_legacy_author_forms
+test_eval_intake_trust_boundary_holds
+test_eval_intake_warns_when_search_hits_but_allowlist_admits_none
 test_comments_never_requested
 test_kill_math_tripped_and_alive
 test_zero_delta_run_not_counted
