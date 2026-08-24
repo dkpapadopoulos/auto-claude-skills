@@ -45,8 +45,14 @@ fi
 # trusts what it records, so editing it is evaluator-shaped (review F6). The
 # activation-hook walker is deliberately excluded: it is the most-edited file
 # in the repo and listing it would make the advisory near-constant noise.
+# tests/run-tests.sh is the ENTIRE local gate .verify.yml declares (#189).
+# Listing the declaration but not the runner it names guards the signpost and
+# not the road: neutering the runner changes what every later verdict MEANS and
+# raised no advisory. It does not carry skill-activation-hook.sh's noise
+# objection -- measured 2 commits in the last 200, vs that file's 103.
 for _f in hooks/openspec-guard.sh ${_canary_libs} .verify.yml hooks/skill-completion-hook.sh \
-          scripts/verify-and-record.sh skills/project-verification/scripts/gate-gaming-check.sh; do
+          scripts/verify-and-record.sh skills/project-verification/scripts/gate-gaming-check.sh \
+          tests/run-tests.sh; do
     case " ${_EVALUATOR_SURFACES:-} " in
         *" ${_f} "*) _record_pass "evaluator surfaces include ${_f}" ;;
         *)           _record_fail "evaluator surfaces include ${_f}" "missing from _EVALUATOR_SURFACES" ;;
@@ -72,8 +78,9 @@ REPO="$(cd "${REPO}" && pwd -P)"
   git -c init.defaultBranch=main init -q
   git config user.email t@t; git config user.name t
   # Default branch may be main or master; _routing_base tries both.
-  mkdir -p hooks/lib config
-  printf 'substrate: local\nchecks:\n  - name: tests\n    run: true\n' > .verify.yml
+  mkdir -p hooks/lib config tests
+  printf 'substrate: local\nchecks:\n  - name: tests\n    run: bash tests/run-tests.sh\n' > .verify.yml
+  echo 'runner' > tests/run-tests.sh
   echo lib > hooks/lib/verdict.sh
   echo '{}' > config/default-triggers.json
   echo readme > README.md
@@ -109,6 +116,15 @@ assert_equals "gate-lib diff => match"        "0" "$(_bool diff_touches_evaluato
   mkdir -p docs; echo x > "docs/.verify.yml.md"; git add -A; git commit -qm docs )
 assert_equals "lookalike path => no match"    "1" "$(_bool diff_touches_evaluator "${REPO}")"
 
+# #189 single-fault case: a branch that touches ONLY tests/run-tests.sh -- no
+# .verify.yml edit, no gate-lib edit -- must still match. Isolated on its own
+# branch so a pass cannot be borrowed from another surface in the same diff.
+( cd "${REPO}"; git checkout -q main; git checkout -qb feat3
+  echo 'exit 0  # neutered' >> tests/run-tests.sh; git commit -qam neuter )
+assert_equals "runner-only diff => match"     "0" "$(_bool diff_touches_evaluator "${REPO}")"
+out="$(diff_touches_evaluator "${REPO}" 2>/dev/null || true)"
+assert_contains "tests/run-tests.sh named in output" "tests/run-tests.sh" "${out:-<empty>}"
+
 # ---------------------------------------------------------------------------
 # 3. Guard e2e: advisory on push, never deny, emitted outside SHIP phase.
 #    ACSM_SKIP_PUSH_GATE=1 (human-set env) bypasses DENIALS; advisories must
@@ -143,6 +159,13 @@ assert_not_contains "advisory file list has no trailing space"   " )"           
 
 out="$(run_guard_in "${REPO}" "feat2")"
 assert_not_contains "clean branch => no evaluator advisory"      "EVALUATOR SURFACE"   "${out:-}"
+
+# #189 e2e: the runner-only branch must reach the user as a real advisory, not
+# merely satisfy the predicate.
+out="$(run_guard_in "${REPO}" "feat3")"
+assert_contains     "runner-only push emits advisory"            "EVALUATOR SURFACE"   "${out:-<empty>}"
+assert_contains     "advisory names tests/run-tests.sh"          "tests/run-tests.sh"  "${out:-<empty>}"
+assert_not_contains "runner advisory never denies"               '"deny"'              "${out:-}"
 
 # gh-merge must NOT flush push advisories: the branch-local staleness text is
 # the wrong delta for a merge of an (arbitrary) PR, and pre-flush behavior for

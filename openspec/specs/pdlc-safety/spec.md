@@ -332,7 +332,7 @@ post-audit triage 2026-07-15.
 
 ### Requirement: Evaluator-surface advisory on push
 
-The push gate MUST emit an advisory (never a permission denial) when a `git push` command's branch diff (mainline merge-base to HEAD) touches any declared evaluator surface, naming the touched files. The evaluator-surface list MUST be a superset of the drift-canary gate-enforcement manifest (`hooks/openspec-guard.sh` + `_GATE_ENFORCE_LIBS`) and MUST include `.verify.yml`. The predicate MUST fail open: an unresolvable diff base or git error yields no advisory and never blocks.
+The push gate MUST emit an advisory (never a permission denial) when a `git push` command's branch diff (mainline merge-base to HEAD) touches any declared evaluator surface, naming the touched files. The evaluator-surface list MUST be a superset of the drift-canary gate-enforcement manifest (`hooks/openspec-guard.sh` + `_GATE_ENFORCE_LIBS`), and MUST include both `.verify.yml` and every runner `.verify.yml` names as a gate command (currently `tests/run-tests.sh`). Listing the gate declaration without its runner leaves the meaning of every subsequent verdict editable with no advisory. The predicate MUST fail open: an unresolvable diff base or git error yields no advisory and never blocks.
 
 #### Scenario: Push touching .verify.yml warns but proceeds
 
@@ -352,6 +352,13 @@ The push gate MUST emit an advisory (never a permission denial) when a `git push
 - GIVEN a branch whose diff touches only `README.md`
 - WHEN the agent runs `git push`
 - THEN no evaluator-surface advisory is emitted
+
+#### Scenario: Push touching only the declared gate runner warns but proceeds
+
+- GIVEN a branch whose diff against the mainline merge-base modifies only `tests/run-tests.sh`, the runner `.verify.yml` declares, and touches no other evaluator surface
+- WHEN the agent runs `git push` and all deny gates pass
+- THEN the hook output contains an evaluator-surface advisory naming `tests/run-tests.sh`
+- AND the hook emits no `permissionDecision` of `deny` for that advisory
 
 #### Scenario: Canary manifest growth is caught by CI
 
