@@ -1,8 +1,8 @@
 [
   {
     "number": 1,
-    "title": 12345,
-    "body": "BOT-NUMERIC-TITLE-BODY",
+    "title": null,
+    "body": "BOT-NULL-TITLE-BODY",
     "author": {
       "is_bot": true,
       "login": "app/github-actions"

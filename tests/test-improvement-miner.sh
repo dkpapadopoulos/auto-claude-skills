@@ -363,18 +363,30 @@ test_eval_intake_warns_when_search_hits_but_allowlist_admits_none() {
         "failed the author allowlist" "$out"
     teardown_test_env
 
-    # ...and when the count genuinely cannot be computed, the cannot-check
-    # branch must fire. A NUMERIC title defeats even `.title? // ""` (the ?
-    # guards the path, not startswith), while the non-matching login lets the
-    # main filter short-circuit -- so the filter succeeds and only the
-    # denominator fails. That is the one shape that reaches this branch.
-    setup_test_env; make_fake_gh
-    out="$(_run_eval_intake_fixture gh-numeric-title.json)"
-    assert_contains "an uncomputable denominator announces itself" \
-        "could not count" "$out"
-    assert_contains "and says the empty result is unverified, not clean" \
-        "UNVERIFIED" "$out"
     teardown_test_env
+}
+
+test_eval_intake_bad_title_on_allowlisted_author() {
+    echo "-- test (#203 r4): a non-string title from the ALLOWLISTED bot must not abort the run --"
+    # jq short-circuits, so a bad title is only skipped for elements the login
+    # REJECTS. When the login MATCHES -- exactly the drift case this code
+    # defends -- startswith() hit the bad title and killed the whole bundle
+    # (exit 5), reporting "not parseable JSON" about JSON that parses fine.
+    # One malformed issue must not take down the entire mining run, and a
+    # title that is not a string is simply not a correctly-titled eval report.
+    local out rc
+    for fx in gh-bot-null-title.json gh-numeric-title.json; do
+        setup_test_env; make_fake_gh
+        out="$(_eval_intake_json "$fx")"; rc=$?
+        assert_equals "${fx}: bundle still succeeds" "0" "$rc"
+        assert_equals "${fx}: the well-formed bot report is still admitted" "1" \
+            "$(printf '%s' "$out" | jq -r '.eval_reports | length' 2>/dev/null)"
+        assert_equals "${fx}: the admitted one is the correctly-titled issue" "94" \
+            "$(printf '%s' "$out" | jq -r '.eval_reports[0].number' 2>/dev/null)"
+        assert_not_contains "${fx}: no bogus 'not parseable JSON' diagnosis" \
+            "not parseable JSON" "$(_run_eval_intake_fixture "$fx")"
+        teardown_test_env
+    done
 }
 
 test_comments_never_requested() {
@@ -726,6 +738,7 @@ test_eval_intake_accepts_real_gh_author_form
 test_eval_intake_accepts_legacy_author_forms
 test_eval_intake_trust_boundary_holds
 test_eval_intake_warns_when_search_hits_but_allowlist_admits_none
+test_eval_intake_bad_title_on_allowlisted_author
 test_comments_never_requested
 test_kill_math_tripped_and_alive
 test_zero_delta_run_not_counted

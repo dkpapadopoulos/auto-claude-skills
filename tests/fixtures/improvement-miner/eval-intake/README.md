@@ -39,27 +39,38 @@ The other files are constructed variants covering forms the capture cannot
 contain at once. They are explicitly NOT the authority on gh's format —
 `gh-app-prefixed.json` is.
 
-**Five of these are the sole killer of some mutation — deleting one silently
-removes the only coverage of a clause.** The rest are covered but never alone.
-That distinction is measured, not asserted; an earlier version of this file
-claimed *every* row was a sole killer, which was false for four of them and is
-exactly the confidently-wrong-documentation failure this directory exists to
-prevent. Re-run the matrix before pruning anything.
+Coverage below is **measured against a 10-mutation matrix**, not asserted.
+Two earlier versions of this paragraph were confidently wrong — one claimed
+every row was a sole killer (false for four), the next credited
+`gh-null-title-with-drift` with pinning a `.title?` that mutation testing
+showed was dead code. Re-run the matrix before pruning anything, and treat
+"sole killer" as scoped to the mutations actually tried.
 
-| sole killer of a mutation | never alone |
+**Sole killer of some mutation** — deleting it removes the only coverage:
+
+| fixture | pins |
 |---|---|
-| `gh-bracket-suffix` (the `[bot]` strip) | `gh-app-prefixed` |
-| `gh-isbot-absent` (`== true` vs `!= false`) | `gh-bare-login` |
-| `gh-title-not-prefix` (the title clause; the title NOTE) | `gh-human-author` |
-| `gh-null-title-with-drift` (the `.title?` type guard) | `gh-impersonator` |
-| `gh-numeric-title` (the cannot-count branch) | `gh-mixed-array` |
-| | `gh-third-party-bot` |
+| `gh-bracket-suffix`       | the `[bot]` strip |
+| `gh-isbot-absent`         | `is_bot == true` rather than `!= false` |
+| `gh-null-title-with-drift`| the **denominator's** type-safe title test |
+| `gh-title-not-prefix`     | the title-drift NOTE |
 
-`gh-app-prefixed` being in the right-hand column does NOT make it prunable —
-it is the only file that is ground truth about gh's actual output format, and
-its value is provenance rather than mutation coverage. `gh-human-author` and
-`gh-impersonator` are rejected by more than one clause each, so no single-clause
-mutation can isolate them; they are defence in depth.
+**Jointly load-bearing pair** — neither alone, but nothing else covers it:
+`gh-bot-null-title` + `gh-numeric-title` are the only fixtures that fail when
+the **filter's** title test loses its type guard. That is the most severe
+regression in the set: without the guard, one malformed title on an
+allowlisted bot's issue aborts the entire bundle (exit 5) and misreports it as
+unparseable JSON. Keep both — null and numeric fail differently.
+
+**Covered but never alone:** `gh-app-prefixed`, `gh-bare-login`,
+`gh-human-author`, `gh-impersonator`, `gh-mixed-array`, `gh-third-party-bot`.
+None of these is prunable on that basis. `gh-app-prefixed` is the only file
+that is ground truth about gh's real output format — its value is provenance,
+not mutation coverage. `gh-human-author` and `gh-impersonator` are each
+rejected by more than one clause, so no single-clause mutation can isolate
+them; they are defence in depth. `gh-bare-login` is a positive case no
+mutation in the matrix isolates, which means the matrix is incomplete there,
+not that the fixture is idle.
 
 | file | author login | `is_bot` | title | expected |
 |------|--------------|----------|-------|----------|
@@ -72,8 +83,9 @@ mutation can isolate them; they are defence in depth.
 | `gh-impersonator.json`    | `github-actions`      | false   | prefix | **excluded** (trust boundary; rejected by two clauses) |
 | `gh-isbot-absent.json`    | `github-actions`      | absent  | prefix | **excluded** — pins `== true` rather than `!= false` |
 | `gh-title-not-prefix.json`| `app/github-actions`  | true    | *contains, does not start with* | **excluded** — pins the title-prefix clause and the title NOTE |
-| `gh-null-title-with-drift.json` | `mallory`, then a drifted bot | mixed | *null*, then prefix | **excluded**, and must still WARN — pins the `.title?` type guard |
-| `gh-numeric-title.json`   | `mallory`, then a drifted bot | mixed | *numeric*, then prefix | **excluded**, and must warn *cannot count* — pins that branch |
+| `gh-null-title-with-drift.json` | `mallory`, then a drifted bot | mixed | *null*, then prefix | **excluded**, and must still WARN — pins the denominator's type guard |
+| `gh-bot-null-title.json`  | the allowlisted bot, twice | true | *null*, then prefix | **1 of 2**, run must NOT abort — pins the filter's type guard |
+| `gh-numeric-title.json`   | the allowlisted bot, twice | true | *numeric*, then prefix | **1 of 2**, run must NOT abort — the numeric half of that pair |
 
 Why the last three exist: `app/` and `[bot]` are unforgeable (GitHub logins
 admit neither `/` nor `[`), so bare `github-actions` is the only spelling a
