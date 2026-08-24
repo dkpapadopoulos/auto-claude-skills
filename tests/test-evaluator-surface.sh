@@ -79,7 +79,7 @@ REPO="$(cd "${REPO}" && pwd -P)"
   git config user.email t@t; git config user.name t
   # Default branch may be main or master; _routing_base tries both.
   mkdir -p hooks/lib config tests
-  printf 'substrate: local\nchecks:\n  - name: tests\n    run: bash tests/run-tests.sh\n' > .verify.yml
+  printf 'substrate: local\ncommands:\n  - name: tests\n    run: bash tests/run-tests.sh\n' > .verify.yml
   echo 'runner' > tests/run-tests.sh
   echo lib > hooks/lib/verdict.sh
   echo '{}' > config/default-triggers.json
@@ -198,6 +198,26 @@ out="$( ( cd "${REPO}" && \
       _mkinput "git push origin HEAD" | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null ) )"
 assert_not_contains "seeded-verdict push is not denied"           '"deny"'            "${out:-}"
 assert_contains     "advisory emits on the genuine allow path"    "EVALUATOR SURFACE" "${out:-<empty>}"
+
+# Same genuine-allow path, but on feat3 -- the runner-only branch (#189). The
+# feat3 assertions above run under ACSM_SKIP_PUSH_GATE=1, where no list content
+# could produce a denial, so "never denies" is tautological there. This is the
+# only place the runner entry drives a REAL, non-bypassed decision: ledger +
+# verdict seeded at feat3's own HEAD, no bypass env. Additive on purpose --
+# repointing the feat case here would have traded one surface's coverage for
+# another's rather than adding.
+( cd "${REPO}" && git checkout -q feat3 )
+branch_ledger_record "requesting-code-review"         "${REPO}"
+branch_ledger_record "verification-before-completion" "${REPO}"
+_PVHEAD3="$(git -C "${REPO}" rev-parse HEAD)"
+jq -nc --arg s "${_PVHEAD3}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' \
+    > "$HOME/.claude/.skill-project-verified-${_TOK}"
+out="$( ( cd "${REPO}" && \
+      _mkinput "git push origin HEAD" | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null ) )"
+assert_not_contains "runner-only seeded push is not denied"       '"deny"'             "${out:-}"
+assert_contains     "runner advisory on the genuine allow path"   "EVALUATOR SURFACE"  "${out:-<empty>}"
+assert_contains     "genuine-allow advisory names the runner"     "tests/run-tests.sh" "${out:-<empty>}"
+
 rm -f "$HOME/.claude/.skill-composition-state-${_TOK}" "$HOME/.claude/.skill-project-verified-${_TOK}"
 
 export HOME="$_OLDHOME"

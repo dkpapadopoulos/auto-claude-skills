@@ -332,7 +332,7 @@ post-audit triage 2026-07-15.
 
 ### Requirement: Evaluator-surface advisory on push
 
-The push gate MUST emit an advisory (never a permission denial) when a `git push` command's branch diff (mainline merge-base to HEAD) touches any declared evaluator surface, naming the touched files. The evaluator-surface list MUST be a superset of the drift-canary gate-enforcement manifest (`hooks/openspec-guard.sh` + `_GATE_ENFORCE_LIBS`), and MUST include both `.verify.yml` and every runner `.verify.yml` names as a gate command (currently `tests/run-tests.sh`). Listing the gate declaration without its runner leaves the meaning of every subsequent verdict editable with no advisory. The predicate MUST fail open: an unresolvable diff base or git error yields no advisory and never blocks.
+The push gate MUST emit an advisory (never a permission denial) when a `git push` command's branch diff (mainline merge-base to HEAD) touches any declared evaluator surface, naming the touched files. The evaluator-surface list MUST be a superset of the drift-canary gate-enforcement manifest (`hooks/openspec-guard.sh` + `_GATE_ENFORCE_LIBS`), and MUST include both `.verify.yml` and the runner this repo's `.verify.yml` declares (`tests/run-tests.sh`). Listing the gate declaration without its runner leaves the meaning of every subsequent verdict editable with no advisory. The list is literal by design: the runner MUST NOT be derived from `.verify.yml` at runtime, since that puts a YAML parse on the PreToolUse path to remove a false positive that is advisory-only. The predicate MUST fail open: an unresolvable diff base or git error yields no advisory and never blocks.
 
 #### Scenario: Push touching .verify.yml warns but proceeds
 
