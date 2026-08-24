@@ -1475,7 +1475,7 @@ HALT if any Red Flag is true:
   REVIEW)
     RED_FLAGS="
 HALT if any Red Flag is true:
-- Summarizing changes instead of dispatching superpowers:code-reviewer subagent
+- Summarizing changes instead of dispatching a code-reviewer subagent (general-purpose + the superpowers code-reviewer.md template; prefer pr-review-toolkit:code-reviewer or feature-dev:code-reviewer when installed)
 - Not providing BASE_SHA and HEAD_SHA git diff range to the reviewer
 - Claiming review is complete without acting on critical/important findings
 - Skipping security-scanner during review (Invoke Skill(auto-claude-skills:security-scanner) for deterministic scanning)"
