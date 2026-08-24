@@ -138,7 +138,7 @@
       "requires": [
         "executing-plans"
       ],
-      "description": "Dispatch superpowers:code-reviewer subagent with git diff range and plan reference. Fix critical/important issues before proceeding.",
+      "description": "Dispatch a code-reviewer subagent (general-purpose + superpowers' code-reviewer.md template; prefer pr-review-toolkit:code-reviewer when installed) with git diff range and plan reference. Fix critical/important issues before proceeding.",
       "invoke": "Skill(superpowers:requesting-code-review)"
     },
     {
@@ -1477,7 +1477,7 @@
       "sequence": [
         {
           "step": "requesting-code-review",
-          "purpose": "Get BASE_SHA and HEAD_SHA. Dispatch superpowers:code-reviewer subagent with diff and plan reference. Fix critical/important issues."
+          "purpose": "Get BASE_SHA and HEAD_SHA. Dispatch a code-reviewer subagent (general-purpose + superpowers' code-reviewer.md template) with diff and plan reference. Fix critical/important issues."
         },
         {
           "step": "agent-team-review",
