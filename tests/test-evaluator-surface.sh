@@ -59,6 +59,45 @@ for _f in hooks/openspec-guard.sh ${_canary_libs} .verify.yml hooks/skill-comple
     esac
 done
 
+# Drift check (round-2 review NEW-3). The list above is literal, so if
+# .verify.yml is ever repointed at a different runner, both the list and the
+# spec sentence naming tests/run-tests.sh silently become false while every
+# assertion above still passes -- the same signpost/road gap #189 fixed, one
+# level up. Derive the runner from the repo's OWN .verify.yml at TEST time and
+# assert membership. Test-time derivation is deliberate and does NOT violate
+# the spec's MUST NOT, which constrains the PreToolUse predicate: the cost this
+# forbids is a YAML parse on a ~50ms hot path, and nothing here runs there.
+_vy="${PROJECT_ROOT}/.verify.yml"
+_runner_paths_found=0
+while IFS= read -r _cmd; do
+    [ -n "${_cmd}" ] || continue
+    for _tok in ${_cmd}; do
+        # Skip interpreters, subcommands and flags; keep repo-relative paths
+        # that actually exist, which is what "the runner" means here.
+        case "${_tok}" in
+            -*|bash|sh|make|npm|npx|yarn|pnpm|python|python3|go|cargo|true) continue ;;
+        esac
+        [ -f "${PROJECT_ROOT}/${_tok}" ] || continue
+        _runner_paths_found=$(( _runner_paths_found + 1 ))
+        case " ${_EVALUATOR_SURFACES:-} " in
+            *" ${_tok} "*) _record_pass "declared runner ${_tok} is an evaluator surface" ;;
+            *)             _record_fail "declared runner ${_tok} is an evaluator surface" \
+                               ".verify.yml declares it as a gate command, but it is absent from _EVALUATOR_SURFACES" ;;
+        esac
+    done
+done <<EOF
+$(sed -n 's/^[[:space:]]*run:[[:space:]]*//p' "${_vy}")
+EOF
+# Non-vacuity guard: if the parse yields nothing the loop above makes zero
+# assertions and the drift check passes by doing nothing -- exactly the
+# silent-clean failure this file exists to prevent.
+if [ "${_runner_paths_found}" -gt 0 ]; then
+    _record_pass "runner path(s) resolved from .verify.yml (${_runner_paths_found})"
+else
+    _record_fail "runner path(s) resolved from .verify.yml" \
+        "parsed no existing file path from any run: line -- the drift check would be vacuous"
+fi
+
 # ---------------------------------------------------------------------------
 # 2. diff_touches_evaluator predicate on a fixture repo
 # ---------------------------------------------------------------------------
