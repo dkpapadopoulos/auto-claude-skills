@@ -98,20 +98,17 @@ _reviewer_shadow_enum() {
 #     settings-editing probe (design.md, Pre-registration, blocking
 #     precondition). Do NOT drop this as redundant.
 #
-#     PRODUCER GAP, stated rather than papered over: the only vantage point that
-#     can observe the field is hooks/reviewer-evidence-hook.sh, which sees the
-#     Agent payload. It does not yet persist the observation, so the guard
-#     resolves `unknown` today and the blocking precondition stays OPEN. The
-#     carrier openspec-guard.sh already reads is a sidecar next to the ledger
-#     record — one line in the recorder, after branch_ledger_record:
+#     SHIPPED: the only vantage point that can observe the field is
+#     hooks/reviewer-evidence-hook.sh, which sees the Agent payload. It writes
+#     a sidecar next to the ledger record, one line after branch_ledger_record,
+#     and openspec-guard.sh::_reviewer_is_error_field reads it — so this
+#     carries real `present`/`absent` data, not a placeholder `unknown`.
 #
-#         printf '%s\n' "present" \
-#             > "$(branch_ledger_dir)/reviewer-ran.is-error-field" 2>/dev/null || true
-#
-#     (writing "absent" when the field was missing from the payload). Until it
-#     is written, every record honestly says `unknown` — which an adjudicator
-#     can see and exclude, unlike a defaulted `present` that would read as a
-#     confirmed assumption.
+#     It records per CREDITED return only. An errored return exits the
+#     recorder (`[ "${_IS_ERROR}" = "true" ] && exit 0`) before the credit and
+#     the sidecar write, so there is no episode for it to describe — that is
+#     correct, not a gap. `unknown` still appears for records predating the
+#     write, or when the ledger directory itself cannot be resolved.
 #
 # Always returns 0. Compact JSONL (jq -cn) because this is a line format.
 reviewer_shadow_record() {
