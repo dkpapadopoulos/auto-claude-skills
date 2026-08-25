@@ -93,6 +93,54 @@ _reset; _run "Agent" "general-purpose" false "Task 1: remove dead reviewer agent
 if _has; then _record_fail "'dead reviewer agent name' is not credited" "ledger entry written"
 else _record_pass "'dead reviewer agent name' is not credited"; fi
 
+# (e6) NO CREDIT — the noun "code-reviewer" (an agent NAME) inside an
+# implementer task. The predicate is word-boundary only: "reviewer" continues
+# with a letter, so this correctly does not credit. Three substring arms
+# (*"code review"*, *"Code review"*, *"code-review"*) were briefly OR'd in and
+# are REMOVED: measured, they added ZERO recall (every genuine positive already
+# matches word-boundary, because "review" in "code review" is followed by a
+# space or end-of-string) and only this class of false positive.
+_reset; _run "Agent" "general-purpose" false "Fix the code-reviewer dispatch bug"
+if _has; then _record_fail "noun 'code-reviewer' is not credited" "ledger entry written"
+else _record_pass "noun 'code-reviewer' is not credited"; fi
+
+# (k) tool_response SHAPE cases.
+#
+# `_payload` hardcodes tool_response:{is_error:$er}, so every assertion above
+# only ever proves the hook agrees with the test's own idea of the payload
+# shape. `.tool_response.is_error` is a TYPED INDEX in jq, not a lookup: it
+# EXITS 5 on an array or a string, which the hook's `|| exit 0` turns into a
+# permanently silent recorder for any harness that sends content blocks. Vary
+# the SHAPE, not just the value.
+_payload_resp() {   # $1=subagent_type $2=description $3=raw JSON for tool_response
+    jq -n --arg st "$1" --arg d "$2" --argjson tr "$3" --arg tp "$_TPATH" \
+      '{tool_name:"Agent",transcript_path:$tp,tool_response:$tr,
+        tool_input:{subagent_type:$st,description:$d}}'
+}
+_run_resp() { _payload_resp "$1" "$2" "$3" \
+    | ( cd "$_REPO" && CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${HOOK}" ) >/dev/null 2>&1; }
+
+# (k1) CREDIT — an ARRAY of content blocks, the plausible agent-response shape.
+_reset; _run_resp "pr-review-toolkit:code-reviewer" "Review the diff" \
+    '[{"type":"text","text":"looks good"}]'
+if _has; then _record_pass "array tool_response still credits"
+else _record_fail "array tool_response still credits" "no ledger entry"; fi
+
+# (k2) CREDIT — a bare STRING tool_response.
+_reset; _run_resp "pr-review-toolkit:code-reviewer" "Review the diff" '"a string"'
+if _has; then _record_pass "string tool_response still credits"
+else _record_fail "string tool_response still credits" "no ledger entry"; fi
+
+# (k3) CREDIT — an object with no is_error key at all.
+_reset; _run_resp "pr-review-toolkit:code-reviewer" "Review the diff" '{}'
+if _has; then _record_pass "object without is_error still credits"
+else _record_fail "object without is_error still credits" "no ledger entry"; fi
+
+# (k4) NO CREDIT — the error signal must keep working through the same builder.
+_reset; _run_resp "pr-review-toolkit:code-reviewer" "Review the diff" '{"is_error":true}'
+if _has; then _record_fail "is_error:true via shape builder does not credit" "ledger entry written"
+else _record_pass "is_error:true via shape builder does not credit"; fi
+
 # (f) A non-subagent tool name is ignored entirely.
 _reset; _run "Bash" "pr-review-toolkit:code-reviewer" false "Review the diff"
 if _has; then _record_fail "non-subagent tool ignored" "ledger entry written"

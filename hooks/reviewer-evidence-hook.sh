@@ -25,7 +25,7 @@ command -v jq >/dev/null 2>&1 || exit 0
 # free-text description legitimately contains).
 _FIELDS="$(printf '%s' "${_INPUT}" | jq -r '[
     .tool_name // "",
-    (.tool_response.is_error // false | tostring),
+    ((.tool_response | objects | .is_error) // false | tostring),
     (.tool_input.subagent_type // ""),
     (.tool_input.description // "" | gsub("[\\n\\r]"; " "))
   ] | join("\u001f")' 2>/dev/null)" || exit 0
@@ -80,6 +80,15 @@ case "${_SUBAGENT}" in
         # "reviewer" inside implementer task names such as "Task 3:
         # reviewer-evidence writer hook".
         #
+        # Three substring arms (*"code review"*, *"Code review"*,
+        # *"code-review"*) briefly shipped OR'd with the word-boundary pattern.
+        # They are REMOVED: measured, they added ZERO recall and only false
+        # positives. Every genuine positive already matches word-boundary,
+        # because "review" in "code review" is always followed by a space or
+        # end-of-string; what the arms uniquely added was crediting the agent
+        # NAME in implementer tasks ("Fix the code-reviewer dispatch bug",
+        # "remove dead superpowers:code-reviewer target"). Pinned by (e6).
+        #
         # The one known false positive is recorded rather than silently
         # accepted, because over-crediting is the dangerous direction (D1):
         # "Task 2: review_dispatch config key" is an implementation task whose
@@ -90,7 +99,7 @@ case "${_SUBAGENT}" in
         # the predicate ships tight still stands: do not widen further, and do
         # not add audit/inspect/check/critique keywords.
         case "${_DESC}" in
-            *[Rr]eview|*[Rr]eview[!a-zA-Z]*|*"code review"*|*"Code review"*|*"code-review"*)
+            *[Rr]eview|*[Rr]eview[!a-zA-Z]*)
                 _IS_REVIEWER=true ;;
         esac ;;
 esac
