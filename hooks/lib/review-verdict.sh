@@ -47,7 +47,14 @@ _review_verdict_head_sha() {
 #
 # `unresolved_blocking > 0` disqualifies even when .verdict says "clean": a
 # provider that contradicts itself is not evidence, and the deny-bias belongs
-# on the side of demanding another look. Note this is a claim about the
+# on the side of demanding another look.
+#
+# The null test is explicit rather than `// 0` because jq's `//` treats BOTH
+# null and FALSE as absent, so `unresolved_blocking: false` read as 0 and
+# stayed clean -- the one malformed shape that landed on the permissive side.
+# Verified case by case: "2" -> not clean; "abc"/""/array/object/true ->
+# tonumber? fails -> 1 -> not clean; -1 and 0.5 -> not clean; 0.0 -> clean;
+# null/absent -> 0 -> clean (deliberate: the field is optional). Note this is a claim about the
 # ARTIFACT only — binding it to a commit is review_verdict_covers_head's job,
 # and callers gating on "reviewed" MUST require both.
 review_verdict_is_clean() {
@@ -57,7 +64,8 @@ review_verdict_is_clean() {
     command -v jq >/dev/null 2>&1 || return 1
     jq -e 'select(type=="object")
        | ((.verdict // "") == "clean")
-       and (((.unresolved_blocking // 0) | tonumber? // 1) == 0)' "$f" >/dev/null 2>&1
+       and ((if (.unresolved_blocking == null) then 0
+             else ((.unresolved_blocking | tonumber?) // 1) end) == 0)' "$f" >/dev/null 2>&1
 }
 
 # review_verdict_covers_head <token> <proj_root> — 0 iff reviewed_head_sha is

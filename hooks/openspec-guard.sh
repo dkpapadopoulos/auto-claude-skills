@@ -595,13 +595,29 @@ EOF
                 _rv_clean=false; _rv_bound=false; _rv_reason="absent"
                 if [ "${_REVIEW_VERDICT_OK}" = "true" ]; then
                     review_verdict_is_clean "${_SESSION_TOKEN}" && _rv_clean=true
-                    review_verdict_covers_head "${_SESSION_TOKEN}" "${_PROJ_ROOT}" && _rv_bound=true
+                    review_verdict_covers_head "${_SESSION_TOKEN}" "${_proot}" && _rv_bound=true
+                    # Four cells, and the (!clean && !bound) one is easy to
+                    # swallow: an artifact that EXISTS, is not clean, and is
+                    # bound to an OLDER commit is "a review ran and found
+                    # blocking findings", not "no review verdict exists". Both
+                    # are candidate true catches so the RATE is unaffected, but
+                    # the user gets the wrong remedy and the corpus gets a
+                    # mislabelled row -- and `reason` exists precisely to make
+                    # records adjudicable. Decide the last cell by artifact
+                    # PRESENCE rather than defaulting to absent.
                     if [ "${_rv_clean}" = "true" ] && [ "${_rv_bound}" = "false" ]; then
                         _rv_reason="unbound"
                     elif [ "${_rv_clean}" = "false" ] && [ "${_rv_bound}" = "true" ]; then
                         _rv_reason="not-clean"
                     elif [ "${_rv_clean}" = "false" ]; then
-                        _rv_reason="absent"
+                        _rv_art=""
+                        command -v review_verdict_artifact_path >/dev/null 2>&1 && \
+                            _rv_art="$(review_verdict_artifact_path "${_SESSION_TOKEN}" 2>/dev/null)"
+                        if [ -n "${_rv_art}" ] && [ -f "${_rv_art}" ]; then
+                            _rv_reason="not-clean"
+                        else
+                            _rv_reason="absent"
+                        fi
                     fi
                 else
                     # Lib unsourceable: we could not CHECK. Say that rather than
@@ -621,7 +637,7 @@ EOF
                             _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }REVIEW VERDICT: requesting-code-review was credited, but no review verdict covers this HEAD -- a Skill return is not evidence a review ran (#197). Record one with scripts/record-review-verdict.sh, or import a GitHub review with --from-github <pr>." ;;
                     esac
                     if command -v review_shadow_record >/dev/null 2>&1; then
-                        review_shadow_record "${_SESSION_TOKEN}" "${_PROJ_ROOT}" "${_rv_reason}" \
+                        review_shadow_record "${_SESSION_TOKEN}" "${_proot}" "${_rv_reason}" \
                             "$( [ "${_gc_is_ghmerge}" = "true" ] && echo merge || echo push )" 2>/dev/null || true
                     fi
                 fi

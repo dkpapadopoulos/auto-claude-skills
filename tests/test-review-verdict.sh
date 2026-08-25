@@ -259,6 +259,82 @@ else
 fi
 trap - EXIT INT TERM
 
+# ---------------------------------------------------------------------------
+# 8. Static: the leg's call sites must pass a variable the guard DEFINES.
+#    Review caught `${_PROJ_ROOT}` at both sites -- a name defined nowhere in
+#    the guard (it calls the root `_proot`). It expanded to empty, the lib's
+#    own cwd fallback silently covered for it, and every runtime test still
+#    passed: binding was computed against the hook's CWD instead of the
+#    resolved root, and the corpus recorded a CWD-derived repo/branch, which
+#    corrupts the pre-registered (repo, branch, session_token) episode key.
+#    Runtime cannot see this class, so assert it statically.
+# ---------------------------------------------------------------------------
+_bad_root="$(grep -n 'review_verdict_covers_head\|review_shadow_record' "${GUARD}" 2>/dev/null | grep -c '_PROJ_ROOT' | tr -d '[:space:]')"
+assert_equals "guard passes no undefined _PROJ_ROOT to the review leg" "0" "${_bad_root:-0}"
+
+# Non-vacuity: the grep must actually be finding the call sites, or the check
+# above passes because it matched nothing.
+_sites="$(grep -c 'review_verdict_covers_head\|review_shadow_record' "${GUARD}" 2>/dev/null | tr -d '[:space:]')"
+if [ "${_sites:-0}" -ge 2 ]; then _record_pass "found the review leg's call sites (${_sites})"
+else _record_fail "found the review leg's call sites" "expected >=2, got ${_sites:-0} -- the check above is vacuous"; fi
+
+# Every variable the call sites pass must be assigned somewhere in the guard.
+_undef=""
+for _v in _proot _SESSION_TOKEN; do
+    grep -q "^[[:space:]]*${_v}=" "${GUARD}" 2>/dev/null || _undef="${_undef} ${_v}"
+done
+assert_equals "call-site variables are assigned in the guard" "" "${_undef}"
+
+# ---------------------------------------------------------------------------
+# 9. Reason classifier: not-clean AND unbound is "not-clean", never "absent".
+#    Both are candidate true catches so the RATE is unaffected, but `absent`
+#    tells the user to record a review when one already ran and found blocking
+#    findings -- the wrong remedy, and a mislabelled corpus row.
+# ---------------------------------------------------------------------------
+_SHADOW="${TMP}/shadow.jsonl"
+rm -f "${_SHADOW}"
+# The cell that matters is (!clean AND !bound) -- the one the `absent` arm used
+# to swallow. An ancestor-bound verdict is BOUND, so it exercises the already
+# correct (!clean && bound) arm instead; mutation testing caught that this
+# scenario left the fix uncovered. A mainline-reachable sha does not bind, so
+# findings-open there is genuinely not-clean AND not-bound.
+_write_verdict findings-open "${BASE_SHA}" 2
+( cd "${REPO}" && printf '# c3\n' >> run.sh && git commit -qam c3 ) >/dev/null 2>&1
+_seed_allow
+( cd "${REPO}" && _mkinput "git push origin HEAD" \
+    | REVIEW_SHADOW_LOG="${_SHADOW}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" >/dev/null 2>&1 )
+if [ -f "${_SHADOW}" ]; then
+    _reason="$(jq -r '.reason' "${_SHADOW}" 2>/dev/null | tail -1)"
+    assert_equals "existing-but-stale verdict records reason=not-clean" "not-clean" "${_reason:-<none>}"
+    _rrepo="$(jq -r '.repo' "${_SHADOW}" 2>/dev/null | tail -1)"
+    if [ -n "${_rrepo}" ] && [ "${_rrepo}" != "null" ]; then
+        _record_pass "shadow record carries a repo (episode key intact)"
+    else
+        _record_fail "shadow record carries a repo (episode key intact)" "repo was '${_rrepo}' -- episode key corrupted"
+    fi
+else
+    _record_fail "shadow record written for a would-block" "no file at ${_SHADOW}"
+fi
+
+# Companion cell: not-clean but BOUND (ancestor). Different arm, same label --
+# pinning both means neither arm can be deleted without a red test.
+rm -f "${_SHADOW}"
+_write_verdict findings-open "${_ANCESTOR}" 2
+_seed_allow
+( cd "${REPO}" && _mkinput "git push origin HEAD" \
+    | REVIEW_SHADOW_LOG="${_SHADOW}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" >/dev/null 2>&1 )
+_reason2="$(jq -r '.reason' "${_SHADOW}" 2>/dev/null | tail -1)"
+assert_equals "not-clean AND bound also records reason=not-clean" "not-clean" "${_reason2:-<none>}"
+
+# And the absent cell must still say absent, or the fix would have collapsed
+# every case into not-clean -- the opposite over-correction.
+rm -f "${_SHADOW}" "${_ART}"
+_seed_allow
+( cd "${REPO}" && _mkinput "git push origin HEAD" \
+    | REVIEW_SHADOW_LOG="${_SHADOW}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" >/dev/null 2>&1 )
+_reason3="$(jq -r '.reason' "${_SHADOW}" 2>/dev/null | tail -1)"
+assert_equals "no artifact at all still records reason=absent" "absent" "${_reason3:-<none>}"
+
 export HOME="$_OLDHOME"
 rm -rf "${TMP}" "${_FAKEHOME}"
 print_summary
