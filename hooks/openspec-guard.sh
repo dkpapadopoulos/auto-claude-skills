@@ -506,6 +506,80 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }$1 accepted via cross-location branch-ledger evidence recorded at ${_bsha:-unknown} on this branch (issue #131 bridge). Rerun if later commits changed reviewed content."
             return 0
         }
+        # _reviewer_ran_ok — ADVISORY ONLY (openspec/changes/reviewer-dispatch-
+        # and-evidence/design.md section C + Pre-registration). Returns 0 ALWAYS
+        # and sets no permissionDecision: it MUST NOT gate. Its only effect is
+        # advisory text appended to _STALE_MSG, exactly like the IMPLEMENT leg.
+        # The deny-flip is a separate change, pre-registered at n=29 independent
+        # episodes; this repo has a measured 56-94% false-block record for
+        # unmeasured denies, so shipping one here would be the known-bad move.
+        #
+        # WHAT IT DISTINGUISHES: skill-completion-hook.sh credits
+        # requesting-code-review the instant Skill() RETURNS ITS INSTRUCTIONS —
+        # before any reviewer could have run. reviewer-ran (written by
+        # hooks/reviewer-evidence-hook.sh on a real reviewer-subagent return) is
+        # the independent second signal. Population is narrow by design: it is
+        # consulted ONLY where the REVIEW milestone IS credited. Where REVIEW is
+        # not credited the existing deny legs already fire and this leg is silent.
+        #
+        # SHARED BY BOTH SITES that gate requesting-code-review — the
+        # chain-scoped Check 1 above and the global fail-closed gate below.
+        # Wiring only Check 1 would leave the global gate (the path this
+        # routing repo's own pushes traverse) passing on the old milestone
+        # alone; that was the design review's severest finding. _REVIEWER_NOTED
+        # dedups the two consultations the same way _INVOC_NOTED does.
+        #
+        # NO ATTESTATION (design D3): the IMPLEMENT leg accepts phase_attest,
+        # REVIEW/VERIFY deliberately reject it. reviewer-ran is a REVIEW
+        # sub-signal, so honoring an attestation here would breach that
+        # auditable-escape asymmetry through a side door.
+        #
+        # FAIL-OPEN ANNOUNCES (#198 / design D5): this leg sits on the gate
+        # path, so "could not evaluate" must SAY so. Silence is
+        # indistinguishable from a satisfied check. The two un-checkable causes
+        # are distinguished rather than collapsed: branch_ledger_has returns 1
+        # both for "no record" and for an unresolvable branch key, and only the
+        # first means "no reviewer ran" — reporting the second as "missing"
+        # would name the wrong remedy (the same defect class the IMPLEMENT
+        # shadow's _impl_det_key_ok probe exists for). branch_ledger_dir is pure
+        # (prints a path, no mkdir), so probing it adds no side effect.
+        _REVIEWER_NOTED=false
+        _reviewer_ran_ok() {
+            local _rs _key_ok=false
+            [ "${_REVIEWER_NOTED}" = "true" ] && return 0
+            _REVIEWER_NOTED=true
+            # NOTE: this command -v is INSIDE the advisory leg, where a miss
+            # costs a NOTE. It is NOT the forbidden guard — CLAUDE.md/D6 forbid
+            # adding command -v to branch-ledger.sh's SOURCE site (~:330), where
+            # a miss costs a DENY and the check would flip that cell to allow.
+            # Nothing here touches _LEDGER_OK or any deny leg.
+            if [ "${_LEDGER_OK}" != "true" ] || ! command -v branch_ledger_has >/dev/null 2>&1; then
+                _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }REVIEWER EVIDENCE: could not check — the branch ledger is unavailable, so NOTHING is concluded here about whether a reviewer subagent ran. (advisory only — this does not block the push)"
+                return 0
+            fi
+            if command -v branch_ledger_dir >/dev/null 2>&1 \
+               && [ -n "$(branch_ledger_dir "${_proot}" 2>/dev/null)" ]; then
+                _key_ok=true
+            fi
+            if [ "${_key_ok}" != "true" ]; then
+                _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }REVIEWER EVIDENCE: could not check — no ledger key resolves for this branch, so NOTHING is concluded here about whether a reviewer subagent ran. (advisory only — this does not block the push)"
+                return 0
+            fi
+            if branch_ledger_has "reviewer-ran" "${_proot}"; then
+                # SHA-bound like _ledger_has (design D8). No allowlisted reviewer
+                # agent is inherently bound to the pushed diff, so an unbound
+                # reviewer-ran would be WEAKER evidence than the milestone it
+                # supplements — a reviewer dispatched on day 1 would otherwise
+                # credit a day-5 push of entirely different code.
+                _rs="$(branch_ledger_sha "reviewer-ran" "${_proot}")"
+                if [ -n "${_HEAD_SHA}" ] && [ -n "${_rs}" ] && [ "${_rs}" != "${_HEAD_SHA}" ]; then
+                    _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }REVIEWER EVIDENCE: stale — a reviewer subagent ran at ${_rs}, HEAD is ${_HEAD_SHA}. Re-review if later commits changed reviewed content. (advisory only — this does not block the push)"
+                fi
+                return 0
+            fi
+            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }REVIEWER EVIDENCE: the REVIEW milestone is credited but no reviewer subagent was observed on this branch. That milestone records a Skill() return, not a review. Dispatch a reviewer agent, or state plainly that no reviewer ran. (advisory only — this does not block the push)"
+            return 0
+        }
         # One exclusion rule, two subjects (#161). The push path measures the
         # branch-local delta; the merge path measures the merged PR's files.
         _names_touch_material_source() {
@@ -545,6 +619,13 @@ EOF
                 jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
                 _DECISION="deny:chain-review"
                 exit 0
+            fi
+            # Reviewer-evidence leg, SITE 1 of 2 (chain-scoped). Advisory only.
+            # Consulted exactly where the REVIEW milestone is credited; the
+            # matching call in the global fail-closed gate below is SITE 2 and
+            # both must exist (see _reviewer_ran_ok).
+            if [ "${_review_completed}" = "true" ]; then
+                _reviewer_ran_ok
             fi
 
             # Check 2: VERIFY in chain but not completed — deny with VERIFY message
@@ -816,6 +897,16 @@ EOF
             if [ "${_g_verify}" = "false" ] && [ "${_VERDICT_OK}" = "true" ] \
                && verdict_is_clean "${_VERDICT_TOKEN}" && verdict_covers_head "${_VERDICT_TOKEN}" "${_proot}"; then
                 _g_verify=true
+            fi
+            # Reviewer-evidence leg, SITE 2 of 2 (global fail-closed gate).
+            # Advisory only. This is the site this routing repo's own pushes
+            # actually traverse — a leg wired only into the chain-scoped Check 1
+            # would leave this path passing on the old milestone alone. Placed
+            # BEFORE the deny below so a satisfied-REVIEW/failed-VERIFY push
+            # still denies unchanged (a deny drops the advisory by design: the
+            # guard emits at most one JSON object).
+            if [ "${_g_review}" = "true" ]; then
+                _reviewer_ran_ok
             fi
             if [ "${_g_review}" = "false" ] || [ "${_g_verify}" = "false" ]; then
                 _need=""

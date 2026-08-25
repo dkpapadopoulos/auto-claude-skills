@@ -310,6 +310,16 @@ _push() {  # runs guard against a git push command payload
 _C2_REPO="$(mktemp -d /tmp/psg-repo-XXXXXX)"
 ( cd "$_C2_REPO" && git init -q && git config user.email t@t && git config user.name t && git commit -q --allow-empty -m init )
 printf '{"chain":["brainstorming","writing-plans","requesting-code-review","verification-before-completion"],"completed":["requesting-code-review","verification-before-completion"],"current_index":0}\n' > "$COMP_FILE"
+# Seed reviewer-ran too. This block credits requesting-code-review, which puts
+# it squarely in the reviewer-evidence leg's population (openspec-guard.sh
+# _reviewer_ran_ok), and that leg would otherwise append an advisory here — a
+# TRUE finding about this seed, but about REVIEW, not about the C2 DESIGN/PLAN
+# leg this block measures. Satisfying the unrelated leg keeps the strong
+# "warn emits empty stdout" pin below intact instead of weakening it to a
+# substring check. Arg omitted deliberately — see the codex #6 note further
+# down for why passing "$_C2_REPO" hashes to the wrong ledger key.
+( cd "$_C2_REPO" && . "${PROJECT_ROOT}/hooks/lib/branch-ledger.sh" \
+    && branch_ledger_record "reviewer-ran" ) 2>/dev/null
 : > "$HOME/.claude/.phase-gate-events.log"
 _out="$(cd "$_C2_REPO" && _push)"
 assert_not_contains "C2 default: no deny for missing DESIGN/PLAN" '"permissionDecision": "deny"' "$_out"
