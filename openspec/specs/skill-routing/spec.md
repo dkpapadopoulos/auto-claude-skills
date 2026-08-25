@@ -833,14 +833,14 @@ Trigger blocks in `config/default-triggers.json` MAY declare an optional `max_it
 
 ### Requirement: Passive Advisory-Lens Telemetry
 
-The Skill PostToolUse completion hook (`hooks/skill-completion-hook.sh`) MUST append one JSONL line per successful Skill completion to `~/.claude/.advisory-lens-log.jsonl`. The line MUST carry the fields `ts` (UTC ISO-8601 timestamp), `skill` (the bare skill name, namespace stripped), `skill_body_lines` (line count of `tool_response.content` or `tool_response.output` — the length of the returned SKILL BODY, not a findings count; renamed from `finding_count_estimate` in #197, which fired before any reviewer could run and so could never measure findings), and `session_token_hashed` (sha256 of the session token, first 12 hex characters). Write failures MUST be silently dropped — the hook MUST exit 0 regardless of telemetry success.
+The Skill PostToolUse completion hook (`hooks/skill-completion-hook.sh`) MUST append one JSONL line per successful Skill completion to `~/.claude/.advisory-lens-log.jsonl`. The line MUST carry the fields `ts` (UTC ISO-8601 timestamp), `skill` (the bare skill name, namespace stripped), `skill_body_lines` (line count of `tool_response.content` or `tool_response.output` — the length of the returned SKILL BODY, not a findings count; renamed from `finding_count_estimate` in #197, which fired before any reviewer could run and so could never measure findings), and `session_token_hashed` (sha256 of the session token, first 12 hex characters). The line MUST also carry `schema_version` (currently 2). The log is append-only and unrotated, so records written before #197 carry schema 1 with the field named `finding_count_estimate`; any reader MUST branch on `schema_version` or union both key names, or it will silently read a fraction of the corpus. Write failures MUST be silently dropped — the hook MUST exit 0 regardless of telemetry success.
 
 #### Scenario: Successful Skill completion appends one line
 
 - **GIVEN** a Skill tool returns successfully and the existing state-mutation block runs
 - **WHEN** the telemetry block executes
 - **THEN** exactly one JSONL line MUST be appended to `~/.claude/.advisory-lens-log.jsonl`
-- **AND** the line MUST contain all four fields: `ts`, `skill`, `skill_body_lines`, `session_token_hashed`
+- **AND** the line MUST contain all five fields: `schema_version`, `ts`, `skill`, `skill_body_lines`, `session_token_hashed`
 
 #### Scenario: Telemetry write failure does not propagate
 
