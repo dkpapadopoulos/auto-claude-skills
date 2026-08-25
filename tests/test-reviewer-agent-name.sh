@@ -21,10 +21,26 @@ echo "=== test-reviewer-agent-name.sh ==="
 #     legitimately embed the old string. Confirmed inert — both consuming
 #     suites pass: test-composition-uptake-pack.sh (16/16) and
 #     test-attestation-measurement.sh (37/37).
+#
+# The `tests/` exclusion is also self-defense, independent of those frozen
+# snapshots: this file's own source carries the search string 4 times (the
+# grep pattern itself plus these comments). Drop the exclusion and the scan
+# matches itself, failing permanently no matter what the rest of the repo
+# looks like.
+#
 # A `git grep` exit code >1 is a real error (bad pathspec, not a repo, etc.)
 # and must fail loudly rather than read as "zero hits, clean" — silently
 # collapsing "could not check" into "no reference" would defeat the gate.
-_gg_output="$(cd "${PROJECT_ROOT}" && git grep -lF 'superpowers:code-reviewer' -- \
+#
+# Use `git -C`, NOT `cd ... && git grep`: `2>&1` on the compound only binds
+# to git grep, so a failing `cd` leaks its error to the outer stderr instead
+# of being captured, leaving `_gg_output` empty with exit 1 — indistinguishable
+# from git grep's own "no matches" exit 1, which silently takes the PASS
+# branch below. `git -C` folds the directory-change failure into git's own
+# exit status (128, "fatal: cannot change to ..."), which the `-gt 1` guard
+# already handles. Do not "simplify" this back to `cd &&` — that reintroduces
+# the silent-pass hole this comment exists to prevent.
+_gg_output="$(git -C "${PROJECT_ROOT}" grep -lF 'superpowers:code-reviewer' -- \
     ':(exclude)openspec/' ':(exclude)tests/' 2>&1)"
 _gg_exit=$?
 if [ "${_gg_exit}" -gt 1 ]; then
