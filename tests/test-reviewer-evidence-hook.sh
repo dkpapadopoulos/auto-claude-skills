@@ -148,6 +148,50 @@ _reset; _run_resp "pr-review-toolkit:code-reviewer" "Review the diff" '{"is_erro
 if _has; then _record_fail "is_error:true via shape builder does not credit" "ledger entry written"
 else _record_pass "is_error:true via shape builder does not credit"; fi
 
+# (n) is_error PRESENCE sidecar.
+#
+# The recorder credits on `.tool_response.is_error // false`, so an ABSENT
+# field still credits — a crashed reviewer can be recorded as a review that
+# ran. Rather than probe the harness (which would mean editing the user's
+# global settings), the design records present-vs-absent per return so the
+# corpus answers the question itself. openspec-guard.sh's
+# `_reviewer_is_error_field` reads `<ledger-dir>/reviewer-ran.is-error-field`;
+# until this hook wrote it, that reader always resolved "unknown" and the
+# precondition was satisfied by nothing.
+_errfield() { head -1 "$(branch_ledger_dir "$_REPO")/reviewer-ran.is-error-field" 2>/dev/null; }
+_assert_errfield() {   # $1=expected $2=label
+    local _got; _got="$(_errfield)"
+    if [ "${_got}" = "$1" ]; then _record_pass "$2"
+    else _record_fail "$2" "expected '$1', got '${_got}'"; fi
+}
+
+# (n1) The field is THERE.
+_reset; _run_resp "pr-review-toolkit:code-reviewer" "Review the diff" '{"is_error":false}'
+_assert_errfield present "is_error present is recorded as present"
+
+# (n2) An object with no is_error key — the shape that credits without the
+# signal, which is exactly what the corpus needs to be able to count.
+_reset; _run_resp "pr-review-toolkit:code-reviewer" "Review the diff" '{}'
+_assert_errfield absent "is_error missing from an object is recorded as absent"
+
+# (n3) A non-object tool_response cannot carry the field at all. "absent" is
+# truthful here — not a fallback, the field really is not there.
+_reset; _run_resp "pr-review-toolkit:code-reviewer" "Review the diff" \
+    '[{"type":"text","text":"looks good"}]'
+_assert_errfield absent "array tool_response is recorded as absent"
+
+# (n4) The sidecar must not disturb the MILESTONE file: openspec-guard.sh's
+# staleness comparison and branch_ledger_sha both parse "<sha> <utc-ts>" out of
+# it, so a format change there breaks two readers.
+_reset; _run_resp "pr-review-toolkit:code-reviewer" "Review the diff" '{"is_error":false}'
+_head="$(cd "$_REPO" && git rev-parse HEAD)"
+if [ "$(branch_ledger_sha "reviewer-ran" "$_REPO")" = "${_head}" ]; then
+    _record_pass "milestone file format is unchanged (branch_ledger_sha still resolves)"
+else
+    _record_fail "milestone file format is unchanged (branch_ledger_sha still resolves)" \
+        "got: $(branch_ledger_sha "reviewer-ran" "$_REPO")"
+fi
+
 # (m) tool_input SHAPE cases. `.tool_input.subagent_type` / `.description`
 # carry the IDENTICAL typed-index hazard just removed from tool_response: a
 # non-object tool_input exits 5 and kills the record path, and `gsub` on a

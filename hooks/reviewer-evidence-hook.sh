@@ -43,15 +43,21 @@ command -v jq >/dev/null 2>&1 || exit 0
 _FIELDS="$(printf '%s' "${_INPUT}" | jq -r '[
     .tool_name // "",
     ((.tool_response | objects | .is_error) // false | tostring),
+    (if ((.tool_response | objects | has("is_error")) // false)
+     then "present" else "absent" end),
     ((.tool_input | objects | .subagent_type) // "" | tostring),
     ((.tool_input | objects | .description) // "" | tostring | gsub("[\\n\\r]"; " "))
   ] | join("\u001f")' 2>/dev/null)" || exit 0
 [ -z "${_FIELDS}" ] && exit 0
 
+# The description is parsed LAST and takes the remainder, so every field added
+# here must go BEFORE it — a trailing field would be swallowed by any \x1f a
+# free-text description happened to contain.
 _TOOL="${_FIELDS%%$'\x1f'*}";      _R1="${_FIELDS#*$'\x1f'}"
 _IS_ERROR="${_R1%%$'\x1f'*}";      _R2="${_R1#*$'\x1f'}"
-_SUBAGENT="${_R2%%$'\x1f'*}"
-_DESC="${_R2#*$'\x1f'}"
+_ERR_FIELD="${_R2%%$'\x1f'*}";     _R3="${_R2#*$'\x1f'}"
+_SUBAGENT="${_R3%%$'\x1f'*}"
+_DESC="${_R3#*$'\x1f'}"
 
 # Only the subagent-dispatch tool. `Agent` is the current Claude Code name;
 # `Task` is kept for older builds this plugin also ships to.
@@ -146,5 +152,31 @@ _LEDGER_OK=false
 # for free (design.md D8) — the gate leg surfaces staleness when that SHA
 # differs from HEAD, exactly as _ledger_has already does for other milestones.
 branch_ledger_record "reviewer-ran" 2>/dev/null || true
+
+# SIDECAR: whether the payload carried `.tool_response.is_error` at all.
+#
+# The credit above is `is_error // false`, so an ABSENT field still credits —
+# a crashed reviewer can be recorded as a review that ran. Probing the harness
+# for the real shape would mean editing the user's global settings, so instead
+# each return records present-vs-absent and the corpus answers the question
+# itself over time. openspec-guard.sh::_reviewer_is_error_field reads this file
+# and resolves "unknown" without it, which is what left that precondition
+# satisfied by nothing.
+#
+# A SIDECAR, not a field in the milestone file (the #133 precedent): that file
+# is format-frozen as "<sha> <utc-ts>" for branch_ledger_sha and the guard's
+# staleness comparison. Written AFTER branch_ledger_record because
+# branch_ledger_dir is pure — it prints a path and never mkdirs, so the
+# directory only exists once the record has been written. Last write wins; this
+# is a per-branch property, not a log.
+_LEDGER_DIR=""
+if command -v branch_ledger_dir >/dev/null 2>&1; then
+    _LEDGER_DIR="$(branch_ledger_dir 2>/dev/null)" || _LEDGER_DIR=""
+fi
+if [ -n "${_LEDGER_DIR}" ] && [ -d "${_LEDGER_DIR}" ]; then
+    _SC="${_LEDGER_DIR}/reviewer-ran.is-error-field"
+    printf '%s\n' "${_ERR_FIELD}" > "${_SC}.tmp.$$" 2>/dev/null \
+        && mv "${_SC}.tmp.$$" "${_SC}" 2>/dev/null || true
+fi
 
 exit 0
