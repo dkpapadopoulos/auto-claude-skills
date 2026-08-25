@@ -45,13 +45,85 @@ fi
 # trusts what it records, so editing it is evaluator-shaped (review F6). The
 # activation-hook walker is deliberately excluded: it is the most-edited file
 # in the repo and listing it would make the advisory near-constant noise.
+# tests/run-tests.sh is the ENTIRE local gate .verify.yml declares (#189).
+# Listing the declaration but not the runner it names guards the signpost and
+# not the road: neutering the runner changes what every later verdict MEANS and
+# raised no advisory. It does not carry skill-activation-hook.sh's noise
+# objection -- measured 2 commits in the last 200, vs that file's 103.
 for _f in hooks/openspec-guard.sh ${_canary_libs} .verify.yml hooks/skill-completion-hook.sh \
-          scripts/verify-and-record.sh skills/project-verification/scripts/gate-gaming-check.sh; do
+          scripts/verify-and-record.sh skills/project-verification/scripts/gate-gaming-check.sh \
+          tests/run-tests.sh; do
     case " ${_EVALUATOR_SURFACES:-} " in
         *" ${_f} "*) _record_pass "evaluator surfaces include ${_f}" ;;
         *)           _record_fail "evaluator surfaces include ${_f}" "missing from _EVALUATOR_SURFACES" ;;
     esac
 done
+
+# Drift check (round-2 review NEW-3, hardened round 3). The list above is
+# literal, so if .verify.yml is ever repointed at a different runner, both the
+# list and the spec sentence naming tests/run-tests.sh silently become false
+# while every assertion above still passes -- the same signpost/road gap #189
+# fixed, one level up. Derive the runner from the repo's OWN .verify.yml at
+# TEST time and assert membership. Test-time derivation is deliberate and does
+# NOT violate the spec's MUST NOT, which constrains the PreToolUse predicate:
+# the cost that forbids is a YAML parse on a ~50ms hot path, not here.
+#
+# Two round-3 defects are fixed here, and both produced a FALSE RED -- an
+# assertion of drift where none happened, which is worse than useless because
+# the obvious "fix" is to add a bogus entry to the surface list:
+#   (a) a `./`-prefixed path passed -f but missed verbatim membership, since
+#       git diff --name-only never emits a `./` prefix. One leading `./` is
+#       stripped before both tests.
+#   (b) any path-shaped ARGUMENT (`--config tests/fixtures/ci.json`) was
+#       indistinguishable from the runner and got demanded as a surface. The
+#       line is now split into shell segments on && || ; and only the FIRST
+#       path-shaped token of each segment counts -- so `a.sh && b.sh` still
+#       correctly demands BOTH (they are two gate commands, which this
+#       feature's own logic says must be surfaces) while `a.sh --config x`
+#       demands only a.sh.
+_vy="${PROJECT_ROOT}/.verify.yml"
+_runner_paths_found=0
+if [ ! -f "${_vy}" ]; then
+    # Distinct from "parsed nothing": name the actual state rather than
+    # reporting a parse failure for a file that is not there.
+    _record_fail "repo .verify.yml exists for the drift check" "no file at ${_vy}"
+else
+while IFS= read -r _seg; do
+    [ -n "${_seg}" ] || continue
+    for _tok in ${_seg}; do
+        # Skip interpreters, subcommands and flags; keep repo-relative paths
+        # that actually exist, which is what "the runner" means here.
+        case "${_tok}" in
+            -*|bash|sh|env|make|npm|npx|yarn|pnpm|python|python3|go|cargo|true) continue ;;
+        esac
+        _tok="${_tok#./}"
+        [ -f "${PROJECT_ROOT}/${_tok}" ] || continue
+        _runner_paths_found=$(( _runner_paths_found + 1 ))
+        case " ${_EVALUATOR_SURFACES:-} " in
+            *" ${_tok} "*) _record_pass "declared runner ${_tok} is an evaluator surface" ;;
+            *)             _record_fail "declared runner ${_tok} is an evaluator surface" \
+                               ".verify.yml declares it as a gate command, but it is absent from _EVALUATOR_SURFACES" ;;
+        esac
+        # First path-shaped token of THIS segment is the runner; the rest are
+        # its arguments. Without this break, adding a config-file argument to
+        # the gate command turns the suite red.
+        break
+    done
+done <<EOF
+$(sed -n 's/^[[:space:]]*run:[[:space:]]*//p' "${_vy}" | awk '{gsub(/&&|\|\||;/, "\n"); print}')
+EOF
+# Non-vacuity guard: if the parse yields nothing the loop above makes zero
+# assertions and the drift check passes by doing nothing -- exactly the
+# silent-clean failure this file exists to prevent. The message must not claim
+# drift: a path-less gate (`run: make test`) is a shape this check cannot
+# verify, which is "cannot check", not "the runner is missing".
+if [ "${_runner_paths_found}" -gt 0 ]; then
+    _record_pass "runner path(s) resolved from .verify.yml (${_runner_paths_found})"
+else
+    _record_fail "runner path(s) resolved from .verify.yml" \
+        "no run: line yielded an existing repo-relative path. If this repo's gate is legitimately path-less (make/npm/pytest) or names an absolute runner, this check cannot verify it and needs extending -- do NOT read this as drift"
+fi
+fi
 
 # ---------------------------------------------------------------------------
 # 2. diff_touches_evaluator predicate on a fixture repo
@@ -72,8 +144,9 @@ REPO="$(cd "${REPO}" && pwd -P)"
   git -c init.defaultBranch=main init -q
   git config user.email t@t; git config user.name t
   # Default branch may be main or master; _routing_base tries both.
-  mkdir -p hooks/lib config
-  printf 'substrate: local\nchecks:\n  - name: tests\n    run: true\n' > .verify.yml
+  mkdir -p hooks/lib config tests
+  printf 'substrate: local\ncommands:\n  - name: tests\n    run: bash tests/run-tests.sh\n' > .verify.yml
+  echo 'runner' > tests/run-tests.sh
   echo lib > hooks/lib/verdict.sh
   echo '{}' > config/default-triggers.json
   echo readme > README.md
@@ -108,6 +181,15 @@ assert_equals "gate-lib diff => match"        "0" "$(_bool diff_touches_evaluato
 ( cd "${REPO}"; git checkout -q main ; git checkout -qb feat2
   mkdir -p docs; echo x > "docs/.verify.yml.md"; git add -A; git commit -qm docs )
 assert_equals "lookalike path => no match"    "1" "$(_bool diff_touches_evaluator "${REPO}")"
+
+# #189 single-fault case: a branch that touches ONLY tests/run-tests.sh -- no
+# .verify.yml edit, no gate-lib edit -- must still match. Isolated on its own
+# branch so a pass cannot be borrowed from another surface in the same diff.
+( cd "${REPO}"; git checkout -q main; git checkout -qb feat3
+  echo 'exit 0  # neutered' >> tests/run-tests.sh; git commit -qam neuter )
+assert_equals "runner-only diff => match"     "0" "$(_bool diff_touches_evaluator "${REPO}")"
+out="$(diff_touches_evaluator "${REPO}" 2>/dev/null || true)"
+assert_contains "tests/run-tests.sh named in output" "tests/run-tests.sh" "${out:-<empty>}"
 
 # ---------------------------------------------------------------------------
 # 3. Guard e2e: advisory on push, never deny, emitted outside SHIP phase.
@@ -144,6 +226,13 @@ assert_not_contains "advisory file list has no trailing space"   " )"           
 out="$(run_guard_in "${REPO}" "feat2")"
 assert_not_contains "clean branch => no evaluator advisory"      "EVALUATOR SURFACE"   "${out:-}"
 
+# #189 e2e: the runner-only branch must reach the user as a real advisory, not
+# merely satisfy the predicate.
+out="$(run_guard_in "${REPO}" "feat3")"
+assert_contains     "runner-only push emits advisory"            "EVALUATOR SURFACE"   "${out:-<empty>}"
+assert_contains     "advisory names tests/run-tests.sh"          "tests/run-tests.sh"  "${out:-<empty>}"
+assert_not_contains "runner advisory never denies"               '"deny"'              "${out:-}"
+
 # gh-merge must NOT flush push advisories: the branch-local staleness text is
 # the wrong delta for a merge of an (arbitrary) PR, and pre-flush behavior for
 # gh-merge outside SHIP was silence — preserve it (review F5). Non-vacuous
@@ -175,6 +264,26 @@ out="$( ( cd "${REPO}" && \
       _mkinput "git push origin HEAD" | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null ) )"
 assert_not_contains "seeded-verdict push is not denied"           '"deny"'            "${out:-}"
 assert_contains     "advisory emits on the genuine allow path"    "EVALUATOR SURFACE" "${out:-<empty>}"
+
+# Same genuine-allow path, but on feat3 -- the runner-only branch (#189). The
+# feat3 assertions above run under ACSM_SKIP_PUSH_GATE=1, where no list content
+# could produce a denial, so "never denies" is tautological there. This is the
+# only place the runner entry drives a REAL, non-bypassed decision: ledger +
+# verdict seeded at feat3's own HEAD, no bypass env. Additive on purpose --
+# repointing the feat case here would have traded one surface's coverage for
+# another's rather than adding.
+( cd "${REPO}" && git checkout -q feat3 )
+branch_ledger_record "requesting-code-review"         "${REPO}"
+branch_ledger_record "verification-before-completion" "${REPO}"
+_PVHEAD3="$(git -C "${REPO}" rev-parse HEAD)"
+jq -nc --arg s "${_PVHEAD3}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' \
+    > "$HOME/.claude/.skill-project-verified-${_TOK}"
+out="$( ( cd "${REPO}" && \
+      _mkinput "git push origin HEAD" | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null ) )"
+assert_not_contains "runner-only seeded push is not denied"       '"deny"'             "${out:-}"
+assert_contains     "runner advisory on the genuine allow path"   "EVALUATOR SURFACE"  "${out:-<empty>}"
+assert_contains     "genuine-allow advisory names the runner"     "tests/run-tests.sh" "${out:-<empty>}"
+
 rm -f "$HOME/.claude/.skill-composition-state-${_TOK}" "$HOME/.claude/.skill-project-verified-${_TOK}"
 
 export HOME="$_OLDHOME"

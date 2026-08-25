@@ -205,13 +205,28 @@ diff_touches_routing() {
 # the gate TRUSTS: the drift-canary manifest (hooks/openspec-guard.sh +
 # session-start's _GATE_ENFORCE_LIBS; superset enforced by
 # tests/test-evaluator-surface.sh), the gate declaration (.verify.yml), the
-# measurement chain (verdict writer, gaming checker), and the branch-ledger
-# milestone writer (skill-completion-hook.sh — the gate trusts what it
-# records). The activation-hook walker is deliberately EXCLUDED: it is the
-# most-edited file in the repo, and listing it would make this advisory
-# near-constant noise. Consumed ONLY by the advisory path — this list must
-# never join a fail-closed deny (design D1, evaluator-surface-advisory).
-_EVALUATOR_SURFACES="hooks/openspec-guard.sh hooks/skill-gate.sh hooks/lib/verdict.sh hooks/lib/branch-ledger.sh hooks/lib/git-command.sh hooks/lib/session-token.sh hooks/lib/phase-evidence.sh hooks/lib/phase-attest.sh hooks/skill-completion-hook.sh .verify.yml scripts/verify-and-record.sh skills/project-verification/scripts/gate-gaming-check.sh"
+# measurement chain (verdict writer, gaming checker, and the runner
+# .verify.yml names — tests/run-tests.sh IS the whole local gate, so listing
+# the declaration without the runner guards the signpost and not the road:
+# neutering the runner changes what every later verdict means and fired
+# nothing, issue #189), and the branch-ledger milestone writer
+# (skill-completion-hook.sh — the gate trusts what it records). The
+# activation-hook walker is deliberately EXCLUDED: it is the most-edited file
+# in the repo, and listing it would make this advisory near-constant noise;
+# that objection does NOT extend to the runner, measured at 2 commits in the
+# last 200 against the walker's 103. Individual tests/test-*.sh files stay out
+# for the same churn reason — the runner alone is the meaning-bearing file.
+# SCOPE: this list is matched against the CONSUMING repo's diff, so unlike the
+# ACS-only paths here, `tests/run-tests.sh` (like `.verify.yml` before it, the
+# existing generic precedent) can also fire in a user repo that happens to use
+# that path. Acceptable because the entry is advisory-only and a repo with that
+# file almost certainly means it as its runner; a repo that does not can ignore
+# one line of text. Deriving the runner from `.verify.yml` instead was rejected:
+# it puts a YAML parse on the PreToolUse hot path (~50ms budget) to remove a
+# false positive that costs nothing.
+# Consumed ONLY by the advisory path — this list must never join a fail-closed
+# deny (design D1, evaluator-surface-advisory).
+_EVALUATOR_SURFACES="hooks/openspec-guard.sh hooks/skill-gate.sh hooks/lib/verdict.sh hooks/lib/branch-ledger.sh hooks/lib/git-command.sh hooks/lib/session-token.sh hooks/lib/phase-evidence.sh hooks/lib/phase-attest.sh hooks/skill-completion-hook.sh .verify.yml scripts/verify-and-record.sh skills/project-verification/scripts/gate-gaming-check.sh tests/run-tests.sh"
 
 # diff_touches_evaluator <proj_root> — 0 iff the branch diff (mainline
 # merge-base..HEAD) touches an evaluator surface; prints each touched surface
