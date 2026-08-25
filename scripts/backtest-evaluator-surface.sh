@@ -24,18 +24,25 @@
 # provenance, so an unknown attribute is a blank cell rather than an inherited
 # one.
 #
-#   figure                        value   mode/N          measured    source
-#   ---------------------------------------------------------------------------
-#   advisory fire-rate            26/61   history N=120   2026-08-24  #189 replay
-#   advisory fire-rate (previous) 12/60   history N=120   2026-07-16  d24e50b (#117)
-#   .verify.yml suspect rule      0/60    history N=120   2026-07-16  d24e50b (#117)
-#   attack matrix                 7/7     attacks         2026-07-16  d24e50b (#117)
+#   figure                      value  mode/N         list       measured    source
+#   ------------------------------------------------------------------------------
+#   advisory fire-rate          26/61  history N=120  pre-#189   2026-08-24  #189 replay
+#   advisory fire-rate          27/61  history N=120  post-#189  2026-08-24  #189 replay
+#   advisory fire-rate (older)  12/60  history N=120  pre-#189   2026-07-16  d24e50b (#117)
+#   .verify.yml suspect rule    0/60   history N=120  n/a        2026-07-16  d24e50b (#117)
+#   attack matrix               7/7    attacks        n/a        2026-07-16  d24e50b (#117)
 #
-# The 2026-08-24 re-measurement adds exactly +1 fire over the 2026-07-16 list
-# (26 -> 27) once tests/run-tests.sh joins _EVALUATOR_SURFACES; that one commit
-# is 042a057 (#190), the true positive that motivated #189. The 60 vs 61
-# denominators are different windows, not an error. NEVER increment a published
-# figure -- re-run this script and replace the row.
+# The `list` column is load-bearing and was the one attribute the prose version
+# never had either: this script reads _EVALUATOR_SURFACES from ORIGIN/MAIN, so
+# the fire-rate row that `history 120` reproduces CHANGES THE DAY #189 MERGES --
+# 26/61 before, 27/61 after, with N and date identical. A single row would have
+# been silently falsified by its own merge, which is exactly the confusion the
+# table exists to end. Both rows are listed so the post-merge reader has one to
+# match; after #189 lands, the post-#189 row is the only one to read.
+# The +1 is commit 042a057 (#190), the true positive that motivated #189. The
+# suspect rule and attack matrix do not depend on the surface list, hence n/a.
+# The 60 vs 61 denominators are different windows, not an error. NEVER increment
+# a published figure -- re-run this script and replace the row.
 #
 # Detector versions under test come from origin/main (what is actually
 # shipped), not the working tree. Bash 3.2.
