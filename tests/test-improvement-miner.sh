@@ -362,8 +362,6 @@ test_eval_intake_warns_when_search_hits_but_allowlist_admits_none() {
     assert_contains "a null title is tolerated and the ACCURATE cause is named" \
         "failed the author allowlist" "$out"
     teardown_test_env
-
-    teardown_test_env
 }
 
 test_eval_intake_bad_title_on_allowlisted_author() {
