@@ -13,8 +13,29 @@
 #                the advisory predicate fire? Measures CATCH-RATE, including
 #                the documented design limits (run:-rewrite is gate-gaming
 #                clean by entry-removal semantics; a clean-predicate lib edit
-#                is advisory-only). Baseline 2026-07-16: 7/7 classes surfaced
-#                by at least one layer.
+#                is advisory-only).
+#
+# BASELINES — this header is the single authority for these figures. CLAUDE.md
+# points here and must NOT restate them; five consecutive review rounds on
+# #189 found attribution errors (wrong value, wrong denominator, wrong
+# window-dependence, wrong date, unsourced date) in a prose copy of this table,
+# and every one came from a shared grammatical subject silently spreading one
+# figure's property to its neighbour. One row per figure, each carrying its own
+# provenance, so an unknown attribute is a blank cell rather than an inherited
+# one.
+#
+#   figure                        value   mode/N          measured    source
+#   ---------------------------------------------------------------------------
+#   advisory fire-rate            26/61   history N=120   2026-08-24  #189 replay
+#   advisory fire-rate (previous) 12/60   history N=120   2026-07-16  d24e50b (#117)
+#   .verify.yml suspect rule      0/60    history N=120   2026-07-16  d24e50b (#117)
+#   attack matrix                 7/7     attacks         2026-07-16  d24e50b (#117)
+#
+# The 2026-08-24 re-measurement adds exactly +1 fire over the 2026-07-16 list
+# (26 -> 27) once tests/run-tests.sh joins _EVALUATOR_SURFACES; that one commit
+# is 042a057 (#190), the true positive that motivated #189. The 60 vs 61
+# denominators are different windows, not an error. NEVER increment a published
+# figure -- re-run this script and replace the row.
 #
 # Detector versions under test come from origin/main (what is actually
 # shipped), not the working tree. Bash 3.2.
