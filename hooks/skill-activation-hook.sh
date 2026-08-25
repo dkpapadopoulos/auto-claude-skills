@@ -1487,7 +1487,7 @@ HALT if any Red Flag is true:
     if command -v jq >/dev/null 2>&1 && [[ -f "${HOME}/.claude/skill-config.json" ]]; then
       _RD_RAW="$(jq -r '.phase_enforcement.review_dispatch // "auto"' \
                  "${HOME}/.claude/skill-config.json" 2>/dev/null)" || _RD_RAW="auto"
-      [[ "${_RD_RAW}" == "ask" ]] && _RD_MODE="ask"
+      if [[ "${_RD_RAW}" == "ask" ]]; then _RD_MODE="ask"; fi
     fi
     if [[ "${_RD_MODE}" != "ask" ]]; then
       RED_FLAGS="${RED_FLAGS}

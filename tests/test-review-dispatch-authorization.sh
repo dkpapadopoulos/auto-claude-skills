@@ -8,6 +8,29 @@ echo "=== test-review-dispatch-authorization.sh ==="
 HOOK="${PROJECT_ROOT}/hooks/skill-activation-hook.sh"
 _OLDHOME="$HOME"
 
+# Each _run_review call gets its own throwaway HOME via mktemp; track every one
+# created so the EXIT trap can remove exactly those paths (never a glob — an
+# unmatched glob is FATAL in zsh and would abort the trap silently) and runs
+# on both pass and fail.
+#
+# This MUST be a file, not a shell variable: every call site below invokes
+# _run_review either inside a pipe (`_run_review ... | grep`) or a command
+# substitution (`$(_run_review ...)`), and both run the left/inner side in a
+# subshell — a variable appended-to there is lost the instant the subshell
+# exits, so the created HOME would never make it back into a parent-shell
+# list. A manifest file is plain disk I/O and survives the subshell boundary.
+_RDA_MANIFEST="$(mktemp "${TMPDIR:-/tmp}/rda-manifest.XXXXXX")"
+_cleanup_rda_tmp_dirs() {
+    local _d
+    if [ -f "${_RDA_MANIFEST}" ]; then
+        while IFS= read -r _d; do
+            [ -n "${_d}" ] && [ -d "${_d}" ] && rm -rf "${_d}"
+        done < "${_RDA_MANIFEST}"
+        rm -f "${_RDA_MANIFEST}"
+    fi
+}
+trap _cleanup_rda_tmp_dirs EXIT
+
 # Drive the hook with a REVIEW-phase prompt and a controlled HOME.
 #
 # TWO measured facts are load-bearing here; changing either silently guts this test.
@@ -28,7 +51,8 @@ _OLDHOME="$HOME"
 _REVIEW_PROMPT='check the code quality of this diff'
 
 _run_review() {   # $1 = skill-config.json content, or empty for "no file"
-    export HOME="$(mktemp -d /tmp/rda-home-XXXXXX)"
+    export HOME="$(mktemp -d "${TMPDIR:-/tmp}/rda-home-XXXXXX")"
+    printf '%s\n' "${HOME}" >> "${_RDA_MANIFEST}"
     mkdir -p "$HOME/.claude"
     # The activation hook needs a registry cache; session-start builds it.
     # This one takes NO piped payload, so it DOES need < /dev/null.
@@ -45,6 +69,14 @@ _run_review() {   # $1 = skill-config.json content, or empty for "no file"
 # routing change turns the whole test green-by-absence in the (b) case and
 # red-for-the-wrong-reason everywhere else, and the failure message would send
 # the next engineer hunting in the wrong file.
+#
+# This guard only probes the "" (no-config) run, not the (b)/(c)/(d) configs.
+# That is safe only under an unstated assumption: PRIMARY_PHASE is derived
+# solely from trigger-scored skills built by session-start-hook.sh, which
+# _run_review always runs BEFORE the config file (if any) is written — so
+# config content cannot influence routing/phase detection, and probing one
+# run's phase covers all of them. If _run_review is ever reordered to write
+# the config before session-start runs, re-verify this assumption.
 _probe="$(_run_review "")"
 if printf '%s' "${_probe}" | grep -qF 'Summarizing changes instead of dispatching'; then
     _record_pass "REVIEW phase is actually reached (test is not vacuous)"
