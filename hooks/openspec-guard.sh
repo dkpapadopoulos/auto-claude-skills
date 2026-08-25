@@ -587,11 +587,13 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # direction that clears the flip).
         #
         # The guard never sees the Agent payload, so the value has to be carried
-        # by the recorder that does. The agreed carrier is a sidecar beside the
-        # ledger record; hooks/reviewer-evidence-hook.sh does not write it yet,
-        # so this resolves "unknown" today and the precondition stays OPEN. That
-        # is recorded truthfully rather than defaulted to "present", which would
-        # read as a confirmed assumption.
+        # by the recorder that does. The carrier is a sidecar beside the ledger
+        # record; hooks/reviewer-evidence-hook.sh writes it after
+        # branch_ledger_record, and this function reads it. "unknown" is still
+        # a real outcome — for records written before that shipped, and when
+        # the ledger dir will not resolve — so the fallback below is not dead
+        # code. It is recorded truthfully rather than defaulted to "present",
+        # which would read as a confirmed assumption.
         _reviewer_is_error_field() {
             local _d _v
             if ! command -v branch_ledger_dir >/dev/null 2>&1; then
