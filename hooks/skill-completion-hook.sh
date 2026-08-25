@@ -168,8 +168,27 @@ elif command -v sha256sum >/dev/null 2>&1; then
     _TELEMETRY_HASH="$(printf '%s' "${_SESSION_TOKEN}" | sha256sum 2>/dev/null | cut -c1-12)"
 fi
 
-# finding_count_estimate: line count of tool_response.content. Coarse proxy
-# only — distinguishes "no findings" (~0 lines) from "many findings" (50+ lines).
+# skill_body_lines: line count of tool_response.content — i.e. the length of
+# the SKILL BODY this event returned.
+#
+# RENAMED from finding_count_estimate (#197). That name was a false claim, not
+# an imprecise one. Skill(...) returns the INSTRUCTION BODY, so this hook fires
+# BEFORE any reviewer is dispatched and `tool_response` is the skill's own text
+# — never a reviewer's output. It could not estimate findings even in principle,
+# and in practice every requesting-code-review record read 1, so nothing built
+# on it could distinguish a real review from a no-op. A field whose name implies
+# a measurement it cannot make is worse than no field: it makes the gap look
+# instrumented. The real count now lives in the review verdict artifact
+# (findings_total / unresolved_blocking), written by a provider that ran AFTER
+# the review. This field stays only as a coarse payload-size signal.
+#
+# schema_version 2 exists because of that rename, not for its own sake. The log
+# is append-only with NO rotation, so it now holds schema-1 lines keyed
+# `finding_count_estimate` alongside schema-2 lines keyed `skill_body_lines`,
+# and the whole point of the telemetry is that someone analyses it later. With
+# no marker in the record itself, that person queries one key and silently gets
+# a fraction of the corpus with no error -- measured at the cutover: 72 old-key
+# records, 0 new. A reader MUST branch on schema_version, or union both keys.
 _TELEMETRY_LINES="$(printf '%s' "${_INPUT}" | jq -r '
     .tool_response.content // .tool_response.output // ""
 ' 2>/dev/null | wc -l 2>/dev/null | tr -d '[:space:]')"
@@ -180,7 +199,7 @@ jq -nc \
     --arg skill "${_BARE}" \
     --argjson count "${_TELEMETRY_LINES}" \
     --arg hash "${_TELEMETRY_HASH}" \
-    '{ts: $ts, skill: $skill, finding_count_estimate: $count, session_token_hashed: $hash}' \
+    '{schema_version: 2, ts: $ts, skill: $skill, skill_body_lines: $count, session_token_hashed: $hash}' \
     >> "${_TELEMETRY_LOG}" 2>/dev/null || true
 # ---- end C1 ----
 
