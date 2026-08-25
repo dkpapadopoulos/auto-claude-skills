@@ -277,6 +277,40 @@ Before emitting an APPROVE verdict, confirm:
 - The verdict cites evidence / confidence / severity per the finding contract, not a bare "looks good".
 - The doubt-theater pattern is not present (see Red Flags above) — if it is, surface it instead of approving.
 
+## Record the Review Verdict
+
+After adjudication, record the outcome so the push gate can tell that a review
+actually happened. This is the point of the artifact: the REVIEW *status* leg
+credits a `Skill()` return, which fires before any reviewer is dispatched, so a
+credited milestone is not evidence a review ran (#197).
+
+Run this in ONE Bash call — shell state does not persist between calls, so the
+token must be re-resolved here even if another block resolved it:
+
+```bash
+PR="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}"
+TOKEN="$(. "$PR/hooks/lib/session-token.sh" 2>/dev/null && resolve_own_session_token || cat ~/.claude/.skill-session-token 2>/dev/null)"
+SKILL_SESSION_TOKEN="$TOKEN" bash "$PR/scripts/record-review-verdict.sh"   --provider agent-team-review   --verdict clean   --base "$(git merge-base HEAD origin/main)" --head "$(git rev-parse HEAD)"   --findings <total> --unresolved-blocking <count>   --dispatch-attempted --dispatch-succeeded
+```
+
+Resolve `$TOKEN` exactly that way — never by reading `~/.claude/.skill-session-token`
+directly. It is a shared last-writer-wins singleton that under concurrent sessions
+names a DIFFERENT conversation, so the verdict would land where the payload-first
+guard never looks (issue #157).
+
+Rules:
+
+- `--verdict clean` ONLY when every actionable finding was resolved or explicitly
+  accepted. If any blocking finding is open, use `--verdict findings-open` and pass
+  the real `--unresolved-blocking` count.
+- If reviewers did not return — the doubt-theater / silent-drop cases in Red Flags —
+  use `--verdict could-not-review`. Recording that is more useful than recording
+  nothing: silence and "we could not review" are different states, and only one of
+  them tells the next reader what happened.
+- Never pass `--verdict clean` without `--base`/`--head`. The writer will refuse and
+  downgrade it anyway, because a clean verdict with no reviewed subject is a claim
+  about nothing.
+
 ## Integration
 
 - **Falls back to:** requesting-code-review for < 5 files on non-sensitive paths

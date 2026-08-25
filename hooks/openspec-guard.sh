@@ -139,6 +139,24 @@ fi
 [ -f "${_GC_ROOT}/hooks/lib/pr-diff.sh" ] && \
     . "${_GC_ROOT}/hooks/lib/pr-diff.sh" 2>/dev/null || true
 
+# review-shadow.sh (#197) — diagnostic corpus for the REVIEW verdict leg.
+# Diagnostic-only, so deliberately NOT in _GATE_ENFORCE_LIBS. Every call site
+# is `command -v`-guarded, so an absent lib silently records nothing and the
+# gate decision is byte-identical.
+[ -f "${_GC_ROOT}/hooks/lib/review-shadow.sh" ] && \
+    . "${_GC_ROOT}/hooks/lib/review-shadow.sh" 2>/dev/null || true
+
+# review-verdict.sh (#197) — the VERDICT half of the REVIEW split. Advisory
+# only, so it is deliberately NOT in _GATE_ENFORCE_LIBS, exactly like
+# implement-shadow.sh and pr-diff.sh above. PAIRED: adding a deny that reads
+# this lib REQUIRES adding it to that list, or a broken install falls open in
+# silence (#198). Guarded source + command -v + flag per the #137 rule: a bare
+# `.` under this file's `trap 'exit 0' ERR` is a push-gate BYPASS.
+_REVIEW_VERDICT_OK=false
+[ -f "${_GC_ROOT}/hooks/lib/review-verdict.sh" ] && \
+    . "${_GC_ROOT}/hooks/lib/review-verdict.sh" 2>/dev/null && \
+    command -v review_verdict_is_clean >/dev/null 2>&1 && _REVIEW_VERDICT_OK=true || true
+
 # Bound the worst case: the precise detector is an O(n^2) char-scan parser, so
 # only use it below a size cap; above it, fall back to the (fail-closed)
 # substring check so a huge git-containing command can't stall the hot path.
@@ -545,6 +563,68 @@ EOF
                 jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
                 _DECISION="deny:chain-review"
                 exit 0
+            fi
+
+            # Check 1b (REVIEW VERDICT, WARN-FIRST) — issue #197. STATUS above
+            # answers "did requesting-code-review return"; it CANNOT answer "did
+            # a review happen", because Skill(...) returns the instruction body
+            # and PostToolUse ^Skill$ fires before any reviewer is dispatched.
+            # This leg reads the owned review verdict artifact for that second
+            # question. ADVISORY ONLY: appends to _STALE_MSG, sets no
+            # permissionDecision and no _DECISION, and never exits -- so it
+            # cannot bypass or weaken any deny above or below it. The deny-flip
+            # is a separate change gated on the pre-registered shadow corpus
+            # (openspec/changes/review-verdict/design.md). Population per that
+            # pre-registration: chain contains the milestone, push or merge, and
+            # STATUS already satisfied -- a session that never got past STATUS
+            # is a different failure and must not pollute the denominator.
+            # material-source condition, per the pre-registered population.
+            # Without it the leg fires on every docs-only push, which is both
+            # noise and a biased denominator -- the same "near-constant
+            # advisory" objection that keeps skill-activation-hook.sh out of
+            # _EVALUATOR_SURFACES. Reuses _diff_touches_material_source (the
+            # IMPLEMENT leg's own predicate, fail-open) rather than a second
+            # implementation of "is this worth reviewing".
+            _rv_material=false
+            if command -v _diff_touches_material_source >/dev/null 2>&1; then
+                _diff_touches_material_source && _rv_material=true
+            fi
+            if [ "${_review_in_chain}" = "true" ] && [ "${_review_completed}" = "true" ] && \
+               [ "${_rv_material}" = "true" ] && \
+               { [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; }; then
+                _rv_clean=false; _rv_bound=false; _rv_reason="absent"
+                if [ "${_REVIEW_VERDICT_OK}" = "true" ]; then
+                    review_verdict_is_clean "${_SESSION_TOKEN}" && _rv_clean=true
+                    review_verdict_covers_head "${_SESSION_TOKEN}" "${_PROJ_ROOT}" && _rv_bound=true
+                    if [ "${_rv_clean}" = "true" ] && [ "${_rv_bound}" = "false" ]; then
+                        _rv_reason="unbound"
+                    elif [ "${_rv_clean}" = "false" ] && [ "${_rv_bound}" = "true" ]; then
+                        _rv_reason="not-clean"
+                    elif [ "${_rv_clean}" = "false" ]; then
+                        _rv_reason="absent"
+                    fi
+                else
+                    # Lib unsourceable: we could not CHECK. Say that rather than
+                    # assert a missing review -- naming the wrong remedy is the
+                    # pre-registered false_block condition (#198 lesson).
+                    _rv_reason="cannot-check"
+                fi
+                if [ "${_rv_clean}" = "false" ] || [ "${_rv_bound}" = "false" ]; then
+                    case "${_rv_reason}" in
+                        cannot-check)
+                            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }REVIEW VERDICT: could not check (hooks/lib/review-verdict.sh did not load), so no claim is made about whether a review ran." ;;
+                        unbound)
+                            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }REVIEW VERDICT: a clean review verdict exists but is not bound to this branch's HEAD, so it does not cover what you are pushing. Re-review and record with scripts/record-review-verdict.sh." ;;
+                        not-clean)
+                            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }REVIEW VERDICT: the recorded review for this branch is not clean (open blocking findings, or the provider could not review). Resolve them and re-record." ;;
+                        *)
+                            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }REVIEW VERDICT: requesting-code-review was credited, but no review verdict covers this HEAD -- a Skill return is not evidence a review ran (#197). Record one with scripts/record-review-verdict.sh, or import a GitHub review with --from-github <pr>." ;;
+                    esac
+                    if command -v review_shadow_record >/dev/null 2>&1; then
+                        review_shadow_record "${_SESSION_TOKEN}" "${_PROJ_ROOT}" "${_rv_reason}" \
+                            "$( [ "${_gc_is_ghmerge}" = "true" ] && echo merge || echo push )" 2>/dev/null || true
+                    fi
+                fi
             fi
 
             # Check 2: VERIFY in chain but not completed — deny with VERIFY message
