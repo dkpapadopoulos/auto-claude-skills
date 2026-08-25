@@ -105,9 +105,9 @@ case "${_SUBAGENT}" in
         # for the auth changes", "code-reviewing the new gate leg"). But that
         # extra recall is exactly the noun/gerund class, and that class holds
         # genuine reviews and implementation tasks in the SAME syntactic shape
-        # ("Fix the code-reviewer dispatch bug", "remove dead
-        # superpowers:code-reviewer target") — no substring can separate them,
-        # so the recall can only be bought together with the false positives.
+        # ("Fix the code-reviewer dispatch bug", "Task 1: remove the dead
+        # code-reviewer target") — no substring can separate them, so the
+        # recall can only be bought together with the false positives.
         # D1's asymmetry decides it: while the leg is advisory a wrongly
         # credited non-reviewer silently corrupts the measurement corpus,
         # whereas a missed review costs one spurious advisory. Pinned by (e6).
