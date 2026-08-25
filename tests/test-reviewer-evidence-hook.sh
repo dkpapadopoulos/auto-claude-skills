@@ -97,9 +97,16 @@ else _record_pass "'dead reviewer agent name' is not credited"; fi
 # implementer task. The predicate is word-boundary only: "reviewer" continues
 # with a letter, so this correctly does not credit. Three substring arms
 # (*"code review"*, *"Code review"*, *"code-review"*) were briefly OR'd in and
-# are REMOVED: measured, they added ZERO recall (every genuine positive already
-# matches word-boundary, because "review" in "code review" is followed by a
-# space or end-of-string) and only this class of false positive.
+# are REMOVED. They were NOT zero-recall — they also fire on "code review"
+# followed by a LETTER, which word-boundary cannot match, so dropping them does
+# lose genuine reviews ("Dispatch a code reviewer for the auth changes",
+# "code-reviewing the new gate leg"). But that extra recall is exactly the
+# noun/gerund class, and that class holds genuine reviews and implementation
+# tasks in the SAME syntactic shape — no substring can separate them, so the
+# recall can only be bought together with the false positives. D1's asymmetry
+# decides it: while the leg is advisory a wrongly credited non-reviewer
+# silently corrupts the measurement corpus, whereas a missed review costs one
+# spurious advisory. This case is the shape the arms wrongly credited.
 _reset; _run "Agent" "general-purpose" false "Fix the code-reviewer dispatch bug"
 if _has; then _record_fail "noun 'code-reviewer' is not credited" "ledger entry written"
 else _record_pass "noun 'code-reviewer' is not credited"; fi
@@ -140,6 +147,42 @@ else _record_fail "object without is_error still credits" "no ledger entry"; fi
 _reset; _run_resp "pr-review-toolkit:code-reviewer" "Review the diff" '{"is_error":true}'
 if _has; then _record_fail "is_error:true via shape builder does not credit" "ledger entry written"
 else _record_pass "is_error:true via shape builder does not credit"; fi
+
+# (m) tool_input SHAPE cases. `.tool_input.subagent_type` / `.description`
+# carry the IDENTICAL typed-index hazard just removed from tool_response: a
+# non-object tool_input exits 5 and kills the record path, and `gsub` on a
+# non-string description errors the same way. Lower risk (tool_input is
+# schema-fixed INPUT, not agent OUTPUT), same class.
+_payload_input() {   # $1=raw JSON for tool_input
+    jq -n --argjson ti "$1" --arg tp "$_TPATH" \
+      '{tool_name:"Agent",transcript_path:$tp,tool_response:{is_error:false},
+        tool_input:$ti}'
+}
+_run_input() { _payload_input "$1" \
+    | ( cd "$_REPO" && CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${HOOK}" ) >/dev/null 2>&1; }
+
+# (m1) A STRING tool_input degrades cleanly: exit 0, no stdout, no record.
+#
+# HONEST LIMIT: this case cannot go red. A non-object tool_input carries no
+# subagent_type either way, so pre-guard (jq exits 5, `|| exit 0`) and
+# post-guard (fields parse, subagent is "", not a reviewer) are externally
+# identical. It pins the degradation contract, not a fixed defect — (m2) is the
+# behaviour-observable half of the same guard.
+_reset
+_mo="$(_payload_input '"oops"' \
+       | ( cd "$_REPO" && CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${HOOK}" ) 2>/dev/null; echo "rc=$?")"
+case "${_mo}" in "rc=0") _record_pass "string tool_input degrades with exit 0 and no stdout" ;;
+                 *) _record_fail "string tool_input degrades with exit 0 and no stdout" "got: ${_mo}" ;; esac
+if _has; then _record_fail "string tool_input writes no record" "ledger entry written"
+else _record_pass "string tool_input writes no record"; fi
+
+# (m2) CREDIT — a NUMERIC description under an allowlisted reviewer. The
+# allowlist does not consult the description at all, so the only thing that can
+# stop this record is `gsub` erroring on a non-string. Goes red without the
+# `tostring` guard.
+_reset; _run_input '{"subagent_type":"pr-review-toolkit:code-reviewer","description":42}'
+if _has; then _record_pass "non-string description does not kill the record"
+else _record_fail "non-string description does not kill the record" "no ledger entry"; fi
 
 # (f) A non-subagent tool name is ignored entirely.
 _reset; _run "Bash" "pr-review-toolkit:code-reviewer" false "Review the diff"

@@ -23,11 +23,28 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 # One jq fork, \x1f-joined (the repo's field separator; never \n, which a
 # free-text description legitimately contains).
+#
+# EVERY nested read goes through `| objects |`. `.a.b` is a TYPED INDEX in jq,
+# not a lookup: it EXITS 5 when `.a` is an array, string or number, and the
+# `|| exit 0` below then turns this recorder permanently silent — empty stdout,
+# exit 0, no record, forever. An array of content blocks is a plausible shape
+# for `tool_response` (agent OUTPUT); `tool_input` is schema-fixed and lower
+# risk, but it is the same class and gets the same guard. `tostring` before
+# `gsub` for the same reason: gsub on a non-string description errors and kills
+# the record just as thoroughly.
+#
+# TRADE, accepted deliberately: for a NON-OBJECT `tool_response` the error
+# signal is unobservable, and `// false` defaults it to success — so an ERRORED
+# array-shaped agent return is now CREDITED as a review that ran. That is
+# over-crediting, the direction the D1 note below calls dangerous. It is still
+# the right trade: the alternative is the typed index, which records nothing at
+# all for that shape (fail-closed only by accident) and is the defect this
+# guard exists to remove.
 _FIELDS="$(printf '%s' "${_INPUT}" | jq -r '[
     .tool_name // "",
     ((.tool_response | objects | .is_error) // false | tostring),
-    (.tool_input.subagent_type // ""),
-    (.tool_input.description // "" | gsub("[\\n\\r]"; " "))
+    ((.tool_input | objects | .subagent_type) // "" | tostring),
+    ((.tool_input | objects | .description) // "" | tostring | gsub("[\\n\\r]"; " "))
   ] | join("\u001f")' 2>/dev/null)" || exit 0
 [ -z "${_FIELDS}" ] && exit 0
 
@@ -81,13 +98,19 @@ case "${_SUBAGENT}" in
         # reviewer-evidence writer hook".
         #
         # Three substring arms (*"code review"*, *"Code review"*,
-        # *"code-review"*) briefly shipped OR'd with the word-boundary pattern.
-        # They are REMOVED: measured, they added ZERO recall and only false
-        # positives. Every genuine positive already matches word-boundary,
-        # because "review" in "code review" is always followed by a space or
-        # end-of-string; what the arms uniquely added was crediting the agent
-        # NAME in implementer tasks ("Fix the code-reviewer dispatch bug",
-        # "remove dead superpowers:code-reviewer target"). Pinned by (e6).
+        # *"code-review"*) briefly shipped OR'd with the word-boundary pattern
+        # and are REMOVED. They were NOT zero-recall — they also fire on "code
+        # review" followed by a LETTER, which word-boundary cannot match, so
+        # dropping them does lose genuine reviews ("Dispatch a code reviewer
+        # for the auth changes", "code-reviewing the new gate leg"). But that
+        # extra recall is exactly the noun/gerund class, and that class holds
+        # genuine reviews and implementation tasks in the SAME syntactic shape
+        # ("Fix the code-reviewer dispatch bug", "remove dead
+        # superpowers:code-reviewer target") — no substring can separate them,
+        # so the recall can only be bought together with the false positives.
+        # D1's asymmetry decides it: while the leg is advisory a wrongly
+        # credited non-reviewer silently corrupts the measurement corpus,
+        # whereas a missed review costs one spurious advisory. Pinned by (e6).
         #
         # The one known false positive is recorded rather than silently
         # accepted, because over-crediting is the dangerous direction (D1):
