@@ -1,0 +1,11 @@
+[
+  {
+    "number": 96,
+    "title": "Behavioral eval regression: filed by an unrelated app",
+    "body": "THIRD-PARTY-BOT-BODY",
+    "author": {
+      "is_bot": true,
+      "login": "app/dependabot"
+    }
+  }
+]

@@ -1,0 +1,20 @@
+[
+  {
+    "number": 1,
+    "title": 12345,
+    "body": "BOT-NUMERIC-TITLE-BODY",
+    "author": {
+      "is_bot": true,
+      "login": "app/github-actions"
+    }
+  },
+  {
+    "number": 94,
+    "title": "Behavioral eval regression: incident-analysis",
+    "body": "REAL-BOT-BODY-MARKER",
+    "author": {
+      "is_bot": true,
+      "login": "app/github-actions"
+    }
+  }
+]

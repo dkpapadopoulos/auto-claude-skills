@@ -122,11 +122,26 @@ json_memory_index() {
 }
 
 json_eval_reports() {
-    # github-actions is the CORRECT GraphQL author login for gh's `author`
-    # field — gh returns it WITHOUT the "[bot]" suffix. Do not "fix" this
-    # to "github-actions[bot]"; that value never matches and silently
-    # zeroes the eval-report intake (docs use the display form; this is
-    # the API form).
+    # Author allowlist (issue #203). gh has emitted this login in at least
+    # three shapes — "app/github-actions" (current, gh 2.97.0),
+    # "github-actions" (historical), "github-actions[bot]" (display form used
+    # in docs). Match the NORMALISED login rather than any single literal:
+    # pinning one literal is what killed this intake, and the wrong literal
+    # was defended by a confident comment for the whole life of the defect.
+    #
+    # Normalisation is deliberately narrow — strip a leading "app/" and a
+    # trailing "[bot]", nothing else — and is ANDed with is_bot, so widening
+    # the accepted spellings does not widen the trust boundary: a human
+    # account and an unrelated app are both still excluded.
+    #
+    # is_bot must be `== true`, never `!= false`: the "app/" and "[bot]"
+    # spellings are unforgeable (GitHub logins admit neither "/" nor "["), so
+    # bare "github-actions" is the only forgeable one and is_bot is its ONLY
+    # guard. `!= false` would admit an ABSENT field — and this whole issue was
+    # gh changing the shape of .author, so requiring the field is the point.
+    # Failing closed here costs a loud warning; failing open costs an
+    # attacker-authored body reaching the model as trusted evidence.
+    # Fixtures, incl. a real capture: tests/fixtures/improvement-miner/eval-intake/
     local BOT_LOGIN="github-actions"
     local EVAL_TITLE_PREFIX="Behavioral eval regression"
     # NOTE: field list deliberately excludes comments — trust boundary.
@@ -142,11 +157,66 @@ json_eval_reports() {
     # Guard against empty-but-SUCCESSFUL output (e.g., no matching issues).
     [ -z "${raw}" ] && raw='[]'
     local filtered
-    filtered="$(printf '%s' "${raw}" | jq --arg bot "${BOT_LOGIN}" --arg pfx "${EVAL_TITLE_PREFIX}" '[.[] | select((.author.login == $bot) and (.title | startswith($pfx))) | {number, title, body}]')"
+    # titled_ok, not `.title | startswith(...)`: jq short-circuits, so a bad
+    # title is only skipped for elements the LOGIN rejects. On an allowlisted
+    # bot's issue -- exactly the drift case this code defends -- a non-string
+    # title reached startswith() and killed the WHOLE bundle with exit 5,
+    # reported as "not parseable JSON" about JSON that parses fine. One
+    # malformed issue must not take down a mining run, and a title that is not
+    # a string is simply not a correctly-titled eval report.
+    filtered="$(printf '%s' "${raw}" | jq --arg bot "${BOT_LOGIN}" --arg pfx "${EVAL_TITLE_PREFIX}" '
+        def norm_login: (.author.login // "")
+            | sub("^app/"; "")
+            | sub("\\[bot\\]$"; "");
+        def titled_ok: (.title | type) == "string" and (.title | startswith($pfx));
+        [ .[]
+          | select((norm_login == $bot)
+                   and (.author.is_bot == true)
+                   and titled_ok)
+          | {number, title, body} ]')"
     rc=$?
     if [ "${rc}" -ne 0 ]; then
         echo "ERROR: eval-report response from gh is not parseable JSON (jq exit ${rc}) — improvement-miner is fail-loud, refusing to degrade to an empty bundle (see jq stderr above)" >&2
         exit 5
+    fi
+    # An intake that admitted nothing while candidates existed is the exact
+    # observable state the #203 defect produced, and it is indistinguishable
+    # from "no regressions exist" downstream. Say so. Advisory, not fatal: a
+    # repo can legitimately have only human-authored issues under this prefix.
+    #
+    # The denominator counts issues that already PASSED the title-prefix check,
+    # not everything gh's search returned. The filter ANDs three predicates, so
+    # a raw-search denominator would let this message blame the author allowlist
+    # for a title-prefix rejection and prescribe the wrong remedy (re-capture
+    # the fixture). GitHub's `in:title` is phrase-CONTAINS, not prefix, so that
+    # is an ordinary issue title away, not a corner case. Counting past the
+    # title check makes the message's claim true by construction.
+    # Same type-safe title test as the filter — deliberately identical, so the
+    # denominator counts exactly what the filter's title clause would accept.
+    # (An earlier version used `.title? // ""` here. `?` was dead: it only
+    # helps when .title raises, which needs a non-object element, and that
+    # already dies at .author.login in the filter above. `// ""` did all the
+    # work, and a NUMERIC title defeated both. Mutation-tested: dropping the
+    # `?` changed no test.)
+    local n_raw n_titled n_kept
+    n_raw="$(printf '%s' "${raw}" | jq 'length' 2>/dev/null)"
+    n_titled="$(printf '%s' "${raw}" | jq --arg pfx "${EVAL_TITLE_PREFIX}" '[.[] | select((.title | type) == "string" and (.title | startswith($pfx)))] | length' 2>/dev/null)"
+    n_kept="$(printf '%s' "${filtered}" | jq 'length' 2>/dev/null)"
+
+    # No "could not count" arm: with the type-safe test above, this count
+    # cannot fail on any input where the FILTER succeeded — and if the filter
+    # failed, the run already exited 5 above. A guard for an unreachable state
+    # is prose no test can kill, which is the failure mode this file keeps
+    # correcting. `${n:-0}` remains only as a belt for a genuinely empty jq
+    # result, which the two conditions below both treat as "say nothing".
+    if [ "${n_titled:-0}" -gt 0 ] && [ "${n_kept:-0}" -eq 0 ]; then
+        echo "WARNING: eval-report intake admitted 0 of ${n_titled} correctly-titled issue(s) — every one failed the author allowlist. If gh changed its author login format again, re-capture tests/fixtures/improvement-miner/eval-intake/gh-app-prefixed.json (see #203); do not read this as 'no eval regressions'." >&2
+    elif [ "${n_titled:-0}" -eq 0 ] && [ "${n_raw:-0}" -gt 0 ]; then
+        # Distinct cause, distinct remedy: gh's `in:title` is phrase-CONTAINS,
+        # so this is benign when an unrelated issue merely mentions the phrase
+        # — but it is also what a renamed eval-report title looks like, and
+        # that is silent otherwise.
+        echo "NOTE: eval-report intake matched ${n_raw} issue(s) on title search but none match the expected title prefix \"${EVAL_TITLE_PREFIX}\" — benign if an unrelated issue merely mentions the phrase; if the eval-report generator renamed its titles, this intake is dead and the prefix needs updating." >&2
     fi
     printf '%s' "${filtered}"
 }

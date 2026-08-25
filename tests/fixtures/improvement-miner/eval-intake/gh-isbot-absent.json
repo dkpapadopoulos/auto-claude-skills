@@ -1,0 +1,10 @@
+[
+  {
+    "number": 99,
+    "title": "Behavioral eval regression: no is_bot field",
+    "body": "ISBOT-ABSENT-BODY",
+    "author": {
+      "login": "github-actions"
+    }
+  }
+]
