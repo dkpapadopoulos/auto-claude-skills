@@ -162,16 +162,44 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# (e) Fail-open still emits SOMETHING with no chain at all. Silence is
-#     indistinguishable from a satisfied check (#198).
+# (e) A leg that cannot check must not name the WRONG REMEDY. Distinct from (d),
+#     which only proves site 1 fires at all: here the ledger records exist ON
+#     DISK and are unreadable solely because the lib will not source. A leg that
+#     concluded from the missing lib alone would say "no reviewer subagent was
+#     observed" and tell the user to dispatch a reviewer — for a branch where
+#     one demonstrably ran. That is the #198 wrong-remedy direction, and it is
+#     the same defect class the IMPLEMENT shadow's cannot_check exists for.
+#
+#     This assertion previously read `[ -n "${_out}" ]` with no composition
+#     state. Measured: it passed with the leg fully REVERTED — `_clear` removes
+#     the state, so with a broken ledger NEITHER gate site is consulted and the
+#     only output is the pre-existing `GATE DEGRADED:` note. An empty-output
+#     check cannot tell "checked and clean" from "never checked" (CLAUDE.md),
+#     and a non-empty check satisfied by someone else's note is the same
+#     vacuity. The composition state is now present so site 1 is really
+#     consulted, and the leg's OWN text is what is asserted.
 # ---------------------------------------------------------------------------
-_clear; _seed_review; _seed_verify
+_clear; _seed_review; _seed_verify; _seed_reviewer
+cat > "$HOME/.claude/.skill-composition-state-${_TOKEN}" <<'EOF'
+{"chain":["requesting-code-review","verification-before-completion"],
+ "completed":["requesting-code-review","verification-before-completion"]}
+EOF
 _out="$(_push "${_BROKEN}")"
-if [ -n "${_out}" ]; then
-    _record_pass "degraded evaluation still emits output"
-else
-    _record_fail "degraded evaluation still emits output" "guard fell silent"
-fi
+case "${_out}" in
+    *"REVIEWER EVIDENCE: could not check"*)
+        _record_pass "un-checkable evaluation announces, with the leg's own text" ;;
+    *)
+        _record_fail "un-checkable evaluation announces, with the leg's own text" \
+                     "sentinel absent: ${_out}" ;;
+esac
+case "${_out}" in
+    *"no reviewer subagent was observed"*)
+        _record_fail "un-checkable evaluation does NOT report the missing-reviewer remedy" \
+                     "wrong remedy named for a branch with reviewer-ran on disk: ${_out}" ;;
+    *)
+        _record_pass "un-checkable evaluation does NOT report the missing-reviewer remedy" ;;
+esac
+rm -f "$HOME/.claude/.skill-composition-state-${_TOKEN}"
 
 # ---------------------------------------------------------------------------
 # (f) SHA-binding (design D8). A reviewer that ran against an earlier commit is
