@@ -42,6 +42,16 @@ with `ACSM_SKIP_PUSH_GATE=1` in its environment. The agent cannot set either.
 - SHIP-phase guards: openspec-ship not run, memory consolidation missing,
   archived delta specs unsynced, REVIEW-in-chain-not-completed.
 - Verdict states `could_not_verify` / gate-gaming `suspect` (never hard-block).
+- REVIEWER EVIDENCE — the `requesting-code-review` milestone is credited the
+  instant `Skill()` returns its INSTRUCTIONS, which is not evidence a reviewer
+  ran. `hooks/reviewer-evidence-hook.sh` (PostToolUse `^(Task|Agent)$`) records
+  a separate SHA-bound `reviewer-ran` milestone when a reviewer subagent
+  actually returns, and the guard surfaces `present` / `stale` / `missing` /
+  `cannot_check` on BOTH sites that gate that milestone (chain-scoped check and
+  global fail-closed gate). **Advisory only — it never denies.** A pre-registered
+  deny-flip decision (n=29 independent episodes or 2026-11-30, whichever comes
+  first) is computed from the diagnostic corpus written by
+  `hooks/lib/reviewer-shadow.sh`, which is excluded from `_GATE_ENFORCE_LIBS`.
 - Design/plan guard, trifecta check, phase-reality block, drift canary.
 
 ## CI (merge-time, outside the hooks)
@@ -73,6 +83,30 @@ with `ACSM_SKIP_PUSH_GATE=1` in its environment. The agent cannot set either.
   routing-governance is scoped to `skills/|config/|hooks/` — a `tests/`-only PR
   that weakens a coverage gate itself never triggers the clean-verdict
   requirement. CI runs regardless of touched paths and has no bypass.
+
+## Configuration — `phase_enforcement.*`
+
+Set in `~/.claude/skill-config.json`. Every key falls back on unreadable
+config (no file, no key, no jq, unparseable), but the *direction* of that
+fallback differs per key and is deliberate in each case.
+
+| Key | Values | Default | Fallback on read failure |
+|-----|--------|---------|--------------------------|
+| `skill_sequencing` | `deny` \| `warn` \| `off` | `deny` in this plugin's own source repo (identity via `.claude-plugin/plugin.json` name), `warn` everywhere else | the computed default; an out-of-enum value is NOT honored |
+| `outbound` | `deny` \| `warn` \| `off` | `warn` | `warn` — a typo can only weaken to advisory, never escalate to a deny |
+| `review_dispatch` | `auto` \| `ask` | `auto` | `auto` — **inverted on purpose**, see below |
+
+`review_dispatch: auto` renders a standing REVIEW-phase authorization telling
+the model that dispatching a **read-only** reviewer subagent is pre-approved,
+so it dispatches directly instead of pausing to ask the user per dispatch.
+The authorization covers agents that only read and report; it does **not**
+cover agents that edit files, push, or take outbound actions — those still
+require approval. Set `"ask"` to opt out and restore the per-dispatch prompt.
+
+Its fail-open direction is inverted relative to the other two: any read
+failure yields `auto`, not silence. Falling back to silence would restore the
+exact stall the render exists to remove, so an unreadable config must not
+quietly re-arm it. Regression: `tests/test-review-dispatch-authorization.sh`.
 
 ## Non-gates (folklore corrections)
 
