@@ -63,6 +63,36 @@ _reset; _run "Agent" "general-purpose" false "Review the diff for correctness"
 if _has; then _record_pass "general-purpose with review intent is credited"
 else _record_fail "general-purpose with review intent is credited" "no ledger entry"; fi
 
+# (e2)-(e5) Real-world `description` shapes, measured from the dispatches made
+# while building this change. A start-anchored `[Rr]eview*` credited only 3 of
+# 9 genuine reviewer dispatches — a predicate that misses two thirds of real
+# reviews measures its own blindness, and every miss enters the shadow corpus
+# as "no reviewer ran" for a branch where one demonstrably did. The two CREDIT
+# cases below are exactly the shapes that were missed; the two NO-CREDIT cases
+# are the noun "reviewer" inside implementer task names, which is what stops
+# the fix from being a plain substring match.
+
+# (e2) CREDIT — "review" mid-string, followed by a non-letter.
+_reset; _run "Agent" "general-purpose" false "Task 1 review: spec + quality"
+if _has; then _record_pass "mid-string review token is credited"
+else _record_fail "mid-string review token is credited" "no ledger entry"; fi
+
+# (e3) CREDIT — hyphen-prefixed "re-review", the re-dispatch shape.
+_reset; _run "Agent" "general-purpose" false "Scoped re-review of Task 1 fix"
+if _has; then _record_pass "re-review is credited"
+else _record_fail "re-review is credited" "no ledger entry"; fi
+
+# (e4) NO CREDIT — the NOUN "reviewer" in an implementer task name. This is
+# what rejects a substring match: "reviewer" continues with a letter.
+_reset; _run "Agent" "general-purpose" false "Task 3: reviewer-evidence writer hook"
+if _has; then _record_fail "noun 'reviewer' is not credited" "ledger entry written"
+else _record_pass "noun 'reviewer' is not credited"; fi
+
+# (e5) NO CREDIT — same noun form, different sentence position.
+_reset; _run "Agent" "general-purpose" false "Task 1: remove dead reviewer agent name"
+if _has; then _record_fail "'dead reviewer agent name' is not credited" "ledger entry written"
+else _record_pass "'dead reviewer agent name' is not credited"; fi
+
 # (f) A non-subagent tool name is ignored entirely.
 _reset; _run "Bash" "pr-review-toolkit:code-reviewer" false "Review the diff"
 if _has; then _record_fail "non-subagent tool ignored" "ledger entry written"

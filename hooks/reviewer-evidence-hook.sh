@@ -63,8 +63,35 @@ case "${_SUBAGENT}" in
         # from a reviewer template, so an allowlist alone would false-negative
         # on the ecosystem's documented pattern. general-purpose is also the
         # workhorse for implementation, hence the intent gate.
+        #
+        # WORD-BOUNDARY match — neither prefix nor substring. Measured against
+        # the real `description` strings dispatched while building this change
+        # (9 genuine reviewer dispatches, 7 non-reviewer):
+        #
+        #   prefix      [Rr]eview*                          3/9 credited, 0/7 false pos
+        #   substring   *[Rr]eview*                         9/9 credited, 4/7 false pos
+        #   word-bound  *[Rr]eview|*[Rr]eview[!a-zA-Z]*     9/9 credited, 1/7 false pos
+        #
+        # Prefix shipped first and missed two thirds of real reviews ("Task 1
+        # review: spec + quality", "Scoped re-review of Task 1 fix") — a
+        # predicate that blind measures itself, not agent compliance, and every
+        # miss enters the shadow corpus as "no reviewer ran" for a branch where
+        # one demonstrably did. Substring is REJECTED: it matches the noun
+        # "reviewer" inside implementer task names such as "Task 3:
+        # reviewer-evidence writer hook".
+        #
+        # The one known false positive is recorded rather than silently
+        # accepted, because over-crediting is the dangerous direction (D1):
+        # "Task 2: review_dispatch config key" is an implementation task whose
+        # subject is literally named review-dispatch, and it credits with no
+        # reviewer having run.
+        #
+        # This is a corrected recall failure, NOT a loosening. D1's rule that
+        # the predicate ships tight still stands: do not widen further, and do
+        # not add audit/inspect/check/critique keywords.
         case "${_DESC}" in
-            [Rr]eview*|*"code review"*|*"Code review"*|*"code-review"*) _IS_REVIEWER=true ;;
+            *[Rr]eview|*[Rr]eview[!a-zA-Z]*|*"code review"*|*"Code review"*|*"code-review"*)
+                _IS_REVIEWER=true ;;
         esac ;;
 esac
 [ "${_IS_REVIEWER}" = "true" ] || exit 0
