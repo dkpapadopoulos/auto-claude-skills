@@ -134,6 +134,11 @@ fi
 # affect the gate, and it is deliberately absent from _GATE_ENFORCE_LIBS.
 [ -f "${_GC_ROOT}/hooks/lib/implement-shadow.sh" ] && \
     . "${_GC_ROOT}/hooks/lib/implement-shadow.sh" 2>/dev/null || true
+# Diagnostic-only reviewer-evidence shadow recorder. Same posture and same
+# guarded-source form as implement-shadow.sh above: absence must not affect the
+# gate, and it is deliberately absent from _GATE_ENFORCE_LIBS.
+[ -f "${_GC_ROOT}/hooks/lib/reviewer-shadow.sh" ] && \
+    . "${_GC_ROOT}/hooks/lib/reviewer-shadow.sh" 2>/dev/null || true
 # Advisory-path PR-diff resolver (#161). Guarded source: absence must not
 # affect the gate, and it is deliberately absent from _GATE_ENFORCE_LIBS.
 [ -f "${_GC_ROOT}/hooks/lib/pr-diff.sh" ] && \
@@ -543,6 +548,75 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # would name the wrong remedy (the same defect class the IMPLEMENT
         # shadow's _impl_det_key_ok probe exists for). branch_ledger_dir is pure
         # (prints a path, no mkdir), so probing it adds no side effect.
+        #
+        # TELEMETRY (design.md Pre-registration): because this leg sets no
+        # _DECISION, a would-advise and a satisfied check are the SAME record in
+        # .push-gate-invocation-log. Every consultation therefore appends one
+        # shadow record via hooks/lib/reviewer-shadow.sh. Diagnostic-only: the
+        # lib is absent from _GATE_ENFORCE_LIBS, the helpers below never exit,
+        # never write stdout and never touch _DECISION or any deny leg.
+        #
+        # _reviewer_credited_by — which skill credited the REVIEW milestone
+        # (design D7: proxy-credited episodes must be segmentable, since whether
+        # the proxy flows emit a visible reviewer at all is UNKNOWN). The branch
+        # ledger records every proxy under the canonical name, so attribution
+        # can only come from the session-local invocation-evidence array — the
+        # SAME file and the SAME proxy list _invoc_has reads (PAIRED with it and
+        # with skill-completion-hook.sh's crediting case list; a fourth proxy
+        # must be added in all three). ONE jq fork, not four: this runs on the
+        # gate path. Ledger-only (cross-session) evidence yields "unknown",
+        # which is an honest answer rather than a guess at "literal".
+        _reviewer_credited_by() {
+            local _f="${HOME}/.claude/.skill-invocation-evidence-${_SESSION_TOKEN}"
+            if [ -z "${_SESSION_TOKEN}" ] || [ ! -f "${_f}" ] || ! command -v jq >/dev/null 2>&1; then
+                printf 'unknown'
+                return 0
+            fi
+            jq -r 'if type != "array" then "unknown"
+                   elif index("requesting-code-review") != null then "literal"
+                   elif index("subagent-driven-development") != null then "subagent-driven-development"
+                   elif index("agent-team-execution") != null then "agent-team-execution"
+                   elif index("agent-team-review") != null then "agent-team-review"
+                   else "unknown" end' "${_f}" 2>/dev/null || printf 'unknown'
+            return 0
+        }
+        # _reviewer_is_error_field — whether .tool_response.is_error was PRESENT
+        # on the credited Agent return (Pre-registration blocking precondition:
+        # an ABSENT field still credits, so if Agent omits it a crashed reviewer
+        # credits reviewer-ran and the corpus overstates compliance in the
+        # direction that clears the flip).
+        #
+        # The guard never sees the Agent payload, so the value has to be carried
+        # by the recorder that does. The agreed carrier is a sidecar beside the
+        # ledger record; hooks/reviewer-evidence-hook.sh does not write it yet,
+        # so this resolves "unknown" today and the precondition stays OPEN. That
+        # is recorded truthfully rather than defaulted to "present", which would
+        # read as a confirmed assumption.
+        _reviewer_is_error_field() {
+            local _d _v
+            if ! command -v branch_ledger_dir >/dev/null 2>&1; then
+                printf 'unknown'
+                return 0
+            fi
+            _d="$(branch_ledger_dir "${_proot}" 2>/dev/null)" || _d=""
+            if [ -z "${_d}" ] || [ ! -f "${_d}/reviewer-ran.is-error-field" ]; then
+                printf 'unknown'
+                return 0
+            fi
+            _v="$(head -1 "${_d}/reviewer-ran.is-error-field" 2>/dev/null)" || _v=""
+            case "${_v}" in present|absent) printf '%s' "${_v}" ;; *) printf 'unknown' ;; esac
+            return 0
+        }
+        # _reviewer_shadow <evidence_present> [evidence_sha] — one record per
+        # consultation. Guarded on the function's existence so a missing lib is
+        # a missing record, never a changed gate outcome.
+        _reviewer_shadow() {
+            command -v reviewer_shadow_record >/dev/null 2>&1 || return 0
+            reviewer_shadow_record "${_pe_action:-push}" "${_proot}" "${_SESSION_TOKEN}" \
+                "${_TRANSCRIPT:-}" "${1:-unknown}" "${2:-}" \
+                "$(_reviewer_credited_by)" "$(_reviewer_is_error_field)" 2>/dev/null || true
+            return 0
+        }
         _REVIEWER_NOTED=false
         _reviewer_ran_ok() {
             local _rs _key_ok=false
@@ -555,6 +629,7 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             # Nothing here touches _LEDGER_OK or any deny leg.
             if [ "${_LEDGER_OK}" != "true" ] || ! command -v branch_ledger_has >/dev/null 2>&1; then
                 _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }REVIEWER EVIDENCE: could not check — the branch ledger is unavailable, so NOTHING is concluded here about whether a reviewer subagent ran. (advisory only — this does not block the push)"
+                _reviewer_shadow "cannot_check"
                 return 0
             fi
             if command -v branch_ledger_dir >/dev/null 2>&1 \
@@ -563,6 +638,7 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             fi
             if [ "${_key_ok}" != "true" ]; then
                 _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }REVIEWER EVIDENCE: could not check — no ledger key resolves for this branch, so NOTHING is concluded here about whether a reviewer subagent ran. (advisory only — this does not block the push)"
+                _reviewer_shadow "cannot_check"
                 return 0
             fi
             if branch_ledger_has "reviewer-ran" "${_proot}"; then
@@ -574,10 +650,22 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
                 _rs="$(branch_ledger_sha "reviewer-ran" "${_proot}")"
                 if [ -n "${_HEAD_SHA}" ] && [ -n "${_rs}" ] && [ "${_rs}" != "${_HEAD_SHA}" ]; then
                     _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }REVIEWER EVIDENCE: stale — a reviewer subagent ran at ${_rs}, HEAD is ${_HEAD_SHA}. Re-review if later commits changed reviewed content. (advisory only — this does not block the push)"
+                    _reviewer_shadow "stale" "${_rs}"
+                else
+                    # `present` records what the leg DID — it emitted no
+                    # advisory, so the episode is a satisfied check. The
+                    # comparison is skipped rather than passed when _HEAD_SHA or
+                    # the recorded SHA is empty (unresolvable HEAD, corrupt
+                    # ledger line); that sub-case is recoverable from the record
+                    # itself as `present` with an EMPTY evidence_sha, so an
+                    # adjudicator can segment it out instead of it hiding inside
+                    # a confident "current".
+                    _reviewer_shadow "present" "${_rs}"
                 fi
                 return 0
             fi
             _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }REVIEWER EVIDENCE: the REVIEW milestone is credited but no reviewer subagent was observed on this branch. That milestone records a Skill() return, not a review. Dispatch a reviewer agent, or state plainly that no reviewer ran. (advisory only — this does not block the push)"
+            _reviewer_shadow "missing"
             return 0
         }
         # One exclusion rule, two subjects (#161). The push path measures the
