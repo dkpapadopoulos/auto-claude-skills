@@ -610,7 +610,26 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # _reviewer_shadow <evidence_present> [evidence_sha] — one record per
         # consultation. Guarded on the function's existence so a missing lib is
         # a missing record, never a changed gate outcome.
+        #
+        # PUSH ONLY, and this is NOT an oversight to be "fixed" by symmetry.
+        # Every input to evidence_present is computed from the LOCAL branch —
+        # the branch ledger, its key, and the HEAD comparison. For a
+        # `gh pr merge <n>` the subject is someone else's PR, which is exactly
+        # why #161/#166 SUPPRESS the advisory on a merge. The record is derived
+        # from the same computation, so it is wrong for the same reason: it
+        # would describe a branch that has nothing to do with the merged PR,
+        # and under the pre-registered deny-flip those rows are near-guaranteed
+        # false blocks that an adjudicator has no field to segment on.
+        #
+        # A missing row is honest; a row naming the wrong subject is not. The
+        # IMPLEMENT leg can record merges only because it resolves the merged
+        # PR's own file list and tags the row with diff_base (pr:<n> |
+        # branch-local | unresolved) — reviewer-shadow.sh has no such resolver,
+        # so recording merges would need that FIRST, not a relaxed condition
+        # here. Fail-closed on the action: an unrecognised future action records
+        # nothing rather than guessing its subject.
         _reviewer_shadow() {
+            [ "${_pe_action:-push}" = "push" ] || return 0
             command -v reviewer_shadow_record >/dev/null 2>&1 || return 0
             reviewer_shadow_record "${_pe_action:-push}" "${_proot}" "${_SESSION_TOKEN}" \
                 "${_TRANSCRIPT:-}" "${1:-unknown}" "${2:-}" \
