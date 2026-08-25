@@ -156,6 +156,95 @@ rm -rf "${_UDIR}" 2>/dev/null || true
 unset REVIEWER_SHADOW_LOG
 
 # ---------------------------------------------------------------------------
+# SOURCE-TIME SAFETY — the property that currently holds by ACCIDENT.
+#
+# hooks/lib/reviewer-shadow.sh is sourced at TOP LEVEL of openspec-guard.sh,
+# ABOVE every deny check, in a hook carrying `trap 'exit 0' ERR` (line 6).
+# Measured under real /bin/bash 3.2.57:
+#
+#   healthy source                       -> execution continues, deny checks run
+#   lib unreadable (chmod 000)           -> continues
+#   lib absent entirely                  -> continues
+#   lib with a FAILING top-level command -> TRAP FIRES, everything below SKIPPED
+#
+# That last row is the issue-#192 residual, and in THIS hook "everything below"
+# is the push gate's entire deny path: a push that should DENY is silently
+# ALLOWED. The `|| true` on the source line does NOT protect against it — it
+# covers the `.` builtin's own exit status, while this trap fires *during* the
+# sourced file's execution (the same distinction tests/test-hook-source-guards.sh
+# documents as explicitly out of its scope).
+#
+# So the guard's source form cannot make this safe. Only the lib's CONTENTS can,
+# and nothing pinned them: the lib is safe today solely because its top level is
+# two literal constant assignments and two function definitions. A later
+# top-level `_X="$(command)"` or `command -v` probe would silently disable the
+# push gate's enforcement, and no other test in this repo would notice.
+#
+# Three assertions, because a static lint alone can rot into agreeing with
+# itself: (1) the real lib is clean, (2) a RED CONTROL proving the lint can
+# still fail, and (3) an EMPIRICAL pin of the underlying trap behaviour, so the
+# lint's rationale is measured rather than asserted from a comment.
+# ---------------------------------------------------------------------------
+_LINTDIR="$(mktemp -d /tmp/rsh-lint-XXXXXX)"
+
+# _toplevel_bad <file> — print every top-level statement that is not a literal
+# assignment, a function opener, or a closing brace. Non-comment, non-blank and
+# non-indented is the definition of top-level here; the quoted-literal form is
+# allowed only when it contains no $, no backtick and no embedded quote, so no
+# expansion or command substitution can hide inside it.
+_toplevel_bad() {
+    grep -vE '^[[:space:]]*(#|$)' "$1" 2>/dev/null \
+      | grep -vE '^[[:space:]]' \
+      | grep -vE '^[A-Za-z_][A-Za-z0-9_]*=[A-Za-z0-9_.:/-]*$|^[A-Za-z_][A-Za-z0-9_]*="[^"$`]*"$|^[a-z_][a-z0-9_]*\(\)[[:space:]]*\{$|^\}$'
+    return 0
+}
+
+_BAD="$(_toplevel_bad "${LIB}")"
+if [ -z "${_BAD}" ]; then
+    _record_pass "lib has no failing-capable top-level statements"
+else
+    _record_fail "lib has no failing-capable top-level statements" \
+"This lib is sourced at top level in openspec-guard.sh ABOVE every deny check, in a hook with trap 'exit 0' ERR. A top-level statement that can FAIL (command substitution, a command -v probe, any command at all) trips that trap DURING the source and silently skips the whole push-gate deny path — an allowed push that should have been denied. The source line's || true does not cover this. Keep the top level to literal assignments and function definitions; put anything that can fail INSIDE a function. Offending line(s): ${_BAD}"
+fi
+
+# RED CONTROL. Without it a broken lint reads exactly like a clean lib — the
+# vacuity this whole change has already hit once (assertion (e) of
+# test-reviewer-evidence-leg.sh, and the push-gate capture classifier before it).
+cp "${LIB}" "${_LINTDIR}/mutated.sh"
+printf '%s\n' '_X="$(false)"' >> "${_LINTDIR}/mutated.sh"
+_BADCTL="$(_toplevel_bad "${_LINTDIR}/mutated.sh")"
+case "${_BADCTL}" in
+    *'_X="$(false)"'*) _record_pass "red control: the lint flags an injected top-level command" ;;
+    *) _record_fail "red control: the lint flags an injected top-level command" \
+                    "lint is vacuous — injected line not reported (got: ${_BADCTL})" ;;
+esac
+
+# EMPIRICAL pin of WHY. Reproduces the guard's shape — trap + the exact guarded
+# source form from openspec-guard.sh — under real /bin/bash, and checks whether
+# the code BELOW the source still runs. Real /bin/bash on purpose: the model's
+# shell is zsh and the trap semantics under test are bash's.
+_probe_reaches() {
+    /bin/bash -c '
+        trap "exit 0" ERR
+        [ -f "$1" ] && . "$1" 2>/dev/null || true
+        printf REACHED
+    ' _ "$1" 2>/dev/null
+}
+cp "${LIB}" "${_LINTDIR}/clean.sh"
+cp "${LIB}" "${_LINTDIR}/failing.sh"
+printf '%s\n' 'nosuchcommand_xyz_probe' >> "${_LINTDIR}/failing.sh"
+_R_CLEAN="$(_probe_reaches "${_LINTDIR}/clean.sh")"
+_R_FAIL="$(_probe_reaches "${_LINTDIR}/failing.sh")"
+if [ "${_R_CLEAN}" = "REACHED" ] && [ "${_R_FAIL}" != "REACHED" ]; then
+    _record_pass "measured: a failing top-level statement skips everything below the source"
+else
+    _record_fail "measured: a failing top-level statement skips everything below the source" \
+                 "clean='${_R_CLEAN}' (want REACHED), failing='${_R_FAIL}' (want empty). If the failing case now reaches, the ERR-trap residual (#192) changed and this lint's rationale must be re-derived before it is relaxed."
+fi
+
+rm -rf "${_LINTDIR}" 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
 # E2E half — the REAL guard, a real repo, a real ledger.
 # ---------------------------------------------------------------------------
 _OLDHOME="$HOME"
