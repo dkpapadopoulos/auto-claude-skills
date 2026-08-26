@@ -162,6 +162,25 @@ else
         "found only ${HOOK_COUNT} — the detector or the glob is broken, not the repo"
 fi
 
+# A file-count tripwire does NOT protect the thing that actually broke. When #192
+# routed the guard's sources through `_guard_load`, this file's matched-LINE
+# population in openspec-guard.sh fell 13 -> 1 and every assertion here stayed
+# green, because the only sanity check counted ERR-trap FILES. Rename the helper
+# tomorrow and the identical vacuum returns. The spec says "add a new wrapper to
+# the matcher", but prose is not a gate — this is, and it is the same
+# presence-check shape as test-fixture-coverage.sh / test-skill-content-coverage.sh.
+#
+# The guard is the only file pinned here because it is the only one whose early
+# exit is a silent push-gate allow, and 10 is a deliberate floor rather than the
+# exact count: sites legitimately come and go, a wrapper rename does not.
+GUARD_SRC_LINES="$(grep -cE '^[[:space:]]*(\.|source|_guard_load)[[:space:]]+' "${PROJECT_ROOT}/hooks/openspec-guard.sh" 2>/dev/null || echo 0)"
+if [ "${GUARD_SRC_LINES}" -ge 10 ]; then
+    _record_pass "openspec-guard.sh source population is intact (${GUARD_SRC_LINES} lines)"
+else
+    _record_fail "openspec-guard.sh source population is intact" \
+        "matched only ${GUARD_SRC_LINES} source lines — a source wrapper was almost certainly renamed without adding it to _unguarded_sources, which silently empties this lint"
+fi
+
 # ---------------------------------------------------------------------------
 # 1. No unguarded source lines outside the allowlist.
 # ---------------------------------------------------------------------------

@@ -64,7 +64,8 @@ fi
 unset ACSM_SKIP_PUSH_GATE
 
 _OLDHOME="$HOME"
-export HOME="$(mktemp -d /tmp/hsgr-home-XXXXXX)"
+_THOME="$(mktemp -d /tmp/hsgr-home-XXXXXX)"
+export HOME="${_THOME}"
 mkdir -p "$HOME/.claude"
 _TPATH="$HOME/t.jsonl"; touch "$_TPATH"     # basename "t" -> token "session-t"
 _TOK="session-t"
@@ -74,7 +75,9 @@ _TROOT="$(mktemp -d /tmp/hsgr-root-XXXXXX)"
 cp -R "${PROJECT_ROOT}/hooks"  "${_TROOT}/hooks"
 cp -R "${PROJECT_ROOT}/config" "${_TROOT}/config" 2>/dev/null || true
 
-_cleanup() { export HOME="$_OLDHOME"; rm -rf "${_TROOT}"; }
+# Removes the temp HOME too — the first cut removed only _TROOT, leaking one
+# mktemp dir per run (42 found on this machine), each holding a verdict artifact.
+_cleanup() { export HOME="$_OLDHOME"; rm -rf "${_TROOT}" "${_THOME}"; }
 trap _cleanup EXIT
 
 _HEAD="$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null)"
@@ -255,6 +258,14 @@ _gl_drive() {   # $1 = the helper text to install; prints END if the driver surv
     {   printf 'set -E\n'
         printf "trap 'exit 0' ERR\n"
         printf '%s\n' "$1"
+        # Without this, BOTH assertions below can pass vacuously — proven by
+        # mutating the real guard: reformat `_guard_load()` so the brace lands on
+        # the next line and the sed extraction yields NOTHING, yet the positive
+        # assertion still saw END (an undefined function is a non-final `||`
+        # operand, so it is trap-exempt and `|| true` carries on). The sentinel
+        # makes "the helper never got installed" a distinct, loud outcome rather
+        # than one that imitates success.
+        printf 'command -v _guard_load >/dev/null 2>&1 || { echo NOHELPER; exit 0; }\n'
         printf '_guard_load "%s" || true\n' "${lib}"
         printf 'echo END\n'
     } > "${d}"

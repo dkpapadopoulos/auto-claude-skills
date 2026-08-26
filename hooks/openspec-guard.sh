@@ -174,13 +174,26 @@ _emit_advisory() {
 # lib would scope INTO this function and be discarded, where at top level it
 # would have errored loudly. `grep -nE '^(local|declare|typeset) ' hooks/lib/*.sh`
 # is empty; check it before adding one.
+# RE-ENTRANCY: the re-arm is depth-counted, not unconditional. A nested call
+# (a sourced lib that itself calls this helper) would otherwise restore the trap
+# while the OUTER source is still executing — design.md's "fixing one site would
+# not have worked" argument, recursed one level. Measured under `set -E` on
+# 3.2.57: nested = silent exit, non-nested = survives. No lib calls the helper
+# today, so this is latent, not live; it is fixed here because the durability
+# claim for the trap line is precisely "it still works if someone adds `set -E`",
+# and this is where that claim stopped being true. _GL_DEPTH is deliberately
+# NOT `local` — it must survive across the nested frame.
 _guard_load() {
     [ -f "${1:-}" ] || return 1
     local _gl_rc=0
+    _GL_DEPTH=$(( ${_GL_DEPTH:-0} + 1 ))
     trap - ERR
     # shellcheck source=/dev/null
     . "$1" 2>/dev/null || _gl_rc=$?
-    trap 'exit 0' ERR
+    _GL_DEPTH=$(( _GL_DEPTH - 1 ))
+    # `if`, never `[ … ] && trap …`: CLAUDE.md's rule — the `&&` form returns 1
+    # when the test is false and flips the status of whatever it ends.
+    if [ "${_GL_DEPTH}" -eq 0 ]; then trap 'exit 0' ERR; fi
     return "${_gl_rc}"
 }
 

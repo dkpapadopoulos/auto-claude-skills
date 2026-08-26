@@ -79,6 +79,20 @@ The call shape remains decisive and MUST keep the #137 form. A helper that retur
 - **WHEN** a future change introduces another wrapper around `.`/`source`
 - **THEN** that wrapper is added to the lint's matcher in the same change, so the sites it now owns stay inside the lint's population
 
+#### Scenario: A wrapper is renamed without updating the matcher
+
+- **WHEN** the helper is renamed and the lint's matcher is not updated, so its matched-line population for `hooks/openspec-guard.sh` collapses
+- **THEN** the lint fails on a population floor over matched source LINES — a file-count check does not cover this, which is why the original 13-to-1 collapse passed every assertion, and prose in this spec is not a gate
+
+### Requirement: A source-wrapping helper MUST be re-entrant
+
+The helper MUST restore the ERR trap only when the outermost load completes. An unconditional re-arm restores the trap while an outer source is still executing, so a lib that itself calls the helper re-exposes the very failure the helper prevents — the "one site is not enough" problem, recursed. This is required even while no lib calls the helper, because the stated justification for keeping the explicit trap disarm is that it continues to hold if the hook ever adds `set -E`, and that is exactly the configuration in which a non-re-entrant re-arm fails.
+
+#### Scenario: A sourced lib calls the helper
+
+- **WHEN** the hook runs under `set -E` and a lib loaded through the helper itself loads another lib through it, then fails after the inner load returns
+- **THEN** the hook survives to its decision, because the trap is restored only at depth zero
+
 ### Requirement: Hooks still exposed to this class MUST be named, not implied
 
 The scope note of the static lint SHALL name every remaining ERR-trap hook that sources libs directly, and state why each is out of scope. A residual gap recorded as "some other hooks" is indistinguishable from one nobody looked for.
