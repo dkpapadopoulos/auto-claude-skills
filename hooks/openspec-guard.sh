@@ -609,9 +609,33 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             case "${_v}" in present|absent) printf '%s' "${_v}" ;; *) printf 'unknown' ;; esac
             return 0
         }
-        # _reviewer_shadow <evidence_present> [evidence_sha] — one record per
-        # consultation. Guarded on the function's existence so a missing lib is
-        # a missing record, never a changed gate outcome.
+        # _reviewer_shadow <evidence_present> [evidence_sha] — QUEUE one record
+        # per consultation. The write itself is DEFERRED to
+        # _reviewer_shadow_flush, called below the push-gate block, i.e. past
+        # every deny site in this file.
+        #
+        # DEFERRED because this leg is consulted where the REVIEW milestone is
+        # credited, which is ABOVE the VERIFY, verify-hardening, global
+        # fail-closed, phase-enforcement and routing-governance denies. A push
+        # one of those stopped was blocked regardless of anything this advisory
+        # leg said, so it can NEVER be a false block attributable to this leg —
+        # yet recorded it enters the corpus as a k=0 "no false block" row,
+        # shrinks the Clopper-Pearson upper bound, and biases the
+        # pre-registered deny-flip TOWARD turning denial on.
+        #
+        # This is the same rule as the PUSH-ONLY exclusion below, for the same
+        # reason: a row describing an episode this leg did not decide is not
+        # honest, and an adjudicator has no field to segment it out on. Shadow
+        # rows are NOT retro-classifiable, so accruing them under a wrong
+        # predicate discards the corpus rather than being fixable later. Do not
+        # "restore symmetry" by writing on the deny paths.
+        #
+        # The ADVISORY is untouched: _STALE_MSG is still appended at the
+        # consultation site, in the same position and order, so an allowed
+        # push reads byte-identically to before. Only the record is gated.
+        # predicate_version is deliberately NOT bumped — the predicate that
+        # decides present/stale/missing/cannot_check is unchanged; only which
+        # consultations get recorded changes, so v1 rows stay poolable.
         #
         # PUSH ONLY, and this is NOT an oversight to be "fixed" by symmetry.
         # Every input to evidence_present is computed from the LOCAL branch —
@@ -630,11 +654,24 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # so recording merges would need that FIRST, not a relaxed condition
         # here. Fail-closed on the action: an unrecognised future action records
         # nothing rather than guessing its subject.
+        _REVIEWER_SHADOW_STATE=""
+        _REVIEWER_SHADOW_SHA=""
         _reviewer_shadow() {
             [ "${_pe_action:-push}" = "push" ] || return 0
+            _REVIEWER_SHADOW_STATE="${1:-unknown}"
+            _REVIEWER_SHADOW_SHA="${2:-}"
+            return 0
+        }
+        # _reviewer_shadow_flush — perform the deferred write. Guarded on the
+        # recorder's existence so a missing lib is a missing record, never a
+        # changed gate outcome. credited_by / is_error_field are read here
+        # rather than snapshotted at queue time: the guard is a pre-exec hook
+        # and writes no ledger, so nothing they read can change in between.
+        _reviewer_shadow_flush() {
+            [ -n "${_REVIEWER_SHADOW_STATE:-}" ] || return 0
             command -v reviewer_shadow_record >/dev/null 2>&1 || return 0
             reviewer_shadow_record "${_pe_action:-push}" "${_proot}" "${_SESSION_TOKEN}" \
-                "${_TRANSCRIPT:-}" "${1:-unknown}" "${2:-}" \
+                "${_TRANSCRIPT:-}" "${_REVIEWER_SHADOW_STATE}" "${_REVIEWER_SHADOW_SHA:-}" \
                 "$(_reviewer_credited_by)" "$(_reviewer_is_error_field)" 2>/dev/null || true
             return 0
         }
@@ -1132,6 +1169,18 @@ EOF
                 _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }EVALUATOR SURFACE: this push modifies file(s) that define what verified means (${_eval_list}). The verification verdict is partly self-referential for this branch — call these files out for explicit human review in the PR."
             fi
         fi
+fi
+
+# Deferred reviewer-evidence shadow write. This sits below EVERY deny site in
+# this file on purpose (last one: routing-governance, above) — a push another
+# leg denied must not enter the corpus the pre-registered deny-flip is computed
+# from. Full rationale at _reviewer_shadow. Guarded on the function's existence:
+# it is defined inside the push-gate block above, so for a non-push/non-merge
+# command an unguarded call would be a command-not-found under
+# `trap 'exit 0' ERR` — a silent early exit that skips the advisory flush below
+# (#137 shape). Diagnostic only: no stdout, no permissionDecision, no _DECISION.
+if command -v _reviewer_shadow_flush >/dev/null 2>&1; then
+    _reviewer_shadow_flush
 fi
 
 # Flush pending push advisories before any pre-SHIP early exit. _STALE_MSG is

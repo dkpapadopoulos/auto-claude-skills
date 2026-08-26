@@ -368,6 +368,42 @@ else
     _record_fail "e2e: no record where REVIEW is not credited at all" "$(cat "${_LOG}")"
 fi
 
+# (7) A push some OTHER leg denied records nothing. The leg is consulted where
+#     the REVIEW milestone is credited, which is above the VERIFY,
+#     verify-hardening, global fail-closed, phase-enforcement and
+#     routing-governance denies. Such a push was blocked regardless of anything
+#     this advisory leg said, so it can never be a false block attributable to
+#     THIS leg — recorded, it enters the corpus as a k=0 "no false block" row,
+#     shrinks the Clopper-Pearson upper bound and biases the pre-registered
+#     deny-flip TOWARD turning denial on. Same rule, same reasoning as the
+#     merge exclusion; rows are not retro-classifiable, so a wrong-predicate
+#     row discards the corpus rather than being fixable later.
+#
+#     REVIEW credited but VERIFY not => the global fail-closed gate denies,
+#     downstream of the consultation.
+_clear; _seed_review
+_out_denied="$(_push)"
+if printf '%s' "${_out_denied}" | grep -qF '"permissionDecision"' && [ ! -s "${_LOG}" ]; then
+    _record_pass "e2e: a push denied by another leg records no row"
+else
+    _record_fail "e2e: a push denied by another leg records no row" \
+                 "gate output: $(printf '%s' "${_out_denied}" | tr -d '\n' | cut -c1-140); log: $(cat "${_LOG}" 2>/dev/null)"
+fi
+
+# (8) The paired half of (7), and it is NOT redundant with (1): (7) alone is
+#     satisfied by a fix that suppresses EVERY row, which would silently empty
+#     the corpus. An allowed push whose advisory is the operative outcome must
+#     record exactly one row — not zero, and not one per consultation site.
+_clear; _seed_review; _seed_verify
+_push >/dev/null
+_ROWCOUNT="$(wc -l < "${_LOG}" 2>/dev/null | tr -d ' ')"
+if [ "${_ROWCOUNT}" = "1" ]; then
+    _record_pass "e2e: an allowed advisory push records exactly one row"
+else
+    _record_fail "e2e: an allowed advisory push records exactly one row" \
+                 "rows=${_ROWCOUNT}; log: $(cat "${_LOG}" 2>/dev/null)"
+fi
+
 # ---------------------------------------------------------------------------
 # The gate itself must be undisturbed. These re-assert the leg's own controls
 # with the recorder wired in — telemetry that changes a gate decision is worse
