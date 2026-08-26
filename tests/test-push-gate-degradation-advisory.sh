@@ -363,19 +363,31 @@ assert_contains "partially-loaded ledger lib still DENIES (must not weaken)" \
 _restore_ledger
 
 # ---------------------------------------------------------------------------
-# Cell 3b — branch-ledger.sh runs `false` mid-source. KNOWN NOT COVERED by the
-# advisory: the ERR trap fires DURING the source, so the hook exits before any
-# accumulator could be read. That shape needs `trap - ERR` around every
-# lib-loading region and is tracked as issue #192.
+# Cell 3b — branch-ledger.sh runs `false` mid-source. This cell used to assert
+# EMPTY output: the ERR trap fired DURING the source and the hook exited before
+# any accumulator could be read, so the one fault class that killed the gate
+# outright was also the one it could not announce. That was pinned as an
+# explicit boundary marker so it would FAIL the day #192 landed.
 #
-# Asserted as EMPTY on purpose, so this is a real pin rather than a sentence:
-# it fails the day #192 lands, which is the point — whoever fixes #192 must
-# come here and assert the advisory instead.
+# #192 has landed: every source site now goes through _guard_load, which
+# disarms the trap across the load. The fault no longer exits the hook, so this
+# cell now degrades exactly like an absent lib (cell 2) — announced, allowed.
+# Asserting the same three things cell 2 asserts is the point: "a lib that
+# breaks mid-source" and "a lib that is not there" must be indistinguishable to
+# the user, because to the gate they are the same event.
 # ---------------------------------------------------------------------------
 printf '\nfalse\n' >> "${_TROOT}/hooks/lib/branch-ledger.sh"
-out="$(run_stable)"
-assert_equals "ERR-trap-exiting lib is still silent (#192 boundary — update when #192 lands)" \
-    "" "${out}"
+out="$(run_stable)"; adv="$(_advisory_text "${out}")"
+assert_contains "mid-source fault => degradation advisory (#192)"  "GATE DEGRADED"    "${adv:-<empty>}"
+assert_contains "advisory names the lib that did not load"         "branch-ledger.sh" "${adv:-<empty>}"
+assert_contains "advisory names what stopped being enforced"       "global fail-closed gate" "${adv:-<empty>}"
+# Paired with a non-empty check ON PURPOSE. `_has_decision` returns "false" for
+# EMPTY output too, so this line alone is equally satisfied by "checked and
+# allowed" and by "the hook never ran" — against the pre-#192 guard it stayed
+# green. The three assertions above already fail there, so the cell as a whole
+# was a genuine pin; this makes the line itself one.
+assert_equals   "mid-source fault still falls OPEN"                "false" "$(_has_decision "${out}")"
+assert_not_empty "…and 'falls open' means it ANSWERED, not that it vanished"  "${out}"
 _restore_ledger
 
 # ---------------------------------------------------------------------------

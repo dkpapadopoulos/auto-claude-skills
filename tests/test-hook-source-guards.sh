@@ -30,14 +30,31 @@
 #   lib hits command-not-found mid-source   -> SILENT ALLOW  <-- NOT covered
 #   lib does `X="$(cd /nope && pwd)"`       -> SILENT ALLOW  <-- NOT covered
 #
-# That last shape is live in this repo: hooks/lib/phase-evidence.sh:10 is
-# `_PHASE_EVID_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"`. Closing it
-# needs `trap - ERR` around the whole lib-loading region at EVERY source site
-# (one site is not enough — a re-source downstream re-arms the trap), which is
-# a larger change to a live gate than #137's scope. Tracked as issue #192.
+# Those three shapes were issue #192, and it is FIXED — but not here, and that
+# distinction is the whole reason to read this paragraph. openspec-guard.sh now
+# routes every source through `_guard_load`, which disarms the trap across the
+# load; the runtime proof lives in tests/test-hook-source-guard-runtime.sh.
+# THIS file's coverage is unchanged: it is static, it inspects call sites, and
+# it stayed green through every one of those silent allows. Nothing here
+# verifies #192, and widening it to claim so would recreate exactly the
+# false-confidence the scope note exists to prevent.
 #
 # So: a green run here means "no source line can be tripped by its own exit
 # status", NOT "no sourced lib can exit this hook".
+#
+# The other ERR-trap hooks that source libs — compact-recovery-hook.sh,
+# compact-recovery-prompt-hook.sh, consolidation-stop.sh, skill-completion-hook.sh,
+# skill-gate.sh — still source them directly, so #192's runtime class remains
+# OPEN for them. None gates an OUTBOUND action, which is why the fix was scoped
+# to the guard: skill-gate.sh does deny, but a silent exit there costs skill
+# sequencing rather than letting a push out, and skill-completion-hook.sh fails
+# in the safe direction (evidence goes unrecorded, so the push gate denies
+# MORE). publish-guard.sh — the other outbound deny — sources nothing at all.
+#
+# Note that the fix cannot simply be shared: `_guard_load` lives inline in
+# openspec-guard.sh because putting it in hooks/lib/ would mean sourcing a lib
+# to make sourcing libs safe, and that first source is the one nothing can
+# protect. Extending the fix means copying the helper, deliberately.
 #
 # Population is hooks/*.sh carrying a LOCAL ERR trap. hooks/lib/*.sh are
 # deliberately excluded: they carry no trap of their own but execute under the
@@ -77,10 +94,24 @@ skill-completion-hook.sh|. "${_PLUGIN_ROOT}/hooks/lib/session-token.sh"'
 
 # _unguarded_sources <file> — print "<basename>|<trimmed line>" for each
 # unguarded source line, or nothing. Only meaningful for ERR-trap files.
+# The matcher covers `.`/`source` AND `_guard_load`, and the second is not
+# decoration. #192 routed all 13 gate-critical sources in openspec-guard.sh
+# through a `_guard_load` helper; a `.`-only matcher then saw ONE line in that
+# file instead of thirteen (measured: 13 at b05925c, 1 after), silently moving
+# every site this lint exists to protect out of its own population — while the
+# "openspec-guard.sh is never allowlistable" assertion below kept passing,
+# vacuously.
+#
+# The call shape still decides. `_guard_load` returns the source's status, so a
+# BARE `_guard_load lib` whose lib fails is a failing simple command at top
+# level: ERR trap, exit 0, empty stdout — the identical silent allow, one
+# careless call site away. Measured under bash 3.2.57: bare call with a failing
+# lib printed nothing and never reached the decision path; the same call with
+# `|| true` reached it. So a renamed source is still a source here.
 _unguarded_sources() {
     local file="$1" base line trimmed
     base="$(basename "${file}")"
-    grep -E '^[[:space:]]*(\.|source)[[:space:]]+' "${file}" 2>/dev/null | while IFS= read -r line; do
+    grep -E '^[[:space:]]*(\.|source|_guard_load)[[:space:]]+' "${file}" 2>/dev/null | while IFS= read -r line; do
         # Strip a trailing comment BEFORE classifying: `. lib  # see foo && bar`
         # would otherwise read as guarded on the comment's `&&`. Stripping for
         # the key too means adding a comment cannot silently invalidate an
@@ -129,6 +160,25 @@ if [ "${HOOK_COUNT}" -ge 5 ]; then
 else
     _record_fail "ERR-trap hook population is non-trivial" \
         "found only ${HOOK_COUNT} — the detector or the glob is broken, not the repo"
+fi
+
+# A file-count tripwire does NOT protect the thing that actually broke. When #192
+# routed the guard's sources through `_guard_load`, this file's matched-LINE
+# population in openspec-guard.sh fell 13 -> 1 and every assertion here stayed
+# green, because the only sanity check counted ERR-trap FILES. Rename the helper
+# tomorrow and the identical vacuum returns. The spec says "add a new wrapper to
+# the matcher", but prose is not a gate — this is, and it is the same
+# presence-check shape as test-fixture-coverage.sh / test-skill-content-coverage.sh.
+#
+# The guard is the only file pinned here because it is the only one whose early
+# exit is a silent push-gate allow, and 10 is a deliberate floor rather than the
+# exact count: sites legitimately come and go, a wrapper rename does not.
+GUARD_SRC_LINES="$(grep -cE '^[[:space:]]*(\.|source|_guard_load)[[:space:]]+' "${PROJECT_ROOT}/hooks/openspec-guard.sh" 2>/dev/null || echo 0)"
+if [ "${GUARD_SRC_LINES}" -ge 10 ]; then
+    _record_pass "openspec-guard.sh source population is intact (${GUARD_SRC_LINES} lines)"
+else
+    _record_fail "openspec-guard.sh source population is intact" \
+        "matched only ${GUARD_SRC_LINES} source lines — a source wrapper was almost certainly renamed without adding it to _unguarded_sources, which silently empties this lint"
 fi
 
 # ---------------------------------------------------------------------------

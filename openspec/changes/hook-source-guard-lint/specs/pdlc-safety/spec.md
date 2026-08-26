@@ -4,7 +4,7 @@
 
 Every `.`/`source` invocation in a hook carrying `trap 'exit 0' ERR` MUST be written so that a non-zero **source status** cannot trip the trap — that is, the source MUST be a non-final operand of an `&&`/`||` list. Where the caller then uses a function from that lib, the guard MUST also confirm the function is defined before calling it, because a partially-sourced lib leaves the function undefined and the resulting command-not-found trips the same trap. An existence check (`[ -f "$lib" ]`) MUST NOT be treated as a guard: it proves only that the file is present, and the failure under test is a lib that exists and returns non-zero while sourcing.
 
-This requirement is deliberately scoped to the source's own exit status. The `&&`/`||` form does NOT suppress the trap when a command *inside* the sourced file fails — that trap fires during the sourced file's execution — so satisfying this requirement MUST NOT be read as proving that no sourced lib can exit the hook. Measured: a lib that runs `false`, hits a command-not-found, or performs a failing `X="$(cd … && pwd)"` assignment still produces a silent allow. Closing that requires clearing the trap around the whole lib-loading region at every source site, and is tracked separately as issue #192.
+This requirement is deliberately scoped to the source's own exit status. The `&&`/`||` form does NOT suppress the trap when a command *inside* the sourced file fails — that trap fires during the sourced file's execution — so satisfying this requirement MUST NOT be read as proving that no sourced lib can exit the hook. Measured: a lib that runs `false`, hits a command-not-found, or performs a failing `X="$(cd … && pwd)"` assignment produced a silent allow. That gap was issue #192 and is closed for `hooks/openspec-guard.sh` by the `source-region-err-trap` change, which routes every source there through a trap-disarming helper; it remains open for the other ERR-trap hooks, which are named in the lint's scope note. The scoping of THIS requirement is unchanged — it is still about source status, and a green lint still does not prove the runtime property.
 
 #### Scenario: Push-gate token lib fails mid-source
 
@@ -19,7 +19,7 @@ This requirement is deliberately scoped to the source's own exit status. The `&&
 #### Scenario: A command inside the sourced lib fails
 
 - **WHEN** a sourced lib runs a failing command mid-source rather than returning non-zero
-- **THEN** the hook still exits early — a known residual gap that this requirement does NOT close, recorded so a green lint is not mistaken for full coverage
+- **THEN** this requirement does NOT determine the outcome — it is scoped to source status — and the hook's survival is governed instead by the `source-region-err-trap` requirement, recorded here so a green lint is never mistaken for full coverage
 
 ### Requirement: The repo MUST deterministically reject any new unguarded source in a fail-open hook
 
