@@ -644,11 +644,16 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # corpus would not be segmentable, reintroducing the very bias this
         # change removes. (Contrast #169, whose added rows stayed filterable on
         # would_block/impl_evidence_kind, and #161, which changed the subject
-        # and DID bump.) It stays at 1 because v1 NEVER SHIPPED:
-        # hooks/lib/reviewer-shadow.sh was added in dd2aeaa, and
-        # `git branch -a --contains dd2aeaa` names only this worktree branch.
-        # No released install can hold a contaminated row, so for every user
-        # predicate_version:1 means the corrected population from day one.
+        # and DID bump.) It stays at 1 because v1 NEVER SHIPPED. Verified at
+        # merge time (2026-08-26): dd2aeaa, which added
+        # hooks/lib/reviewer-shadow.sh, existed only on this branch —
+        # `git branch -a --contains dd2aeaa` named
+        # worktree-reviewer-dispatch-and-evidence and its own remote tracking
+        # ref, and no released ref. So no install can hold a v1 row written
+        # under the pre-fix population, and for every user predicate_version:1
+        # means the corrected population from day one. That check stops
+        # reproducing once this branch is pruned, which is why the RESULT is
+        # recorded here rather than left as an instruction to re-run it.
         #
         # PUSH ONLY, and this is NOT an oversight to be "fixed" by symmetry.
         # Every input to evidence_present is computed from the LOCAL branch —

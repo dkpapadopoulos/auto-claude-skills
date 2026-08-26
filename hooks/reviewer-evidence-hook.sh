@@ -169,6 +169,19 @@ branch_ledger_record "reviewer-ran" 2>/dev/null || true
 # branch_ledger_dir is pure — it prints a path and never mkdirs, so the
 # directory only exists once the record has been written. Last write wins; this
 # is a per-branch property, not a log.
+#
+# PAIRED RESOLUTION: branch_ledger_record above and branch_ledger_dir below are
+# both called WITHOUT a proj_root argument, so both fall back to
+# `git rev-parse --show-toplevel`. That is correct in a hook, where cwd is the
+# repo — but it is load-bearing that the two resolve IDENTICALLY.
+# branch_ledger_key hashes the raw path STRING, so ANY difference between them
+# — a trailing slash, a non-canonical or symlinked path, an explicit proj_root
+# given to one call and not the other — puts the sidecar in a different ledger
+# directory than the milestone, and the guard reads `unknown` forever while the
+# milestone exists. Change both or neither. (openspec-guard.sh DOES pass an
+# explicit "${_proot}" because the guard is not necessarily running with cwd
+# inside the target repo; that asymmetry is correct — do not align either file
+# to the other.)
 _LEDGER_DIR=""
 if command -v branch_ledger_dir >/dev/null 2>&1; then
     _LEDGER_DIR="$(branch_ledger_dir 2>/dev/null)" || _LEDGER_DIR=""

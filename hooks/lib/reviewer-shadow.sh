@@ -110,6 +110,14 @@ _reviewer_shadow_enum() {
 #     correct, not a gap. `unknown` still appears for records predating the
 #     write, or when the ledger directory itself cannot be resolved.
 #
+#     If the sidecar-write site in hooks/reviewer-evidence-hook.sh is ever
+#     expanded — written in more cases, or at a different point — BUMP
+#     schema_version in the same commit. Records written before the expansion
+#     carry a different meaning for is_error_field, and without a version
+#     boundary a pooled corpus cannot separate them. This is the #133 sidecar
+#     precedent: a new observation surface gets a version bump so the earlier
+#     records stay segmentable.
+#
 # Always returns 0. Compact JSONL (jq -cn) because this is a line format.
 reviewer_shadow_record() {
     command -v jq >/dev/null 2>&1 || return 0
