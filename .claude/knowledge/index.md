@@ -1,6 +1,7 @@
 <!-- schema_version: okf-0.1 -->
 # Knowledge Index
 
+- [Any test input you invented rather than observed can pass while the code is wrong](invented-test-inputs-pass-while-wrong.md) — The fixture rule generalises: an imagined input corpus, a hardcoded payload shape, or a baseline captured from already-modified code all produce green suites over broken components; four measured instances, three of which shipped green.
 - [Bash 3.2 rejects quoted operands in arithmetic](bash32-arithmetic-quoting.md) — Quoted operands in $(( )) abort the script under macOS /bin/bash, breaking fail-open hooks.
 - [Behavioral-eval subjects can Read the branch's own spec — sandbox denies writes, not reads](behavioral-eval-subject-read-contamination.md) — run-behavioral-evals.sh denies Edit/Write/Bash (and in CI WebFetch/WebSearch/Task/Agent) but never Read, so a subject evaluated on a branch whose committed spec/design describes the expected behavior can read the answer and false-pass the baseline; isolate the subject's cwd.
 - [Check usage evidence before hardening a skill path](check-usage-evidence-before-hardening-skill-path.md) — Before adding gates, preconditions, or workflow steps to a skill, verify the skill actually fires — transcript Skill() invocations and ledger/invocation artifacts; an unused path makes any hardening dead prose.
