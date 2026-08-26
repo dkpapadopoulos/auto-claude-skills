@@ -119,13 +119,78 @@ _emit_advisory() {
     return 0
 }
 
+# _guard_load <path> — source a lib with this hook's fail-open ERR trap
+# DISARMED, then re-arm it. The ONE way this file may source anything (#192).
+#
+# #137 made every call site here `. lib && … || true`, which suppresses the ERR
+# trap for the `.` builtin's own RETURN STATUS. It does not suppress it for a
+# command that fails *inside* the sourced file: that trap fires during the
+# sourced file's execution, above every deny check below, and the hook exits 0
+# with EMPTY STDOUT — indistinguishable from an allow. Measured at b05925c, a
+# lib running `false`, hitting command-not-found, or doing
+# `X="$(cd /nope && pwd)"` mid-source silently allowed a `git push` that the
+# healthy guard denied. That last shape is a live line: phase-evidence.sh:10.
+#
+# Two independent mechanisms make this safe, and BOTH are deliberate:
+#   1. the explicit `trap - ERR` / re-arm around the source, which is what the
+#      issue asks for and what keeps working if this file ever adds `set -E`;
+#   2. being a FUNCTION at all — bash does not inherit an ERR trap into a
+#      function without `set -E` (measured on 3.2.57), so the trap cannot fire
+#      here even mid-edit.
+# Belt-and-braces is warranted: the failure mode is a silent gate bypass.
+#
+# Fixing ONE site is not enough — phase-attest.sh re-sources session-token.sh,
+# so a trap re-armed too early just fires one lib later. Every source site in
+# this file goes through here.
+#
+# What this does NOT do is make a broken lib work: sourcing simply CONTINUES
+# past the failing command, so the lib may be partially loaded. Callers keep
+# their `command -v <fn>` checks and their #198 degradation notes.
+#
+# NOR does it cover `exit`. `trap - ERR` suppresses a trap; it cannot stop a
+# sourced file from exiting the shell it is sourced into. Measured: `exit 7`
+# appended to any of the ten libs sourced above the deny sites kills the hook
+# with EMPTY STDOUT and exit code 7 — the same silent allow, through a door no
+# in-process guard can close (only a subshell pre-probe could, at a fork per
+# lib on the hot path). Only consol-marker.sh survives it, because it is the
+# one lib sourced BELOW every deny. No lib does this today; a top-level
+# `[ -z "$X" ] && exit 1` guard added to one would. So the guarantee here is
+# precisely: a lib that FAILS cannot exit the hook. A lib that EXITS still can.
+#
+# Returns the source's own status, so existing `_guard_load x && FLAG=true ||
+# true` call sites keep their #137 shape.
+#
+# THE CALL SHAPE STILL MATTERS — this helper does not make a source site safe by
+# itself. Because it returns the source's status, a BARE `_guard_load lib` whose
+# lib fails is a failing simple command at top level: ERR trap, exit 0, empty
+# stdout, the identical silent allow, one careless call site away. Measured on
+# 3.2.57: a bare call with a failing lib printed nothing and never reached the
+# decision path; the same call with `|| true` reached it. So every call site here
+# keeps #137's `&&`/`|| true` form, and tests/test-hook-source-guards.sh treats
+# `_guard_load` as a source for exactly that reason — without it, renaming the
+# call moved all 13 sites out of that lint's population (13 -> 1, measured).
+#
+# Latent, and true of no lib today: a top-level `local`/`declare` in a sourced
+# lib would scope INTO this function and be discarded, where at top level it
+# would have errored loudly. `grep -nE '^(local|declare|typeset) ' hooks/lib/*.sh`
+# is empty; check it before adding one.
+_guard_load() {
+    [ -f "${1:-}" ] || return 1
+    local _gl_rc=0
+    trap - ERR
+    # shellcheck source=/dev/null
+    . "$1" 2>/dev/null || _gl_rc=$?
+    trap 'exit 0' ERR
+    return "${_gl_rc}"
+}
+
 # Precise git-write detection (fail-open): source the predicate. If unavailable,
 # the substring fallbacks below preserve the original (fail-closed) behavior.
 # The `command -v` confirmation is for the ADVISORY only — _gc_precise does its
 # own check, so this adds no gating and cannot change a decision.
 _GC_LIB_OK=false
 if [ -f "${_GC_ROOT}/hooks/lib/git-command.sh" ]; then
-    . "${_GC_ROOT}/hooks/lib/git-command.sh" 2>/dev/null && \
+    _guard_load "${_GC_ROOT}/hooks/lib/git-command.sh" && \
         command -v command_parse_balanced >/dev/null 2>&1 && \
         _GC_LIB_OK=true || true
 fi
@@ -133,18 +198,18 @@ fi
 # Diagnostic-only shadow recorder (Stage C1). Guarded source: absence must not
 # affect the gate, and it is deliberately absent from _GATE_ENFORCE_LIBS.
 [ -f "${_GC_ROOT}/hooks/lib/implement-shadow.sh" ] && \
-    . "${_GC_ROOT}/hooks/lib/implement-shadow.sh" 2>/dev/null || true
+    _guard_load "${_GC_ROOT}/hooks/lib/implement-shadow.sh" || true
 # Advisory-path PR-diff resolver (#161). Guarded source: absence must not
 # affect the gate, and it is deliberately absent from _GATE_ENFORCE_LIBS.
 [ -f "${_GC_ROOT}/hooks/lib/pr-diff.sh" ] && \
-    . "${_GC_ROOT}/hooks/lib/pr-diff.sh" 2>/dev/null || true
+    _guard_load "${_GC_ROOT}/hooks/lib/pr-diff.sh" || true
 
 # review-shadow.sh (#197) — diagnostic corpus for the REVIEW verdict leg.
 # Diagnostic-only, so deliberately NOT in _GATE_ENFORCE_LIBS. Every call site
 # is `command -v`-guarded, so an absent lib silently records nothing and the
 # gate decision is byte-identical.
 [ -f "${_GC_ROOT}/hooks/lib/review-shadow.sh" ] && \
-    . "${_GC_ROOT}/hooks/lib/review-shadow.sh" 2>/dev/null || true
+    _guard_load "${_GC_ROOT}/hooks/lib/review-shadow.sh" || true
 
 # review-verdict.sh (#197) — the VERDICT half of the REVIEW split. Advisory
 # only, so it is deliberately NOT in _GATE_ENFORCE_LIBS, exactly like
@@ -154,7 +219,7 @@ fi
 # `.` under this file's `trap 'exit 0' ERR` is a push-gate BYPASS.
 _REVIEW_VERDICT_OK=false
 [ -f "${_GC_ROOT}/hooks/lib/review-verdict.sh" ] && \
-    . "${_GC_ROOT}/hooks/lib/review-verdict.sh" 2>/dev/null && \
+    _guard_load "${_GC_ROOT}/hooks/lib/review-verdict.sh" && \
     command -v review_verdict_is_clean >/dev/null 2>&1 && _REVIEW_VERDICT_OK=true || true
 
 # Bound the worst case: the precise detector is an O(n^2) char-scan parser, so
@@ -206,8 +271,7 @@ _SESSION_TOKEN=""
 # is what makes the `else` fallback reachable on a failed source.
 _TOKEN_LIB_OK=false
 if [ -f "${_PLUGIN_ROOT}/hooks/lib/session-token.sh" ]; then
-    # shellcheck source=lib/session-token.sh
-    . "${_PLUGIN_ROOT}/hooks/lib/session-token.sh" 2>/dev/null && \
+    _guard_load "${_PLUGIN_ROOT}/hooks/lib/session-token.sh" && \
         command -v resolve_session_token_from_transcript >/dev/null 2>&1 && \
         _TOKEN_LIB_OK=true || true
 fi
@@ -347,8 +411,7 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # ledger checks are simply false and the .completed path below governs.
         _LEDGER_OK=false
         if [ -f "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" ]; then
-            # shellcheck source=lib/branch-ledger.sh
-            . "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" && _LEDGER_OK=true
+            _guard_load "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" && _LEDGER_OK=true
         fi
         # #198: the ledger legs AND the whole global fail-closed gate below are
         # conditioned on _LEDGER_OK, so a failed load silently unenforces them.
@@ -358,8 +421,7 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # `|| true` so a non-zero source cannot trip `trap 'exit 0' ERR`.
         _VERDICT_OK=false
         if [ -f "${_PLUGIN_ROOT}/hooks/lib/verdict.sh" ]; then
-            # shellcheck source=lib/verdict.sh
-            . "${_PLUGIN_ROOT}/hooks/lib/verdict.sh" 2>/dev/null && _VERDICT_OK=true || true
+            _guard_load "${_PLUGIN_ROOT}/hooks/lib/verdict.sh" && _VERDICT_OK=true || true
         fi
         # #198: verify-hardening and routing-governance are both conditioned on
         # _VERDICT_OK, so a failed load silently unenforces both. Routing
@@ -378,14 +440,14 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # lib here — a bad source must not trip the fail-open ERR trap into a
         # bypass (`|| true` absorbs a non-zero source exit).
         [ -f "${_PLUGIN_ROOT}/hooks/lib/phase-attest.sh" ] && \
-            . "${_PLUGIN_ROOT}/hooks/lib/phase-attest.sh" 2>/dev/null || true
+            _guard_load "${_PLUGIN_ROOT}/hooks/lib/phase-attest.sh" || true
         # phase-evidence: defines phase_gate_log, used by the IMPLEMENT leg (Check 0)
         # BELOW. Must be sourced here — the later source (~C2 block) is after Check 0,
         # so without this the leg's telemetry call is a silent no-op and the
         # IMPLEMENT-warn event log (the deny-flip backtest baseline) stays empty.
         # Re-source there is idempotent. Source-guarded (no ERR-trap bypass).
         [ -f "${_PLUGIN_ROOT}/hooks/lib/phase-evidence.sh" ] && \
-            . "${_PLUGIN_ROOT}/hooks/lib/phase-evidence.sh" 2>/dev/null || true
+            _guard_load "${_PLUGIN_ROOT}/hooks/lib/phase-evidence.sh" || true
         # #198: phase-evidence.sh backs a DENY-capable leg (the DESIGN/PLAN
         # outbound check further below is gated on `command -v
         # phase_step_satisfied` and denies when phase_enforcement.outbound is
@@ -943,8 +1005,7 @@ EOF
         if [ "${_PUSHGATE_SKIP}" != "true" ] && command -v jq >/dev/null 2>&1 \
            && [ "${_pe_covered}" = "true" ]; then
             if [ -f "${_PLUGIN_ROOT}/hooks/lib/phase-evidence.sh" ]; then
-                # shellcheck source=lib/phase-evidence.sh
-                . "${_PLUGIN_ROOT}/hooks/lib/phase-evidence.sh" 2>/dev/null || true
+                _guard_load "${_PLUGIN_ROOT}/hooks/lib/phase-evidence.sh" || true
             fi
             if command -v phase_step_satisfied >/dev/null 2>&1; then
                 _pe_missing=""
@@ -1147,8 +1208,7 @@ _consol_marker=""
 # `else` branch exists precisely to cover a missing lib.
 _CONSOL_LIB_OK=false
 if [ -f "${_PLUGIN_ROOT}/hooks/lib/consol-marker.sh" ]; then
-    # shellcheck source=lib/consol-marker.sh
-    . "${_PLUGIN_ROOT}/hooks/lib/consol-marker.sh" 2>/dev/null && \
+    _guard_load "${_PLUGIN_ROOT}/hooks/lib/consol-marker.sh" && \
         command -v consol_marker_path >/dev/null 2>&1 && _CONSOL_LIB_OK=true || true
 fi
 if [ "${_CONSOL_LIB_OK}" = true ]; then
@@ -1207,7 +1267,7 @@ if [ -f "${_COMP_STATE}" ] && command -v jq >/dev/null 2>&1; then
     # Ledger-aware (same OR as the push gate): a durable branch milestone counts as
     # completed, so this advisory does not contradict a ledger-satisfied push gate.
     if [ "${_in_completed}" = "false" ] && [ -f "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" ]; then
-        . "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" 2>/dev/null && \
+        _guard_load "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" && \
             branch_ledger_has "requesting-code-review" && _in_completed=true
     fi
     if [ "${_in_chain}" = "true" ] && [ "${_in_completed}" = "false" ]; then
