@@ -248,7 +248,30 @@ pre-registered one: an absent `is_error` credits a crashed reviewer, which
 inflates apparent compliance and biases the rate **toward** flipping to deny.
 While the leg is advisory that costs a missed advisory. **Measuring this is a
 precondition of the deny-flip, not of this change** — and the shadow record's
-`is_error_field` dimension lets the corpus measure it directly.
+`is_error_field` dimension lets the corpus measure it directly. The producer
+SHIPPED: `hooks/reviewer-evidence-hook.sh` writes the sidecar at credit time and
+`openspec-guard.sh::_reviewer_is_error_field` reads it, so records carry real
+`present`/`absent` data rather than a placeholder.
+
+**`is_error_field: "absent"` is the observable signal for this whole class, and
+it covers TWO distinct causes that an adjudicator must not conflate:**
+
+| cause | what the payload looked like | what it means |
+|---|---|---|
+| object without the key | `tool_response: {}` or `{"wasInterrupted": true}` | the harness did not report an error field |
+| non-object payload | `tool_response: [...]` or `"a string"` | the field is *unobservable*; the `objects` guard defaulted it |
+
+Both record `absent`, and the record cannot tell them apart. That is acceptable
+— both credit, and the exposure is identical in direction and size — but a rate
+computed over `absent` rows is measuring "could not observe an error signal",
+NOT "the harness said there was no error". State that when the flip is decided;
+reading `absent` as a confirmed success would overstate compliance in the
+direction that clears the flip.
+
+`unknown` remains distinct from both, and means something weaker again: no
+sidecar was readable at all (a record predating the write, or an unresolvable
+ledger directory). It is not evidence about the payload and must be excluded
+from any rate rather than folded into `absent`.
 
 **D3 — No attestation escape in this change.** The IMPLEMENT leg accepts
 `phase_attest`; REVIEW and VERIFY deliberately reject it — CLAUDE.md records
