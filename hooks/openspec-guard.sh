@@ -609,10 +609,14 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             case "${_v}" in present|absent) printf '%s' "${_v}" ;; *) printf 'unknown' ;; esac
             return 0
         }
-        # _reviewer_shadow <evidence_present> [evidence_sha] — QUEUE one record
-        # per consultation. The write itself is DEFERRED to
-        # _reviewer_shadow_flush, called below the push-gate block, i.e. past
-        # every deny site in this file.
+        # _reviewer_shadow <evidence_present> [evidence_sha] — stage at most one
+        # record per invocation. This is a single overwrite slot holding the
+        # LAST consultation, not a queue; it is sufficient only because
+        # _REVIEWER_NOTED (below) caps this leg at one consultation per
+        # invocation. Relaxing that dedup expecting per-consultation rows would
+        # silently record only the last one — make this a real queue first.
+        # The write itself is DEFERRED to _reviewer_shadow_flush, called below
+        # the push-gate block, i.e. past every deny site in this file.
         #
         # DEFERRED because this leg is consulted where the REVIEW milestone is
         # credited, which is ABOVE the VERIFY, verify-hardening, global
@@ -633,9 +637,18 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # The ADVISORY is untouched: _STALE_MSG is still appended at the
         # consultation site, in the same position and order, so an allowed
         # push reads byte-identically to before. Only the record is gated.
-        # predicate_version is deliberately NOT bumped — the predicate that
-        # decides present/stale/missing/cannot_check is unchanged; only which
-        # consultations get recorded changes, so v1 rows stay poolable.
+        # predicate_version is deliberately NOT bumped, but NOT because the
+        # predicate is unchanged — that argument is insufficient here. The
+        # record carries no field naming the gate decision, so a v1 denied-push
+        # row is byte-indistinguishable from a v2 allowed-push row and a pooled
+        # corpus would not be segmentable, reintroducing the very bias this
+        # change removes. (Contrast #169, whose added rows stayed filterable on
+        # would_block/impl_evidence_kind, and #161, which changed the subject
+        # and DID bump.) It stays at 1 because v1 NEVER SHIPPED:
+        # hooks/lib/reviewer-shadow.sh was added in dd2aeaa, and
+        # `git branch -a --contains dd2aeaa` names only this worktree branch.
+        # No released install can hold a contaminated row, so for every user
+        # predicate_version:1 means the corrected population from day one.
         #
         # PUSH ONLY, and this is NOT an oversight to be "fixed" by symmetry.
         # Every input to evidence_present is computed from the LOCAL branch —
@@ -665,8 +678,11 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # _reviewer_shadow_flush — perform the deferred write. Guarded on the
         # recorder's existence so a missing lib is a missing record, never a
         # changed gate outcome. credited_by / is_error_field are read here
-        # rather than snapshotted at queue time: the guard is a pre-exec hook
-        # and writes no ledger, so nothing they read can change in between.
+        # rather than snapshotted at stage time: the guard is a pre-exec hook
+        # and writes no ledger, so it is not itself a source of change between
+        # the two points. (The is_error_field sidecar is written by
+        # reviewer-evidence-hook.sh, a different process, so a concurrent write
+        # is possible in principle — negligible here, and diagnostic-only.)
         _reviewer_shadow_flush() {
             [ -n "${_REVIEWER_SHADOW_STATE:-}" ] || return 0
             command -v reviewer_shadow_record >/dev/null 2>&1 || return 0
