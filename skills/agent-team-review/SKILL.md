@@ -56,11 +56,35 @@ Each reviewer gets:
 
 ### 3. Parallel Review
 
-Reviewers work independently using Read, Grep, and analysis tools. They do NOT modify any files.
+Reviewers work independently using Read, Grep, and analysis tools. They do NOT modify the
+shared working tree; a reviewer that must RUN something works in its own detached worktree.
+
+**Collect the reports — they do not arrive on their own.** A background reviewer in this
+harness signals idle with no findings attached, because its final text is a return value,
+not a message to the lead. Observed on one push-gate change: of four reviewers, three went
+idle empty and produced full reports only when asked, and one errored out and produced
+nothing.
+
+| Reviewer state | What the lead does |
+|----------------|--------------------|
+| Report received via SendMessage | Count it. This is the only state that counts as delivered. |
+| Idle, no findings attached | **Idle is not a report.** SendMessage the reviewer asking for the report, listing the exact questions you want answered. |
+| Idle again after one nudge | Chase a quiet reviewer **at least twice** before writing it off — reviewers chased twice have delivered substantive findings that a single nudge would have lost. |
+| Errored, timed out, or killed | **A timeout is not a pass.** Re-dispatch it and never count it toward coverage. |
+| Still nothing after re-dispatch | Record the lens as uncovered and carry it into the verdict (below). Do not silently reduce the team. |
+
+**Before re-dispatching anything, run `git status` and `git log`.** The first move on a quiet
+agent is not re-dispatch — subagents here frequently finish the work and stall before
+reporting, leaving completed changes sitting uncommitted in the tree. Re-dispatching without
+looking duplicates work that is already done.
+
+**Coverage is what was delivered, not what was spawned.** If any lens never delivered, the
+review is not `clean` — record `--verdict could-not-review` (see "Record the Review Verdict")
+and say which lens is missing. Silence and "we could not review" are different states.
 
 ### 4. Lead Synthesis
 
-After all reviewers report findings:
+After collecting the reports per §3 — including any lens recorded as uncovered:
 
 1. Group findings by severity (blocking → warning → suggestion)
 2. Deduplicate overlapping findings
@@ -139,6 +163,17 @@ Task tool (general-purpose):
   prompt: |
     You are a security reviewer examining code changes.
 
+    ## Delivery Contract (read this first)
+    - Time-box yourself to 15 minutes of review, then REPORT EVEN IF INCOMPLETE: send
+      what you have via SendMessage to `main` and name what you did NOT cover. Partial
+      honest coverage beats a timeout that delivers nothing.
+    - Deliver unprompted. Send the report BEFORE you go idle or end your turn. Your
+      final text is a return value, not a message to the lead, and an idle notification
+      carries no findings — if you stop without a SendMessage, your whole review is lost.
+    - If you could not review, send a report saying so and why. Silence is not a pass.
+    - Say plainly if you find nothing — do not manufacture findings. A "no findings"
+      report delivered on time is a successful review.
+
     ## Your Lens: Security
 
     Focus on:
@@ -159,6 +194,13 @@ Task tool (general-purpose):
 
     ## Rules
     - Read-only: do NOT modify any files
+    - Own worktree for anything that executes or mutates: if your lens needs to run
+      tests, builds, or mutation testing, first `git worktree add --detach
+      /tmp/review-<your-name> HEAD`, work only there, and remove it when done.
+      Never write to the shared working tree — another agent's test suite may be
+      running against it.
+    - Distinguish what you VERIFIED by running from what you INFERRED by reading, and
+      label each finding accordingly.
     - Report each finding using the plain-text FINDING format, including the Confidence and Evidence fields
     - Send all findings to the lead via SendMessage
     - Be specific: include file path, line number, and remediation
@@ -171,6 +213,17 @@ Task tool (general-purpose):
   team_name: "code-review"
   prompt: |
     You are a code quality reviewer examining code changes.
+
+    ## Delivery Contract (read this first)
+    - Time-box yourself to 15 minutes of review, then REPORT EVEN IF INCOMPLETE: send
+      what you have via SendMessage to `main` and name what you did NOT cover. Partial
+      honest coverage beats a timeout that delivers nothing.
+    - Deliver unprompted. Send the report BEFORE you go idle or end your turn. Your
+      final text is a return value, not a message to the lead, and an idle notification
+      carries no findings — if you stop without a SendMessage, your whole review is lost.
+    - If you could not review, send a report saying so and why. Silence is not a pass.
+    - Say plainly if you find nothing — do not manufacture findings. A "no findings"
+      report delivered on time is a successful review.
 
     ## Your Lens: Code Quality
 
@@ -195,6 +248,13 @@ Task tool (general-purpose):
 
     ## Rules
     - Read-only: do NOT modify any files
+    - Own worktree for anything that executes or mutates: if your lens needs to run
+      tests, builds, or mutation testing, first `git worktree add --detach
+      /tmp/review-<your-name> HEAD`, work only there, and remove it when done.
+      Never write to the shared working tree — another agent's test suite may be
+      running against it.
+    - Distinguish what you VERIFIED by running from what you INFERRED by reading, and
+      label each finding accordingly.
     - Report each finding using the plain-text FINDING format, including the Confidence and Evidence fields
     - Send all findings to the lead via SendMessage
     - Distinguish between blocking issues and suggestions
@@ -207,6 +267,17 @@ Task tool (general-purpose):
   team_name: "code-review"
   prompt: |
     You are a spec compliance reviewer examining code changes.
+
+    ## Delivery Contract (read this first)
+    - Time-box yourself to 15 minutes of review, then REPORT EVEN IF INCOMPLETE: send
+      what you have via SendMessage to `main` and name what you did NOT cover. Partial
+      honest coverage beats a timeout that delivers nothing.
+    - Deliver unprompted. Send the report BEFORE you go idle or end your turn. Your
+      final text is a return value, not a message to the lead, and an idle notification
+      carries no findings — if you stop without a SendMessage, your whole review is lost.
+    - If you could not review, send a report saying so and why. Silence is not a pass.
+    - Say plainly if you find nothing — do not manufacture findings. A "no findings"
+      report delivered on time is a successful review.
 
     ## Your Lens: Spec Compliance
 
@@ -226,6 +297,13 @@ Task tool (general-purpose):
 
     ## Rules
     - Read-only: do NOT modify any files
+    - Own worktree for anything that executes or mutates: if your lens needs to run
+      tests, builds, or mutation testing, first `git worktree add --detach
+      /tmp/review-<your-name> HEAD`, work only there, and remove it when done.
+      Never write to the shared working tree — another agent's test suite may be
+      running against it.
+    - Distinguish what you VERIFIED by running from what you INFERRED by reading, and
+      label each finding accordingly.
     - Report each finding using the plain-text FINDING format, including the Confidence and Evidence fields
     - Send all findings to the lead via SendMessage
     - Flag both missing features AND unplanned additions
@@ -238,6 +316,17 @@ Task tool (general-purpose):
   team_name: "code-review"
   prompt: |
     You are a governance reviewer examining code changes for safety regressions.
+
+    ## Delivery Contract (read this first)
+    - Time-box yourself to 15 minutes of review, then REPORT EVEN IF INCOMPLETE: send
+      what you have via SendMessage to `main` and name what you did NOT cover. Partial
+      honest coverage beats a timeout that delivers nothing.
+    - Deliver unprompted. Send the report BEFORE you go idle or end your turn. Your
+      final text is a return value, not a message to the lead, and an idle notification
+      carries no findings — if you stop without a SendMessage, your whole review is lost.
+    - If you could not review, send a report saying so and why. Silence is not a pass.
+    - Say plainly if you find nothing — do not manufacture findings. A "no findings"
+      report delivered on time is a successful review.
 
     ## Your Lens: Governance & Safety
 
@@ -257,6 +346,13 @@ Task tool (general-purpose):
 
     ## Rules
     - Read-only: do NOT modify any files
+    - Own worktree for anything that executes or mutates: if your lens needs to run
+      tests, builds, or mutation testing, first `git worktree add --detach
+      /tmp/review-<your-name> HEAD`, work only there, and remove it when done.
+      Never write to the shared working tree — another agent's test suite may be
+      running against it.
+    - Distinguish what you VERIFIED by running from what you INFERRED by reading, and
+      label each finding accordingly.
     - Report each finding using the plain-text FINDING format, including the Confidence and Evidence fields
     - Send all findings to the lead via SendMessage
     - A finding is blocking if it removes or weakens an existing safety constraint
@@ -266,6 +362,7 @@ Task tool (general-purpose):
 
 ## Red Flags
 
+- **Silent drop:** a reviewer went idle or errored and the round was reported as complete without its lens. Coverage counts reports delivered, not agents spawned — an undelivered lens is an uncovered lens. Chase it per Protocol §3; if it still does not deliver, name the gap and record `could-not-review` rather than approving around it.
 - **Doubt theater:** across 2 or more review rounds, reviewers surfaced substantive findings and zero were classified actionable. That is doubt theater — you are validating, not reviewing. Stop and surface the dismissal pattern to the user instead of proceeding to SHIP.
 
 ## Verification
@@ -273,6 +370,9 @@ Task tool (general-purpose):
 Before emitting an APPROVE verdict, confirm:
 
 - Every spawned reviewer returned a finding set this session -- no reviewer silently dropped.
+  This is an outcome, and Protocol §3 is the mechanism that reaches it: an idle or errored
+  reviewer was chased and re-dispatched, not counted. A lens that never delivered means
+  `could-not-review`, not APPROVE.
 - Each actionable finding was resolved or explicitly accepted with rationale -- not waved through.
 - The verdict cites evidence / confidence / severity per the finding contract, not a bare "looks good".
 - The doubt-theater pattern is not present (see Red Flags above) — if it is, surface it instead of approving.

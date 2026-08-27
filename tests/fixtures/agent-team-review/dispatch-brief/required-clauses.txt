@@ -1,0 +1,30 @@
+# Pinned eval set for issue #204 — agent-team-review dispatch brief.
+# NEVER DELETE. Each non-comment, non-blank line is a LITERAL needle (grep -F)
+# that MUST appear inside EVERY reviewer lens prompt block in
+# skills/agent-team-review/SKILL.md. A reviewer only ever sees its own prompt,
+# so a clause stated once in the protocol prose reaches nobody — the assertion
+# is deliberately per-block, not whole-file.
+#
+# Provenance: issue #204, from memory/background-reviewers-need-explicit-report-request.md
+# (observed 2026-08-12/14: 4 reviewers dispatched, 3 went idle with no findings and
+# reported only when asked, 1 timed out and delivered nothing; separately one
+# reviewer mutation-tested in the SHARED tree during a 12-minute suite run).
+
+# --- Clause 1: time-box, and report even if incomplete ---
+Time-box yourself to 15 minutes
+REPORT EVEN IF INCOMPLETE
+
+# --- Clause 2: a timeout / dead end is not a pass (reviewer-side mirror) ---
+Silence is not a pass
+
+# --- Clause 3: unprompted delivery — do not go idle holding the report ---
+Deliver unprompted
+SendMessage to `main`
+
+# --- Clause 4: own worktree for any reviewer that RUNS or MUTATES ---
+git worktree add --detach
+
+# --- Safety / no-regression: the delivery metric must not be gameable ---
+Read-only: do NOT modify any files
+do not manufacture findings
+VERIFIED by running from what you INFERRED by reading

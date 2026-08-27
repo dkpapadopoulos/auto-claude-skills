@@ -1,0 +1,21 @@
+# Pinned sha-bound range for the BEHAVIORAL leg of the issue #204 A/B contract.
+# NEVER DELETE — the candidate run is only comparable to the baseline when both
+# review the same subject.
+#
+# Baseline sha (issue #204 "Verified at"): 5076a7ddfd74c6660dac2a7130704b8903d5acd5
+# Review range: dispatch the 4-lens team over BASE..HEAD below.
+#
+# base=5076a7ddfd74c6660dac2a7130704b8903d5acd5^
+# head=5076a7ddfd74c6660dac2a7130704b8903d5acd5
+#
+# Pre-registered metric: unprompted delivery rate = reviewers whose findings
+# reached the lead with NO follow-up request / reviewers dispatched.
+#   baseline (observed, n=4): 0/4 unprompted, 1 timeout, 8 shared-tree mutations
+#   candidate target:         >= 3/4 unprompted AND zero main-tree mutations
+#
+# The behavioral leg needs live multi-agent dispatch: slow, nondeterministic,
+# and explicitly NOT a merge precondition (issue #204, "Note on sequencing").
+# The deterministic leg is required-clauses.txt, asserted by
+# tests/test-reviewer-dispatch-brief.sh and run in CI.
+base=5076a7ddfd74c6660dac2a7130704b8903d5acd5^
+head=5076a7ddfd74c6660dac2a7130704b8903d5acd5
