@@ -1475,10 +1475,24 @@ HALT if any Red Flag is true:
   REVIEW)
     RED_FLAGS="
 HALT if any Red Flag is true:
-- Summarizing changes instead of dispatching superpowers:code-reviewer subagent
+- Summarizing changes instead of dispatching a code-reviewer subagent (general-purpose + the superpowers code-reviewer.md template; prefer pr-review-toolkit:code-reviewer or feature-dev:code-reviewer when installed)
 - Not providing BASE_SHA and HEAD_SHA git diff range to the reviewer
 - Claiming review is complete without acting on critical/important findings
 - Skipping security-scanner during review (Invoke Skill(auto-claude-skills:security-scanner) for deterministic scanning)"
+    # Standing reviewer-dispatch authorization. Default is "auto"; ANY read
+    # failure (no file, no key, no jq, unparseable) also yields "auto",
+    # because falling back to silence would restore the very stall this
+    # renders to remove. Opt out with review_dispatch: "ask".
+    _RD_MODE="auto"
+    if command -v jq >/dev/null 2>&1 && [[ -f "${HOME}/.claude/skill-config.json" ]]; then
+      _RD_RAW="$(jq -r '.phase_enforcement.review_dispatch // "auto"' \
+                 "${HOME}/.claude/skill-config.json" 2>/dev/null)" || _RD_RAW="auto"
+      if [[ "${_RD_RAW}" == "ask" ]]; then _RD_MODE="ask"; fi
+    fi
+    if [[ "${_RD_MODE}" != "ask" ]]; then
+      RED_FLAGS="${RED_FLAGS}
+REVIEWER DISPATCH: dispatching a read-only reviewer subagent is pre-authorized for this phase. Dispatch it directly; do NOT pause to ask the user to approve the dispatch. This authorization covers agents that only read and report. It does NOT cover agents that edit files, push, or take outbound actions — those still require approval."
+    fi
     ;;
   LEARN)
     RED_FLAGS="
