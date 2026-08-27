@@ -482,6 +482,96 @@ eq "a missing --verdict value exits non-zero" "1" \
 eq "a missing --reason value exits non-zero"  "1" \
    "$( ( ulimit -t 5; "$SCRIPT" someid --verdict true_catch --reason >/dev/null 2>&1 ); echo $? )"
 
+# ---------------------------------------------------------------------------
+# would_block is the rate population (#213 follow-up).
+#
+# CLAUDE.md: "Any false-block rate over the log MUST filter
+# select(.would_block == true)". The script had ZERO references to the field:
+# _episodes() pooled every record, so --status reported a denominator that
+# included attested non-blocks — records that BY CONSTRUCTION cannot be a false
+# block — and --next queued them for adjudication. Measured on the live corpus:
+# 17 records, 2 would_block:true, 15 attested. Diluting the denominator biases
+# the rate toward CLEARING the deny-flip, which is the unsafe direction.
+#
+# The attested records are NOT junk — #169 added them so the corpus could
+# observe how often ATTESTATION rather than real work satisfied the leg. So they
+# must stay VISIBLE while being excluded from the rate. That is why the filter
+# is not inside _episodes(): it is shared, and filtering there would erase them.
+# ---------------------------------------------------------------------------
+recwb() { # recwb <id> <ts> <repo> <branch> <token> <would_block-json>
+  printf '{"record_id":"%s","ts":"%s","repo":"%s","branch":"%s","session_token":"%s","predicate_version":2,"action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"attested","transcript_path":"/tmp/t.jsonl","gate":"push-implement","would_block":%s,"schema_version":3}\n' \
+    "$1" "$2" "$3" "$4" "$5" "$6" >> "$IMPLEMENT_SHADOW_LOG"
+}
+recnowb() { # a record with NO would_block field at all
+  printf '{"record_id":"%s","ts":"%s","repo":"%s","branch":"%s","session_token":"%s","predicate_version":2,"action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"none","transcript_path":"/tmp/t.jsonl","gate":"push-implement","schema_version":3}\n' \
+    "$1" "$2" "$3" "$4" "$5" >> "$IMPLEMENT_SHADOW_LOG"
+}
+status() { "$SCRIPT" --status 2>/dev/null; }
+
+# An attested record must never be offered for adjudication: labelling it is
+# meaningless work, and a verdict on it cannot inform a false-block rate.
+: > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
+recwb w1 "2026-08-01T10:00:00Z" "/repo/A" "feat/x" "tok1" false
+eq "--next does NOT offer an attested (would_block:false) record" "" \
+   "$("$SCRIPT" --next 2>/dev/null | grep -c '^w1' | tr -d ' ' | sed 's/^0$//')"
+
+# ...but a would-block record IS offered.
+: > "$IMPLEMENT_SHADOW_LOG"
+recwb w2 "2026-08-01T10:00:00Z" "/repo/A" "feat/x" "tok1" true
+eq "--next DOES offer a would_block:true record" "1" \
+   "$("$SCRIPT" --next 2>/dev/null | grep -c '^w2' | tr -d ' ')"
+
+# The two populations are reported separately: the rate population, and the
+# attestation observation #169 exists to collect.
+: > "$IMPLEMENT_SHADOW_LOG"
+recwb b1 "2026-08-01T10:00:00Z" "/repo/A" "feat/x" "tokA" true
+recwb a1 "2026-08-01T11:00:00Z" "/repo/A" "feat/y" "tokB" false
+recwb a2 "2026-08-01T12:00:00Z" "/repo/A" "feat/z" "tokC" false
+eq "status reports the would-block population"      "1" "$(status | grep -c 'would-block  *1')"
+eq "status reports the attestation-only population" "1" "$(status | grep -c 'attestation-only  *2')"
+
+# The rate's denominator must not include attestation-only episodes.
+# One would-block episode adjudicated => have 1, not 3.
+adj b1 true_catch "x" >/dev/null
+eq "the rate denominator counts would-block episodes only" "1" \
+   "$(status | grep -c 'have 1)')"
+
+# MIXED EPISODE — a rule DEFINED, not discovered: an episode is a would-block
+# episode if ANY of its records would have blocked. "any" is used precisely
+# because it is anchor-independent: _episodes() anchors episode_id on the FIRST
+# record by timestamp, so a rule reading only the anchor would classify the same
+# episode differently depending on arrival order. Both orders are asserted.
+: > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
+recwb m1 "2026-08-01T10:00:00Z" "/repo/A" "feat/m" "tokM" true
+recwb m2 "2026-08-01T10:05:00Z" "/repo/A" "feat/m" "tokM" false
+eq "mixed episode (would-block FIRST) counts as would-block" "1" \
+   "$(status | grep -c 'would-block  *1')"
+: > "$IMPLEMENT_SHADOW_LOG"
+recwb m3 "2026-08-01T10:00:00Z" "/repo/A" "feat/m" "tokM" false
+recwb m4 "2026-08-01T10:05:00Z" "/repo/A" "feat/m" "tokM" true
+eq "mixed episode (attested FIRST) counts as would-block too" "1" \
+   "$(status | grep -c 'would-block  *1')"
+
+# A missing/malformed would_block must be REPORTED as an exclusion, never
+# coerced to false. Folding an unknown into the attested population would hide
+# it in the bucket that looks safe, which is the bias this whole change removes.
+: > "$IMPLEMENT_SHADOW_LOG"
+recnowb x1 "2026-08-01T10:00:00Z" "/repo/A" "feat/x" "tokX"
+eq "a record with no would_block field is reported as excluded" "1" \
+   "$(status | grep -c 'malformed would_block')"
+eq "...and is NOT silently counted as attestation-only" "0" \
+   "$(status | grep -c 'attestation-only  *1')"
+
+# DIVERSITY FLOOR — must also be computed over would-block episodes only.
+# Otherwise attestation observations satisfy the >=2-repo requirement while zero
+# real false-block evidence spans repos.
+: > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
+recwb d1 "2026-08-01T10:00:00Z" "/repo/A" "feat/x" "tokA" true
+recwb d2 "2026-08-01T11:00:00Z" "/repo/B" "feat/y" "tokB" false
+adj d1 true_catch "x" >/dev/null
+eq "an attested episode in repo B does NOT satisfy the 2-repo floor" "1" \
+   "$(status | grep -c 'have 1)$')"
+
 echo
 echo "Tests run: $(( PASS + FAIL ))  passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
