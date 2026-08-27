@@ -12,13 +12,26 @@ _INPUT="$(cat)"
 # first — a path cannot contain \x1f, the command may contain anything).
 _COMMAND=""
 _TRANSCRIPT=""
+# Recorded here because the accumulator that carries degradation notes is not
+# defined yet, and this is the only place the answer is known cheaply. Every
+# check that READS RECORDED EVIDENCE parses it with jq, and all seven deny
+# sites emit via `jq -n` — so without jq this hook cannot reach a trustworthy
+# conclusion AND cannot deny even if it could. That is the whole of issue
+# #213: it did so in silence.
+_JQ_OK=true
 if command -v jq >/dev/null 2>&1; then
     _FIELDS="$(printf '%s' "${_INPUT}" | jq -r '[.transcript_path // "", .tool_input.command // ""] | join("\u001f")' 2>/dev/null)" || _FIELDS=""
     _TRANSCRIPT="${_FIELDS%%$'\x1f'*}"
     _COMMAND="${_FIELDS#*$'\x1f'}"
 else
+    _JQ_OK=false
     # Fallback: grep for command field (may miss commands with embedded quotes)
     _COMMAND="$(printf '%s' "${_INPUT}" | grep -o '"command" *: *"[^"]*"' | head -1 | sed 's/"command" *: *"//;s/"$//')" || true
+    # transcript_path too, so a token can at least resolve. NECESSARY BUT NOT
+    # SUFFICIENT on its own (#213): with a token resolved the guard still checks
+    # no verdict it can trust, because state reads all parse with jq. Done so the
+    # session is correctly identified in the advisory that now fires below.
+    _TRANSCRIPT="$(printf '%s' "${_INPUT}" | grep -o '"transcript_path" *: *"[^"]*"' | head -1 | sed 's/"transcript_path" *: *"//;s/"$//')" || true
 fi
 
 # Cheap pre-filter: only a command mentioning "git" can be a git write, and
@@ -107,6 +120,53 @@ _degraded_text() {
 # _emit_advisory <text> — the ONE place that knows how to put advisory text on
 # stdout. Factored out rather than duplicated: issue #166 exists because the
 # rule for what an action may surface lived in two places and diverged.
+# _json_escape — make arbitrary text safe inside a JSON string, for the no-jq
+# emitters only. The previous `tr '\n"' ' '` dropped newlines and quotes but NOT
+# backslashes, and both emitters interpolate ${_PLUGIN_ROOT}: a plugin installed
+# under a path containing a backslash produced UNPARSEABLE JSON, the harness
+# dropped the object, and the guard was silent again — inside the very code path
+# that exists to stop it being silent (measured, #213). The final `_WARNINGS`
+# emitter was worse still: it stripped only newlines, so an embedded quote broke
+# it, and one live note already contains \"warn\".
+#
+# Backslash MUST be escaped before the quote, or the backslash pass would escape
+# the escapes the quote pass just added. Control characters are replaced rather
+# than escaped: this is an advisory string, and \u00XX handling is not worth
+# hand-rolling in Bash 3.2.
+#
+# The class is [:cntrl:], NOT just \n\r\t. JSON forbids every unescaped byte
+# below 0x20, so a first cut naming only those three left a raw BEL emitting
+# output that `jq -e .` rejects — the harness drops the object and the guard is
+# silent again, which is the exact failure this helper exists to prevent, merely
+# rarer. Found by feeding the real helper adversarial input rather than by
+# reading it. BSD tr supports the class (verified on this platform).
+_json_escape() {
+    printf '%s' "${1:-}" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '[:cntrl:]' ' '
+}
+# _emit_deny <message> — the ONE way this hook emits a deny (#213).
+#
+# All seven deny sites used a bare `jq -n`, so without jq a gate that had ALREADY
+# DECIDED to deny died at the emitter: `jq: command not found`, ERR trap, exit 0,
+# empty stdout — the decision was reached and then thrown away, which reads to
+# the harness as an allow. Measured: with a committed routing diff and no jq, the
+# routing-governance deny vanished exactly this way.
+#
+# Note this is NOT the same class as the advisory: a leg that cannot RUN must
+# fall open, but a leg that ran and concluded "deny" must be able to say so.
+# mutate-then-push WOULD be the one deny that could legitimately fire without jq
+# — its predicate is pure string detection — were it not for its own long-standing
+# `command -v jq` block guard. So its deny was never REACHED without jq, and never
+# lost. Saying otherwise (an earlier draft did) contradicts the CHANGELOG entry
+# for this very change.
+_emit_deny() {
+    if command -v jq >/dev/null 2>&1; then
+        jq -n --arg msg "${1:-}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+    else
+        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"%s"}\n' \
+            "$(_json_escape "${1:-}")"
+    fi
+    return 0
+}
 _emit_advisory() {
     [ -n "${1:-}" ] || return 0
     if command -v jq >/dev/null 2>&1; then
@@ -114,7 +174,7 @@ _emit_advisory() {
             '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":$msg}}'
     else
         printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' \
-            "$(printf 'PUSH GATE (advisory): %s' "$1" | tr '\n"' ' ')"
+            "$(_json_escape "PUSH GATE (advisory): $1")"
     fi
     return 0
 }
@@ -282,6 +342,28 @@ _SESSION_TOKEN=""
 # `|| true` alone leaves a partially-sourced lib with the resolver undefined, and
 # the command-not-found on the next line trips the very same ERR trap. The flag
 # is what makes the `else` fallback reachable on a failed source.
+# #213: jq missing => this hook can neither CHECK nor DENY. Every check that
+# reads recorded evidence parses it with jq, and all seven deny sites emit
+# through `jq -n`, so the guard walks its whole length and concludes nothing
+# it can trust. Recorded as a degradation
+# note here — after the fast path, so only genuinely gated commands carry it,
+# and before token resolution, so it is present at the empty-token exit below.
+#
+# This is the SECOND path licensed to say a command was not gated (CLAUDE.md
+# reserves that wording for the empty-token exit). The licence is warranted for
+# a stronger reason than anywhere else: elsewhere "nothing was gated" is an
+# overstatement because the composition-chain checks read `.completed` with jq
+# and need no lib — but here it is jq ITSELF that is missing, so those checks
+# are gone too. There is no leg left running to overstate.
+if [ "${_JQ_OK}" != true ]; then
+    # Wording matters here because this is USER-FACING. An earlier cut said
+    # "every gate body requires jq", which is false — routing-governance is
+    # gated on the verdict LIB, not on jq, and that is exactly how it reached a
+    # deny it could not emit. The accurate statement is about state: every check
+    # that consults recorded evidence parses it with jq, so none of them can
+    # reach a trustworthy conclusion without it.
+    _degraded_note "jq is not on PATH, so no push-gate check could reach a trustworthy conclusion and no deny could be emitted — every check that reads recorded evidence parses it with jq, and every deny is serialised with it. This command was NOT gated. Install jq to restore the gate."
+fi
 _TOKEN_LIB_OK=false
 if [ -f "${_PLUGIN_ROOT}/hooks/lib/session-token.sh" ]; then
     _guard_load "${_PLUGIN_ROOT}/hooks/lib/session-token.sh" && \
@@ -313,7 +395,14 @@ if [ -z "${_SESSION_TOKEN}" ]; then
     # `.completed` checks, so "nothing was gated" is literally true here and
     # nowhere else.
     _dt="$(_degraded_text)"
-    if [ "${_TOKEN_LIB_OK}" != true ] && [ -n "${_dt}" ]; then
+    # The jq arm is NOT redundant with the token arm (#213). Without jq the
+    # token lib is perfectly healthy — it simply never got a transcript to work
+    # from — so _TOKEN_LIB_OK is true and this exit classified the case as the
+    # ordinary "not a driven session" one and said nothing. The single state
+    # that most warrants "nothing was gated" was the one state that suppressed
+    # it. The jq note already carries that sentence, so only the token arm
+    # appends here.
+    if [ -n "${_dt}" ] && [ "${_TOKEN_LIB_OK}" != true ]; then
         _dt="${_dt} No session token could be resolved at all (no singleton either), so the ENTIRE push gate was skipped and this command was not gated."
     fi
     _emit_advisory "${_dt}"
@@ -414,7 +503,7 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
            && [ "${#_COMMAND}" -le "${_GC_MAX}" ] \
            && command_git_mutate_before_push "${_COMMAND}"; then
             _MSG="PUSH GATE: this command mutates history (commit/merge/rebase/cherry-pick/revert/am) and pushes in ONE command. The gate evaluates evidence for the CURRENT commit, so the pushed result would be unverified. Run the mutation first, re-run verification if content changed, then run git push as a separate command."
-            jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+            _emit_deny "${_MSG}"
             _DECISION="deny:mutate-then-push"
             exit 0
         fi
@@ -635,7 +724,7 @@ EOF
             [ "${_review_completed}" = "false" ] && _bridge_has "requesting-code-review" && _review_completed=true
             if [ "${_review_in_chain}" = "true" ] && [ "${_review_completed}" = "false" ]; then
                 _MSG="PUSH GATE — Expected: REVIEW → VERIFY → SHIP completed before push. Actual: requesting-code-review has not run on this chain. Do now: invoke Skill(superpowers:requesting-code-review), then retry the denied command."
-                jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+                _emit_deny "${_MSG}"
                 _DECISION="deny:chain-review"
                 exit 0
             fi
@@ -728,7 +817,7 @@ EOF
             [ "${_verif_completed}" = "false" ] && _bridge_has "verification-before-completion" && _verif_completed=true
             if [ "${_verif_in_chain}" = "true" ] && [ "${_verif_completed}" = "false" ]; then
                 _MSG="PUSH GATE — Expected: verification-before-completion completed before push. Actual: it has not run on this active chain. Do now: invoke Skill(superpowers:verification-before-completion), then retry the denied command."
-                jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+                _emit_deny "${_MSG}"
                 _DECISION="deny:chain-verify"
                 exit 0
             fi
@@ -932,12 +1021,20 @@ EOF
             # was measured at, so we require sha == HEAD (not merely ancestor): an
             # ancestor/stale/cross-branch/absent verdict => no denial (a later HEAD may
             # be fixed). This is the false-block guard.
-            if [ "${_VERDICT_OK}" = "true" ] && [ "${_verif_in_chain}" = "true" ] \
+            # `_JQ_OK` is explicit here for the same reason it is on
+            # routing-governance (#213), even though this leg is currently safe
+            # without it: both its predicates read the verdict artifact with jq and
+            # so answer "no" when jq is missing, which happens to fall toward allow.
+            # That safety is INCIDENTAL — it depends on which way two jq-dependent
+            # predicates happen to fail — and relying on an accident is precisely
+            # how routing-governance came to deny on a verdict it could not read.
+            # Stating the precondition costs nothing and changes no behaviour.
+            if [ "${_JQ_OK}" = "true" ] && [ "${_VERDICT_OK}" = "true" ] && [ "${_verif_in_chain}" = "true" ] \
                && verdict_sha_is_head "${_VERDICT_TOKEN}" "" \
                && verdict_has_test_failure "${_VERDICT_TOKEN}"; then
                 _gates="$(verdict_failing_gates "${_VERDICT_TOKEN}")" || true
                 _MSG="PUSH GATE: verification-before-completion is recorded, but the verification verdict at HEAD reports failing gate(s): ${_gates}. Fix and re-run Skill(auto-claude-skills:project-verification) before retrying."
-                jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+                _emit_deny "${_MSG}"
                 _DECISION="deny:verify-hardening"
                 exit 0
             fi
@@ -994,7 +1091,7 @@ EOF
                 [ "${_g_verify}" = "false" ] && _need="${_need}${_need:+ and }verification-before-completion"
                 _MSG="PUSH GATE (fail-closed): ${_GATE_ACTION} requires ${_need} to have run, but no record exists for it on this branch. Invoke the missing Skill(s) and let them complete, then retry. To bypass intentionally: run the command from your own terminal, or relaunch Claude Code with ACSM_SKIP_PUSH_GATE=1 set in its environment."
                 # jq presence is guaranteed by the block guard above.
-                jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+                _emit_deny "${_MSG}"
                 _DECISION="deny:global-failclosed"
                 exit 0
             fi
@@ -1040,7 +1137,7 @@ EOF
                     _PE_MSG="PHASE GATE (outbound): this chain-covered ${_GATE_ACTION} has no evidence for '${_pe_missing}'. Invoke Skill(superpowers:${_pe_missing}) or record an explicit skip (phase_attest ${_pe_missing} \"<reason>\") before shipping."
                     [ "${PUSH_GATE_CAPTURE_REPLAY:-}" != "1" ] && command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "outbound" "${_pe_mode}" "${_pe_action}" "${_pe_missing}"
                     if [ "${_pe_mode}" = "deny" ]; then
-                        jq -n --arg msg "${_PE_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+                        _emit_deny "${_PE_MSG}"
                         _DECISION="deny:phase-enforcement"
                         exit 0
                     fi
@@ -1065,7 +1162,16 @@ EOF
         # Push-only by design: the origin/main...HEAD delta describes the LOCAL
         # branch, which for `gh pr merge <other>` is unrelated — extending the
         # check to merges would compare the wrong branch (see F2 design doc).
-        if [ "${_PUSHGATE_SKIP}" != "true" ] && [ "${_gc_is_push}" = "true" ] && [ "${_VERDICT_OK}" = "true" ]; then
+        # `_JQ_OK` is part of the precondition, not decoration (#213). This leg is
+        # gated on the LIB loading, not on jq — so without jq it still ran, and
+        # every verdict predicate under it reads the artifact with jq and therefore
+        # returned "not clean" for want of a parser rather than for want of a
+        # verdict. It then denied. That is a false block manufactured by the
+        # missing tool, and it violates the invariant the whole gate is built on:
+        # a check that cannot run must never block. Skipping here is correct; the
+        # jq degradation note already tells the user this leg did not run.
+        if [ "${_PUSHGATE_SKIP}" != "true" ] && [ "${_gc_is_push}" = "true" ] \
+           && [ "${_JQ_OK}" = "true" ] && [ "${_VERDICT_OK}" = "true" ]; then
             # _proot resolved once above, alongside _VERDICT_TOKEN.
             if is_routing_repo "${_proot}" && diff_touches_routing "${_proot}"; then
                 if verdict_is_clean "${_VERDICT_TOKEN}" && verdict_covers_head "${_VERDICT_TOKEN}" "${_proot}" \
@@ -1081,7 +1187,7 @@ EOF
                     # No clean covering verdict, OR the clean verdict is an ancestor and
                     # routing files CHANGED after it (an unverified routing delta) — deny.
                     _MSG="PUSH GATE (routing governance): this push modifies routing files (skills/, config/, or hooks/) but no clean verification verdict covering these changes exists. Run Skill(auto-claude-skills:project-verification) until it reports a clean verdict, then push."
-                    jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+                    _emit_deny "${_MSG}"
                     _DECISION="deny:routing-governance"
                     exit 0
                 fi
@@ -1313,7 +1419,10 @@ if [ -n "${_WARNINGS}" ]; then
     if command -v jq >/dev/null 2>&1; then
         jq -n --arg msg "${_WARNINGS}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":$msg}}'
     else
-        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$(printf '%s' "${_WARNINGS}" | tr '\n' ' ')"
+        # Same escaping as _emit_advisory (#213): this branch stripped only
+        # newlines, so a quote in any warning — and one degradation note carries
+        # \"warn\" — produced unparseable JSON that the harness silently drops.
+        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$(_json_escape "${_WARNINGS}")"
     fi
 fi
 exit 0
