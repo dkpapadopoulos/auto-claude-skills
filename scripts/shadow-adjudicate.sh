@@ -241,7 +241,11 @@ cmd_next() {
     # which the renderer must report as "not recorded" rather than print blank —
     # a schema-2 record genuinely has no per-leg data, and that is different
     # from every leg having been checked.
+    # Adjudicating an attested record is meaningless work — a verdict on it can
+    # never inform a false-block rate — so it is never offered. Type-checked for
+    # the same reason as _episode_wb: a JSON string "true" must not qualify.
     _line="$(_shadow_tsv 'select((.ts // "") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
+              | select(has("would_block") and ((.would_block|type) == "boolean") and .would_block == true)
               | [.record_id,.ts,.repo,.branch,.action,.diff_base,
                  (.impl_in_chain|tostring),(.material_source|tostring),
                  .impl_evidence_kind,.transcript_path,
@@ -323,6 +327,65 @@ cmd_next() {
 # verdict layer, and it biases AGAINST flipping the gate.
 # Claimant is "agent" only when NO human-claimed adjudication exists for the
 # episode — a human re-confirmation re-includes it.
+# _episode_wb <comma-separated record ids> -> yes | no | malformed
+#
+# Which episodes the false-block rate may be computed over. CLAUDE.md has always
+# required `select(.would_block == true)`; this file had ZERO references to the
+# field, so --status pooled attested non-blocks — records that BY CONSTRUCTION
+# cannot be a false block — into the denominator, and --next queued them for
+# adjudication. Measured on the live corpus: 17 records, 2 would-block, 15
+# attested. A diluted denominator biases the rate toward CLEARING the deny-flip,
+# which is the unsafe direction.
+#
+# The filter deliberately lives HERE and in the two callers, NOT inside
+# _episodes(): that function is shared, and filtering there would erase the
+# attested population from --status entirely — which is exactly what #169 added
+# those records to make visible. Excluded from the rate, still reported.
+#
+# THE MIXED-EPISODE RULE IS "ANY", AND THAT IS THE POINT. An episode collapses
+# records sharing (repo, branch, session_token) within the window, so it can in
+# principle hold both kinds. "Any record would have blocked" is used because it
+# is ANCHOR-INDEPENDENT: _episodes() anchors episode_id on the FIRST record by
+# timestamp, so any rule that consulted only the anchor would classify the same
+# episode differently depending on arrival order. Both orders are pinned by test.
+# No mixed episode exists in the corpus today — this is a rule DEFINED in advance
+# rather than discovered later, because an undefined rule is how this instrument
+# came to be wrong in the first place.
+#
+# Membership is read from `would_block` ONLY, never inferred from
+# `impl_evidence_kind`. The two correlate perfectly in today's data, which is
+# precisely the trap: that field is format-frozen and describes EVIDENCE, not
+# rate membership, and coupling them would re-create the implicit contract that
+# broke this reader.
+#
+# A missing or non-boolean value is "malformed", never silently "no": folding an
+# unknown into the population that looks safe is the same bias in miniature.
+_episode_wb() {
+    local _ids="${1:-}" _id _v _sawtrue=false _sawbad=false _oifs
+    [ -n "${_ids}" ] && [ -f "${SHADOW_LOG}" ] || { echo malformed; return 0; }
+    command -v jq >/dev/null 2>&1 || { echo malformed; return 0; }
+    _oifs="$IFS"; IFS=,
+    for _id in ${_ids}; do
+        # Type-checked, not `tostring`: a JSON *string* "true" would otherwise be
+        # indistinguishable from the boolean and would silently join the rate
+        # population.
+        _v="$(jq -r --arg id "${_id}" \
+             'select(.record_id == $id)
+              | if (has("would_block") and ((.would_block|type) == "boolean"))
+                then (.would_block|tostring) else "MALFORMED" end' \
+             "${SHADOW_LOG}" 2>/dev/null | head -1)"
+        case "${_v}" in
+            true)  _sawtrue=true ;;
+            false) ;;
+            *)     _sawbad=true ;;
+        esac
+    done
+    IFS="$_oifs"
+    if [ "${_sawtrue}" = true ]; then echo yes;       return 0; fi
+    if [ "${_sawbad}"  = true ]; then echo malformed; return 0; fi
+    echo no
+}
+
 _episode_verdict() {
     local _ids="${1:-}" _v="unlabeled" _claim="agent" _has_human=0 _id _rows
     local _latest _rv _rc
@@ -360,6 +423,7 @@ _episode_verdict() {
 # cmd_status — episode-level readout. Observational; always exits 0.
 cmd_status() {
     local _tot=0 _lab=0 _fb=0 _tc=0 _unk=0 _agent=0 _unlab=0 _v1=0
+    local _wbep=0 _attep=0 _malwb=0 _wb
     local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
     local _den _wc_k _wc_n _band_hdl _band_wc
     local _badts=0 _unparsed=0 _lines=0 _parsed=0
@@ -394,6 +458,18 @@ cmd_status() {
     while IFS="$(printf '\037')" read -r _eid _repo _branch _tok _ids; do
         [ -z "${_eid:-}" ] && continue
         _tot=$(( _tot + 1 ))
+        # Rate membership first. Everything below this point — adjudicated,
+        # agent-claimed, the verdict counts AND the repo-diversity set — is
+        # would-block-only. The diversity floor matters as much as the rate: if
+        # attestation episodes could satisfy >=2 repos, the corpus would clear
+        # the diversity requirement with zero false-block evidence spanning
+        # repos, which is the same dilution one level up.
+        _wb="$(_episode_wb "${_ids}")"
+        case "${_wb}" in
+            yes) _wbep=$(( _wbep + 1 )) ;;
+            no)  _attep=$(( _attep + 1 )); continue ;;
+            *)   _malwb=$(( _malwb + 1 )); continue ;;
+        esac
         _vc="$(_episode_verdict "${_ids}")"
         _v="$(printf '%s' "${_vc}" | sed -n 1p)"
         _c="$(printf '%s' "${_vc}" | sed -n 2p)"
@@ -419,6 +495,10 @@ EOF
     _nrepos="$(printf '%s' "${_repos}" | grep -c . )"
     echo "IMPLEMENT shadow corpus — predicate_version ${REQUIRED_PREDICATE_VERSION}"
     printf '  episodes          %s\n' "${_tot}"
+    printf '  would-block       %s   <- the ONLY population the rate is computed over\n' "${_wbep}"
+    printf '  attestation-only  %s   <- observation (#169): attestation satisfied the leg; cannot contain a false block\n' "${_attep}"
+    [ "${_malwb}" -gt 0 ] && \
+        printf '  malformed would_block %s   <- excluded: field missing or not boolean; NOT counted as attestation-only\n' "${_malwb}"
     printf '  adjudicated       %s   (human-claimed)\n' "${_lab}"
     printf '  agent-claimed     %s   <- excluded until a human re-confirms\n' "${_agent}"
     printf '  unadjudicated     %s\n' "${_unlab}"
