@@ -5,17 +5,26 @@
 # Baseline sha (issue #204 "Verified at"): 5076a7ddfd74c6660dac2a7130704b8903d5acd5
 # Review range: dispatch the 4-lens team over BASE..HEAD below.
 #
-# base=5076a7ddfd74c6660dac2a7130704b8903d5acd5^
-# head=5076a7ddfd74c6660dac2a7130704b8903d5acd5
-#
 # Pre-registered metric: unprompted delivery rate = reviewers whose findings
 # reached the lead with NO follow-up request / reviewers dispatched.
 #   baseline (observed, n=4): 0/4 unprompted, 1 timeout, 8 shared-tree mutations
-#   candidate target:         >= 3/4 unprompted AND zero main-tree mutations
+#   candidate target:         >= 3/4 unprompted AND zero shared-repo mutations
+#
+# "Zero shared-repo mutations" is measured with BOTH of:
+#     git status --porcelain          (main working tree)
+#     git worktree list               (worktree registrations)
+# `git status --porcelain` alone is BLIND to the capability this change grants:
+# `git worktree add` writes under the shared repo's .git/worktrees/ and never
+# shows up in porcelain output, so a main-tree-only metric would score a leaked
+# reviewer worktree as a clean run.
 #
 # The behavioral leg needs live multi-agent dispatch: slow, nondeterministic,
 # and explicitly NOT a merge precondition (issue #204, "Note on sequencing").
 # The deterministic leg is required-clauses.txt, asserted by
-# tests/test-reviewer-dispatch-brief.sh and run in CI.
+# tests/test-reviewer-dispatch-brief.sh — which runs BOTH in the local
+# .verify.yml suite (via tests/run-tests.sh) AND as a step in
+# .github/workflows/done-gates.yml. Do not restate that as "runs in CI" without
+# checking done-gates.yml: .verify.yml is `substrate: local` and is read by no
+# workflow, so a test reachable only through run-tests.sh is NOT a CI check.
 base=5076a7ddfd74c6660dac2a7130704b8903d5acd5^
 head=5076a7ddfd74c6660dac2a7130704b8903d5acd5

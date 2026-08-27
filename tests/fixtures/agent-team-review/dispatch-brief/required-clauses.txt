@@ -5,6 +5,15 @@
 # so a clause stated once in the protocol prose reaches nobody — the assertion
 # is deliberately per-block, not whole-file.
 #
+# THIS FILE IS NOT THE SOLE AUTHORITY. tests/test-reviewer-dispatch-brief.sh
+# independently hardcodes the issue-#204 clause anchors and asserts they are
+# present HERE, so deleting a needle fails the gate instead of silently deleting
+# an assertion. Adding needles is safe; removing one is not.
+#
+# A needle must stay on ONE physical line in SKILL.md. Re-wrapping a prompt
+# bullet across lines breaks the literal match and fails the gate — that is the
+# safe direction (false FAIL, never false PASS), but reflow deliberately.
+#
 # Provenance: issue #204, from memory/background-reviewers-need-explicit-report-request.md
 # (observed 2026-08-12/14: 4 reviewers dispatched, 3 went idle with no findings and
 # reported only when asked, 1 timed out and delivered nothing; separately one
@@ -23,8 +32,12 @@ SendMessage to `main`
 
 # --- Clause 4: own worktree for any reviewer that RUNS or MUTATES ---
 git worktree add --detach
+mktemp -d
+Never write to the shared working tree
+Confirm your worktree matches the subject
 
 # --- Safety / no-regression: the delivery metric must not be gameable ---
-Read-only: do NOT modify any files
+Read-only in the shared tree
+do NOT modify any files
 do not manufacture findings
 VERIFIED by running from what you INFERRED by reading

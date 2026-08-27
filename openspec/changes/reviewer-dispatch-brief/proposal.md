@@ -45,8 +45,14 @@ Two facts make the reviewer-side clauses load-bearing rather than decorative:
    findings", which keeps the delivery metric from being gamed by fabrication.
 
 2. **An own-worktree rule in every lens's `## Rules`** — any reviewer that RUNS or MUTATES
-   anything (tests, builds, mutation testing) must `git worktree add --detach` first and
-   never write to the shared tree. Paired with a verified-vs-inferred labelling rule.
+   anything (tests, builds, mutation testing) must `git worktree add --detach` into a
+   `mktemp -d` path first and never write to the shared tree. The path must be unique per
+   invocation: lens names are constants, so a fixed `/tmp/review-<lens>` fails with
+   `fatal: already exists` the moment the lead re-dispatches a timed-out reviewer, which
+   the lead-side protocol mandates. The reviewer must also confirm its worktree matches the
+   subject — a detached worktree does not carry the shared tree's uncommitted changes, so
+   running against it and reporting VERIFIED would name a different tree. Paired with a
+   verified-vs-inferred labelling rule.
 
    The clauses live **in each prompt, not in the protocol prose**, because a reviewer
    subagent only ever sees its own prompt.
@@ -68,7 +74,17 @@ Two facts make the reviewer-side clauses load-bearing rather than decorative:
 
 6. **Deterministic gate** `tests/test-reviewer-dispatch-brief.sh` — asserts every clause in
    **every** lens block, scoped per block so a clause stated once cannot satisfy four
-   reviewers, plus the lead-side protocol and the no-regression clauses.
+   reviewers, plus the lead-side protocol (scoped to Protocol §3) and the no-regression
+   clauses. The gate is a **second authority**, not a fixture reader: it hardcodes the #204
+   clause anchors and asserts the fixture still carries them, because with the fixture as
+   sole authority a deleted needle silently deletes its own assertion. It derives the lens
+   population from the skill rather than hardcoding four, and compares the four Delivery
+   Contract blocks byte-for-byte, since drift is duplication's one cost.
+
+7. **Registered in CI** — added to `.github/workflows/done-gates.yml` and pinned by
+   `tests/test-done-gate-ci.sh`. This was a claim before it was true: `.verify.yml` is
+   `substrate: local` and is read by no workflow, so a test reachable only through
+   `tests/run-tests.sh` is not a CI check.
 
 ## Capabilities
 
@@ -87,7 +103,8 @@ Two facts make the reviewer-side clauses load-bearing rather than decorative:
 ## Sequencing: why the behavioral leg is not a merge precondition
 
 The A/B contract in #204 has two legs. The deterministic leg (every lens prompt carries
-every clause) is cheap, runs in CI, and lands with the prompt edit. The behavioral leg
+every clause) is cheap and lands with the prompt edit — and is registered as a
+`done-gates.yml` step so that "runs in CI" is a fact rather than a claim. The behavioral leg
 (dispatch the 4-lens team over the pinned range and measure unprompted delivery ≥ 3/4 with
 zero main-tree mutations) requires live multi-agent dispatch: slow, nondeterministic, and
 explicitly optional evidence per the issue. Its subject is pinned in `pinned-range.txt` so a

@@ -82,6 +82,12 @@ looking duplicates work that is already done.
 review is not `clean` — record `--verdict could-not-review` (see "Record the Review Verdict")
 and say which lens is missing. Silence and "we could not review" are different states.
 
+**Reap the reviewers' worktrees before TeamDelete.** A reviewer that timed out or was killed
+never ran its own `git worktree remove`, and `git worktree add` registers under the shared
+repo's `.git/worktrees/` — which `git status --porcelain` cannot see, so a leak is invisible
+to the main-tree cleanliness check. Run `git worktree list`, remove any left by this round,
+then `git worktree prune`.
+
 ### 4. Lead Synthesis
 
 After collecting the reports per §3 — including any lens recorded as uncovered:
@@ -165,7 +171,8 @@ Task tool (general-purpose):
 
     ## Delivery Contract (read this first)
     - Time-box yourself to 15 minutes of review, then REPORT EVEN IF INCOMPLETE: send
-      what you have via SendMessage to `main` and name what you did NOT cover. Partial
+      what you have via SendMessage to `main` (or the lead address your brief names)
+      and name what you did NOT cover. Partial
       honest coverage beats a timeout that delivers nothing.
     - Deliver unprompted. Send the report BEFORE you go idle or end your turn. Your
       final text is a return value, not a message to the lead, and an idle notification
@@ -193,12 +200,21 @@ Task tool (general-purpose):
     Files changed: {files}
 
     ## Rules
-    - Read-only: do NOT modify any files
-    - Own worktree for anything that executes or mutates: if your lens needs to run
-      tests, builds, or mutation testing, first `git worktree add --detach
-      /tmp/review-<your-name> HEAD`, work only there, and remove it when done.
+    - Read-only in the shared tree: do NOT modify any files there.
+    - Own worktree for anything that executes or mutates. If your lens needs to run
+      tests, builds, or mutation testing, make a PRIVATE one first:
+      `W="$(mktemp -d)/wt" && git worktree add --detach "$W" <the HEAD sha in your
+      Context>`. Never a fixed path like `/tmp/review-<lens>`: a re-dispatched
+      reviewer carries the same name, so a fixed path fails with `fatal: already
+      exists` on its first command, and two overlapping rounds collide the same way.
+      Work only inside `$W`, then `git worktree remove "$W"`.
       Never write to the shared working tree — another agent's test suite may be
       running against it.
+    - Confirm your worktree matches the subject before trusting anything you RUN in
+      it. A detached worktree does NOT carry the shared tree's uncommitted changes,
+      so if the diff under review is uncommitted your worktree is a DIFFERENT tree.
+      Say so and review by reading rather than labelling a run against the wrong tree
+      as VERIFIED.
     - Distinguish what you VERIFIED by running from what you INFERRED by reading, and
       label each finding accordingly.
     - Report each finding using the plain-text FINDING format, including the Confidence and Evidence fields
@@ -216,7 +232,8 @@ Task tool (general-purpose):
 
     ## Delivery Contract (read this first)
     - Time-box yourself to 15 minutes of review, then REPORT EVEN IF INCOMPLETE: send
-      what you have via SendMessage to `main` and name what you did NOT cover. Partial
+      what you have via SendMessage to `main` (or the lead address your brief names)
+      and name what you did NOT cover. Partial
       honest coverage beats a timeout that delivers nothing.
     - Deliver unprompted. Send the report BEFORE you go idle or end your turn. Your
       final text is a return value, not a message to the lead, and an idle notification
@@ -247,12 +264,21 @@ Task tool (general-purpose):
     Files changed: {files}
 
     ## Rules
-    - Read-only: do NOT modify any files
-    - Own worktree for anything that executes or mutates: if your lens needs to run
-      tests, builds, or mutation testing, first `git worktree add --detach
-      /tmp/review-<your-name> HEAD`, work only there, and remove it when done.
+    - Read-only in the shared tree: do NOT modify any files there.
+    - Own worktree for anything that executes or mutates. If your lens needs to run
+      tests, builds, or mutation testing, make a PRIVATE one first:
+      `W="$(mktemp -d)/wt" && git worktree add --detach "$W" <the HEAD sha in your
+      Context>`. Never a fixed path like `/tmp/review-<lens>`: a re-dispatched
+      reviewer carries the same name, so a fixed path fails with `fatal: already
+      exists` on its first command, and two overlapping rounds collide the same way.
+      Work only inside `$W`, then `git worktree remove "$W"`.
       Never write to the shared working tree — another agent's test suite may be
       running against it.
+    - Confirm your worktree matches the subject before trusting anything you RUN in
+      it. A detached worktree does NOT carry the shared tree's uncommitted changes,
+      so if the diff under review is uncommitted your worktree is a DIFFERENT tree.
+      Say so and review by reading rather than labelling a run against the wrong tree
+      as VERIFIED.
     - Distinguish what you VERIFIED by running from what you INFERRED by reading, and
       label each finding accordingly.
     - Report each finding using the plain-text FINDING format, including the Confidence and Evidence fields
@@ -270,7 +296,8 @@ Task tool (general-purpose):
 
     ## Delivery Contract (read this first)
     - Time-box yourself to 15 minutes of review, then REPORT EVEN IF INCOMPLETE: send
-      what you have via SendMessage to `main` and name what you did NOT cover. Partial
+      what you have via SendMessage to `main` (or the lead address your brief names)
+      and name what you did NOT cover. Partial
       honest coverage beats a timeout that delivers nothing.
     - Deliver unprompted. Send the report BEFORE you go idle or end your turn. Your
       final text is a return value, not a message to the lead, and an idle notification
@@ -296,12 +323,21 @@ Task tool (general-purpose):
     Files changed: {files}
 
     ## Rules
-    - Read-only: do NOT modify any files
-    - Own worktree for anything that executes or mutates: if your lens needs to run
-      tests, builds, or mutation testing, first `git worktree add --detach
-      /tmp/review-<your-name> HEAD`, work only there, and remove it when done.
+    - Read-only in the shared tree: do NOT modify any files there.
+    - Own worktree for anything that executes or mutates. If your lens needs to run
+      tests, builds, or mutation testing, make a PRIVATE one first:
+      `W="$(mktemp -d)/wt" && git worktree add --detach "$W" <the HEAD sha in your
+      Context>`. Never a fixed path like `/tmp/review-<lens>`: a re-dispatched
+      reviewer carries the same name, so a fixed path fails with `fatal: already
+      exists` on its first command, and two overlapping rounds collide the same way.
+      Work only inside `$W`, then `git worktree remove "$W"`.
       Never write to the shared working tree — another agent's test suite may be
       running against it.
+    - Confirm your worktree matches the subject before trusting anything you RUN in
+      it. A detached worktree does NOT carry the shared tree's uncommitted changes,
+      so if the diff under review is uncommitted your worktree is a DIFFERENT tree.
+      Say so and review by reading rather than labelling a run against the wrong tree
+      as VERIFIED.
     - Distinguish what you VERIFIED by running from what you INFERRED by reading, and
       label each finding accordingly.
     - Report each finding using the plain-text FINDING format, including the Confidence and Evidence fields
@@ -319,7 +355,8 @@ Task tool (general-purpose):
 
     ## Delivery Contract (read this first)
     - Time-box yourself to 15 minutes of review, then REPORT EVEN IF INCOMPLETE: send
-      what you have via SendMessage to `main` and name what you did NOT cover. Partial
+      what you have via SendMessage to `main` (or the lead address your brief names)
+      and name what you did NOT cover. Partial
       honest coverage beats a timeout that delivers nothing.
     - Deliver unprompted. Send the report BEFORE you go idle or end your turn. Your
       final text is a return value, not a message to the lead, and an idle notification
@@ -345,12 +382,21 @@ Task tool (general-purpose):
     Files changed: {files}
 
     ## Rules
-    - Read-only: do NOT modify any files
-    - Own worktree for anything that executes or mutates: if your lens needs to run
-      tests, builds, or mutation testing, first `git worktree add --detach
-      /tmp/review-<your-name> HEAD`, work only there, and remove it when done.
+    - Read-only in the shared tree: do NOT modify any files there.
+    - Own worktree for anything that executes or mutates. If your lens needs to run
+      tests, builds, or mutation testing, make a PRIVATE one first:
+      `W="$(mktemp -d)/wt" && git worktree add --detach "$W" <the HEAD sha in your
+      Context>`. Never a fixed path like `/tmp/review-<lens>`: a re-dispatched
+      reviewer carries the same name, so a fixed path fails with `fatal: already
+      exists` on its first command, and two overlapping rounds collide the same way.
+      Work only inside `$W`, then `git worktree remove "$W"`.
       Never write to the shared working tree — another agent's test suite may be
       running against it.
+    - Confirm your worktree matches the subject before trusting anything you RUN in
+      it. A detached worktree does NOT carry the shared tree's uncommitted changes,
+      so if the diff under review is uncommitted your worktree is a DIFFERENT tree.
+      Say so and review by reading rather than labelling a run against the wrong tree
+      as VERIFIED.
     - Distinguish what you VERIFIED by running from what you INFERRED by reading, and
       label each finding accordingly.
     - Report each finding using the plain-text FINDING format, including the Confidence and Evidence fields

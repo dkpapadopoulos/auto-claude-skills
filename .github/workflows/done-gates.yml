@@ -70,6 +70,14 @@ jobs:
       - name: Skill-content coverage gate
         run: bash tests/test-skill-content-coverage.sh < /dev/null
 
+      # Reviewer dispatch-brief content gate (issue #204). Pure content-grep over
+      # skills/agent-team-review/SKILL.md plus its pinned fixture — fast and
+      # flake-free, the profile this workflow reserves for itself. It is here
+      # because the fixture and the openspec proposal both CLAIM the leg runs in
+      # CI; reachable only via tests/run-tests.sh, that claim was false.
+      - name: Reviewer dispatch-brief gate
+        run: bash tests/test-reviewer-dispatch-brief.sh < /dev/null
+
       # The regression that pins this workflow to the documentation claim.
       - name: Done-gate CI claim is accurate
         run: bash tests/test-done-gate-ci.sh < /dev/null

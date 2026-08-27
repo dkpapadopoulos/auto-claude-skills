@@ -39,15 +39,25 @@ Each reviewer lens prompt MUST require that any reviewer needing to run tests, b
 mutation testing first creates a detached worktree (`git worktree add --detach`), works
 only there, and never writes to the shared working tree.
 
-The existing read-only rule MUST be retained. No reviewer MUST be granted write access to
-the shared tree.
+The existing read-only rule MUST be retained, scoped to the shared tree. No reviewer MUST
+EVER be granted write access to the shared working tree.
+
+The worktree path MUST be unique per invocation (`mktemp -d`), never a fixed
+lens-derived path: lens names are constants, so a re-dispatched reviewer — which the
+lead-side protocol mandates — reuses the name and fails with `fatal: already exists` on
+its first command, as do two overlapping review rounds.
+
+Each prompt MUST require the reviewer to confirm its worktree matches the subject before
+labelling anything VERIFIED, because a detached worktree does not carry the shared tree's
+uncommitted changes and would otherwise be a different tree from the one under review.
 
 #### Scenario: worktree rule present alongside the retained read-only rule
 
 - **GIVEN** any reviewer lens prompt
-- **WHEN** its `## Rules` section is read
-- **THEN** it contains both `Read-only: do NOT modify any files` and a
-  `git worktree add --detach` instruction
+- **WHEN** the prompt is read
+- **THEN** it contains `Read-only in the shared tree`, `do NOT modify any files`,
+  `git worktree add --detach`, `mktemp -d`, `Never write to the shared working tree`, and
+  `Confirm your worktree matches the subject`
 
 ### Requirement: The lead MUST have a defined recovery protocol for idle and errored reviewers
 
@@ -65,12 +75,29 @@ the shared tree.
 The `Verification` section's existing outcome assertion MUST reference this mechanism
 rather than standing alone.
 
-#### Scenario: errored reviewer is not counted as covered
+The lead MUST also reap reviewer worktrees at the end of a round. `git worktree add`
+registers under the shared repo's `.git/worktrees/`, which `git status --porcelain` cannot
+observe, so a reviewer killed before its own cleanup leaks invisibly to any main-tree
+cleanliness check.
 
-- **GIVEN** a dispatched reviewer that errors or times out
-- **WHEN** the lead computes review coverage
-- **THEN** that reviewer is re-dispatched and excluded from coverage, and if it still does
-  not deliver the recorded verdict is `could-not-review`
+#### Scenario: the errored-reviewer rule is stated in Protocol §3
+
+- **GIVEN** `skills/agent-team-review/SKILL.md`
+- **WHEN** the block between `### 3. Parallel Review` and the next `### ` heading is
+  extracted
+- **THEN** it states that a timeout is not a pass and that such a reviewer is never counted
+  toward coverage, that an undelivered lens is recorded as `--verdict could-not-review`,
+  and that reviewer worktrees are pruned
+- **AND** the assertion is scoped to that block, not to the whole file: `could-not-review`
+  already occurs elsewhere in the skill, so a whole-file needle is satisfied by that
+  pre-existing text and pins nothing
+
+#### Scenario: the Verification outcome cites its mechanism
+
+- **GIVEN** the `## Verification` section
+- **WHEN** it is read
+- **THEN** it names Protocol §3 as the mechanism producing the outcome it asserts, and
+  states that a lens that never delivered means `could-not-review`, not APPROVE
 
 ### Requirement: The dispatch-brief eval set MUST be pinned and non-vacuous
 
@@ -78,8 +105,22 @@ rather than standing alone.
 MUST contain the literal required clauses and a sha-bound range plus the pre-registered
 unprompted-delivery metric for the behavioral leg.
 
-The deterministic gate MUST fail rather than silently pass when the clause fixture is
-empty or unreadable, and MUST fail when a lens prompt block cannot be extracted.
+The fixture MUST NOT be the sole authority for what is asserted. The gate MUST
+independently carry the issue-#204 clause anchors and MUST fail when the fixture no longer
+contains one of them — otherwise deleting a needle silently deletes its own assertion, and
+a fixture trimmed to the floor plus inverted prompts runs green.
+
+The gate MUST derive the lens population from `skills/agent-team-review/SKILL.md` rather
+than hardcoding it, so a lens added later cannot be silently exempt, and MUST assert that
+the per-lens Delivery Contract blocks are identical, since duplication is the chosen design
+and drift is its only cost.
+
+The gate MUST fail rather than silently pass when the clause fixture is empty, unreadable,
+or absent, and MUST fail when a lens prompt block cannot be extracted.
+
+The gate MUST run in CI, not only in the local `.verify.yml` suite. `.verify.yml` is
+`substrate: local` and is read by no workflow, so a test reachable only through
+`tests/run-tests.sh` is not a CI check.
 
 #### Scenario: emptied fixture fails the gate
 
@@ -92,3 +133,23 @@ empty or unreadable, and MUST fail when a lens prompt block cannot be extracted.
 - **GIVEN** a lens prompt whose `name:` anchor has been renamed
 - **WHEN** the deterministic gate runs
 - **THEN** it fails on that lens's block extraction
+
+#### Scenario: a needle deleted from the fixture fails the gate
+
+- **GIVEN** `required-clauses.txt` with an issue-#204 clause anchor removed
+- **WHEN** the deterministic gate runs
+- **THEN** it fails on the anchor control, rather than passing with one fewer assertion
+
+#### Scenario: an unlisted fifth lens is not exempt
+
+- **GIVEN** a fifth reviewer template added under `## Reviewer Spawn Templates` carrying
+  none of the clauses
+- **WHEN** the deterministic gate runs
+- **THEN** it fails, because the lens population is derived from the skill rather than
+  hardcoded
+
+#### Scenario: the gate is invoked by the CI workflow
+
+- **GIVEN** `.github/workflows/done-gates.yml`
+- **WHEN** its `run:` lines are read
+- **THEN** they invoke `tests/test-reviewer-dispatch-brief.sh` with stdin closed

@@ -8,9 +8,14 @@
 # Why per-lens-block and not whole-file: a reviewer subagent sees ONLY its own
 # prompt. A clause present once in the protocol prose reaches no reviewer, and a
 # whole-file needle cannot tell "in all four prompts" from "in one of them".
-# Needles come from tests/fixtures/agent-team-review/dispatch-brief/ (pinned eval
-# set, never delete) rather than being inlined here, so the fixture stays the
-# single authority for the A/B contract.
+#
+# TWO authorities, deliberately. The fixture
+# tests/fixtures/agent-team-review/dispatch-brief/required-clauses.txt carries the
+# needles; this file independently hardcodes the issue-#204 clause anchors and
+# asserts the fixture still contains them. A single authority was the first cut
+# and it leaked: with only a count floor, deleting two needles from the fixture
+# AND inverting the matching clauses in all four prompts ran fully green (49/49),
+# because a deleted needle silently deletes its own assertion.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -33,6 +38,11 @@ if [ -f "${RANGE_FILE}" ]; then
     assert_contains "pinned range: head sha recorded" "head=" "${RANGE_CONTENT}"
     assert_contains "pinned range: unprompted delivery metric named" \
         "unprompted delivery rate" "${RANGE_CONTENT}"
+    # The metric must be able to SEE the capability the change grants. `git status
+    # --porcelain` cannot observe a worktree registered under .git/worktrees/, so a
+    # main-tree-only metric is blind to reviewer worktree leaks.
+    assert_contains "pinned range: metric covers worktree registration, not just the main tree" \
+        "git worktree list" "${RANGE_CONTENT}"
 fi
 
 # --- Load the needles -------------------------------------------------------
@@ -49,14 +59,72 @@ if [ -n "${CLAUSES}" ]; then
     CLAUSE_COUNT="$(printf '%s\n' "${CLAUSES}" | wc -l | tr -d ' ')"
 fi
 
-# Red control: an empty or unreadable fixture would make every per-lens
-# assertion below vacuously pass, which is exactly the shape this test exists to
-# prevent. Floor is the 4 issue-#204 clauses + the 3 safety clauses = 7 lines.
-if [ "${CLAUSE_COUNT}" -ge 7 ]; then
+_fixture_has() {
+    printf '%s\n' "${CLAUSES}" | grep -qFx -- "$1"
+}
+
+# --- Control 1: the fixture still carries every issue-#204 clause anchor ----
+# Hardcoded HERE, not read from the fixture: a floor computed from the fixture's
+# own contents cannot notice the fixture shrinking. Matched with `grep -Fx` so a
+# needle must be present verbatim as a whole line, not merely as a substring of
+# some other needle.
+#
+# Keep this list in step with issue #204: clauses 1-4 plus the safety clauses its
+# "Hard no-regression clause" section requires.
+_require_needle() {
+    if _fixture_has "$1"; then
+        _record_pass "fixture carries #204 anchor [$1]"
+    else
+        _record_fail "fixture carries #204 anchor [$1]" \
+            "needle missing from required-clauses.txt — deleting a needle deletes its per-lens assertion"
+    fi
+}
+_require_needle "Time-box yourself to 15 minutes"
+_require_needle "REPORT EVEN IF INCOMPLETE"
+_require_needle "Silence is not a pass"
+_require_needle "Deliver unprompted"
+_require_needle "SendMessage to \`main\`"
+_require_needle "git worktree add --detach"
+_require_needle "Never write to the shared working tree"
+_require_needle "Read-only in the shared tree"
+_require_needle "do NOT modify any files"
+_require_needle "do not manufacture findings"
+
+# --- Control 2: non-vacuity floor ------------------------------------------
+# Secondary to Control 1 (which a shrinking fixture trips first), but it also
+# catches an unreadable or wholly-commented fixture, where the per-lens loop
+# would iterate zero needles and every clause assertion would silently vanish.
+if [ "${CLAUSE_COUNT}" -ge 10 ]; then
     _record_pass "clause fixture non-vacuous (${CLAUSE_COUNT} needles)"
 else
     _record_fail "clause fixture non-vacuous" \
-        "expected >= 7 needles, got ${CLAUSE_COUNT} — assertions below prove nothing"
+        "expected >= 10 needles, got ${CLAUSE_COUNT} — assertions below prove nothing"
+fi
+
+# --- Discover the lens population -------------------------------------------
+# Derived from SKILL.md, NEVER hardcoded: a hardcoded list silently exempts a
+# fifth lens added later, which is the population-enumeration vacuity this repo's
+# fixture/content-coverage gates exist to prevent. Scoped to the spawn-template
+# section so an unrelated `name:` elsewhere cannot enter the population.
+LENSES="$(awk '
+    /^## Reviewer Spawn Templates/ { in_s=1; next }
+    in_s && /^## / { exit }
+    in_s && match($0, /^[[:space:]]*name: "[^"]+"/) {
+        line=$0; sub(/^[[:space:]]*name: "/, "", line); sub(/".*$/, "", line); print line
+    }
+' "${SKILL}")"
+
+LENS_COUNT=0
+if [ -n "${LENSES}" ]; then
+    LENS_COUNT="$(printf '%s\n' "${LENSES}" | wc -l | tr -d ' ')"
+fi
+
+# Floor matches the four lenses the skill's Reviewer Composition table defines.
+if [ "${LENS_COUNT}" -ge 4 ]; then
+    _record_pass "lens population discovered (${LENS_COUNT} lenses)"
+else
+    _record_fail "lens population discovered" \
+        "expected >= 4 lens prompts under '## Reviewer Spawn Templates', found ${LENS_COUNT}"
 fi
 
 # --- Per-lens prompt blocks -------------------------------------------------
@@ -79,7 +147,9 @@ _block_has() {
     printf '%s\n' "$2" | grep -qF -- "$1"
 }
 
-for lens in security-reviewer quality-reviewer spec-reviewer adversarial-reviewer; do
+CONTRACT_REF=""
+while IFS= read -r lens; do
+    [ -n "${lens}" ] || continue
     BLOCK="$(_lens_block "${lens}")"
     if [ -z "${BLOCK}" ]; then
         _record_fail "${lens}: prompt block extracted" \
@@ -99,35 +169,93 @@ for lens in security-reviewer quality-reviewer spec-reviewer adversarial-reviewe
     done <<EOF
 ${CLAUSES}
 EOF
-done
+
+    # --- Control 3: the four Delivery Contract blocks must be IDENTICAL ------
+    # Duplication into every prompt is the deliberate design (a subagent reads
+    # only its own prompt), and its one cost is drift. Without this, a lens whose
+    # contract was reworded still passes as long as it retains every needle.
+    CONTRACT="$(printf '%s\n' "${BLOCK}" | awk '
+        /^[[:space:]]*## Delivery Contract/ { f=1; next }
+        f && /^[[:space:]]*## / { exit }
+        f
+    ')"
+    if [ -z "${CONTRACT}" ]; then
+        _record_fail "${lens}: Delivery Contract block extracted" "empty"
+    elif [ -z "${CONTRACT_REF}" ]; then
+        CONTRACT_REF="${CONTRACT}"
+        _record_pass "${lens}: Delivery Contract block extracted (reference copy)"
+    elif [ "${CONTRACT}" = "${CONTRACT_REF}" ]; then
+        _record_pass "${lens}: Delivery Contract identical to the other lenses"
+    else
+        _record_fail "${lens}: Delivery Contract identical to the other lenses" \
+            "this lens's contract has drifted from the reference copy"
+    fi
+done <<EOF
+${LENSES}
+EOF
 
 # --- Lead-side collection protocol -----------------------------------------
 # The Verification section already asserted the OUTCOME ("every spawned reviewer
 # returned a finding set"). Issue #204's point is that no mechanism produced it.
-SKILL_CONTENT="$(cat "${SKILL}")"
+#
+# SCOPED to Protocol §3, not whole-file: these needles are generic enough that
+# unrelated prose elsewhere in the skill would satisfy them, which would let the
+# mechanism be relocated out of the protocol and still pass.
+LEAD_BLOCK="$(awk '/^### 3\. Parallel Review/{f=1;next} f && /^### /{exit} f' "${SKILL}")"
+if [ -z "${LEAD_BLOCK}" ]; then
+    _record_fail "lead: Protocol §3 block extracted" \
+        "non-empty block — heading moved, lead-side assertions below prove nothing"
+else
+    _record_pass "lead: Protocol §3 block extracted"
+fi
 
-assert_contains "lead: idle is not a report" "Idle is not a report" "${SKILL_CONTENT}"
-assert_contains "lead: a timeout is not a pass" "A timeout is not a pass" "${SKILL_CONTENT}"
+assert_contains "lead: idle is not a report" "Idle is not a report" "${LEAD_BLOCK}"
+assert_contains "lead: a timeout is not a pass" "A timeout is not a pass" "${LEAD_BLOCK}"
 assert_contains "lead: errored reviewer is re-dispatched, not counted" \
-    "never count it toward coverage" "${SKILL_CONTENT}"
+    "never count it toward coverage" "${LEAD_BLOCK}"
+# Both halves: spec requires `git status` AND `git log` before re-dispatch, and
+# the anchor is the full sentence — a bare "git status" needle is satisfied by any
+# unrelated future mention.
 assert_contains "lead: check the tree before re-dispatching" \
-    "git status" "${SKILL_CONTENT}"
+    "Before re-dispatching anything, run \`git status\` and \`git log\`" "${LEAD_BLOCK}"
 assert_contains "lead: chase twice before writing a reviewer off" \
-    "at least twice" "${SKILL_CONTENT}"
-assert_contains "lead: undelivered reviewer downgrades the verdict" \
-    "could-not-review" "${SKILL_CONTENT}"
+    "at least twice" "${LEAD_BLOCK}"
+# Anchored on the NEW sentence. `could-not-review` alone pre-existed this change
+# in "## Record the Review Verdict", so a bare-token needle was satisfied by that
+# fallback and pinned nothing — deleting this entire paragraph ran green.
+assert_contains "lead: undelivered lens downgrades the verdict" \
+    "Coverage is what was delivered, not what was spawned" "${LEAD_BLOCK}"
+assert_contains "lead: undelivered lens routes to could-not-review" \
+    "record \`--verdict could-not-review\`" "${LEAD_BLOCK}"
+# The worktree capability this change grants leaks into the shared repo's
+# .git/worktrees/, which the main-tree cleanliness check cannot see.
+assert_contains "lead: reviewer worktrees are reaped" \
+    "git worktree prune" "${LEAD_BLOCK}"
+
+# --- Verification cites the mechanism --------------------------------------
+# spec.md requires the outcome assertion to reference Protocol §3 rather than
+# stand alone. That is the diff's headline claim, and nothing asserted it —
+# deleting these lines ran fully green.
+VERIF_BLOCK="$(awk '/^## Verification/{f=1;next} f && /^## /{exit} f' "${SKILL}")"
+if [ -z "${VERIF_BLOCK}" ]; then
+    _record_fail "verification block extracted" "non-empty block"
+else
+    _record_pass "verification block extracted"
+fi
+assert_contains "verification: outcome names its mechanism" \
+    "Protocol §3 is the mechanism" "${VERIF_BLOCK}"
+assert_contains "verification: undelivered lens is not APPROVE" \
+    "\`could-not-review\`, not APPROVE" "${VERIF_BLOCK}"
 
 # --- Hard no-regression clauses (issue #204 safety section) -----------------
-assert_contains "lead: silent-drop red flag" \
-    "**Silent drop:**" "${SKILL_CONTENT}"
-assert_contains "lead: coverage counts reports, not spawns" \
-    "Coverage counts reports delivered, not agents spawned" "${SKILL_CONTENT}"
-
+SKILL_CONTENT="$(cat "${SKILL}")"
 assert_contains "no-regression: doubt-theater red flag retained" \
     "doubt theater" "${SKILL_CONTENT}"
 assert_contains "no-regression: APPROVE verdict contract retained" \
     "Before emitting an APPROVE verdict" "${SKILL_CONTENT}"
-assert_contains "no-regression: reviewers stay read-only in the shared tree" \
-    "Never write to the shared working tree" "${SKILL_CONTENT}"
+assert_contains "lead: silent-drop red flag" \
+    "**Silent drop:**" "${SKILL_CONTENT}"
+assert_contains "lead: coverage counts reports, not spawns" \
+    "Coverage counts reports delivered, not agents spawned" "${SKILL_CONTENT}"
 
 print_summary

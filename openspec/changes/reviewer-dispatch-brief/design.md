@@ -55,21 +55,44 @@ other leg, pinned in `tests/fixtures/agent-team-review/dispatch-brief/pinned-ran
 
 ## Non-vacuity
 
-Three ways this test could pass while proving nothing, each pinned:
+Six ways this test could pass while proving nothing. The first is the one the initial
+cut got wrong, and it is the reason there are two authorities rather than one:
 
-1. **Empty/unreadable fixture** ⇒ the per-lens loop iterates zero needles. A floor of 7
-   needles is asserted before the loop (mutation-verified: emptying the fixture drops the
-   run count 55 → 19 and fails that one control).
-2. **Moved anchors** ⇒ an unmatched `name: "<lens>"` yields an empty block and every
-   clause assertion for that lens vanishes. Empty extraction is an explicit failure.
-3. **Last block running to EOF** ⇒ `adversarial-reviewer` is the final prompt, so a range
+1. **A shrinking fixture silently deletes its own assertions.** With the fixture as sole
+   authority and only a count floor, review demonstrated a **fully green 49/49 run that
+   inverted issue #204's clauses 1 and 2**: delete two needles from `required-clauses.txt`
+   (9 → 7, exactly the old floor) and reword the matching clauses in all four prompts to
+   say the opposite. A count floor cannot notice this, because the deleted needle takes
+   its assertion with it. Fixed by hardcoding the #204 clause anchors in the *test* and
+   asserting the fixture still contains each of them (`grep -Fx`, whole-line). The fixture
+   may be extended; it may not shrink.
+2. **Empty/unreadable/wholly-commented fixture** ⇒ the per-lens loop iterates zero needles.
+   The anchor control above trips first; the count floor remains as a second net.
+3. **Moved anchors** ⇒ an unmatched `name: "<lens>"` yields an empty block and every clause
+   assertion for that lens vanishes. Empty extraction is an explicit failure.
+4. **Last block running to EOF** ⇒ `adversarial-reviewer` is the final prompt, so a range
    terminating only on the next `name: "` would absorb Red Flags and Verification, and a
    clause misplaced there would false-pass. The range also stops at the next top-level
    `## ` heading (mutation-verified: moving a clause from the adversarial prompt into
    `## Red Flags` fails).
+5. **A hardcoded lens list exempts a fifth lens.** Review demonstrated appending a
+   `perf-reviewer` template carrying none of the clauses: green. The population is now
+   derived from `SKILL.md` inside `## Reviewer Spawn Templates`, with a floor of 4.
+6. **A needle satisfied by a pre-existing fallback pins nothing.** `could-not-review`
+   already occurred once at the base commit in `## Record the Review Verdict`, so the
+   assertion labelled "undelivered reviewer downgrades the verdict" passed with the entire
+   new Protocol §3 paragraph deleted. Lead-side assertions are now scoped to the §3 block
+   and anchored on new text. The same class hit `git status` (generic) and the
+   `## Verification` mechanism lines (unasserted entirely — the diff's headline claim).
 
-All four mutations plus the M1 single-lens strip were run and each failed exactly the
-assertion it should, with a green control before and after.
+Measured with a green control before and after each: single-lens clause strip ⇒ 1 fail
+scoped to that lens; emptied fixture ⇒ the non-vacuity control fires and the run count
+drops **57 → 21**; renamed lens anchor ⇒ block-extraction fail; clause relocated into
+`## Red Flags` ⇒ that lens fails; lead-side row deleted ⇒ fail.
+
+**Duplication has one cost — drift — and it is now pinned.** Nothing previously asserted
+that the four Delivery Contract blocks were identical, so a reworded copy still carrying
+every needle passed. The blocks are extracted and compared byte-for-byte against the first.
 
 ## Alternatives rejected
 
