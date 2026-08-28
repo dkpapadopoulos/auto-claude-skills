@@ -52,7 +52,7 @@ if _has; then _record_fail "errored reviewer does not record" "ledger entry writ
 else _record_pass "errored reviewer does not record"; fi
 
 # (d) Implementation agent is NOT credited — this is the false-positive that
-# would blind the measurement the deny-flip depends on.
+# would blind the telemetry this change reads from.
 _reset; _run "Agent" "general-purpose" false "Implement Task 4: add the parser"
 if _has; then _record_fail "implementation agent not credited" "ledger entry written"
 else _record_pass "implementation agent not credited"; fi
@@ -66,8 +66,8 @@ else _record_fail "general-purpose with review intent is credited" "no ledger en
 # (e2)-(e5) Real-world `description` shapes, measured from the dispatches made
 # while building this change. A start-anchored `[Rr]eview*` credited only 3 of
 # 9 genuine reviewer dispatches — a predicate that misses two thirds of real
-# reviews measures its own blindness, and every miss enters the shadow corpus
-# as "no reviewer ran" for a branch where one demonstrably did. The two CREDIT
+# reviews measures its own blindness, and every miss costs an un-upgraded
+# telemetry field for a branch where one demonstrably did. The two CREDIT
 # cases below are exactly the shapes that were missed; the two NO-CREDIT cases
 # are the noun "reviewer" inside implementer task names, which is what stops
 # the fix from being a plain substring match.
@@ -100,13 +100,14 @@ else _record_pass "'dead reviewer agent name' is not credited"; fi
 # are REMOVED. They were NOT zero-recall — they also fire on "code review"
 # followed by a LETTER, which word-boundary cannot match, so dropping them does
 # lose genuine reviews ("Dispatch a code reviewer for the auth changes",
-# "code-reviewing the new gate leg"). But that extra recall is exactly the
-# noun/gerund class, and that class holds genuine reviews and implementation
-# tasks in the SAME syntactic shape — no substring can separate them, so the
-# recall can only be bought together with the false positives. D1's asymmetry
-# decides it: while the leg is advisory a wrongly credited non-reviewer
-# silently corrupts the measurement corpus, whereas a missed review costs one
-# spurious advisory. This case is the shape the arms wrongly credited.
+# "code-reviewing the new observer hook"). But that extra recall is exactly
+# the noun/gerund class, and that class holds genuine reviews and
+# implementation tasks in the SAME syntactic shape — no substring can
+# separate them, so the recall can only be bought together with the false
+# positives. The asymmetry decides it: a wrongly credited non-reviewer
+# silently records a false compliance signal in the telemetry, whereas a
+# missed review only costs one un-upgraded telemetry field. This case is the
+# shape the arms wrongly credited.
 _reset; _run "Agent" "general-purpose" false "Fix the code-reviewer dispatch bug"
 if _has; then _record_fail "noun 'code-reviewer' is not credited" "ledger entry written"
 else _record_pass "noun 'code-reviewer' is not credited"; fi

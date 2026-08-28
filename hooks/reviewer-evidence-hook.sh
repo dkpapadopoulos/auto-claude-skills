@@ -36,7 +36,7 @@ command -v jq >/dev/null 2>&1 || exit 0
 # TRADE, accepted deliberately: for a NON-OBJECT `tool_response` the error
 # signal is unobservable, and `// false` defaults it to success — so an ERRORED
 # array-shaped agent return is now CREDITED as a review that ran. That is
-# over-crediting, the direction the D1 note below calls dangerous. It is still
+# over-crediting, the direction the asymmetry note below calls dangerous. It is still
 # the right trade: the alternative is the typed index, which records nothing at
 # all for that shape (fail-closed only by accident) and is the defect this
 # guard exists to remove.
@@ -67,11 +67,12 @@ case "${_TOOL}" in Task|Agent) ;; *) exit 0 ;; esac
 # expansion does not word-split under zsh and would iterate once over the
 # whole string.
 #
-# The predicate is deliberately TIGHT (see design.md D1). While the gate leg
-# is advisory the error cost is asymmetric: a MISSED review costs one spurious
-# advisory, but a WRONGLY credited non-reviewer silently enters the corpus as
-# compliance and biases the pre-registered deny-flip toward flipping. Do not
-# loosen this to quiet advisories.
+# The predicate is deliberately TIGHT (see the asymmetry note below). This
+# hook is diagnostic telemetry, not a gate (design.md D2) — but the error
+# cost is still asymmetric: a MISSED review costs one un-upgraded telemetry
+# field, while a WRONGLY credited non-reviewer silently records a false
+# compliance signal into that same telemetry. Do not loosen this to catch
+# the occasional miss.
 _IS_REVIEWER=false
 case "${_SUBAGENT}" in
     pr-review-toolkit:code-reviewer|pr-review-toolkit:silent-failure-hunter|\
@@ -105,23 +106,24 @@ case "${_SUBAGENT}" in
         # and are REMOVED. They were NOT zero-recall — they also fire on "code
         # review" followed by a LETTER, which word-boundary cannot match, so
         # dropping them does lose genuine reviews ("Dispatch a code reviewer
-        # for the auth changes", "code-reviewing the new gate leg"). But that
+        # for the auth changes", "code-reviewing the new observer hook"). But that
         # extra recall is exactly the noun/gerund class, and that class holds
         # genuine reviews and implementation tasks in the SAME syntactic shape
         # ("Fix the code-reviewer dispatch bug", "Task 1: remove the dead
         # code-reviewer target") — no substring can separate them, so the
         # recall can only be bought together with the false positives.
-        # D1's asymmetry decides it: while the leg is advisory a wrongly
-        # credited non-reviewer silently corrupts the measurement corpus,
-        # whereas a missed review costs one spurious advisory. Pinned by (e6).
+        # The asymmetry above decides it: a wrongly credited non-reviewer
+        # silently records a false compliance signal in the telemetry, whereas
+        # a missed review only costs one un-upgraded telemetry field. Pinned
+        # by (e6).
         #
         # The one known false positive is recorded rather than silently
-        # accepted, because over-crediting is the dangerous direction (D1):
-        # "Task 2: review_dispatch config key" is an implementation task whose
-        # subject is literally named review-dispatch, and it credits with no
-        # reviewer having run.
+        # accepted, because over-crediting is the dangerous direction (see
+        # above): "Task 2: review_dispatch config key" is an implementation
+        # task whose subject is literally named review-dispatch, and it
+        # credits with no reviewer having run.
         #
-        # This is a corrected recall failure, NOT a loosening. D1's rule that
+        # This is a corrected recall failure, NOT a loosening. The rule that
         # the predicate ships tight still stands: do not widen further, and do
         # not add audit/inspect/check/critique keywords.
         case "${_DESC}" in
@@ -146,8 +148,9 @@ _LEDGER_OK=false
 [ "${_LEDGER_OK}" = "true" ] || exit 0
 
 # branch_ledger_record stores "<sha> <utc-ts>", so the evidence is SHA-bound
-# for free (design.md D8) — the gate leg surfaces staleness when that SHA
-# differs from HEAD, exactly as _ledger_has already does for other milestones.
+# for free — any future reader, such as scripts/record-review-verdict.sh, can
+# compare that SHA against HEAD to judge staleness without this hook doing
+# anything extra.
 branch_ledger_record "reviewer-ran" 2>/dev/null || true
 
 # D4 (design.md): this hook's write and scripts/record-review-verdict.sh's
