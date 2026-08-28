@@ -195,6 +195,7 @@ Task tool (general-purpose):
     - Error messages leaking sensitive information
 
     ## Context
+    Review range: {base_sha}..{head_sha}
     Design doc: {design_doc}
     Diff: {diff}
     Files changed: {files}
@@ -203,8 +204,9 @@ Task tool (general-purpose):
     - Read-only in the shared tree: do NOT modify any files there.
     - Own worktree for anything that executes or mutates. If your lens needs to run
       tests, builds, or mutation testing, make a PRIVATE one first:
-      `W="$(mktemp -d)/wt" && git worktree add --detach "$W" <the HEAD sha in your
-      Context>`. Never a fixed path like `/tmp/review-<lens>`: a re-dispatched
+      `W="$(mktemp -d)/wt" && git worktree add --detach "$W" {head_sha}` — the sha
+      from your Context, never a bare `HEAD`, which in the shared tree may have moved
+      on. Never a fixed path like `/tmp/review-<lens>` either: a re-dispatched
       reviewer carries the same name, so a fixed path fails with `fatal: already
       exists` on its first command, and two overlapping rounds collide the same way.
       Work only inside `$W`, then `git worktree remove "$W"`.
@@ -259,6 +261,7 @@ Task tool (general-purpose):
     - Maintainability
 
     ## Context
+    Review range: {base_sha}..{head_sha}
     Design doc: {design_doc}
     Diff: {diff}
     Files changed: {files}
@@ -267,8 +270,9 @@ Task tool (general-purpose):
     - Read-only in the shared tree: do NOT modify any files there.
     - Own worktree for anything that executes or mutates. If your lens needs to run
       tests, builds, or mutation testing, make a PRIVATE one first:
-      `W="$(mktemp -d)/wt" && git worktree add --detach "$W" <the HEAD sha in your
-      Context>`. Never a fixed path like `/tmp/review-<lens>`: a re-dispatched
+      `W="$(mktemp -d)/wt" && git worktree add --detach "$W" {head_sha}` — the sha
+      from your Context, never a bare `HEAD`, which in the shared tree may have moved
+      on. Never a fixed path like `/tmp/review-<lens>` either: a re-dispatched
       reviewer carries the same name, so a fixed path fails with `fatal: already
       exists` on its first command, and two overlapping rounds collide the same way.
       Work only inside `$W`, then `git worktree remove "$W"`.
@@ -317,6 +321,7 @@ Task tool (general-purpose):
     - Are edge cases from the spec handled?
 
     ## Context
+    Review range: {base_sha}..{head_sha}
     Design doc: {design_doc}
     Plan: {plan}
     Diff: {diff}
@@ -326,8 +331,9 @@ Task tool (general-purpose):
     - Read-only in the shared tree: do NOT modify any files there.
     - Own worktree for anything that executes or mutates. If your lens needs to run
       tests, builds, or mutation testing, make a PRIVATE one first:
-      `W="$(mktemp -d)/wt" && git worktree add --detach "$W" <the HEAD sha in your
-      Context>`. Never a fixed path like `/tmp/review-<lens>`: a re-dispatched
+      `W="$(mktemp -d)/wt" && git worktree add --detach "$W" {head_sha}` — the sha
+      from your Context, never a bare `HEAD`, which in the shared tree may have moved
+      on. Never a fixed path like `/tmp/review-<lens>` either: a re-dispatched
       reviewer carries the same name, so a fixed path fails with `fatal: already
       exists` on its first command, and two overlapping rounds collide the same way.
       Work only inside `$W`, then `git worktree remove "$W"`.
@@ -377,6 +383,7 @@ Task tool (general-purpose):
     - Destructive operations added without confirmation gates
 
     ## Context
+    Review range: {base_sha}..{head_sha}
     Design doc: {design_doc}
     Diff: {diff}
     Files changed: {files}
@@ -385,8 +392,9 @@ Task tool (general-purpose):
     - Read-only in the shared tree: do NOT modify any files there.
     - Own worktree for anything that executes or mutates. If your lens needs to run
       tests, builds, or mutation testing, make a PRIVATE one first:
-      `W="$(mktemp -d)/wt" && git worktree add --detach "$W" <the HEAD sha in your
-      Context>`. Never a fixed path like `/tmp/review-<lens>`: a re-dispatched
+      `W="$(mktemp -d)/wt" && git worktree add --detach "$W" {head_sha}` — the sha
+      from your Context, never a bare `HEAD`, which in the shared tree may have moved
+      on. Never a fixed path like `/tmp/review-<lens>` either: a re-dispatched
       reviewer carries the same name, so a fixed path fails with `fatal: already
       exists` on its first command, and two overlapping rounds collide the same way.
       Work only inside `$W`, then `git worktree remove "$W"`.

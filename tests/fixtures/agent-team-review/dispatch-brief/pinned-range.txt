@@ -26,5 +26,7 @@
 # .github/workflows/done-gates.yml. Do not restate that as "runs in CI" without
 # checking done-gates.yml: .verify.yml is `substrate: local` and is read by no
 # workflow, so a test reachable only through run-tests.sh is NOT a CI check.
+# Nor is "runs in CI" the same as "blocks merge" — that needs "Done Gates" marked
+# Required in branch protection, a manual setting outside this repo (docs/CI.md).
 base=5076a7ddfd74c6660dac2a7130704b8903d5acd5^
 head=5076a7ddfd74c6660dac2a7130704b8903d5acd5

@@ -46,6 +46,14 @@ uncovered-lens case to it keeps "we could not review" distinguishable from "we r
 and found nothing" — the same distinction the anti-fabrication clause protects on the
 reviewer side.
 
+## "Runs in CI" is not "blocks merge"
+
+The gate is a `done-gates.yml` step, so it runs on every PR. It **hard-blocks** only once
+"Done Gates" is marked Required in GitHub branch protection — a manual repo setting outside
+this tree, exactly as `docs/CI.md` and that workflow's own header already state for the two
+pre-existing gates. Do not upgrade the wording to "blocks merge" without checking that
+setting.
+
 ## Why the deterministic gate is content-only
 
 The gate asserts that the clauses are present, not that reviewers obey them. That is the
@@ -85,10 +93,22 @@ cut got wrong, and it is the reason there are two authorities rather than one:
    and anchored on new text. The same class hit `git status` (generic) and the
    `## Verification` mechanism lines (unasserted entirely — the diff's headline claim).
 
-Measured with a green control before and after each: single-lens clause strip ⇒ 1 fail
-scoped to that lens; emptied fixture ⇒ the non-vacuity control fires and the run count
-drops **57 → 21**; renamed lens anchor ⇒ block-extraction fail; clause relocated into
-`## Red Flags` ⇒ that lens fails; lead-side row deleted ⇒ fail.
+**The anchor set must track the FIXTURE, not the issue.** The first cut of control 1
+anchored issue #204's own clauses only, while the fixture grew past them during review, and
+the floor was set to the *anchor* count rather than the *fixture* count. All three reviewers
+independently found the resulting gap: deleting the three unanchored needles (`mktemp -d`,
+the subject-confirmation rule, the VERIFIED/INFERRED rule) landed exactly on the floor and
+ran **82/82 green** — a green run that reinstated the fixed-path worktree collision in all
+four prompts, i.e. deleted a fix this very change had just made. Every needle is anchored
+now and the floor equals the fixture size, so the two controls are independent rather than
+one duplicating the other (the mutation now fails 4 assertions: 3 anchors + the floor).
+
+Measured at the current tip, with a green control before and after each: **14 needles, 14
+anchors, 102 assertions**; single-lens clause strip ⇒ 1 fail scoped to that lens; emptied
+fixture ⇒ 46 run / 15 fail; renamed lens anchor ⇒ block-extraction fail; clause relocated
+into `## Red Flags` ⇒ that lens fails; lead-side row deleted ⇒ fail. Counts are
+data-dependent (needles × lenses), so treat them as measurements to re-run, never as
+constants to pin.
 
 **Duplication has one cost — drift — and it is now pinned.** Nothing previously asserted
 that the four Delivery Contract blocks were identical, so a reworded copy still carrying

@@ -31,6 +31,11 @@ Deliver unprompted
 SendMessage to `main`
 
 # --- Clause 4: own worktree for any reviewer that RUNS or MUTATES ---
+# The Context template must SUPPLY the sha the worktree command consumes: an
+# instruction referencing a field the prompt does not carry is unfollowable, and
+# a reviewer improvising `HEAD` reintroduces the wrong-tree defect believing it
+# complied.
+Review range: {base_sha}..{head_sha}
 git worktree add --detach
 mktemp -d
 Never write to the shared working tree

@@ -69,13 +69,20 @@ _fixture_has() {
 # needle must be present verbatim as a whole line, not merely as a substring of
 # some other needle.
 #
-# Keep this list in step with issue #204: clauses 1-4 plus the safety clauses its
-# "Hard no-regression clause" section requires.
+# Keep this list in step with THE FIXTURE, not with issue #204. Tracking the issue
+# is what opened the second leak: the anchors covered #204's own clauses while the
+# fixture grew past them, so the three post-#204 needles (`mktemp -d`, the
+# subject-confirmation rule, the VERIFIED/INFERRED rule) were unanchored — and with
+# the floor set to the ANCHOR count rather than the fixture count, deleting exactly
+# those three landed on the floor and ran 82/82 green. That green run reinstated the
+# fixed-path worktree collision in all four prompts. Every needle is anchored now,
+# and the floor below equals the fixture size, so Control 2 backstops rather than
+# duplicating Control 1.
 _require_needle() {
     if _fixture_has "$1"; then
-        _record_pass "fixture carries #204 anchor [$1]"
+        _record_pass "fixture carries required anchor [$1]"
     else
-        _record_fail "fixture carries #204 anchor [$1]" \
+        _record_fail "fixture carries required anchor [$1]" \
             "needle missing from required-clauses.txt — deleting a needle deletes its per-lens assertion"
     fi
 }
@@ -89,16 +96,24 @@ _require_needle "Never write to the shared working tree"
 _require_needle "Read-only in the shared tree"
 _require_needle "do NOT modify any files"
 _require_needle "do not manufacture findings"
+_require_needle "VERIFIED by running from what you INFERRED by reading"
+_require_needle "mktemp -d"
+_require_needle "Confirm your worktree matches the subject"
+_require_needle "Review range: {base_sha}..{head_sha}"
 
 # --- Control 2: non-vacuity floor ------------------------------------------
 # Secondary to Control 1 (which a shrinking fixture trips first), but it also
 # catches an unreadable or wholly-commented fixture, where the per-lens loop
 # would iterate zero needles and every clause assertion would silently vanish.
-if [ "${CLAUSE_COUNT}" -ge 10 ]; then
+# The floor MUST equal the fixture's needle count, never the anchor count. Any
+# headroom between them is a set of needles that can be deleted without tripping
+# either control — which is exactly how the second leak opened. Raise both together
+# when adding a needle.
+if [ "${CLAUSE_COUNT}" -ge 14 ]; then
     _record_pass "clause fixture non-vacuous (${CLAUSE_COUNT} needles)"
 else
     _record_fail "clause fixture non-vacuous" \
-        "expected >= 10 needles, got ${CLAUSE_COUNT} — assertions below prove nothing"
+        "expected >= 14 needles, got ${CLAUSE_COUNT} — assertions below prove nothing"
 fi
 
 # --- Discover the lens population -------------------------------------------

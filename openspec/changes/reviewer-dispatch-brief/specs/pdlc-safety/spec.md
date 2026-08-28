@@ -42,6 +42,10 @@ only there, and never writes to the shared working tree.
 The existing read-only rule MUST be retained, scoped to the shared tree. No reviewer MUST
 EVER be granted write access to the shared working tree.
 
+Each prompt's Context block MUST supply the sha the worktree command consumes. An
+instruction referencing a field the prompt does not carry is unfollowable, and a reviewer
+improvising `HEAD` reintroduces the wrong-tree defect while believing it complied.
+
 The worktree path MUST be unique per invocation (`mktemp -d`), never a fixed
 lens-derived path: lens names are constants, so a re-dispatched reviewer — which the
 lead-side protocol mandates — reuses the name and fails with `fatal: already exists` on
@@ -56,8 +60,9 @@ uncommitted changes and would otherwise be a different tree from the one under r
 - **GIVEN** any reviewer lens prompt
 - **WHEN** the prompt is read
 - **THEN** it contains `Read-only in the shared tree`, `do NOT modify any files`,
-  `git worktree add --detach`, `mktemp -d`, `Never write to the shared working tree`, and
-  `Confirm your worktree matches the subject`
+  `git worktree add --detach`, `mktemp -d`, `Never write to the shared working tree`,
+  `Confirm your worktree matches the subject`, and a `Review range:` Context field naming
+  the shas
 
 ### Requirement: The lead MUST have a defined recovery protocol for idle and errored reviewers
 
@@ -106,9 +111,14 @@ MUST contain the literal required clauses and a sha-bound range plus the pre-reg
 unprompted-delivery metric for the behavioral leg.
 
 The fixture MUST NOT be the sole authority for what is asserted. The gate MUST
-independently carry the issue-#204 clause anchors and MUST fail when the fixture no longer
-contains one of them — otherwise deleting a needle silently deletes its own assertion, and
-a fixture trimmed to the floor plus inverted prompts runs green.
+independently carry an anchor for EVERY needle the fixture holds, and MUST fail when the
+fixture no longer contains one of them — otherwise deleting a needle silently deletes its
+own assertion, and a fixture trimmed to the floor plus inverted prompts runs green.
+
+The anchor set MUST track the fixture, not issue #204. Anchoring only #204's own clauses
+leaves every later-added needle unanchored, which is a live instance of the same defect.
+The non-vacuity floor MUST equal the fixture's needle count, never the anchor count: any
+headroom between the two is a set of needles deletable without tripping either control.
 
 The gate MUST derive the lens population from `skills/agent-team-review/SKILL.md` rather
 than hardcoding it, so a lens added later cannot be silently exempt, and MUST assert that
@@ -136,9 +146,10 @@ The gate MUST run in CI, not only in the local `.verify.yml` suite. `.verify.yml
 
 #### Scenario: a needle deleted from the fixture fails the gate
 
-- **GIVEN** `required-clauses.txt` with an issue-#204 clause anchor removed
+- **GIVEN** `required-clauses.txt` with any needle removed
 - **WHEN** the deterministic gate runs
-- **THEN** it fails on the anchor control, rather than passing with one fewer assertion
+- **THEN** it fails on that needle's anchor control AND on the non-vacuity floor, rather
+  than passing with one fewer assertion
 
 #### Scenario: an unlisted fifth lens is not exempt
 
