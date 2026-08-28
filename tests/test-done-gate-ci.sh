@@ -39,6 +39,11 @@ assert_contains "workflow RUNS the routing-fixture coverage gate" \
     "tests/test-fixture-coverage.sh" "${_run_lines}"
 assert_contains "workflow RUNS the skill-content coverage gate" \
     "tests/test-skill-content-coverage.sh" "${_run_lines}"
+# Issue #204: the pinned fixture and the openspec proposal both claim the reviewer
+# dispatch-brief leg runs in CI. Reachable only through tests/run-tests.sh, that
+# claim was false — .verify.yml is `substrate: local` and no workflow reads it.
+assert_contains "workflow RUNS the reviewer dispatch-brief gate" \
+    "tests/test-reviewer-dispatch-brief.sh" "${_run_lines}"
 
 # Must fire on PRs, or it cannot back a merge-time claim. Asserted against the YAML
 # key (line-anchored, with colon), not the prose word — the header comment discusses
@@ -60,5 +65,7 @@ assert_file_exists "fixture-coverage gate script exists" \
     "${PROJECT_ROOT}/tests/test-fixture-coverage.sh"
 assert_file_exists "skill-content coverage gate script exists" \
     "${PROJECT_ROOT}/tests/test-skill-content-coverage.sh"
+assert_file_exists "reviewer dispatch-brief gate script exists" \
+    "${PROJECT_ROOT}/tests/test-reviewer-dispatch-brief.sh"
 
 print_summary
