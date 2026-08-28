@@ -190,6 +190,53 @@ test_ci_entry_validates_repo_bundle() {
 }
 test_ci_entry_validates_repo_bundle
 
+# --- issue #206: the hook A/B real-checkout fact -----------------------------
+# The repo-bundle check above validates whatever facts happen to be present, so
+# it stays green if this one is deleted. These assertions pin the fact itself.
+# Pinned eval set: tests/fixtures/knowledge/hook-ab-checkout.txt (never delete).
+test_hook_ab_fact_present_and_pinned() {
+    local fact="${PROJECT_ROOT}/.claude/knowledge/hook-ab-needs-real-checkout.md"
+    local fixture="${PROJECT_ROOT}/tests/fixtures/knowledge/hook-ab-checkout.txt"
+    assert_file_exists "#206: hook A/B fact present" "${fact}"
+    assert_file_exists "#206: pinned eval set present" "${fixture}"
+    [ -f "${fact}" ] || return 0
+
+    local body; body="$(cat "${fact}")"
+    # The remedy and the mechanism. Without the mechanism the remedy reads as an
+    # arbitrary preference, which is what makes it skippable under time pressure.
+    assert_contains "#206: fact states the remedy" \
+        "git worktree add --detach" "${body}"
+    assert_contains "#206: fact names the mechanism" \
+        "CLAUDE_PLUGIN_ROOT" "${body}"
+    # The direction is load-bearing: the scratch side always ALLOWS, so the
+    # artefact points the same way a real enforcement regression does.
+    assert_contains "#206: fact records the measured direction" \
+        "scratch copy   -> allow" "${body}"
+
+    # Indexed, or session-start never injects it.
+    assert_contains "#206: fact is indexed" "hook-ab-needs-real-checkout.md" \
+        "$(cat "${PROJECT_ROOT}/.claude/knowledge/index.md")"
+
+    # The cited LINE must still contain the code it cites. knowledge-validate.sh
+    # checks only that the source FILE resolves, so a file:line citation rots
+    # silently as unrelated edits shift it -- this one already moved :346 -> :336.
+    local src line file
+    src="$(sed -n 's/^source:[[:space:]]*//p' "${fact}" | head -1)"
+    file="${PROJECT_ROOT}/${src%%:*}"; line="${src##*:}"
+    if [ -f "${file}" ] && [ "${line}" != "${src}" ] && \
+       printf '%s' "${line}" | grep -qE '^[0-9]+$'; then
+        if sed -n "${line}p" "${file}" | grep -qF '_PLUGIN_ROOT='; then
+            _record_pass "#206: cited source line still holds the cited code"
+        else
+            _record_fail "#206: cited source line still holds the cited code" \
+                "${src} no longer contains _PLUGIN_ROOT= — citation has drifted"
+        fi
+    else
+        _record_fail "#206: source is a resolvable file:line" "got '${src}'"
+    fi
+}
+test_hook_ab_fact_present_and_pinned
+
 test_forgetful_map_del() {
     local tmp; tmp="$(mktemp -d)"; local m="${tmp}/map.tsv"
     bash "${PROJECT_ROOT}/scripts/knowledge-forgetful-map.sh" put "${m}" slug-a 1 hash-a
