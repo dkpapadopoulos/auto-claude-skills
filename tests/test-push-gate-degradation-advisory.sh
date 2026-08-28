@@ -42,6 +42,15 @@ mkdir -p "$HOME/.claude"
 _TPATH="$HOME/t.jsonl"; touch "$_TPATH"     # basename "t" -> token "session-t"
 _TOK="session-t"
 
+# The healthy control models a REAL install, which has the superpowers backbone
+# on disk — so the fail-closed deny message is the canonical one (no /setup hint,
+# which item 2 appends ONLY when the backbone is absent). Seed it so the pinned
+# byte-identical baseline keeps representing a normal install, not a bare one.
+for _bb in requesting-code-review verification-before-completion; do
+    mkdir -p "$HOME/.claude/plugins/cache/mkt/superpowers/6.3.0/skills/${_bb}"
+    printf -- '---\n' > "$HOME/.claude/plugins/cache/mkt/superpowers/6.3.0/skills/${_bb}/SKILL.md"
+done
+
 # Disposable plugin root — libs get broken in here, never in the checkout.
 _TROOT="$(mktemp -d /tmp/pgd-root-XXXXXX)"
 cp -R "${PROJECT_ROOT}/hooks"  "${_TROOT}/hooks"

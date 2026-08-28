@@ -179,6 +179,41 @@ _emit_advisory() {
     return 0
 }
 
+# _skill_available <name> — remedy-availability check (openspec:
+# remedy-aware-backbone, item 2). Returns 0 (available) if <name>'s SKILL.md is
+# present ON DISK in any location session-start discovers from; 1 only if it is
+# genuinely absent everywhere. **Disk, not the registry cache, is the authority
+# — deliberately (security review, 2026-08-28):** the cache is a plain 0644 file
+# any Bash-tool turn can overwrite, so trusting its `available:false` would hand
+# the agent a one-line opt-out of the REVIEW/VERIFY gate (write the flag, push
+# unverified). Disk presence cannot be forged in the DISABLING direction without
+# deleting the real installed plugin — destructive, session-breaking, and
+# detectable — which is the same forge-resistance the rest of this gate uses
+# (SHA-binding, token symmetry, verdict-at-HEAD). Fails toward AVAILABLE (deny
+# preserved) whenever the skill is found; only true absence degrades. Mirrors
+# session-start's layout: cache/<mkt>/<plugin>/[<version>/]skills/<name>/SKILL.md
+# (version dir optional) plus user skills. Bash-only hook, so an unmatched glob
+# stays literal and `[ -f <literal> ]` is false — no nullglob needed.
+_skill_available() {
+    local _n="${1:-}" _f
+    for _f in \
+        "${HOME}/.claude/plugins/cache"/*/*/skills/"${_n}"/SKILL.md \
+        "${HOME}/.claude/plugins/cache"/*/*/*/skills/"${_n}"/SKILL.md \
+        "${HOME}/.claude/skills/${_n}/SKILL.md"; do
+        [ -f "${_f}" ] && return 0
+    done
+    return 1
+}
+# Achievable-remedy clause (item 2). CRITICAL DESIGN POINT (security review
+# 2026-08-28): the gate is NEVER suppressed based on skill availability. The
+# original bug was only that a REVIEW/VERIFY deny told a no-superpowers install
+# to "invoke Skill(superpowers:X)" — a remedy it cannot execute. The fix keeps
+# the deny (so no agent-reachable signal can turn a deny into an allow — that is
+# the whole point of this gate) and instead APPENDS an achievable remedy to the
+# message when the demanded skill is genuinely absent on disk. Deleting the
+# superpowers plugin therefore only changes the wording, never the decision.
+_SETUP_HINT="The superpowers backbone appears not to be installed — run /setup to install it so these skills can run, or set ACSM_SKIP_PUSH_GATE=1 (human-only, at launch) to bypass."
+
 # _guard_load <path> — source a lib with this hook's fail-open ERR trap
 # DISARMED, then re-arm it. The ONE way this file may source anything (#192).
 #
@@ -751,6 +786,7 @@ EOF
             [ "${_review_completed}" = "false" ] && _bridge_has "requesting-code-review" && _review_completed=true
             if [ "${_review_in_chain}" = "true" ] && [ "${_review_completed}" = "false" ]; then
                 _MSG="PUSH GATE — Expected: REVIEW → VERIFY → SHIP completed before push. Actual: requesting-code-review has not run on this chain. Do now: invoke Skill(superpowers:requesting-code-review), then retry the denied command."
+                _skill_available "requesting-code-review" || _MSG="${_MSG} ${_SETUP_HINT}"
                 _emit_deny "${_MSG}"
                 _DECISION="deny:chain-review"
                 exit 0
@@ -844,6 +880,7 @@ EOF
             [ "${_verif_completed}" = "false" ] && _bridge_has "verification-before-completion" && _verif_completed=true
             if [ "${_verif_in_chain}" = "true" ] && [ "${_verif_completed}" = "false" ]; then
                 _MSG="PUSH GATE — Expected: verification-before-completion completed before push. Actual: it has not run on this active chain. Do now: invoke Skill(superpowers:verification-before-completion), then retry the denied command."
+                _skill_available "verification-before-completion" || _MSG="${_MSG} ${_SETUP_HINT}"
                 _emit_deny "${_MSG}"
                 _DECISION="deny:chain-verify"
                 exit 0
@@ -1113,10 +1150,20 @@ EOF
                 _g_verify=true
             fi
             if [ "${_g_review}" = "false" ] || [ "${_g_verify}" = "false" ]; then
+                # Split the missing milestones by whether their remedy is
+                # ACHIEVABLE (item 2, openspec: remedy-aware-backbone). A skill
                 _need=""
                 [ "${_g_review}" = "false" ] && _need="requesting-code-review"
                 [ "${_g_verify}" = "false" ] && _need="${_need}${_need:+ and }verification-before-completion"
                 _MSG="PUSH GATE (fail-closed): ${_GATE_ACTION} requires ${_need} to have run, but no record exists for it on this branch. Invoke the missing Skill(s) and let them complete, then retry. To bypass intentionally: run the command from your own terminal, or relaunch Claude Code with ACSM_SKIP_PUSH_GATE=1 set in its environment."
+                # Item 2: if a required skill is not installed, the "invoke the
+                # missing Skill(s)" remedy is impossible — APPEND the achievable
+                # one. The deny still fires (never suppressed by an agent-reachable
+                # signal); only the wording changes when the backbone is absent.
+                if { [ "${_g_review}" = "false" ] && ! _skill_available "requesting-code-review"; } \
+                   || { [ "${_g_verify}" = "false" ] && ! _skill_available "verification-before-completion"; }; then
+                    _MSG="${_MSG} ${_SETUP_HINT}"
+                fi
                 # jq presence is guaranteed by the block guard above.
                 _emit_deny "${_MSG}"
                 _DECISION="deny:global-failclosed"
