@@ -107,6 +107,30 @@ case "${VERDICT}" in
     *) echo "record-review-verdict: --verdict must be clean|findings-open|could-not-review" >&2; exit 2 ;;
 esac
 
+# Dispatch telemetry provenance (spec: observed-dispatch-telemetry).
+# The --from-github path above already derived these from a real PR; mark it.
+# Otherwise prefer an OBSERVED reviewer-subagent return over the caller's
+# flags: if the caller asserts a dispatch that was never observed, the
+# artifact must say `asserted`, because that disagreement is the signal.
+# Absence records as "not observed", never as an observed negative (D3).
+DISPATCH_EVIDENCE="asserted"
+if [ -n "${FROM_GH}" ] && [ "${DISPATCH_ATTEMPTED}" = "true" ]; then
+    DISPATCH_EVIDENCE="imported"
+else
+    _ODT_OK=false
+    # D4: this read MUST resolve the branch-ledger key the same way
+    # hooks/reviewer-evidence-hook.sh's write does. branch_ledger_key hashes
+    # the RAW path string, so a non-canonical path on either side yields a
+    # different directory and this read silently misses. Both currently
+    # derive it from `git rev-parse --show-toplevel` with no proj_root arg.
+    # Give one side an explicit root and you must give it to the other.
+    . "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" 2>/dev/null && command -v branch_ledger_has >/dev/null 2>&1 && _ODT_OK=true || true
+    if [ "${_ODT_OK}" = "true" ] && branch_ledger_has "reviewer-ran" 2>/dev/null; then
+        DISPATCH_ATTEMPTED="true"; DISPATCH_SUCCEEDED="true"
+        DISPATCH_EVIDENCE="observed"
+    fi
+fi
+
 # ---- resolve + validate the reviewed subject -------------------------------
 [ -n "${HEAD_ARG}" ] || HEAD_ARG="$(git -C "${_ROOT:-.}" rev-parse HEAD 2>/dev/null)" || HEAD_ARG=""
 _resolve() { git -C "${_ROOT:-.}" rev-parse --verify "${1}^{commit}" 2>/dev/null; }
@@ -154,11 +178,12 @@ jq -nc \
     --argjson ub "${UNRESOLVED:-0}" \
     --argjson da "${DISPATCH_ATTEMPTED}" \
     --argjson ds "${DISPATCH_SUCCEEDED}" \
-    '{schema_version:1, provider:$provider,
+    --arg de "${DISPATCH_EVIDENCE}" \
+    '{schema_version:2, provider:$provider,
       reviewed_base_sha:$base, reviewed_head_sha:$head,
       changed_file_digest:$digest, changed_file_count:$fc,
       findings_total:$ft, unresolved_blocking:$ub, verdict:$verdict,
-      dispatch_attempted:$da, dispatch_succeeded:$ds,
+      dispatch_attempted:$da, dispatch_succeeded:$ds, dispatch_evidence:$de,
       ts:$ts, writer:"record-review-verdict.sh"}' > "${TMP}" 2>/dev/null \
   || { rm -f "${TMP}"; echo "record-review-verdict: failed to build the record" >&2; exit 2; }
 

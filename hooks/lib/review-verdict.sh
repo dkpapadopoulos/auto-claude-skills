@@ -35,7 +35,16 @@ review_verdict_field() {
     command -v jq >/dev/null 2>&1 || return 1
     # `type=="object"` guards the non-object shapes (a bare array parses fine
     # as JSON and would otherwise yield null rather than a refusal).
-    jq -er --arg k "$field" 'select(type=="object") | .[$k] // empty' "$f" 2>/dev/null
+    #
+    # NOT `.[$k] // empty`: jq's `//` treats `false` as falsy too (same trap
+    # review_verdict_is_clean's own comment calls out for unresolved_blocking),
+    # so a boolean-false field — e.g. dispatch_attempted:false — silently read
+    # as empty/absent, indistinguishable from a missing key. Every prior
+    # caller only ever read a truthy value, so this went unnoticed until
+    # observed-dispatch-telemetry's writer started recording a real `false`.
+    # An explicit null check preserves "missing key or explicit null => empty"
+    # while letting `false` print as the string "false".
+    jq -er --arg k "$field" 'select(type=="object") | (.[$k]) as $v | if $v == null then empty else $v end' "$f" 2>/dev/null
 }
 
 _review_verdict_head_sha() {

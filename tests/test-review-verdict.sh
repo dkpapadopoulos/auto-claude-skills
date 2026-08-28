@@ -179,7 +179,7 @@ if [ -f "${WRITER}" ]; then
         assert_equals "writer output is clean per the reader" "0" "$(_bool review_verdict_is_clean "${_TOK}")"
         assert_equals "writer records the provider" "local-agent" \
             "$(review_verdict_field "${_TOK}" provider 2>/dev/null)"
-        assert_equals "writer records schema_version" "1" \
+        assert_equals "writer records schema_version" "2" \
             "$(review_verdict_field "${_TOK}" schema_version 2>/dev/null)"
     else
         _record_fail "writer produced an artifact" "no file at ${_ART} after invoking ${WRITER}"
@@ -334,6 +334,56 @@ _seed_allow
     | REVIEW_SHADOW_LOG="${_SHADOW}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" >/dev/null 2>&1 )
 _reason3="$(jq -r '.reason' "${_SHADOW}" 2>/dev/null | tail -1)"
 assert_equals "no artifact at all still records reason=absent" "absent" "${_reason3:-<none>}"
+
+# --- observed dispatch telemetry (spec: observed-dispatch-telemetry) ---
+# A seeded reviewer-ran record must upgrade the telemetry to measured.
+_ODT_RAW="$(mktemp -d /tmp/odt-repo-XXXXXX)"
+( cd "$_ODT_RAW" && git init -q && git config user.email t@t && git config user.name t \
+  && git commit -q --allow-empty -m init )
+# D4, and this is NOT theoretical — it was measured while writing this plan.
+# Seed the ledger with git's CANONICAL toplevel, never the mktemp path. On
+# macOS /tmp is a symlink to /private/tmp, and branch_ledger_key hashes the RAW
+# path string, so the two differ:
+#     /tmp/x         -> eff78f10...
+#     /private/tmp/x -> 35e951cd...
+# The script reads via `git rev-parse --show-toplevel`, so seeding with the
+# mktemp path writes a key it will never read, and assertion (a) fails looking
+# exactly like "the derivation is broken".
+_ODT_REPO="$(cd "$_ODT_RAW" && git rev-parse --show-toplevel)"
+# shellcheck disable=SC1090
+. "${PROJECT_ROOT}/hooks/lib/branch-ledger.sh"
+
+_odt_record() {   # $@ = extra flags for record-review-verdict.sh
+    ( cd "$_ODT_REPO" && SKILL_SESSION_TOKEN="$_TOK" \
+        CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        bash "${PROJECT_ROOT}/scripts/record-review-verdict.sh" \
+        --provider local-agent --verdict clean \
+        --base "$(git -C "$_ODT_REPO" rev-parse HEAD)" \
+        --head "$(git -C "$_ODT_REPO" rev-parse HEAD)" "$@" ) >/dev/null 2>&1
+}
+_odt_field() { review_verdict_field "$_TOK" "$1" 2>/dev/null; }
+
+# (a) an observation upgrades the telemetry and is labelled observed
+branch_ledger_record "reviewer-ran" "$_ODT_REPO"
+_odt_record
+assert_equals "observed dispatch is recorded as observed" "observed" "$(_odt_field dispatch_evidence)"
+assert_equals "observed dispatch sets attempted"          "true"     "$(_odt_field dispatch_attempted)"
+assert_equals "observed dispatch sets succeeded"          "true"     "$(_odt_field dispatch_succeeded)"
+
+# (b) with NO observation, explicit flags are recorded as asserted, never observed
+find "$HOME/.claude" -maxdepth 1 -type d -name '.skill-branch-ledger-*' -exec rm -rf {} + 2>/dev/null
+_odt_record --dispatch-attempted --dispatch-succeeded
+assert_equals "asserted flags are labelled asserted" "asserted" "$(_odt_field dispatch_evidence)"
+
+# (c) no observation and no flags: both false, still asserted
+find "$HOME/.claude" -maxdepth 1 -type d -name '.skill-branch-ledger-*' -exec rm -rf {} + 2>/dev/null
+_odt_record
+assert_equals "absent dispatch is not observed"  "asserted" "$(_odt_field dispatch_evidence)"
+assert_equals "absent dispatch is false"         "false"    "$(_odt_field dispatch_attempted)"
+
+# (d) the schema version is bumped
+assert_equals "writer records schema_version 2" "2" "$(_odt_field schema_version)"
+rm -rf "$_ODT_RAW"
 
 export HOME="$_OLDHOME"
 rm -rf "${TMP}" "${_FAKEHOME}"
