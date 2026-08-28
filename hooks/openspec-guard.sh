@@ -508,32 +508,25 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # Unconditional (evidence cannot save it by definition); honors the human
         # bypass; fail-open when jq is unavailable.
         #
-        # Trust split (Finding 2): _GC_PRECISE_OK is a WHOLE-COMMAND balance flag,
-        # so an unrelated unbalanced fragment (e.g. an unknown-owner `python3 <<PY`)
-        # elsewhere in the string flips it — and the segment-walking predicate then
-        # early-returns TRUNCATED output, silently missing a real `commit && push`.
-        # So: use the precise predicate when the parse is trustworthy, else FAIL
-        # CLOSED on a substring co-occurrence of a mutate verb and a push. The
-        # fallback only over-denies weird untrusted inputs (safe direction); a
-        # heredoc doc-write + push carries no `git <mutate>` code token, so the
-        # PR's target workflow is not falsely blocked.
-        # The lib is required for BOTH branches: when git-command.sh is absent
-        # entirely, this deny deliberately drops and is ANNOUNCED by the
-        # degradation advisory (#198) — the substring fallback must not silently
-        # resurrect it and rewrite that documented contract. It rescues only the
-        # Finding-2 case: lib PRESENT, but a whole-command balance flag flipped
-        # by an unrelated unbalanced fragment would otherwise skip the check.
+        # Finding 2: run the PRECISE segment-walking predicate — never a raw
+        # substring scan. The scanner now CONSUMES unknown-owner heredoc bodies
+        # (rather than truncating at the operator), so trailing top-level code
+        # stays reliably segmented even when the parse is marked untrusted; the
+        # predicate word-splits each segment (so `git  commit` with any spacing
+        # is caught) and never sees discarded body prose (so a doc/plan body
+        # mentioning "git commit" cannot false-deny). An earlier raw-substring
+        # fallback here had both a whitespace bypass AND that false-deny — both
+        # vanish with segmentation as the single source of truth.
+        # Gated on the lib (command_git_mutate_before_push): absent, this deny
+        # deliberately drops and is ANNOUNCED by the degradation advisory (#198).
+        # Size cap mirrors the precise push path; the scanner self-budgets code
+        # chars internally.
         _gc_mutate_then_push=false
         if [ "${_gc_is_push}" = "true" ] && command -v jq >/dev/null 2>&1 \
-           && command -v command_git_mutate_before_push >/dev/null 2>&1; then
-            if [ "${_GC_PRECISE_OK}" = "true" ]; then
-                command_git_mutate_before_push "${_COMMAND}" && _gc_mutate_then_push=true
-            else
-                case "${_COMMAND}" in
-                    *"git commit"*|*"git merge"*|*"git rebase"*|*"git cherry-pick"*|*"git revert"*|*"git am"*)
-                        _gc_mutate_then_push=true ;;
-                esac
-            fi
+           && command -v command_git_mutate_before_push >/dev/null 2>&1 \
+           && [ "${#_COMMAND}" -le "${_GC_MAX_TOTAL}" ] \
+           && command_git_mutate_before_push "${_COMMAND}"; then
+            _gc_mutate_then_push=true
         fi
         if [ "${_PUSHGATE_SKIP}" != "true" ] && [ "${_gc_mutate_then_push}" = "true" ]; then
             _MSG="PUSH GATE: this command mutates history (commit/merge/rebase/cherry-pick/revert/am) and pushes in ONE command. The gate evaluates evidence for the CURRENT commit, so the pushed result would be unverified. Run the mutation first, re-run verification if content changed, then run git push as a separate command."

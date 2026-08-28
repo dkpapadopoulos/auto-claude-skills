@@ -72,12 +72,26 @@ _assert_pred "P7b bash-fed body prose is not a push"   1 command_invokes_git_wri
 _c8="cat <<EOF${_NL}git push origin main"
 _assert_pred "P8 unterminated heredoc is unbalanced"   1 command_parse_balanced "${_c8}"
 
-# P11: unknown heredoc owner (remote/interpreter we can't classify) -> fail
-# CLOSED: never silently discard a body that might execute.
+# P11: unknown heredoc owner (remote/interpreter we can't classify) -> parse
+# marked UNTRUSTED (push detection uses substring fallback), but the body is
+# CONSUMED to its delimiter, not truncated, so trailing top-level code stays
+# segmented (Finding 2 re-review).
 _c11="ssh prod-host <<EOF${_NL}git push${_NL}EOF"
 _assert_pred "P11 ssh-fed heredoc is unbalanced"       1 command_parse_balanced "${_c11}"
 _c11b="python3 - <<PY${_NL}print('git push')${_NL}PY"
 _assert_pred "P11b python-fed heredoc is unbalanced"   1 command_parse_balanced "${_c11b}"
+# F2a (re-review): a real commit&&push AFTER an unknown-owner heredoc, with ANY
+# whitespace between git and the verb, is detected precisely (body consumed,
+# trailing code segmented; predicate word-splits). Was a substring-bypass.
+_c_f2a="python3 - <<PY${_NL}print(1)${_NL}PY${_NL}git  commit -m x && git push origin HEAD"
+_assert_pred "F2a 2-space commit after heredoc is mutate" 0 command_git_mutate_before_push "${_c_f2a}"
+_TABc="python3 - <<PY${_NL}print(1)${_NL}PY${_NL}git${_TAB}commit -m x && git push"
+_assert_pred "F2a tab commit after heredoc is mutate"   0 command_git_mutate_before_push "${_TABc}"
+# F2b (re-review): an unknown-owner body whose PROSE mentions a mutate verb,
+# followed by a bare push, must NOT false-deny (prose is consumed, not code).
+_c_f2b="python3 - <<PY${_NL}remember to git commit before you push${_NL}PY${_NL}git push origin HEAD"
+_assert_pred "F2b body-prose mutate verb not a mutate"  1 command_git_mutate_before_push "${_c_f2b}"
+_assert_pred "F2b trailing bare push still detected"    0 command_invokes_git_write "${_c_f2b}"
 
 # P12: arithmetic `<<` is a shift, not a heredoc — a real push after it must
 # not be swallowed as a phantom body (design review: required, not optional).
@@ -201,9 +215,21 @@ out="$(_run "${_c_f2}")"
 assert_contains "E7 mutate deny survives unrelated heredoc" 'mutates history' "${out:-<empty>}"
 # Control: a plain doc-write + push (no mutate verb) is NOT falsely denied as
 # mutate-then-push even when the parse is untrusted.
-_c_f2b="python3 - <<PY${_NL}print(1)${_NL}PY${_NL}cat > d.md <<EOF${_NL}notes${_NL}EOF${_NL}git push origin HEAD"
-out="$(_run "${_c_f2b}")"
+_c_e7b="python3 - <<PY${_NL}print(1)${_NL}PY${_NL}cat > d.md <<EOF${_NL}notes${_NL}EOF${_NL}git push origin HEAD"
+out="$(_run "${_c_e7b}")"
 assert_not_contains "E7b doc-write+push not mutate-denied" 'mutates history' "${out:-}"
+
+# E8 (re-review a): whitespace variant of the compound after an unknown-owner
+# heredoc must DENY as mutate-then-push (was a substring bypass).
+out="$(_run "${_c_f2a}")"
+assert_contains "E8 whitespace commit&&push is mutate-denied" 'mutates history' "${out:-<empty>}"
+
+# E9 (re-review b): unknown-owner body prose mentioning a mutate verb + a bare
+# push must NOT false-deny as mutate-then-push. Clean evidence covers the plain
+# push, so the whole command should be ALLOWED (no deny at all).
+out="$(_run "${_c_f2b}")"
+assert_not_contains "E9 body-prose does not false-deny mutate" 'mutates history' "${out:-}"
+assert_not_contains "E9 clean-evidence plain push allowed" '"deny"' "${out:-}"
 
 export HOME="$_OLDHOME"
 print_summary

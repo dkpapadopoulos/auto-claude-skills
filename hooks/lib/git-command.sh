@@ -47,7 +47,7 @@ _GC_SEP=$'\037'
 _gc_split_segments() {
     local _s="$1" _seg="" _sq=0 _dq=0 _out="" _line _c _i _n _j
     local _pending="" _body=0 _arith=0 _budget=4096 _pend_sep=0
-    local _tab _delim _tstrip _q _q2 _w _bad
+    local _tab _delim _tstrip _q _q2 _w _bad _hd_reg
     _tab=$'\t'
     # An empty separator would make IFS="" disable splitting in every caller —
     # the whole command becomes one segment and a real `git add -A && git push`
@@ -83,8 +83,11 @@ _gc_split_segments() {
                 case "${_line}" in
                     *'$('*|*'`'*)
                         # live command substitution in an expanded body — the
-                        # discarded "data" actually executes. Untrustworthy.
-                        _GC_UNBALANCED=1; printf '%s' "${_out}${_seg}"; return 0 ;;
+                        # "data" actually executes. Mark UNTRUSTED (push
+                        # detection falls back to substring, which sees the
+                        # embedded push in the raw command) but keep consuming
+                        # the body so trailing code stays reliably segmented.
+                        _GC_UNBALANCED=1 ;;
                 esac
             fi
             continue
@@ -181,36 +184,44 @@ _gc_split_segments() {
                             _GC_UNBALANCED=1; printf '%s' "${_out}${_seg}"; return 0
                         fi
                         _w="$(_gc_segment_cmd_word "${_seg}")"
+                        _hd_reg=0
                         case "${_w}" in
                             cat|*/cat|tee|*/tee|git|*/git)
-                                # data sink: the body is data — discard it
-                                # (but see the unquoted-body substitution guard
-                                # in body mode: an unquoted delimiter whose body
-                                # runs `$(...)` fails closed). `git` is here so
-                                # `git commit -F - <<EOF …` keeps its commit
-                                # (and mutate-then-push) classification.
-                                _q2="Q"; [ -z "${_q}" ] && _q2="U"
-                                if [ -n "${_pending}" ]; then
-                                    _pending="${_pending} ${_tstrip}:${_q2}:${_delim}"
-                                else
-                                    _pending="${_tstrip}:${_q2}:${_delim}"
-                                fi
-                                _seg="${_seg}${_line:${_i}:$((_j-_i))}"
-                                _i=$((_j-1)) ;;
+                                # data sink: the body is data — consume it (but
+                                # see the unquoted-body substitution guard in
+                                # body mode). `git` is here so `git commit -F -
+                                # <<EOF …` keeps its commit classification on
+                                # the code part.
+                                _hd_reg=1 ;;
                             bash|*/bash|sh|*/sh|zsh|*/zsh|dash|*/dash|ksh|*/ksh|eval|source|.)
-                                # shell interpreter: the body EXECUTES — do
-                                # NOT register a heredoc; body lines scan as
-                                # code, so `bash <<EOF … git push … EOF`
-                                # yields a real push segment (precisely).
-                                _seg="${_seg}${_line:${_i}:$((_j-_i))}"
-                                _i=$((_j-1)) ;;
+                                # shell interpreter: the body EXECUTES — do NOT
+                                # register a heredoc; body lines scan as code,
+                                # so `bash <<EOF … git push … EOF` yields a real
+                                # push segment (precisely).
+                                _hd_reg=0 ;;
                             *)
                                 # unknown owner (python/ssh/docker/empty/...):
-                                # the body may execute remotely or via an
-                                # interpreter we cannot enumerate — fail
-                                # CLOSED to the substring path.
-                                _GC_UNBALANCED=1; printf '%s' "${_out}${_seg}"; return 0 ;;
+                                # the body may execute in ways we cannot model,
+                                # so mark the parse UNTRUSTED (push detection
+                                # falls back to the substring path). But still
+                                # CONSUME the body to its known delimiter rather
+                                # than truncating — truncating dropped a real
+                                # trailing `commit && push` from the segment
+                                # stream (Finding 2), and the trailing top-level
+                                # code must stay reliably segmented for the
+                                # precise mutate-then-push predicate.
+                                _hd_reg=1; _GC_UNBALANCED=1 ;;
                         esac
+                        if [ "${_hd_reg}" -eq 1 ]; then
+                            _q2="Q"; [ -z "${_q}" ] && _q2="U"
+                            if [ -n "${_pending}" ]; then
+                                _pending="${_pending} ${_tstrip}:${_q2}:${_delim}"
+                            else
+                                _pending="${_tstrip}:${_q2}:${_delim}"
+                            fi
+                        fi
+                        _seg="${_seg}${_line:${_i}:$((_j-_i))}"
+                        _i=$((_j-1))
                     fi ;;
                 ';'|'|'|'&') _out="${_out}${_seg}${_GC_SEP}"; _seg="" ;;
                 *) _seg="${_seg}${_c}" ;;
