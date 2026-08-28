@@ -38,6 +38,11 @@ assert_contains "rv: a11y checks documented" "axe" "$RV_CONTENT"
 assert_contains "rv: graceful degradation documented" "no interactive validation tools" "$RV_CONTENT"
 
 # Report contract
+# Dead session marker removed (openspec: state-scripts-injection-cut). It wrote
+# ~/.skill-validation-ran-<token> that NO code ever read, using the forbidden
+# singleton-token incantation, under a false "checked by the SHIP phase gate"
+# claim. Pin it stays gone so it cannot be reintroduced.
+assert_not_contains "rv: dead session marker removed" "validation-ran" "$RV_CONTENT"
 assert_contains "rv: unified report heading" "Validation Report" "$RV_CONTENT"
 assert_contains "rv: coverage gaps section" "Coverage Gaps" "$RV_CONTENT"
 assert_contains "rv: manual checks section" "Manual Checks" "$RV_CONTENT"
@@ -45,8 +50,6 @@ assert_contains "rv: manual checks section" "Manual Checks" "$RV_CONTENT"
 # Fix-rescan loop
 assert_contains "rv: fix-rescan loop" "Max 3" "$RV_CONTENT"
 
-# Session marker
-assert_contains "rv: session marker" "validation-ran" "$RV_CONTENT"
 
 # Ad-hoc script temp location
 assert_contains "rv: mktemp for ad-hoc scripts" "mktemp" "$RV_CONTENT"
@@ -71,6 +74,9 @@ DC_CONTENT="$(cat "${DC_SKILL}")"
 
 # Frontmatter
 assert_contains "dc: has name frontmatter" "name: implementation-drift-check" "$DC_CONTENT"
+# Dead session marker removed (openspec: state-scripts-injection-cut) — see the
+# rv note above; same dead-write + false-claim pattern. Pin it stays gone.
+assert_not_contains "dc: dead session marker removed" "drift-check-ran" "$DC_CONTENT"
 
 # Two report modes
 assert_contains "dc: full drift mode" "Implementation Drift Check" "$DC_CONTENT"
@@ -92,8 +98,6 @@ assert_contains "dc: review-induced drift" "Review-Induced" "$DC_CONTENT"
 assert_contains "dc: implemented-as-specified flag" "implemented-as-specified" "$DC_CONTENT"
 assert_contains "dc: added-without-spec flag" "added-without-spec" "$DC_CONTENT"
 
-# Session marker
-assert_contains "dc: session marker" "drift-check-ran" "$DC_CONTENT"
 
 # Auto-co-selection guard explanation
 assert_contains "dc: artifact-presence gate" "artifact-presence" "$DC_CONTENT"
