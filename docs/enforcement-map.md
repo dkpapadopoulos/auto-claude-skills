@@ -54,10 +54,16 @@ with `ACSM_SKIP_PUSH_GATE=1` in its environment. The agent cannot set either.
   Enabling protection is NOT a settings toggle here: `version-bump.yml` pushes
   directly to `main` with `[skip ci]`, so required checks would block it and
   version bumps would stop silently. See docs/CI.md before changing this.
-- Done Gates workflow (`.github/workflows/done-gates.yml`) — runs the two owned
-  done-gates, routing-fixture coverage and skill-content coverage, on every PR.
-  Would hard-block only if marked Required (see the caveat above).
-  Regression: `tests/test-done-gate-ci.sh` pins the workflow to this claim.
+- Done Gates workflow (`.github/workflows/done-gates.yml`) — runs three content
+  checks on every PR: the two owned done-gates (routing-fixture coverage,
+  skill-content coverage) plus the reviewer dispatch-brief gate
+  (`tests/test-reviewer-dispatch-brief.sh`, issue #204). The third is a
+  single-skill content gate, not a third owned done-gate — it is here because
+  its own fixture and openspec proposal CLAIMED it ran in CI while it was
+  reachable only through `tests/run-tests.sh`, i.e. the folklore corrected in
+  the bullet below. All three would hard-block only if marked Required (see the
+  caveat above). Regression: `tests/test-done-gate-ci.sh` pins the workflow to
+  this claim — extend it when adding a step, or the claim rots.
 - OpenSpec Validate workflow (spec-driven mode) — same: runs on every PR, not
   currently Required, so it does not block.
 - **The FULL `tests/run-tests.sh` suite does NOT run in CI.** `.verify.yml` is
