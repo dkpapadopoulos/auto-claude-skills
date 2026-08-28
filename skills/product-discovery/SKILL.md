@@ -139,17 +139,15 @@ After the user approves the brief — this is mandatory. The LEARN-phase `outcom
    # Do NOT re-derive `session-<id>` by hand — hooks/lib/session-token.sh owns
    # that format. The singleton stays the last-resort fallback, so a missing
    # lib degrades to the old behaviour instead of failing.
-   PR="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}"
-   TOKEN="$(. "$PR/hooks/lib/session-token.sh" 2>/dev/null && resolve_own_session_token || cat ~/.claude/.skill-session-token 2>/dev/null)"
-   echo "session token: ${TOKEN:-<unresolved>}"   # a scatter is then visible in-session
+   # persist-state.sh resolves the session token internally (issue #157) — you
+   # author only the payload. No token line to retype, nothing to get wrong.
+   PS="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}/scripts/persist-state.sh"
 
-   . "$PR/hooks/lib/openspec-state.sh"
-
-   openspec_state_set_discovery_path "$TOKEN" "<slug>" "docs/plans/YYYY-MM-DD-<slug>-discovery.md"
+   bash "$PS" set-discovery-path "<slug>" "docs/plans/YYYY-MM-DD-<slug>-discovery.md"
 
    # Structured hypotheses as a JSON array — each H<N> from Step 3 is one object.
    HYPS='[{"id":"H1","description":"We believe ...","metric":"checkout_completion_rate","baseline":"0.12","target":"increase >20%","window":"2 weeks post-ship"}]'
-   openspec_state_set_hypotheses "$TOKEN" "<slug>" "$HYPS"
+   bash "$PS" set-hypotheses "<slug>" "$HYPS"
    ```
    Use `null` for fields unknown at discovery time. Keep them as JSON literals — the helper validates the shape.
 

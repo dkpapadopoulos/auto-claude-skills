@@ -12,7 +12,7 @@ Every installer benefits: the prompt tax and the bug class are in the shipped pl
 
 1. **(done)** Delete the two dead session-marker writes (`runtime-validation`, `implementation-drift-check`) — zero readers, wrong-token incantation, false "checked by the SHIP phase gate" claim.
 2. Add `scripts/persist-state.sh` — a single dispatcher (`set-intent`, `upsert-change`, `set-discovery-path`, …) that resolves the token internally (`SKILL_SESSION_TOKEN` → `resolve_own_session_token` → singleton fallback, exactly as `verify-and-record.sh`) and calls the matching `openspec_state_*` function.
-3. Replace the retyped incantation at every writer surface (both configs, both hooks' injected directives, the three SKILL.md bodies) with a call to that script.
+3. Replace the retyped incantation at the writer surfaces with a call to that script: both configs, both hooks' injected directives, and `product-discovery`. `agent-team-review` delegates to `record-review-verdict.sh` (already self-resolving). **`openspec-ship` is DEFERRED** — it also reads state and marks-archived across a documented flow, so its extraction is a larger rewrite; it becomes the sole remaining incantation copy (nothing to drift against) until then.
 4. Replace `test-openspec-state-token-symmetry.sh` with EQUAL-STRENGTH coverage: unit tests on `persist-state.sh` (token resolution, each op) + a call-site test that every surface invokes the script and none re-derives the incantation.
 5. Trim the INTENT EXTRACTION injection: keep the outcome contract (verbatim confirmed-intent block, human-confirmed, persisted, read back at PLAN) and the persist call; cut the method-prescription prose ("one question at a time", "track your confidence").
 

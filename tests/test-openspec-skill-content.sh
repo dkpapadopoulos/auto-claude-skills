@@ -277,6 +277,13 @@ test_openspec_ship_session_token_resolution() {
         && naked="present"
     assert_equals "ship: singleton only as fallback, never first assignment (#157)" \
         "absent" "$naked"
+    # openspec-ship is the one remaining surface with a HAND-ROLLED inline
+    # resolver (deferred from state-scripts-injection-cut — it also reads state
+    # and mark-archives). Shell state does not persist across Bash tool calls, so
+    # every executable block that uses $TOKEN must re-resolve it; the old
+    # symmetry test pinned this warning and its retirement must not drop it.
+    assert_contains "ship: warns shell state does not persist between Bash calls (#157)" \
+        "does not persist between" "$content"
 }
 test_openspec_ship_session_token_resolution
 
