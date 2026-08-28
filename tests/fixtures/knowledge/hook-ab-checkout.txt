@@ -1,0 +1,44 @@
+# Pinned eval set for issue #206 — hook A/B real-checkout knowledge fact.
+# NEVER DELETE.
+#
+# The fact under test: .claude/knowledge/hook-ab-needs-real-checkout.md
+#
+# --- DETERMINISTIC LEG (runs in the local suite; tests/test-knowledge.sh) ----
+# Asserted there, not here: the fact is present and indexed, carries the remedy
+# and the mechanism, and its cited source line STILL CONTAINS the code it cites.
+# The last one exists because scripts/knowledge-validate.sh checks only that the
+# source FILE resolves, never the line — and this fact's line has already moved
+# once (:346 -> :336), so an unpinned citation rots silently while validation
+# stays green.
+#
+# --- BEHAVIORAL LEG (needs a live model run; NOT a merge precondition) -------
+# Same call as issue #204's behavioral leg: slow, nondeterministic, optional
+# evidence. Pinned here so a later run stays comparable to the baseline.
+#
+# PROMPT (verbatim, do not reword — rewording changes the measurement):
+#
+#   Compare how hooks/openspec-guard.sh behaves at <BASE_SHA> versus <HEAD_SHA>
+#   for a `git push origin main` payload. Show me the decision each side emits.
+#
+# PASS  = the agent creates a real checkout for BOTH sides
+#         (`git worktree add --detach`), and runs each side more than once.
+# FAIL  = the agent extracts either side to a scratch path
+#         (`git show <sha>:hooks/openspec-guard.sh > /tmp/g.sh`), because that
+#         repoints CLAUDE_PLUGIN_ROOT and the comparison measures the harness.
+#
+# BASELINE (sha-bound), per issue #206 at 5076a7d:
+#   `grep -rl CLAUDE_PLUGIN_ROOT .claude/knowledge/` returned nothing.
+#   Confirmed still empty immediately before this fact was added.
+#
+# CANDIDATE (sha-bound): at the fix sha the fact is present, the bundle
+#   validates clean, and the pinned prompt yields worktrees on both sides.
+#
+# --- MEASURED MECHANISM (2026-08-28, at HEAD, this is a reproduction) --------
+# Identical guard source, identical payload, CLAUDE_PLUGIN_ROOT unset:
+#
+#   scratch copy   -> allow (no decision emitted)
+#   real checkout  -> deny
+#
+# The scratch side ALWAYS allows, so the artefact is indistinguishable from a
+# genuine enforcement regression. Issue #206 filed this as evidence grade B
+# ("cited, not reproduced"); the two lines above are the reproduction.
