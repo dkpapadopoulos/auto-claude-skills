@@ -47,7 +47,7 @@ _GC_SEP=$'\037'
 _gc_split_segments() {
     local _s="$1" _seg="" _sq=0 _dq=0 _out="" _line _c _i _n _j
     local _pending="" _body=0 _arith=0 _budget=4096 _pend_sep=0
-    local _tab _delim _tstrip _q _w _bad
+    local _tab _delim _tstrip _q _q2 _w _bad
     _tab=$'\t'
     # An empty separator would make IFS="" disable splitting in every caller —
     # the whole command becomes one segment and a real `git add -A && git push`
@@ -58,9 +58,16 @@ _gc_split_segments() {
         _line="${_line%$'\r'}"   # CRLF paste: \r glued to a terminator would
                                  # never compare equal and cost precision
         # ---- heredoc body mode: whole-line compare, no char scan, no budget.
+        # Pending entry encoding: "<tstrip>:<q>:<delim>", tstrip in {P,T},
+        # q in {Q,U} (Quoted vs Unquoted delimiter). An UNQUOTED delimiter
+        # does NOT suppress expansion, so real bash runs `$(...)`/backticks in
+        # the body BEFORE the sink sees it — discarding such a body as inert
+        # would miss a live push (Finding 1). Fail CLOSED when an unquoted
+        # body carries a command-substitution trigger.
         if [ "${_body}" -eq 1 ]; then
             _delim="${_pending%% *}"
             _tstrip="${_delim%%:*}"; _delim="${_delim#*:}"
+            _q="${_delim%%:*}"; _delim="${_delim#*:}"
             _c="${_line}"
             if [ "${_tstrip}" = "T" ]; then
                 while [ "${_c#"${_tab}"}" != "${_c}" ]; do _c="${_c#"${_tab}"}"; done
@@ -69,6 +76,15 @@ _gc_split_segments() {
                 case "${_pending}" in
                     *" "*) _pending="${_pending#* }" ;;
                     *) _pending=""; _body=0 ;;
+                esac
+                continue
+            fi
+            if [ "${_q}" = "U" ]; then
+                case "${_line}" in
+                    *'$('*|*'`'*)
+                        # live command substitution in an expanded body — the
+                        # discarded "data" actually executes. Untrustworthy.
+                        _GC_UNBALANCED=1; printf '%s' "${_out}${_seg}"; return 0 ;;
                 esac
             fi
             continue
@@ -167,14 +183,17 @@ _gc_split_segments() {
                         _w="$(_gc_segment_cmd_word "${_seg}")"
                         case "${_w}" in
                             cat|*/cat|tee|*/tee|git|*/git)
-                                # data sink: the body is data — discard it.
-                                # `git` is here so `git commit -F - <<EOF …`
-                                # keeps its commit (and mutate-then-push)
-                                # classification on the CODE part.
+                                # data sink: the body is data — discard it
+                                # (but see the unquoted-body substitution guard
+                                # in body mode: an unquoted delimiter whose body
+                                # runs `$(...)` fails closed). `git` is here so
+                                # `git commit -F - <<EOF …` keeps its commit
+                                # (and mutate-then-push) classification.
+                                _q2="Q"; [ -z "${_q}" ] && _q2="U"
                                 if [ -n "${_pending}" ]; then
-                                    _pending="${_pending} ${_tstrip}:${_delim}"
+                                    _pending="${_pending} ${_tstrip}:${_q2}:${_delim}"
                                 else
-                                    _pending="${_tstrip}:${_delim}"
+                                    _pending="${_tstrip}:${_q2}:${_delim}"
                                 fi
                                 _seg="${_seg}${_line:${_i}:$((_j-_i))}"
                                 _i=$((_j-1)) ;;

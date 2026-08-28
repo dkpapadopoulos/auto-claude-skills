@@ -506,12 +506,36 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # rebase created inline in the same command would push unverified content
         # (and evade the routing-delta check — the new commit can't be diffed yet).
         # Unconditional (evidence cannot save it by definition); honors the human
-        # bypass; fail-open when the predicate or jq is unavailable.
-        if [ "${_PUSHGATE_SKIP}" != "true" ] && [ "${_gc_is_push}" = "true" ] \
-           && command -v jq >/dev/null 2>&1 \
-           && command -v command_git_mutate_before_push >/dev/null 2>&1 \
-           && [ "${_GC_PRECISE_OK}" = "true" ] \
-           && command_git_mutate_before_push "${_COMMAND}"; then
+        # bypass; fail-open when jq is unavailable.
+        #
+        # Trust split (Finding 2): _GC_PRECISE_OK is a WHOLE-COMMAND balance flag,
+        # so an unrelated unbalanced fragment (e.g. an unknown-owner `python3 <<PY`)
+        # elsewhere in the string flips it — and the segment-walking predicate then
+        # early-returns TRUNCATED output, silently missing a real `commit && push`.
+        # So: use the precise predicate when the parse is trustworthy, else FAIL
+        # CLOSED on a substring co-occurrence of a mutate verb and a push. The
+        # fallback only over-denies weird untrusted inputs (safe direction); a
+        # heredoc doc-write + push carries no `git <mutate>` code token, so the
+        # PR's target workflow is not falsely blocked.
+        # The lib is required for BOTH branches: when git-command.sh is absent
+        # entirely, this deny deliberately drops and is ANNOUNCED by the
+        # degradation advisory (#198) — the substring fallback must not silently
+        # resurrect it and rewrite that documented contract. It rescues only the
+        # Finding-2 case: lib PRESENT, but a whole-command balance flag flipped
+        # by an unrelated unbalanced fragment would otherwise skip the check.
+        _gc_mutate_then_push=false
+        if [ "${_gc_is_push}" = "true" ] && command -v jq >/dev/null 2>&1 \
+           && command -v command_git_mutate_before_push >/dev/null 2>&1; then
+            if [ "${_GC_PRECISE_OK}" = "true" ]; then
+                command_git_mutate_before_push "${_COMMAND}" && _gc_mutate_then_push=true
+            else
+                case "${_COMMAND}" in
+                    *"git commit"*|*"git merge"*|*"git rebase"*|*"git cherry-pick"*|*"git revert"*|*"git am"*)
+                        _gc_mutate_then_push=true ;;
+                esac
+            fi
+        fi
+        if [ "${_PUSHGATE_SKIP}" != "true" ] && [ "${_gc_mutate_then_push}" = "true" ]; then
             _MSG="PUSH GATE: this command mutates history (commit/merge/rebase/cherry-pick/revert/am) and pushes in ONE command. The gate evaluates evidence for the CURRENT commit, so the pushed result would be unverified. Run the mutation first, re-run verification if content changed, then run git push as a separate command."
             _emit_deny "${_MSG}"
             _DECISION="deny:mutate-then-push"

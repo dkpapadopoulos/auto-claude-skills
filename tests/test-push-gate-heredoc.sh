@@ -33,7 +33,11 @@ _assert_pred "P1 parse is balanced"                    0 command_parse_balanced 
 
 # P2: plan doc with fenced git lines in the BODY, then a REAL push after the
 # terminator -> push yes, mutate-then-push NO (the fenced lines are data).
-_c2="cat > plan.md <<PLANEOF${_NL}- [ ] step:${_NL}\`\`\`bash${_NL}git add -A${_NL}git commit -m x${_NL}\`\`\`${_NL}PLANEOF${_NL}git push"
+# QUOTED delimiter: a plan containing ```bash fences MUST use <<'EOF' — an
+# unquoted delimiter would make bash treat the backtick fences as live command
+# substitution (correctly failing closed), so the realistic, safe workflow is
+# the quoted form, which is what this fix keeps precise.
+_c2="cat > plan.md <<'PLANEOF'${_NL}- [ ] step:${_NL}\`\`\`bash${_NL}git add -A${_NL}git commit -m x${_NL}\`\`\`${_NL}PLANEOF${_NL}git push"
 _assert_pred "P2 trailing real push detected"          0 command_invokes_git_write "${_c2}"
 _assert_pred "P2 fenced body lines are not mutations"  1 command_git_mutate_before_push "${_c2}"
 
@@ -119,6 +123,17 @@ _c10="cat > n.md <<EOF${_NL}don't forget${_NL}EOF${_NL}git push"
 _assert_pred "P10 apostrophe in body; real push seen"  0 command_invokes_git_write "${_c10}"
 _assert_pred "P10 parse is balanced"                   0 command_parse_balanced "${_c10}"
 
+# F1 (review): unquoted delimiter -> body `$(...)`/backtick EXECUTES, so a
+# data-sink body is NOT inert. Must fail closed (unbalanced) so the substring
+# path sees the embedded push. Quoted delimiter stays inert (balanced).
+_c_f1="cat > plan.md <<EOF${_NL}\$(git push origin main)${_NL}EOF"
+_assert_pred "F1 unquoted \$() body is unbalanced"     1 command_parse_balanced "${_c_f1}"
+_c_f1b="cat > plan.md <<EOF${_NL}\`git push origin main\`${_NL}EOF"
+_assert_pred "F1b unquoted backtick body is unbalanced" 1 command_parse_balanced "${_c_f1b}"
+_c_f1c="cat > plan.md <<'EOF'${_NL}\$(git push origin main)${_NL}EOF"
+_assert_pred "F1c quoted \$() body stays inert"        0 command_parse_balanced "${_c_f1c}"
+_assert_pred "F1c quoted \$() body not a push"         1 command_invokes_git_write "${_c_f1c}"
+
 # ---------------------------------------------------------------- guard e2e
 GUARD="${PROJECT_ROOT}/hooks/openspec-guard.sh"
 _OLDHOME="$HOME"
@@ -163,6 +178,32 @@ assert_contains "E4 control compound denied as mutate" 'mutates history' "${out:
 # substring path must still see it).
 out="$(_run "${_c7}")"
 assert_contains "E5 bash-fed heredoc push is gated" '"deny"' "${out:-<empty>}"
+
+# E6 (Finding 1 e2e): unquoted-delimiter data-sink body running $(git push)
+# must be DENIED, not allowed as inert data.
+out="$(_run "${_c_f1}")"
+assert_contains "E6 unquoted \$() heredoc push is gated" '"deny"' "${out:-<empty>}"
+
+# E7 (Finding 2 e2e): an unrelated unknown-owner heredoc must NOT disarm the
+# mutate-then-push deny for a real inline commit&&push. Seed evidence that
+# legitimately covers a PLAIN push at HEAD (clean verdict + review ledger) so
+# the ONLY thing that can deny is the compound-specific check.
+_seed_mutate_evidence() {
+    local _sha; _sha="$(cd "${PROJECT_ROOT}" && git rev-parse HEAD 2>/dev/null)"
+    printf '%s' "{\"chain\":[\"requesting-code-review\",\"verification-before-completion\"],\"current_index\":2,\"completed\":[\"requesting-code-review\",\"verification-before-completion\"]}" \
+        > "$HOME/.claude/.skill-composition-state-${_TOK}"
+    printf '%s' "{\"passed\":[\"tests\"],\"failed\":[],\"could_not_verify\":[],\"gate_gaming_status\":\"clean\",\"sha\":\"${_sha}\"}" \
+        > "$HOME/.claude/.skill-project-verified-${_TOK}"
+}
+_seed_mutate_evidence
+_c_f2="python3 - <<PY${_NL}print(1)${_NL}PY${_NL}git commit -m fix && git push origin HEAD"
+out="$(_run "${_c_f2}")"
+assert_contains "E7 mutate deny survives unrelated heredoc" 'mutates history' "${out:-<empty>}"
+# Control: a plain doc-write + push (no mutate verb) is NOT falsely denied as
+# mutate-then-push even when the parse is untrusted.
+_c_f2b="python3 - <<PY${_NL}print(1)${_NL}PY${_NL}cat > d.md <<EOF${_NL}notes${_NL}EOF${_NL}git push origin HEAD"
+out="$(_run "${_c_f2b}")"
+assert_not_contains "E7b doc-write+push not mutate-denied" 'mutates history' "${out:-}"
 
 export HOME="$_OLDHOME"
 print_summary
