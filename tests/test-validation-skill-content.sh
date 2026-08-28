@@ -77,6 +77,16 @@ assert_contains "dc: has name frontmatter" "name: implementation-drift-check" "$
 # Dead session marker removed (openspec: state-scripts-injection-cut) — see the
 # rv note above; same dead-write + false-claim pattern. Pin it stays gone.
 assert_not_contains "dc: dead session marker removed" "drift-check-ran" "$DC_CONTENT"
+# The suppression it claimed (session-marker gate) never worked (marker written
+# under the singleton, hook reads payload-first) and its writer is deleted — the
+# SKILL.md must not claim automatic SHIP suppression, and no config may carry the
+# dead session-marker gate. Pinned after a PR review caught the false claim.
+assert_not_contains "dc: no false SHIP-suppression claim" "SHIP entry is suppressed" "$DC_CONTENT"
+assert_not_contains "dc: no session-marker-gate claim"    "session-marker gate"       "$DC_CONTENT"
+_DT="$(cat "${PROJECT_ROOT}/config/default-triggers.json")"
+_FB="$(cat "${PROJECT_ROOT}/config/fallback-registry.json")"
+assert_not_contains "default-triggers: dead session-marker gate removed" "session-marker" "$_DT"
+assert_not_contains "fallback-registry: dead session-marker gate removed" "session-marker" "$_FB"
 
 # Two report modes
 assert_contains "dc: full drift mode" "Implementation Drift Check" "$DC_CONTENT"

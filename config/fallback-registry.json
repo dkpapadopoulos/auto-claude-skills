@@ -1368,15 +1368,11 @@
         },
         {
           "step": "runtime-validation",
-          "purpose": "FALLBACK: Run realistic-context validation only if not already run in REVIEW",
-          "gate": "session-marker",
-          "marker": "validation-ran"
+          "purpose": "FALLBACK: Run realistic-context validation if it did not run in REVIEW"
         },
         {
           "step": "implementation-drift-check",
-          "purpose": "FALLBACK: Run drift check only if not already run in REVIEW",
-          "gate": "session-marker",
-          "marker": "drift-check-ran"
+          "purpose": "FALLBACK: Run drift check if it did not run in REVIEW"
         },
         {
           "step": "openspec-ship",

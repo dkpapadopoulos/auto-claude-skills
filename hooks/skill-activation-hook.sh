@@ -1383,9 +1383,6 @@ if [[ -n "$CURRENT_PHASE" ]]; then
 
         _gate_pass=1
         case "$_gate_type" in
-          session-marker)
-            [[ -f "${HOME}/.claude/.skill-${_gate_marker}-${_SESSION_TOKEN:-default}" ]] && _gate_pass=0
-            ;;
           artifact-presence)
             _gate_pass=0
             _saved_IFS="$IFS"; IFS=','

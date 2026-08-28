@@ -9,7 +9,7 @@ Detect spec drift, surface unvalidated assumptions, and identify coverage gaps b
 
 ## When to Use
 
-- **Auto-co-selection (REVIEW + SHIP):** Fires automatically during REVIEW phase (parallel) and SHIP phase (sequential fallback) when comparison material exists. The SHIP entry is suppressed if the skill already ran during REVIEW (session-marker gate).
+- **Auto-co-selection (REVIEW + SHIP):** Fires automatically during REVIEW phase (parallel) and SHIP phase (sequential) when comparison material exists.
 - **Explicit invocation (IMPLEMENT):** Invoke directly during implementation with prompts like "check drift", "am I still on plan", "spec check". When no comparison material exists, degrades to assumptions-only mode.
 
 ### Comparison Sources (any of these triggers auto-fire)
