@@ -44,7 +44,7 @@ review_verdict_field() {
     # observed-dispatch-telemetry's writer started recording a real `false`.
     # An explicit null check preserves "missing key or explicit null => empty"
     # while letting `false` print as the string "false".
-    jq -er --arg k "$field" 'select(type=="object") | (.[$k]) as $v | if $v == null then empty else $v end' "$f" 2>/dev/null
+    jq -er --arg k "$field" 'select(type=="object") | (.[$k]) as $v | if $v == null then empty else ($v|tostring) end' "$f" 2>/dev/null
 }
 
 _review_verdict_head_sha() {

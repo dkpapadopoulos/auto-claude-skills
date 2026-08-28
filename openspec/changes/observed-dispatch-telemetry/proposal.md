@@ -57,7 +57,9 @@ This change extends that pattern to local dispatches.
 - `hooks/reviewer-evidence-hook.sh` — new, diagnostic-only recorder.
 - `hooks/hooks.json` — one new `PostToolUse` registration.
 - `scripts/record-review-verdict.sh` — derivation + the new field.
-- `hooks/lib/review-verdict.sh` — reader tolerance for `schema_version: 2`.
+- `hooks/lib/review-verdict.sh` — `review_verdict_field`'s jq `//`-falsy fix,
+  so a genuine `false` value reads back as `false` (with a zero exit status)
+  instead of empty/unknown.
 - `skills/agent-team-review/SKILL.md` — the copy-paste flags become unnecessary.
 
 ## Explicitly NOT a predicate

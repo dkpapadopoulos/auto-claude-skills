@@ -7,7 +7,7 @@
 The review verdict artifact MUST record `dispatch_evidence` with one of exactly
 three values: `observed`, `asserted`, or `imported`.
 
-`observed` MUST be used only when a reviewer subagent return was actually
+`observed` MUST be used only when a reviewer subagent dispatch was actually
 recorded for this branch. `imported` MUST be used only when the values were
 derived from a resolvable pull request. `asserted` MUST be used in every other
 case, including when the caller passed `--dispatch-attempted` or
@@ -26,14 +26,14 @@ telemetry. None of them, alone or collapsed, MUST act as a deny predicate.
 
 #### Scenario: an observed dispatch is recorded as observed
 
-- **GIVEN** a reviewer subagent returned non-error on this branch
+- **GIVEN** a reviewer subagent was dispatched with no error reported on this branch
 - **WHEN** a review verdict is recorded without dispatch flags
 - **THEN** `dispatch_attempted` and `dispatch_succeeded` are `true`
 - **AND** `dispatch_evidence` is `observed`
 
 #### Scenario: an assertion is not laundered into a measurement
 
-- **GIVEN** no reviewer subagent return was recorded for this branch
+- **GIVEN** no reviewer subagent dispatch was recorded for this branch
 - **WHEN** a review verdict is recorded WITH `--dispatch-attempted --dispatch-succeeded`
 - **THEN** `dispatch_evidence` is `asserted`
 - **AND** `dispatch_evidence` is NOT `observed`
@@ -46,18 +46,21 @@ telemetry. None of them, alone or collapsed, MUST act as a deny predicate.
 
 ## ADDED Requirements
 
-### Requirement: A returning reviewer subagent is observed and recorded
+### Requirement: A dispatched reviewer subagent is observed and recorded
 
-A `PostToolUse` hook MUST record an observed reviewer-subagent return into the
-per-(repo+branch) branch ledger.
+A `PostToolUse` hook MUST record an observed reviewer-subagent dispatch into
+the per-(repo+branch) branch ledger. The hook fires on the subagent's spawn
+acknowledgement, not on its eventual return — the harness delivers no
+completion event to this hook, so "observed" means "dispatched", not
+"reviewed" or "returned".
 
 The matcher MUST cover both `Task` and `Agent` tool names, because the subagent
 tool is named `Agent` on current Claude Code and `Task` on older builds.
 
-A return whose `tool_response` reports an error MUST NOT be recorded. The error
-field MUST be read through a type guard so that a non-object `tool_response`
-degrades to "not errored" rather than raising and silently disabling the
-recorder for every payload.
+A dispatch whose `tool_response` reports an error MUST NOT be recorded. The
+error field MUST be read through a type guard so that a non-object
+`tool_response` degrades to "not errored" rather than raising and silently
+disabling the recorder for every payload.
 
 Reviewer identification MUST use a `subagent_type` allowlist, with a
 `general-purpose` dispatch recorded only when its description matches a
@@ -68,21 +71,23 @@ The hook MUST write nothing to stdout, MUST exit 0 on every path, and MUST NOT
 be added to `_GATE_ENFORCE_LIBS`.
 
 The hook's write and the recording script's read MUST resolve the branch-ledger
-key identically. The key is a hash of the raw path string, so a non-canonical
-path on either side yields a different directory and the read silently misses.
+key identically. The key is a hash of the raw path string and branch name, so
+a non-canonical path on either side yields a different directory and the read
+silently misses — as does the write and the read being made from different
+worktrees on different branches of the same repo.
 
-#### Scenario: a reviewer return is observed
+#### Scenario: a reviewer dispatch is observed
 
 - **GIVEN** a `PostToolUse` payload with tool name `Agent`, an allowlisted
   reviewer `subagent_type`, and no error
 - **WHEN** the hook runs
-- **THEN** an observed reviewer return is recorded for the current repo and branch
+- **THEN** an observed reviewer dispatch is recorded for the current repo and branch
 
 #### Scenario: a non-object payload does not disable the recorder
 
 - **GIVEN** a payload whose `tool_response` is an array rather than an object
 - **WHEN** the hook runs
-- **THEN** the return is recorded
+- **THEN** the dispatch is recorded
 - **AND** the hook exits 0 having written nothing to stdout
 
 #### Scenario: an implementation agent is not recorded as a reviewer
@@ -90,4 +95,4 @@ path on either side yields a different directory and the read silently misses.
 - **GIVEN** a payload with `subagent_type` `general-purpose` and a description
   describing implementation work
 - **WHEN** the hook runs
-- **THEN** no reviewer return is recorded
+- **THEN** no reviewer dispatch is recorded

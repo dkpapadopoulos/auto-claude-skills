@@ -114,16 +114,32 @@ esac
 # artifact must say `asserted`, because that disagreement is the signal.
 # Absence records as "not observed", never as an observed negative (D3).
 DISPATCH_EVIDENCE="asserted"
-if [ -n "${FROM_GH}" ] && [ "${DISPATCH_ATTEMPTED}" = "true" ]; then
+# Gated on the PR having actually RESOLVED (_GH non-empty, set at the
+# `gh pr view` call above), not on DISPATCH_ATTEMPTED — that flag is also
+# `true` when the CALLER passed --dispatch-attempted, so gating on it alone
+# would label a pure assertion "imported" for an unresolvable PR (no network,
+# no gh, wrong number, private repo): the spec's binding rule is `imported`
+# only for a resolvable PR. `${_GH:-}` is required: _GH is only assigned
+# inside the `--from-github` branch above, and this file runs under `set -u`.
+if [ -n "${FROM_GH}" ] && [ -n "${_GH:-}" ]; then
     DISPATCH_EVIDENCE="imported"
 else
     _ODT_OK=false
     # D4: this read MUST resolve the branch-ledger key the same way
     # hooks/reviewer-evidence-hook.sh's write does. branch_ledger_key hashes
-    # the RAW path string, so a non-canonical path on either side yields a
-    # different directory and this read silently misses. Both currently
-    # derive it from `git rev-parse --show-toplevel` with no proj_root arg.
-    # Give one side an explicit root and you must give it to the other.
+    # the RAW path string AND branch name, so a non-canonical path on either
+    # side yields a different directory and this read silently misses. Both
+    # currently derive the path half from `git rev-parse --show-toplevel`
+    # with no proj_root arg. Give one side an explicit root and you must give
+    # it to the other.
+    #
+    # The branch half is derived from THIS script's own cwd, same as the
+    # hook derives it from the dispatching session's cwd — running this
+    # script from a different worktree than the one the reviewer was
+    # dispatched from (the repo's own using-git-worktrees pattern) resolves a
+    # different branch and this read misses even when the repo is identical.
+    # Safe (falls through to "asserted", D3), just usually the case in that
+    # workflow. See design.md Trade-offs.
     . "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" 2>/dev/null && command -v branch_ledger_has >/dev/null 2>&1 && _ODT_OK=true || true
     if [ "${_ODT_OK}" = "true" ] && branch_ledger_has "reviewer-ran" 2>/dev/null; then
         DISPATCH_ATTEMPTED="true"; DISPATCH_SUCCEEDED="true"

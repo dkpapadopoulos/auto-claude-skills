@@ -2,10 +2,17 @@
 # reviewer-evidence-hook.sh — PostToolUse on ^(Task|Agent)$
 #
 # Records a `reviewer-ran` milestone into the per-(repo+branch) branch ledger
-# when a REVIEWER subagent returns successfully. This is the signal that
+# when a REVIEWER subagent is dispatched. This is the signal that
 # distinguishes "the review skill was invoked" (which skill-completion-hook.sh
 # already credits the instant Skill() returns its instructions) from "a
-# reviewer actually ran".
+# reviewer subagent was actually spawned to do it" — NOT from "a review was
+# completed". PostToolUse for `Agent`/`Task` fires on the SPAWN acknowledgement,
+# not on the subagent's eventual return: measured across 23 real `Agent` calls
+# in three transcripts, every `tool_result` is a ~310-330 byte "Spawned
+# successfully…" message and none carries an `is_error` field. The reviewer's
+# real report arrives later as a separate task notification this hook never
+# sees. A reviewer that spawns and then crashes, is stopped, goes idle, or
+# returns nothing is recorded identically to one that reviewed successfully.
 #
 # Diagnostic/advisory recorder ONLY. It emits nothing on stdout, sets no
 # permissionDecision, and every failure path exits 0 silently — a recorder
@@ -60,7 +67,12 @@ _DESC="${_R2#*$'\x1f'}"
 # `Task` is kept for older builds this plugin also ships to.
 case "${_TOOL}" in Task|Agent) ;; *) exit 0 ;; esac
 
-# An errored or aborted agent reviewed nothing.
+# An agent whose spawn acknowledgement reports an error was never dispatched
+# successfully, so it reviewed nothing. NOTE: measured absent from all 23 real
+# `Agent` payloads sampled (see header) — this leg is currently dead in
+# production, and every dispatch that reaches this point is credited. Kept
+# because it costs nothing and protects a future payload shape that does carry
+# the field; do not delete it as unreachable.
 [ "${_IS_ERROR}" = "true" ] && exit 0
 
 # Reviewer identification. `case`, not `for x in $LIST`: unquoted scalar
@@ -155,12 +167,21 @@ branch_ledger_record "reviewer-ran" 2>/dev/null || true
 
 # D4 (design.md): this hook's write and scripts/record-review-verdict.sh's
 # read must resolve the branch-ledger key IDENTICALLY. branch_ledger_key
-# hashes the raw path string, so a non-canonical path on either side (a
-# trailing slash, a doubled separator, an unresolved symlink) produces a
-# different key and the read silently misses — this produced a false negative
-# during PR #212's development. Both currently derive the key from
-# `git rev-parse --show-toplevel` (this hook via branch_ledger_record's
-# arg-less fallback); any future change giving one side an explicit proj_root
-# must give it to both.
+# hashes the raw path string AND branch name, so a non-canonical path on
+# either side (a trailing slash, a doubled separator, an unresolved symlink)
+# produces a different key and the read silently misses — this produced a
+# false negative during PR #212's development. Both currently derive the path
+# half from `git rev-parse --show-toplevel` (this hook via
+# branch_ledger_record's arg-less fallback); any future change giving one
+# side an explicit proj_root must give it to both.
+#
+# The branch half carries the SAME hazard from a different cause: each side
+# derives it from its own cwd. This hook runs in the dispatching session's
+# cwd/branch; the script may run from a different worktree entirely (the
+# repo's own using-git-worktrees / agent-team-execution pattern) and reads
+# ITS cwd/branch instead. That mismatch is silent and safe — the read simply
+# misses and the derivation falls through to "asserted" (D3) — but it means
+# this write is usually invisible to that read in exactly the workflow this
+# hook was built for. See design.md Trade-offs.
 
 exit 0

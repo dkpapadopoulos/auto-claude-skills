@@ -87,12 +87,17 @@ _ART="$HOME/.claude/.skill-review-verdict-${_TOK}"
 _bool() { if "$@" >/dev/null 2>&1; then echo 0; else echo 1; fi; }
 
 _write_verdict() { # <verdict> <head_sha> [unresolved_blocking]
+    # schema_version:2 + dispatch_evidence, matching the real writer's shape
+    # (issue: an all-schema-1, no-dispatch_evidence fixture here meant the
+    # guard e2e below was never driven with a dispatch field present, so
+    # "dispatch_evidence is never a deny predicate" was an untested claim).
     jq -nc --arg v "$1" --arg h "$2" --arg b "${BASE_SHA}" \
            --argjson ub "${3:-0}" \
-        '{schema_version:1,provider:"local-agent",reviewed_base_sha:$b,
+        '{schema_version:2,provider:"local-agent",reviewed_base_sha:$b,
           reviewed_head_sha:$h,changed_file_digest:"deadbeefcafe",
           changed_file_count:1,findings_total:0,unresolved_blocking:$ub,
           verdict:$v,dispatch_attempted:true,dispatch_succeeded:true,
+          dispatch_evidence:"observed",
           ts:"2026-08-25T00:00:00Z",writer:"test"}' > "${_ART}"
 }
 
@@ -383,6 +388,76 @@ assert_equals "absent dispatch is false"         "false"    "$(_odt_field dispat
 
 # (d) the schema version is bumped
 assert_equals "writer records schema_version 2" "2" "$(_odt_field schema_version)"
+
+# ---------------------------------------------------------------------------
+# (I2) `imported` MUST require a RESOLVABLE PR, not just the flag. The old
+# predicate was `[ -n "$FROM_GH" ] && [ "$DISPATCH_ATTEMPTED" = true ]`, but
+# DISPATCH_ATTEMPTED is ALSO true when the CALLER passes --dispatch-attempted
+# -- so an unresolvable PR (no gh, no network, wrong number, private repo)
+# plus that flag mislabelled a pure assertion "imported". This needs no
+# network: a PATH shim with every real binary except `gh` reproduces "no gh
+# installed" deterministically (same technique as
+# tests/test-push-gate-jq-absent.sh's jq-less shim).
+# ---------------------------------------------------------------------------
+_NOGH="$(mktemp -d /tmp/odt-nogh-XXXXXX)"
+_oIFS="$IFS"; IFS=:
+for _d in $PATH; do
+    [ -d "$_d" ] || continue
+    for _f in "$_d"/*; do
+        [ -e "$_f" ] || continue
+        _b="$(basename "$_f")"
+        [ "$_b" = "gh" ] && continue
+        [ -e "${_NOGH}/$_b" ] && continue
+        [ -x "$_f" ] && ln -s "$_f" "${_NOGH}/$_b" 2>/dev/null
+    done
+done
+IFS="$_oIFS"
+_probe_gh() { env -i PATH="$1" HOME="$HOME" /bin/bash -c 'command -v gh >/dev/null 2>&1 && echo yes || echo no'; }
+
+if [ "$(_probe_gh "${_NOGH}")" = "no" ]; then
+    find "$HOME/.claude" -maxdepth 1 -type d -name '.skill-branch-ledger-*' -exec rm -rf {} + 2>/dev/null
+    rm -f "${_ART}"
+    ( cd "$_ODT_REPO" && SKILL_SESSION_TOKEN="$_TOK" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        PATH="${_NOGH}" bash "${PROJECT_ROOT}/scripts/record-review-verdict.sh" \
+        --from-github 999999 --dispatch-attempted ) >/dev/null 2>&1
+    assert_equals "unresolvable PR + --dispatch-attempted is NOT imported" \
+        "asserted" "$(_odt_field dispatch_evidence)"
+else
+    _record_fail "could build a gh-less PATH for the I2 regression" \
+        "gh still resolvable on that PATH; the regression is untested this run"
+fi
+
+# Companion (optional per the brief, included): a RESOLVABLE PR outranks a
+# real observation (imported > observed -- design.md section B / ruling R2).
+# A fake `gh` script avoids a real network call while still exercising the
+# "PR actually resolved" branch.
+_FAKEGH="$(mktemp -d /tmp/odt-fakegh-XXXXXX)"
+cp -R "${_NOGH}/." "${_FAKEGH}/" 2>/dev/null || true
+_ODT_HEAD="$(git -C "$_ODT_REPO" rev-parse HEAD)"
+cat > "${_FAKEGH}/gh" <<EOF
+#!/bin/sh
+if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
+    printf '{"headRefOid":"%s","baseRefOid":"%s","reviews":[{"state":"APPROVED"}]}\n' \
+        "${_ODT_HEAD}" "${_ODT_HEAD}"
+    exit 0
+fi
+exit 1
+EOF
+chmod +x "${_FAKEGH}/gh"
+
+if [ "$(_probe_gh "${_FAKEGH}")" = "yes" ]; then
+    branch_ledger_record "reviewer-ran" "$_ODT_REPO"
+    rm -f "${_ART}"
+    ( cd "$_ODT_REPO" && SKILL_SESSION_TOKEN="$_TOK" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        PATH="${_FAKEGH}" bash "${PROJECT_ROOT}/scripts/record-review-verdict.sh" \
+        --from-github 1 ) >/dev/null 2>&1
+    assert_equals "imported outranks a real observation" "imported" "$(_odt_field dispatch_evidence)"
+else
+    _record_fail "could build a resolvable-gh PATH for the precedence test" \
+        "gh not resolvable on the fake PATH"
+fi
+rm -rf "${_NOGH}" "${_FAKEGH}"
+
 rm -rf "$_ODT_RAW"
 
 export HOME="$_OLDHOME"

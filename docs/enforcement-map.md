@@ -42,8 +42,9 @@ with `ACSM_SKIP_PUSH_GATE=1` in its environment. The agent cannot set either.
 - The review verdict artifact's `dispatch_evidence` field records one of
   `observed` | `asserted` | `imported` — provenance for `dispatch_attempted`/
   `dispatch_succeeded`, never a gate input. `observed` is written only when
-  `hooks/reviewer-evidence-hook.sh` (`PostToolUse` on `^(Task|Agent)$`)
-  recorded an actual reviewer-subagent return for this branch; `imported` only
+  `hooks/reviewer-evidence-hook.sh` (`PostToolUse` on `^(Task|Agent)$`, which
+  fires at spawn, not return) recorded an actual reviewer-subagent dispatch
+  for this branch; `imported` only
   for a resolved `--from-github` PR; everything else — including an explicit
   `--dispatch-attempted`/`--dispatch-succeeded` on the CLI — is `asserted`.
   None of `dispatch_attempted`, `dispatch_succeeded`, or `dispatch_evidence`

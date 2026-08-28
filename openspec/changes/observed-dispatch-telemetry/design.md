@@ -7,8 +7,13 @@ a measurement in a field that already exists".
 
 ### A. The observer
 
-`hooks/reviewer-evidence-hook.sh`, `PostToolUse` on `^(Task|Agent)$`. On a
-reviewer subagent returning non-error it calls
+`hooks/reviewer-evidence-hook.sh`, `PostToolUse` on `^(Task|Agent)$`. This
+fires at DISPATCH, not at return: measured by parsing 23 real `Agent` tool
+calls across three transcripts, every `tool_result` is a ~310-330 byte
+"Spawned successfully…" acknowledgement, and none carries an `is_error`
+field — the reviewer's actual report arrives later as a separate task
+notification this hook never sees. On a dispatch identified as a reviewer,
+with no error reported on the spawn acknowledgement, it calls
 `branch_ledger_record "reviewer-ran"`, which stores `<sha> <utc-ts>`.
 
 Salvaged from PR #212 with the gate-facing parts removed. What it keeps, and why
@@ -33,14 +38,16 @@ each was earned there rather than assumed here:
 telemetry fields, mirroring what the `--from-github` path already does at `:84`.
 Precedence, highest first:
 
-1. an observed `reviewer-ran` record for this branch → `observed`
-2. `--from-github` with a PR that has reviews → `imported`
+1. a resolvable `--from-github` PR → `imported`
+2. an observed `reviewer-ran` record for this branch → `observed`
 3. explicit `--dispatch-attempted` / `--dispatch-succeeded` flags → `asserted`
 4. nothing → both `false`, `dispatch_evidence: "asserted"`
 
-Observation outranks the flags deliberately. If the model asserts a dispatch and
-no dispatch was observed, the artifact should say so — that disagreement is the
-signal, and letting the assertion win would delete it.
+`imported` outranks `observed` when both hold: the values came from the PR
+itself, so `imported` is the truthful label (R2). Observation outranks the
+flags: if the model asserts a dispatch and no dispatch was observed, the
+artifact should say so — that disagreement is the signal, and letting the
+assertion win would delete it.
 
 ### C. The provenance field
 
@@ -73,13 +80,17 @@ through to `asserted`. The honest failure is losing the upgrade, not fabricating
 a negative.
 
 **D4 — The hook's write and the script's read MUST resolve the branch key
-identically.** Both currently derive it from `git rev-parse --show-toplevel` —
-the hook via `branch_ledger_record`'s arg-less fallback, the script via `_ROOT`.
-`branch_ledger_key` hashes the **raw path string**, so a non-canonical path on
-either side (a trailing slash, a doubled separator, an unresolved symlink)
-produces a different directory and the read silently misses. This is not
-hypothetical: it produced a false negative during PR #212's development, where a
-`$TMPDIR`-derived path with a doubled slash made a working recorder look broken.
+identically.** Both currently derive the path half from
+`git rev-parse --show-toplevel` — the hook via `branch_ledger_record`'s
+arg-less fallback, the script via `_ROOT`. `branch_ledger_key` hashes the
+**raw path string and branch name**, so a non-canonical path on either side
+(a trailing slash, a doubled separator, an unresolved symlink) produces a
+different directory and the read silently misses. This is not hypothetical:
+it produced a false negative during PR #212's development, where a
+`$TMPDIR`-derived path with a doubled slash made a working recorder look
+broken. The branch half carries the same hazard from a different cause: each
+side derives it from its own cwd, and the two sides can legitimately be
+different worktrees on different branches of the same repo — see Trade-offs.
 Any future change giving one side an explicit `proj_root` must give it to both.
 
 **D5 — Diagnostic-only, excluded from `_GATE_ENFORCE_LIBS`.** The hook writes no
@@ -88,17 +99,36 @@ gate state, emits nothing on stdout, and exits 0 on every path. Same posture as
 
 ## Trade-offs
 
-- **The `is_error` field's presence in the `Agent` payload was never measured.**
-  A probe was scoped during PR #212 and deliberately skipped. If the field is
-  absent, a crashed reviewer is recorded as a successful dispatch. This matters
-  **less** here than it did there: as telemetry an over-credit is a wrong data
-  point; as a gate it would have been a wrong block. The `| objects` guard
-  ensures the failure is over-crediting rather than a silently dead recorder.
-- **Dispatch is still not scrutiny.** An observed dispatch says a subagent ran
-  and returned, nothing more. That is precisely why it stays telemetry.
+- **The `is_error` field is measured ABSENT from every real `Agent` payload,
+  and the error leg never fires in production.** Parsed 23 real `Agent` tool
+  calls across three transcripts: every `tool_result` is a spawn
+  acknowledgement with no `is_error` field at all, so the `// false` default is
+  always taken. A crashed, stopped, or idle reviewer is therefore recorded as a
+  successful dispatch every time this hook fires on a reviewer subagent — not
+  merely in some untested edge case. This matters **less** here than it did in
+  PR #212: as telemetry an over-credit is a wrong data point; as a gate it
+  would have been a wrong block. The `| objects` guard still earns its keep —
+  it protects a future payload shape that DOES carry the field, and bounds the
+  failure to over-crediting rather than a silently dead recorder.
+- **Dispatch is still not scrutiny, and is not even confirmed return.** An
+  observed dispatch says a subagent was spawned and its spawn was
+  acknowledged without error — nothing about whether it ran to completion,
+  produced a report, or reviewed anything. That is precisely why it stays
+  telemetry.
 - **The observer only sees subagent dispatches.** A human review, or one done by
   reading the diff inline, produces no observation and correctly records
   `asserted`. The field measures dispatch, not review.
+- **The observation is keyed to the dispatching session's repo+branch.**
+  `branch_ledger_key` hashes `<origin-or-path>\x1f<branch>`, and the branch
+  half is derived from each side's own cwd, same hazard class as the path half
+  D4 already covers. `PostToolUse` fires in the dispatching session's
+  cwd/branch; `scripts/record-review-verdict.sh` reads from whatever cwd it is
+  invoked from. A review dispatched from one worktree and a verdict recorded
+  from another — the repo's own `using-git-worktrees` / `agent-team-execution`
+  pattern, not an edge case — resolve DIFFERENT keys, so the write is
+  invisible to that read. D3 holds (this degrades to `asserted`, never a
+  fabricated negative), but it means the upgrade to `observed` will usually
+  not happen in exactly the workflow this hook was built for.
 
 ## Dissenting views
 
@@ -148,10 +178,10 @@ against does not hold. The rule is stale, not violated.
 
 ## Acceptance Scenarios
 
-1. **Observed dispatch upgrades the telemetry.** GIVEN a reviewer subagent
-   returned non-error on this branch, WHEN a verdict is recorded without dispatch
-   flags, THEN `dispatch_attempted` and `dispatch_succeeded` are `true` and
-   `dispatch_evidence` is `observed`.
+1. **Observed dispatch upgrades the telemetry.** GIVEN a reviewer subagent was
+   dispatched with no error reported on this branch, WHEN a verdict is
+   recorded without dispatch flags, THEN `dispatch_attempted` and
+   `dispatch_succeeded` are `true` and `dispatch_evidence` is `observed`.
 2. **Assertion is recorded as assertion.** GIVEN no observation exists, WHEN a
    verdict is recorded WITH `--dispatch-attempted --dispatch-succeeded`, THEN
    both are `true` and `dispatch_evidence` is `asserted`.
