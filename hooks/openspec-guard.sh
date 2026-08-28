@@ -295,15 +295,20 @@ _REVIEW_VERDICT_OK=false
     _guard_load "${_GC_ROOT}/hooks/lib/review-verdict.sh" && \
     command -v review_verdict_is_clean >/dev/null 2>&1 && _REVIEW_VERDICT_OK=true || true
 
-# Bound the worst case: the precise detector is an O(n^2) char-scan parser, so
-# only use it below a size cap; above it, fall back to the (fail-closed)
-# substring check so a huge git-containing command can't stall the hot path.
-_GC_MAX=4096   # above this, use the substring fallback (fail-closed) — bounds cost
+# Bound the worst case: the scanner self-budgets its O(n^2) char-scan at 4096
+# CODE characters (heredoc bodies and quoted continuation lines are consumed
+# line-wise and cost O(n) total), reporting unbalanced beyond the budget — so
+# the size gate here is only a sanity cap on the O(n) line pass. This is what
+# lets a >4KB `cat > plan.md <<EOF …` doc-write parse precisely instead of
+# false-denying via the substring fallback (openspec: remedy-aware-backbone;
+# observed live at command_len 6082 and 35036).
+_GC_MAX=4096      # scanner code-char budget (kept for reference/telemetry)
+_GC_MAX_TOTAL=131072
 _gc_precise() {
     # Both predicates are required: the fast-path and gate body call
     # command_invokes_gh_merge too — if the lib were ever split and only one
     # loaded, an unbound call would ERR-trap the whole gate open. Check both.
-    [ "${#_COMMAND}" -le "${_GC_MAX}" ] && \
+    [ "${#_COMMAND}" -le "${_GC_MAX_TOTAL}" ] && \
         command -v command_invokes_git_write >/dev/null 2>&1 && \
         command -v command_invokes_gh_merge >/dev/null 2>&1 || return 1
     # #155 follow-up: an UNBALANCED quote parse means the segmentation cannot be
@@ -317,9 +322,14 @@ _gc_precise() {
 }
 
 # Fast path: only proceed for a REAL git commit/push or gh-merge invocation.
-# Precise when the detector lib loaded and the command is small; substring
-# fallback (fail-closed) otherwise.
-if _gc_precise; then
+# Precise when the detector lib loaded and the parse is trustworthy; substring
+# fallback (fail-closed) otherwise. Computed ONCE: the same trust decision must
+# gate every precise-predicate consumer below — in particular the
+# mutate-then-push deny, which previously ran on a size check alone and could
+# act on an untrustworthy segmentation (design-review finding, bundled here).
+_GC_PRECISE_OK=false
+_gc_precise && _GC_PRECISE_OK=true || true
+if [ "${_GC_PRECISE_OK}" = "true" ]; then
     if ! command_invokes_git_write "${_COMMAND}" \
        && ! command_invokes_gh_merge "${_COMMAND}"; then
         exit 0
@@ -423,7 +433,7 @@ fi
 #      verification verdict. Routing changes are high-risk by nature, not by phase.
 # Fail-open guards for both: missing lib / missing jq / not a routing repo /
 # unresolvable diff base => no gate (never a false-block).
-if _gc_precise; then
+if [ "${_GC_PRECISE_OK}" = "true" ]; then
     _gc_is_push=false; command_invokes_git_write "${_COMMAND}" "push" && _gc_is_push=true
     _gc_is_ghmerge=false; command_invokes_gh_merge "${_COMMAND}" && _gc_is_ghmerge=true
 else
@@ -500,7 +510,7 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         if [ "${_PUSHGATE_SKIP}" != "true" ] && [ "${_gc_is_push}" = "true" ] \
            && command -v jq >/dev/null 2>&1 \
            && command -v command_git_mutate_before_push >/dev/null 2>&1 \
-           && [ "${#_COMMAND}" -le "${_GC_MAX}" ] \
+           && [ "${_GC_PRECISE_OK}" = "true" ] \
            && command_git_mutate_before_push "${_COMMAND}"; then
             _MSG="PUSH GATE: this command mutates history (commit/merge/rebase/cherry-pick/revert/am) and pushes in ONE command. The gate evaluates evidence for the CURRENT commit, so the pushed result would be unverified. Run the mutation first, re-run verification if content changed, then run git push as a separate command."
             _emit_deny "${_MSG}"

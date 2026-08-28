@@ -173,7 +173,14 @@ _assert_pred "quoted-newline payload parses balanced"    0 command_parse_balance
 _assert_pred "awk-style single quotes parse balanced"    0 command_parse_balanced "awk '{print \$1}' f"
 _assert_pred "nested quotes parse balanced"              0 command_parse_balanced "echo \"a 'b' c\""
 _assert_pred "apostrophe comment parses unbalanced"      1 command_parse_balanced "${_UB_COMMENT}"
-_assert_pred "heredoc apostrophe parses unbalanced"      1 command_parse_balanced "${_UB_HEREDOC}"
+# remedy-aware-backbone: the heredoc body is now recognized as DATA (cat is a
+# data sink), so the apostrophe in it no longer poisons quote state — the parse
+# is BALANCED and the trailing push is detected PRECISELY instead of via the
+# unbalanced fallback. The safety intent of the old expectation (the push after
+# a heredoc must never be missed) is pinned by the paired predicate below and
+# by the e2e "heredoc-apostrophe push still denied" assert.
+_assert_pred "heredoc apostrophe parses balanced"        0 command_parse_balanced "${_UB_HEREDOC}"
+_assert_pred "push after apostrophe heredoc detected"    0 command_invokes_git_write "${_UB_HEREDOC}"
 
 # END-TO-END: unbalanced-quote payloads carrying a real push must still DENY.
 out="$(_run "${_UB_COMMENT}")"

@@ -11,65 +11,251 @@ _GC_SEP=$'\037'
 
 # Split a command into segments on UNQUOTED ; | & and NEWLINE boundaries
 # (covers ; | && || and multi-line scripts). Quote-aware: operators inside
-# '...' or "..." are literal, not boundaries. Emits segments separated by
-# ${_GC_SEP}. Backslash escapes, `#` comments and heredoc bodies are NOT
-# interpreted, so this scanner's quoting model diverges from the shell's.
-# A false negative here is a gate BYPASS, i.e. the UNSAFE direction — the
-# opposite of what this comment claimed before #155. Callers must not rely on
-# the precise predicates when `command_parse_balanced` reports an unbalanced
-# parse; see `_gc_precise` in openspec-guard.sh.
+# '...' or "..." are literal, not boundaries. HEREDOC-aware (openspec:
+# remedy-aware-backbone): a body fed to a known DATA SINK (cat/tee/git) is
+# data and is discarded, never emitted as segments — pre-fix, a plan doc
+# written via `cat > plan.md <<EOF` whose body contained `git push` was
+# classified as a real push (~17-22%% of live denies). A body fed to a known
+# SHELL INTERPRETER (bash/sh/…/eval) EXECUTES, so it is scanned as code; a
+# body fed to anything else (python/ssh/docker/unknown) cannot be proven
+# data and fails CLOSED via _GC_UNBALANCED. Arithmetic contexts `((…))` are
+# depth-tracked so `$((1<<2))` is never misread as a heredoc operator.
+# Emits segments separated by ${_GC_SEP}. Backslash escapes and `#` comments
+# are still NOT interpreted. A false negative here is a gate BYPASS, i.e. the
+# UNSAFE direction. Callers must not rely on the precise predicates when
+# `command_parse_balanced` reports an unbalanced parse; see `_gc_precise` in
+# openspec-guard.sh.
 #
 # ISSUE #155 — two coupled requirements, BOTH needed:
 #  (1) Newline is a boundary HERE, in the quote-aware scanner, so a newline
-#      inside quotes is consumed literally by the _sq/_dq branches while an
-#      unquoted one still splits a genuine multi-line compound.
+#      inside quotes is consumed literally while an unquoted one still splits
+#      a genuine multi-line compound.
 #  (2) The emitted record separator is US, NOT newline. A quoted segment
 #      legitimately CONTAINS newlines, so a newline-delimited output format is
-#      re-split by the callers' IFS loop no matter how careful this scanner is —
-#      which is exactly how the original bug survived (1) alone.
+#      re-split by the callers' IFS loop no matter how careful this scanner is.
 # Pre-fix, a payload like
 #   node x.mjs task "review this<NL>git push origin main<NL>and tell me why"
 # yielded a bare `git push origin main` segment and was classified as a real
-# push. Measured in production: 5 of 26 deny records were Codex invocations
-# that push nothing (one was deny:routing-governance, a push-only leg).
-# PAIRED: every caller iterating this output must use IFS="${_GC_SEP}".
+# push. PAIRED: every caller iterating this output must use IFS="${_GC_SEP}".
+#
+# COST MODEL: the char-scan is O(len^2) in bash 3.2 (substring indexing walks
+# the string), so CODE characters are budgeted at 4096 — beyond that the parse
+# is declared unbalanced and callers use their fail-closed substring path
+# (byte-for-byte the pre-change behavior for >4KB commands). Heredoc BODIES
+# and fully-quoted continuation lines are consumed line-wise (O(n) total) and
+# do NOT spend budget — that is what makes a 35KB doc-write parseable at all.
 _gc_split_segments() {
-    local _s="$1" _seg="" _sq=0 _dq=0 _i=0 _n _c _out="" _nl
-    _nl='
-'
+    local _s="$1" _seg="" _sq=0 _dq=0 _out="" _line _c _i _n _j
+    local _pending="" _body=0 _arith=0 _budget=4096 _pend_sep=0
+    local _tab _delim _tstrip _q _w _bad
+    _tab=$'\t'
     # An empty separator would make IFS="" disable splitting in every caller —
     # the whole command becomes one segment and a real `git add -A && git push`
     # goes undetected. Re-assert it here so the fail direction stays CLOSED.
     [ -n "${_GC_SEP:-}" ] || _GC_SEP=$'\037'
-    _n=${#_s}
-    while [ "${_i}" -lt "${_n}" ]; do
-        _c="${_s:${_i}:1}"
+    _GC_UNBALANCED=0
+    while IFS= read -r _line || [ -n "${_line}" ]; do
+        _line="${_line%$'\r'}"   # CRLF paste: \r glued to a terminator would
+                                 # never compare equal and cost precision
+        # ---- heredoc body mode: whole-line compare, no char scan, no budget.
+        if [ "${_body}" -eq 1 ]; then
+            _delim="${_pending%% *}"
+            _tstrip="${_delim%%:*}"; _delim="${_delim#*:}"
+            _c="${_line}"
+            if [ "${_tstrip}" = "T" ]; then
+                while [ "${_c#"${_tab}"}" != "${_c}" ]; do _c="${_c#"${_tab}"}"; done
+            fi
+            if [ "${_c}" = "${_delim}" ]; then
+                case "${_pending}" in
+                    *" "*) _pending="${_pending#* }" ;;
+                    *) _pending=""; _body=0 ;;
+                esac
+            fi
+            continue
+        fi
+        # ---- normal mode: flush the segment boundary owed by the previous
+        # line's newline (deferred so the output never gains a trailing SEP).
+        if [ "${_pend_sep}" -eq 1 ]; then
+            _out="${_out}${_seg}${_GC_SEP}"; _seg=""; _pend_sep=0
+        fi
+        # Quote fast-path: a continuation line with no closing-quote character
+        # is consumed whole — bounds the #155 large-quoted-payload cost.
         if [ "${_sq}" -eq 1 ]; then
-            [ "${_c}" = "'" ] && _sq=0
-            _seg="${_seg}${_c}"; _i=$((_i+1)); continue
+            case "${_line}" in
+                *"'"*) : ;;
+                *) _seg="${_seg}${_line}"$'\n'; continue ;;
+            esac
+        elif [ "${_dq}" -eq 1 ]; then
+            case "${_line}" in
+                *'"'*) : ;;
+                *) _seg="${_seg}${_line}"$'\n'; continue ;;
+            esac
         fi
-        if [ "${_dq}" -eq 1 ]; then
-            [ "${_c}" = '"' ] && _dq=0
-            _seg="${_seg}${_c}"; _i=$((_i+1)); continue
+        _n=${#_line}; _i=0
+        while [ "${_i}" -lt "${_n}" ]; do
+            _budget=$((_budget - 1))
+            if [ "${_budget}" -le 0 ]; then
+                _GC_UNBALANCED=1; printf '%s' "${_out}${_seg}"; return 0
+            fi
+            _c="${_line:${_i}:1}"
+            if [ "${_sq}" -eq 1 ]; then
+                [ "${_c}" = "'" ] && _sq=0
+                _seg="${_seg}${_c}"; _i=$((_i+1)); continue
+            fi
+            if [ "${_dq}" -eq 1 ]; then
+                [ "${_c}" = '"' ] && _dq=0
+                _seg="${_seg}${_c}"; _i=$((_i+1)); continue
+            fi
+            case "${_c}" in
+                "'") _sq=1; _seg="${_seg}${_c}" ;;
+                '"') _dq=1; _seg="${_seg}${_c}" ;;
+                '(')
+                    # `((`/`$((` opens an arithmetic context; `<<` inside one
+                    # is a shift, not a heredoc (`$((1<<2))` bypass — design
+                    # review requirement).
+                    if [ "${_line:$((_i+1)):1}" = "(" ]; then
+                        _arith=$((_arith+1)); _seg="${_seg}(("; _i=$((_i+1))
+                    else
+                        _seg="${_seg}${_c}"
+                    fi ;;
+                ')')
+                    if [ "${_arith}" -gt 0 ] && [ "${_line:$((_i+1)):1}" = ")" ]; then
+                        _arith=$((_arith-1)); _seg="${_seg}))"; _i=$((_i+1))
+                    else
+                        _seg="${_seg}${_c}"
+                    fi ;;
+                '<')
+                    if [ "${_arith}" -gt 0 ] || [ "${_line:$((_i+1)):1}" != "<" ]; then
+                        _seg="${_seg}${_c}"
+                    elif [ "${_line:$((_i+2)):1}" = "<" ]; then
+                        # herestring `<<<`: same-line operand, plain text —
+                        # consume all three so `<<` is not re-matched at i+1.
+                        _seg="${_seg}<<<"; _i=$((_i+2))
+                    else
+                        # heredoc operator: <<[-][blanks]['"]delim['"]
+                        _j=$((_i+2)); _tstrip="P"
+                        if [ "${_line:${_j}:1}" = "-" ]; then _tstrip="T"; _j=$((_j+1)); fi
+                        while :; do
+                            _c="${_line:${_j}:1}"
+                            case "${_c}" in
+                                ' '|"${_tab}") _j=$((_j+1)) ;;
+                                *) break ;;
+                            esac
+                        done
+                        _q=""
+                        case "${_line:${_j}:1}" in
+                            "'"|'"') _q="${_line:${_j}:1}"; _j=$((_j+1)) ;;
+                        esac
+                        _delim=""
+                        while :; do
+                            _c="${_line:${_j}:1}"
+                            case "${_c}" in
+                                [A-Za-z0-9_]) _delim="${_delim}${_c}"; _j=$((_j+1)) ;;
+                                *) break ;;
+                            esac
+                        done
+                        _bad=0
+                        [ -n "${_delim}" ] || _bad=1
+                        if [ -n "${_q}" ]; then
+                            if [ "${_line:${_j}:1}" = "${_q}" ]; then _j=$((_j+1)); else _bad=1; fi
+                        fi
+                        if [ "${_bad}" -eq 1 ]; then
+                            # empty / non-[A-Za-z0-9_] / mixed-quote delimiter:
+                            # cannot locate the terminator — fail CLOSED.
+                            _GC_UNBALANCED=1; printf '%s' "${_out}${_seg}"; return 0
+                        fi
+                        _w="$(_gc_segment_cmd_word "${_seg}")"
+                        case "${_w}" in
+                            cat|*/cat|tee|*/tee|git|*/git)
+                                # data sink: the body is data — discard it.
+                                # `git` is here so `git commit -F - <<EOF …`
+                                # keeps its commit (and mutate-then-push)
+                                # classification on the CODE part.
+                                if [ -n "${_pending}" ]; then
+                                    _pending="${_pending} ${_tstrip}:${_delim}"
+                                else
+                                    _pending="${_tstrip}:${_delim}"
+                                fi
+                                _seg="${_seg}${_line:${_i}:$((_j-_i))}"
+                                _i=$((_j-1)) ;;
+                            bash|*/bash|sh|*/sh|zsh|*/zsh|dash|*/dash|ksh|*/ksh|eval|source|.)
+                                # shell interpreter: the body EXECUTES — do
+                                # NOT register a heredoc; body lines scan as
+                                # code, so `bash <<EOF … git push … EOF`
+                                # yields a real push segment (precisely).
+                                _seg="${_seg}${_line:${_i}:$((_j-_i))}"
+                                _i=$((_j-1)) ;;
+                            *)
+                                # unknown owner (python/ssh/docker/empty/...):
+                                # the body may execute remotely or via an
+                                # interpreter we cannot enumerate — fail
+                                # CLOSED to the substring path.
+                                _GC_UNBALANCED=1; printf '%s' "${_out}${_seg}"; return 0 ;;
+                        esac
+                    fi ;;
+                ';'|'|'|'&') _out="${_out}${_seg}${_GC_SEP}"; _seg="" ;;
+                *) _seg="${_seg}${_c}" ;;
+            esac
+            _i=$((_i+1))
+        done
+        # ---- end of line
+        if [ "${_sq}" -eq 1 ] || [ "${_dq}" -eq 1 ]; then
+            # inside quotes: the newline is literal (#155 requirement (1)).
+            _seg="${_seg}"$'\n'
+        else
+            _pend_sep=1
+            [ -n "${_pending}" ] && _body=1
         fi
-        case "${_c}" in
-            "'") _sq=1; _seg="${_seg}${_c}" ;;
-            '"') _dq=1; _seg="${_seg}${_c}" ;;
-            ';'|'|'|'&'|"${_nl}") _out="${_out}${_seg}${_GC_SEP}"; _seg="" ;;
-            *) _seg="${_seg}${_c}" ;;
-        esac
-        _i=$((_i+1))
-    done
-    # #155 follow-up — publish whether the scan ended INSIDE a quote. Making
-    # newline a boundary above put this scanner's quote state on the enforcement
-    # path for multi-line commands, and its model diverges from the shell's: it
-    # does not interpret backslash escapes, `#` comments, or heredoc bodies. An
-    # apostrophe in any of those (`# don't forget` + NL + a real push) leaves
-    # _sq set, so the newline is consumed literally and the push never becomes
-    # its own segment — an under-detect, i.e. a gate BYPASS. Callers must treat
-    # an unbalanced parse as untrustworthy and fail CLOSED.
-    if [ "${_sq}" -eq 1 ] || [ "${_dq}" -eq 1 ]; then _GC_UNBALANCED=1; else _GC_UNBALANCED=0; fi
+    done <<< "${_s}"
+    # Publish whether the scan ended in a trustworthy state: inside a quote
+    # (#155), or with an unterminated heredoc body (this change), the
+    # segmentation cannot be trusted and precise detection would UNDER-detect —
+    # a gate bypass. Callers must fail CLOSED on unbalanced.
+    if [ "${_sq}" -eq 1 ] || [ "${_dq}" -eq 1 ] || [ -n "${_pending}" ] || [ "${_body}" -eq 1 ]; then
+        _GC_UNBALANCED=1
+    fi
     printf '%s' "${_out}${_seg}"
+}
+
+# _gc_segment_cmd_word <segment-text>
+#   Echoes the segment's effective command word: unwraps leading `(`/`{` group
+#   openers and skips env/assignment/wrapper prefixes. Used ONLY to classify
+#   the OWNER of a heredoc operator (data sink vs shell interpreter vs
+#   unknown) — it deliberately returns the word verbatim (path prefixes are
+#   matched by the caller's case patterns). PAIRED: shares the group-opener
+#   unwrap shape with _gc_segment_git_sub — a fix to one likely applies to
+#   the other.
+_gc_segment_cmd_word() {
+    local _gcw
+    # shellcheck disable=SC2086
+    set -- $1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            '('|'{') shift ;;
+            '('*|'{'*)
+                _gcw="$1"
+                while :; do
+                    case "${_gcw}" in
+                        '('*) _gcw="${_gcw#\(}" ;;
+                        '{'*) _gcw="${_gcw#\{}" ;;
+                        *) break ;;
+                    esac
+                done
+                shift
+                set -- "${_gcw}" "$@"
+                break ;;
+            *) break ;;
+        esac
+    done
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            env|sudo|nohup|command|exec|time) shift ;;
+            [A-Za-z_]*=*) shift ;;
+            *) break ;;
+        esac
+    done
+    [ "$#" -gt 0 ] || return 0
+    printf '%s' "$1"
 }
 
 # command_parse_balanced <command>
