@@ -121,11 +121,22 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "^Task$",
+        "matcher": "^(Task|Agent)$",
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/cozempic-wrapper.sh checkpoint"
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/cozempic-wrapper.sh checkpoint",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "^(Task|Agent)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/reviewer-evidence-hook.sh",
+            "timeout": 5
           }
         ]
       },

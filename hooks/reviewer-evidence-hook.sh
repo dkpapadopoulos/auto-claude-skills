@@ -1,0 +1,187 @@
+#!/bin/bash
+# reviewer-evidence-hook.sh — PostToolUse on ^(Task|Agent)$
+#
+# Records a `reviewer-ran` milestone into the per-(repo+branch) branch ledger
+# when a REVIEWER subagent is dispatched. This is the signal that
+# distinguishes "the review skill was invoked" (which skill-completion-hook.sh
+# already credits the instant Skill() returns its instructions) from "a
+# reviewer subagent was actually spawned to do it" — NOT from "a review was
+# completed". PostToolUse for `Agent`/`Task` fires on the SPAWN acknowledgement,
+# not on the subagent's eventual return: measured across 23 real `Agent` calls
+# in three transcripts, every `tool_result` is a ~310-330 byte "Spawned
+# successfully…" message and none carries an `is_error` field. The reviewer's
+# real report arrives later as a separate task notification this hook never
+# sees. A reviewer that spawns and then crashes, is stopped, goes idle, or
+# returns nothing is recorded identically to one that reviewed successfully.
+#
+# Diagnostic/advisory recorder ONLY. It emits nothing on stdout, sets no
+# permissionDecision, and every failure path exits 0 silently — a recorder
+# must never alter a gate decision. Deliberately NOT in _GATE_ENFORCE_LIBS.
+#
+# Spec: openspec/changes/observed-dispatch-telemetry/
+# Bash 3.2 compatible.
+
+trap 'exit 0' ERR
+set -uo pipefail
+
+_INPUT="$(cat 2>/dev/null)"
+[ -z "${_INPUT}" ] && exit 0
+command -v jq >/dev/null 2>&1 || exit 0
+
+# One jq fork, \x1f-joined (the repo's field separator; never \n, which a
+# free-text description legitimately contains).
+#
+# EVERY nested read goes through `| objects |`. `.a.b` is a TYPED INDEX in jq,
+# not a lookup: it EXITS 5 when `.a` is an array, string or number, and the
+# `|| exit 0` below then turns this recorder permanently silent — empty stdout,
+# exit 0, no record, forever. An array of content blocks is a plausible shape
+# for `tool_response` (agent OUTPUT); `tool_input` is schema-fixed and lower
+# risk, but it is the same class and gets the same guard. `tostring` before
+# `gsub` for the same reason: gsub on a non-string description errors and kills
+# the record just as thoroughly.
+#
+# TRADE, accepted deliberately: for a NON-OBJECT `tool_response` the error
+# signal is unobservable, and `// false` defaults it to success — so an ERRORED
+# array-shaped agent return is now CREDITED as a review that ran. That is
+# over-crediting, the direction the asymmetry note below calls dangerous. It is still
+# the right trade: the alternative is the typed index, which records nothing at
+# all for that shape (fail-closed only by accident) and is the defect this
+# guard exists to remove.
+_FIELDS="$(printf '%s' "${_INPUT}" | jq -r '[
+    .tool_name // "",
+    ((.tool_response | objects | .is_error) // false | tostring),
+    ((.tool_input | objects | .subagent_type) // "" | tostring),
+    ((.tool_input | objects | .description) // "" | tostring | gsub("[\\n\\r]"; " "))
+  ] | join("\u001f")' 2>/dev/null)" || exit 0
+[ -z "${_FIELDS}" ] && exit 0
+
+# The description is parsed LAST and takes the remainder, so every field added
+# here must go BEFORE it — a trailing field would be swallowed by any \x1f a
+# free-text description happened to contain.
+_TOOL="${_FIELDS%%$'\x1f'*}";      _R1="${_FIELDS#*$'\x1f'}"
+_IS_ERROR="${_R1%%$'\x1f'*}";      _R2="${_R1#*$'\x1f'}"
+_SUBAGENT="${_R2%%$'\x1f'*}"
+_DESC="${_R2#*$'\x1f'}"
+
+# Only the subagent-dispatch tool. `Agent` is the current Claude Code name;
+# `Task` is kept for older builds this plugin also ships to.
+case "${_TOOL}" in Task|Agent) ;; *) exit 0 ;; esac
+
+# An agent whose spawn acknowledgement reports an error was never dispatched
+# successfully, so it reviewed nothing. NOTE: measured absent from all 23 real
+# `Agent` payloads sampled (see header) — this leg is currently dead in
+# production, and every dispatch that reaches this point is credited. Kept
+# because it costs nothing and protects a future payload shape that does carry
+# the field; do not delete it as unreachable.
+[ "${_IS_ERROR}" = "true" ] && exit 0
+
+# Reviewer identification. `case`, not `for x in $LIST`: unquoted scalar
+# expansion does not word-split under zsh and would iterate once over the
+# whole string.
+#
+# The predicate is deliberately TIGHT (see the asymmetry note below). This
+# hook is diagnostic telemetry, not a gate (design.md D2) — but the error
+# cost is still asymmetric: a MISSED review costs one un-upgraded telemetry
+# field, while a WRONGLY credited non-reviewer silently records a false
+# compliance signal into that same telemetry. Do not loosen this to catch
+# the occasional miss.
+_IS_REVIEWER=false
+case "${_SUBAGENT}" in
+    pr-review-toolkit:code-reviewer|pr-review-toolkit:silent-failure-hunter|\
+    pr-review-toolkit:pr-test-analyzer|pr-review-toolkit:comment-analyzer|\
+    pr-review-toolkit:type-design-analyzer|feature-dev:code-reviewer)
+        _IS_REVIEWER=true ;;
+    general-purpose)
+        # superpowers' own requesting-code-review dispatches general-purpose
+        # from a reviewer template, so an allowlist alone would false-negative
+        # on the ecosystem's documented pattern. general-purpose is also the
+        # workhorse for implementation, hence the intent gate.
+        #
+        # WORD-BOUNDARY match — neither prefix nor substring. Measured against
+        # the real `description` strings dispatched while building this change
+        # (9 genuine reviewer dispatches, 7 non-reviewer):
+        #
+        #   prefix      [Rr]eview*                          3/9 credited, 0/7 false pos
+        #   substring   *[Rr]eview*                         9/9 credited, 4/7 false pos
+        #   word-bound  *[Rr]eview|*[Rr]eview[!a-zA-Z]*     9/9 credited, 1/7 false pos
+        #
+        # Prefix shipped first and missed two thirds of real reviews ("Task 1
+        # review: spec + quality", "Scoped re-review of Task 1 fix") — a
+        # predicate that blind measures itself, not agent compliance, and every
+        # miss costs an un-upgraded telemetry field for a branch where one
+        # demonstrably did. Substring is REJECTED: it matches the noun
+        # "reviewer" inside implementer task names such as "Task 3:
+        # reviewer-evidence writer hook".
+        #
+        # Three substring arms (*"code review"*, *"Code review"*,
+        # *"code-review"*) briefly shipped OR'd with the word-boundary pattern
+        # and are REMOVED. They were NOT zero-recall — they also fire on "code
+        # review" followed by a LETTER, which word-boundary cannot match, so
+        # dropping them does lose genuine reviews ("Dispatch a code reviewer
+        # for the auth changes", "code-reviewing the new observer hook"). But that
+        # extra recall is exactly the noun/gerund class, and that class holds
+        # genuine reviews and implementation tasks in the SAME syntactic shape
+        # ("Fix the code-reviewer dispatch bug", "Task 1: remove the dead
+        # code-reviewer target") — no substring can separate them, so the
+        # recall can only be bought together with the false positives.
+        # The asymmetry above decides it: a wrongly credited non-reviewer
+        # silently records a false compliance signal in the telemetry, whereas
+        # a missed review only costs one un-upgraded telemetry field. Pinned
+        # by (e6).
+        #
+        # The one known false positive is recorded rather than silently
+        # accepted, because over-crediting is the dangerous direction (see
+        # above): "Task 2: review_dispatch config key" is an implementation
+        # task whose subject is literally named review-dispatch, and it
+        # credits with no reviewer having run.
+        #
+        # This is a corrected recall failure, NOT a loosening. The rule that
+        # the predicate ships tight still stands: do not widen further, and do
+        # not add audit/inspect/check/critique keywords.
+        case "${_DESC}" in
+            *[Rr]eview|*[Rr]eview[!a-zA-Z]*)
+                _IS_REVIEWER=true ;;
+        esac ;;
+esac
+[ "${_IS_REVIEWER}" = "true" ] || exit 0
+
+# #137 source-guard form: source + command -v + flag. A bare `. lib` under
+# `trap 'exit 0' ERR` is a silent early exit, and `[ -f ]` proves existence,
+# not source success. Safe to use the command -v form HERE because this hook
+# is a recorder — a failed load costs a record, never a deny. This change does
+# not touch openspec-guard.sh's own source sites.
+_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+_LEDGER_OK=false
+# Kept on ONE physical line: tests/test-hook-source-guards.sh classifies each
+# source line by grepping single lines, so a `\`-continued guard reads to the
+# lint as a bare `. lib` and is flagged.
+# shellcheck source=lib/branch-ledger.sh
+. "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" 2>/dev/null && command -v branch_ledger_record >/dev/null 2>&1 && _LEDGER_OK=true || true
+[ "${_LEDGER_OK}" = "true" ] || exit 0
+
+# branch_ledger_record stores "<sha> <utc-ts>", so the evidence is SHA-bound
+# for free — any future reader, such as scripts/record-review-verdict.sh, can
+# compare that SHA against HEAD to judge staleness without this hook doing
+# anything extra.
+branch_ledger_record "reviewer-ran" 2>/dev/null || true
+
+# D4 (design.md): this hook's write and scripts/record-review-verdict.sh's
+# read must resolve the branch-ledger key IDENTICALLY. branch_ledger_key
+# hashes the raw path string AND branch name, so a non-canonical path on
+# either side (a trailing slash, a doubled separator, an unresolved symlink)
+# produces a different key and the read silently misses — this produced a
+# false negative during PR #212's development. Both currently derive the path
+# half from `git rev-parse --show-toplevel` (this hook via
+# branch_ledger_record's arg-less fallback); any future change giving one
+# side an explicit proj_root must give it to both.
+#
+# The branch half carries the SAME hazard from a different cause: each side
+# derives it from its own cwd. This hook runs in the dispatching session's
+# cwd/branch; the script may run from a different worktree entirely (the
+# repo's own using-git-worktrees / agent-team-execution pattern) and reads
+# ITS cwd/branch instead. That mismatch is silent and safe — the read simply
+# misses and the derivation falls through to "asserted" (D3) — but it means
+# this write is usually invisible to that read in exactly the workflow this
+# hook was built for. See design.md Trade-offs.
+
+exit 0

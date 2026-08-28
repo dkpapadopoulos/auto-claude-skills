@@ -444,8 +444,13 @@ token must be re-resolved here even if another block resolved it:
 ```bash
 PR="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}"
 TOKEN="$(. "$PR/hooks/lib/session-token.sh" 2>/dev/null && resolve_own_session_token || cat ~/.claude/.skill-session-token 2>/dev/null)"
-SKILL_SESSION_TOKEN="$TOKEN" bash "$PR/scripts/record-review-verdict.sh"   --provider agent-team-review   --verdict clean   --base "$(git merge-base HEAD origin/main)" --head "$(git rev-parse HEAD)"   --findings <total> --unresolved-blocking <count>   --dispatch-attempted --dispatch-succeeded
+SKILL_SESSION_TOKEN="$TOKEN" bash "$PR/scripts/record-review-verdict.sh"   --provider agent-team-review   --verdict clean   --base "$(git merge-base HEAD origin/main)" --head "$(git rev-parse HEAD)"   --findings <total> --unresolved-blocking <count>
 ```
+
+Do not pass `--dispatch-attempted`/`--dispatch-succeeded` here: when a
+reviewer subagent actually ran, the script observes it from the branch ledger
+regardless of these flags, so passing them adds nothing; when one did not
+run, passing them would falsely assert a `true` dispatch that never happened.
 
 Resolve `$TOKEN` exactly that way — never by reading `~/.claude/.skill-session-token`
 directly. It is a shared last-writer-wins singleton that under concurrent sessions

@@ -39,6 +39,17 @@ with `ACSM_SKIP_PUSH_GATE=1` in its environment. The agent cannot set either.
   from main land after review structurally) and caught 0 defects.
   `gate-status.sh` prints the delta (docs vs src) via
   `hooks/lib/staleness-delta.sh` to keep collecting live data.
+- The review verdict artifact's `dispatch_evidence` field records one of
+  `observed` | `asserted` | `imported` — provenance for `dispatch_attempted`/
+  `dispatch_succeeded`, never a gate input. `observed` is written only when
+  `hooks/reviewer-evidence-hook.sh` (`PostToolUse` on `^(Task|Agent)$`, which
+  fires at spawn, not return) recorded an actual reviewer-subagent dispatch
+  for this branch; `imported` only
+  for a resolved `--from-github` PR; everything else — including an explicit
+  `--dispatch-attempted`/`--dispatch-succeeded` on the CLI — is `asserted`.
+  None of `dispatch_attempted`, `dispatch_succeeded`, or `dispatch_evidence`
+  may act as a deny predicate, alone or collapsed (#197's spec). Regression:
+  `tests/test-review-verdict.sh`, `tests/test-reviewer-evidence-hook.sh`.
 - SHIP-phase guards: openspec-ship not run, memory consolidation missing,
   archived delta specs unsynced, REVIEW-in-chain-not-completed.
 - Verdict states `could_not_verify` / gate-gaming `suspect` (never hard-block).
