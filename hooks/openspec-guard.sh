@@ -179,6 +179,41 @@ _emit_advisory() {
     return 0
 }
 
+# _skill_available <name> — remedy-availability check (openspec:
+# remedy-aware-backbone, item 2). Returns 0 (available) if <name>'s SKILL.md is
+# present ON DISK in any location session-start discovers from; 1 only if it is
+# genuinely absent everywhere. **Disk, not the registry cache, is the authority
+# — deliberately (security review, 2026-08-28):** the cache is a plain 0644 file
+# any Bash-tool turn can overwrite, so trusting its `available:false` would hand
+# the agent a one-line opt-out of the REVIEW/VERIFY gate (write the flag, push
+# unverified). Disk presence cannot be forged in the DISABLING direction without
+# deleting the real installed plugin — destructive, session-breaking, and
+# detectable — which is the same forge-resistance the rest of this gate uses
+# (SHA-binding, token symmetry, verdict-at-HEAD). Fails toward AVAILABLE (deny
+# preserved) whenever the skill is found; only true absence degrades. Mirrors
+# session-start's layout: cache/<mkt>/<plugin>/[<version>/]skills/<name>/SKILL.md
+# (version dir optional) plus user skills. Bash-only hook, so an unmatched glob
+# stays literal and `[ -f <literal> ]` is false — no nullglob needed.
+_skill_available() {
+    local _n="${1:-}" _f
+    for _f in \
+        "${HOME}/.claude/plugins/cache"/*/*/skills/"${_n}"/SKILL.md \
+        "${HOME}/.claude/plugins/cache"/*/*/*/skills/"${_n}"/SKILL.md \
+        "${HOME}/.claude/skills/${_n}/SKILL.md"; do
+        [ -f "${_f}" ] && return 0
+    done
+    return 1
+}
+# Achievable-remedy clause (item 2). CRITICAL DESIGN POINT (security review
+# 2026-08-28): the gate is NEVER suppressed based on skill availability. The
+# original bug was only that a REVIEW/VERIFY deny told a no-superpowers install
+# to "invoke Skill(superpowers:X)" — a remedy it cannot execute. The fix keeps
+# the deny (so no agent-reachable signal can turn a deny into an allow — that is
+# the whole point of this gate) and instead APPENDS an achievable remedy to the
+# message when the demanded skill is genuinely absent on disk. Deleting the
+# superpowers plugin therefore only changes the wording, never the decision.
+_SETUP_HINT="The superpowers backbone appears not to be installed — run /setup to install it so these skills can run, or set ACSM_SKIP_PUSH_GATE=1 (human-only, at launch) to bypass."
+
 # _guard_load <path> — source a lib with this hook's fail-open ERR trap
 # DISARMED, then re-arm it. The ONE way this file may source anything (#192).
 #
@@ -295,15 +330,20 @@ _REVIEW_VERDICT_OK=false
     _guard_load "${_GC_ROOT}/hooks/lib/review-verdict.sh" && \
     command -v review_verdict_is_clean >/dev/null 2>&1 && _REVIEW_VERDICT_OK=true || true
 
-# Bound the worst case: the precise detector is an O(n^2) char-scan parser, so
-# only use it below a size cap; above it, fall back to the (fail-closed)
-# substring check so a huge git-containing command can't stall the hot path.
-_GC_MAX=4096   # above this, use the substring fallback (fail-closed) — bounds cost
+# Bound the worst case: the scanner self-budgets its O(n^2) char-scan at 4096
+# CODE characters (heredoc bodies and quoted continuation lines are consumed
+# line-wise and cost O(n) total), reporting unbalanced beyond the budget — so
+# the size gate here is only a sanity cap on the O(n) line pass. This is what
+# lets a >4KB `cat > plan.md <<EOF …` doc-write parse precisely instead of
+# false-denying via the substring fallback (openspec: remedy-aware-backbone;
+# observed live at command_len 6082 and 35036).
+_GC_MAX=4096      # scanner code-char budget (kept for reference/telemetry)
+_GC_MAX_TOTAL=131072
 _gc_precise() {
     # Both predicates are required: the fast-path and gate body call
     # command_invokes_gh_merge too — if the lib were ever split and only one
     # loaded, an unbound call would ERR-trap the whole gate open. Check both.
-    [ "${#_COMMAND}" -le "${_GC_MAX}" ] && \
+    [ "${#_COMMAND}" -le "${_GC_MAX_TOTAL}" ] && \
         command -v command_invokes_git_write >/dev/null 2>&1 && \
         command -v command_invokes_gh_merge >/dev/null 2>&1 || return 1
     # #155 follow-up: an UNBALANCED quote parse means the segmentation cannot be
@@ -317,9 +357,14 @@ _gc_precise() {
 }
 
 # Fast path: only proceed for a REAL git commit/push or gh-merge invocation.
-# Precise when the detector lib loaded and the command is small; substring
-# fallback (fail-closed) otherwise.
-if _gc_precise; then
+# Precise when the detector lib loaded and the parse is trustworthy; substring
+# fallback (fail-closed) otherwise. Computed ONCE: the same trust decision must
+# gate every precise-predicate consumer below — in particular the
+# mutate-then-push deny, which previously ran on a size check alone and could
+# act on an untrustworthy segmentation (design-review finding, bundled here).
+_GC_PRECISE_OK=false
+_gc_precise && _GC_PRECISE_OK=true || true
+if [ "${_GC_PRECISE_OK}" = "true" ]; then
     if ! command_invokes_git_write "${_COMMAND}" \
        && ! command_invokes_gh_merge "${_COMMAND}"; then
         exit 0
@@ -423,7 +468,7 @@ fi
 #      verification verdict. Routing changes are high-risk by nature, not by phase.
 # Fail-open guards for both: missing lib / missing jq / not a routing repo /
 # unresolvable diff base => no gate (never a false-block).
-if _gc_precise; then
+if [ "${_GC_PRECISE_OK}" = "true" ]; then
     _gc_is_push=false; command_invokes_git_write "${_COMMAND}" "push" && _gc_is_push=true
     _gc_is_ghmerge=false; command_invokes_gh_merge "${_COMMAND}" && _gc_is_ghmerge=true
 else
@@ -496,12 +541,29 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # rebase created inline in the same command would push unverified content
         # (and evade the routing-delta check — the new commit can't be diffed yet).
         # Unconditional (evidence cannot save it by definition); honors the human
-        # bypass; fail-open when the predicate or jq is unavailable.
-        if [ "${_PUSHGATE_SKIP}" != "true" ] && [ "${_gc_is_push}" = "true" ] \
-           && command -v jq >/dev/null 2>&1 \
+        # bypass; fail-open when jq is unavailable.
+        #
+        # Finding 2: run the PRECISE segment-walking predicate — never a raw
+        # substring scan. The scanner now CONSUMES unknown-owner heredoc bodies
+        # (rather than truncating at the operator), so trailing top-level code
+        # stays reliably segmented even when the parse is marked untrusted; the
+        # predicate word-splits each segment (so `git  commit` with any spacing
+        # is caught) and never sees discarded body prose (so a doc/plan body
+        # mentioning "git commit" cannot false-deny). An earlier raw-substring
+        # fallback here had both a whitespace bypass AND that false-deny — both
+        # vanish with segmentation as the single source of truth.
+        # Gated on the lib (command_git_mutate_before_push): absent, this deny
+        # deliberately drops and is ANNOUNCED by the degradation advisory (#198).
+        # Size cap mirrors the precise push path; the scanner self-budgets code
+        # chars internally.
+        _gc_mutate_then_push=false
+        if [ "${_gc_is_push}" = "true" ] && command -v jq >/dev/null 2>&1 \
            && command -v command_git_mutate_before_push >/dev/null 2>&1 \
-           && [ "${#_COMMAND}" -le "${_GC_MAX}" ] \
+           && [ "${#_COMMAND}" -le "${_GC_MAX_TOTAL}" ] \
            && command_git_mutate_before_push "${_COMMAND}"; then
+            _gc_mutate_then_push=true
+        fi
+        if [ "${_PUSHGATE_SKIP}" != "true" ] && [ "${_gc_mutate_then_push}" = "true" ]; then
             _MSG="PUSH GATE: this command mutates history (commit/merge/rebase/cherry-pick/revert/am) and pushes in ONE command. The gate evaluates evidence for the CURRENT commit, so the pushed result would be unverified. Run the mutation first, re-run verification if content changed, then run git push as a separate command."
             _emit_deny "${_MSG}"
             _DECISION="deny:mutate-then-push"
@@ -724,6 +786,7 @@ EOF
             [ "${_review_completed}" = "false" ] && _bridge_has "requesting-code-review" && _review_completed=true
             if [ "${_review_in_chain}" = "true" ] && [ "${_review_completed}" = "false" ]; then
                 _MSG="PUSH GATE — Expected: REVIEW → VERIFY → SHIP completed before push. Actual: requesting-code-review has not run on this chain. Do now: invoke Skill(superpowers:requesting-code-review), then retry the denied command."
+                _skill_available "requesting-code-review" || _MSG="${_MSG} ${_SETUP_HINT}"
                 _emit_deny "${_MSG}"
                 _DECISION="deny:chain-review"
                 exit 0
@@ -817,6 +880,7 @@ EOF
             [ "${_verif_completed}" = "false" ] && _bridge_has "verification-before-completion" && _verif_completed=true
             if [ "${_verif_in_chain}" = "true" ] && [ "${_verif_completed}" = "false" ]; then
                 _MSG="PUSH GATE — Expected: verification-before-completion completed before push. Actual: it has not run on this active chain. Do now: invoke Skill(superpowers:verification-before-completion), then retry the denied command."
+                _skill_available "verification-before-completion" || _MSG="${_MSG} ${_SETUP_HINT}"
                 _emit_deny "${_MSG}"
                 _DECISION="deny:chain-verify"
                 exit 0
@@ -1086,10 +1150,20 @@ EOF
                 _g_verify=true
             fi
             if [ "${_g_review}" = "false" ] || [ "${_g_verify}" = "false" ]; then
+                # Split the missing milestones by whether their remedy is
+                # ACHIEVABLE (item 2, openspec: remedy-aware-backbone). A skill
                 _need=""
                 [ "${_g_review}" = "false" ] && _need="requesting-code-review"
                 [ "${_g_verify}" = "false" ] && _need="${_need}${_need:+ and }verification-before-completion"
                 _MSG="PUSH GATE (fail-closed): ${_GATE_ACTION} requires ${_need} to have run, but no record exists for it on this branch. Invoke the missing Skill(s) and let them complete, then retry. To bypass intentionally: run the command from your own terminal, or relaunch Claude Code with ACSM_SKIP_PUSH_GATE=1 set in its environment."
+                # Item 2: if a required skill is not installed, the "invoke the
+                # missing Skill(s)" remedy is impossible — APPEND the achievable
+                # one. The deny still fires (never suppressed by an agent-reachable
+                # signal); only the wording changes when the backbone is absent.
+                if { [ "${_g_review}" = "false" ] && ! _skill_available "requesting-code-review"; } \
+                   || { [ "${_g_verify}" = "false" ] && ! _skill_available "verification-before-completion"; }; then
+                    _MSG="${_MSG} ${_SETUP_HINT}"
+                fi
                 # jq presence is guaranteed by the block guard above.
                 _emit_deny "${_MSG}"
                 _DECISION="deny:global-failclosed"
