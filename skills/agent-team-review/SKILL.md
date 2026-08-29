@@ -95,9 +95,80 @@ After collecting the reports per §3 — including any lens recorded as uncovere
 1. Group findings by severity (blocking → warning → suggestion)
 2. Deduplicate overlapping findings
 3. **Severity floor.** Drop `quality`- and `spec`-category `suggestion`-severity findings that do not map to a capability named in the design doc, and demote any `quality`/`spec` `blocking` finding whose `Evidence` lacks an observable failure path to `warning`. **Never drop or demote `security` or `governance` findings on these bases** — those catch unplanned risks no design doc anticipated, and may rest on structural criteria (e.g. removing or weakening a safety constraint) rather than a runnable failure path. This curbs the bot-asymptote nit accretion (advisory findings that accumulate every round without ever being actionable).
-4. Present unified report to user
+4. Adjudicate per §4a every finding you are about to accept or reject at `blocking` or `warning` — a `suggestion` needs one only if you intend to action it
+5. Present unified report to user
 
 **Dropped findings stay visible.** Never silently discard a floored finding — the count and one-line reason for each is reported under "Dropped (below severity floor)" in the summary, so the user can audit the filter and the `doubt theater` signal (systematic non-actioning) remains detectable.
+
+### 4a. Adjudicating one finding: isolate exactly one fault
+
+The severity floor decides which findings are worth deciding. This step decides them, and it has one rule:
+
+**Change exactly one thing, and build a pair that COULD disagree.**
+
+Reproduce with the claimed cause present, and again with it removed, holding everything else fixed, and read the oracle the finding itself names. Three outcomes, and only the first two decide anything:
+
+| pair | you may conclude |
+|---|---|
+| the runs **disagree** | the claim holds |
+| the runs **agree**, and a comparable positive control disagrees in the same harness | the claim is false |
+| the runs **agree**, with no positive control | nothing — you have not tested the claim |
+
+Requiring the pair to *disagree* is the design constraint on the experiment, not the verdict: an experiment that could not have come out either way was never a test.
+
+"One thing" means **one causal variable, with every other precondition held equal** — not one changed token. Reproducing an input-triggered failure legitimately changes the input *and* whatever setup that input requires; what must not vary is anything else that could produce the outcome on its own.
+
+**Scope: this applies to findings that make an experimentally decidable causal claim** — "X causes Y", "removing X changes Y", "input I produces failure F". It does NOT apply to structural findings, and specifically **not** to `security`/`governance` findings blocking on the structural criterion the finding contract already allows (a change that removes or weakens an existing safety constraint). Those are decided by reading what the change removes, exactly as before; demanding a runnable pair for them would quietly repeal that exception. If a finding has no manipulable variable, it is not in scope here — say so and adjudicate it on its own terms.
+
+**The oracle is whatever the finding predicts**, not necessarily allow/deny: an emitted field, an exit code, a log line, a recorded artifact, a count. Name the oracle before you run, or you will find one afterwards that agrees with you. The finding contract carries an `Oracle:` line for this; when a report omits it, derive one and **state it in your disposition** — an oracle chosen silently by the adjudicator is the same freedom the rule exists to remove.
+
+Observed failure this exists to prevent (2026-08-12): a reviewer reported that without `hooks/lib/git-command.sh` the mutate-then-push check stops firing. The reproduction harness had several faults active at once, an unrelated fail-closed leg produced the same visible verdict either way, and the finding read as refuted. Re-run with **that one lib removed and every other gate satisfied**, the effect appeared exactly as reported. The claim is now a documented invariant in `CLAUDE.md`.
+
+The mechanism generalises: **an upstream fail-closed gate masks a downstream fall-open one.** Until every other gate is independently satisfied, the variable under test contributes nothing observable, so the "removed" run carries no information about it — and a test written from that run asserts nothing.
+
+Both directions are in scope:
+
+- **Before rejecting** a finding that "failed to reproduce": show the paired control. Absent it, you have not refuted the finding, you have only failed to trigger it — say that instead.
+- **Before accepting** a finding: the same pairing. A finding accepted without a control that flips is a guess with a file:line attached, and the test it motivates will pass whether or not the code is fixed.
+
+**A pair that does not flip is not, on its own, proof of falsity.** It has three candidate explanations and you must name which one you are asserting: the claim is false; the intervention was incomplete (you removed less than the claim describes); or the preconditions were not met (a masking gate, the wrong config, the wrong subject). The second and third are experiment failures, and reporting them as "refuted" is the original 2026-08-12 mistake wearing a control.
+
+**So a non-flip decides "false" only once the other two are ruled out, and the way you rule them out is a POSITIVE CONTROL.** Run, in the same harness, a variable you already know does flip. If the harness demonstrably detects that one and not yours, "the claim is false" is the surviving explanation; if it detects neither, you have learned nothing about either.
+
+**The control must be COMPARABLE, not merely known-good.** Same subject, same oracle, same preconditions — otherwise it proves the harness detects *something*, which is not the same as proving your intervention was complete or your preconditions were met. A positive control drawn from a different subject tells you the wiring works and nothing about your claim. This is what makes the seeded set in `tests/fixtures/agent-team-review/adjudication/` decidable at all: `REAL-1` flips under the identical subject, control command and preconditions that the three `FALSE` cells use, so it *is* their positive control — without it, three no-flips would be three unmeasured findings, not three refutations.
+
+State the positive control alongside the verdict whenever you reject a finding. "It did not reproduce" and "it did not reproduce in a harness that provably reproduces something else" are different claims, and only the second is evidence.
+
+Escalation when the pairing is not obtainable — a fault that needs credentials, hardware you do not have, or a genuinely probabilistic effect:
+
+1. Say so explicitly, in the finding's disposition: `could-not-reproduce (single-fault control not obtainable: <why>)`.
+2. Keep the finding at the severity it carries **after** the floor. Do not silently demote what you could not test.
+3. Route it to the user as an open question, not as a resolved one, under "Open" in the summary.
+4. A probabilistic effect is obtainable statistically: N runs each side with a stated rate difference is a valid pair. Reach for escalation only when even that is out of range.
+
+**Isolation is mandatory and is not optional politeness.** Run every reproduction in a detached worktree, never in the shared working tree. Adjudication injects faults on purpose; doing that where a concurrent session or a running suite can see it corrupts other people's work and, on this repo's own push gate, measures a tree nobody is pushing. Never write to the shared working tree while adjudicating.
+
+```bash
+WT="$(mktemp -d)"; git worktree add --detach "$WT" {head_sha}
+# {head_sha} is the review range's head — the tree the reviewers actually read.
+# Committed work needs nothing further; the sha already carries it.
+#
+# UNCOMMITTED work must be carried across, or a bare checkout of the sha
+# adjudicates the PARENT state and "fails to reproduce" every finding about it.
+# Diff against HEAD, NOT against {base_sha}: base..head is already IN the sha,
+# so applying that would re-apply committed changes on top of themselves and
+# fail (or worse, half-apply).
+git diff HEAD | git -C "$WT" apply          # tracked, uncommitted
+# Untracked files are in NEITHER the diff nor the sha, so list AND copy any the
+# finding depends on — discovering them is not carrying them, and a missing one
+# makes the finding "fail to reproduce" for a reason unrelated to the claim:
+#   git ls-files --others --exclude-standard | while IFS= read -r f; do
+#     mkdir -p "$WT/$(dirname "$f")"; cp "$f" "$WT/$f"; done
+...
+git worktree remove --force "$WT"   # reap it, like §3 reaps reviewer worktrees
+```
+
+**Record the pairing, not just the verdict.** Each finding adjudicated *by pairing* carries one line: what was changed, what the with-run decided, what the without-run decided, and — on a rejection — the positive control that proves the harness could have detected it. A structural finding decided by reading has no pair and records the constraint it removes instead; do not manufacture a pairing line for it. A verdict with no pairing recorded is indistinguishable from an unexamined one, which is exactly the doubt-theater signal §Red Flags is looking for. Conversely, an open `could-not-reproduce` finding is **not** a dismissal, so do not count it as one when judging the doubt-theater pattern in §Red Flags: that pattern is systematic NON-ACTIONING across rounds, and an item explicitly routed to the user as unresolved has been actioned — into the open column, where the user can see it.
 
 ### 5. Verdict Routing
 
@@ -108,6 +179,13 @@ After collecting the reports per §3 — including any lens recorded as uncovere
 | `clean` | TeamDelete → cross-model offer (§6, when applicable) → proceed to SHIP |
 
 **On `blocking_issues`** — Expected: zero blocking findings before SHIP. Actual: N blocking finding(s) remain. Do now: TeamDelete the review team, return to IMPLEMENT, fix each blocking finding (cite file:line from the report), then re-review. Do NOT proceed to SHIP until re-review returns `clean` or `suggestions_only`.
+
+**An OPEN finding is not a clean one.** A `could-not-reproduce` item from §4a is unresolved, not resolved-in-your-favour, so it constrains the verdict:
+
+- an open finding at `blocking` severity ⇒ the verdict MUST NOT be `clean` or `suggestions_only`. Route it as `blocking_issues` and name the open item as the reason, with what would settle it. The user may decide to ship anyway — that is their call to make explicitly, not one the verdict makes silently by omission;
+- an open finding at `warning` severity ⇒ `suggestions_only` at most, never `clean`, and it is named in the summary's `Open` section.
+
+This is the gap that makes "we could not test it" the most dangerous disposition: it is the one that reads as harmless while a blocking finding sits inside it.
 
 ### 6. Cross-Model Offer
 
@@ -125,6 +203,7 @@ File: src/auth.ts:42
 Category: security | quality | spec | governance
 Confidence: high | medium | low
 Evidence: observable failure path or concrete reproduction — what input/call triggers it and what breaks
+Oracle: what observably differs when the claim holds — an exit code, an emitted field, a log line, a recorded artifact, a count (omit for a structural finding)
 Issue: SQL injection via unsanitized input
 Suggestion: Use parameterized queries
 ```
@@ -152,8 +231,13 @@ Suggestions:
 Dropped (below severity floor):
 - (count + one-line reason per dropped finding, or "none")
 
+Open (could not adjudicate):
+- (per finding: severity, and why the single-fault control was not obtainable, or "none")
+
 Verdict: blocking_issues | clean | suggestions_only
 ```
+
+Every finding adjudicated BY PAIRING carries its §4a pairing inline — what was changed, what each configuration decided, and the positive control on a rejection. A structural finding decided by reading carries the constraint it removes instead; it has no pair to report.
 
 ## Reviewer Spawn Templates
 
