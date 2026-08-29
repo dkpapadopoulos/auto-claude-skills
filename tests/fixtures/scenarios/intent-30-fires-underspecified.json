@@ -1,7 +1,9 @@
 {
   "name": "intent-30-fires-underspecified",
+  "_comment": "Needles pin the four load-bearing parts of the DESIGN intent-extraction directive: the header, the probe for the real goal behind the literal ask, the out-of-scope framing of the convergence block, and the instruction to PERSIST the confirmed intent. PR #221 rewrote the directive (shorter probe; persistence single-sourced into scripts/persist-state.sh), leaving two needles naming text that no longer exists — a paired update that PR missed. It made this the only red scenario file, and since .verify.yml declares the whole suite as the gate, no clean verification verdict could be produced repo-wide.",
+  "_comment_needle_choice": "EACH needle is mutation-verified to fail when its part is deleted from hooks/skill-activation-hook.sh. Two traps found by doing that rather than assuming it: (1) the bare needle 'out-of-scope' was VACUOUS for the convergence block — deleting the '**Out-of-scope:**' line left this fixture green, because the phrase also occurs in the persistence command's argument and in unrelated DESIGN guidance; it is now the marked-up form, which occurs once. (2) These are still PROSE needles, not semantic ones — 'the underlying need' is a slice of the current wording and WILL need updating if the directive is reworded again. That is accepted: the alternative is a needle so generic it pins nothing, which is exactly trap (1).",
   "prompt": "I want to add notifications to the app",
   "expected_phase": "DESIGN",
   "expected_skills": ["brainstorming"],
-  "must_match": ["INTENT EXTRACTION:", "what would you actually want", "out-of-scope", "openspec_state_set_intent"]
+  "must_match": ["INTENT EXTRACTION:", "the underlying need", "**Out-of-scope:**", "set-intent"]
 }
