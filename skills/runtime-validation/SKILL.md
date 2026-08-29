@@ -421,16 +421,6 @@ framework apps (Next/Nuxt/SSR) defer to the framework's own inlining.
 
 After the loop completes (or on first pass if all scenarios pass), present the final Validation Report.
 
-## Step 6: Session Marker
-
-After completing validation (regardless of pass/fail outcome), write a session-scoped marker to prevent duplicate runs in SHIP phase:
-
-```bash
-touch ~/.claude/.skill-validation-ran-$(cat ~/.claude/.skill-session-token 2>/dev/null || echo default)
-```
-
-This marker is checked by the SHIP phase composition gate. If present, the SHIP fallback entry for runtime-validation is suppressed — validation already ran in REVIEW.
-
 ## Cleanup
 
 After all validation is complete:

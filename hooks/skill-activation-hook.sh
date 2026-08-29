@@ -1383,9 +1383,6 @@ if [[ -n "$CURRENT_PHASE" ]]; then
 
         _gate_pass=1
         case "$_gate_type" in
-          session-marker)
-            [[ -f "${HOME}/.claude/.skill-${_gate_marker}-${_SESSION_TOKEN:-default}" ]] && _gate_pass=0
-            ;;
           artifact-presence)
             _gate_pass=0
             _saved_IFS="$IFS"; IFS=','
@@ -1757,10 +1754,10 @@ Brainstorming MUST build on this confirmed intent and out-of-scope boundary — 
   else
     # Scenario 1: no intent, no brief (or no token) -> emit the directive.
     SKILL_LINES="${SKILL_LINES}
-INTENT EXTRACTION: If your ask is underspecified (missing one or more of who/why/success-criteria/constraints), do NOT propose approaches, designs, or options yet. First run a one-question-at-a-time intent pass: ask ONE question at a time, track your confidence (low/med/high) in the real goal, and include a \"what would you actually want if this worked perfectly?\" probe for the underlying need (not just the literal request). Then, as soon as the user has given you enough to act on, you MUST — BEFORE proposing ANY approach, design, or option — emit this convergence block verbatim and stop for confirmation:
+INTENT EXTRACTION: If your ask is underspecified (missing one or more of who/why/success-criteria/constraints), do NOT propose approaches, designs, or options yet. First converge with the user on the real goal — the underlying need, not just the literal request. Then, as soon as the user has given you enough to act on, you MUST — BEFORE proposing ANY approach, design, or option — emit this convergence block verbatim and stop for confirmation:
   **Confirmed intent:** <one line capturing who/why/success>
   **Out-of-scope:** <what this is explicitly NOT>
-Only AFTER the user confirms that block may you propose approaches. Then persist it in ONE Bash call (shell state does not persist between tool calls): \`PR=\"\${CLAUDE_PLUGIN_ROOT:-\$(git rev-parse --show-toplevel 2>/dev/null)}\"; TOKEN=\"\$(. \"\$PR/hooks/lib/session-token.sh\" 2>/dev/null && resolve_own_session_token || cat ~/.claude/.skill-session-token 2>/dev/null)\"; . \"\$PR/hooks/lib/openspec-state.sh\"; openspec_state_set_intent \"\$TOKEN\" \"<confirmed intent> :: out-of-scope: <...>\"\`. Resolve \$TOKEN exactly that way — never by reading ~/.claude/.skill-session-token directly: it is a shared last-writer-wins singleton that under concurrent sessions names a DIFFERENT conversation, so the intent lands in a file this hook never reads back (issue #157). SKIP this pass entirely if the ask is already fully specified, is mechanical (rename/typo/file-move), or an approved discovery brief already covers intent."
+Only AFTER the user confirms that block may you propose approaches. Then persist it in ONE Bash call: \`bash \"\${CLAUDE_PLUGIN_ROOT:-\$(git rev-parse --show-toplevel 2>/dev/null)}/scripts/persist-state.sh\" set-intent \"<confirmed intent> :: out-of-scope: <...>\"\` — the script resolves the session token internally (issue #157), so you author only the intent text. SKIP this pass entirely if the ask is already fully specified, is mechanical (rename/typo/file-move), or an approved discovery brief already covers intent."
     [[ -n "${SKILL_EXPLAIN:-}" ]] && echo "[skill-hook]   [intent-extraction] emitted directive (no intent, no brief)" >&2
   fi
 fi

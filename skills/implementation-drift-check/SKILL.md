@@ -9,7 +9,7 @@ Detect spec drift, surface unvalidated assumptions, and identify coverage gaps b
 
 ## When to Use
 
-- **Auto-co-selection (REVIEW + SHIP):** Fires automatically during REVIEW phase (parallel) and SHIP phase (sequential fallback) when comparison material exists. The SHIP entry is suppressed if the skill already ran during REVIEW (session-marker gate).
+- **Auto-co-selection (REVIEW + SHIP):** Fires automatically during REVIEW phase (parallel) and SHIP phase (sequential) when comparison material exists.
 - **Explicit invocation (IMPLEMENT):** Invoke directly during implementation with prompts like "check drift", "am I still on plan", "spec check". When no comparison material exists, degrades to assumptions-only mode.
 
 ### Comparison Sources (any of these triggers auto-fire)
@@ -264,16 +264,6 @@ Append to the first matching document in priority order:
 
 If the document already has a "Post-Implementation Notes" section, append to it rather than creating a duplicate.
 
-### Session Marker
-
-After completing (regardless of mode or findings), write the session marker to prevent duplicate execution during SHIP fallback:
-
-```bash
-touch ~/.claude/.skill-drift-check-ran-$(cat ~/.claude/.skill-session-token 2>/dev/null || echo default)
-```
-
-This marker is checked by the SHIP phase session-marker gate. If the marker exists, the SHIP fallback entry is suppressed.
-
 ## Verification
 
 Before reporting "no drift", confirm:
@@ -281,4 +271,3 @@ Before reporting "no drift", confirm:
 - The comparison ran against the highest-authority source available (active OpenSpec change > canonical live intent > archived), and which source was used is stated.
 - Each spec/plan requirement was checked against the actual implementation -- not assumed aligned.
 - Assumptions and untested paths are listed explicitly; an empty list means "verified none", not "did not look".
-- The session marker is written only after the analysis actually ran.

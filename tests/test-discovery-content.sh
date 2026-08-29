@@ -30,15 +30,19 @@ assert_contains "Open Questions section preserved" "**Open Questions:**" "${SKIL
 
 # --- SKILL.md auto-persists discovery state (closes hypothesis loop at source) ---
 assert_contains "Persist Discovery State step" "Persist Discovery State" "${SKILL_CONTENT}"
-assert_contains "SKILL calls set_discovery_path helper" "openspec_state_set_discovery_path" "${SKILL_CONTENT}"
-assert_contains "SKILL calls set_hypotheses helper" "openspec_state_set_hypotheses" "${SKILL_CONTENT}"
+# Persistence now goes through scripts/persist-state.sh (openspec:
+# state-scripts-injection-cut), which resolves the token internally — the skill
+# no longer retypes the openspec_state_* helper or the token incantation.
+assert_contains "SKILL uses persist-state.sh" "persist-state.sh" "${SKILL_CONTENT}"
+assert_contains "SKILL persists discovery path" "set-discovery-path" "${SKILL_CONTENT}"
+assert_contains "SKILL persists hypotheses" "set-hypotheses" "${SKILL_CONTENT}"
 
 # --- Registry: DISCOVER persistence hint ---
 REGISTRY="${PROJECT_ROOT}/config/default-triggers.json"
 REGISTRY_CONTENT="$(cat "${REGISTRY}")"
 
 assert_contains "DISCOVER persistence hint in registry" "PERSIST DISCOVERY" "${REGISTRY_CONTENT}"
-assert_contains "discovery_path state write in hint" "openspec_state_set_discovery_path" "${REGISTRY_CONTENT}"
+assert_contains "discovery_path state write in hint" "set-discovery-path" "${REGISTRY_CONTENT}"
 
 FALLBACK="${PROJECT_ROOT}/config/fallback-registry.json"
 FALLBACK_CONTENT="$(cat "${FALLBACK}")"
