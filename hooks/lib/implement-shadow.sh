@@ -35,16 +35,24 @@
 # deletes composition/invocation/attest state at 7 days
 # (`hooks/session-start-hook.sh`), while the corpus needs months to reach n=29.
 #
-# predicate_version deliberately STAYS 2: this changes what the record
-# DESCRIBES, not when the leg fires, so v2 records remain poolable and the
-# pre-registered horizon does not restart.
+# That schema-3 change did NOT bump predicate_version: it changed what the
+# record DESCRIBES, not when the leg fires. (The separate #219 bump below did
+# change when the leg fires — the two are independent axes on purpose.)
 IMPLEMENT_SHADOW_SCHEMA_VERSION=3
 # 2 (#161): merge-path material_source is now measured against the merged PR's
 # file list, not the branch-local delta. v1 merge records measured a different
 # subject and MUST NOT be pooled with v2.
-IMPLEMENT_SHADOW_PREDICATE_VERSION=2
+# 3 (#219): PUSH-path material_source is now measured against the tree and ref
+# the pushed command actually names (`git -C <worktree>`, `cd <worktree> &&`, or
+# a `git push origin <branch>` refspec), not against whatever the SESSION cwd
+# happened to have checked out. That is the same wrong-subject defect #161 fixed
+# for merges, and it changes when the leg fires: a push measured against a
+# concurrent session's branch could report material_source on a branch that
+# touched no source at all, and vice versa. v2 records measured a different
+# subject and MUST NOT be pooled with v3.
+IMPLEMENT_SHADOW_PREDICATE_VERSION=3
 
-# implement_shadow_record <action> <repo> <session_token> <transcript_path> <evidence_kind> <diff_base> <material_source> [would_block]
+# implement_shadow_record <action> <repo> <session_token> <transcript_path> <evidence_kind> <diff_base> <material_source> [would_block] [evidence_detail] [rev]
 #   action: push | gh-merge
 #   evidence_kind: which evidence classes were tried and missed (e.g. "none")
 #   diff_base: what the material-source check was measured against
@@ -87,7 +95,7 @@ IMPLEMENT_SHADOW_PREDICATE_VERSION=2
 implement_shadow_record() {
     command -v jq >/dev/null 2>&1 || return 0
     local _act="${1:-unknown}" _repo="${2:-}" _tok="${3:-}" _tp="${4:-}" _ev="${5:-none}" _db="${6:-branch-local}"
-    local _ms="${7:-true}" _wb="${8:-true}" _ed="${9:-}"
+    local _ms="${7:-true}" _wb="${8:-true}" _ed="${9:-}" _rev="${10:-HEAD}"
     local _log _dir _ts _nonce _rid _branch _head
     _log="${IMPLEMENT_SHADOW_LOG:-${HOME}/.claude/.push-implement-shadow.jsonl}"
     _dir="$(dirname "${_log}" 2>/dev/null)" || return 0
@@ -103,8 +111,26 @@ implement_shadow_record() {
     _rid="$(printf '%s|%s|%s|%s|%s' "${_ts}" "$$" "${_tok}" "${_act}" "${_nonce}" \
         | { shasum -a 256 2>/dev/null || cksum; } | tr -dc 'a-f0-9' | cut -c1-16)"
     [ -n "${_rid}" ] || return 0
-    _branch="$(git -C "${_repo}" rev-parse --abbrev-ref HEAD 2>/dev/null)" || _branch=""
-    _head="$(git -C "${_repo}" rev-parse HEAD 2>/dev/null)" || _head=""
+    # The record names the SUBJECT the leg measured, not the checkout it ran in
+    # (#219). `_rev` is the caller's already-validated revision, and `branch` must
+    # describe the SAME thing `head_sha` and `material_source` were computed over
+    # — episode identity is `(repo, branch, session_token)`, so a branch naming
+    # one commit while head_sha names another splits or merges episodes that are
+    # not the same work.
+    #
+    # Three cases, and collapsing the third into the second was a real defect
+    # caught in review: a push can name a raw sha, a tag, or a remote-tracking
+    # ref (`git push origin <sha>:refs/heads/x`). The guard resolves those to a
+    # commit via `^{commit}`, so `head_sha` is right — but falling back to the
+    # CHECKED-OUT branch there recorded a branch that has nothing to do with it.
+    # `--abbrev-ref` on the rev itself is honest: a branch name for a branch, the
+    # tag's short name for a tag, the sha for a detached revision.
+    case "${_rev}" in
+        refs/heads/*) _branch="${_rev#refs/heads/}" ;;
+        HEAD|'')      _branch="$(git -C "${_repo}" rev-parse --abbrev-ref HEAD 2>/dev/null)" || _branch="" ;;
+        *)            _branch="$(git -C "${_repo}" rev-parse --abbrev-ref "${_rev}" 2>/dev/null)" || _branch="" ;;
+    esac
+    _head="$(git -C "${_repo}" rev-parse "${_rev}" 2>/dev/null)" || _head=""
     : >> "${_log}" 2>/dev/null || return 0
     chmod 0600 "${_log}" 2>/dev/null || true
     jq -cn \

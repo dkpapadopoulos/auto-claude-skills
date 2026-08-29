@@ -158,12 +158,21 @@ _json_escape() {
 # `command -v jq` block guard. So its deny was never REACHED without jq, and never
 # lost. Saying otherwise (an earlier draft did) contradicts the CHANGELOG entry
 # for this very change.
+# A deny carries the SUBJECT note when there is one (#219). Every other advisory
+# is dropped on a deny — the guard emits one JSON object and the user is already
+# being stopped — but this one is the exception on purpose: the failure #219
+# documents is a deny whose stated predicate is false of the command, so which
+# tree and which ref the decision was measured against is part of the decision,
+# not commentary about it. It is empty for every command that gives no subject
+# hint, which is every command that could reach a deny before this change.
 _emit_deny() {
+    local _dm="${1:-}"
+    [ -n "${_SUBJ_NOTE:-}" ] && _dm="${_dm} ${_SUBJ_NOTE}"
     if command -v jq >/dev/null 2>&1; then
-        jq -n --arg msg "${1:-}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+        jq -n --arg msg "${_dm}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
     else
         printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"%s"}\n' \
-            "$(_json_escape "${1:-}")"
+            "$(_json_escape "${_dm}")"
     fi
     return 0
 }
@@ -632,12 +641,135 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # same HEAD (failure-preferring). Composition/ledger/signal reads stay session-
         # scoped. Fail-open: token unchanged if the lib is unavailable.
         _proot="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+
+        # --- SUBJECT RESOLUTION (issue #219) --------------------------------
+        # This hook's process cwd is the SESSION cwd, which is not necessarily
+        # the tree — or the branch — the gated command acts on. Measuring the
+        # session's checkout instead of the command's subject produced live
+        # denies whose stated predicate was false of the push being blocked
+        # (a routing-governance deny on a branch touching zero routing files,
+        # because a concurrent session had parked the shared checkout on ITS
+        # routing branch), and it penalised exactly the worktree isolation this
+        # repo prescribes for concurrent sessions.
+        #
+        # _SUBJ_ROOT / _SUBJ_REV are what the DIFF predicates and the VERDICT
+        # lookup measure. `_proot` is deliberately left alone and still carries
+        # the process-derived root for the branch-ledger legs: the ledger's
+        # writer (skill-completion-hook.sh) keys its records on ITS process
+        # cwd, so re-pointing the reader at the subject would make existing
+        # records invisible — strictly MORE denies. The cross-location bridge
+        # exists for precisely that split.
+        #
+        # SECURITY: the command text is model-authored. A path it names is used
+        # only after it resolves to a worktree of THIS repository (same
+        # --git-common-dir); a ref only after it resolves under refs/heads/ in
+        # that repository. An unvalidatable hint is DISCARDED and announced, so
+        # arbitrary text can never steer the gate's subject, and discarding
+        # always falls back to today's behaviour rather than to an allow.
+        _SUBJ_ROOT="${_proot}"
+        _SUBJ_REV="HEAD"
+        _SUBJ_NOTE=""
+        if [ -n "${_proot}" ] && command -v command_git_subject_dir >/dev/null 2>&1; then
+            _subj_common="$(git -C "${_proot}" rev-parse --git-common-dir 2>/dev/null || true)"
+            case "${_subj_common}" in
+                '') : ;;
+                /*) : ;;
+                *) _subj_common="${_proot}/${_subj_common}" ;;
+            esac
+            if [ -n "${_subj_common}" ] && [ -d "${_subj_common}" ]; then
+                _subj_common="$(cd "${_subj_common}" 2>/dev/null && pwd -P)" || _subj_common=""
+            else
+                _subj_common=""
+            fi
+            _subj_cand="$(command_git_subject_dir "${_COMMAND}" 2>/dev/null || true)"
+            if [ -n "${_subj_cand}" ]; then
+                _subj_ok=false
+                if [ -d "${_subj_cand}" ] && [ -n "${_subj_common}" ]; then
+                    _cand_common="$(git -C "${_subj_cand}" rev-parse --git-common-dir 2>/dev/null || true)"
+                    case "${_cand_common}" in
+                        '') : ;;
+                        /*) : ;;
+                        *) _cand_common="${_subj_cand}/${_cand_common}" ;;
+                    esac
+                    if [ -n "${_cand_common}" ] && [ -d "${_cand_common}" ]; then
+                        _cand_common="$(cd "${_cand_common}" 2>/dev/null && pwd -P)" || _cand_common=""
+                    else
+                        _cand_common=""
+                    fi
+                    if [ -n "${_cand_common}" ] && [ "${_cand_common}" = "${_subj_common}" ]; then
+                        _cand_top="$(git -C "${_subj_cand}" rev-parse --show-toplevel 2>/dev/null || true)"
+                        if [ -n "${_cand_top}" ]; then _SUBJ_ROOT="${_cand_top}"; _subj_ok=true; fi
+                    fi
+                fi
+                if [ "${_subj_ok}" = "true" ]; then
+                    # `if`, not `[ … ] && X=…`: this hook carries `trap 'exit 0'
+                    # ERR`, and an `&&` list whose test fails returns 1, which is
+                    # one refactor away from being the last command in a region
+                    # that trips the trap into a silent allow (CLAUDE.md #137).
+                    if [ "${_SUBJ_ROOT}" != "${_proot}" ]; then
+                        _SUBJ_NOTE="SUBJECT: this command acts in ${_SUBJ_ROOT}, not the session's ${_proot} — the checks below measured ${_SUBJ_ROOT}."
+                    fi
+                else
+                    _SUBJ_NOTE="SUBJECT: the command names a directory (${_subj_cand}) that is not a worktree of this repository, so it was ignored and the checks below measured the session's ${_proot} instead."
+                fi
+            fi
+        fi
+        if [ -n "${_SUBJ_ROOT}" ] && command -v command_push_ref >/dev/null 2>&1; then
+            _subj_ref="$(command_push_ref "${_COMMAND}" 2>/dev/null || true)"
+            if [ -n "${_subj_ref}" ]; then
+                # Branch first, so _SUBJ_REV stays a readable `refs/heads/<x>`
+                # for the shadow record's branch field. Then ANY revision git
+                # accepts as a push source: `git push origin <sha>:refs/heads/x`
+                # is an ordinary push, and treating its source as unresolvable
+                # was a measured BYPASS — the gate fell back to the checkout's
+                # HEAD and ALLOWED where the equivalent named-branch push
+                # DENIED. `^{commit}` forces a revision-only, single-value
+                # lookup, so a model-authored value cannot be read as a path,
+                # and `command_push_ref` has already excluded a leading `-`.
+                _subj_sha=""
+                if git -C "${_SUBJ_ROOT}" rev-parse --verify --quiet "refs/heads/${_subj_ref}" >/dev/null 2>&1; then
+                    _SUBJ_REV="refs/heads/${_subj_ref}"
+                else
+                    _subj_sha="$(git -C "${_SUBJ_ROOT}" rev-parse --verify --quiet "${_subj_ref}^{commit}" 2>/dev/null || true)"
+                    # `if`, not `[ … ] && X=…` — see the note above; keeping the
+                    # two shapes consistent is the point, since the unsafe form
+                    # is the one that reads as harmless.
+                    if [ -n "${_subj_sha}" ]; then _SUBJ_REV="${_subj_sha}"; fi
+                fi
+                if [ "${_SUBJ_REV}" != "HEAD" ]; then
+                    _subj_head="$(git -C "${_SUBJ_ROOT}" rev-parse HEAD 2>/dev/null || true)"
+                    _subj_tip="$(git -C "${_SUBJ_ROOT}" rev-parse "${_SUBJ_REV}" 2>/dev/null || true)"
+                    if [ -n "${_subj_head}" ] && [ -n "${_subj_tip}" ] && [ "${_subj_head}" != "${_subj_tip}" ]; then
+                        _SUBJ_NOTE="${_SUBJ_NOTE}${_SUBJ_NOTE:+ }SUBJECT: this push names ${_subj_ref}, which is not what ${_SUBJ_ROOT} has checked out — the checks below measured ${_subj_ref}."
+                    fi
+                else
+                    _SUBJ_NOTE="${_SUBJ_NOTE}${_SUBJ_NOTE:+ }SUBJECT: the pushed ref '${_subj_ref}' does not resolve to any commit here, so the checks below measured this checkout's HEAD instead."
+                fi
+            fi
+        fi
+        # "No ref resolved" is ambiguous, and the ambiguity matters: a bare
+        # `git push` really is HEAD, but a deletion pushes no content at all and
+        # `--all`/`--mirror`/`--tags`/multi-refspec pushes several, of which HEAD
+        # is at best one. Both fall through to `_SUBJ_REV=HEAD` and are then
+        # measured as though HEAD were the subject — which can deny a deletion
+        # for routing files it does not carry, and can under-measure a multi-ref
+        # push. That is PRE-EXISTING behaviour (before this change everything was
+        # measured at HEAD), so it is ANNOUNCED here and deliberately not acted
+        # on: `command_push_subject_is_partial` fires if ANY push segment is
+        # partial, so suppressing a gate on it would let `git push --delete
+        # origin x; git push origin main` excuse the second push. Narrowing the
+        # subject for these shapes is a separate change with its own controls.
+        if command -v command_push_subject_is_partial >/dev/null 2>&1 \
+           && command_push_subject_is_partial "${_COMMAND}"; then
+            _SUBJ_NOTE="${_SUBJ_NOTE}${_SUBJ_NOTE:+ }SUBJECT: this push deletes a ref or carries more than one, so no single commit is its subject — the checks below measured this checkout's HEAD, which may not be what is being pushed."
+        fi
+
         _VERDICT_TOKEN="${_SESSION_TOKEN}"
         if [ "${_VERDICT_OK}" = "true" ]; then
-            _VERDICT_TOKEN="$(verdict_resolve_token "${_SESSION_TOKEN}" "${_proot}")" || _VERDICT_TOKEN="${_SESSION_TOKEN}"
+            _VERDICT_TOKEN="$(verdict_resolve_token "${_SESSION_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}")" || _VERDICT_TOKEN="${_SESSION_TOKEN}"
             [ -z "${_VERDICT_TOKEN}" ] && _VERDICT_TOKEN="${_SESSION_TOKEN}"
         fi
-        _STALE_MSG=""
+        _STALE_MSG="${_SUBJ_NOTE}"
         # IMPLEMENT-only subset of _STALE_MSG (issue #161 I1). _STALE_MSG has
         # FIVE other writers (ledger staleness below, invocation-evidence /
         # bridge-acceptance notes, routing-delta, evaluator-surface) that are
@@ -762,17 +894,17 @@ $1
 EOF
             return 1
         }
-        # _diff_touches_material_source <proj_root> — 0 iff the branch diff
-        # (mainline merge-base..HEAD) touches anything outside docs/openspec/*.md.
-        # Reuses _branch_diff_names (verdict.sh, sourced above) so the IMPLEMENT
-        # leg's diff base can never disagree with routing-governance/staleness's
-        # base resolution — no separate merge-base logic invented here. Fail-open:
-        # unresolvable base / verdict.sh unavailable => 1 (no advisory, never a
-        # false-fire).
+        # _diff_touches_material_source <proj_root> [commit] — 0 iff the branch
+        # diff (mainline merge-base..subject) touches anything outside
+        # docs/openspec/*.md. Reuses _branch_diff_names (verdict.sh, sourced
+        # above) so the IMPLEMENT leg's diff base can never disagree with
+        # routing-governance/staleness's base resolution — no separate merge-base
+        # logic invented here. Fail-open: unresolvable base / verdict.sh
+        # unavailable => 1 (no advisory, never a false-fire).
         _diff_touches_material_source() {
             local _names
             command -v _branch_diff_names >/dev/null 2>&1 || return 1
-            _names="$(_branch_diff_names "${1:-}")" || return 1
+            _names="$(_branch_diff_names "${1:-}" "${2:-HEAD}")" || return 1
             _names_touch_material_source "${_names}"
         }
         if [ "${_PUSHGATE_SKIP}" != "true" ] && [ -f "${_COMP_STATE}" ] && command -v jq >/dev/null 2>&1; then
@@ -814,7 +946,7 @@ EOF
             # implementation of "is this worth reviewing".
             _rv_material=false
             if command -v _diff_touches_material_source >/dev/null 2>&1; then
-                _diff_touches_material_source && _rv_material=true
+                _diff_touches_material_source "${_SUBJ_ROOT}" "${_SUBJ_REV}" && _rv_material=true
             fi
             if [ "${_review_in_chain}" = "true" ] && [ "${_review_completed}" = "true" ] && \
                [ "${_rv_material}" = "true" ] && \
@@ -822,7 +954,7 @@ EOF
                 _rv_clean=false; _rv_bound=false; _rv_reason="absent"
                 if [ "${_REVIEW_VERDICT_OK}" = "true" ]; then
                     review_verdict_is_clean "${_SESSION_TOKEN}" && _rv_clean=true
-                    review_verdict_covers_head "${_SESSION_TOKEN}" "${_proot}" && _rv_bound=true
+                    review_verdict_covers_head "${_SESSION_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}" && _rv_bound=true
                     # Four cells, and the (!clean && !bound) one is easy to
                     # swallow: an artifact that EXISTS, is not clean, and is
                     # bound to an OLDER commit is "a review ran and found
@@ -1040,7 +1172,7 @@ EOF
                             _names_touch_material_source "${_impl_pr_files}" && _impl_material=true
                         fi
                     fi
-                elif _diff_touches_material_source "${_proot}"; then
+                elif _diff_touches_material_source "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
                     _impl_material=true
                 fi
                 # Any gh-merge outcome records (material, resolved-non-material,
@@ -1060,7 +1192,7 @@ EOF
                         command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "${_pe_action}" "executing-plans"
                     fi
                     if command -v implement_shadow_record >/dev/null 2>&1; then
-                        implement_shadow_record "${_pe_action}" "${_proot}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" "${_impl_db}" "${_impl_material}" "true" "${_impl_detail}" || true
+                        implement_shadow_record "${_pe_action}" "${_SUBJ_ROOT}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" "${_impl_db}" "${_impl_material}" "true" "${_impl_detail}" "${_SUBJ_REV}" || true
                     fi
                 fi
                 # Attestation-resolved episodes are recorded too, as
@@ -1073,7 +1205,7 @@ EOF
                 if [ "${_impl_ev}" = "attested" ] && \
                    { [ "${_impl_material}" = "true" ] || [ "${_pe_action}" = "gh-merge" ]; }; then
                     if command -v implement_shadow_record >/dev/null 2>&1; then
-                        implement_shadow_record "${_pe_action}" "${_proot}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "attested" "${_impl_db}" "${_impl_material}" "false" "${_impl_detail}" || true
+                        implement_shadow_record "${_pe_action}" "${_SUBJ_ROOT}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "attested" "${_impl_db}" "${_impl_material}" "false" "${_impl_detail}" "${_SUBJ_REV}" || true
                     fi
                 fi
             fi
@@ -1094,7 +1226,7 @@ EOF
             # how routing-governance came to deny on a verdict it could not read.
             # Stating the precondition costs nothing and changes no behaviour.
             if [ "${_JQ_OK}" = "true" ] && [ "${_VERDICT_OK}" = "true" ] && [ "${_verif_in_chain}" = "true" ] \
-               && verdict_sha_is_head "${_VERDICT_TOKEN}" "" \
+               && verdict_sha_is_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}" \
                && verdict_has_test_failure "${_VERDICT_TOKEN}"; then
                 _gates="$(verdict_failing_gates "${_VERDICT_TOKEN}")" || true
                 _MSG="PUSH GATE: verification-before-completion is recorded, but the verification verdict at HEAD reports failing gate(s): ${_gates}. Fix and re-run Skill(auto-claude-skills:project-verification) before retrying."
@@ -1146,7 +1278,7 @@ EOF
             # A clean verification verdict covering HEAD is stronger (SHA-bound) evidence
             # of VERIFY than the status milestone, so it also satisfies the verify leg.
             if [ "${_g_verify}" = "false" ] && [ "${_VERDICT_OK}" = "true" ] \
-               && verdict_is_clean "${_VERDICT_TOKEN}" && verdict_covers_head "${_VERDICT_TOKEN}" "${_proot}"; then
+               && verdict_is_clean "${_VERDICT_TOKEN}" && verdict_covers_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
                 _g_verify=true
             fi
             if [ "${_g_review}" = "false" ] || [ "${_g_verify}" = "false" ]; then
@@ -1247,13 +1379,13 @@ EOF
         if [ "${_PUSHGATE_SKIP}" != "true" ] && [ "${_gc_is_push}" = "true" ] \
            && [ "${_JQ_OK}" = "true" ] && [ "${_VERDICT_OK}" = "true" ]; then
             # _proot resolved once above, alongside _VERDICT_TOKEN.
-            if is_routing_repo "${_proot}" && diff_touches_routing "${_proot}"; then
-                if verdict_is_clean "${_VERDICT_TOKEN}" && verdict_covers_head "${_VERDICT_TOKEN}" "${_proot}" \
-                   && { verdict_sha_is_head "${_VERDICT_TOKEN}" "${_proot}" || ! verdict_routing_delta "${_VERDICT_TOKEN}" "${_proot}"; }; then
+            if is_routing_repo "${_SUBJ_ROOT}" && diff_touches_routing "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
+                if verdict_is_clean "${_VERDICT_TOKEN}" && verdict_covers_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}" \
+                   && { verdict_sha_is_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}" || ! verdict_routing_delta "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}"; }; then
                     # Clean verdict at HEAD, OR at an ancestor whose routing files are
                     # unchanged since (a benign non-routing follow-up) — allow. The
                     # ancestor case only warns so follow-up commits aren't re-blocked.
-                    if ! verdict_sha_is_head "${_VERDICT_TOKEN}" "${_proot}"; then
+                    if ! verdict_sha_is_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
                         _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }routing change: the clean verification verdict covers an earlier commit, not HEAD (routing files unchanged since). Re-run project-verification to refresh."
                     fi
                     : # allow
@@ -1276,7 +1408,7 @@ EOF
         # base unresolvable => silence. See
         # openspec/changes/evaluator-surface-advisory/design.md.
         if [ "${_gc_is_push}" = "true" ] && command -v diff_touches_evaluator >/dev/null 2>&1; then
-            _eval_hits="$(diff_touches_evaluator "${_proot}" 2>/dev/null)" || _eval_hits=""
+            _eval_hits="$(diff_touches_evaluator "${_SUBJ_ROOT}" "${_SUBJ_REV}" 2>/dev/null)" || _eval_hits=""
             if [ -n "${_eval_hits}" ]; then
                 _eval_list="$(printf '%s' "${_eval_hits}" | tr '\n' ' ')"
                 _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }EVALUATOR SURFACE: this push modifies file(s) that define what verified means (${_eval_list}). The verification verdict is partly self-referential for this branch — call these files out for explicit human review in the PR."

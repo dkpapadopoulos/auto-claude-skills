@@ -14,7 +14,24 @@
 # Bash 3.2. Never `set -e`. Never reads stdin.
 set -u
 
-REQUIRED_PREDICATE_VERSION=2
+# Adjudicable predicate version. DERIVED FROM THE PRODUCER, not hardcoded: this
+# constant and hooks/lib/implement-shadow.sh's IMPLEMENT_SHADOW_PREDICATE_VERSION
+# are the two halves of one contract, and pinning them independently is a silent
+# corpus blackout — measured when #219 bumped the producer to 3 while this stayed
+# at 2: `--status` reported 0 episodes with the real records counted as
+# "unpoolable", and `--verdict` refused every new record. That reads exactly like
+# an empty corpus, which is the one state this instrument must never fake.
+# The literal below is only the fallback for a checkout where the lib is absent.
+REQUIRED_PREDICATE_VERSION=3
+_sa_lib="$(cd "$(dirname "${BASH_SOURCE:-$0}")/.." 2>/dev/null && pwd)/hooks/lib/implement-shadow.sh"
+if [ -f "${_sa_lib}" ]; then
+    # shellcheck disable=SC1090
+    . "${_sa_lib}" 2>/dev/null || true
+    case "${IMPLEMENT_SHADOW_PREDICATE_VERSION:-}" in
+        ''|*[!0-9]*) : ;;
+        *) REQUIRED_PREDICATE_VERSION="${IMPLEMENT_SHADOW_PREDICATE_VERSION}" ;;
+    esac
+fi
 FLOOR_EPISODES=29
 FLOOR_REPOS=2
 EPISODE_WINDOW_SEC=1800
@@ -191,7 +208,7 @@ cmd_adjudicate() {
     [ -z "${_pv}" ] && { echo "error: no record '${_rid}' in ${SHADOW_LOG}" >&2; return 1; }
     if [ "${_pv}" != "${REQUIRED_PREDICATE_VERSION}" ]; then
         echo "error: record '${_rid}' is predicate_version ${_pv}; only v${REQUIRED_PREDICATE_VERSION} is adjudicable." >&2
-        echo "       v1 measured a different subject for merges and MUST NOT be pooled with v2." >&2
+        echo "       Records of another predicate version measured a different subject and MUST NOT be pooled." >&2
         return 1
     fi
     if [ ! -f "${ADJ_LOG}" ]; then
@@ -275,7 +292,7 @@ cmd_next() {
         if [ "${_n_v2}" -eq 0 ]; then
             printf 'no v%s records yet — nothing is adjudicable.\n' "${REQUIRED_PREDICATE_VERSION}"
             [ "${_n_v1}" -gt 0 ] && \
-                printf '  %s v1 record(s) present, excluded: v1 measured a different subject and is unpoolable with v2.\n' "${_n_v1}"
+                printf '  %s record(s) of another predicate version present, excluded: they measured a different subject and are unpoolable.\n' "${_n_v1}"
             printf '  The corpus grows as the IMPLEMENT leg fires; see --status for the floor.\n'
             return 0
         fi
@@ -502,7 +519,7 @@ EOF
     printf '  adjudicated       %s   (human-claimed)\n' "${_lab}"
     printf '  agent-claimed     %s   <- excluded until a human re-confirms\n' "${_agent}"
     printf '  unadjudicated     %s\n' "${_unlab}"
-    printf '  v1 records        %s   <- unpoolable, excluded\n' "${_v1}"
+    printf '  other-predicate   %s   <- unpoolable, excluded\n' "${_v1}"
     [ "${_badts}" -gt 0 ] && \
         printf '  malformed ts      %s   <- excluded: unparseable timestamp, cannot be placed in an episode\n' "${_badts}"
     [ "${_unparsed}" -gt 0 ] && \

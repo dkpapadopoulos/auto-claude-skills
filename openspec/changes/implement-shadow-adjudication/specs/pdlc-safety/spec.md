@@ -28,8 +28,14 @@ also adds no integrity, since every available signal is forgeable regardless.
 Output MUST describe results as **human-claimed**, and MUST NOT describe them as
 human-verified.
 
-Adjudicating a record whose `predicate_version` is not 2 MUST be refused with a
-non-zero exit and an explanation. The script MUST NOT be sourced by
+Adjudicating a record whose `predicate_version` is not the CURRENT producer
+version MUST be refused with a non-zero exit and an explanation, and records of
+other predicate versions MUST be reported as excluded rather than silently
+dropped. The adjudicable version MUST be derived from the producer
+(`hooks/lib/implement-shadow.sh`) rather than pinned independently: two
+independently pinned constants make a producer bump a SILENT corpus blackout —
+`--status` reports zero episodes while live records are counted as unpoolable,
+which is indistinguishable from an empty corpus. The script MUST NOT be sourced by
 `hooks/openspec-guard.sh`, MUST NOT be added to `_GATE_ENFORCE_LIBS`, and MUST NOT
 write any gate state or emit a `permissionDecision`.
 

@@ -3,7 +3,7 @@ type: gotcha
 title: A/B-testing a hook needs a real checkout on both sides
 description: Running a hook from a scratch copy repoints CLAUDE_PLUGIN_ROOT, so its libs fall open and the comparison differs for reasons unrelated to the diff.
 tags: [hooks, testing, fail-open, push-gate]
-source: hooks/openspec-guard.sh:381
+source: hooks/openspec-guard.sh:390
 timestamp: 2026-08-28T00:00:00Z
 ---
 

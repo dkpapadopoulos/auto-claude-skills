@@ -24,7 +24,11 @@ export IMPLEMENT_SHADOW_LOG="${_u_home}/shadow.jsonl"
 . "${PROJECT_ROOT}/hooks/lib/implement-shadow.sh"
 
 assert_equals "schema_version is 3" "3" "${IMPLEMENT_SHADOW_SCHEMA_VERSION}"
-assert_equals "predicate_version is unchanged at 2" "2" \
+# 3 (#219): the push path now measures the tree and ref the command names, not
+# the session cwd — that changes WHEN the leg fires, so v2 records are no longer
+# poolable. Bumping this pin without bumping the constant, or vice versa, is the
+# mistake it exists to catch.
+assert_equals "predicate_version is 3 (#219 push subject)" "3" \
     "${IMPLEMENT_SHADOW_PREDICATE_VERSION}"
 
 implement_shadow_record push "${PROJECT_ROOT}" tok /tmp/t.jsonl none branch-local true
@@ -70,7 +74,7 @@ assert_equals "missing is distinguishable from cannot_check" "missing" \
     "$(jq -r '.impl_evidence_detail.ledger' "${IMPLEMENT_SHADOW_LOG}")"
 assert_equals "schema_version on a detailed record is 3" "3" \
     "$(jq -r '.schema_version' "${IMPLEMENT_SHADOW_LOG}")"
-assert_equals "predicate_version stays 2 so v2 records remain poolable" "2" \
+assert_equals "predicate_version is 3 so v2 records are NOT pooled" "3" \
     "$(jq -r '.predicate_version' "${IMPLEMENT_SHADOW_LOG}")"
 
 # An omitted detail must be null, NOT a fabricated all-missing object. "not
@@ -294,7 +298,7 @@ assert_contains "record names the gate"        '"gate":"push-implement"' "${_rec
 assert_contains "record marks a would-block"   '"would_block":true'      "${_rec}"
 assert_contains "record carries action push"   '"action":"push"'         "${_rec}"
 assert_contains "record carries schema_version"    '"schema_version":3'    "${_rec}"
-assert_contains "record carries predicate_version" '"predicate_version":2' "${_rec}"
+assert_contains "record carries predicate_version" '"predicate_version":3' "${_rec}"
 assert_contains "record carries a record_id"   '"record_id":'            "${_rec}"
 assert_contains "record carries a ts"          '"ts":'                   "${_rec}"
 assert_contains "record carries the transcript pointer" '"transcript_path":' "${_rec}"
@@ -420,7 +424,7 @@ _rec="$(cat "$IMPLEMENT_SHADOW_LOG")"
 assert_equals "merge writes one record" "1" "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
 assert_contains "merge record names the PR as its subject" '"diff_base":"pr:7"' "${_rec}"
 assert_contains "merge record still marks material source"  '"material_source":true' "${_rec}"
-assert_contains "predicate_version bumped to 2"             '"predicate_version":2' "${_rec}"
+assert_contains "predicate_version bumped to 3 (#219)"        '"predicate_version":3' "${_rec}"
 assert_not_contains "merge did not become a deny" "permissionDecision" "${out:-}"
 
 # Unresolvable PR -> unresolved, record still written, still no deny.
