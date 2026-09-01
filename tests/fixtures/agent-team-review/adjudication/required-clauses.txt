@@ -1,0 +1,87 @@
+# Pinned eval set for issue #205 — agent-team-review lead adjudication.
+# NEVER DELETE. Each non-comment, non-blank line is a LITERAL needle (grep -F)
+# that MUST appear in skills/agent-team-review/SKILL.md.
+#
+# THIS FILE IS NOT THE SOLE AUTHORITY. tests/test-review-adjudication.sh
+# independently hardcodes the issue-#205 anchors and asserts they are present
+# HERE, and pins a count floor equal to the needle count — so deleting a needle
+# fails the gate instead of silently deleting its own assertion. That leak was
+# measured on the sibling dispatch-brief gate; do not reintroduce it by making
+# this file the only source of needles.
+#
+# A needle must stay on ONE physical line in SKILL.md. Reflowing a paragraph
+# breaks the literal match and fails the gate — the safe direction (false FAIL,
+# never false PASS), but reflow deliberately.
+#
+# Provenance: issue #205, from memory/reviewer-findings-need-isolated-reproduction.md
+# (observed 2026-08-12: a real finding against hooks/lib/git-command.sh was nearly
+# dismissed because the reproduction harness had several faults active at once).
+# The measured pairings behind it live in seeded-findings.md, in this directory.
+
+# --- Clause 1: the rule itself — one variable, and the pair must disagree ---
+Change exactly one thing, and build a pair that COULD disagree
+you have not tested the claim
+
+# --- Clause 2: the masking mechanism, named so it can be recognised ---
+an upstream fail-closed gate masks a downstream fall-open one
+
+# --- Clause 3: BOTH directions — rejecting and accepting are equally gated ---
+Before rejecting
+Before accepting
+
+# --- Clause 4: a failed reproduction is not a refutation ---
+you have not refuted the finding, you have only failed to trigger it
+
+# --- Clause 5: escalation when the pair cannot be obtained ---
+could-not-reproduce
+Keep the finding at the severity it carries
+
+# --- Clause 6: isolation — reproduction never touches the shared tree ---
+git worktree add --detach
+Never write to the shared working tree while adjudicating
+
+# --- Clause 7: the pairing is recorded, so an unexamined verdict is visible ---
+Record the pairing, not just the verdict
+
+# --- Clause 8: scope — structural security/governance findings are EXEMPT ---
+# Without this, §4a silently repeals the finding contract's structural exception
+# and demands a runnable pair for "this removes a safety constraint".
+experimentally decidable causal claim
+findings blocking on the structural criterion the finding contract already allows
+
+# --- Clause 9: the oracle is named BEFORE the run, and is not always allow/deny ---
+The oracle is whatever the finding predicts
+
+# --- Clause 10: a non-flipping pair has three explanations, only one is "false" ---
+A pair that does not flip is not, on its own, proof of falsity
+
+# --- Clause 11: the worktree must carry the REVIEWED change, not its parent ---
+adjudicates the PARENT state
+
+# --- Clause 12: a non-flip decides "false" only against a POSITIVE control ---
+# Without this the procedure contradicts its own seeded FALSE cells, which
+# reject on a no-flip.
+a non-flip decides "false" only once the other two are ruled out
+positive control that proves the harness could have detected it
+
+# --- Clause 13: an open finding constrains the verdict, it is not "clean" ---
+An OPEN finding is not a clean one
+the verdict MUST NOT be `clean`
+
+# --- Clause 14: the uncommitted delta is taken against HEAD, not the base ---
+# `git diff {base_sha}` re-applies committed changes already in the sha.
+Diff against HEAD, NOT against
+
+# --- Clause 15: the finding contract carries the oracle, so the lead does not
+# invent it after seeing the result ---
+Oracle: what observably differs when the claim holds
+
+# --- Clause 16: the positive control must be COMPARABLE, not merely known-good ---
+The control must be COMPARABLE, not merely known-good
+
+# --- Clause 17: the summary's pairing requirement carries the same structural
+# exemption as §4a, or it demands a pair that cannot exist ---
+adjudicated BY PAIRING carries its §4a pairing inline
+
+# --- Clause 18: untracked files must be COPIED, not merely listed ---
+discovering them is not carrying them
