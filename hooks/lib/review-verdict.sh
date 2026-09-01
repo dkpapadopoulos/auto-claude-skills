@@ -77,7 +77,7 @@ review_verdict_is_clean() {
              else ((.unresolved_blocking | tonumber?) // 1) end) == 0)' "$f" >/dev/null 2>&1
 }
 
-# review_verdict_covers_head <token> <proj_root> — 0 iff reviewed_head_sha is
+# review_verdict_covers_head <token> <proj_root> [commit] — 0 iff reviewed_head_sha is
 # bound to THIS branch: equal to HEAD, or a branch-local ancestor of HEAD.
 #
 # Deliberately reuses branch_ledger_sha_is_branch_local rather than
@@ -92,12 +92,16 @@ review_verdict_is_clean() {
 # commits are NOT classified — that heuristic is exactly the fitted matching
 # the publish-guard design rejects. The delta is recorded and measured instead.
 review_verdict_covers_head() {
-    local token="${1:-}" proot="${2:-}" sha head base=""
+    # [commit] (#219): the subject the gated command names, HEAD when omitted.
+    # The guard passes it so this advisory answers "does the review cover what is
+    # being pushed", not "what this shell has checked out". Omitting it is
+    # byte-identical to the previous behaviour.
+    local token="${1:-}" proot="${2:-}" rev="${3:-HEAD}" sha head base=""
     sha="$(_review_verdict_head_sha "$token")" || return 1
     [ -z "$sha" ] && return 1
     [ -z "$proot" ] && proot="$(git rev-parse --show-toplevel 2>/dev/null)"
     [ -n "$proot" ] || return 1
-    head="$(git -C "$proot" rev-parse HEAD 2>/dev/null)" || return 1
+    head="$(git -C "$proot" rev-parse "$rev" 2>/dev/null)" || return 1
     [ -z "$head" ] && return 1
     [ "$sha" = "$head" ] && return 0
 

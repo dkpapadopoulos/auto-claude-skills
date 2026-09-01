@@ -19,31 +19,43 @@ _verdict_sha() {
     jq -r '.sha // empty' "$f" 2>/dev/null
 }
 
-# verdict_sha_is_head <token> <proj_root> — 0 iff artifact .sha == HEAD exactly.
+# SUBJECT COMMIT (issue #219). Every helper below that used to hardcode `HEAD`
+# now takes an OPTIONAL trailing <commit>: the commit the gated command actually
+# acts on, which is not the checked-out HEAD whenever the command names another
+# ref (`git push origin <branch>`) or acts in another worktree (`git -C`).
+# Omitting it resolves `HEAD` exactly as before, so every existing caller and
+# every external consumer (scripts/gate-status.sh, tests) is unchanged.
+#
+# The caller resolves and VALIDATES the commit; these helpers pass it to git as
+# a revision, never as a path or flag.
+
+# verdict_sha_is_head <token> <proj_root> [commit] — 0 iff artifact .sha is the
+# subject commit exactly (HEAD when no commit is given).
 verdict_sha_is_head() {
-    local token="${1:-}" proot="${2:-}" sha head
+    local token="${1:-}" proot="${2:-}" rev="${3:-HEAD}" sha head
     sha="$(_verdict_sha "$token")" || return 1
     [ -z "$sha" ] && return 1
     [ -z "$proot" ] && proot="$(git rev-parse --show-toplevel 2>/dev/null)"
-    head="$(git -C "${proot:-.}" rev-parse HEAD 2>/dev/null)" || return 1
+    head="$(git -C "${proot:-.}" rev-parse "$rev" 2>/dev/null)" || return 1
     [ -n "$head" ] && [ "$sha" = "$head" ]
 }
 
-# verdict_covers_head <token> <proj_root> — 0 iff .sha == HEAD or is an ancestor
-# of HEAD on the branch. This is the branch-scoping the token-scoped artifact
-# lacks: an unrelated (cross-branch) or missing sha never covers HEAD.
+# verdict_covers_head <token> <proj_root> [commit] — 0 iff .sha == the subject
+# commit or is an ancestor of it on the branch. This is the branch-scoping the
+# token-scoped artifact lacks: an unrelated (cross-branch) or missing sha never
+# covers the subject.
 verdict_covers_head() {
-    local token="${1:-}" proot="${2:-}" sha head
+    local token="${1:-}" proot="${2:-}" rev="${3:-HEAD}" sha head
     sha="$(_verdict_sha "$token")" || return 1
     [ -z "$sha" ] && return 1
     [ -z "$proot" ] && proot="$(git rev-parse --show-toplevel 2>/dev/null)"
-    head="$(git -C "${proot:-.}" rev-parse HEAD 2>/dev/null)" || return 1
+    head="$(git -C "${proot:-.}" rev-parse "$rev" 2>/dev/null)" || return 1
     [ -z "$head" ] && return 1
     [ "$sha" = "$head" ] && return 0
     git -C "${proot:-.}" merge-base --is-ancestor "$sha" "$head" 2>/dev/null
 }
 
-# verdict_resolve_token <session_token> <proj_root> — pick the token whose verdict
+# verdict_resolve_token <session_token> <proj_root> [commit] — pick the token whose verdict
 # is authoritative for the CURRENT push. The verdict is bound to the COMMIT (sha),
 # NOT the session: the project-verification writer has no stdin payload, while this
 # hook resolves payload-first (issue #51). Concurrent sessions clobber the shared
@@ -73,14 +85,14 @@ verdict_covers_head() {
 # on the HEAD sha still bounds the jq/git forks to the few files naming HEAD (usually 0-2).
 # Fail-open: echoes <session_token> on any error.
 verdict_resolve_token() {
-    local session_token="${1:-}" proot="${2:-}" head f base tok best_clean=""
+    local session_token="${1:-}" proot="${2:-}" rev="${3:-HEAD}" head f base tok best_clean=""
     # 1. Own verdict at EXACT HEAD -> use it, no sibling scan (byte-identical fast path).
     #    NOTE: verdict_sha_is_head, NOT verdict_covers_head — an own ANCESTOR verdict must
     #    NOT short-circuit past a sibling verdict measured at the exact HEAD (issue #123).
-    if [ -n "$session_token" ] && verdict_sha_is_head "$session_token" "$proot"; then
+    if [ -n "$session_token" ] && verdict_sha_is_head "$session_token" "$proot" "$rev"; then
         printf '%s' "$session_token"; return 0
     fi
-    head="$(git -C "${proot:-.}" rev-parse HEAD 2>/dev/null)" || head=""
+    head="$(git -C "${proot:-.}" rev-parse "$rev" 2>/dev/null)" || head=""
     if [ -n "$head" ]; then
         # 2. Cross-token bridge: sibling artifacts bound to the EXACT HEAD. Failure@HEAD
         #    outranks clean (deny-bias). Own token skipped — steps 1/3 own it. A grep -F
@@ -91,7 +103,7 @@ verdict_resolve_token() {
             tok="${base#.skill-project-verified-}"
             [ -z "$tok" ] && continue
             [ "$tok" = "$session_token" ] && continue
-            verdict_sha_is_head "$tok" "$proot" || continue   # jq-confirm exact HEAD (grep can match other fields)
+            verdict_sha_is_head "$tok" "$proot" "$rev" || continue   # jq-confirm exact HEAD (grep can match other fields)
             if verdict_has_test_failure "$tok"; then printf '%s' "$tok"; return 0; fi
             [ -z "$best_clean" ] && verdict_is_clean "$tok" && best_clean="$tok"
         done <<EOF
@@ -101,7 +113,7 @@ EOF
     fi
     # 3. No exact-HEAD verdict anywhere -> fall back to the session's OWN coverage, which
     #    ACCEPTS an ANCESTOR (scoped to the own token — forgery posture). Else unchanged.
-    if [ -n "$session_token" ] && verdict_covers_head "$session_token" "$proot"; then
+    if [ -n "$session_token" ] && verdict_covers_head "$session_token" "$proot" "$rev"; then
         printf '%s' "$session_token"; return 0
     fi
     printf '%s' "$session_token"
@@ -156,11 +168,17 @@ is_routing_repo() {
     [ -n "$proot" ] && [ -f "${proot}/config/default-triggers.json" ]
 }
 
-# _routing_base <proj_root> — best-available mainline merge-base for HEAD.
+# _routing_base <proj_root> [commit] — best-available mainline merge-base for the
+# subject commit (HEAD when none is given).
 _routing_base() {
-    local proot="${1:-.}" ref b
-    for ref in origin/HEAD '@{upstream}' origin/main main origin/master master; do
-        b="$(git -C "$proot" merge-base HEAD "$ref" 2>/dev/null)" && [ -n "$b" ] && { printf '%s' "$b"; return 0; }
+    local proot="${1:-.}" rev="${2:-HEAD}" ref b up
+    # `@{upstream}` with no left-hand side means the CHECKED-OUT branch's
+    # upstream, which is the wrong branch as soon as the subject is another one.
+    # Ask for the subject's own upstream instead; a sha (or a branch with no
+    # upstream) simply fails to resolve and the loop falls through.
+    up="${rev}@{upstream}"
+    for ref in origin/HEAD "$up" origin/main main origin/master master; do
+        b="$(git -C "$proot" merge-base "$rev" "$ref" 2>/dev/null)" && [ -n "$b" ] && { printf '%s' "$b"; return 0; }
     done
     return 1
 }
@@ -171,33 +189,34 @@ _routing_base() {
 # ancestor-clean verdict is still authoritative. Fail-open: sha unknown/unreadable
 # => 1 (no detectable delta => don't manufacture a false-block).
 verdict_routing_delta() {
-    local token="${1:-}" proot="${2:-}" sha head names
+    local token="${1:-}" proot="${2:-}" rev="${3:-HEAD}" sha head names
     sha="$(_verdict_sha "$token")" || return 1
     [ -z "$sha" ] && return 1
     [ -z "$proot" ] && proot="$(git rev-parse --show-toplevel 2>/dev/null)"
-    head="$(git -C "${proot:-.}" rev-parse HEAD 2>/dev/null)" || return 1
+    head="$(git -C "${proot:-.}" rev-parse "$rev" 2>/dev/null)" || return 1
     names="$(git -C "${proot:-.}" diff --name-only "$sha" "$head" 2>/dev/null)" || return 1
     printf '%s\n' "$names" | grep -Eq '^(skills|config|hooks)/'
 }
 
-# _branch_diff_names <proj_root> — name-only branch diff (mainline merge-base
-# ..HEAD), shared by diff_touches_routing and diff_touches_evaluator so the
-# deny gate and the advisory can never disagree on what the branch changed.
+# _branch_diff_names <proj_root> [commit] — name-only branch diff (mainline
+# merge-base..subject, HEAD when no commit is given), shared by
+# diff_touches_routing and diff_touches_evaluator so the deny gate and the
+# advisory can never disagree on what the branch changed.
 # Fail-open: unresolvable root/base or git error => non-zero, no output.
 _branch_diff_names() {
-    local proot="${1:-}" head base
+    local proot="${1:-}" rev="${2:-HEAD}" head base
     [ -z "$proot" ] && proot="$(git rev-parse --show-toplevel 2>/dev/null)"
     [ -z "$proot" ] && return 1
-    head="$(git -C "$proot" rev-parse HEAD 2>/dev/null)" || return 1
-    base="$(_routing_base "$proot")" || return 1
+    head="$(git -C "$proot" rev-parse "$rev" 2>/dev/null)" || return 1
+    base="$(_routing_base "$proot" "$rev")" || return 1
     git -C "$proot" diff --name-only "$base" "$head" 2>/dev/null
 }
 
-# diff_touches_routing <proj_root> — 0 iff the branch diff (base..HEAD) touches a
-# routing path. Fail-open: unresolvable base => 1 (no gate).
+# diff_touches_routing <proj_root> [commit] — 0 iff the branch diff
+# (base..subject) touches a routing path. Fail-open: unresolvable base => 1.
 diff_touches_routing() {
     local names
-    names="$(_branch_diff_names "${1:-}")" || return 1
+    names="$(_branch_diff_names "${1:-}" "${2:-HEAD}")" || return 1
     printf '%s\n' "$names" | grep -Eq '^(skills|config|hooks)/'
 }
 
@@ -236,7 +255,7 @@ _EVALUATOR_SURFACES="hooks/openspec-guard.sh hooks/skill-gate.sh hooks/lib/verdi
 # unresolvable base/git error => 1, no output (advisory silence, never a block).
 diff_touches_evaluator() {
     local names hits
-    names="$(_branch_diff_names "${1:-}")" || return 1
+    names="$(_branch_diff_names "${1:-}" "${2:-HEAD}")" || return 1
     hits="$(printf '%s\n' "$names" | awk -v s=" ${_EVALUATOR_SURFACES} " '$0 != "" && index(s, " " $0 " ")' 2>/dev/null)" || return 1
     [ -n "$hits" ] || return 1
     printf '%s\n' "$hits"

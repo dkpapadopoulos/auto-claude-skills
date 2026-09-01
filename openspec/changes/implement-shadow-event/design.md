@@ -252,6 +252,196 @@ rather than left unresolved. It does NOT give `attested / all-eligible`;
 evidence-backed episodes are deliberately still not recorded (see
 `attestation-measurement/design.md`, Unit E).
 
+**Predicate v3 (#219, 2026-08-29) — the v2 corpus is closed.** The leg's
+`material_source` for a PUSH was measured against whatever the SESSION cwd had
+checked out, which is not the tree or the branch the pushed command names
+whenever the session sits in a different worktree or the refspec names another
+branch. That is the same wrong-subject defect #161 fixed for the merge path, and
+it changes **when the leg fires**, so `IMPLEMENT_SHADOW_PREDICATE_VERSION` is now
+**3** and v2 records MUST NOT be pooled with v3. Records also now carry the
+subject's branch and sha rather than the checkout's, so episode identity
+`(repo, branch, session_token)` names the work the record describes.
+
+The v2 corpus that closes here is **2 would-block episodes** (2026-08-02 and
+2026-08-03, `27884d11399402ac` and `b9f3ca7066b17c01`, neither adjudicated) plus
+21 attestation-resolved ones, over 32 days. That is 0.0625 would-block
+episodes/day against the pre-registered 0.697 — the dated horizon's falsification
+condition, met with room to spare and now compounded by a restart. The
+re-registration that decision demands is issue #199 and is recorded in its own
+section below. Note what it does and does not touch: it moves the horizon, which
+the Pre-registration already flagged as resting on a provisional rate assumption,
+and it leaves the threshold, floor, denominator and diversity requirement exactly
+as written. Changing THOSE in the same edit that resets the data would be the
+post-hoc fitting that section exists to prevent.
+
+## Re-registration 2026-08-29 (issues #199 + #219)
+
+Two independent things have happened to this measurement, and both are recorded
+here. **Nothing in the Pre-registration above is edited.** The threshold, the
+floor, the episode denominator and the diversity requirement are unchanged and
+explicitly not renegotiated — only the *horizon*, which that section already
+flagged as resting on a provisional accumulation-rate assumption, moves.
+
+### 1. The predicate changed, so the corpus resets — independent of any rate
+
+#219 moved the leg's `material_source` onto the subject the pushed command names
+(the session cwd's branch was being measured instead, which for a concurrent
+session or a worktree is a different branch entirely). That changes **when the
+leg fires**, so per the standing pooling rule `IMPLEMENT_SHADOW_PREDICATE_VERSION`
+goes 2 → 3 and the v2 corpus — 2 would-block, 21 attested, 0 adjudicated —
+becomes permanently unpoolable. **n resets to 0 under v3**, effective at #219's
+merge commit.
+
+This ground is worth separating from the one below because it is *independent of
+whether the data looked favourable*: the instrument got a correctness fix. A
+corpus measured against the wrong subject is not a smaller corpus, it is not
+evidence — the same finding #161 recorded when it bumped v1 → v2 for this exact
+defect class on the merge path.
+
+### 2. The accumulation-rate assumption is falsified — the tripwire firing as designed
+
+At 2026-08-29, 32 days into v2 recording (`scripts/shadow-adjudicate.sh --status`):
+
+| | |
+|---|---|
+| episodes (all) | 23 |
+| **would-block episodes — the only population the rate is computed over** | **2** |
+| attestation-resolved episodes | 21 |
+| adjudicated | 0 |
+| distinct repos among adjudicated episodes | 0 |
+
+That last row is the diversity counter, which counts repos among **adjudicated**
+episodes; nothing has been adjudicated, so it reads 0 for that reason and not
+because the episodes lack repos. Measured directly against the log, the two
+would-block episodes span **two distinct repos** (`auto-claude-skills` and
+`SuperTrain`).
+
+Be precise about what that does and does not say. Both counters are presently
+unmet — n is 2 of 29 and adjudicated diversity is 0 of 2, trivially, because
+nothing is adjudicated. What the measurement rules out is diversity being a
+*structural* obstacle: the population this leg fires on is not confined to one
+repo, so reaching the floor is a question of volume and adjudication effort, not
+of the corpus being inherently single-repo.
+
+Both would-block episodes are from 2026-08-02 and 2026-08-03; none has occurred
+in the 26 days since. That is **0.0625 would-block episodes/day** against a
+pre-registered 0.697.
+
+Do not quote that as a clean 11x: 0.697 was a *transcript-proxy* rate for any
+candidate push/merge, which the Pre-registration itself flags as an optimistic
+bound, while 0.0625 counts only episodes where the leg fired and found no
+evidence — a strict subset. The sound statement is the one the horizon clause
+asks for: **the proxy badly overpredicted usable corpus accumulation**, by an
+order of magnitude rather than a little. (Issue #199's own "~3x", written
+2026-08-06, predates the `would_block` population filter and pooled attestation
+episodes that cannot contain a false block; it understates the shortfall.)
+
+### The decision
+
+1. **The threshold, floor, denominator and diversity requirement stand,
+   reaffirmed and not open under this re-registration.** Those were never flagged
+   as provisional. "We did not clear the bar, so we are moving the bar" is the
+   post-hoc move this document exists to prevent, and being an order of magnitude
+   behind schedule makes it more tempting, not more true.
+2. **No new horizon date is committed.** Re-dating off the v2 rate would repeat
+   the original mistake with fresher numbers: the predicate itself changed what
+   counts as a qualifying push, so the v2 rate does not necessarily carry to v3.
+   How much it changes is genuinely unmeasured: the fix alters which pushes
+   qualify, in a direction this section has no evidence about, so a projection
+   off the v2 number would be a guess wearing a date — and a date is what gets
+   quoted later. Horizon is therefore **unknown, pending re-estimate**, and this
+   section deliberately makes no claim about how far off 2027-12 was.
+3. **Re-estimate after the first 14 days of v3 recording**, then compute a
+   horizon by the same arithmetic used on 2026-07-28. That check is a new,
+   differently-shaped tripwire and gets its own issue rather than reusing #173.
+4. **The leg stays advisory and the log keeps recording.** Nothing becomes deny.
+
+**Falsification condition for this re-registration:** if the 14-day v3
+re-estimate is again off by an order of magnitude from what it predicts, that is
+a second independent miss, and it is grounds to hold the pre-committed "is <10%
+the right threshold at all" question **explicitly and in the open, in its own
+dated section** — never to adjust the threshold quietly as a third patch to this
+same rule.
+
+### Why this is a re-registration and not post-hoc fitting
+
+The `<10%` threshold and the n=29 floor are the decision rule; the 2026-09-08
+date is a **diagnostic tripwire on a separately-flagged assumption**, and the
+Pre-registration pre-commits what a missed horizon means — "grounds to revisit
+whether `<10%` is the right threshold at all". Note it says *revisit*, not
+*lower*. That distinction is the whole basis for touching the date and nothing
+else.
+
+**It is NOT the same evidentiary class as the 2026-07-28 floor derivation**, and
+claiming so would be the overclaim this section is trying to avoid. That floor
+was *arithmetic*: mechanically implied by an already-committed threshold, so it
+could not have come out differently. Declining to re-date is an **empirical
+governance decision** made after seeing results. It is defensible, but it is
+defensible on different grounds, and the grounds are these two — neither of which
+is "the data were inconvenient":
+
+1. the rate assumption was explicitly flagged provisional and its own
+   pre-committed trigger fired, exactly as designed;
+2. the predicate changed for reasons unrelated to the rate, which voids pooling
+   under a standing rule regardless of what the data said.
+
+Both leave the threshold, floor, denominator and diversity requirement untouched.
+
+**What was considered and rejected:** withdrawing the flip outright — declaring
+the leg permanently advisory and closing the question. It was drafted, and it is
+wrong. It buys nothing operationally (the leg is advisory either way and the log
+records either way), it forecloses a future decision, and it is a project-level
+stop taken immediately after inconvenient data. That is outcome-dependent
+stopping: not threshold manipulation, but not categorically immune to
+rationalisation either, and it needs a defence that re-dating simply does not.
+Also rejected: adopting a bounded-harm kill-switch flip now. Codex proposed
+almost exactly that on 2026-07-28 and it was declined; being behind schedule does
+not make the argument more true, and under v3 it would have **zero** evidence to
+stand on.
+
+### Two corrections to arguments that looked stronger than they are
+
+**The escape hatch does not bound the whole harm model.** It is tempting to argue
+that because a deny from this leg is escapable by one truthful `phase_attest`
+— already classified a `true_catch` — the `<10%` bar is close to vacuous. That
+holds for only ONE of the two `false_block` disjuncts. "The human could not
+proceed" is structurally foreclosed by attestation. **"The gate's message named
+the wrong remedy" is not**: an agent can attest truthfully and still have been
+pointed at the wrong fix, and that is exactly the `cannot_check`-vs-`missing`
+distinction `impl_evidence_detail` exists to expose. So the bar is carrying less
+weight than n=29 implies, but it is not vacuous, and the component that still
+needs measuring is remedy correctness — a smaller and cheaper target than
+"false-block rate in general".
+
+**"21 of 23 attested" cannot settle the value question, and there is a cheap
+instrument that can.** Those records say the hatch was USED, never whether the
+reason was true — so they distinguish neither "the hatch works" from "attestation
+is a reflex", and arguing from them about the value of denying the 2 would-block
+episodes also mixes populations. The instrument that answers it needs no schema
+change and no predicate change: **adjudicate a sample of the attestation-only
+episodes for whether the `phase_attest` reason is situation-specific or
+boilerplate.** `--next`/`--verdict` already label non-blocking records, and the
+rate-gate excludes them, so this costs only human attention and answers a
+real-vs-theatre question no value of n can reach.
+
+### Consequences for other work
+
+- **Issue #173** (the dated check against 2026-09-08) should **close citing this
+  section**, not fire against a floor already known unreachable — it now has two
+  converging reasons, the rate miss and the corpus-invalidating predicate bump.
+  The 14-day v3 re-estimate is a differently-shaped check and belongs in a fresh
+  issue.
+- **The two v2 would-block records** (`27884d11399402ac` in `auto-claude-skills`,
+  `b9f3ca7066b17c01` in `SuperTrain`) are orphaned by the v3 bump. Labelling them
+  is nearly free and gives an early read on whether the rare population behaves as
+  designed, but it feeds no rate and **an agent must not label them** — agent
+  claims are excluded until a human re-confirms, which is the rule working, not
+  an obstacle to route around.
+- **An opt-in deny** — `phase_enforcement.implement: "deny"` for users who want
+  the leg to block on their own machines — is a coherent follow-up and is
+  deliberately NOT proposed here. It would be a user choice rather than a default,
+  so it does not inherit this decision rule; it needs its own issue.
+
 ## Trade-offs
 
 - **Deferred payoff.** No usable rate for weeks. Accepted because the

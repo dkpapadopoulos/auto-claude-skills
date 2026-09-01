@@ -851,3 +851,331 @@ gh_publish_body_files() {
     [ -n "${_out}" ] && printf '%s' "${_out}"
     return 0
 }
+
+# ---------------------------------------------------------------------------
+# Subject resolution (#219)
+#
+# The gate that consumes these runs with the hook PROCESS's cwd, which the
+# harness sets to the SESSION cwd — not to the tree the gated command acts on.
+# These two helpers report what the COMMAND ITSELF says about its subject.
+#
+# SECURITY (same posture as pr_ref_from_command): the command text is
+# model-authored, so NOTHING here is trusted. Both functions only *report* the
+# claim; the caller MUST validate it — a directory against `git rev-parse
+# --git-common-dir` of its own repository, a ref against `refs/heads/<name>`
+# inside that repository — before any `git -C` or `git rev-parse` consumes it.
+# Neither ever emits a leading `-`, so a discarded-but-interpolated value
+# cannot become a flag.
+#
+# CEILING: `--git-dir=`, and any path or ref arriving through a variable,
+# command substitution, or `bash -c` indirection, are NOT resolved — the same
+# string-detection ceiling the rest of this lib documents. Unresolved means the
+# caller keeps its process-cwd subject, i.e. today's behaviour.
+
+# _gc_strip_openers <word> — drop leading group openers, as `(git push` and
+# `{ git push` glue `(`/`{` onto the first token.
+_gc_strip_openers() {
+    local _w="$1"
+    while :; do
+        case "${_w}" in
+            '('*) _w="${_w#\(}" ;;
+            '{'*) _w="${_w#\{}" ;;
+            *) break ;;
+        esac
+    done
+    printf '%s' "${_w}"
+}
+
+# _gc_strip_closers <word> — drop trailing group closers, as `(git push)`
+# glues `)` onto the last token. No path or ref legitimately ends in ) or }.
+_gc_strip_closers() {
+    local _w="$1"
+    while :; do
+        case "${_w}" in
+            *')') _w="${_w%\)}" ;;
+            *'}') _w="${_w%\}}" ;;
+            *) break ;;
+        esac
+    done
+    printf '%s' "${_w}"
+}
+
+# _gc_segment_dir_flag <segment> — the worktree directory a git invocation
+# names via `-C <path>` or `--work-tree[=]<path>`, scanning only the global
+# flags before the subcommand. Echoes nothing when there is none, and
+# deliberately echoes nothing when there is MORE THAN ONE: git applies repeated
+# -C cumulatively and relative to each other, so a single "the" directory does
+# not exist and guessing one would point the gate at a tree the command never
+# touches.
+_gc_segment_dir_flag() {
+    local _d="" _n=0 _u
+    # shellcheck disable=SC2086
+    set -- $1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            '('|'{') shift ;;
+            '('*|'{'*) _u="$(_gc_strip_openers "$1")"; shift; set -- "${_u}" "$@"; break ;;
+            *) break ;;
+        esac
+    done
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            env) shift ;;
+            [A-Za-z_]*=*) shift ;;
+            *) break ;;
+        esac
+    done
+    [ "$#" -gt 0 ] || return 0
+    case "$1" in git|*/git) shift ;; *) return 0 ;; esac
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            -C|--work-tree)
+                if [ "$#" -ge 2 ]; then _d="$2"; _n=$((_n+1)); shift 2; else shift; fi ;;
+            --work-tree=*)
+                _d="${1#--work-tree=}"; _n=$((_n+1)); shift ;;
+            -c|--git-dir|--namespace)
+                if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+            -*) shift ;;
+            *) break ;;
+        esac
+    done
+    [ "${_n}" -eq 1 ] || return 0
+    _d="$(_gc_strip_closers "${_d}")"
+    _d="${_d%\"}"; _d="${_d#\"}"; _d="${_d%\'}"; _d="${_d#\'}"
+    case "${_d}" in ''|-*) return 0 ;; esac
+    printf '%s' "${_d}"
+}
+
+# _gc_segment_cd_target <segment> — the single path argument of a `cd`
+# segment. Echoes nothing for `cd` with no argument (that is $HOME, never a
+# repo subject), with several arguments, or for anything that is not cd.
+_gc_segment_cd_target() {
+    local _p _u
+    # shellcheck disable=SC2086
+    set -- $1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            '('|'{') shift ;;
+            '('*|'{'*) _u="$(_gc_strip_openers "$1")"; shift; set -- "${_u}" "$@"; break ;;
+            *) break ;;
+        esac
+    done
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            env|command|builtin) shift ;;
+            [A-Za-z_]*=*) shift ;;
+            *) break ;;
+        esac
+    done
+    [ "${1:-}" = "cd" ] || return 0
+    shift
+    while [ "$#" -gt 0 ]; do
+        case "$1" in -L|-P|-@) shift ;; *) break ;; esac
+    done
+    [ "$#" -eq 1 ] || return 0
+    _p="$(_gc_strip_closers "$1")"
+    _p="${_p%\"}"; _p="${_p#\"}"; _p="${_p%\'}"; _p="${_p#\'}"
+    case "${_p}" in ''|-*) return 0 ;; esac
+    printf '%s' "${_p}"
+}
+
+# command_git_subject_dir <command>
+#   The directory the command's `git push` acts in, as the command states it:
+#   an explicit `-C`/`--work-tree` on that git invocation, else the target of a
+#   `cd` in an EARLIER segment of the same compound command. Echoes nothing
+#   when the command does not say.
+#
+#   Push only. `gh pr merge` has no local subject directory — its subject is the
+#   PR, which hooks/lib/pr-diff.sh already resolves (#161).
+command_git_subject_dir() {
+    local _segs _oldifs _seg _cd="" _cd_try="" _dashc="" _found=0
+    _segs="$(_gc_split_segments "$1")"
+    _oldifs="$IFS"
+    IFS="${_GC_SEP}"
+    for _seg in ${_segs}; do
+        IFS="${_oldifs}"
+        if [ "$(_gc_segment_git_sub "${_seg}")" = "push" ]; then
+            _dashc="$(_gc_segment_dir_flag "${_seg}")"
+            _found=1
+            IFS="${_oldifs}"
+            break
+        fi
+        _cd_try="$(_gc_segment_cd_target "${_seg}")"
+        [ -n "${_cd_try}" ] && _cd="${_cd_try}"
+        IFS="${_GC_SEP}"
+    done
+    IFS="${_oldifs}"
+    [ "${_found}" -eq 1 ] || return 0
+    if [ -n "${_dashc}" ]; then printf '%s' "${_dashc}"; return 0; fi
+    [ -n "${_cd}" ] && printf '%s' "${_cd}"
+    return 0
+}
+
+# command_push_ref <command>
+#   The LOCAL ref a `git push` names as the thing being pushed, when it names
+#   exactly one: the source half of the single refspec. Echoes nothing for a
+#   bare `git push`, for `HEAD` (which carries no information the subject
+#   directory does not already have), for a wildcard or multi-refspec push, and
+#   for a deletion (`--delete` pushes no content, so there is no subject to
+#   measure).
+#
+#   A `refs/heads/x` form is reduced to `x`. The caller tries the branch form
+#   FIRST and then any revision, so a tag or a remote-tracking name DOES resolve
+#   — to the commit it peels to, which is the commit such a push actually ships.
+#   (An earlier revision of this comment claimed they "simply fail to resolve";
+#   that was true of the branch-only validation that turned out to be a bypass.)
+#   Only a value that names no commit at all leaves the caller's subject alone.
+#
+#   Returning nothing is AMBIGUOUS by construction and the caller must treat it
+#   so: it means "bare push" (HEAD is the subject) for one command and "deletion
+#   or multi-ref push" (HEAD is NOT the subject) for another. Use
+#   command_push_subject_is_partial to tell those apart.
+command_push_ref() {
+    local _segs _oldifs _seg _r="" _n=0 _found=0 _u
+    _segs="$(_gc_split_segments "$1")"
+    _oldifs="$IFS"
+    IFS="${_GC_SEP}"
+    for _seg in ${_segs}; do
+        IFS="${_oldifs}"
+        if [ "$(_gc_segment_git_sub "${_seg}")" = "push" ]; then
+            _found=1
+            # shellcheck disable=SC2086
+            set -- ${_seg}
+            while [ "$#" -gt 0 ]; do
+                case "$1" in
+                    '('|'{') shift ;;
+                    '('*|'{'*) _u="$(_gc_strip_openers "$1")"; shift; set -- "${_u}" "$@"; break ;;
+                    *) break ;;
+                esac
+            done
+            while [ "$#" -gt 0 ]; do
+                case "$1" in env) shift ;; [A-Za-z_]*=*) shift ;; *) break ;; esac
+            done
+            case "${1:-}" in git|*/git) shift ;; *) IFS="${_GC_SEP}"; continue ;; esac
+            # global flags, then the `push` word itself
+            while [ "$#" -gt 0 ]; do
+                case "$1" in
+                    -C|-c|--git-dir|--work-tree|--namespace)
+                        if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                    -*) shift ;;
+                    *) break ;;
+                esac
+            done
+            [ "$#" -gt 0 ] && shift   # drop `push`
+            while [ "$#" -gt 0 ]; do
+                case "$1" in
+                    --delete|-d) return 0 ;;
+                    --repo|-o|--push-option|--receive-pack|--exec)
+                        if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                    --) shift ;;
+                    -*) shift ;;
+                    *)
+                        _n=$((_n+1))
+                        # positional 1 is the remote; positional 2 is the refspec.
+                        [ "${_n}" -eq 2 ] && _r="$1"
+                        [ "${_n}" -gt 2 ] && return 0
+                        shift ;;
+                esac
+            done
+            break
+        fi
+        IFS="${_GC_SEP}"
+    done
+    IFS="${_oldifs}"
+    [ "${_found}" -eq 1 ] || return 0
+    [ -n "${_r}" ] || return 0
+    _r="$(_gc_strip_closers "${_r}")"
+    _r="${_r%\"}"; _r="${_r#\"}"; _r="${_r%\'}"; _r="${_r#\'}"
+    _r="${_r#+}"          # force-push marker
+    _r="${_r%%:*}"        # src:dst -> src (what is being pushed)
+    _r="${_r#refs/heads/}"
+    # What survives here is any single revision git will accept as a push
+    # SOURCE: a branch name, a fully-qualified ref, a raw sha, or a revision
+    # expression (`topic~1`, `topic^{commit}`). Restricting this to branch names
+    # was a BYPASS, not a safety measure: `git push origin <sha>:refs/heads/x`
+    # is a perfectly ordinary push whose source the caller then failed to
+    # resolve, so the gate silently fell back to the checkout's HEAD and
+    # measured a commit the command does not push. Measured against the real
+    # guard: with a clean worktree checked out, the sha form ALLOWED where the
+    # equivalent named-branch push DENIED. The caller resolves this as a
+    # revision (`<r>^{commit}`) and ignores it if it does not resolve, so an
+    # unparseable value costs a fallback, never a wrong subject.
+    case "${_r}" in
+        ''|HEAD|-*) return 0 ;;
+        *'*'*|*'?'*|*'['*) return 0 ;;
+    esac
+    printf '%s' "${_r}"
+}
+
+# command_push_subject_is_partial <command>
+#   0 when the command's push carries something OTHER than one commit that
+#   `command_push_ref` can name — i.e. when "no ref resolved" must NOT be read as
+#   "the checkout's HEAD is the subject":
+#     - a deletion (`--delete`, `-d`, or an empty-source refspec `:branch`),
+#       which pushes no content at all;
+#     - a multi-ref push (`--all`, `--mirror`, `--tags`, or 2+ refspecs), which
+#       pushes several and HEAD is at best one of them.
+#
+#   ANNOUNCE-ONLY by contract. The caller must not use this to skip a deny:
+#   a command can contain several push segments (`git push --delete origin x;
+#   git push origin main`), and this returns 0 if ANY of them is partial — so
+#   suppressing a gate on it would let a deletion in segment 1 excuse a real
+#   push in segment 2. Reporting "the subject is not one commit" is safe in
+#   that direction; acting on it is not.
+#
+#   Fail-safe: an unparseable command returns 1 (says nothing), never a claim.
+command_push_subject_is_partial() {
+    local _segs _oldifs _seg _n _u
+    _segs="$(_gc_split_segments "$1")"
+    _oldifs="$IFS"
+    IFS="${_GC_SEP}"
+    for _seg in ${_segs}; do
+        IFS="${_oldifs}"
+        if [ "$(_gc_segment_git_sub "${_seg}")" = "push" ]; then
+            _n=0
+            # shellcheck disable=SC2086
+            set -- ${_seg}
+            while [ "$#" -gt 0 ]; do
+                case "$1" in
+                    '('|'{') shift ;;
+                    '('*|'{'*) _u="$(_gc_strip_openers "$1")"; shift; set -- "${_u}" "$@"; break ;;
+                    *) break ;;
+                esac
+            done
+            while [ "$#" -gt 0 ]; do
+                case "$1" in env) shift ;; [A-Za-z_]*=*) shift ;; *) break ;; esac
+            done
+            case "${1:-}" in git|*/git) shift ;; *) IFS="${_GC_SEP}"; continue ;; esac
+            while [ "$#" -gt 0 ]; do
+                case "$1" in
+                    -C|-c|--git-dir|--work-tree|--namespace)
+                        if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                    -*) shift ;;
+                    *) break ;;
+                esac
+            done
+            [ "$#" -gt 0 ] && shift   # drop `push`
+            while [ "$#" -gt 0 ]; do
+                case "$1" in
+                    --delete|-d|--all|--mirror|--tags)
+                        IFS="${_oldifs}"; return 0 ;;
+                    --repo|-o|--push-option|--receive-pack|--exec)
+                        if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                    --) shift ;;
+                    -*) shift ;;
+                    :*)
+                        # `:branch` — empty source half, i.e. a deletion.
+                        IFS="${_oldifs}"; return 0 ;;
+                    *)
+                        _n=$((_n+1))
+                        # positional 1 is the remote; 2+ are refspecs.
+                        if [ "${_n}" -ge 3 ]; then IFS="${_oldifs}"; return 0; fi
+                        shift ;;
+                esac
+            done
+        fi
+        IFS="${_GC_SEP}"
+    done
+    IFS="${_oldifs}"
+    return 1
+}
