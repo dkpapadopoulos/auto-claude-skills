@@ -186,6 +186,24 @@ classify() { # $1 pass_count, $2 n
         else print "broken";
     }'
 }
+# Provenance gate (schema 2). A baseline diff answers "did the measured behaviour
+# change"; it is read as "did OUR code regress". Those coincide ONLY while the
+# thing doing the measuring is held fixed. `claude-sonnet-5` is a floating alias
+# for both subject and judge, so an alias revision would otherwise produce a
+# large, stable, well-replicated "regression" every week forever — and unlike
+# sampling noise, a bigger sample size makes that MORE confident, not less.
+# So on a mismatch the diff does not run at all; it is not a warning.
+# A v1 baseline declares no provenance and therefore never mismatches.
+PROVENANCE_MISMATCH=0
+BASE_PROVENANCE="$(jq -c '.provenance // empty' "${BASELINE}" 2>/dev/null)" || BASE_PROVENANCE=""
+if [ -n "${BASE_PROVENANCE}" ] && [ "${BASE_PROVENANCE}" != "null" ]; then
+    _now_prov="$(printf '%s' "${PROVENANCE_JSON}" | jq -cS '.' 2>/dev/null)"
+    _base_prov="$(printf '%s' "${BASE_PROVENANCE}" | jq -cS '.' 2>/dev/null)"
+    if [ -n "${_now_prov}" ] && [ -n "${_base_prov}" ] && [ "${_now_prov}" != "${_base_prov}" ]; then
+        PROVENANCE_MISMATCH=1
+    fi
+fi
+
 rank() { case "$1" in stable) echo 2 ;; flaky) echo 1 ;; *) echo 0 ;; esac }
 
 REGRESSIONS="${RUN_DIR}/regressions.txt"; : > "${REGRESSIONS}"
@@ -212,6 +230,8 @@ for sid in ${scenario_ids}; do
         delta="unchanged"
         if [ -z "${base_cls}" ] || [ "${base_cls}" = "null" ]; then
             delta="new"
+        elif [ "${PROVENANCE_MISMATCH}" -eq 1 ]; then
+            delta="not-compared"
         elif [ "$(rank "${cls}")" -lt "$(rank "${base_cls}")" ]; then
             delta="REGRESSED"
             printf '%s\t%s\t%s\t%s\t%s\n' "${sid}" "${idx}" "${desc}" "${base_cls}" "${cls}" >> "${REGRESSIONS}"
@@ -237,6 +257,28 @@ mkdir -p "$(dirname "${REPORT}")"
     echo ""
     echo "**Pack:** \`${PACK}\`  **Variance:** ${VARIANCE}  **Captured:** $(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo ""
+    if [ "${PROVENANCE_MISMATCH}" -eq 1 ]; then
+        echo "## RECALIBRATION EVENT — comparison skipped"
+        echo ""
+        echo "This run's provenance differs from the baseline's, so no regression"
+        echo "comparison was performed. A difference measured across a model or CLI"
+        echo "change says nothing about whether this repo's behaviour changed."
+        echo ""
+        echo "| | baseline | this run |"
+        echo "|---|---|---|"
+        printf '| subject models | %s | %s |\n' \
+            "$(printf '%s' "${BASE_PROVENANCE}" | jq -r '(.subject_models // []) | join(", ")')" \
+            "$(printf '%s' "${PROVENANCE_JSON}" | jq -r '(.subject_models // []) | join(", ")')"
+        printf '| judge model | %s | %s |\n' \
+            "$(printf '%s' "${BASE_PROVENANCE}" | jq -r '.judge_model // ""')" \
+            "$(printf '%s' "${PROVENANCE_JSON}" | jq -r '.judge_model // ""')"
+        printf '| cli version | %s | %s |\n' \
+            "$(printf '%s' "${BASE_PROVENANCE}" | jq -r '.cli_version // ""')" \
+            "$(printf '%s' "${PROVENANCE_JSON}" | jq -r '.cli_version // ""')"
+        echo ""
+        echo "Re-baseline deliberately (\`--update-baseline\`) once the new provenance is intended."
+        echo ""
+    fi
     echo "| Scenario | # | Kind | Assertion | Pass | Class | Baseline | Delta |"
     echo "|---|---|---|---|---|---|---|---|"
     while IFS=$'\t' read -r sid idx kind desc rate cls base delta; do

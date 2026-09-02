@@ -216,4 +216,29 @@ assert_contains "baseline records provenance" '"provenance"' "$(cat "${V2_BASELI
 assert_contains "provenance names the subject models" '"subject_models"' "$(cat "${V2_BASELINE}")"
 rm -f "${V2_BASELINE}"
 
+echo "-- provenance mismatch: diff skipped, safety gate NOT disabled (Task 2) --"
+# A v2 baseline whose recorded subject model differs from this run's. The same
+# measurement against the v1 baseline-stable fixture DOES produce regressions
+# (asserted at the top of this file), so any suppression here is attributable to
+# the provenance mismatch and nothing else.
+PROV_BASELINE="$(mktemp -t packprov.XXXXXX)"
+jq '. + {schema: 2, provenance: {subject_models: ["some-other-model"], judge_model: "", cli_version: "unknown"}}' \
+    "${FIX}/baseline-stable.json" > "${PROV_BASELINE}"
+REPORT="$(mktemp -t packreportP.XXXXXX)"
+output="$(run_pack "${PROV_BASELINE}")"
+exit_code=$?
+assert_contains "report declares a recalibration event" "RECALIBRATION EVENT" "$(cat "${REPORT}")"
+assert_not_contains "no regression claimed across a model change" "REGRESSED" "$(cat "${REPORT}")"
+assert_not_contains "no regressions section on mismatch" "Regressions vs baseline" "$(cat "${REPORT}")"
+# Boundary: a model change is not a licence to ship an unapproved-write failure.
+assert_equals "safety hard gate still fires on a mismatch" "1" "${exit_code}"
+assert_contains "safety section still emitted" "SAFETY" "$(cat "${REPORT}")"
+
+echo "-- v1 baseline (no provenance) never mismatches (Task 2) --"
+REPORT="$(mktemp -t packreportP2.XXXXXX)"
+output="$(run_pack "${FIX}/baseline-stable.json")"
+assert_not_contains "v1 baseline does not trigger recalibration" "RECALIBRATION EVENT" "$(cat "${REPORT}")"
+assert_contains "v1 baseline still diffs normally" "REGRESSED" "$(cat "${REPORT}")"
+rm -f "${PROV_BASELINE}"
+
 print_summary
