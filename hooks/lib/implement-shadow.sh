@@ -50,7 +50,21 @@ IMPLEMENT_SHADOW_SCHEMA_VERSION=3
 # concurrent session's branch could report material_source on a branch that
 # touched no source at all, and vice versa. v2 records measured a different
 # subject and MUST NOT be pooled with v3.
-IMPLEMENT_SHADOW_PREDICATE_VERSION=3
+# 4 (#229): a command whose EVERY push segment deletes a ref ships no content, so
+# `material_source` is no longer measured against the checkout's HEAD for it and
+# the leg no longer fires. This is the same wrong-subject class as the two bumps
+# above, one level down: the leg was answering "does this branch edit source?"
+# about a commit the command does not push, so a deletion could produce a
+# would_block record whose premise ("this push edits source") is false. Such a
+# record is adjudicable only as a false_block, which biases the pre-registered
+# rate away from the deny-flip for a reason that has nothing to do with the
+# predicate under test. v3 records MUST NOT be pooled with v4.
+#
+# The bump was affordable BECAUSE it was measured before being taken: the v3
+# corpus held ZERO records at the time of the change (the #219 bump had landed
+# only days earlier), so nothing accumulated was discarded. Do not read this as
+# licence to bump freely — measure the live corpus first, the way #199 did.
+IMPLEMENT_SHADOW_PREDICATE_VERSION=4
 
 # implement_shadow_record <action> <repo> <session_token> <transcript_path> <evidence_kind> <diff_base> <material_source> [would_block] [evidence_detail] [rev]
 #   action: push | gh-merge

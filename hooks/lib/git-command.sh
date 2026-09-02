@@ -1070,6 +1070,16 @@ command_push_ref() {
                     --) shift ;;
                     -*) shift ;;
                     *)
+                        # A word made up ENTIRELY of group closers is
+                        # punctuation, not a refspec. A parenthesised push
+                        # written with spaces and no trailing semicolon reaches
+                        # here as ONE segment whose last word is a bare closer,
+                        # and counting it made that a THREE-positional push: the
+                        # ref stopped resolving, the gate silently fell back to
+                        # the checkout HEAD, and command_push_subject_is_partial
+                        # announced a single-ref push as carrying more than one.
+                        # Measured against this parser before the line existed.
+                        case "$1" in *[!\)\}]*) : ;; *) shift; continue ;; esac
                         _n=$((_n+1))
                         # positional 1 is the remote; positional 2 is the refspec.
                         [ "${_n}" -eq 2 ] && _r="$1"
@@ -1125,54 +1135,352 @@ command_push_ref() {
 #
 #   Fail-safe: an unparseable command returns 1 (says nothing), never a claim.
 command_push_subject_is_partial() {
-    local _segs _oldifs _seg _n _u
+    local _segs _oldifs _seg _shape
     _segs="$(_gc_split_segments "$1")"
     _oldifs="$IFS"
     IFS="${_GC_SEP}"
     for _seg in ${_segs}; do
         IFS="${_oldifs}"
         if [ "$(_gc_segment_git_sub "${_seg}")" = "push" ]; then
-            _n=0
-            # shellcheck disable=SC2086
-            set -- ${_seg}
-            while [ "$#" -gt 0 ]; do
-                case "$1" in
-                    '('|'{') shift ;;
-                    '('*|'{'*) _u="$(_gc_strip_openers "$1")"; shift; set -- "${_u}" "$@"; break ;;
-                    *) break ;;
-                esac
-            done
-            while [ "$#" -gt 0 ]; do
-                case "$1" in env) shift ;; [A-Za-z_]*=*) shift ;; *) break ;; esac
-            done
-            case "${1:-}" in git|*/git) shift ;; *) IFS="${_GC_SEP}"; continue ;; esac
-            while [ "$#" -gt 0 ]; do
-                case "$1" in
-                    -C|-c|--git-dir|--work-tree|--namespace)
-                        if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
-                    -*) shift ;;
-                    *) break ;;
-                esac
-            done
-            [ "$#" -gt 0 ] && shift   # drop `push`
-            while [ "$#" -gt 0 ]; do
-                case "$1" in
-                    --delete|-d|--all|--mirror|--tags)
-                        IFS="${_oldifs}"; return 0 ;;
-                    --repo|-o|--push-option|--receive-pack|--exec)
-                        if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
-                    --) shift ;;
-                    -*) shift ;;
-                    :*)
-                        # `:branch` — empty source half, i.e. a deletion.
-                        IFS="${_oldifs}"; return 0 ;;
-                    *)
-                        _n=$((_n+1))
-                        # positional 1 is the remote; 2+ are refspecs.
-                        if [ "${_n}" -ge 3 ]; then IFS="${_oldifs}"; return 0; fi
-                        shift ;;
-                esac
-            done
+            # Expressed on the shared segment shape rather than a private copy
+            # of the parsing loop. The two are exactly equivalent — this returns
+            # 0 for a deletion flag, a broad flag, any empty-source refspec, or
+            # two or more refspecs — and single-sourcing the parse is the point:
+            # the bare-closer defect fixed in `command_push_ref` was present in
+            # this function's duplicate loop too, which is how one parser came to
+            # answer a different question than its neighbour about the same
+            # command.
+            _shape="$(_gc_push_seg_shape "${_seg}")"
+            if [ -n "${_shape}" ]; then
+                # shellcheck disable=SC2086
+                set -- ${_shape}   # <del> <refs> <empty> <broad> <odd>
+                if [ "$1" -eq 1 ] || [ "$4" -ne 0 ] || [ "$3" -ge 1 ] || [ "$2" -ge 2 ] \
+                   || [ "$5" -ge 1 ]; then
+                    IFS="${_oldifs}"; return 0
+                fi
+            fi
+        fi
+        IFS="${_GC_SEP}"
+    done
+    IFS="${_oldifs}"
+    return 1
+}
+
+# _gc_push_seg_shape <segment>
+#   Classifies ONE `git push` segment, echoing five space-separated integers:
+#     <explicit-delete> <refspec-count> <empty-source-refspec-count> <broad> <odd>
+#   where `broad` is 1 when the segment carries `--all`, `--mirror` or `--tags`
+#   (each of which pushes refs no refspec names) and `odd` counts refspecs whose
+#   shape is recognisable but classifiable neither way — today only a bare `:`,
+#   empty on BOTH halves. Echoes nothing when the segment is not a `git push` —
+#   the caller must treat that as "unparseable", never as a shape.
+#
+#   `odd` exists so the two callers can disagree about the same refspec, which
+#   they must: a bare `:` ships no content (empty source) yet names nothing to
+#   delete, so `command_push_is_all_deletions` MUST refuse it — a security
+#   predicate guesses toward "keep measuring" — while
+#   `command_push_subject_is_partial` MUST still announce it, which is free.
+#   Collapsing `odd` into either `refs` or `empty` silently changes one of those
+#   two answers; it dropped the announcement when this refactor first landed.
+#
+#   THE single place `git push` arguments are parsed for shape:
+#   `command_push_subject_is_partial` and both predicates below are expressed on
+#   it, so the "skip openers, env assignments, the git word, the global flags
+#   and the `push` word" preamble exists once. That is not tidiness — the
+#   bare-closer defect fixed in `command_push_ref` was present, identically, in
+#   the duplicate loop `command_push_subject_is_partial` used to carry, so two
+#   parsers were answering different questions about the same command.
+#   `command_push_ref` keeps its own scan (it needs the refspec's VALUE, not a
+#   count) and is the one remaining copy; a parsing fix here must be mirrored
+#   there.
+_gc_push_seg_shape() {
+    local _u _n=0 _del=0 _refs=0 _empty=0 _broad=0 _odd=0 _a
+    # shellcheck disable=SC2086
+    set -- $1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            '('|'{') shift ;;
+            '('*|'{'*) _u="$(_gc_strip_openers "$1")"; shift; set -- "${_u}" "$@"; break ;;
+            *) break ;;
+        esac
+    done
+    while [ "$#" -gt 0 ]; do
+        case "$1" in env) shift ;; [A-Za-z_]*=*) shift ;; *) break ;; esac
+    done
+    case "${1:-}" in git|*/git) shift ;; *) return 0 ;; esac
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            -C|-c|--git-dir|--work-tree|--namespace)
+                if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+            -*) shift ;;
+            *) break ;;
+        esac
+    done
+    [ "${1:-}" = "push" ] || return 0
+    shift
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --delete|-d) _del=1; shift ;;
+            --all|--mirror|--tags) _broad=1; shift ;;
+            --repo|-o|--push-option|--receive-pack|--exec)
+                if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+            --) shift ;;
+            -*) shift ;;
+            *)
+                # Punctuation, not a refspec — see command_push_ref.
+                case "$1" in *[!\)\}]*) : ;; *) shift; continue ;; esac
+                _n=$((_n+1))
+                # positional 1 is the remote; 2+ are refspecs.
+                if [ "${_n}" -ge 2 ]; then
+                    _refs=$((_refs+1))
+                    _a="$(_gc_strip_closers "$1")"
+                    _a="${_a%\"}"; _a="${_a#\"}"; _a="${_a%\'}"; _a="${_a#\'}"
+                    _a="${_a#+}"    # force-push marker
+                    # `:<dst>` with a NON-EMPTY dst is the empty-source form,
+                    # i.e. a deletion: there is no source half, so the refspec
+                    # can carry no content by construction. A bare `:` (empty
+                    # on both halves) is `odd`, not a deletion — it names
+                    # nothing to delete, and a security predicate guesses toward
+                    # "keep measuring", never toward "skip the gate".
+                    case "${_a}" in
+                        :) _odd=$((_odd+1)) ;;
+                        :?*) _empty=$((_empty+1)) ;;
+                    esac
+                fi
+                shift ;;
+        esac
+    done
+    printf '%s %s %s %s %s' "${_del}" "${_refs}" "${_empty}" "${_broad}" "${_odd}"
+}
+
+# _gc_seg_is_inert <segment>
+#   0 when a segment cannot execute anything that ships content: it is empty,
+#   it is nothing but group punctuation (`)`, `}`, `;` — `{ git push …; }` splits
+#   into a command segment and a bare `}`), or its command word is `cd` (which
+#   cannot push, and which the guard's subject resolver already models).
+#
+#   Deliberately a WHITELIST. Everything else — another git invocation, a script,
+#   `bash -c`, even `echo` — returns 1. See command_push_is_all_deletions for why
+#   the fail direction has to be this strict.
+_gc_seg_is_inert() {
+    local _w
+    # shellcheck disable=SC2086
+    set -- $1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            '('|'{') shift ;;
+            '('*|'{'*) _w="$(_gc_strip_openers "$1")"; shift; set -- "${_w}" "$@"; break ;;
+            *) break ;;
+        esac
+    done
+    while [ "$#" -gt 0 ]; do
+        case "$1" in *[!\)\}\;]*) break ;; *) shift ;; esac
+    done
+    [ "$#" -eq 0 ] && return 0
+    case "$1" in cd) return 0 ;; esac
+    return 1
+}
+
+# command_push_is_all_deletions <command>
+#   0 iff the command contains at least one `git push` segment AND EVERY push
+#   segment in it is a deletion — one that carries `--delete`/`-d`, or whose
+#   refspecs are ALL of the empty-source `:<dst>` form. Such a command ships no
+#   content at all, so measuring it at the checkout's HEAD is measuring a commit
+#   it does not push: that is how `git push --delete origin foo` came to be
+#   denied by routing-governance for routing files the deletion does not carry
+#   (issue #229).
+#
+#   EVERY segment, not any — and that is the whole safety argument. `git push
+#   --delete origin x; git push origin main` must NOT qualify: segment 2 ships
+#   real content, and a predicate that fired on segment 1 would let the deletion
+#   excuse it. `command_push_subject_is_partial` is the ANY-form and stays
+#   announce-only for exactly this reason; this one is the ALL-form and is the
+#   only one a gate may act on.
+#
+#   `--all`/`--mirror`/`--tags` anywhere in a segment disqualifies it: those push
+#   refs no refspec names, so "all its refspecs are deletions" says nothing about
+#   what the segment ships.
+#
+#   Fail-safe: no push segment, an unparseable segment, or any doubt returns 1
+#   — "says nothing" — which leaves the caller measuring HEAD exactly as before.
+#   Every failure mode therefore costs a stale measurement, never a skipped gate.
+#   That direction is structural, not incidental: the only routes to "deletion"
+#   are an explicit `--delete`/`-d`, or every refspec literally beginning with
+#   `:` — which by construction has no source half. Word-splitting or quoting
+#   differences can only ADD positionals, and an added positional that is not
+#   `:`-prefixed pushes the answer toward not-a-deletion. Measured against the
+#   parser for `$(...)`, `"$VAR"`, `\:a`, `":a main"`, `--`, and every
+#   value-taking option form; see tests/test-push-gate-detection.sh.
+#
+#   DOCUMENTED CEILING: `--delete` supplied as the VALUE of an option this
+#   parser does not model would be read as the deletion flag. Every value-taking
+#   `git push` option that exists today is modelled (`--repo`, `-o`,
+#   `--push-option`, `--receive-pack`, `--exec`), so reaching this needs a git
+#   option that does not exist — the same class as the `bash -c` indirection
+#   ceiling the guard already documents. If git gains a value-taking push
+#   option, add it to the skip list here AND in `command_push_ref`.
+command_push_is_all_deletions() {
+    # `_cmd`, not `$1`, below the loop: `set -- ${_shape}` inside it REPLACES the
+    # positional parameters, so by the time control reaches the end of this
+    # function `$1` is a shape digit and not the command. Reading `$1` there
+    # silently handed `command_parse_balanced` the string "0" — which parses
+    # balanced — and re-opened the bypass this gate exists to close, with every
+    # unit test still green because they exercise the predicate, not the
+    # variable. Caught by re-running the attack probe after a pure refactor.
+    local _cmd="$1"
+    local _segs _oldifs _seg _shape _found=0
+    # An UNTRUSTWORTHY PARSE cannot certify anything. This scanner does not
+    # interpret backslash escapes (see the header), so outside an active quote a
+    # `\'` is a literal quote character to real bash but toggles quote mode
+    # here — and everything after it, including a genuine `;` and a real push,
+    # is swallowed as "inside a quote". Measured:
+    #     git push --delete origin scratch; cd \'; git push origin main
+    # merges into one segment whose first word is `cd`, so the segment whitelist
+    # vouches for it and the trailing push is never inspected — certified as
+    # deletion-only while really pushing. Confirmed against real bash: the
+    # deletion runs, `cd \'` fails harmlessly, and `;` does not care, so the
+    # push lands on the remote. It contains no `$(`, backtick or `<(`, so the
+    # substitution guard below does not see it either.
+    #
+    # The scanner ALREADY knows: it sets `_GC_UNBALANCED`, and `_gc_precise` in
+    # openspec-guard.sh gates the other precise predicates on exactly this.
+    # Checking it here rather than only at the call site is the point — this
+    # function's contract is "any doubt returns 1", an unbalanced parse IS that
+    # doubt, and a future call site cannot forget to gate what the function
+    # gates itself. The same family (an incomplete heredoc, the 4096-char scan
+    # budget) is covered by the same one check.
+    #
+    # Deliberately NOT applied to `command_push_subject_is_partial` or
+    # `command_push_is_multi_ref`: those are announce-only, so their failure
+    # mode is a possibly-wrong advisory rather than a skipped gate — and their
+    # advisory ("HEAD may not be what is pushed") is if anything MORE true when
+    # the parse is untrustworthy. Gating them would suppress information for
+    # symmetry's sake.
+    #
+    # The check is at the END of this function, not here, purely for cost:
+    # `command_parse_balanced` re-runs the char scan, which is O(n^2) in bash
+    # 3.2, and this runs synchronously in a PreToolUse gate. Placing it on the
+    # success path alone means the second scan is paid only by commands that
+    # would otherwise be certified — a small subset — instead of by every push.
+    # Measured end-to-end against the real guard: at the head of the function it
+    # cost +44ms on a typical push and +535ms on a 4KB command; on the success
+    # path it costs those only for an actual deletion candidate. Semantically
+    # identical: it only ever converts a `return 0` into a `return 1`.
+    #
+    # A command substitution RUNS, wherever it appears, and its output is only
+    # what happens to the result afterwards. `$(…)`, backticks and process
+    # substitution therefore each smuggle a whole command inside a segment this
+    # predicate would otherwise vouch for — including inside the arguments of
+    # the deletion itself. Measured against this predicate before the check
+    # existed; every one of these certified as deletion-only while really
+    # pushing content:
+    #     git push --delete origin scratch && cd $(git push origin main)
+    #     git push --delete origin scratch && cd `git push origin main`
+    #     git push --delete origin $(git push origin main)
+    #     git push --delete origin x < <(git push origin main)
+    # Note the third: the substitution is an argument of the RECOGNISED deletion
+    # segment, so a guard scoped to the `cd` whitelist entry — the obvious fix
+    # once the first shape is known — leaves it wide open. Confirmed against
+    # real bash: the inner push completes and the ref appears on the remote
+    # before the outer command has done anything with the captured output.
+    #
+    # The check is therefore on the WHOLE raw command, not per-segment and not
+    # per-token: `_gc_split_segments` does not treat `$(` as a boundary, and by
+    # the time a segment has been word-split the construct is scattered across
+    # tokens (`$(git`, `push`, …, `main)`), which is exactly how it slipped past
+    # a first-word whitelist. Coarse on purpose — a substitution inside single
+    # quotes is literal data and is refused anyway. Same trigger the heredoc
+    # scanner above already uses to mark an expanded body untrusted, and the
+    # same one-directional cost as the segment whitelist: a lost skip, a
+    # fallback to measuring HEAD, never a new deny.
+    case "$1" in
+        *'$('*|*'`'*|*'<('*|*'>('*) return 1 ;;
+    esac
+    _segs="$(_gc_split_segments "$1")"
+    _oldifs="$IFS"
+    IFS="${_GC_SEP}"
+    for _seg in ${_segs}; do
+        IFS="${_oldifs}"
+        if [ "$(_gc_segment_git_sub "${_seg}")" != "push" ]; then
+            # EVERY segment must be accounted for, not just the recognized
+            # pushes. "All recognized push segments are deletions" is a WEAKER
+            # claim than "this command ships no content", and the gap between
+            # them is a false ALLOW rather than the safe fallback every other
+            # ceiling in this file degrades to. Measured against this predicate
+            # before the check existed — all three of these certified as
+            # deletion-only while shipping real content:
+            #   git push --delete origin x && git -c alias.p=push p origin main
+            #   git push --delete origin x && ./deploy.sh
+            #   git push --delete origin x && bash -c "git push origin main"
+            # The first is the sharpest: a git ALIAS is invisible to
+            # `_gc_segment_git_sub` (it reports the alias word, not `push`), and
+            # it needs nothing new from git — an alias configured in
+            # ~/.gitconfig in an earlier turn works just as well as the inline
+            # `-c alias.…=push` above. Reproduced end-to-end against the real
+            # guard: routing branch, no covering verdict, ordinary push DENIED
+            # while the alias compound was ALLOWED with the guard announcing
+            # "ships no content".
+            #
+            # Hence a WHITELIST, not a blocklist of git subcommands: a
+            # subcommand check closes the alias case and leaves the script and
+            # `bash -c` cases open. An allowlist of non-pushing git builtins was
+            # considered and rejected — `git subtree push`, `git submodule
+            # foreach`, and `git send-pack` all push, so the list would have to
+            # be provably complete rather than merely plausible, and a future
+            # subcommand would silently join the safe side.
+            #
+            # The cost is only a forgone optimisation: a compound command falls
+            # back to measuring HEAD, which is exactly today's behaviour, so
+            # this can lose a skip but can never add a deny.
+            _gc_seg_is_inert "${_seg}" || { IFS="${_oldifs}"; return 1; }
+            IFS="${_GC_SEP}"
+            continue
+        fi
+        _shape="$(_gc_push_seg_shape "${_seg}")"
+        if [ -z "${_shape}" ]; then IFS="${_oldifs}"; return 1; fi
+        _found=1
+        # shellcheck disable=SC2086
+        set -- ${_shape}   # <del> <refs> <empty> <broad> <odd>
+        if [ "$4" -ne 0 ]; then IFS="${_oldifs}"; return 1; fi
+        if [ "$1" -eq 1 ]; then IFS="${_GC_SEP}"; continue; fi
+        if [ "$2" -ge 1 ] && [ "$2" -eq "$3" ]; then IFS="${_GC_SEP}"; continue; fi
+        IFS="${_oldifs}"; return 1
+    done
+    IFS="${_oldifs}"
+    [ "${_found}" -eq 1 ] || return 1
+    # Last gate, and the reason is in the header comment above: an untrustworthy
+    # parse cannot certify anything, and paying for the re-scan here rather than
+    # at the top confines the cost to commands that would otherwise be certified.
+    if command -v command_parse_balanced >/dev/null 2>&1; then
+        command_parse_balanced "${_cmd}" || return 1
+    fi
+    return 0
+}
+
+# command_push_is_multi_ref <command>
+#   0 iff ANY push segment carries more than one ref: `--all`, `--mirror`,
+#   `--tags`, or two or more refspecs. HEAD is at best one of what such a command
+#   ships, so the gate under-measures it.
+#
+#   ANNOUNCE-ONLY, like `command_push_subject_is_partial` and for the same
+#   reason: it is an ANY-form over segments. Measuring every named ref is a
+#   separate change (issue #229 records the decision to keep measuring HEAD here
+#   and say so, rather than build multi-subject measurement for a shape this
+#   repo's workflows do not produce).
+command_push_is_multi_ref() {
+    local _segs _oldifs _seg _shape
+    _segs="$(_gc_split_segments "$1")"
+    _oldifs="$IFS"
+    IFS="${_GC_SEP}"
+    for _seg in ${_segs}; do
+        IFS="${_oldifs}"
+        if [ "$(_gc_segment_git_sub "${_seg}")" = "push" ]; then
+            _shape="$(_gc_push_seg_shape "${_seg}")"
+            if [ -n "${_shape}" ]; then
+                # shellcheck disable=SC2086
+                set -- ${_shape}   # <del> <refs> <empty> <broad> <odd>
+                if [ "$4" -ne 0 ] || [ "$2" -ge 2 ]; then IFS="${_oldifs}"; return 0; fi
+            fi
         fi
         IFS="${_GC_SEP}"
     done

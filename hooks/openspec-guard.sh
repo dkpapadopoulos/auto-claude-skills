@@ -750,18 +750,41 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # "No ref resolved" is ambiguous, and the ambiguity matters: a bare
         # `git push` really is HEAD, but a deletion pushes no content at all and
         # `--all`/`--mirror`/`--tags`/multi-refspec pushes several, of which HEAD
-        # is at best one. Both fall through to `_SUBJ_REV=HEAD` and are then
-        # measured as though HEAD were the subject — which can deny a deletion
-        # for routing files it does not carry, and can under-measure a multi-ref
-        # push. That is PRE-EXISTING behaviour (before this change everything was
-        # measured at HEAD), so it is ANNOUNCED here and deliberately not acted
-        # on: `command_push_subject_is_partial` fires if ANY push segment is
-        # partial, so suppressing a gate on it would let `git push --delete
-        # origin x; git push origin main` excuse the second push. Narrowing the
-        # subject for these shapes is a separate change with its own controls.
-        if command -v command_push_subject_is_partial >/dev/null 2>&1 \
-           && command_push_subject_is_partial "${_COMMAND}"; then
-            _SUBJ_NOTE="${_SUBJ_NOTE}${_SUBJ_NOTE:+ }SUBJECT: this push deletes a ref or carries more than one, so no single commit is its subject — the checks below measured this checkout's HEAD, which may not be what is being pushed."
+        # is at best one. Both used to fall through to `_SUBJ_REV=HEAD` and be
+        # measured as though HEAD were the subject (issue #229).
+        #
+        # The two halves are settled DIFFERENTLY, and the asymmetry is the point:
+        #
+        #  - DELETION. `command_push_is_all_deletions` is the ALL-form: it fires
+        #    only when EVERY push segment in the command deletes a ref, so the
+        #    command demonstrably ships no content and the content-dependent
+        #    checks below have no subject to measure. That is what makes it safe
+        #    to ACT on where `command_push_subject_is_partial` is not: the ANY-
+        #    form would let `git push --delete origin x; git push origin main`
+        #    excuse the second push, and the ALL-form returns 1 for exactly that
+        #    command. Only the content legs are skipped — the composition-chain
+        #    REVIEW/VERIFY gates and the global fail-closed gate still fire,
+        #    because they gate the PHASE, not the shipped commit, and deleting a
+        #    remote ref is still an outbound action.
+        #
+        #  - MULTI-REF. Deliberately NOT acted on. Measuring every named ref is a
+        #    separate, larger change with its own false-block surface, for a
+        #    shape this repo's workflows do not produce (`--all`, `--mirror`).
+        #    The gate keeps measuring HEAD and now SAYS that it may therefore
+        #    under-measure, instead of conflating it with the deletion case.
+        #
+        # Fail-safe in both directions: the predicates say nothing when the
+        # command is unparseable, which leaves today's HEAD measurement in place.
+        _SUBJ_DELETION_ONLY=false
+        if command -v command_push_is_all_deletions >/dev/null 2>&1 \
+           && command_push_is_all_deletions "${_COMMAND}"; then
+            _SUBJ_DELETION_ONLY=true
+        fi
+        if [ "${_SUBJ_DELETION_ONLY}" = "true" ]; then
+            _SUBJ_NOTE="${_SUBJ_NOTE}${_SUBJ_NOTE:+ }SUBJECT: every push in this command deletes a ref, so it ships no content and no commit is its subject — the content-dependent checks (routing governance, verify hardening, implementation evidence, evaluator surface) were SKIPPED rather than measured against this checkout's HEAD, which this command does not push. The review and verification gates still apply."
+        elif command -v command_push_subject_is_partial >/dev/null 2>&1 \
+             && command_push_subject_is_partial "${_COMMAND}"; then
+            _SUBJ_NOTE="${_SUBJ_NOTE}${_SUBJ_NOTE:+ }SUBJECT: this push carries more than one ref, or mixes a ref deletion with a real push, so no single commit is its subject — the checks below measured this checkout's HEAD, which is at best one of the refs being pushed, so they may UNDER-measure what this command ships."
         fi
 
         _VERDICT_TOKEN="${_SESSION_TOKEN}"
@@ -1172,7 +1195,16 @@ EOF
                             _names_touch_material_source "${_impl_pr_files}" && _impl_material=true
                         fi
                     fi
-                elif _diff_touches_material_source "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
+                # #229: a command whose every push deletes a ref ships no source,
+                # so the branch diff at HEAD answers a question about a commit
+                # this command does not push. Leaving it in would let a deletion
+                # produce a would_block record whose premise ("this push edits
+                # source") is false — adjudicable only as a false_block, which
+                # moves the pre-registered rate for a reason unrelated to the
+                # predicate under test. This CHANGES WHEN THE LEG FIRES, so
+                # IMPLEMENT_SHADOW_PREDICATE_VERSION is bumped to 4 alongside it.
+                elif [ "${_SUBJ_DELETION_ONLY:-false}" != "true" ] \
+                     && _diff_touches_material_source "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
                     _impl_material=true
                 fi
                 # Any gh-merge outcome records (material, resolved-non-material,
@@ -1225,7 +1257,13 @@ EOF
             # predicates happen to fail — and relying on an accident is precisely
             # how routing-governance came to deny on a verdict it could not read.
             # Stating the precondition costs nothing and changes no behaviour.
+            # `_SUBJ_DELETION_ONLY` (#229): a command whose every push deletes a
+            # ref ships no commit, so a failing verdict AT HEAD is authoritative
+            # for a commit this command does not send. Denying on it is the same
+            # class of false block as routing-governance denying a deletion for
+            # routing files it does not carry.
             if [ "${_JQ_OK}" = "true" ] && [ "${_VERDICT_OK}" = "true" ] && [ "${_verif_in_chain}" = "true" ] \
+               && [ "${_SUBJ_DELETION_ONLY:-false}" != "true" ] \
                && verdict_sha_is_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}" \
                && verdict_has_test_failure "${_VERDICT_TOKEN}"; then
                 _gates="$(verdict_failing_gates "${_VERDICT_TOKEN}")" || true
@@ -1376,7 +1414,12 @@ EOF
         # missing tool, and it violates the invariant the whole gate is built on:
         # a check that cannot run must never block. Skipping here is correct; the
         # jq degradation note already tells the user this leg did not run.
+        # `_SUBJ_DELETION_ONLY` (#229): the named false block. `git push --delete
+        # origin foo` carries no files at all, so `diff_touches_routing` at HEAD
+        # answers a question about a commit this command does not push, and its
+        # "yes" denied a deletion for routing changes the deletion cannot ship.
         if [ "${_PUSHGATE_SKIP}" != "true" ] && [ "${_gc_is_push}" = "true" ] \
+           && [ "${_SUBJ_DELETION_ONLY:-false}" != "true" ] \
            && [ "${_JQ_OK}" = "true" ] && [ "${_VERDICT_OK}" = "true" ]; then
             # _proot resolved once above, alongside _VERDICT_TOKEN.
             if is_routing_repo "${_SUBJ_ROOT}" && diff_touches_routing "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
@@ -1407,7 +1450,11 @@ EOF
         # reasoning as routing-governance). Fail-open: predicate missing or
         # base unresolvable => silence. See
         # openspec/changes/evaluator-surface-advisory/design.md.
-        if [ "${_gc_is_push}" = "true" ] && command -v diff_touches_evaluator >/dev/null 2>&1; then
+        # Deletion-only skip (#229) for the same reason as the two legs above:
+        # the branch diff describes a commit this command does not push, so the
+        # advisory would name evaluator files no deletion can ship.
+        if [ "${_gc_is_push}" = "true" ] && [ "${_SUBJ_DELETION_ONLY:-false}" != "true" ] \
+           && command -v diff_touches_evaluator >/dev/null 2>&1; then
             _eval_hits="$(diff_touches_evaluator "${_SUBJ_ROOT}" "${_SUBJ_REV}" 2>/dev/null)" || _eval_hits=""
             if [ -n "${_eval_hits}" ]; then
                 _eval_list="$(printf '%s' "${_eval_hits}" | tr '\n' ' ')"

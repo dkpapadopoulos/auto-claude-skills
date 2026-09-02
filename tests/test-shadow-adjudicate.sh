@@ -10,6 +10,23 @@ eq()   { [ "$2" = "$3" ] && ok "$1" || bad "$1" "$2" "$3"; }
 
 echo "=== test-shadow-adjudicate.sh ==="
 
+# Fixture records MUST carry the version the PRODUCER currently writes, derived
+# — never a literal. Hardcoding it here reproduces, in the test, exactly the
+# defect the reader/producer assertion further down exists to prevent: when the
+# producer bumped, every fixture in this file became "previous predicate", the
+# adjudicable corpus went to zero, and ~30 unrelated cells failed at once with
+# no cell naming the cause. Measured when #229 bumped the producer to 4.
+# Sourcing failure is LOUD here on purpose: an empty _PV would emit invalid JSON
+# and the suite would blame the parser instead of the missing lib.
+# shellcheck disable=SC1090
+. "${ROOT}/hooks/lib/implement-shadow.sh" 2>/dev/null || true
+_PV="${IMPLEMENT_SHADOW_PREDICATE_VERSION:-}"
+case "${_PV}" in
+    ''|*[!0-9]*)
+        echo "  FATAL: could not derive IMPLEMENT_SHADOW_PREDICATE_VERSION from hooks/lib/implement-shadow.sh" >&2
+        exit 1 ;;
+esac
+
 # --- Task 1: band arithmetic (exact Clopper-Pearson) ---
 band() { ( . "$SCRIPT" --source-only; _band "$1" "$2" ); }
 
@@ -28,7 +45,7 @@ export IMPLEMENT_ADJUDICATION_LOG="$TMP/adj.jsonl"
 
 rec() { # rec <id> <ts> <repo> <branch> <token> [pv]
   printf '{"record_id":"%s","ts":"%s","repo":"%s","branch":"%s","session_token":"%s","predicate_version":%s,"action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"none","transcript_path":"/tmp/t.jsonl","gate":"push-implement","would_block":true,"schema_version":1}\n' \
-    "$1" "$2" "$3" "$4" "$5" "${6:-3}" >> "$IMPLEMENT_SHADOW_LOG"
+    "$1" "$2" "$3" "$4" "$5" "${6:-${_PV}}" >> "$IMPLEMENT_SHADOW_LOG"
 }
 episodes() { ( . "$SCRIPT" --source-only; _episodes ); }
 
@@ -96,7 +113,7 @@ eq "and the episode contains ONLY the valid record" "v9" "$(episodes | cut -f5)"
 jrecf() { # jrecf <id> <branch> <token>
   jq -cn --arg id "$1" --arg br "$2" --arg tok "$3" \
     '{record_id:$id,ts:"2026-07-28T10:00:00Z",repo:"/repo/A",branch:$br,
-      session_token:$tok,predicate_version:3,action:"push",diff_base:"branch-local",
+      session_token:$tok,predicate_version:'"${_PV}"',action:"push",diff_base:"branch-local",
       impl_in_chain:true,material_source:true,impl_evidence_kind:"none",
       transcript_path:"/tmp/t.jsonl",gate:"push-implement",would_block:true,
       schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"
@@ -124,7 +141,7 @@ eq "and unparseable lines are reported"          "1" \
 # record was excluded from episodes AND contributed 0 to the malformed count.
 : > "$IMPLEMENT_SHADOW_LOG"; jrecf q1 b1 t1
 jq -cn '{record_id:"nots",repo:"/repo/A",branch:"b",session_token:"t2",
-         predicate_version:3,action:"push",diff_base:"branch-local",
+         predicate_version:'"${_PV}"',action:"push",diff_base:"branch-local",
          impl_in_chain:true,material_source:true,impl_evidence_kind:"none",
          transcript_path:"/tmp/t",gate:"push-implement",would_block:true,
          schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"
@@ -142,7 +159,7 @@ eq "and is reported as malformed"           "1" \
 jrec() { # jrec <id> <ts> <repo> <branch> <token>
   jq -cn --arg id "$1" --arg ts "$2" --arg repo "$3" --arg br "$4" --arg tok "$5" \
     '{record_id:$id,ts:$ts,repo:$repo,branch:$br,session_token:$tok,
-      predicate_version:3,action:"push",diff_base:"branch-local",
+      predicate_version:'"${_PV}"',action:"push",diff_base:"branch-local",
       impl_in_chain:true,material_source:true,impl_evidence_kind:"none",
       transcript_path:"/tmp/t.jsonl",gate:"push-implement",would_block:true,
       schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"
@@ -257,7 +274,7 @@ eq "empty-v2 --next still exits 0"           "0" "$("$SCRIPT" --next >/dev/null 
 # not check" WITHOUT re-deriving it from ~/.claude state that session-start GC
 # deletes at 7 days. If --next does not surface it, recording it is pointless.
 rec3() { # rec3 <id> <ts> <detail-json>
-  printf '{"record_id":"%s","ts":"%s","repo":"/repo/A","branch":"feat/x","session_token":"tok1","predicate_version":3,"action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"none","impl_evidence_detail":%s,"transcript_path":"/tmp/t.jsonl","gate":"push-implement","would_block":true,"schema_version":3}\n' \
+  printf '{"record_id":"%s","ts":"%s","repo":"/repo/A","branch":"feat/x","session_token":"tok1","predicate_version":'"${_PV}"',"action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"none","impl_evidence_detail":%s,"transcript_path":"/tmp/t.jsonl","gate":"push-implement","would_block":true,"schema_version":3}\n' \
     "$1" "$2" "$3" >> "$IMPLEMENT_SHADOW_LOG"
 }
 
@@ -428,7 +445,7 @@ build_floor() { # build_floor <n_true_catch> <n_false_block> <n_unknown>
 jrec2() { # jrec2 <id> <repo> — unique branch+token so each record is its own episode
   jq -cn --arg id "$1" --arg repo "$2" \
     '{record_id:$id,ts:"2026-07-28T10:00:00Z",repo:$repo,branch:("br-"+$id),
-      session_token:("tok-"+$id),predicate_version:3,action:"push",
+      session_token:("tok-"+$id),predicate_version:'"${_PV}"',action:"push",
       diff_base:"branch-local",impl_in_chain:true,material_source:true,
       impl_evidence_kind:"none",transcript_path:"/tmp/t.jsonl",
       gate:"push-implement",would_block:true,schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"
@@ -464,7 +481,7 @@ eq "34 labelled but only 14 rate-bearing stays below the floor" "1" \
 seed
 jrecf2() { jq -cn --arg id "$1" --arg br "$2" --arg tok "$3" \
   '{record_id:$id,ts:"2026-07-28T10:00:00Z",repo:"/repo/A",branch:$br,
-    session_token:$tok,predicate_version:3,action:"push",diff_base:"branch-local",
+    session_token:$tok,predicate_version:'"${_PV}"',action:"push",diff_base:"branch-local",
     impl_in_chain:true,material_source:true,impl_evidence_kind:"none",
     transcript_path:"/tmp/t.jsonl",gate:"push-implement",would_block:true,
     schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"; }
@@ -526,11 +543,11 @@ eq "a missing --reason value exits non-zero"  "1" \
 # is not inside _episodes(): it is shared, and filtering there would erase them.
 # ---------------------------------------------------------------------------
 recwb() { # recwb <id> <ts> <repo> <branch> <token> <would_block-json>
-  printf '{"record_id":"%s","ts":"%s","repo":"%s","branch":"%s","session_token":"%s","predicate_version":3,"action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"attested","transcript_path":"/tmp/t.jsonl","gate":"push-implement","would_block":%s,"schema_version":3}\n' \
+  printf '{"record_id":"%s","ts":"%s","repo":"%s","branch":"%s","session_token":"%s","predicate_version":'"${_PV}"',"action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"attested","transcript_path":"/tmp/t.jsonl","gate":"push-implement","would_block":%s,"schema_version":3}\n' \
     "$1" "$2" "$3" "$4" "$5" "$6" >> "$IMPLEMENT_SHADOW_LOG"
 }
 recnowb() { # a record with NO would_block field at all
-  printf '{"record_id":"%s","ts":"%s","repo":"%s","branch":"%s","session_token":"%s","predicate_version":3,"action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"none","transcript_path":"/tmp/t.jsonl","gate":"push-implement","schema_version":3}\n' \
+  printf '{"record_id":"%s","ts":"%s","repo":"%s","branch":"%s","session_token":"%s","predicate_version":'"${_PV}"',"action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"none","transcript_path":"/tmp/t.jsonl","gate":"push-implement","schema_version":3}\n' \
     "$1" "$2" "$3" "$4" "$5" >> "$IMPLEMENT_SHADOW_LOG"
 }
 status() { "$SCRIPT" --status 2>/dev/null; }

@@ -182,6 +182,203 @@ _assert_pred "apostrophe comment parses unbalanced"      1 command_parse_balance
 _assert_pred "heredoc apostrophe parses balanced"        0 command_parse_balanced "${_UB_HEREDOC}"
 _assert_pred "push after apostrophe heredoc detected"    0 command_invokes_git_write "${_UB_HEREDOC}"
 
+
+# --- Predicate units: partial push subjects (issue #229) --------------------
+# `command_push_is_all_deletions` is the ALL-form and the ONLY one a gate may
+# act on; `command_push_is_multi_ref` and `command_push_subject_is_partial` are
+# ANY-forms and stay announce-only. Every NO-MATCH cell below is a control: it
+# is a command the ALL-form must REFUSE to classify as a deletion, because
+# classifying it would skip the content gates on a command that ships content.
+D=command_push_is_all_deletions
+M=command_push_is_multi_ref
+
+# ALL-form MATCH (expect 0) — commands that demonstrably ship no content.
+_assert_pred "delete long flag"              0 $D 'git push --delete origin foo'
+_assert_pred "delete short flag"             0 $D 'git push -d origin foo'
+_assert_pred "empty-source refspec"          0 $D 'git push origin :foo'
+_assert_pred "force marker on empty source"  0 $D 'git push origin +:foo'
+_assert_pred "two empty-source refspecs"     0 $D 'git push origin :a :b'
+_assert_pred "delete of two refs"            0 $D 'git push --delete origin a b'
+_assert_pred "delete after a cd"             0 $D 'cd /tmp/x && git push --delete origin foo'
+_assert_pred "delete in a brace group"       0 $D '{ git push --delete origin foo; }'
+_assert_pred "delete with -C"                0 $D 'git -C /tmp/x push --delete origin foo'
+_assert_pred "delete with -c config"         0 $D 'git -c k=v push --delete origin foo'
+_assert_pred "delete with env prefix"        0 $D 'env FOO=1 git push --delete origin foo'
+_assert_pred "delete inside a group"         0 $D '( git push --delete origin foo )'
+
+# ALL-form NO MATCH (expect 1) — the controls. Each of these SHIPS CONTENT, so a
+# fix that merely stopped denying would fail here.
+_assert_pred "ordinary push is not a deletion"   1 $D 'git push origin main'
+_assert_pred "bare push is not a deletion"       1 $D 'git push'
+# THE control the ALL-form exists for: a deletion must never excuse a real push
+# in the SAME command. This is why command_push_subject_is_partial stays
+# announce-only — the ANY-form returns 0 for both of these.
+_assert_pred "deletion then real push"           1 $D 'git push --delete origin x; git push origin main'
+_assert_pred "real push then deletion"           1 $D 'git push origin main && git push --delete origin x'
+_assert_pred "deletion mixed with a refspec"     1 $D 'git push origin :a main'
+_assert_pred "deletion then --all"               1 $D 'git push --delete origin x; git push --all origin'
+# --all/--mirror/--tags push refs that no refspec names, so "all refspecs are
+# deletions" says nothing about what the segment ships.
+_assert_pred "--all is not a deletion"           1 $D 'git push --all origin'
+_assert_pred "--mirror is not a deletion"        1 $D 'git push --mirror origin'
+_assert_pred "--tags is not a deletion"          1 $D 'git push --tags origin'
+# These two are the cells that make the broad-flag disqualifier load-bearing.
+# Without them the flag check is provably dead: mutation-tested by deleting the
+# line, which left every other cell green — the three above pass on the refspec
+# count alone (`--all origin` has no refspec, so it is already not-all-deletions).
+# `--tags` alongside an empty-source refspec DOES ship content (every tag), and
+# `--delete` would otherwise satisfy the deletion test on its own.
+_assert_pred "--tags with a deletion refspec"    1 $D 'git push --tags origin :foo'
+_assert_pred "--all combined with --delete"      1 $D 'git push --all --delete origin foo'
+_assert_pred "--mirror combined with --delete"   1 $D 'git push --mirror --delete origin foo'
+# A bare `:` names no ref on either half; guessing here would guess unsafely.
+_assert_pred "bare colon is not a deletion"      1 $D 'git push origin :'
+_assert_pred "src:dst refspec is not a deletion" 1 $D 'git push origin main:refs/heads/x'
+_assert_pred "sha refspec is not a deletion"     1 $D 'git push origin deadbeef:refs/heads/x'
+_assert_pred "no push at all"                    1 $D 'git status'
+_assert_pred "push only inside a quoted string"  1 $D 'echo "git push --delete origin foo"'
+
+# EVERY SEGMENT MUST BE ACCOUNTED FOR. "All recognized push segments are
+# deletions" is a WEAKER claim than "this command ships no content", and these
+# three were all CERTIFIED as deletion-only — while shipping real content —
+# before `_gc_seg_is_inert` existed. The alias case is the sharpest: a git alias
+# reports its own word from `_gc_segment_git_sub`, never `push`, so the segment
+# is invisible to this predicate; it needs nothing new from git, and an alias in
+# ~/.gitconfig works as well as the inline `-c` form. Reproduced end-to-end
+# against the real guard (see tests/test-push-gate-subject.sh).
+_assert_pred "alias-hidden push in the same command"  1 $D 'git push --delete origin x && git -c alias.p=push p origin main'
+_assert_pred "script segment alongside a deletion"    1 $D 'git push --delete origin x && ./deploy.sh'
+_assert_pred "bash -c segment alongside a deletion"   1 $D 'git push --delete origin x && bash -c "git push origin main"'
+_assert_pred "another git subcommand alongside"       1 $D 'git branch -D x && git push --delete origin x'
+# The cost is a forgone optimisation, never a new deny: an unaccountable segment
+# falls back to measuring HEAD, i.e. today's behaviour. Even `echo` is refused —
+# the whitelist is `cd` and pure punctuation only, because the parser cannot
+# tell `echo` from `./deploy.sh` without a command table it would have to keep
+# provably complete.
+_assert_pred "even a harmless echo is not certified"  1 $D 'git push --delete origin foo && echo done'
+
+# A command substitution RUNS wherever it appears — its output is only what
+# happens afterwards. Each of these certified as deletion-only before the
+# whole-command substitution guard existed, and each really pushes content
+# (confirmed against real bash: the inner push completes and the ref reaches the
+# remote before the outer command does anything with the captured output).
+_assert_pred "substitution inside a cd argument"      1 $D 'git push --delete origin scratch && cd $(git push origin main)'
+_assert_pred "backtick form of the same"              1 $D 'git push --delete origin scratch && cd `git push origin main`'
+# THIS one is why the guard is whole-command rather than scoped to the `cd`
+# whitelist entry: the substitution is an argument of the RECOGNISED deletion
+# segment, so a cd-scoped fix — the obvious one once the shape above is known —
+# would leave it open.
+_assert_pred "substitution inside the deletion itself" 1 $D 'git push --delete origin $(git push origin main)'
+_assert_pred "substitution glued to a refspec"        1 $D 'git push --delete origin x$(git push origin main)'
+_assert_pred "process substitution"                   1 $D 'git push --delete origin x < <(git push origin main)'
+# Bounded cost: an ordinary variable expansion is untouched, so the guard has
+# not simply disabled certification for anything with a `$` in it.
+_assert_pred "plain variable expansion still certifies" 0 $D 'cd "$WT" && git push --delete origin foo'
+_assert_pred "variable refspec still certifies"         0 $D 'git push --delete origin "$BRANCH"'
+
+# AN UNTRUSTWORTHY PARSE CANNOT CERTIFY. This scanner does not interpret
+# backslash escapes, so outside an active quote a `\'` is a literal quote to real
+# bash but toggles quote mode here — swallowing a genuine `;` and a real push
+# into one segment whose first word is `cd`, which the whitelist then vouches
+# for. It contains no `$(`, backtick or `<(`, so the substitution guard never
+# sees it. `_GC_UNBALANCED`/`command_parse_balanced` already knew; the predicate
+# just was not asking.
+_assert_pred "escaped quote hides a trailing push"  1 $D "git push --delete origin scratch; cd \\'; git push origin main"
+# ...and the bounded cost, stated: an unbalanced command with nothing hidden in
+# it merely loses the skip and falls back to measuring HEAD.
+_assert_pred "an unbalanced but harmless command also falls back" 1 $D "git push --delete origin it\\'s"
+# The two are distinguishable only by the predicate's REASON, so pin that the
+# balanced twin of the harmless case does still certify — otherwise the cell
+# above passes equally well if certification broke outright.
+_assert_pred "the balanced twin still certifies"    0 $D 'git push --delete origin its'
+
+# Separators other than `&&`, and command wrappers, must all reach the segment
+# whitelist rather than sneaking a second push past it. Probed as a class after
+# two reported bypasses each turned out to be an instance of a wider one.
+_assert_pred "pipe-both separator"           1 $D 'git push --delete origin x |& git push origin main'
+_assert_pred "background separator"          1 $D 'git push --delete origin x & git push origin main'
+_assert_pred "or separator"                  1 $D 'git push --delete origin x || git push origin main'
+_assert_pred "newline separator"             1 $D 'git push --delete origin x
+git push origin main'
+_assert_pred "subshell group after deletion" 1 $D 'git push --delete origin x; ( git push origin main )'
+_assert_pred "xargs wrapper"                 1 $D 'git push --delete origin x && xargs git push origin main'
+_assert_pred "sudo wrapper"                  1 $D 'git push --delete origin x && sudo git push origin main'
+_assert_pred "time wrapper"                  1 $D 'git push --delete origin x && time git push origin main'
+_assert_pred "exec wrapper"                  1 $D 'git push --delete origin x && exec git push origin main'
+_assert_pred "command wrapper"               1 $D 'git push --delete origin x && command git push origin main'
+_assert_pred "heredoc into a shell"          1 $D 'git push --delete origin x && bash <<EOF
+git push origin main
+EOF'
+# CERTIFIED, and correctly so: the quotes make this ONE refspec argument, so git
+# is asked to delete a ref literally named `x && git push origin main` and errors
+# — nothing is pushed. Pinned because it LOOKS like the bypass shape and a future
+# reader may otherwise "fix" it into a false deny.
+_assert_pred "quoted boundary is one refspec, not two commands" 0 $D 'git push --delete origin "x && git push origin main"'
+# An absolute git path is a real git invocation; a differently-named binary is not.
+_assert_pred "absolute git path certifies"   0 $D '/usr/local/bin/git push --delete origin x'
+_assert_pred "a lookalike binary does not"   1 $D 'mygit push --delete origin x'
+
+# Adversarial shapes. The command text is MODEL-AUTHORED, so a false POSITIVE
+# here skips routing-governance on a command that ships content. Every cell
+# below was measured against the parser, not reasoned about.
+# Option-value forms: an option that eats the following word must not turn a
+# content-bearing push into a deletion, and must not be mistaken for one.
+_assert_pred "value-taking option before a deletion" 0 $D 'git push --repo x origin :a'
+_assert_pred "option value eats a ref-shaped word"   0 $D 'git push --receive-pack main origin :a'
+_assert_pred "a live refspec survives the option"    1 $D 'git push -o v origin :a main'
+_assert_pred "equals-form option with a deletion"    0 $D 'git push --push-option=v origin :a'
+_assert_pred "equals-form option with a real push"   1 $D 'git push --exec=x origin main'
+# `--delete` as the VALUE of a value-taking option is not a deletion flag.
+_assert_pred "--delete consumed as an option value"  1 $D 'git push --repo --delete origin x'
+# End-of-options.
+_assert_pred "-- before a deletion"                  0 $D 'git push -- origin :a'
+_assert_pred "-- between remote and deletion"        0 $D 'git push origin -- :a'
+_assert_pred "-- with a live refspec too"            1 $D 'git push -- origin :a main'
+# The gate sees LITERAL text: anything shell-expanded is unknown, and unknown
+# must never resolve to "deletion".
+_assert_pred "command substitution alongside"        1 $D 'git push origin :a $(echo main)'
+_assert_pred "variable refspec alongside"            1 $D 'git push origin :a "$BRANCH"'
+_assert_pred "wholly variable refspec"               1 $D 'git push origin "$SPEC"'
+_assert_pred "escaped colon is not an empty source"  1 $D 'git push origin \:a'
+_assert_pred "quoted refspec with a space"           1 $D 'git push origin ":a main"'
+# DOCUMENTED CEILING, asserted so it is a known state rather than a surprise:
+# `--delete` supplied as the value of an option this parser does not model would
+# be read as the deletion flag. Every value-taking `git push` option that exists
+# today is modelled, so this needs a git option that does not exist; it is the
+# same class as the `bash -c` indirection ceiling.
+_assert_pred "ceiling: --delete after an unmodelled option" 0 $D 'git push --unknownopt --delete origin main'
+
+# ANY-form multi-ref (announce-only).
+_assert_pred "--all is multi-ref"            0 $M 'git push --all origin'
+_assert_pred "--mirror is multi-ref"         0 $M 'git push --mirror origin'
+_assert_pred "--tags is multi-ref"           0 $M 'git push --tags origin'
+_assert_pred "two refspecs is multi-ref"     0 $M 'git push origin a b'
+_assert_pred "mixed delete+ref is multi-ref" 0 $M 'git push origin :a main'
+_assert_pred "single refspec is not multi"   1 $M 'git push origin main'
+_assert_pred "bare push is not multi"        1 $M 'git push'
+_assert_pred "single deletion is not multi"  1 $M 'git push --delete origin foo'
+
+# A word made only of group closers is punctuation, not a refspec. Before this
+# was fixed, a parenthesised push written with spaces and no trailing semicolon
+# counted the closer as a third positional: the ref stopped resolving (so the
+# gate fell back to the checkout HEAD) and a single-ref push was announced as
+# carrying more than one.
+assert_equals "grouped push resolves its ref"      "main" "$(command_push_ref '( git push origin main )')"
+assert_equals "grouped brace push resolves"        "main" "$(command_push_ref '{ git push origin main; }')"
+assert_equals "ungrouped push still resolves"      "main" "$(command_push_ref 'git push origin main')"
+_assert_pred "grouped single push is not partial"  1 command_push_subject_is_partial '( git push origin main )'
+_assert_pred "grouped multi push is still partial" 0 command_push_subject_is_partial '( git push origin a b )'
+# Routing the ANY-form through the shared shape changed three answers, all
+# deliberately, and each is pinned so it stays a decision rather than drift.
+# (1) A force-marked deletion was MISSED before: the old private loop matched
+#     `:*` literally, which `+:x` does not start with, so a real deletion was
+#     never announced and the gate measured HEAD without saying so.
+_assert_pred "force-marked deletion is partial"    0 command_push_subject_is_partial 'git push origin +:x'
+# (2)+(3) are the bare-closer cells above.
+# A bare `:` must stay announce-worthy while NOT being a deletion — the two
+# callers disagree about it on purpose, which is why the shape carries `odd`.
+_assert_pred "bare colon is still partial"         0 command_push_subject_is_partial 'git push origin :'
+_assert_pred "bare colon is still not a deletion"  1 $D 'git push origin :'
 # END-TO-END: unbalanced-quote payloads carrying a real push must still DENY.
 out="$(_run "${_UB_COMMENT}")"
 assert_contains "apostrophe-comment push still denied" '"deny"' "${out:-<empty>}"
