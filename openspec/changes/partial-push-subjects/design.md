@@ -164,6 +164,43 @@ and the temptation after a "no behaviour change" edit is to skip that. In a file
 where `set --` is the normal idiom for argument walking, `$1` below a loop is
 not the argument, and nothing about the edit looks like it touches the predicate.
 
+### Two more, found in review — both the same class as the first three
+
+Adversarial review of the committed change found two further certify-bypasses.
+Both are worth recording because neither is exotic syntax, and both are the
+*same failure mode as each other and as the earlier three*: an enumeration that
+was incomplete.
+
+**A group closer glued to a flag.** Refspec words were passed through
+`_gc_strip_closers`; flag words were not. So `--tags)` missed its literal arm,
+fell through to the generic `-*`, and left `broad=0`:
+
+```
+git push origin :x --tags     -> refuses   (broad=1)
+(git push origin :x --tags)   -> CERTIFIED (broad=0)   <-- and --tags ships every tag
+```
+
+A trailing `;` restored the refusal, which is exactly why no cell caught it:
+every group cell used a spaced `)` or a brace group with `;`. Fixed by
+normalising **every** word once at the top of the argument loop rather than only
+the ones read as refspecs — the class, not the instance. `_gc_strip_closers_var`
+does it fork-free, which also removes a fork per refspec that the old echoing
+form was paying.
+
+**zsh `=(…)` process substitution.** The substitution guard enumerated *bash's*
+forms. zsh has a fifth, and **zsh is the shell that actually executes these
+commands** — CLAUDE.md's "the model's Bash tool is NOT bash", arriving from an
+unexpected direction. Measured: `/bin/zsh -c 'cd =(touch /tmp/X; echo x)'`
+creates the file. `git push --delete origin =(git push origin main)` therefore
+certified — the substitution inside the recognised deletion's own arguments,
+which is the precise shape this layer exists to stop. Fixed by adding `=(`; also
+`${ ` / `${|` (bash ≥5.3 funsubs) forward-looking.
+
+That list has now been wrong twice, so it is commented as a **known-incomplete
+enumeration of one smuggling family**, not as a proof. That is the standing
+argument for keeping the three layers separate rather than folding them into one
+check: the enumeration is the layer most likely to be incomplete again.
+
 ## Three orthogonal layers, and why none subsumes another
 
 | Layer | Catches | Missed by the others |
@@ -216,10 +253,20 @@ before acting:
 
 - `IMPLEMENT_SHADOW_PREDICATE_VERSION` was already **3**, bumped days earlier by
   #219/#227 for the same wrong-subject class;
-- the corpus held **51 records, all at v2, and zero at v3**.
+- the corpus held **all records at v2, and zero at v3** (51 when first measured,
+  54 by end of session — it grows during use, so the count is a timestamp, not a
+  constant; the v3 figure of zero is the load-bearing one).
 
 So the v3 population that a bump would discard was empty, and the bump costs
-nothing. The leg is skipped for deletion-only pushes and
+nothing.
+
+**Why v3 was empty is worth knowing before the next such decision**, and it is
+not "because v3 was new": the deployed plugin is still *emitting* v2, i.e.
+#219's 3-bump had not reached the running installation at all. The conclusion
+("measure the live corpus before deciding a bump is unaffordable") survives, but
+the mechanism is that a producer bump does not take effect until the plugin
+cache updates — so a corpus can look conveniently empty for a reason that has
+nothing to do with the bump under consideration. The leg is skipped for deletion-only pushes and
 `IMPLEMENT_SHADOW_PREDICATE_VERSION` becomes **4**.
 
 Keeping it would not have been merely noisy. A deletion-only would-block record

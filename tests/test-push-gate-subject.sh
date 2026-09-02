@@ -232,6 +232,10 @@ assert_not_contains "...and it does not claim to ship no content" "ships no cont
 # still certifies, so the whitelist has not simply disabled the fix.
 out="$(run "${RR}" "cd ${WT} && git push --delete origin mine")"
 assert_not_contains "cd + deletion still skips the content legs" '"deny"' "${out:-}"
+# PAIRED with a positive assertion on the same output. An assert_not_contains on
+# its own is satisfied by SILENCE — measured: replacing the guard with
+# `exit 0` left 13 of 40 cells passing, and this was one of them.
+assert_contains     "...and says so, rather than passing by silence" "ships no content" "${out:-<empty>}"
 
 # (15) Multi-ref is deliberately NOT narrowed (#229 records the decision):
 #      it keeps measuring HEAD, and now says that it may under-measure.
@@ -251,6 +255,8 @@ out="$(run "${RR}" "git push origin other")"
 assert_contains     "control: failing verdict at HEAD denies an ordinary push" "failing gate" "${out:-<empty>}"
 out="$(run "${RR}" "git push --delete origin other")"
 assert_not_contains "failing verdict at HEAD does not deny a deletion" '"deny"' "${out:-}"
+# Paired positive, same reason as the cell above: silence must not pass.
+assert_contains     "...and the deletion note is present on that allow" "ships no content" "${out:-<empty>}"
 mkart "$(clean_at "${MINE}")"
 
 # (17) The deliberate BOUNDARY: the composition-chain gates are not content

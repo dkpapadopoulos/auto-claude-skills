@@ -311,7 +311,14 @@ if [ -f "${_GC_ROOT}/hooks/lib/git-command.sh" ]; then
         command -v command_parse_balanced >/dev/null 2>&1 && \
         _GC_LIB_OK=true || true
 fi
-[ "${_GC_LIB_OK}" = "true" ] || _degraded_note "git-command.sh did not load from ${_GC_ROOT}, so command detection fell back to substring matching and the mutate-then-push check did NOT run — a combined commit-and-push was not gated."
+# The inventory must name what stopped being ENFORCED, not just what stopped
+# being parsed — CLAUDE.md: "an inventory that omits the only entry costing a
+# deny is a false all-clear on its most severe item." This lib also carries
+# SUBJECT resolution (#219) and the deletion narrowing (#229), and without it
+# both silently revert to measuring the session checkout, which is precisely the
+# misattributed deny #219 exists to prevent — and the note that would explain it
+# (`_SUBJ_NOTE`) is computed by the very lib that failed, so it is empty.
+[ "${_GC_LIB_OK}" = "true" ] || _degraded_note "git-command.sh did not load from ${_GC_ROOT}, so: command detection fell back to substring matching; the mutate-then-push check did NOT run (a combined commit-and-push was not gated); and SUBJECT RESOLUTION did not run, so the checks below measured this checkout's HEAD rather than the tree/ref the command names, and a ref deletion was NOT recognised as shipping no content. A denial below may therefore describe a different commit than the one being pushed."
 # Diagnostic-only shadow recorder (Stage C1). Guarded source: absence must not
 # affect the gate, and it is deliberately absent from _GATE_ENFORCE_LIBS.
 [ -f "${_GC_ROOT}/hooks/lib/implement-shadow.sh" ] && \

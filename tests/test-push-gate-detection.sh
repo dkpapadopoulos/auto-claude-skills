@@ -185,12 +185,11 @@ _assert_pred "push after apostrophe heredoc detected"    0 command_invokes_git_w
 
 # --- Predicate units: partial push subjects (issue #229) --------------------
 # `command_push_is_all_deletions` is the ALL-form and the ONLY one a gate may
-# act on; `command_push_is_multi_ref` and `command_push_subject_is_partial` are
-# ANY-forms and stay announce-only. Every NO-MATCH cell below is a control: it
+# act on; `command_push_subject_is_partial` is
+# an ANY-form and stay announce-only. Every NO-MATCH cell below is a control: it
 # is a command the ALL-form must REFUSE to classify as a deletion, because
 # classifying it would skip the content gates on a command that ships content.
 D=command_push_is_all_deletions
-M=command_push_is_multi_ref
 
 # ALL-form MATCH (expect 0) — commands that demonstrably ship no content.
 _assert_pred "delete long flag"              0 $D 'git push --delete origin foo'
@@ -271,6 +270,33 @@ _assert_pred "backtick form of the same"              1 $D 'git push --delete or
 _assert_pred "substitution inside the deletion itself" 1 $D 'git push --delete origin $(git push origin main)'
 _assert_pred "substitution glued to a refspec"        1 $D 'git push --delete origin x$(git push origin main)'
 _assert_pred "process substitution"                   1 $D 'git push --delete origin x < <(git push origin main)'
+# zsh `=( )` is process substitution too, and ZSH is the shell that actually
+# executes these commands. Measured: `/bin/zsh -c 'cd =(touch /tmp/X; echo x)'`
+# creates the file, so the inner command runs. Omitting it certified the shape
+# this layer exists to stop — the substitution inside the deletion's own args.
+_assert_pred "zsh =() process substitution"           1 $D 'git push --delete origin scratch && cd =(git push origin main)'
+_assert_pred "zsh =() inside the deletion itself"     1 $D 'git push --delete origin =(git push origin main)'
+# bash >=5.3 funsub; unreachable on bash 3.2 / zsh 5.9, pinned forward-looking.
+_assert_pred "bash 5.3 funsub"                        1 $D 'git push --delete origin scratch && cd ${ git push origin main; }'
+# ...and the narrow patterns must not swallow an ordinary ${VAR} expansion.
+_assert_pred "ordinary brace expansion still certifies" 0 $D 'cd "${WT}" && git push --delete origin foo'
+
+# A group closer GLUED to a FLAG. Refspec words were closer-stripped and flag
+# words were not, so `--tags)` missed its literal arm and fell through to the
+# generic `-*`, leaving broad=0. `--tags` pushes every tag "in addition to the
+# refspecs explicitly listed", so these are content pushes that were certified
+# as shipping nothing. The spaced form always refused, which is exactly why no
+# group cell caught it — they all used a spaced `)` or a brace group with `;`.
+_assert_pred "glued closer after --tags"              1 $D '(git push origin :x --tags)'
+_assert_pred "glued closer, space after the paren"    1 $D '( git push origin :x --tags)'
+_assert_pred "glued closer after --all"               1 $D '(git push --delete origin x --all)'
+_assert_pred "glued closer after --mirror"            1 $D '(git push --delete origin x --mirror)'
+# Control: the spaced twin must refuse too, so the cells above cannot pass
+# merely because grouped commands stopped certifying altogether.
+_assert_pred "spaced twin also refuses"               1 $D 'git push origin :x --tags'
+# ...and a grouped GENUINE deletion must still certify, or the fix is just a
+# blanket refusal of parenthesised commands.
+_assert_pred "grouped genuine deletion still certifies" 0 $D '(git push --delete origin foo)'
 # Bounded cost: an ordinary variable expansion is untouched, so the guard has
 # not simply disabled certification for anything with a `$` in it.
 _assert_pred "plain variable expansion still certifies" 0 $D 'cd "$WT" && git push --delete origin foo'
@@ -348,15 +374,6 @@ _assert_pred "quoted refspec with a space"           1 $D 'git push origin ":a m
 # same class as the `bash -c` indirection ceiling.
 _assert_pred "ceiling: --delete after an unmodelled option" 0 $D 'git push --unknownopt --delete origin main'
 
-# ANY-form multi-ref (announce-only).
-_assert_pred "--all is multi-ref"            0 $M 'git push --all origin'
-_assert_pred "--mirror is multi-ref"         0 $M 'git push --mirror origin'
-_assert_pred "--tags is multi-ref"           0 $M 'git push --tags origin'
-_assert_pred "two refspecs is multi-ref"     0 $M 'git push origin a b'
-_assert_pred "mixed delete+ref is multi-ref" 0 $M 'git push origin :a main'
-_assert_pred "single refspec is not multi"   1 $M 'git push origin main'
-_assert_pred "bare push is not multi"        1 $M 'git push'
-_assert_pred "single deletion is not multi"  1 $M 'git push --delete origin foo'
 
 # A word made only of group closers is punctuation, not a refspec. Before this
 # was fixed, a parenthesised push written with spaces and no trailing semicolon
