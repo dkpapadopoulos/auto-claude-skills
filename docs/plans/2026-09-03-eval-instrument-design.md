@@ -62,3 +62,43 @@ is safe.
 
 Raising variance; parallelising the scenario loop; re-baselining; any change
 to `skills/incident-analysis/SKILL.md` (it did not regress).
+
+## Residual risk after this change (measured, not eliminated)
+
+Adversarial review established that the persistence filter **reduces** the
+false-regression rate; it does not remove it. Assuming each week's draw is
+independent conditional on a fixed true rate, the reported probability is the
+single-week probability squared:
+
+| true pass rate | single week | after persistence |
+|---|---|---|
+| 0.90-0.99 (near-ceiling) | 0.03%-2.8% | 0.00003%-0.08% — effectively solved |
+| 0.50-0.70 (already "flaky" at baseline) | 21.6%-50% | **4.7%-25%** |
+
+With several flaky-baseline assertions among the pack's 61, expect on the order
+of 0.3-1 false REGRESSED reports per run. That is a large improvement on the
+observed 5-8, but it is **not zero**, and a REGRESSED on an assertion whose
+baseline class is already `flaky` deserves continued scepticism.
+
+Two options were deliberately NOT taken, and both remain open:
+- requiring three consecutive runs (rather than two) for assertions whose
+  baseline class is `flaky` — cheap, but trades detection latency for quiet;
+- raising the variance, which is the only route to real statistical power and
+  is blocked by the sequential scenario loop inside the 45-minute job timeout.
+
+## Defects found in review and fixed before merge
+
+1. **The baseline writer never received the classification fix.** `classify()`
+   was corrected to compare the rate, but the `--update-baseline` writer kept a
+   second copy of the truncated-count rule, and the compare path read the
+   stored label rather than recomputing. A 17/19 (89%) assertion was stored
+   "stable" and compared as "flaky", manufacturing a permanent REGRESSED for a
+   rate that never moved — the exact failure this work exists to remove. Fixed
+   by making the compare path recompute from the stored counts, so `classify()`
+   is the single authority and the two cannot diverge again.
+2. **A watch-only run closed the tracking issue with "Clean run".** Suppressing
+   first-occurrence degradations made those runs exit 0, and the workflow closes
+   the issue on exit 0. A real, sustained regression whose weekly draw happened
+   to look fine could therefore flap between `watch` and closed-as-clean
+   indefinitely, with no issue ever saying "still watching". Fixed with a
+   `## Watching` report section that the workflow checks before closing.

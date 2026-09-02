@@ -141,6 +141,17 @@ jobs:
               gh issue create --title "$ISSUE_TITLE" --body-file /tmp/issue-body.md
             fi
           elif [ "$RC" = "0" ] && [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "Clean run: $RUN_URL — closing."
-            gh issue close "$existing"
+            # A run can exit 0 while still carrying "watch" rows: an assertion
+            # degraded once is deliberately NOT reported as a regression until a
+            # second consecutive run confirms it. Closing here would announce
+            # "Clean run" over an ongoing, unconfirmed degradation — and a real
+            # regression whose weekly draw happens to look fine can otherwise
+            # flap between watch and closed-as-clean indefinitely, with no issue
+            # ever saying "still watching". Only a run with NO watch rows closes.
+            if grep -q '^## Watching' tests/artifacts/pack-report.md 2>/dev/null; then
+              gh issue comment "$existing" --body "No confirmed regression this run, but one or more assertions are still being watched (degraded once, awaiting confirmation). Not closing: $RUN_URL"
+            else
+              gh issue comment "$existing" --body "Clean run: $RUN_URL — closing."
+              gh issue close "$existing"
+            fi
           fi

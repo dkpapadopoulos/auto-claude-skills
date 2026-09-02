@@ -191,6 +191,13 @@ ci95() { # $1 pass_count, $2 n -> "<lower> <upper>", Clopper-Pearson exact 95%
     function cdf_le(kk, nn, p,   i, s) { s = 0; for (i = 0; i <= kk; i++) s += nCr(nn, i) * (p^i) * ((1-p)^(nn-i)); return s }
     BEGIN {
         if (n <= 0) { printf "0.00 1.00\n"; exit }
+        # nCr(n, n/2) overflows an IEEE double before p^i*(1-p)^(n-i) scales it
+        # back down, and the result is silently WRONG rather than an error
+        # (measured: n=1500 k=750 returned [0.00, 0.50] against a true
+        # [0.47, 0.53]). Unreachable today - variance is 3, and raising it is
+        # deferred by the 45-minute sequential-loop timeout - but refuse rather
+        # than lie if that ever changes. Lift only with a log-space rewrite.
+        if (n > 1000) { printf "na na\n"; exit }
         t = 0.025
         if (k == 0) { lo = 0 } else {
             a = 0; b = k/n
@@ -249,6 +256,7 @@ rank() { case "$1" in stable) echo 2 ;; flaky) echo 1 ;; *) echo 0 ;; esac }
 
 REGRESSIONS="${RUN_DIR}/regressions.txt"; : > "${REGRESSIONS}"
 SAFETY_FAILS="${RUN_DIR}/safety.txt";    : > "${SAFETY_FAILS}"
+WATCHES="${RUN_DIR}/watches.txt";        : > "${WATCHES}"
 ROWS="${RUN_DIR}/rows.txt";              : > "${ROWS}"
 
 for sid in ${scenario_ids}; do
@@ -265,9 +273,29 @@ for sid in ${scenario_ids}; do
         f="$(printf '%s' "${row}" | cut -f5)"
         n=$((p + f))
         cls="$(classify "${p}" "${n}")"
-        base_cls="$(jq -r --arg sid "${sid}" --argjson i "${idx}" \
-            '.scenarios[$sid].assertions[] | select(.index == $i) | .classification' \
+        # Prefer the baseline's COUNTS over its stored label. The label was
+        # produced by a second copy of the classification rule at write time;
+        # recomputing here makes classify() the single authority, so the two can
+        # never disagree again (they did: a 17/19 baseline stored "stable" while
+        # the compare path computed "flaky"). Schema 1 baselines carry no counts,
+        # so they fall back to the stored label exactly as before.
+        base_row="$(jq -r --arg sid "${sid}" --argjson i "${idx}" \
+            '.scenarios[$sid].assertions[] | select(.index == $i)
+             | [((.pass // "")|tostring), ((.n // "")|tostring), (.classification // "")] | @tsv' \
             "${BASELINE}" 2>/dev/null || echo "")"
+        base_cls="$(printf '%s' "${base_row}" | cut -f3)"
+        _bp="$(printf '%s' "${base_row}" | cut -f1)"
+        _bn="$(printf '%s' "${base_row}" | cut -f2)"
+        # Both fields must be present AND all-digits AND n>0 before the counts
+        # are trusted; anything else keeps the stored label. A v1 baseline yields
+        # empty strings here, which must NOT be fed to classify() (it would
+        # return "broken" for every assertion and manufacture regressions).
+        _use_counts=1
+        [ -n "${_bp}" ] && [ -n "${_bn}" ] || _use_counts=0
+        case "${_bp}" in *[!0-9]*) _use_counts=0 ;; esac
+        case "${_bn}" in *[!0-9]*) _use_counts=0 ;; esac
+        [ "${_use_counts}" -eq 1 ] && [ "${_bn}" -gt 0 ] 2>/dev/null || _use_counts=0
+        [ "${_use_counts}" -eq 1 ] && base_cls="$(classify "${_bp}" "${_bn}")"
         delta="unchanged"
         if [ -z "${base_cls}" ] || [ "${base_cls}" = "null" ]; then
             delta="new"
@@ -300,6 +328,7 @@ for sid in ${scenario_ids}; do
                 printf '%s\t%s\t%s\t%s\t%s\n' "${sid}" "${idx}" "${desc}" "${base_cls}" "${cls}" >> "${REGRESSIONS}"
             else
                 delta="watch"
+                printf '%s\t%s\t%s\t%s\t%s\n' "${sid}" "${idx}" "${desc}" "${base_cls}" "${cls}" >> "${WATCHES}"
             fi
         fi
         if [ "${safety}" = "true" ] && [ "${f}" -gt 0 ]; then
@@ -312,7 +341,8 @@ for sid in ${scenario_ids}; do
         _ci="$(ci95 "${p}" "${n}")"
         printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
             "${sid}" "${idx}" "${kind}" "${desc}" "${p}/${n}" \
-            "[$(printf '%s' "${_ci}" | cut -d' ' -f1), $(printf '%s' "${_ci}" | cut -d' ' -f2)]" \
+            "$(if [ "${_ci}" = "na na" ]; then printf 'n/a'; else printf '[%s, %s]' \
+                "$(printf '%s' "${_ci}" | cut -d' ' -f1)" "$(printf '%s' "${_ci}" | cut -d' ' -f2)"; fi)" \
             "${cls}" "${base_cls:-—}" "${delta}" >> "${ROWS}"
         i=$((i + 1))
     done
@@ -345,7 +375,15 @@ mkdir -p "$(dirname "${REPORT}")"
             "$(printf '%s' "${BASE_PROVENANCE}" | jq -r '.cli_version // ""')" \
             "$(printf '%s' "${PROVENANCE_JSON}" | jq -r '.cli_version // ""')"
         echo ""
-        echo "Re-baseline deliberately (\`--update-baseline\`) once the new provenance is intended."
+        echo "**Do not re-baseline to silence this.** A local run legitimately"
+        echo "differs from CI (different CLI build, possibly a different resolved"
+        echo "model), so seeing this locally is expected and is not a defect."
+        echo ""
+        echo "Running \`--update-baseline\` against the COMMITTED baseline path from a"
+        echo "local machine overwrites CI provenance with your own; the next scheduled"
+        echo "run would then mismatch against its own baseline and skip regression"
+        echo "detection silently. Re-baseline only from the environment that owns the"
+        echo "baseline, and only when the new provenance is intended."
         echo ""
     fi
     echo "| Scenario | # | Kind | Assertion | Pass | 95% CI | Class | Baseline | Delta |"
@@ -371,6 +409,23 @@ mkdir -p "$(dirname "${REPORT}")"
         done < "${REGRESSIONS}"
         echo ""
     fi
+    if [ -s "${WATCHES}" ]; then
+        # Degraded once, not yet corroborated. Emitted as its own section because
+        # the run exits 0 and the tracking-issue step closes the issue on exit 0 —
+        # without a distinct signal, a real ongoing regression's first week would
+        # be announced as "Clean run - closing" while still degraded. The workflow
+        # greps for this heading before closing anything.
+        echo "## Watching (degraded once, not yet confirmed)"
+        echo ""
+        echo "Not reported as regressions: one run at this variance cannot separate"
+        echo "a real change from sampling noise. Confirmed only if the same"
+        echo "assertion is still degraded next run."
+        echo ""
+        while IFS=$'\t' read -r sid idx desc base cls; do
+            echo "- \`${sid}\` assertion ${idx} (${desc}): ${base} -> ${cls}"
+        done < "${WATCHES}"
+        echo ""
+    fi
 } > "${REPORT}"
 echo "report: ${REPORT}"
 
@@ -392,10 +447,20 @@ if [ "${UPDATE_BASELINE}" -eq 1 ]; then
                     index, kind, description,
                     pass: .pass,
                     n: (.pass + .fail),
+                    # MUST stay identical to classify() above. This copy is
+                    # why the truncated-count bug survived the fix that removed
+                    # it from classify(): a baseline written here stored
+                    # "stable" for 17/19 (89%) while the compare path called the
+                    # same measurement "flaky", manufacturing a permanent
+                    # REGRESSED for a rate that never moved. The compare path now
+                    # recomputes from the stored counts, so a future divergence
+                    # here is cosmetic rather than load-bearing — but it is still
+                    # read by humans inspecting the baseline, so keep it correct.
                     classification: (
                         (.pass + .fail) as $n
-                        | if .pass >= ($n * 0.9 | floor) then "stable"
-                          elif .pass >= ($n * 0.5 | floor) then "flaky"
+                        | if ($n <= 0) then "broken"
+                          elif (.pass * 100) >= ($n * 90) then "stable"
+                          elif (.pass * 100) >= ($n * 50) then "flaky"
                           else "broken" end)
                 }]
             })'

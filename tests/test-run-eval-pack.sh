@@ -306,4 +306,53 @@ assert_equals "2/3 upper bound"  "0.99" "$(ci95 2 3 | cut -d' ' -f2)"
 assert_equals "9/10 lower bound" "0.55" "$(ci95 9 10 | cut -d' ' -f1)"
 rm -f "${CI_SRC}"
 
+echo "-- compare trusts the baseline's COUNTS, not its stored label (Critical 1) --"
+# pack-scn-fail measures broken. The baseline stores label "broken" (which alone
+# would mean no regression) but counts 2/2, which classify() calls "stable".
+# Trusting the counts is what makes writer/compare unable to diverge.
+REPORT="$(mktemp -t packreportC1.XXXXXX)"
+output="$(run_pack "${FIX}/baseline-stale-label.json")"
+assert_contains "recomputes baseline class from stored counts" "REGRESSED" "$(cat "${REPORT}")"
+
+echo "-- generated baseline's label always agrees with classify() (Critical 1) --"
+C1_BASE="$(mktemp -t packbaseC1.XXXXXX)"; rm -f "${C1_BASE}"
+REPORT="$(mktemp -t packreportC1b.XXXXXX)"
+output="$(run_pack "${C1_BASE}" --update-baseline)"
+CLS_SRC="$(mktemp -t clssrc.XXXXXX)"
+sed -n '/^classify() {/,/^}/p' "${PACK_RUNNER}" > "${CLS_SRC}"
+# shellcheck disable=SC1090
+. "${CLS_SRC}"
+_mismatch=""
+while IFS=$'\t' read -r _p _n _cls; do
+    [ -n "${_cls}" ] || continue
+    _expect="$(classify "${_p}" "${_n}")"
+    [ "${_expect}" = "${_cls}" ] || _mismatch="${_mismatch} ${_p}/${_n}:stored=${_cls},classify=${_expect}"
+done <<EOF
+$(jq -r '.scenarios | to_entries[] | .value.assertions[] | [.pass, .n, .classification] | @tsv' "${C1_BASE}")
+EOF
+assert_equals "written labels agree with classify() for every assertion" "" "${_mismatch}"
+rm -f "${C1_BASE}" "${CLS_SRC}"
+
+echo "-- watch rows are surfaced as their own section (Critical 2) --"
+# A first-occurrence degradation exits 0. The workflow closes the tracking issue
+# on exit 0, so without a distinct signal a real, ongoing regression would be
+# announced as "Clean run - closing" while still degraded.
+REPORT="$(mktemp -t packreportC2.XXXXXX)"
+output="$(run_pack "${FIX}/baseline-stable.json" --previous "${FIX}/previous-clean.json")"
+assert_contains "watch section present on a first occurrence" "## Watching" "$(cat "${REPORT}")"
+assert_contains "watch section names the assertion" "pack-scn-fail" "$(cat "${REPORT}")"
+
+echo "-- a genuinely clean run has no watch section (Critical 2 control) --"
+CLEAN_BASE="$(mktemp -t packbaseC2.XXXXXX)"; rm -f "${CLEAN_BASE}"
+REPORT="$(mktemp -t packreportC2b.XXXXXX)"
+output="$(run_pack "${CLEAN_BASE}" --update-baseline)"
+REPORT="$(mktemp -t packreportC2c.XXXXXX)"
+output="$(run_pack "${CLEAN_BASE}")"
+assert_not_contains "no watch section when nothing degraded" "## Watching" "$(cat "${REPORT}")"
+rm -f "${CLEAN_BASE}"
+
+echo "-- workflow must not close the tracking issue while watch rows exist (Critical 2) --"
+WF="${PROJECT_ROOT}/.github/workflows/behavioral-evals.yml"
+assert_contains "workflow guards the close on watch rows" "## Watching" "$(cat "${WF}")"
+
 print_summary
