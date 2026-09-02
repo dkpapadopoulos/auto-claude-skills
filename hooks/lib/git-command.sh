@@ -900,31 +900,13 @@ _gc_strip_closers() {
     printf '%s' "${_w}"
 }
 
-# _gc_is_closer_word <word> — 0 when the word is made up ENTIRELY of group
-#   closers (`)`, `}`), i.e. punctuation rather than an argument. A parenthesised
-#   command written with spaces and no trailing semicolon is not split by
-#   `_gc_split_segments`, so its closing `)` arrives as its own word and would
-#   otherwise be counted as a positional.
-#
-#   A FUNCTION rather than the `case` repeated inline at its call sites, for two
-#   independent reasons. (1) Single-sourcing: the push parsers must agree on what
-#   counts as an argument, and this is the kind of duplicated one-liner that
-#   drifts. (2) STATIC ANALYSIS: inline, this is a `case` nested inside a `case`
-#   branch, which opengrep's bash parser cannot handle — measured, that one line
-#   took the whole of git-command.sh from 47 findings to a total `Syntax error`,
-#   i.e. no static analysis of this file at all, while `bash -n` stayed happy and
-#   every test stayed green. Every rewrite that keeps the inner `case` still
-#   fails; every rewrite that hoists it out parses. Do not inline it back.
-_gc_is_closer_word() {
-    case "$1" in *[!\)\}]*) return 1 ;; esac
-    return 0
-}
 
 # _gc_strip_closers_var <word> — like _gc_strip_closers, but sets `_GC_W`
 #   instead of echoing. Same result, no subshell: the echoing form costs a FORK
 #   per word, and these loops run per-argument inside a synchronous PreToolUse
 #   gate. A closer-only word normalises to the empty string, so callers get the
-#   `_gc_is_closer_word` test for free by matching `''`.
+#   closer-only test for free by matching `''` — which is why the separate
+#   predicate that used to do it no longer exists.
 _gc_strip_closers_var() {
     _GC_W="$1"
     while :; do
@@ -1113,15 +1095,14 @@ command_push_ref() {
                     -*) shift ;;
                     *)
                         # A word made up ENTIRELY of group closers is
-                        # punctuation, not a refspec. A parenthesised push
+                        # punctuation, not a refspec — a parenthesised push
                         # written with spaces and no trailing semicolon reaches
                         # here as ONE segment whose last word is a bare closer,
-                        # and counting it made that a THREE-positional push: the
-                        # ref stopped resolving, the gate silently fell back to
-                        # the checkout HEAD, and command_push_subject_is_partial
-                        # announced a single-ref push as carrying more than one.
-                        # Measured against this parser before the line existed.
-                        if _gc_is_closer_word "$1"; then shift; continue; fi
+                        # and counting it made that a THREE-positional push, so
+                        # the ref stopped resolving and the gate fell back to the
+                        # checkout HEAD. That is now handled by the `''` arm
+                        # above: the word is normalised before the `case`, so a
+                        # closer-only word is already the empty string here.
                         _n=$((_n+1))
                         # positional 1 is the remote; positional 2 is the refspec.
                         [ "${_n}" -eq 2 ] && _r="$1"
