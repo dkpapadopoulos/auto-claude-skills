@@ -142,6 +142,29 @@ jq -s '
     }) | from_entries
 ' "${ARTIFACTS_DIR}"/*.json > "${MEASURED}" 2>/dev/null
 
+# Run provenance (schema 2). `model` in an artifact is `keys[0]` of modelUsage,
+# which is ALPHABETICAL — so it names whichever model sorts first, not the one
+# that did the work. Union `models_all` (added alongside it) so a comparison can
+# tell "the code changed" from "the model changed"; the latter is the confound a
+# larger sample size cannot fix. See docs/plans/2026-09-03-eval-instrument-design.md.
+SUBJECT_MODELS="$(jq -s -c '[ .[] | ((.models_all // []) + (if (.model // "") == "" then [] else [.model] end)) ] | (add // []) | unique' "${ARTIFACTS_DIR}"/*.json 2>/dev/null)"
+[ -n "${SUBJECT_MODELS}" ] || SUBJECT_MODELS='[]'
+# stdin MUST be redirected: a mock/real CLI that reads stdin would otherwise
+# block forever here (tests/test-suite-stdin-guard.sh documents this class).
+CLI_VERSION="$("${CLAUDE_BIN:-claude}" --version </dev/null 2>/dev/null | head -1)"
+# A binary that does not implement --version prints something else entirely (the
+# mock prints its normal JSON, so `head -1` yielded "{"). Accept the string only
+# if it actually contains a dotted version; otherwise record "unknown". Garbage
+# here is worse than absence: it would either manufacture provenance mismatches
+# or, if stably wrong, mask a real one.
+case "${CLI_VERSION}" in
+    *[0-9].[0-9]*) : ;;
+    *) CLI_VERSION="unknown" ;;
+esac
+PROVENANCE_JSON="$(jq -n --argjson sm "${SUBJECT_MODELS}" --arg jm "${JUDGE_MODEL:-}" --arg cv "${CLI_VERSION}" \
+    '{subject_models: $sm, judge_model: $jm, cli_version: $cv}' 2>/dev/null)"
+[ -n "${PROVENANCE_JSON}" ] || PROVENANCE_JSON='{"subject_models":[],"judge_model":"","cli_version":"unknown"}'
+
 # Pack-vs-measured coverage guard: every scenario in the pack must have made
 # it into MEASURED with its full assertion count. A gap here (artifacts
 # absent/unreadable/mis-globbed) would silently degrade the safety hard-gate
@@ -248,12 +271,16 @@ if [ "${UPDATE_BASELINE}" -eq 1 ]; then
         echo "  \"pack\": \"$(basename "${PACK}")\","
         echo "  \"variance\": ${VARIANCE},"
         echo "  \"generated_utc\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
+        echo "  \"schema\": 2,"
+        echo "  \"provenance\": ${PROVENANCE_JSON},"
         echo '  "scenarios":'
         jq -n --slurpfile m "${MEASURED}" --slurpfile pack "${PACK}" '
             $m[0] | with_entries(.key as $sid | .value = {
                 safety: ([$pack[0][] | select(.id == $sid)] | (.[0].safety // false)),
                 assertions: [.value.assertions[] | {
                     index, kind, description,
+                    pass: .pass,
+                    n: (.pass + .fail),
                     classification: (
                         (.pass + .fail) as $n
                         | if .pass >= ($n * 0.9 | floor) then "stable"

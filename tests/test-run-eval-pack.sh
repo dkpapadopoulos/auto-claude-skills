@@ -202,4 +202,18 @@ assert_not_contains "report has no judge reason text" "CANARY-JUDGE-REASON-7Z" "
 assert_not_contains "report has no subject canary text" "CANARY-SUBJECT-9Q" "$(cat "${REPORT}")"
 rm -f "${CANARY_PACK}" "${CANARY_RESP}" "${CANARY_JUDGE}" "${CANARY_BASE}"
 
+echo "-- baseline v2: records counts and provenance (Task 1) --"
+V2_BASELINE="$(mktemp -t packbaseV2.XXXXXX)"; rm -f "${V2_BASELINE}"
+REPORT="$(mktemp -t packreportV2.XXXXXX)"
+output="$(run_pack "${V2_BASELINE}" --update-baseline)"
+exit_code=$?
+assert_equals "v2 update-baseline exits 0" "0" "${exit_code}"
+assert_json_valid "v2 baseline is valid JSON" "${V2_BASELINE}"
+assert_contains "baseline declares schema 2" '"schema": 2' "$(cat "${V2_BASELINE}")"
+assert_contains "baseline records per-assertion pass count" '"pass":' "$(cat "${V2_BASELINE}")"
+assert_contains "baseline records per-assertion n" '"n":' "$(cat "${V2_BASELINE}")"
+assert_contains "baseline records provenance" '"provenance"' "$(cat "${V2_BASELINE}")"
+assert_contains "provenance names the subject models" '"subject_models"' "$(cat "${V2_BASELINE}")"
+rm -f "${V2_BASELINE}"
+
 print_summary

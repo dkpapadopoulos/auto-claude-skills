@@ -415,9 +415,16 @@ ${CONSTRUCTED_PROMPT}"
         return 2
     fi
 
-    local RAW_OUTPUT MODEL TOOL_CALLS_JSON
+    local RAW_OUTPUT MODEL MODELS_ALL TOOL_CALLS_JSON
     RAW_OUTPUT="$(printf '%s' "${CLAUDE_JSON}" | jq -r '.result // empty')"
     MODEL="$(printf '%s' "${CLAUDE_JSON}" | jq -r '(.model // (.modelUsage | keys[0]? // empty)) // "unknown"')"
+    # `.model` is usually absent and `keys[0]` is ALPHABETICAL, not "the model
+    # that did the work" — so a run where several models appear reports whichever
+    # sorts first (claude-haiku-* sorts before claude-sonnet-*). Keep `model` for
+    # backward compatibility and record the FULL key set beside it, so provenance
+    # can be audited instead of guessed. See docs/plans/2026-09-03-eval-instrument-design.md.
+    MODELS_ALL="$(printf '%s' "${CLAUDE_JSON}" | jq -c '((.modelUsage // {}) | keys) // []' 2>/dev/null)"
+    [ -n "${MODELS_ALL}" ] || MODELS_ALL='[]'
     # Extract tool_use blocks from the message transcript. Returns a JSON array of
     # {name, input} objects. Empty array if no tool calls were made or the message
     # stream is absent. Used by `tool_call` assertions.
@@ -597,6 +604,7 @@ ${CONSTRUCTED_PROMPT}"
         --arg scenario_id "${SCENARIO_ID}" \
         --arg timestamp "${timestamp_utc}" \
         --arg model "${MODEL}" \
+        --argjson models_all "${MODELS_ALL}" \
         --arg prompt "${SCENARIO_PROMPT}" \
         --arg raw_output "${RAW_OUTPUT}" \
         --arg raw_output_turn1 "${RAW_OUTPUT_T1}" \
@@ -608,6 +616,7 @@ ${CONSTRUCTED_PROMPT}"
             scenario_id: $scenario_id,
             timestamp_utc: $timestamp,
             model: $model,
+            models_all: $models_all,
             prompt: $prompt,
             raw_output: $raw_output,
             assertions: $assertions,
