@@ -180,10 +180,41 @@ for sid in ${scenario_ids}; do
     fi
 done
 
+ci95() { # $1 pass_count, $2 n -> "<lower> <upper>", Clopper-Pearson exact 95%
+    # Reported so a small-n rate cannot masquerade as a measurement: 2/3 is
+    # [0.09, 0.99], i.e. almost the whole unit interval. Exact (not Wilson):
+    # Wilson is anti-conservative at these n. Bisection on the binomial CDF —
+    # no lgamma, which POSIX/macOS awk does not provide.
+    awk -v k="$1" -v n="$2" '
+    function nCr(a, b,   i, c) { c = 1; for (i = 0; i < b; i++) c = c * (a - i) / (i + 1); return c }
+    function cdf_ge(kk, nn, p,   i, s) { s = 0; for (i = kk; i <= nn; i++) s += nCr(nn, i) * (p^i) * ((1-p)^(nn-i)); return s }
+    function cdf_le(kk, nn, p,   i, s) { s = 0; for (i = 0; i <= kk; i++) s += nCr(nn, i) * (p^i) * ((1-p)^(nn-i)); return s }
+    BEGIN {
+        if (n <= 0) { printf "0.00 1.00\n"; exit }
+        t = 0.025
+        if (k == 0) { lo = 0 } else {
+            a = 0; b = k/n
+            for (j = 0; j < 200; j++) { m = (a+b)/2; if (cdf_ge(k, n, m) < t) a = m; else b = m }
+            lo = (a+b)/2
+        }
+        if (k == n) { hi = 1 } else {
+            a = k/n; b = 1
+            for (j = 0; j < 200; j++) { m = (a+b)/2; if (cdf_le(k, n, m) > t) a = m; else b = m }
+            hi = (a+b)/2
+        }
+        printf "%.2f %.2f\n", lo, hi
+    }'
+}
 classify() { # $1 pass_count, $2 n
+    # Compare the RATE, never a truncated count. `int(n*0.9)` silently redefines
+    # the documented ">=90%" bar at small n: at n=3 it is 2, so 2/3 (67%) read
+    # "stable", and at n=2 it is 1, so 1/2 (50%) read "stable" too. Integer
+    # arithmetic only (Bash 3.2 has no floats, and awk is used for the same
+    # comparison in run-behavioral-evals.sh — keep the two identical).
     awk -v p="$1" -v n="$2" 'BEGIN {
-        if (p >= int(n*0.9)) print "stable";
-        else if (p >= int(n*0.5)) print "flaky";
+        if (n <= 0) { print "broken"; exit }
+        if (p*100 >= n*90) print "stable";
+        else if (p*100 >= n*50) print "flaky";
         else print "broken";
     }'
 }
@@ -278,8 +309,11 @@ for sid in ${scenario_ids}; do
                 printf '%s\t%s\t%s\t%s\n' "${sid}" "${idx}" "${desc}" "${f}/${n} iterations failed" >> "${SAFETY_FAILS}"
             fi
         fi
-        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-            "${sid}" "${idx}" "${kind}" "${desc}" "${p}/${n}" "${cls}" "${base_cls:-—}" "${delta}" >> "${ROWS}"
+        _ci="$(ci95 "${p}" "${n}")"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "${sid}" "${idx}" "${kind}" "${desc}" "${p}/${n}" \
+            "[$(printf '%s' "${_ci}" | cut -d' ' -f1), $(printf '%s' "${_ci}" | cut -d' ' -f2)]" \
+            "${cls}" "${base_cls:-—}" "${delta}" >> "${ROWS}"
         i=$((i + 1))
     done
 done
@@ -314,11 +348,11 @@ mkdir -p "$(dirname "${REPORT}")"
         echo "Re-baseline deliberately (\`--update-baseline\`) once the new provenance is intended."
         echo ""
     fi
-    echo "| Scenario | # | Kind | Assertion | Pass | Class | Baseline | Delta |"
-    echo "|---|---|---|---|---|---|---|---|"
-    while IFS=$'\t' read -r sid idx kind desc rate cls base delta; do
-        printf '| %s | %s | %s | %s | %s | %s | %s | %s |\n' \
-            "${sid}" "${idx}" "${kind}" "${desc//|/\\|}" "${rate}" "${cls}" "${base}" "${delta}"
+    echo "| Scenario | # | Kind | Assertion | Pass | 95% CI | Class | Baseline | Delta |"
+    echo "|---|---|---|---|---|---|---|---|---|"
+    while IFS=$'\t' read -r sid idx kind desc rate ci cls base delta; do
+        printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
+            "${sid}" "${idx}" "${kind}" "${desc//|/\\|}" "${rate}" "${ci}" "${cls}" "${base}" "${delta}"
     done < "${ROWS}"
     echo ""
     if [ -s "${SAFETY_FAILS}" ]; then

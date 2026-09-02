@@ -266,4 +266,44 @@ REPORT="$(mktemp -t packreportN4.XXXXXX)"
 output="$(run_pack "${FIX}/baseline-stable.json")"
 assert_file_exists "measured counts written beside the report" "$(dirname "${REPORT}")/pack-measured.json"
 
+echo "-- classification honours the documented rate bars (Task 4) --"
+# Extract the REAL classify() from the runner rather than hand-copying it: a
+# hand-written copy only ever proves the test agrees with the test's own idea
+# of the rule (see .claude/knowledge/classifier-fixtures-from-real-producer.md).
+CLASSIFY_SRC="$(mktemp -t classifysrc.XXXXXX)"
+sed -n '/^classify() {/,/^}/p' "${PACK_RUNNER}" > "${CLASSIFY_SRC}"
+assert_contains "extracted the runner's real classify()" "classify()" "$(cat "${CLASSIFY_SRC}")"
+# shellcheck disable=SC1090
+. "${CLASSIFY_SRC}"
+classify_probe() { classify "$1" "$2"; }
+
+# The documented contract is "stable >=90%, flaky 50-89%, broken <50%".
+assert_equals "3 of 3 (100%) is stable"            "stable" "$(classify_probe 3 3)"
+assert_equals "2 of 3 (67%) is NOT stable"         "flaky"  "$(classify_probe 2 3)"
+assert_equals "1 of 3 (33%) is broken"             "broken" "$(classify_probe 1 3)"
+assert_equals "0 of 3 is broken"                   "broken" "$(classify_probe 0 3)"
+assert_equals "1 of 2 (50%) is flaky, not stable"  "flaky"  "$(classify_probe 1 2)"
+assert_equals "9 of 10 (90%) is stable"            "stable" "$(classify_probe 9 10)"
+assert_equals "8 of 10 (80%) is flaky"             "flaky"  "$(classify_probe 8 10)"
+assert_equals "4 of 10 (40%) is broken"            "broken" "$(classify_probe 4 10)"
+rm -f "${CLASSIFY_SRC}"
+
+echo "-- Clopper-Pearson interval makes small-n uninformativeness visible (Task 4) --"
+CI_SRC="$(mktemp -t cisrc.XXXXXX)"
+sed -n '/^ci95() {/,/^}/p' "${PACK_RUNNER}" > "${CI_SRC}"
+assert_contains "extracted the runner's real ci95()" "ci95()" "$(cat "${CI_SRC}")"
+# shellcheck disable=SC1090
+. "${CI_SRC}"
+# Known Clopper-Pearson 95% values (exact, cross-checked against scipy):
+#   3/3  -> [0.292, 1.000]      0/3 -> [0.000, 0.708]
+#   2/3  -> [0.094, 0.992]      9/10 -> [0.555, 0.997]
+assert_equals "3/3 lower bound"  "0.29" "$(ci95 3 3 | cut -d' ' -f1)"
+assert_equals "3/3 upper bound"  "1.00" "$(ci95 3 3 | cut -d' ' -f2)"
+assert_equals "0/3 lower bound"  "0.00" "$(ci95 0 3 | cut -d' ' -f1)"
+assert_equals "0/3 upper bound"  "0.71" "$(ci95 0 3 | cut -d' ' -f2)"
+assert_equals "2/3 lower bound"  "0.09" "$(ci95 2 3 | cut -d' ' -f1)"
+assert_equals "2/3 upper bound"  "0.99" "$(ci95 2 3 | cut -d' ' -f2)"
+assert_equals "9/10 lower bound" "0.55" "$(ci95 9 10 | cut -d' ' -f1)"
+rm -f "${CI_SRC}"
+
 print_summary

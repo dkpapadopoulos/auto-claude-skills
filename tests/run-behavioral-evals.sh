@@ -260,9 +260,10 @@ write_variance_report() {
         echo "| # | Description | Pass | Fail | Pass rate | Classification |"
         echo "|---|---|---|---|---|---|"
 
-        local stable_threshold flaky_threshold
-        stable_threshold="$(awk -v n="${n}" 'BEGIN { print int(n*0.9) }')"
-        flaky_threshold="$(awk -v n="${n}" 'BEGIN { print int(n*0.5) }')"
+        # Rate comparison, not a truncated count — int(n*0.9) redefines the
+        # documented ">=90%" bar at small n (at n=3 it is 2, so 2/3 read
+        # "stable"). Kept byte-identical in intent to run-eval-pack.sh::classify
+        # so the pack report and the variance report cannot disagree.
 
         sort -n "${cfile}" | while IFS=$'\t' read -r idx p f text desc; do
             local classification rate
@@ -271,13 +272,12 @@ write_variance_report() {
                 classification="—"
             else
                 rate="$(awk -v p="${p}" -v n="${n}" 'BEGIN { printf "%.0f%%", (p/n)*100 }')"
-                if [ "${p}" -ge "${stable_threshold}" ]; then
-                    classification="stable"
-                elif [ "${p}" -ge "${flaky_threshold}" ]; then
-                    classification="flaky"
-                else
-                    classification="broken"
-                fi
+                classification="$(awk -v p="${p}" -v n="${n}" 'BEGIN {
+                    if (n <= 0) { print "broken"; exit }
+                    if (p*100 >= n*90) print "stable";
+                    else if (p*100 >= n*50) print "flaky";
+                    else print "broken";
+                }')"
             fi
             local desc_md="${desc//|/\\|}"
             printf '| %s | %s | %s | %s | %s | %s |\n' \
