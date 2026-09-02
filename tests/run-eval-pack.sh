@@ -41,7 +41,7 @@ if [ "${BEHAVIORAL_EVALS:-0}" != "1" ]; then
     exit 2
 fi
 
-PACK=""; VARIANCE=3; BASELINE=""; REPORT=""; MODEL=""; ARTIFACTS_OUT=""; UPDATE_BASELINE=0
+PACK=""; VARIANCE=3; BASELINE=""; REPORT=""; MODEL=""; ARTIFACTS_OUT=""; UPDATE_BASELINE=0; PREVIOUS=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --pack) PACK="${2:-}"; shift 2 ;;
@@ -50,6 +50,7 @@ while [ $# -gt 0 ]; do
         --report) REPORT="${2:-}"; shift 2 ;;
         --model) MODEL="${2:-}"; shift 2 ;;
         --artifacts-dir) ARTIFACTS_OUT="${2:-}"; shift 2 ;;
+        --previous) PREVIOUS="${2:-}"; shift 2 ;;
         --update-baseline) UPDATE_BASELINE=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "error: unknown argument: $1" >&2; usage; exit 2 ;;
@@ -204,6 +205,15 @@ if [ -n "${BASE_PROVENANCE}" ] && [ "${BASE_PROVENANCE}" != "null" ]; then
     fi
 fi
 
+# Persist the measured counts next to the report so the NEXT run can apply the
+# persistence filter. Deliberately not inside ARTIFACTS_DIR: that directory is
+# globbed as */*.json during aggregation and is guarded against pre-existing
+# .json files, so a measured.json there would corrupt the following run.
+if [ -n "${REPORT}" ]; then
+    mkdir -p "$(dirname "${REPORT}")" 2>/dev/null || true
+    cp "${MEASURED}" "$(dirname "${REPORT}")/pack-measured.json" 2>/dev/null || true
+fi
+
 rank() { case "$1" in stable) echo 2 ;; flaky) echo 1 ;; *) echo 0 ;; esac }
 
 REGRESSIONS="${RUN_DIR}/regressions.txt"; : > "${REGRESSIONS}"
@@ -233,8 +243,33 @@ for sid in ${scenario_ids}; do
         elif [ "${PROVENANCE_MISMATCH}" -eq 1 ]; then
             delta="not-compared"
         elif [ "$(rank "${cls}")" -lt "$(rank "${base_cls}")" ]; then
-            delta="REGRESSED"
-            printf '%s\t%s\t%s\t%s\t%s\n' "${sid}" "${idx}" "${desc}" "${base_cls}" "${cls}" >> "${REGRESSIONS}"
+            # Persistence filter. A single week's degradation is not evidence: at the
+            # production variance the class boundary is a one-sample flip, and two
+            # consecutive real runs shared exactly one of 5 and 8 flagged assertions
+            # (~0.66 expected by chance). Require the SAME assertion to be degraded in
+            # the previous run before reporting. With no --previous, behaviour is
+            # unchanged, so local runs and the first CI run after this lands still work.
+            _persisted=1
+            if [ -n "${PREVIOUS}" ]; then
+                _prev_row="$(jq -r --arg sid "${sid}" --argjson i "${idx}" \
+                    '.[$sid].assertions[]? | select(.index == $i) | [.pass, .fail] | @tsv' \
+                    "${PREVIOUS}" 2>/dev/null)" || _prev_row=""
+                if [ -z "${_prev_row}" ]; then
+                    _persisted=0   # not measured last run => no corroboration
+                else
+                    _pp="$(printf '%s' "${_prev_row}" | cut -f1)"
+                    _pf="$(printf '%s' "${_prev_row}" | cut -f2)"
+                    _pn=$((_pp + _pf))
+                    _prev_cls="$(classify "${_pp}" "${_pn}")"
+                    [ "$(rank "${_prev_cls}")" -lt "$(rank "${base_cls}")" ] || _persisted=0
+                fi
+            fi
+            if [ "${_persisted}" -eq 1 ]; then
+                delta="REGRESSED"
+                printf '%s\t%s\t%s\t%s\t%s\n' "${sid}" "${idx}" "${desc}" "${base_cls}" "${cls}" >> "${REGRESSIONS}"
+            else
+                delta="watch"
+            fi
         fi
         if [ "${safety}" = "true" ] && [ "${f}" -gt 0 ]; then
             gated="$(jq -r --arg sid "${sid}" --argjson i "${idx}" \

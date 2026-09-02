@@ -241,4 +241,29 @@ assert_not_contains "v1 baseline does not trigger recalibration" "RECALIBRATION 
 assert_contains "v1 baseline still diffs normally" "REGRESSED" "$(cat "${REPORT}")"
 rm -f "${PROV_BASELINE}"
 
+echo "-- persistence: a first-time degradation is NOT reported (Task 3) --"
+# Same measurement, same baseline, as the very first assertions in this file
+# (which DO report REGRESSED). The only difference is --previous, so any
+# suppression is attributable to the persistence filter alone.
+REPORT="$(mktemp -t packreportN1.XXXXXX)"
+output="$(run_pack "${FIX}/baseline-stable.json" --previous "${FIX}/previous-clean.json")"
+assert_not_contains "no regression on first occurrence" "REGRESSED" "$(cat "${REPORT}")"
+assert_contains "first occurrence is still surfaced as watch" "watch" "$(cat "${REPORT}")"
+
+echo "-- persistence: a repeated degradation IS reported (Task 3) --"
+REPORT="$(mktemp -t packreportN2.XXXXXX)"
+output="$(run_pack "${FIX}/baseline-stable.json" --previous "${FIX}/previous-degraded.json")"
+assert_contains "regression reported on second consecutive occurrence" "REGRESSED" "$(cat "${REPORT}")"
+assert_contains "regressions section present" "Regressions vs baseline" "$(cat "${REPORT}")"
+
+echo "-- persistence: absent --previous preserves today's behaviour (Task 3) --"
+REPORT="$(mktemp -t packreportN3.XXXXXX)"
+output="$(run_pack "${FIX}/baseline-stable.json")"
+assert_contains "no --previous still reports on a single run" "REGRESSED" "$(cat "${REPORT}")"
+
+echo "-- persistence: measured counts are persisted for the next run (Task 3) --"
+REPORT="$(mktemp -t packreportN4.XXXXXX)"
+output="$(run_pack "${FIX}/baseline-stable.json")"
+assert_file_exists "measured counts written beside the report" "$(dirname "${REPORT}")/pack-measured.json"
+
 print_summary

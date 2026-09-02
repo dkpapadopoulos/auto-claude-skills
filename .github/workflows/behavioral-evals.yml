@@ -59,6 +59,26 @@ jobs:
       - name: Install pinned claude CLI
         run: npm install -g @anthropic-ai/claude-code@2.1.198
 
+      # Persistence filter (#94): a regression is reported only when the SAME
+      # assertion is degraded in two consecutive runs. Two real consecutive runs
+      # flagged 5 and 8 assertions sharing exactly one (~0.66 expected by chance),
+      # so a single week's flag is not evidence. Best-effort: if the previous
+      # artifacts are unavailable the runner simply reports as before.
+      - name: Fetch previous run's measured counts
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+          mkdir -p tests/prev
+          prev="$(gh run list --workflow behavioral-evals.yml --status success \
+                    --limit 10 --json databaseId -q '.[].databaseId' \
+                  | grep -v '^${{ github.run_id }}$' | head -1)" || prev=""
+          [ -n "$prev" ] || { echo "no previous successful run"; exit 0; }
+          echo "previous run: $prev"
+          gh run download "$prev" -n behavioral-eval-artifacts -D tests/prev || true
+          ls -la tests/prev || true
+
       - name: Run eval pack
         id: pack
         env:
@@ -71,11 +91,17 @@ jobs:
           set -o pipefail
           mkdir -p tests/artifacts
           rc=0
+          # --previous only when last week's counts actually came down.
+          if [ -f tests/prev/pack-measured.json ]; then
+            set -- --previous tests/prev/pack-measured.json
+          else
+            set --
+          fi
           bash tests/run-eval-pack.sh \
             --pack "$PACK" --baseline "$BASELINE" \
             --variance "$VARIANCE" --model claude-sonnet-5 \
             --report tests/artifacts/pack-report.md \
-            --artifacts-dir tests/artifacts/iterations || rc=$?
+            --artifacts-dir tests/artifacts/iterations "$@" || rc=$?
           echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
           cat tests/artifacts/pack-report.md >> "$GITHUB_STEP_SUMMARY" || true
           # rc 0 = clean, rc 1 = regression/safety-fail (handled downstream by
