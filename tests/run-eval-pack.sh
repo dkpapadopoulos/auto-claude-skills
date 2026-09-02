@@ -23,6 +23,9 @@ Options:
   --report <path>      markdown report output (default:
                        tests/artifacts/pack-report-<utc>.md)
   --model <name>       forwarded to run-behavioral-evals.sh --model
+  --previous <path>    previous run's pack-measured.json. A degradation is
+                       reported only if the SAME assertion was also degraded
+                       there; without it, a single run reports as before.
   --artifacts-dir <path>  persist per-iteration artifacts here (default: run-temp, deleted on exit)
                        (must not already contain .json files)
   --update-baseline    write measured classifications to --baseline and exit 0
@@ -95,6 +98,22 @@ if [ -f "${BASELINE}" ]; then
     if [ -n "${missing}" ]; then
         echo "error: baseline scenario(s) missing from pack (never-delete guard): ${missing}" >&2
         echo "deprecate explicitly: update the baseline with --update-baseline in the same change" >&2
+        exit 2
+    fi
+fi
+
+# --previous must be usable or the run must fail loudly. An unreadable
+# corroborator otherwise demotes every regression to "watch": the exit code never
+# reaches 1, the tracking-issue step never posts, and a real sustained regression
+# is silently never reported. --baseline already exits 2 on corruption ("no
+# silent 'new' classification"); this is the same contract for the same reason.
+if [ -n "${PREVIOUS}" ]; then
+    if [ ! -f "${PREVIOUS}" ]; then
+        echo "error: --previous '${PREVIOUS}' does not exist" >&2
+        exit 2
+    fi
+    if ! jq -e . "${PREVIOUS}" >/dev/null 2>&1; then
+        echo "error: --previous '${PREVIOUS}' is not valid JSON" >&2
         exit 2
     fi
 fi
@@ -235,7 +254,7 @@ classify() { # $1 pass_count, $2 n
 # A v1 baseline declares no provenance and therefore never mismatches.
 PROVENANCE_MISMATCH=0
 BASE_PROVENANCE="$(jq -c '.provenance // empty' "${BASELINE}" 2>/dev/null)" || BASE_PROVENANCE=""
-if [ -n "${BASE_PROVENANCE}" ] && [ "${BASE_PROVENANCE}" != "null" ]; then
+if [ -n "${BASE_PROVENANCE}" ]; then   # `.provenance // empty` already yields "" for null
     _now_prov="$(printf '%s' "${PROVENANCE_JSON}" | jq -cS '.' 2>/dev/null)"
     _base_prov="$(printf '%s' "${BASE_PROVENANCE}" | jq -cS '.' 2>/dev/null)"
     if [ -n "${_now_prov}" ] && [ -n "${_base_prov}" ] && [ "${_now_prov}" != "${_base_prov}" ]; then
@@ -475,6 +494,25 @@ fi
 # to normal (non-update) runs — a safety failure can never be "fixed" simply
 # by re-baselining in the same invocation; it must be re-run without
 # --update-baseline to observe the hard gate.
+# Machine-readable run status, written as DATA next to the report. The
+# tracking-issue step must branch on the run's state, and it previously did that
+# by grepping the report for a heading — which silently missed the recalibration
+# path (every delta is "not-compared", so no watch rows are emitted) and closed
+# the issue announcing "Clean run" over a comparison the guard had explicitly
+# declined to perform. A heading is prose; this is an interface.
+# Precedence is deliberate: safety outranks everything, a confirmed regression
+# outranks an un-evaluated comparison, and "clean" is the only state that may
+# close a tracking issue.
+_STATUS="clean"
+if [ -s "${SAFETY_FAILS}" ]; then _STATUS="safety"
+elif [ -s "${REGRESSIONS}" ]; then _STATUS="regressed"
+elif [ "${PROVENANCE_MISMATCH}" -eq 1 ]; then _STATUS="recalibration"
+elif [ -s "${WATCHES}" ]; then _STATUS="watching"
+fi
+if [ -n "${REPORT}" ]; then
+    printf '%s\n' "${_STATUS}" > "$(dirname "${REPORT}")/pack-status.txt" 2>/dev/null || true
+fi
+
 if [ "${UPDATE_BASELINE}" -eq 1 ]; then exit 0; fi
 if [ -s "${SAFETY_FAILS}" ]; then exit 1; fi
 if [ -s "${REGRESSIONS}" ]; then exit 1; fi

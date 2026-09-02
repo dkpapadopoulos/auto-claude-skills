@@ -102,3 +102,35 @@ Two options were deliberately NOT taken, and both remain open:
    to look fine could therefore flap between `watch` and closed-as-clean
    indefinitely, with no issue ever saying "still watching". Fixed with a
    `## Watching` report section that the workflow checks before closing.
+
+## Second review round — findings and disposition
+
+A second reviewer found one Critical the first round missed, plus four
+Important and several Minor. Fixed: N1-N8, N11, N12. Two were deliberately
+left, and are recorded here rather than silently dropped:
+
+- **N9** `pack-measured.json` is written unconditionally to `dirname(REPORT)`,
+  so two runs sharing a report directory clobber each other. Harmless today —
+  the workflow serialises via `concurrency` — but it is shared mutable state
+  with no run identity, and a second consumer would need one.
+- **N10** the recalibration table interpolates `subject_models` / `cli_version`
+  into markdown without escaping `|`, unlike assertion descriptions, and that
+  table is embedded in the issue body. These strings are CLI metadata rather
+  than subject output, so the structured-only guarantee (never relay model text
+  outbound) is not weakened; but the canary tests do not cover the new fields.
+
+**N1 is the finding worth remembering.** The fix for "an exit-0 run can carry an
+unresolved degradation" guarded the issue-close with a report HEADING. The
+recalibration path emits no watch rows, so the loudest state in the design was
+invisible to that guard and closed the issue announcing "Clean run" over a
+comparison it had explicitly declined to perform. The lesson is not "add the
+other heading": a workflow that branches on prose is one rewording away from
+silently reverting. Status is now written as DATA (`pack-status.txt`) and the
+close happens only on `clean`.
+
+**N3/N4 share one root cause worth stating plainly.** The deterministic mock can
+only produce 0/n and n/n — exactly the rates where the truncated-count rule and
+the rate rule AGREE. So no end-to-end test in this change could distinguish
+them, and reverting either classifier left its suite green. That blind spot is
+why the original bug shipped at all. `mock-claude-cycle.sh` now produces an
+intermediate rate (2/3), and both classifiers are pinned at it.
