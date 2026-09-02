@@ -900,6 +900,26 @@ _gc_strip_closers() {
     printf '%s' "${_w}"
 }
 
+# _gc_is_closer_word <word> — 0 when the word is made up ENTIRELY of group
+#   closers (`)`, `}`), i.e. punctuation rather than an argument. A parenthesised
+#   command written with spaces and no trailing semicolon is not split by
+#   `_gc_split_segments`, so its closing `)` arrives as its own word and would
+#   otherwise be counted as a positional.
+#
+#   A FUNCTION rather than the `case` repeated inline at its call sites, for two
+#   independent reasons. (1) Single-sourcing: the push parsers must agree on what
+#   counts as an argument, and this is the kind of duplicated one-liner that
+#   drifts. (2) STATIC ANALYSIS: inline, this is a `case` nested inside a `case`
+#   branch, which opengrep's bash parser cannot handle — measured, that one line
+#   took the whole of git-command.sh from 47 findings to a total `Syntax error`,
+#   i.e. no static analysis of this file at all, while `bash -n` stayed happy and
+#   every test stayed green. Every rewrite that keeps the inner `case` still
+#   fails; every rewrite that hoists it out parses. Do not inline it back.
+_gc_is_closer_word() {
+    case "$1" in *[!\)\}]*) return 1 ;; esac
+    return 0
+}
+
 # _gc_segment_dir_flag <segment> — the worktree directory a git invocation
 # names via `-C <path>` or `--work-tree[=]<path>`, scanning only the global
 # flags before the subcommand. Echoes nothing when there is none, and
@@ -1079,7 +1099,7 @@ command_push_ref() {
                         # the checkout HEAD, and command_push_subject_is_partial
                         # announced a single-ref push as carrying more than one.
                         # Measured against this parser before the line existed.
-                        case "$1" in *[!\)\}]*) : ;; *) shift; continue ;; esac
+                        if _gc_is_closer_word "$1"; then shift; continue; fi
                         _n=$((_n+1))
                         # positional 1 is the remote; positional 2 is the refspec.
                         [ "${_n}" -eq 2 ] && _r="$1"
@@ -1228,7 +1248,7 @@ _gc_push_seg_shape() {
             -*) shift ;;
             *)
                 # Punctuation, not a refspec — see command_push_ref.
-                case "$1" in *[!\)\}]*) : ;; *) shift; continue ;; esac
+                if _gc_is_closer_word "$1"; then shift; continue; fi
                 _n=$((_n+1))
                 # positional 1 is the remote; 2+ are refspecs.
                 if [ "${_n}" -ge 2 ]; then
