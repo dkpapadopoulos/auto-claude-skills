@@ -4,10 +4,10 @@
 
 ### Requirement: A push that ships no content is not measured at the checkout's HEAD
 
-When every `git push` segment in a gated command deletes a ref, the command
-ships no content, and the push gate's **content-dependent** checks MUST be
-skipped rather than evaluated against the subject directory's `HEAD`, which the
-command does not push. The content-dependent checks are routing-governance,
+When every `git push` segment in a gated command deletes a ref, the gate MUST
+treat the command as shipping no content, and its **content-dependent** checks
+MUST be skipped rather than evaluated against the subject directory's `HEAD`,
+which the command does not push. The content-dependent checks are routing-governance,
 verify-verdict hardening, the evaluator-surface advisory, and the
 IMPLEMENT-evidence leg.
 
@@ -140,10 +140,10 @@ state that the review and verification gates still applied.
 
 ### Requirement: A multi-ref push is reported as possibly under-measuring
 
-When a gated push carries more than one ref — `--all`, `--mirror`, `--tags`, or
-two or more refspecs — the gate MUST continue to measure the subject
-directory's `HEAD`, and MUST state that `HEAD` is at best one of the refs being
-pushed so the checks may under-measure what the command ships.
+The gate MUST continue to measure the subject directory's `HEAD` when a gated
+push carries more than one ref — `--all`, `--mirror`, `--tags`, or two or more
+refspecs — and MUST state that `HEAD` is at best one of the refs being pushed,
+so the checks may under-measure what the command ships.
 
 That statement MUST be distinct from the statement made for a deletion. A single
 shared message for both shapes is what allowed the deletion false block to go
@@ -160,9 +160,9 @@ unnoticed, and the two shapes are now resolved differently.
 
 ### Requirement: Group punctuation is not counted as a refspec
 
-A command word made up entirely of group closers (`)`, `}`) is punctuation, not
-a refspec, and the push-command parsers MUST NOT count it as a positional
-argument.
+The push-command parsers MUST NOT count a command word made up entirely of
+group closers (`)`, `}`) as a positional argument: such a word is punctuation,
+not a refspec.
 
 #### Scenario: a parenthesised push resolves its ref
 
