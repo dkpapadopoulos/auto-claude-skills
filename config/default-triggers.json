@@ -579,7 +579,7 @@
       "role": "workflow",
       "phase": "LEARN",
       "triggers": [
-        "(improvement.miner|improvement.mining|(^|[^a-z])mine (the repo for|for) (improvement|evidence)|(^|[^a-z])mine improvements)"
+        "(improvement.miner|improvement.mining|(^|[^a-z])mine (the repo for|for) (improvement|evidence)|(^|[^a-z])mine improvements|what.{0,15}(should|could|can) we improve|what.{0,6}(is|s) worth (fixing|improving)|improvement (proposals|opportunit)|(sweep|scan|comb).{0,25}(repo|repository|codebase|backlog).{0,25}improvement)"
       ],
       "keywords": [
         "mine improvements",
@@ -589,7 +589,7 @@
         "mine the repo for improvements"
       ],
       "trigger_mode": "regex",
-      "priority": 30,
+      "priority": 16,
       "precedes": [],
       "requires": [],
       "description": "Sweep repo-local evidence (eval baselines, gate-status, memory feedback, revival criteria) into a ranked, evidence-graded proposal report; in-session approve/reject; approved items become GitHub issues.",
