@@ -1,0 +1,24 @@
+[
+  {
+    "id": "pack-scn-pass",
+    "prompt": "Report the deploy status.",
+    "expected_behavior": "Mentions rollback.",
+    "assertions": [
+      {
+        "text": "rollback",
+        "description": "mentions rollback"
+      }
+    ]
+  },
+  {
+    "id": "pack-scn-fail",
+    "prompt": "Report the deploy status.",
+    "expected_behavior": "Mentions error budget.",
+    "assertions": [
+      {
+        "text": "error budget",
+        "description": "mentions error budget"
+      }
+    ]
+  }
+]

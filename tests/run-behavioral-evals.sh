@@ -260,9 +260,10 @@ write_variance_report() {
         echo "| # | Description | Pass | Fail | Pass rate | Classification |"
         echo "|---|---|---|---|---|---|"
 
-        local stable_threshold flaky_threshold
-        stable_threshold="$(awk -v n="${n}" 'BEGIN { print int(n*0.9) }')"
-        flaky_threshold="$(awk -v n="${n}" 'BEGIN { print int(n*0.5) }')"
+        # Rate comparison, not a truncated count — int(n*0.9) redefines the
+        # documented ">=90%" bar at small n (at n=3 it is 2, so 2/3 read
+        # "stable"). Kept byte-identical in intent to run-eval-pack.sh::classify
+        # so the pack report and the variance report cannot disagree.
 
         sort -n "${cfile}" | while IFS=$'\t' read -r idx p f text desc; do
             local classification rate
@@ -271,13 +272,12 @@ write_variance_report() {
                 classification="—"
             else
                 rate="$(awk -v p="${p}" -v n="${n}" 'BEGIN { printf "%.0f%%", (p/n)*100 }')"
-                if [ "${p}" -ge "${stable_threshold}" ]; then
-                    classification="stable"
-                elif [ "${p}" -ge "${flaky_threshold}" ]; then
-                    classification="flaky"
-                else
-                    classification="broken"
-                fi
+                classification="$(awk -v p="${p}" -v n="${n}" 'BEGIN {
+                    if (n <= 0) { print "broken"; exit }
+                    if (p*100 >= n*90) print "stable";
+                    else if (p*100 >= n*50) print "flaky";
+                    else print "broken";
+                }')"
             fi
             local desc_md="${desc//|/\\|}"
             printf '| %s | %s | %s | %s | %s | %s |\n' \
@@ -415,9 +415,16 @@ ${CONSTRUCTED_PROMPT}"
         return 2
     fi
 
-    local RAW_OUTPUT MODEL TOOL_CALLS_JSON
+    local RAW_OUTPUT MODEL MODELS_ALL TOOL_CALLS_JSON
     RAW_OUTPUT="$(printf '%s' "${CLAUDE_JSON}" | jq -r '.result // empty')"
     MODEL="$(printf '%s' "${CLAUDE_JSON}" | jq -r '(.model // (.modelUsage | keys[0]? // empty)) // "unknown"')"
+    # `.model` is usually absent and `keys[0]` is ALPHABETICAL, not "the model
+    # that did the work" — so a run where several models appear reports whichever
+    # sorts first (claude-haiku-* sorts before claude-sonnet-*). Keep `model` for
+    # backward compatibility and record the FULL key set beside it, so provenance
+    # can be audited instead of guessed. See docs/plans/2026-09-03-eval-instrument-design.md.
+    MODELS_ALL="$(printf '%s' "${CLAUDE_JSON}" | jq -c '((.modelUsage // {}) | keys) // []' 2>/dev/null)"
+    [ -n "${MODELS_ALL}" ] || MODELS_ALL='[]'
     # Extract tool_use blocks from the message transcript. Returns a JSON array of
     # {name, input} objects. Empty array if no tool calls were made or the message
     # stream is absent. Used by `tool_call` assertions.
@@ -597,6 +604,7 @@ ${CONSTRUCTED_PROMPT}"
         --arg scenario_id "${SCENARIO_ID}" \
         --arg timestamp "${timestamp_utc}" \
         --arg model "${MODEL}" \
+        --argjson models_all "${MODELS_ALL}" \
         --arg prompt "${SCENARIO_PROMPT}" \
         --arg raw_output "${RAW_OUTPUT}" \
         --arg raw_output_turn1 "${RAW_OUTPUT_T1}" \
@@ -608,6 +616,7 @@ ${CONSTRUCTED_PROMPT}"
             scenario_id: $scenario_id,
             timestamp_utc: $timestamp,
             model: $model,
+            models_all: $models_all,
             prompt: $prompt,
             raw_output: $raw_output,
             assertions: $assertions,
