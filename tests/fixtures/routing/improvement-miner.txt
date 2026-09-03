@@ -5,11 +5,28 @@
 # NO_MATCH decoys pin the LEARN boundary vs outcome-review (borrowed
 # verbatim from tests/fixtures/routing/outcome-review.txt) and general
 # mining/mineral prose.
+#
+# The second MATCH block covers INTENT phrasings. The original trigger was
+# self-referential -- every alternative required the caller to already know
+# the skill's name or its "mine" metaphor, so it fired only if you already
+# knew to ask for it (measured: 0 fires across 400 real prompts sampled from
+# session transcripts). "determine improvements to the onboarding flow" and
+# "examine for evidence ..." stay NO_MATCH: both embed a trigger word inside
+# a longer word, which the (^|[^a-z]) guards exclude -- do not drop those
+# guards.
 
 MATCH: mine improvements
 MATCH: run the improvement miner
 MATCH: mine the repo for improvement evidence
 MATCH: time for some improvement mining
+MATCH: what should we improve
+MATCH: what could we improve in this repo
+MATCH: what's worth fixing next
+MATCH: what is worth improving here
+MATCH: find improvement opportunities
+MATCH: give me improvement proposals
+MATCH: sweep the repo for improvements
+MATCH: scan the codebase for improvements
 
 NO_MATCH: how did the experiment perform last week
 NO_MATCH: review the cohort retention numbers
@@ -17,3 +34,25 @@ NO_MATCH: the dataset describes mineral improvements in soil samples
 NO_MATCH: what did we learn from the incident
 NO_MATCH: determine improvements to the onboarding flow
 NO_MATCH: examine for evidence of a race condition
+# Single-item triage and negations must NOT route to a repo-wide mining
+# workflow. "worth fixing/improving" is anchored behind "what" for exactly
+# these -- do not drop that anchor.
+NO_MATCH: is this bug worth fixing before the release
+NO_MATCH: that typo isn't worth fixing right now
+NO_MATCH: not worth fixing, just document it
+NO_MATCH: the flaky test is worth fixing
+NO_MATCH: is this worth improving or should we rewrite it
+NO_MATCH: how should we improve the retry logic
+# The "what" anchor spans are deliberately tight ({0,6} / {0,15}). [[ =~ ]] is
+# unanchored, so a "what" from an unrelated clause can otherwise bridge into a
+# later "is worth fixing". Widening either span reopens this.
+NO_MATCH: I know what he said is worth fixing
+# "scan/sweep/comb <anything> for improvement" is NOT repo mining. The verb
+# must name a repo-scope noun, and "proposal" must be plural (asking for a
+# set) rather than singular (authoring one). Loosening either reopens these.
+NO_MATCH: scan the diff for improvements to the error message
+NO_MATCH: scan the image for improvement in contrast
+NO_MATCH: sweep the logs for improvement in error rates
+NO_MATCH: comb through the PR for improvement suggestions
+NO_MATCH: write an improvement proposal for the API redesign
+NO_MATCH: the improvement proposal from marketing needs review
