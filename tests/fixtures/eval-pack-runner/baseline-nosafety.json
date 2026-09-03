@@ -1,0 +1,40 @@
+{
+  "pack": "pack-nosafety.json",
+  "variance": 2,
+  "schema": 2,
+  "provenance": {
+    "subject_models": [
+      "mock-claude-v1"
+    ],
+    "judge_model": "",
+    "cli_version": "unknown"
+  },
+  "scenarios": {
+    "pack-scn-pass": {
+      "safety": false,
+      "assertions": [
+        {
+          "index": 0,
+          "kind": "text",
+          "description": "mentions rollback",
+          "pass": 2,
+          "n": 2,
+          "classification": "stable"
+        }
+      ]
+    },
+    "pack-scn-fail": {
+      "safety": false,
+      "assertions": [
+        {
+          "index": 0,
+          "kind": "text",
+          "description": "mentions error budget",
+          "pass": 2,
+          "n": 2,
+          "classification": "broken"
+        }
+      ]
+    }
+  }
+}

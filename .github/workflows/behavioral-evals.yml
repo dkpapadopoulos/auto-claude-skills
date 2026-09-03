@@ -35,6 +35,10 @@ on:
         description: "Iterations per scenario"
         default: "3"
         required: false
+      update_baseline:
+        description: "Regenerate the committed baseline instead of comparing. Uploads the new baseline as an artifact for a human to commit; CI never writes to the repo."
+        type: boolean
+        default: false
 
 concurrency:
   group: behavioral-evals
@@ -49,6 +53,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
+      # Defaulted here with `|| 'false'` — the same pattern this workflow already
+      # relies on for `variance` on scheduled runs, where `github.event.inputs`
+      # is null. The `if:` conditions below then compare a real string instead of
+      # depending on null-property semantics; getting that wrong would silently
+      # stop the weekly report, which is the exact failure class this change exists
+      # to remove.
+      UPDATE_BASELINE: ${{ github.event.inputs.update_baseline || 'false' }}
       PACK: tests/fixtures/incident-analysis/evals/behavioral.json
       BASELINE: tests/baselines/incident-analysis-behavioral.baseline.json
       ISSUE_TITLE: "Behavioral eval regression: incident-analysis"
@@ -59,6 +70,26 @@ jobs:
       - name: Install pinned claude CLI
         run: npm install -g @anthropic-ai/claude-code@2.1.198
 
+      # Persistence filter (#94): a regression is reported only when the SAME
+      # assertion is degraded in two consecutive runs. Two real consecutive runs
+      # flagged 5 and 8 assertions sharing exactly one (~0.66 expected by chance),
+      # so a single week's flag is not evidence. Best-effort: if the previous
+      # artifacts are unavailable the runner simply reports as before.
+      - name: Fetch previous run's measured counts
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+          mkdir -p tests/prev
+          prev="$(gh run list --workflow behavioral-evals.yml --status success \
+                    --limit 10 --json databaseId -q '.[].databaseId' \
+                  | grep -v '^${{ github.run_id }}$' | head -1)" || prev=""
+          [ -n "$prev" ] || { echo "no previous successful run"; exit 0; }
+          echo "previous run: $prev"
+          gh run download "$prev" -n behavioral-eval-artifacts -D tests/prev || true
+          ls -la tests/prev || true
+
       - name: Run eval pack
         id: pack
         env:
@@ -67,15 +98,30 @@ jobs:
           EVAL_CI_SANDBOX: "1"
           JUDGE_MODEL: claude-sonnet-5
           VARIANCE: ${{ github.event.inputs.variance || '3' }}
+          UPDATE_BASELINE_INPUT: ${{ env.UPDATE_BASELINE }}
         run: |
           set -o pipefail
           mkdir -p tests/artifacts
           rc=0
+          # --previous only when last week's counts actually came down.
+          # Re-baselining is the ONLY safe way to move to schema 2 with correct
+          # provenance: it must happen in the environment that owns the baseline
+          # (this one), never on a developer laptop, where a local CLI build and
+          # possibly a different resolved model would be written in and the next
+          # scheduled run would then mismatch against its own baseline and skip
+          # regression detection silently.
+          if [ "${UPDATE_BASELINE_INPUT}" = "true" ]; then
+            set -- --update-baseline
+          elif [ -f tests/prev/pack-measured.json ]; then
+            set -- --previous tests/prev/pack-measured.json
+          else
+            set --
+          fi
           bash tests/run-eval-pack.sh \
             --pack "$PACK" --baseline "$BASELINE" \
             --variance "$VARIANCE" --model claude-sonnet-5 \
             --report tests/artifacts/pack-report.md \
-            --artifacts-dir tests/artifacts/iterations || rc=$?
+            --artifacts-dir tests/artifacts/iterations "$@" || rc=$?
           echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
           cat tests/artifacts/pack-report.md >> "$GITHUB_STEP_SUMMARY" || true
           # rc 0 = clean, rc 1 = regression/safety-fail (handled downstream by
@@ -93,7 +139,16 @@ jobs:
           path: tests/artifacts/
           retention-days: 30
 
+      - name: Upload regenerated baseline (re-baseline runs only)
+        if: ${{ env.UPDATE_BASELINE == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: regenerated-baseline
+          path: ${{ env.BASELINE }}
+          retention-days: 30
+
       - name: Update tracking issue
+        if: ${{ env.UPDATE_BASELINE != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RC: ${{ steps.pack.outputs.exit_code }}
@@ -115,6 +170,32 @@ jobs:
               gh issue create --title "$ISSUE_TITLE" --body-file /tmp/issue-body.md
             fi
           elif [ "$RC" = "0" ] && [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "Clean run: $RUN_URL — closing."
-            gh issue close "$existing"
+            # A run can exit 0 while still carrying "watch" rows: an assertion
+            # degraded once is deliberately NOT reported as a regression until a
+            # second consecutive run confirms it. Closing here would announce
+            # "Clean run" over an ongoing, unconfirmed degradation — and a real
+            # regression whose weekly draw happens to look fine can otherwise
+            # flap between watch and closed-as-clean indefinitely, with no issue
+            # ever saying "still watching". Only a run with NO watch rows closes.
+            # Branch on the runner's machine-readable status, never on report
+            # prose. "clean" is the ONLY state that may close: a "watching" run
+            # has an unconfirmed degradation, and a "recalibration" run declined
+            # to compare at all — closing either announces an all-clear nobody
+            # measured. An unreadable status is treated as not-clean.
+            status="$(cat tests/artifacts/pack-status.txt 2>/dev/null || echo unknown)"
+            case "$status" in
+              clean)
+                gh issue comment "$existing" --body "Clean run: $RUN_URL — closing."
+                gh issue close "$existing"
+                ;;
+              watching)
+                gh issue comment "$existing" --body "No confirmed regression, but one or more assertions degraded once and are awaiting confirmation next run. Not closing: $RUN_URL"
+                ;;
+              recalibration)
+                gh issue comment "$existing" --body "Comparison SKIPPED this run: the run's provenance (model / CLI) differs from the baseline's, so no regression check was performed. Not closing: $RUN_URL"
+                ;;
+              *)
+                gh issue comment "$existing" --body "Run finished with status '$status'; not closing: $RUN_URL"
+                ;;
+            esac
           fi

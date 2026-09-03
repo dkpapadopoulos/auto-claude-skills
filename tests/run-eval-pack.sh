@@ -23,6 +23,9 @@ Options:
   --report <path>      markdown report output (default:
                        tests/artifacts/pack-report-<utc>.md)
   --model <name>       forwarded to run-behavioral-evals.sh --model
+  --previous <path>    previous run's pack-measured.json. A degradation is
+                       reported only if the SAME assertion was also degraded
+                       there; without it, a single run reports as before.
   --artifacts-dir <path>  persist per-iteration artifacts here (default: run-temp, deleted on exit)
                        (must not already contain .json files)
   --update-baseline    write measured classifications to --baseline and exit 0
@@ -41,7 +44,7 @@ if [ "${BEHAVIORAL_EVALS:-0}" != "1" ]; then
     exit 2
 fi
 
-PACK=""; VARIANCE=3; BASELINE=""; REPORT=""; MODEL=""; ARTIFACTS_OUT=""; UPDATE_BASELINE=0
+PACK=""; VARIANCE=3; BASELINE=""; REPORT=""; MODEL=""; ARTIFACTS_OUT=""; UPDATE_BASELINE=0; PREVIOUS=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --pack) PACK="${2:-}"; shift 2 ;;
@@ -50,6 +53,7 @@ while [ $# -gt 0 ]; do
         --report) REPORT="${2:-}"; shift 2 ;;
         --model) MODEL="${2:-}"; shift 2 ;;
         --artifacts-dir) ARTIFACTS_OUT="${2:-}"; shift 2 ;;
+        --previous) PREVIOUS="${2:-}"; shift 2 ;;
         --update-baseline) UPDATE_BASELINE=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "error: unknown argument: $1" >&2; usage; exit 2 ;;
@@ -72,6 +76,13 @@ pack_dir="$(basename "$(dirname "$(dirname "${PACK}")")")"
 [ -z "${BASELINE}" ] && BASELINE="tests/baselines/${pack_dir}-${pack_base}.baseline.json"
 utc_now="$(date -u +%Y%m%dT%H%M%SZ)"
 [ -z "${REPORT}" ] && REPORT="tests/artifacts/pack-report-${utc_now}.md"
+# Reset the status the moment the path is known, BEFORE any guard can exit. The
+# workflow reads this file to decide whether to close the tracking issue, so a
+# value left over from a previous run in the same directory would be read as this
+# run's verdict — a stale "clean" would close an issue on a run that evaluated
+# nothing. "unknown" is not a closing state.
+mkdir -p "$(dirname "${REPORT}")" 2>/dev/null || true
+printf 'unknown\n' > "$(dirname "${REPORT}")/pack-status.txt" 2>/dev/null || true
 
 if [ "${UPDATE_BASELINE}" -eq 0 ] && [ ! -f "${BASELINE}" ]; then
     echo "error: baseline not found: ${BASELINE} — generate one with --update-baseline" >&2
@@ -94,6 +105,22 @@ if [ -f "${BASELINE}" ]; then
     if [ -n "${missing}" ]; then
         echo "error: baseline scenario(s) missing from pack (never-delete guard): ${missing}" >&2
         echo "deprecate explicitly: update the baseline with --update-baseline in the same change" >&2
+        exit 2
+    fi
+fi
+
+# --previous must be usable or the run must fail loudly. An unreadable
+# corroborator otherwise demotes every regression to "watch": the exit code never
+# reaches 1, the tracking-issue step never posts, and a real sustained regression
+# is silently never reported. --baseline already exits 2 on corruption ("no
+# silent 'new' classification"); this is the same contract for the same reason.
+if [ -n "${PREVIOUS}" ]; then
+    if [ ! -f "${PREVIOUS}" ]; then
+        echo "error: --previous '${PREVIOUS}' does not exist" >&2
+        exit 2
+    fi
+    if ! jq -e . "${PREVIOUS}" >/dev/null 2>&1; then
+        echo "error: --previous '${PREVIOUS}' is not valid JSON" >&2
         exit 2
     fi
 fi
@@ -142,6 +169,29 @@ jq -s '
     }) | from_entries
 ' "${ARTIFACTS_DIR}"/*.json > "${MEASURED}" 2>/dev/null
 
+# Run provenance (schema 2). `model` in an artifact is `keys[0]` of modelUsage,
+# which is ALPHABETICAL — so it names whichever model sorts first, not the one
+# that did the work. Union `models_all` (added alongside it) so a comparison can
+# tell "the code changed" from "the model changed"; the latter is the confound a
+# larger sample size cannot fix. See docs/plans/2026-09-03-eval-instrument-design.md.
+SUBJECT_MODELS="$(jq -s -c '[ .[] | ((.models_all // []) + (if (.model // "") == "" then [] else [.model] end)) ] | (add // []) | unique' "${ARTIFACTS_DIR}"/*.json 2>/dev/null)"
+[ -n "${SUBJECT_MODELS}" ] || SUBJECT_MODELS='[]'
+# stdin MUST be redirected: a mock/real CLI that reads stdin would otherwise
+# block forever here (tests/test-suite-stdin-guard.sh documents this class).
+CLI_VERSION="$("${CLAUDE_BIN:-claude}" --version </dev/null 2>/dev/null | head -1)"
+# A binary that does not implement --version prints something else entirely (the
+# mock prints its normal JSON, so `head -1` yielded "{"). Accept the string only
+# if it actually contains a dotted version; otherwise record "unknown". Garbage
+# here is worse than absence: it would either manufacture provenance mismatches
+# or, if stably wrong, mask a real one.
+case "${CLI_VERSION}" in
+    *[0-9].[0-9]*) : ;;
+    *) CLI_VERSION="unknown" ;;
+esac
+PROVENANCE_JSON="$(jq -n --argjson sm "${SUBJECT_MODELS}" --arg jm "${JUDGE_MODEL:-}" --arg cv "${CLI_VERSION}" \
+    '{subject_models: $sm, judge_model: $jm, cli_version: $cv}' 2>/dev/null)"
+[ -n "${PROVENANCE_JSON}" ] || PROVENANCE_JSON='{"subject_models":[],"judge_model":"","cli_version":"unknown"}'
+
 # Pack-vs-measured coverage guard: every scenario in the pack must have made
 # it into MEASURED with its full assertion count. A gap here (artifacts
 # absent/unreadable/mis-globbed) would silently degrade the safety hard-gate
@@ -156,17 +206,83 @@ for sid in ${scenario_ids}; do
     fi
 done
 
+ci95() { # $1 pass_count, $2 n -> "<lower> <upper>", Clopper-Pearson exact 95%
+    # Reported so a small-n rate cannot masquerade as a measurement: 2/3 is
+    # [0.09, 0.99], i.e. almost the whole unit interval. Exact (not Wilson):
+    # Wilson is anti-conservative at these n. Bisection on the binomial CDF —
+    # no lgamma, which POSIX/macOS awk does not provide.
+    awk -v k="$1" -v n="$2" '
+    function nCr(a, b,   i, c) { c = 1; for (i = 0; i < b; i++) c = c * (a - i) / (i + 1); return c }
+    function cdf_ge(kk, nn, p,   i, s) { s = 0; for (i = kk; i <= nn; i++) s += nCr(nn, i) * (p^i) * ((1-p)^(nn-i)); return s }
+    function cdf_le(kk, nn, p,   i, s) { s = 0; for (i = 0; i <= kk; i++) s += nCr(nn, i) * (p^i) * ((1-p)^(nn-i)); return s }
+    BEGIN {
+        if (n <= 0) { printf "0.00 1.00\n"; exit }
+        # nCr(n, n/2) overflows an IEEE double before p^i*(1-p)^(n-i) scales it
+        # back down, and the result is silently WRONG rather than an error
+        # (measured: n=1500 k=750 returned [0.00, 0.50] against a true
+        # [0.47, 0.53]). Unreachable today - variance is 3, and raising it is
+        # deferred by the 45-minute sequential-loop timeout - but refuse rather
+        # than lie if that ever changes. Lift only with a log-space rewrite.
+        if (n > 1000) { printf "na na\n"; exit }
+        t = 0.025
+        if (k == 0) { lo = 0 } else {
+            a = 0; b = k/n
+            for (j = 0; j < 200; j++) { m = (a+b)/2; if (cdf_ge(k, n, m) < t) a = m; else b = m }
+            lo = (a+b)/2
+        }
+        if (k == n) { hi = 1 } else {
+            a = k/n; b = 1
+            for (j = 0; j < 200; j++) { m = (a+b)/2; if (cdf_le(k, n, m) > t) a = m; else b = m }
+            hi = (a+b)/2
+        }
+        printf "%.2f %.2f\n", lo, hi
+    }'
+}
 classify() { # $1 pass_count, $2 n
+    # Compare the RATE, never a truncated count. `int(n*0.9)` silently redefines
+    # the documented ">=90%" bar at small n: at n=3 it is 2, so 2/3 (67%) read
+    # "stable", and at n=2 it is 1, so 1/2 (50%) read "stable" too. Integer
+    # arithmetic only (Bash 3.2 has no floats, and awk is used for the same
+    # comparison in run-behavioral-evals.sh — keep the two identical).
     awk -v p="$1" -v n="$2" 'BEGIN {
-        if (p >= int(n*0.9)) print "stable";
-        else if (p >= int(n*0.5)) print "flaky";
+        if (n <= 0) { print "broken"; exit }
+        if (p*100 >= n*90) print "stable";
+        else if (p*100 >= n*50) print "flaky";
         else print "broken";
     }'
 }
+# Provenance gate (schema 2). A baseline diff answers "did the measured behaviour
+# change"; it is read as "did OUR code regress". Those coincide ONLY while the
+# thing doing the measuring is held fixed. `claude-sonnet-5` is a floating alias
+# for both subject and judge, so an alias revision would otherwise produce a
+# large, stable, well-replicated "regression" every week forever — and unlike
+# sampling noise, a bigger sample size makes that MORE confident, not less.
+# So on a mismatch the diff does not run at all; it is not a warning.
+# A v1 baseline declares no provenance and therefore never mismatches.
+PROVENANCE_MISMATCH=0
+BASE_PROVENANCE="$(jq -c '.provenance // empty' "${BASELINE}" 2>/dev/null)" || BASE_PROVENANCE=""
+if [ -n "${BASE_PROVENANCE}" ]; then   # `.provenance // empty` already yields "" for null
+    _now_prov="$(printf '%s' "${PROVENANCE_JSON}" | jq -cS '.' 2>/dev/null)"
+    _base_prov="$(printf '%s' "${BASE_PROVENANCE}" | jq -cS '.' 2>/dev/null)"
+    if [ -n "${_now_prov}" ] && [ -n "${_base_prov}" ] && [ "${_now_prov}" != "${_base_prov}" ]; then
+        PROVENANCE_MISMATCH=1
+    fi
+fi
+
+# Persist the measured counts next to the report so the NEXT run can apply the
+# persistence filter. Deliberately not inside ARTIFACTS_DIR: that directory is
+# globbed as */*.json during aggregation and is guarded against pre-existing
+# .json files, so a measured.json there would corrupt the following run.
+if [ -n "${REPORT}" ]; then
+    mkdir -p "$(dirname "${REPORT}")" 2>/dev/null || true
+    cp "${MEASURED}" "$(dirname "${REPORT}")/pack-measured.json" 2>/dev/null || true
+fi
+
 rank() { case "$1" in stable) echo 2 ;; flaky) echo 1 ;; *) echo 0 ;; esac }
 
 REGRESSIONS="${RUN_DIR}/regressions.txt"; : > "${REGRESSIONS}"
 SAFETY_FAILS="${RUN_DIR}/safety.txt";    : > "${SAFETY_FAILS}"
+WATCHES="${RUN_DIR}/watches.txt";        : > "${WATCHES}"
 ROWS="${RUN_DIR}/rows.txt";              : > "${ROWS}"
 
 for sid in ${scenario_ids}; do
@@ -183,15 +299,63 @@ for sid in ${scenario_ids}; do
         f="$(printf '%s' "${row}" | cut -f5)"
         n=$((p + f))
         cls="$(classify "${p}" "${n}")"
-        base_cls="$(jq -r --arg sid "${sid}" --argjson i "${idx}" \
-            '.scenarios[$sid].assertions[] | select(.index == $i) | .classification' \
+        # Prefer the baseline's COUNTS over its stored label. The label was
+        # produced by a second copy of the classification rule at write time;
+        # recomputing here makes classify() the single authority, so the two can
+        # never disagree again (they did: a 17/19 baseline stored "stable" while
+        # the compare path computed "flaky"). Schema 1 baselines carry no counts,
+        # so they fall back to the stored label exactly as before.
+        base_row="$(jq -r --arg sid "${sid}" --argjson i "${idx}" \
+            '.scenarios[$sid].assertions[] | select(.index == $i)
+             | [((.pass // "")|tostring), ((.n // "")|tostring), (.classification // "")] | @tsv' \
             "${BASELINE}" 2>/dev/null || echo "")"
+        base_cls="$(printf '%s' "${base_row}" | cut -f3)"
+        _bp="$(printf '%s' "${base_row}" | cut -f1)"
+        _bn="$(printf '%s' "${base_row}" | cut -f2)"
+        # Both fields must be present AND all-digits AND n>0 before the counts
+        # are trusted; anything else keeps the stored label. A v1 baseline yields
+        # empty strings here, which must NOT be fed to classify() (it would
+        # return "broken" for every assertion and manufacture regressions).
+        _use_counts=1
+        [ -n "${_bp}" ] && [ -n "${_bn}" ] || _use_counts=0
+        case "${_bp}" in *[!0-9]*) _use_counts=0 ;; esac
+        case "${_bn}" in *[!0-9]*) _use_counts=0 ;; esac
+        [ "${_use_counts}" -eq 1 ] && [ "${_bn}" -gt 0 ] 2>/dev/null || _use_counts=0
+        [ "${_use_counts}" -eq 1 ] && base_cls="$(classify "${_bp}" "${_bn}")"
         delta="unchanged"
         if [ -z "${base_cls}" ] || [ "${base_cls}" = "null" ]; then
             delta="new"
+        elif [ "${PROVENANCE_MISMATCH}" -eq 1 ]; then
+            delta="not-compared"
         elif [ "$(rank "${cls}")" -lt "$(rank "${base_cls}")" ]; then
-            delta="REGRESSED"
-            printf '%s\t%s\t%s\t%s\t%s\n' "${sid}" "${idx}" "${desc}" "${base_cls}" "${cls}" >> "${REGRESSIONS}"
+            # Persistence filter. A single week's degradation is not evidence: at the
+            # production variance the class boundary is a one-sample flip, and two
+            # consecutive real runs shared exactly one of 5 and 8 flagged assertions
+            # (~0.66 expected by chance). Require the SAME assertion to be degraded in
+            # the previous run before reporting. With no --previous, behaviour is
+            # unchanged, so local runs and the first CI run after this lands still work.
+            _persisted=1
+            if [ -n "${PREVIOUS}" ]; then
+                _prev_row="$(jq -r --arg sid "${sid}" --argjson i "${idx}" \
+                    '.[$sid].assertions[]? | select(.index == $i) | [.pass, .fail] | @tsv' \
+                    "${PREVIOUS}" 2>/dev/null)" || _prev_row=""
+                if [ -z "${_prev_row}" ]; then
+                    _persisted=0   # not measured last run => no corroboration
+                else
+                    _pp="$(printf '%s' "${_prev_row}" | cut -f1)"
+                    _pf="$(printf '%s' "${_prev_row}" | cut -f2)"
+                    _pn=$((_pp + _pf))
+                    _prev_cls="$(classify "${_pp}" "${_pn}")"
+                    [ "$(rank "${_prev_cls}")" -lt "$(rank "${base_cls}")" ] || _persisted=0
+                fi
+            fi
+            if [ "${_persisted}" -eq 1 ]; then
+                delta="REGRESSED"
+                printf '%s\t%s\t%s\t%s\t%s\n' "${sid}" "${idx}" "${desc}" "${base_cls}" "${cls}" >> "${REGRESSIONS}"
+            else
+                delta="watch"
+                printf '%s\t%s\t%s\t%s\t%s\n' "${sid}" "${idx}" "${desc}" "${base_cls}" "${cls}" >> "${WATCHES}"
+            fi
         fi
         if [ "${safety}" = "true" ] && [ "${f}" -gt 0 ]; then
             gated="$(jq -r --arg sid "${sid}" --argjson i "${idx}" \
@@ -200,8 +364,12 @@ for sid in ${scenario_ids}; do
                 printf '%s\t%s\t%s\t%s\n' "${sid}" "${idx}" "${desc}" "${f}/${n} iterations failed" >> "${SAFETY_FAILS}"
             fi
         fi
-        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-            "${sid}" "${idx}" "${kind}" "${desc}" "${p}/${n}" "${cls}" "${base_cls:-—}" "${delta}" >> "${ROWS}"
+        _ci="$(ci95 "${p}" "${n}")"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "${sid}" "${idx}" "${kind}" "${desc}" "${p}/${n}" \
+            "$(if [ "${_ci}" = "na na" ]; then printf 'n/a'; else printf '[%s, %s]' \
+                "$(printf '%s' "${_ci}" | cut -d' ' -f1)" "$(printf '%s' "${_ci}" | cut -d' ' -f2)"; fi)" \
+            "${cls}" "${base_cls:-—}" "${delta}" >> "${ROWS}"
         i=$((i + 1))
     done
 done
@@ -214,11 +382,41 @@ mkdir -p "$(dirname "${REPORT}")"
     echo ""
     echo "**Pack:** \`${PACK}\`  **Variance:** ${VARIANCE}  **Captured:** $(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo ""
-    echo "| Scenario | # | Kind | Assertion | Pass | Class | Baseline | Delta |"
-    echo "|---|---|---|---|---|---|---|---|"
-    while IFS=$'\t' read -r sid idx kind desc rate cls base delta; do
-        printf '| %s | %s | %s | %s | %s | %s | %s | %s |\n' \
-            "${sid}" "${idx}" "${kind}" "${desc//|/\\|}" "${rate}" "${cls}" "${base}" "${delta}"
+    if [ "${PROVENANCE_MISMATCH}" -eq 1 ]; then
+        echo "## RECALIBRATION EVENT — comparison skipped"
+        echo ""
+        echo "This run's provenance differs from the baseline's, so no regression"
+        echo "comparison was performed. A difference measured across a model or CLI"
+        echo "change says nothing about whether this repo's behaviour changed."
+        echo ""
+        echo "| | baseline | this run |"
+        echo "|---|---|---|"
+        printf '| subject models | %s | %s |\n' \
+            "$(printf '%s' "${BASE_PROVENANCE}" | jq -r '(.subject_models // []) | join(", ")')" \
+            "$(printf '%s' "${PROVENANCE_JSON}" | jq -r '(.subject_models // []) | join(", ")')"
+        printf '| judge model | %s | %s |\n' \
+            "$(printf '%s' "${BASE_PROVENANCE}" | jq -r '.judge_model // ""')" \
+            "$(printf '%s' "${PROVENANCE_JSON}" | jq -r '.judge_model // ""')"
+        printf '| cli version | %s | %s |\n' \
+            "$(printf '%s' "${BASE_PROVENANCE}" | jq -r '.cli_version // ""')" \
+            "$(printf '%s' "${PROVENANCE_JSON}" | jq -r '.cli_version // ""')"
+        echo ""
+        echo "**Do not re-baseline to silence this.** A local run legitimately"
+        echo "differs from CI (different CLI build, possibly a different resolved"
+        echo "model), so seeing this locally is expected and is not a defect."
+        echo ""
+        echo "Running \`--update-baseline\` against the COMMITTED baseline path from a"
+        echo "local machine overwrites CI provenance with your own; the next scheduled"
+        echo "run would then mismatch against its own baseline and skip regression"
+        echo "detection silently. Re-baseline only from the environment that owns the"
+        echo "baseline, and only when the new provenance is intended."
+        echo ""
+    fi
+    echo "| Scenario | # | Kind | Assertion | Pass | 95% CI | Class | Baseline | Delta |"
+    echo "|---|---|---|---|---|---|---|---|---|"
+    while IFS=$'\t' read -r sid idx kind desc rate ci cls base delta; do
+        printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
+            "${sid}" "${idx}" "${kind}" "${desc//|/\\|}" "${rate}" "${ci}" "${cls}" "${base}" "${delta}"
     done < "${ROWS}"
     echo ""
     if [ -s "${SAFETY_FAILS}" ]; then
@@ -237,6 +435,23 @@ mkdir -p "$(dirname "${REPORT}")"
         done < "${REGRESSIONS}"
         echo ""
     fi
+    if [ -s "${WATCHES}" ]; then
+        # Degraded once, not yet corroborated. Emitted as its own section because
+        # the run exits 0 and the tracking-issue step closes the issue on exit 0 —
+        # without a distinct signal, a real ongoing regression's first week would
+        # be announced as "Clean run - closing" while still degraded. The workflow
+        # greps for this heading before closing anything.
+        echo "## Watching (degraded once, not yet confirmed)"
+        echo ""
+        echo "Not reported as regressions: one run at this variance cannot separate"
+        echo "a real change from sampling noise. Confirmed only if the same"
+        echo "assertion is still degraded next run."
+        echo ""
+        while IFS=$'\t' read -r sid idx desc base cls; do
+            echo "- \`${sid}\` assertion ${idx} (${desc}): ${base} -> ${cls}"
+        done < "${WATCHES}"
+        echo ""
+    fi
 } > "${REPORT}"
 echo "report: ${REPORT}"
 
@@ -248,16 +463,30 @@ if [ "${UPDATE_BASELINE}" -eq 1 ]; then
         echo "  \"pack\": \"$(basename "${PACK}")\","
         echo "  \"variance\": ${VARIANCE},"
         echo "  \"generated_utc\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
+        echo "  \"schema\": 2,"
+        echo "  \"provenance\": ${PROVENANCE_JSON},"
         echo '  "scenarios":'
         jq -n --slurpfile m "${MEASURED}" --slurpfile pack "${PACK}" '
             $m[0] | with_entries(.key as $sid | .value = {
                 safety: ([$pack[0][] | select(.id == $sid)] | (.[0].safety // false)),
                 assertions: [.value.assertions[] | {
                     index, kind, description,
+                    pass: .pass,
+                    n: (.pass + .fail),
+                    # MUST stay identical to classify() above. This copy is
+                    # why the truncated-count bug survived the fix that removed
+                    # it from classify(): a baseline written here stored
+                    # "stable" for 17/19 (89%) while the compare path called the
+                    # same measurement "flaky", manufacturing a permanent
+                    # REGRESSED for a rate that never moved. The compare path now
+                    # recomputes from the stored counts, so a future divergence
+                    # here is cosmetic rather than load-bearing — but it is still
+                    # read by humans inspecting the baseline, so keep it correct.
                     classification: (
                         (.pass + .fail) as $n
-                        | if .pass >= ($n * 0.9 | floor) then "stable"
-                          elif .pass >= ($n * 0.5 | floor) then "flaky"
+                        | if ($n <= 0) then "broken"
+                          elif (.pass * 100) >= ($n * 90) then "stable"
+                          elif (.pass * 100) >= ($n * 50) then "flaky"
                           else "broken" end)
                 }]
             })'
@@ -272,6 +501,25 @@ fi
 # to normal (non-update) runs — a safety failure can never be "fixed" simply
 # by re-baselining in the same invocation; it must be re-run without
 # --update-baseline to observe the hard gate.
+# Machine-readable run status, written as DATA next to the report. The
+# tracking-issue step must branch on the run's state, and it previously did that
+# by grepping the report for a heading — which silently missed the recalibration
+# path (every delta is "not-compared", so no watch rows are emitted) and closed
+# the issue announcing "Clean run" over a comparison the guard had explicitly
+# declined to perform. A heading is prose; this is an interface.
+# Precedence is deliberate: safety outranks everything, a confirmed regression
+# outranks an un-evaluated comparison, and "clean" is the only state that may
+# close a tracking issue.
+_STATUS="clean"
+if [ -s "${SAFETY_FAILS}" ]; then _STATUS="safety"
+elif [ -s "${REGRESSIONS}" ]; then _STATUS="regressed"
+elif [ "${PROVENANCE_MISMATCH}" -eq 1 ]; then _STATUS="recalibration"
+elif [ -s "${WATCHES}" ]; then _STATUS="watching"
+fi
+if [ -n "${REPORT}" ]; then
+    printf '%s\n' "${_STATUS}" > "$(dirname "${REPORT}")/pack-status.txt" 2>/dev/null || true
+fi
+
 if [ "${UPDATE_BASELINE}" -eq 1 ]; then exit 0; fi
 if [ -s "${SAFETY_FAILS}" ]; then exit 1; fi
 if [ -s "${REGRESSIONS}" ]; then exit 1; fi

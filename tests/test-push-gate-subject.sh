@@ -151,19 +151,127 @@ assert_contains "unresolvable pushed ref is named" "does not resolve to any comm
 
 # ================= A subject that is not one commit is named ================
 # "No ref resolved" is ambiguous: a bare push really is HEAD, but a deletion
-# carries no content and a multi-ref push carries several. Both fall through to
-# HEAD, so the ambiguity is announced rather than silently measured. It is NOT
-# acted on — the predicate fires if ANY push segment is partial, so suppressing
-# a gate on it would let a deletion excuse a real push in the same command.
+# carries no content and a multi-ref push carries several. #229 settles the two
+# halves DIFFERENTLY, so they must no longer share one message: a deletion is
+# acted on (the content legs are skipped, cells 13-17 below) while a multi-ref
+# push keeps measuring HEAD and says it may under-measure. A single shared note
+# for both is what made the deletion false-block invisible.
 mkart "$(clean_at "${MINE}")"
 out="$(run "${RR}" "git push --delete origin mine")"
-assert_contains "a deletion is named as not-one-commit" "no single commit is its subject" "${out:-<empty>}"
+assert_contains "a deletion is named as shipping no content" "ships no content" "${out:-<empty>}"
 out="$(run "${RR}" "git push --all origin")"
 assert_contains "a multi-ref push is named as not-one-commit" "no single commit is its subject" "${out:-<empty>}"
 # ...and the note must NOT fire on an ordinary single-ref push, or it is noise.
 out="$(run "${RR}" "git -C ${WT} push origin mine")"
 assert_not_contains "an ordinary push is not called partial" "no single commit is its subject" "${out:-}"
+assert_not_contains "an ordinary push is not called a deletion" "ships no content" "${out:-}"
 
+
+# ================= Deletion-only pushes skip the content legs (#229) ========
+# A command whose EVERY push segment deletes a ref ships no content, so the
+# content-dependent legs have no subject: measuring them at this checkout's HEAD
+# answers a question about a commit the command does not send. Each flip below
+# is paired with a control that MUST keep denying, so a fix that merely stopped
+# denying cannot pass.
+mkart "$(clean_at "${MINE}")"   # covers MY worktree, NOT the shared routing HEAD
+
+# (13) Control first: from the shared checkout (parked on a routing branch with
+#      no covering verdict) an ordinary push of that branch DENIES.
+out="$(run "${RR}" "git push origin other")"
+assert_contains     "control: ordinary push of the routing branch denies" '"deny"' "${out:-<empty>}"
+#      ...and the same ref as a DELETION ships nothing, so it must not.
+out="$(run "${RR}" "git push --delete origin other")"
+assert_not_contains "deletion-only push => routing governance does not fire" '"deny"' "${out:-}"
+assert_contains     "deletion-only push says it ships no content" "ships no content" "${out:-<empty>}"
+
+# (14) THE controls the ALL-form exists for: a deletion must never excuse a real
+#      push in the same command. Both of these still deny.
+out="$(run "${RR}" "git push --delete origin mine; git push origin other")"
+assert_contains "deletion followed by a real push => still deny" '"deny"' "${out:-<empty>}"
+# Note the real push must name a branch that ACTUALLY carries routing changes:
+# with `main` here the cell passed for the wrong reason — `main` equals the
+# mainline base, so its diff is empty and nothing would have denied even without
+# the deletion. A control that cannot deny proves nothing about the skip.
+out="$(run "${RR}" "git push origin other && git push --delete origin mine")"
+assert_contains "real push followed by a deletion => still deny" '"deny"' "${out:-<empty>}"
+out="$(run "${RR}" "git push origin :mine other")"
+assert_contains "deletion mixed with a live refspec => still deny" '"deny"' "${out:-<empty>}"
+
+# (14b) THE regression this predicate's segment whitelist exists for, and it is
+#       not a syntax trick: a git ALIAS reports its own word from
+#       `_gc_segment_git_sub`, never `push`, so the second segment is invisible
+#       to every precise predicate here — while still pushing real content.
+#       Measured before the fix: this ALLOWED, with the guard announcing "ships
+#       no content", on a branch whose routing change had no covering verdict.
+#       Everywhere else in this lib the string-detection ceiling degrades to
+#       "measure HEAD" (safe); certifying deletion-only made it degrade to
+#       "skip the gate", which is why this one had to be closed rather than
+#       documented. An alias in ~/.gitconfig works the same way — nothing about
+#       this needs the inline `-c` form.
+out="$(run "${RR}" "git push --delete origin mine && git -c alias.p=push p origin other")"
+assert_contains "alias-hidden push in a deletion command => still deny" '"deny"' "${out:-<empty>}"
+assert_not_contains "...and the gate does not claim it ships no content" "ships no content" "${out:-}"
+# Same shape with an opaque segment rather than an alias — the subcommand is not
+# the discriminator, "can we account for this segment at all" is.
+out="$(run "${RR}" "git push --delete origin mine && ./deploy.sh")"
+assert_contains "opaque segment in a deletion command => still deny" '"deny"' "${out:-<empty>}"
+# (14c) A command substitution runs wherever it appears — including inside the
+#       arguments of the recognised deletion itself, which is why the guard for
+#       it is whole-command rather than scoped to the segment whitelist.
+out="$(run "${RR}" "git push --delete origin mine && cd \$(git push origin other)")"
+assert_contains "substitution in a deletion command => still deny" '"deny"' "${out:-<empty>}"
+# (14d) And an UNTRUSTWORTHY PARSE cannot certify. `\\'` is a literal quote to
+#       real bash but toggles quote mode in this scanner, merging a genuine `;`
+#       and a real push into one segment whose first word is `cd`. It contains
+#       no substitution syntax at all, so it evades the guard above; the
+#       scanner's own `_GC_UNBALANCED` is what catches it.
+out="$(run "${RR}" "git push --delete origin mine; cd \\'; git push origin other")"
+assert_contains "unbalanced parse in a deletion command => still deny" '"deny"' "${out:-<empty>}"
+assert_not_contains "...and it does not claim to ship no content" "ships no content" "${out:-}"
+# ...and the bounded cost is visible: a compound whose extra segment is inert
+# still certifies, so the whitelist has not simply disabled the fix.
+out="$(run "${RR}" "cd ${WT} && git push --delete origin mine")"
+assert_not_contains "cd + deletion still skips the content legs" '"deny"' "${out:-}"
+# PAIRED with a positive assertion on the same output. An assert_not_contains on
+# its own is satisfied by SILENCE — measured: replacing the guard with
+# `exit 0` left 13 of 40 cells passing, and this was one of them.
+assert_contains     "...and says so, rather than passing by silence" "ships no content" "${out:-<empty>}"
+
+# (15) Multi-ref is deliberately NOT narrowed (#229 records the decision):
+#      it keeps measuring HEAD, and now says that it may under-measure.
+out="$(run "${RR}" "git push --all origin")"
+assert_contains "--all still measured at HEAD => deny stands" '"deny"' "${out:-<empty>}"
+assert_contains "--all is announced as possibly under-measuring" "UNDER-measure" "${out:-<empty>}"
+# ...and it must NOT claim the deletion skip, or the two shapes are conflated
+# again — which is the conflation this issue exists to undo.
+assert_not_contains "--all does not claim the deletion skip" "ships no content" "${out:-}"
+
+# (16) verify-hardening is a content leg too: a FAILING verdict at the checkout
+#      HEAD is authoritative for that commit, which a deletion does not push.
+_HEADSHA="$(git -C "${RR}" rev-parse HEAD)"
+jq -nc --arg s "${_HEADSHA}" \
+  '{failed:["tests"],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' > "${ART}"
+out="$(run "${RR}" "git push origin other")"
+assert_contains     "control: failing verdict at HEAD denies an ordinary push" "failing gate" "${out:-<empty>}"
+out="$(run "${RR}" "git push --delete origin other")"
+assert_not_contains "failing verdict at HEAD does not deny a deletion" '"deny"' "${out:-}"
+# Paired positive, same reason as the cell above: silence must not pass.
+assert_contains     "...and the deletion note is present on that allow" "ships no content" "${out:-<empty>}"
+mkart "$(clean_at "${MINE}")"
+
+# (17) The deliberate BOUNDARY: the composition-chain gates are not content
+#      legs. Deleting a remote ref is still an outbound action, so REVIEW/VERIFY
+#      still apply to it — narrowing the subject must not become "a deletion is
+#      ungated".
+printf '%s' '{"chain":["requesting-code-review","verification-before-completion"],"current_index":0,"completed":[]}' > "${COMP}"
+out="$(run "${RR}" "git push --delete origin other")"
+assert_contains "a deletion still faces the REVIEW/VERIFY gates" '"deny"' "${out:-<empty>}"
+#      Assert WHICH gate denied, not merely that something did. Asserting only
+#      `"deny"` passed even when the deletion skip was wrongly widened to the
+#      REVIEW gate, because VERIFY then denied instead and the cell could not
+#      tell the difference — mutation-measured.
+assert_contains "...and it is the REVIEW gate that denies" "requesting-code-review has not run" "${out:-<empty>}"
+printf '%s' '{"chain":["requesting-code-review","verification-before-completion"],"current_index":2,"completed":["requesting-code-review","verification-before-completion"]}' > "${COMP}"
 # ================= The divergence is announced (#198) =================
 # (10) When the gate measured a tree other than the one it is running in, it
 #      says so — silence would make a subject swap indistinguishable from the

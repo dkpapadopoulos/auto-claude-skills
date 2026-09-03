@@ -1,0 +1,7 @@
+{
+  "pack-scn-fail": {
+    "assertions": [
+      { "index": 0, "kind": "text", "description": "mentions error budget", "pass": 2, "fail": 0 }
+    ]
+  }
+}
