@@ -521,4 +521,30 @@ if assert_not_equals_status; then _record_pass "early exit overwrites a stale st
 else _record_fail "early exit overwrites a stale status" "still reads 'clean'"; fi
 rm -rf "${STALE_DIR}"
 
+echo "-- the workflow is checked STRUCTURALLY, not just by grep (N-YAML) --"
+# Every other workflow assertion here is a text grep, so a file that still
+# contains the right substrings but no longer MEANS them passes. That is exactly
+# how a duplicate job-level `env:` shipped: YAML mapping construction is
+# last-key-wins, so the block holding UPDATE_BASELINE was silently discarded
+# while every grep kept passing and `ruby -ryaml` still reported "valid" —
+# duplicate keys are valid YAML. Validity is not semantics.
+WF3="${PROJECT_ROOT}/.github/workflows/behavioral-evals.yml"
+_job_env_blocks="$(grep -c '^    env:' "${WF3}")"
+assert_equals "job declares exactly one env: block" "1" "${_job_env_blocks}"
+
+# Parser-backed check where a YAML parser exists; skipped (not failed) otherwise,
+# so the suite stays hermetic on machines without one.
+if command -v ruby >/dev/null 2>&1 && ruby -ryaml -e '' >/dev/null 2>&1; then
+    _env_keys="$(ruby -ryaml -e '
+        e = YAML.load_file(ARGV[0])["jobs"]["run-pack"]["env"] || {}
+        print e.keys.sort.join(",")
+    ' "${WF3}" 2>/dev/null)"
+    assert_contains "parsed job env retains UPDATE_BASELINE" "UPDATE_BASELINE" "${_env_keys}"
+    assert_contains "parsed job env retains PACK" "PACK" "${_env_keys}"
+    assert_contains "parsed job env retains BASELINE" "BASELINE" "${_env_keys}"
+    assert_contains "parsed job env retains ISSUE_TITLE" "ISSUE_TITLE" "${_env_keys}"
+else
+    echo "  SKIP: no ruby YAML parser available for the structural workflow check"
+fi
+
 print_summary

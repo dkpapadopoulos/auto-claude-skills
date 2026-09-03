@@ -60,7 +60,6 @@ jobs:
       # stop the weekly report, which is the exact failure class this change exists
       # to remove.
       UPDATE_BASELINE: ${{ github.event.inputs.update_baseline || 'false' }}
-    env:
       PACK: tests/fixtures/incident-analysis/evals/behavioral.json
       BASELINE: tests/baselines/incident-analysis-behavioral.baseline.json
       ISSUE_TITLE: "Behavioral eval regression: incident-analysis"
