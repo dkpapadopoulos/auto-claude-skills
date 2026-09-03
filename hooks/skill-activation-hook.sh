@@ -982,19 +982,37 @@ _format_output() {
 
     # Log the zero-match prompt for diagnostics (rotate at 100 entries, cap at 50KB)
     _ZM_LOG="${HOME}/.claude/.skill-zero-match-log"
+    # Secure BEFORE the first content write: this log holds RAW PROMPT TEXT,
+    # the most sensitive of the local diagnostic corpora, and a pre-existing
+    # 0644 file would leak every record appended to it. Same shape as
+    # scripts/push-gate-capture.sh -- umask covers a fresh file, the explicit
+    # chmod fixes an already-loose one. The prompt is deliberately NOT hashed:
+    # seeing which prompts matched no trigger IS the diagnostic value.
+    ( umask 077; : >> "$_ZM_LOG" ) 2>/dev/null || true
+    chmod 0600 "$_ZM_LOG" 2>/dev/null || true
     # Truncate prompt to 200 chars to prevent unbounded log growth
     printf '%.200s\n' "$P" >> "$_ZM_LOG" 2>/dev/null || true
     if [[ -f "$_ZM_LOG" ]]; then
       # Rotate by line count
       _lc="$(wc -l < "$_ZM_LOG" 2>/dev/null | tr -d ' ')"
       if [[ "$_lc" =~ ^[0-9]+$ ]] && [[ "$_lc" -gt 100 ]]; then
-        tail -n 100 "$_ZM_LOG" > "${_ZM_LOG}.tmp" 2>/dev/null && mv "${_ZM_LOG}.tmp" "$_ZM_LOG" 2>/dev/null || true
+        ( umask 077; tail -n 100 "$_ZM_LOG" > "${_ZM_LOG}.tmp" ) 2>/dev/null && mv "${_ZM_LOG}.tmp" "$_ZM_LOG" 2>/dev/null || true
       fi
       # Rotate by byte size (50KB cap)
       _zm_size="$(wc -c < "$_ZM_LOG" 2>/dev/null | tr -d ' ')"
       if [[ "$_zm_size" =~ ^[0-9]+$ ]] && [[ "$_zm_size" -gt 51200 ]]; then
-        tail -n 50 "$_ZM_LOG" > "${_ZM_LOG}.tmp" 2>/dev/null && mv "${_ZM_LOG}.tmp" "$_ZM_LOG" 2>/dev/null || true
+        ( umask 077; tail -n 50 "$_ZM_LOG" > "${_ZM_LOG}.tmp" ) 2>/dev/null && mv "${_ZM_LOG}.tmp" "$_ZM_LOG" 2>/dev/null || true
       fi
+      # The .tmp holds the SAME raw prompt text as the log, so it is created
+      # under `umask 077` too -- otherwise it sits world-readable in the window
+      # between `tail >` and `mv`, which would defeat the point of securing the
+      # log at all. push-gate-capture.sh has this same gap; matching an
+      # existing gap is not a reason to keep one.
+      # Both rotations write a FRESH .tmp under the ambient umask and mv it
+      # over the log, so the mv carries the .tmp's mode across and undoes the
+      # write-path chmod above. Re-secure after rotating, or the log reverts
+      # to 0644 the first time it fills up.
+      chmod 0600 "$_ZM_LOG" 2>/dev/null || true
     fi
 
     # Zero-match: emit nothing (no additionalContext)
