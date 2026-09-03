@@ -28,7 +28,7 @@ assert_equals "schema_version is 3" "3" "${IMPLEMENT_SHADOW_SCHEMA_VERSION}"
 # the session cwd — that changes WHEN the leg fires, so v2 records are no longer
 # poolable. Bumping this pin without bumping the constant, or vice versa, is the
 # mistake it exists to catch.
-assert_equals "predicate_version is 3 (#219 push subject)" "3" \
+assert_equals "predicate_version is 4 (#229 deletion subject)" "4" \
     "${IMPLEMENT_SHADOW_PREDICATE_VERSION}"
 
 implement_shadow_record push "${PROJECT_ROOT}" tok /tmp/t.jsonl none branch-local true
@@ -74,7 +74,7 @@ assert_equals "missing is distinguishable from cannot_check" "missing" \
     "$(jq -r '.impl_evidence_detail.ledger' "${IMPLEMENT_SHADOW_LOG}")"
 assert_equals "schema_version on a detailed record is 3" "3" \
     "$(jq -r '.schema_version' "${IMPLEMENT_SHADOW_LOG}")"
-assert_equals "predicate_version is 3 so v2 records are NOT pooled" "3" \
+assert_equals "predicate_version is 4 so v3 records are NOT pooled" "4" \
     "$(jq -r '.predicate_version' "${IMPLEMENT_SHADOW_LOG}")"
 
 # An omitted detail must be null, NOT a fabricated all-missing object. "not
@@ -298,7 +298,7 @@ assert_contains "record names the gate"        '"gate":"push-implement"' "${_rec
 assert_contains "record marks a would-block"   '"would_block":true'      "${_rec}"
 assert_contains "record carries action push"   '"action":"push"'         "${_rec}"
 assert_contains "record carries schema_version"    '"schema_version":3'    "${_rec}"
-assert_contains "record carries predicate_version" '"predicate_version":3' "${_rec}"
+assert_contains "record carries predicate_version" '"predicate_version":4' "${_rec}"
 assert_contains "record carries a record_id"   '"record_id":'            "${_rec}"
 assert_contains "record carries a ts"          '"ts":'                   "${_rec}"
 assert_contains "record carries the transcript pointer" '"transcript_path":' "${_rec}"
@@ -424,7 +424,7 @@ _rec="$(cat "$IMPLEMENT_SHADOW_LOG")"
 assert_equals "merge writes one record" "1" "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
 assert_contains "merge record names the PR as its subject" '"diff_base":"pr:7"' "${_rec}"
 assert_contains "merge record still marks material source"  '"material_source":true' "${_rec}"
-assert_contains "predicate_version bumped to 3 (#219)"        '"predicate_version":3' "${_rec}"
+assert_contains "predicate_version bumped to 4 (#229)"        '"predicate_version":4' "${_rec}"
 assert_not_contains "merge did not become a deny" "permissionDecision" "${out:-}"
 
 # Unresolvable PR -> unresolved, record still written, still no deny.
@@ -661,6 +661,36 @@ assert_equals "well-formed non-array evidence stays missing, not cannot_check" "
     "$(jq -r '.impl_evidence_detail.invocation' "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | head -1)"
 rm -f "$HOME/.claude/.skill-invocation-evidence-${_TOK}"
 
+
+# --- Deletion-only pushes leave the corpus alone (#229) ---------------------
+# A command whose EVERY push deletes a ref ships no source, so measuring
+# `material_source` against the checkout HEAD asks about a commit the command
+# does not push. Such a record can only be adjudicated a false_block, which
+# moves the pre-registered rate for a reason unrelated to the predicate under
+# test — so the leg must not fire, and PREDICATE_VERSION is bumped to 4.
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(run_guard 'git push --delete origin feature/x')"
+assert_not_contains "deletion-only push raises no IMPLEMENT advisory" "IMPLEMENT:" "${out:-}"
+assert_equals "deletion-only push appends no shadow record" "0" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+
+# CONTROL: the identical state with an ordinary push MUST still record. Without
+# this the cell above passes when the leg is broken outright, or when the
+# fixture stopped producing material source at all.
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(run_guard)"
+assert_contains "control: ordinary push still raises the advisory" "IMPLEMENT:" "${out:-<empty>}"
+assert_equals "control: ordinary push still appends a record" "1" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+
+# CONTROL: a deletion must not suppress the leg for a real push in the SAME
+# command — the ALL-form guarantee, asserted here rather than assumed from the
+# predicate's unit tests.
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(run_guard 'git push --delete origin feature/x; git push origin HEAD')"
+assert_contains "deletion + real push still raises the advisory" "IMPLEMENT:" "${out:-<empty>}"
+assert_equals "deletion + real push still appends a record" "1" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
 export HOME="$_OLDHOME"
 rm -rf "${_REPO}" "${_THOME}" 2>/dev/null
 print_summary
