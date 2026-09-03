@@ -42,8 +42,16 @@ jobs:
       # Pinned version (not @latest) so a breaking OpenSpec release does not
       # silently break PR gating. Bump deliberately via a PR that updates
       # this file.
+      #
+      # 1.3.0 -> 1.7.0: 1.3.0 read a requirement's text as ONLY THE FIRST LINE
+      # of its body, so a SHALL/MUST pushed past the wrap point by hard
+      # wrapping was reported missing (#235 fixed three such requirements).
+      # 1.7.0 still REJECTS a requirement with no modal at all -- measured on
+      # identical probe specs, both versions fail a modal-free requirement --
+      # so this bump drops a line-position false positive, not the RFC 2119
+      # rule itself.
       - name: Install OpenSpec CLI
-        run: npm install -g @fission-ai/openspec@1.3.0
+        run: npm install -g @fission-ai/openspec@1.7.0
 
       - name: Validate all active OpenSpec changes
         run: bash scripts/validate-active-openspec-changes.sh
