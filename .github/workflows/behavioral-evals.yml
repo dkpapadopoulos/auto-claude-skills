@@ -53,6 +53,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
+      # Defaulted here with `|| 'false'` — the same pattern this workflow already
+      # relies on for `variance` on scheduled runs, where `github.event.inputs`
+      # is null. The `if:` conditions below then compare a real string instead of
+      # depending on null-property semantics; getting that wrong would silently
+      # stop the weekly report, which is the exact failure class this change exists
+      # to remove.
+      UPDATE_BASELINE: ${{ github.event.inputs.update_baseline || 'false' }}
+    env:
       PACK: tests/fixtures/incident-analysis/evals/behavioral.json
       BASELINE: tests/baselines/incident-analysis-behavioral.baseline.json
       ISSUE_TITLE: "Behavioral eval regression: incident-analysis"
@@ -91,7 +99,7 @@ jobs:
           EVAL_CI_SANDBOX: "1"
           JUDGE_MODEL: claude-sonnet-5
           VARIANCE: ${{ github.event.inputs.variance || '3' }}
-          UPDATE_BASELINE_INPUT: ${{ github.event.inputs.update_baseline || 'false' }}
+          UPDATE_BASELINE_INPUT: ${{ env.UPDATE_BASELINE }}
         run: |
           set -o pipefail
           mkdir -p tests/artifacts
@@ -133,7 +141,7 @@ jobs:
           retention-days: 30
 
       - name: Upload regenerated baseline (re-baseline runs only)
-        if: ${{ github.event.inputs.update_baseline == 'true' }}
+        if: ${{ env.UPDATE_BASELINE == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: regenerated-baseline
@@ -141,7 +149,7 @@ jobs:
           retention-days: 30
 
       - name: Update tracking issue
-        if: ${{ github.event.inputs.update_baseline != 'true' }}
+        if: ${{ env.UPDATE_BASELINE != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RC: ${{ steps.pack.outputs.exit_code }}

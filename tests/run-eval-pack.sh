@@ -76,6 +76,13 @@ pack_dir="$(basename "$(dirname "$(dirname "${PACK}")")")"
 [ -z "${BASELINE}" ] && BASELINE="tests/baselines/${pack_dir}-${pack_base}.baseline.json"
 utc_now="$(date -u +%Y%m%dT%H%M%SZ)"
 [ -z "${REPORT}" ] && REPORT="tests/artifacts/pack-report-${utc_now}.md"
+# Reset the status the moment the path is known, BEFORE any guard can exit. The
+# workflow reads this file to decide whether to close the tracking issue, so a
+# value left over from a previous run in the same directory would be read as this
+# run's verdict — a stale "clean" would close an issue on a run that evaluated
+# nothing. "unknown" is not a closing state.
+mkdir -p "$(dirname "${REPORT}")" 2>/dev/null || true
+printf 'unknown\n' > "$(dirname "${REPORT}")/pack-status.txt" 2>/dev/null || true
 
 if [ "${UPDATE_BASELINE}" -eq 0 ] && [ ! -f "${BASELINE}" ]; then
     echo "error: baseline not found: ${BASELINE} — generate one with --update-baseline" >&2

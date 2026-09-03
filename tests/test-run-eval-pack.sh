@@ -497,6 +497,28 @@ WF2="${PROJECT_ROOT}/.github/workflows/behavioral-evals.yml"
 assert_contains "workflow exposes an update_baseline input" "update_baseline:" "$(cat "${WF2}")"
 assert_equals "re-baseline run passes --update-baseline" "1" "$(grep -c 'set -- --update-baseline' "${WF2}")"
 assert_contains "regenerated baseline is uploaded for a human to commit" "regenerated-baseline" "$(cat "${WF2}")"
-assert_contains "tracking issue is skipped on a re-baseline run" "update_baseline != 'true'" "$(cat "${WF2}")"
+assert_contains "tracking issue is skipped on a re-baseline run" "env.UPDATE_BASELINE != 'true'" "$(cat "${WF2}")"
+# The if: conditions must compare a DEFAULTED job-level env, not a raw
+# github.event.inputs property: on a scheduled run that object is null, and
+# getting the comparison wrong would silently stop the weekly report entirely.
+assert_contains "update_baseline is defaulted at job level" "github.event.inputs.update_baseline || 'false'" "$(cat "${WF2}")"
+assert_not_contains "if: conditions do not read raw event inputs" "if: \${{ github.event.inputs" "$(cat "${WF2}")"
+
+echo "-- an early exit never leaves a STALE status behind (N1 follow-up) --"
+# The workflow reads pack-status.txt to decide whether to close the tracking
+# issue. Guard paths exit 2 before any status is computed, so without an early
+# reset a status file from a previous run in the same directory would be read as
+# this run's verdict — a stale "clean" would close an issue on a run that never
+# evaluated anything.
+STALE_DIR="$(mktemp -d -t stalestatus.XXXXXX)"
+REPORT="${STALE_DIR}/pack-report.md"
+printf 'clean\n' > "${STALE_DIR}/pack-status.txt"
+output="$(run_pack "${TMPDIR:-/tmp}/definitely-absent-baseline-$$.json")"
+exit_code=$?
+assert_equals "missing baseline still exits 2" "2" "${exit_code}"
+assert_not_equals_status() { [ "$(cat "${STALE_DIR}/pack-status.txt" 2>/dev/null)" != "clean" ]; }
+if assert_not_equals_status; then _record_pass "early exit overwrites a stale status"
+else _record_fail "early exit overwrites a stale status" "still reads 'clean'"; fi
+rm -rf "${STALE_DIR}"
 
 print_summary
