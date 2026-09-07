@@ -526,9 +526,11 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # (set by the replay) prevents re-arming (recursion guard).
         _DECISION="allow"
         # A human bypass is not an allow. The capture trap arms below (:552), so a
-        # bypassed command already writes a record; labelling it `allow` made every
-        # conversion rate over that log unsound. Relabel only — the bypass itself is
-        # untouched and stays unconditional.
+        # bypassed command already writes a record; this relabel makes that record
+        # distinguishable from a genuine allow. It fixes ONLY the env-bypass case:
+        # a push run from the user's own terminal never reaches this PreToolUse
+        # hook and writes no record at all, so the log's denominator stays
+        # incomplete and this alone does not make conversion rates complete.
         [ "${_PUSHGATE_SKIP}" = "true" ] && _DECISION="bypass:env"
         # Positive "reached the decision point" sentinel for the capture replay
         # (issue #127). The on-disk replay re-runs this guard, which is itself

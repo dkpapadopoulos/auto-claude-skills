@@ -1303,8 +1303,8 @@ test_ship_sequence_requests_the_verdict() {
         _purp="$(jq -r '.phase_compositions.SHIP.sequence[0].purpose // ""' \
                     "${PROJECT_ROOT}/${_reg}")"
         # The spec requires BOTH hazards named, not just the runtime.
-        assert_contains "SHIP seq[0] purpose warns the suite is backgrounded (${_reg})" \
-            "backgrounded" "${_purp}"
+        assert_contains "SHIP seq[0] purpose warns the gate may be backgrounded (${_reg})" \
+            "background" "${_purp}"
         assert_contains "SHIP seq[0] purpose names the mid-run HEAD-move hazard (${_reg})" \
             "straddled" "${_purp}"
     done
