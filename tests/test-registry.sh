@@ -342,7 +342,7 @@ test_default_triggers_has_phase_compositions() {
     # SHIP should have sequence entries
     local ship_sequence
     ship_sequence="$(jq '.phase_compositions.SHIP.sequence | length' "${PROJECT_ROOT}/config/default-triggers.json" 2>/dev/null)"
-    assert_equals "SHIP has 9 sequence entries" "9" "${ship_sequence}"
+    assert_equals "SHIP has 10 sequence entries" "10" "${ship_sequence}"
 
     teardown_test_env
 }

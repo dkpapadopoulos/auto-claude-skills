@@ -1363,6 +1363,10 @@
       "driver": "verification-before-completion",
       "sequence": [
         {
+          "step": "project-verification",
+          "purpose": "Run the repo declared test/lint gate and record a sha-bound verdict. REQUIRED: the push gate's verify-hardening check reads this artifact and no other SHIP step writes it. If the gate takes long enough to background, do NOT commit while it runs: a HEAD that moves mid-run records gate-run-straddled-commit and covers NO commit, so the verdict is wasted."
+        },
+        {
           "step": "deploy-gate",
           "purpose": "Run deployment readiness checklist before documentation and archive"
         },

@@ -50,7 +50,7 @@ PAIRS="$(awk '
 [ -n "$PAIRS" ] || { echo "verify-and-record: no commands declared in .verify.yml" >&2; exit 1; }
 
 # Capture the session token BEFORE running the gate (issue #122). This repo's
-# suite runs ~3 minutes; a concurrent session prompting in that window rebinds
+# suite runs ~16 minutes (measured 943s at c2ae84f); a concurrent session prompting in that window rebinds
 # the shared last-writer-wins singleton (~/.claude/.skill-session-token), and a
 # post-run read would bind the verdict to the SIBLING's token — the writer would
 # then measure PASS but the push gate, reading the own-token file, would still
