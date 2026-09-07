@@ -57,6 +57,31 @@ The general lesson, and the reason the probe existed at all: two hooks on two
 events are a distributed system, and "the dispatch obviously happens before the
 completion" is a statement about the world, not about hook delivery.
 
+## The join cannot double-miss
+
+Write-own-half-then-read-the-other is not merely "a small window". The
+both-miss interleaving is impossible, and the argument is short enough to check.
+
+Let `Wd`/`Rd` be the dispatch hook's write and read, `Wc`/`Rc` the completion
+hook's. Each hook writes before it reads, so `Wd < Rd` and `Wc < Rc`.
+
+Suppose both miss. The dispatch hook missing means it read before the completion
+half existed: `Rd < Wc`. The completion hook missing means `Rc < Wd`. Chaining:
+
+    Wd < Rd < Wc < Rc < Wd
+
+which requires `Wd < Wd`. Contradiction — so at least one side always observes
+the other, and exactly one or both record the milestone (the ledger write is an
+idempotent overwrite, so a double credit is harmless).
+
+This holds because each half is a single `printf >>` whose fd is closed when the
+command ends, and each read `awk`s a freshly opened file — there is no buffered
+writer holding data back across the two processes.
+
+The one way a half legitimately never appears is an append that did not happen
+(size ceiling, unwritable `~/.claude`). That is the `|| true` path, and it fails
+toward UNDER-crediting.
+
 ## Why a dispatch-time writer at all
 
 Three ways to identify a `general-purpose` reviewer at completion were
@@ -141,10 +166,11 @@ review happened".
 not proven; 8 ids observed across the probes were 17 random hex characters and
 all distinct, including 3 dispatched in one session, so reuse is implausible but
 not excluded. Reuse would require a collision *and* a matching branch key to
-produce a false credit. `isolation: "worktree"` and `isolation: "remote"`
-dispatches were not probed — `session-token.sh` flags the same gap for the
-adjacent mechanism — so `session_id` symmetry is established for local
-dispatches only. A pairing record written in the pre-join format degrades to a
+produce a false credit. `isolation: "worktree"` WAS probed after
+`session-token.sh` flagged the same gap for the adjacent mechanism: both halves
+land under the same `session_id`, the ledger key matches (both hooks run in the
+parent session's cwd, not the worktree), and the credit is recorded.
+`isolation: "remote"` remains unprobed. A pairing record written in the pre-join format degrades to a
 miss rather than a false credit (the key field is empty, and an empty key never
 compares equal), which is the correct direction for a format change.
 

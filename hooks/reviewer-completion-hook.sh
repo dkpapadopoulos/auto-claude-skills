@@ -42,8 +42,16 @@
 trap 'exit 0' ERR
 set -uo pipefail
 
-# shellcheck source=lib/reviewer-pairing.sh
-_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
+if [ -z "${_PLUGIN_ROOT}" ]; then
+    # NOT `X="${VAR:-$(cd .. && pwd)}"`. A top-level assignment whose value comes
+    # from a command substitution trips this file's blanket `trap 'exit 0' ERR`
+    # AT THAT LINE when the substitution fails, killing the hook before anything
+    # below it runs — the shape CLAUDE.md calls out in publish-guard.sh. Split so
+    # the failure is handled rather than fatal.
+    _PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)" || _PLUGIN_ROOT=""
+fi
+[ -n "${_PLUGIN_ROOT}" ] || exit 0
 
 _INPUT="$(cat 2>/dev/null)"
 [ -z "${_INPUT}" ] && exit 0
@@ -86,6 +94,11 @@ _PAIR_OK=false
 # Kept on ONE physical line: tests/test-hook-source-guards.sh classifies each
 # source line by grepping single lines, so a `\`-continued guard reads to the
 # lint as a bare `. lib` and is flagged.
+#
+# The `&&`-guard covers the SOURCE'S OWN exit status, not a command failing
+# inside the sourced file (#192). reviewer-pairing.sh only defines functions —
+# it executes nothing at load — so there is no such command to fail.
+# shellcheck source=lib/reviewer-pairing.sh
 . "${_PLUGIN_ROOT}/hooks/lib/reviewer-pairing.sh" 2>/dev/null && command -v reviewer_pairing_note_complete >/dev/null 2>&1 && _PAIR_OK=true || true
 [ "${_PAIR_OK}" = "true" ] || exit 0
 

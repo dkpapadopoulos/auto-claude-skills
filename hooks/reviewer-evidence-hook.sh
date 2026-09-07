@@ -154,7 +154,16 @@ esac
 # not source success. Safe to use the command -v form HERE because this hook
 # is a recorder — a failed load costs a record, never a deny. This change does
 # not touch openspec-guard.sh's own source sites.
-_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
+if [ -z "${_PLUGIN_ROOT}" ]; then
+    # NOT `X="${VAR:-$(cd .. && pwd)}"`. A top-level assignment whose value comes
+    # from a command substitution trips this file's blanket `trap 'exit 0' ERR`
+    # AT THAT LINE when the substitution fails, killing the hook before anything
+    # below it runs — the shape CLAUDE.md calls out in publish-guard.sh. Split so
+    # the failure is handled rather than fatal.
+    _PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)" || _PLUGIN_ROOT=""
+fi
+[ -n "${_PLUGIN_ROOT}" ] || exit 0
 _LEDGER_OK=false
 # Kept on ONE physical line: tests/test-hook-source-guards.sh classifies each
 # source line by grepping single lines, so a `\`-continued guard reads to the
