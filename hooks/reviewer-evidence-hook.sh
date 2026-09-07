@@ -51,6 +51,8 @@ _FIELDS="$(printf '%s' "${_INPUT}" | jq -r '[
     .tool_name // "",
     ((.tool_response | objects | .is_error) // false | tostring),
     ((.tool_input | objects | .subagent_type) // "" | tostring),
+    (.session_id // "" | tostring),
+    ((.tool_response | objects | .agentId) // "" | tostring),
     ((.tool_input | objects | .description) // "" | tostring | gsub("[\\n\\r]"; " "))
   ] | join("\u001f")' 2>/dev/null)" || exit 0
 [ -z "${_FIELDS}" ] && exit 0
@@ -60,8 +62,10 @@ _FIELDS="$(printf '%s' "${_INPUT}" | jq -r '[
 # free-text description happened to contain.
 _TOOL="${_FIELDS%%$'\x1f'*}";      _R1="${_FIELDS#*$'\x1f'}"
 _IS_ERROR="${_R1%%$'\x1f'*}";      _R2="${_R1#*$'\x1f'}"
-_SUBAGENT="${_R2%%$'\x1f'*}"
-_DESC="${_R2#*$'\x1f'}"
+_SUBAGENT="${_R2%%$'\x1f'*}";      _R3="${_R2#*$'\x1f'}"
+_SID="${_R3%%$'\x1f'*}";           _R4="${_R3#*$'\x1f'}"
+_AGENT_ID="${_R4%%$'\x1f'*}"
+_DESC="${_R4#*$'\x1f'}"
 
 # Only the subagent-dispatch tool. `Agent` is the current Claude Code name;
 # `Task` is kept for older builds this plugin also ships to.
@@ -164,6 +168,62 @@ _LEDGER_OK=false
 # compare that SHA against HEAD to judge staleness without this hook doing
 # anything extra.
 branch_ledger_record "reviewer-ran" 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# Dispatch-time pairing write (openspec/changes/reviewer-completion-evidence/).
+#
+# `reviewer-completion-hook.sh` runs on SubagentStop, whose payload carries
+# `agent_type` but NOT the dispatch `description` this hook's predicate was
+# measured on. It therefore needs the `agent_id` judged a reviewer HERE.
+#
+# It cannot recover the link itself: measured in-hook, at SubagentStop time the
+# parent transcript contains ZERO lines mentioning the agent id, because the
+# `tool_result` carrying `agentId` is written AFTER that event fires. A
+# dispatch-time writer is the only source.
+#
+# Symmetry is by construction, not by convention: both hooks read `session_id`
+# from their OWN payload, and the two events carry the identical value
+# (measured in one run). This is deliberately NOT the `resolve_own_session_token`
+# path — that resolver exists for model-Bash-turn writers which have no payload,
+# and its singleton fallback is the last-writer-wins scatter that would break a
+# pairing under concurrent sessions.
+#
+# ORDERING IS LOAD-BEARING: this runs AFTER the reviewer-ran record, never
+# before. Under this file's `trap 'exit 0' ERR`, a single failing command is a
+# silent early exit — and the first draft put this block above the record, where
+# `wc -c < <missing file>` (a REDIRECTION failure, which `2>/dev/null` does not
+# suppress) killed the hook before it wrote anything. That deleted the
+# pre-existing milestone with no error, and it is exactly the #137/#198 class.
+# New best-effort work goes below the thing that must not be lost.
+_pair_file() {
+    local sid="${1:-}"
+    [ -n "$sid" ] || return 1
+    case "$sid" in
+        *[!A-Za-z0-9._-]*|.|..) return 1 ;;
+    esac
+    printf '%s' "${HOME}/.claude/.skill-reviewer-dispatch-session-${sid}"
+}
+if [ -n "${_AGENT_ID}" ]; then
+    case "${_AGENT_ID}" in
+        *[!A-Za-z0-9._-]*) ;;                       # never write a surprising value
+        *)
+            _PAIR="$(_pair_file "${_SID}")" || _PAIR=""
+            if [ -n "${_PAIR}" ]; then
+                # Size ceiling instead of a trim: a read-modify-write rotation
+                # would race two parallel dispatches, and dropping new records
+                # is strictly safer than corrupting existing ones. ~18 bytes per
+                # line, so this bounds a pathological session, not a real one.
+                _PAIR_BYTES=0
+                if [ -f "${_PAIR}" ]; then
+                    _PAIR_BYTES="$(wc -c < "${_PAIR}" 2>/dev/null | tr -d ' ')" || _PAIR_BYTES=0
+                    case "${_PAIR_BYTES}" in ''|*[!0-9]*) _PAIR_BYTES=0 ;; esac
+                fi
+                if [ "${_PAIR_BYTES}" -lt 65536 ]; then
+                    printf '%s\n' "${_AGENT_ID}" >> "${_PAIR}" 2>/dev/null || true
+                fi
+            fi ;;
+    esac
+fi
 
 # D4 (design.md): this hook's write and scripts/record-review-verdict.sh's
 # read must resolve the branch-ledger key IDENTICALLY. branch_ledger_key

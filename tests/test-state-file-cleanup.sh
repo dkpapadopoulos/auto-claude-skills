@@ -118,4 +118,34 @@ else
 fi
 teardown_test_env
 
+# ---------------------------------------------------------------------------
+# C6 — reviewer-dispatch pairing file (openspec/changes/reviewer-completion-
+# evidence/): stale dead-token pairings are pruned with the family; the CURRENT
+# session's pairing is preserved. A pairing GC'd mid-session would silently
+# demote every later general-purpose reviewer completion to "not a reviewer".
+# ---------------------------------------------------------------------------
+echo "--- C6: reviewer-dispatch pairing GC ---"
+setup_test_env
+mkdir -p "${HOME}/.claude"
+STALE_PAIR="${HOME}/.claude/.skill-reviewer-dispatch-session-deadbeef-old"
+printf 'a1b2c3\n' > "${STALE_PAIR}"
+backdate "${STALE_PAIR}"
+run_hook
+TOK="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null)"
+if [ -f "${STALE_PAIR}" ]; then
+    _record_fail "C6a: stale dead-token pairing pruned" "still present"
+else
+    _record_pass "C6a: stale dead-token pairing pruned"
+fi
+CUR_PAIR="${HOME}/.claude/.skill-reviewer-dispatch-${TOK}"
+printf 'a1b2c3\n' > "${CUR_PAIR}"
+backdate "${CUR_PAIR}"        # stale mtime, but it's the ACTIVE token
+run_hook
+if [ -f "${CUR_PAIR}" ]; then
+    _record_pass "C6b: current-session pairing preserved despite stale mtime"
+else
+    _record_fail "C6b: current-session pairing preserved despite stale mtime" "deleted"
+fi
+teardown_test_env
+
 print_summary
