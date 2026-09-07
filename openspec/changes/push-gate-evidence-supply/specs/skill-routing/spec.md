@@ -16,8 +16,11 @@ verdict recorded at the start of SHIP is not invalidated by the phase's own late
 commits under the existing ancestor-acceptance rule.
 
 The step's rendered purpose text MUST state the two facts that make it fail silently
-when they are unknown: that the verification suite is long enough to be backgrounded,
-and that a HEAD that moves while the suite runs produces a verdict covering no commit.
+when they are unknown: that the gate MAY need backgrounding if it runs long, and that a
+HEAD that moves while it runs produces a verdict covering no commit. The text MUST NOT
+assert a runtime figure or any other measurement taken from one particular repository —
+this string ships to every install, and a repo whose gate takes seconds would be told
+something false.
 
 This requirement is satisfied by configuration data alone. It MUST NOT be implemented
 by adding a hook, a predicate, a skill, or a new evidence artifact, because the
@@ -28,7 +31,8 @@ producing skill, the consuming gate, and the rendering path all already exist.
 - **GIVEN** a session entering the SHIP phase
 - **WHEN** the composition chain is rendered
 - **THEN** the verification-verdict producer appears as a step in the SHIP sequence
-- **AND** its purpose text states the suite's runtime and the mid-run HEAD-move hazard
+- **AND** its purpose text names both hazards: that the gate may need backgrounding, and the mid-run HEAD-move hazard
+- **AND** the text asserts no repo-specific runtime figure
 
 #### Scenario: a verdict recorded at the start of SHIP survives the phase
 
