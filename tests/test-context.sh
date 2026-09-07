@@ -1290,4 +1290,26 @@ test_discovery_precondition_wiring() {
 
 test_discovery_precondition_wiring
 
+test_ship_sequence_requests_the_verdict() {
+    # project-verification must be the FIRST SHIP sequence step in BOTH registries:
+    # routing-governance and verify-hardening read the verdict it alone writes, and
+    # no other SHIP step produces it.
+    local _reg _first _purp
+    for _reg in config/default-triggers.json config/fallback-registry.json; do
+        _first="$(jq -r '.phase_compositions.SHIP.sequence[0].step // ""' \
+                    "${PROJECT_ROOT}/${_reg}")"
+        assert_equals "SHIP seq[0] is project-verification (${_reg})" \
+            "project-verification" "${_first}"
+        _purp="$(jq -r '.phase_compositions.SHIP.sequence[0].purpose // ""' \
+                    "${PROJECT_ROOT}/${_reg}")"
+        # The spec requires BOTH hazards named, not just the runtime.
+        assert_contains "SHIP seq[0] purpose warns the suite is backgrounded (${_reg})" \
+            "backgrounded" "${_purp}"
+        assert_contains "SHIP seq[0] purpose names the mid-run HEAD-move hazard (${_reg})" \
+            "straddled" "${_purp}"
+    done
+}
+
+test_ship_sequence_requests_the_verdict
+
 print_summary
