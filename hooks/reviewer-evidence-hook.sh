@@ -170,78 +170,45 @@ _LEDGER_OK=false
 branch_ledger_record "reviewer-ran" 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
-# Dispatch-time pairing write (openspec/changes/reviewer-completion-evidence/).
+# Reviewer dispatch/completion JOIN (openspec/changes/reviewer-completion-
+# evidence/). `reviewer-completion-hook.sh` observes that a subagent finished;
+# this hook owns the classification. Neither can credit alone.
 #
-# `reviewer-completion-hook.sh` runs on SubagentStop, whose payload carries
-# `agent_type` but NOT the dispatch `description` this hook's predicate was
-# measured on. It therefore needs the `agent_id` judged a reviewer HERE.
+# NEITHER HOOK IS GUARANTEED TO RUN FIRST — measured end-to-end against both
+# real hooks on CLI 2.1.236: for a BACKGROUND dispatch this one fires 1.44s
+# BEFORE completion, but for a FOREGROUND dispatch it fires ~30ms AFTER it
+# (3 of 3). So each side writes its own half first and then looks for the
+# other; whichever runs second records the milestone. The first cut wrote here
+# and read there, which is a systematic no-op for every foreground reviewer.
 #
-# It cannot recover the link itself: measured in-hook, at SubagentStop time the
-# parent transcript contains ZERO lines mentioning the agent id, because the
-# `tool_result` carrying `agentId` is written AFTER that event fires. A
-# dispatch-time writer is the only source.
-#
-# Symmetry is by construction, not by convention: both hooks read `session_id`
-# from their OWN payload, and the two events carry the identical value
-# (measured in one run). This is deliberately NOT the `resolve_own_session_token`
-# path — that resolver exists for model-Bash-turn writers which have no payload,
-# and its singleton fallback is the last-writer-wins scatter that would break a
-# pairing under concurrent sessions.
-#
-# ORDERING IS LOAD-BEARING: this runs AFTER the reviewer-ran record, never
-# before. Under this file's `trap 'exit 0' ERR`, a single failing command is a
-# silent early exit — and the first draft put this block above the record, where
-# `wc -c < <missing file>` (a REDIRECTION failure, which `2>/dev/null` does not
-# suppress) killed the hook before it wrote anything. That deleted the
-# pre-existing milestone with no error, and it is exactly the #137/#198 class.
-# New best-effort work goes below the thing that must not be lost.
-_pair_file() {
-    local sid="${1:-}"
-    [ -n "$sid" ] || return 1
-    case "$sid" in
-        *[!A-Za-z0-9._-]*|.|..) return 1 ;;
-    esac
-    printf '%s' "${HOME}/.claude/.skill-reviewer-dispatch-session-${sid}"
-}
-if [ -n "${_AGENT_ID}" ]; then
-    case "${_AGENT_ID}" in
-        *[!A-Za-z0-9._-]*) ;;                       # never write a surprising value
-        *)
-            _PAIR="$(_pair_file "${_SID}")" || _PAIR=""
-            if [ -n "${_PAIR}" ]; then
-                # Size ceiling instead of a trim: a read-modify-write rotation
-                # would race two parallel dispatches, and dropping new records
-                # is strictly safer than corrupting existing ones. ~18 bytes per
-                # line, so this bounds a pathological session, not a real one.
-                _PAIR_BYTES=0
-                if [ -f "${_PAIR}" ]; then
-                    _PAIR_BYTES="$(wc -c < "${_PAIR}" 2>/dev/null | tr -d ' ')" || _PAIR_BYTES=0
-                    case "${_PAIR_BYTES}" in ''|*[!0-9]*) _PAIR_BYTES=0 ;; esac
-                fi
-                if [ "${_PAIR_BYTES}" -lt 65536 ]; then
-                    printf '%s\n' "${_AGENT_ID}" >> "${_PAIR}" 2>/dev/null || true
-                fi
-            fi ;;
-    esac
-fi
+# ORDERING WITHIN THIS FILE IS ALSO LOAD-BEARING: this runs AFTER the
+# reviewer-ran record, never before. Under this file's `trap 'exit 0' ERR` a
+# single failing command is a silent early exit — the first draft put this
+# above the record, where `wc -c < <missing file>` (a REDIRECTION failure,
+# which `2>/dev/null` does not suppress) killed the hook before it wrote
+# anything, silently deleting the pre-existing milestone. New best-effort work
+# goes below the thing that must not be lost. See CLAUDE.md #137/#198.
+_PAIR_OK=false
+# Kept on ONE physical line: tests/test-hook-source-guards.sh classifies each
+# source line by grepping single lines, so a `\`-continued guard reads to the
+# lint as a bare `. lib` and is flagged.
+# shellcheck source=lib/reviewer-pairing.sh
+. "${_PLUGIN_ROOT}/hooks/lib/reviewer-pairing.sh" 2>/dev/null && command -v reviewer_pairing_note_dispatch >/dev/null 2>&1 && _PAIR_OK=true || true
 
-# D4 (design.md): this hook's write and scripts/record-review-verdict.sh's
-# read must resolve the branch-ledger key IDENTICALLY. branch_ledger_key
-# hashes the raw path string AND branch name, so a non-canonical path on
-# either side (a trailing slash, a doubled separator, an unresolved symlink)
-# produces a different key and the read silently misses — this produced a
-# false negative during PR #212's development. Both currently derive the path
-# half from `git rev-parse --show-toplevel` (this hook via
-# branch_ledger_record's arg-less fallback); any future change giving one
-# side an explicit proj_root must give it to both.
-#
-# The branch half carries the SAME hazard from a different cause: each side
-# derives it from its own cwd. This hook runs in the dispatching session's
-# cwd/branch; the script may run from a different worktree entirely (the
-# repo's own using-git-worktrees / agent-team-execution pattern) and reads
-# ITS cwd/branch instead. That mismatch is silent and safe — the read simply
-# misses and the derivation falls through to "asserted" (D3) — but it means
-# this write is usually invisible to that read in exactly the workflow this
-# hook was built for. See design.md Trade-offs.
+if [ "${_PAIR_OK}" = "true" ] && [ -n "${_AGENT_ID}" ]; then
+    # The key binds the credit to a (repo, branch) pair. Stored at dispatch so
+    # the completion side can refuse to credit a branch the reviewer never saw:
+    # a backgrounded reviewer finishes on the parent session's clock, and that
+    # session is free to check out something else meanwhile.
+    _PAIR_KEY="$(branch_ledger_key 2>/dev/null)" || _PAIR_KEY=""
+    if [ -n "${_PAIR_KEY}" ]; then
+        # HALF ONE, written BEFORE reading the other half.
+        reviewer_pairing_note_dispatch "${_SID}" "${_AGENT_ID}" "${_PAIR_KEY}" || true
+        # HALF TWO: did this agent already finish? (foreground ordering)
+        if reviewer_pairing_has_complete "${_SID}" "${_AGENT_ID}"; then
+            branch_ledger_record "reviewer-returned" 2>/dev/null || true
+        fi
+    fi
+fi
 
 exit 0

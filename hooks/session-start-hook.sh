@@ -150,7 +150,7 @@ find "${HOME}/.claude" -maxdepth 1 \
     \( -name '.skill-composition-state-*' -o -name '.skill-openspec-state-*' \
        -o -name '.skill-compact-pending-*' \
        -o -name '.skill-invocation-evidence-*' -o -name '.skill-phase-attest-*' \
-       -o -name '.skill-reviewer-dispatch-*' \) \
+       -o -name '.skill-reviewer-dispatch-*' -o -name '.skill-reviewer-complete-*' \) \
     -mtime +"${_STATE_RETENTION_DAYS}" \
     ! -name "*-state-${_SESSION_TOKEN}" \
     ! -name ".skill-compact-pending-${_SESSION_TOKEN}" \
@@ -158,6 +158,7 @@ find "${HOME}/.claude" -maxdepth 1 \
     ! -name ".skill-invocation-evidence-sha-${_SESSION_TOKEN}" \
     ! -name ".skill-phase-attest-${_SESSION_TOKEN}" \
     ! -name ".skill-reviewer-dispatch-${_SESSION_TOKEN}" \
+    ! -name ".skill-reviewer-complete-${_SESSION_TOKEN}" \
     -exec rm -f {} + 2>/dev/null || true
 
 # Cap the phase-gate telemetry log (F6): every skill-gate.sh / openspec-guard.sh

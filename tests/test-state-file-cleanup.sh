@@ -128,23 +128,29 @@ echo "--- C6: reviewer-dispatch pairing GC ---"
 setup_test_env
 mkdir -p "${HOME}/.claude"
 STALE_PAIR="${HOME}/.claude/.skill-reviewer-dispatch-session-deadbeef-old"
-printf 'a1b2c3\n' > "${STALE_PAIR}"
-backdate "${STALE_PAIR}"
+STALE_DONE="${HOME}/.claude/.skill-reviewer-complete-session-deadbeef-old"
+printf 'a1b2c3 deadkey\n' > "${STALE_PAIR}"
+printf 'a1b2c3\n' > "${STALE_DONE}"
+backdate "${STALE_PAIR}"; backdate "${STALE_DONE}"
 run_hook
 TOK="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null)"
-if [ -f "${STALE_PAIR}" ]; then
-    _record_fail "C6a: stale dead-token pairing pruned" "still present"
+if [ -f "${STALE_PAIR}" ] || [ -f "${STALE_DONE}" ]; then
+    _record_fail "C6a: stale dead-token pairing halves pruned" "still present"
 else
-    _record_pass "C6a: stale dead-token pairing pruned"
+    _record_pass "C6a: stale dead-token pairing halves pruned"
 fi
+# Both halves must survive: pruning EITHER one mid-session silently breaks
+# every later join, and the join needs both sides present.
 CUR_PAIR="${HOME}/.claude/.skill-reviewer-dispatch-${TOK}"
-printf 'a1b2c3\n' > "${CUR_PAIR}"
-backdate "${CUR_PAIR}"        # stale mtime, but it's the ACTIVE token
+CUR_DONE="${HOME}/.claude/.skill-reviewer-complete-${TOK}"
+printf 'a1b2c3 curkey\n' > "${CUR_PAIR}"
+printf 'a1b2c3\n' > "${CUR_DONE}"
+backdate "${CUR_PAIR}"; backdate "${CUR_DONE}"   # stale mtime, but it's the ACTIVE token
 run_hook
-if [ -f "${CUR_PAIR}" ]; then
-    _record_pass "C6b: current-session pairing preserved despite stale mtime"
+if [ -f "${CUR_PAIR}" ] && [ -f "${CUR_DONE}" ]; then
+    _record_pass "C6b: current-session pairing halves preserved despite stale mtime"
 else
-    _record_fail "C6b: current-session pairing preserved despite stale mtime" "deleted"
+    _record_fail "C6b: current-session pairing halves preserved despite stale mtime" "deleted"
 fi
 teardown_test_env
 
