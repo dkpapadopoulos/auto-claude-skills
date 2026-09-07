@@ -144,11 +144,12 @@ assert_contains "real deny replays as deny (not a false drift signal)" \
 # (9) stdout hygiene: guard stdout is EXACTLY one JSON object (no sentinel/capture leak live).
 assert_equals "exactly one json object on stdout" "1" "$(printf '%s' "${out}" | jq -s 'length' 2>/dev/null)"
 
-# (10) allow path via human-bypass env: capture still records, decision=allow.
+# (10) human-bypass env: capture records the bypass, NOT an allow.
 : > "$GLOG" 2>/dev/null || true
 out="$(_grun 'git push origin HEAD' 'ACSM_SKIP_PUSH_GATE=1')"
 assert_not_contains "bypass allows (no deny)" '"deny"' "${out:-}"
-assert_contains "allow record written" '"decision":"allow"' "$(cat "$GLOG")"
+assert_contains "bypass record labelled bypass:env" '"decision":"bypass:env"' "$(cat "$GLOG")"
+assert_not_contains "bypass is not labelled allow" '"decision":"allow"' "$(cat "$GLOG")"
 
 # (11) recursion guard: PUSH_GATE_CAPTURE_DISABLE=1 writes NO record.
 : > "$GLOG" 2>/dev/null || true

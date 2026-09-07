@@ -525,6 +525,11 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # subprocess ONLY from a hardened EXIT trap. PUSH_GATE_CAPTURE_DISABLE=1
         # (set by the replay) prevents re-arming (recursion guard).
         _DECISION="allow"
+        # A human bypass is not an allow. The capture trap arms below (:552), so a
+        # bypassed command already writes a record; labelling it `allow` made every
+        # conversion rate over that log unsound. Relabel only — the bypass itself is
+        # untouched and stays unconditional.
+        [ "${_PUSHGATE_SKIP}" = "true" ] && _DECISION="bypass:env"
         # Positive "reached the decision point" sentinel for the capture replay
         # (issue #127). The on-disk replay re-runs this guard, which is itself
         # fail-open (`trap 'exit 0' ERR`) — so an empty replay stdout cannot tell
