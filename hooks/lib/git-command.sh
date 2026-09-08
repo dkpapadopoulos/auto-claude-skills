@@ -223,7 +223,56 @@ _gc_split_segments() {
                         _seg="${_seg}${_line:${_i}:$((_j-_i))}"
                         _i=$((_j-1))
                     fi ;;
-                ';'|'|'|'&') _out="${_out}${_seg}${_GC_SEP}"; _seg="" ;;
+                '&')
+                    # `&` is a control operator EXCEPT immediately after `<` or
+                    # `>`, where it belongs to a redirection (`2>&1`, `>&2`,
+                    # `3>&-`). Splitting there tore a redirection in half and
+                    # discarded whatever followed it: `git push origin main
+                    # 3>&- next` became the segment `git push origin main 3>`
+                    # plus `- next`, so the parser saw ONE refspec while bash
+                    # pushes `main` AND `next` — a confident UNDER-report, the
+                    # direction #198 calls strictly worse, introduced by the
+                    # redirection fix itself.
+                    #
+                    # It also left `2>&1` unable to certify a deletion-only
+                    # command, because the orphaned `1` is not on the inert
+                    # whitelist and the ALL-form correctly refuses to vouch for
+                    # a segment it cannot account for.
+                    #
+                    # Narrow by construction: only an `&` whose PREVIOUS
+                    # character is `<` or `>` stops being a boundary, so
+                    # `a && b`, `a & b` and a trailing `&` are untouched.
+                    # An ESCAPED `>` is a literal character in a filename, not
+                    # an operator, so the `&` after it IS a control operator and
+                    # must still split. This scanner does not interpret backslash
+                    # escapes (its own header says so), and until this arm existed
+                    # that ceiling could only ever cause OVER-splitting — the safe
+                    # direction. Merging is a new capability, and merging is what
+                    # makes an escape dangerous:
+                    #
+                    #   echo a\>&git push origin main
+                    #
+                    # Real bash prints `a>`, backgrounds it, and RUNS THE PUSH.
+                    # Without this arm the whole command collapsed into one
+                    # segment whose first word is `echo`, so `_gc_segment_git_sub`
+                    # never reported `push`, no push segment was found, and EVERY
+                    # gate was skipped — including the fail-closed REVIEW/VERIFY
+                    # gate. Measured across `echo`, `cd`, `true` and a brace
+                    # group, so it is the class and not one spelling; and none of
+                    # the three orthogonal layers catches it (no substitution
+                    # syntax, `\>` toggles no quote state so the parse is
+                    # balanced, and the inert whitelist is never consulted because
+                    # DETECTION already failed).
+                    #
+                    # `a\\>` (escaped backslash, then a real operator) also takes
+                    # this arm and over-splits. That is the safe direction and is
+                    # left deliberately: a merge may never remove a command.
+                    case "${_seg}" in
+                        *'\<'|*'\>') _out="${_out}${_seg}${_GC_SEP}"; _seg="" ;;
+                        *'<'|*'>') _seg="${_seg}${_c}" ;;
+                        *) _out="${_out}${_seg}${_GC_SEP}"; _seg="" ;;
+                    esac ;;
+                ';'|'|') _out="${_out}${_seg}${_GC_SEP}"; _seg="" ;;
                 *) _seg="${_seg}${_c}" ;;
             esac
             _i=$((_i+1))
@@ -901,6 +950,56 @@ _gc_strip_closers() {
 }
 
 
+# _gc_redir_kind_var <word> — classify a word as a SHELL REDIRECTION, setting
+# `_GC_REDIR` and returning 0; returns 1 (and leaves _GC_REDIR empty) otherwise.
+#   _GC_REDIR=glued — a complete redirection (`2>&1`, `>/tmp/o`, `>-`, `3>&-`);
+#                     it consumes nothing further.
+#   _GC_REDIR=bare  — an operator whose target is the NEXT word (`>`, `2>`, `>>`,
+#                     `<`, `<<<`); the caller must skip both.
+#
+# Sets a variable rather than printing, for the same reason `_gc_strip_closers_var`
+# does: this runs per-argument inside two loops on the synchronous gate path, and
+# a command substitution per word measured ~88% slower over 200 iterations.
+#
+# STRUCTURAL, NOT AN ENUMERATION, and the shape is: an optional `{name}` (bash
+# >= 4.1 named fd), an optional `&`, an optional file-descriptor digit run, then
+# `<` or `>`. That covers `10>`, `<<<`, `{fd}>file` without anyone having listed
+# them — this predicate family has been bypassed repeatedly by lists of shell
+# syntax that were complete until they were not.
+#
+# `-` IS NOT AN OPERATOR CHARACTER, and getting that wrong was a security
+# regression in the first cut of this helper. `-` is part of an operator only in
+# the fd-close forms `>&-` / `3>&-`, where it follows `&`. Standing alone after
+# `>` it is an ordinary FILENAME: `git push origin :scratch >- main` redirects to
+# a file named `-` and pushes BOTH `:scratch` and `main`. Treating `>-` as a bare
+# operator swallowed `main`, left "all refspecs are deletions", and made
+# command_push_is_all_deletions CERTIFY a content-shipping push — skipping all
+# four content gates. So the operator run is `[<>&]` only; `>&-` still classifies
+# as `glued` (the `-` remains, so it consumes nothing), which is what bash does.
+#
+# A word is judged by its LEADING characters, so a quoted word that merely begins
+# with an operator character — a ref pathologically named `">weird"` — is not a
+# redirection. This must never swallow a real refspec.
+_gc_redir_kind_var() {
+    local _w="${1:-}" _rest
+    _GC_REDIR=""
+    [ -n "${_w}" ] || return 1
+    case "${_w}" in
+        '{'*'}'*) _rest="${_w#*\}}" ;;      # {fd}>file
+        *) _rest="${_w}" ;;
+    esac
+    _rest="${_rest#&}"
+    while :; do
+        case "${_rest}" in [0-9]*) _rest="${_rest#?}" ;; *) break ;; esac
+    done
+    case "${_rest}" in [\<\>]*) ;; *) return 1 ;; esac
+    while :; do
+        case "${_rest}" in [\<\>\&]*) _rest="${_rest#?}" ;; *) break ;; esac
+    done
+    if [ -n "${_rest}" ]; then _GC_REDIR=glued; else _GC_REDIR=bare; fi
+    return 0
+}
+
 # _gc_strip_closers_var <word> — like _gc_strip_closers, but sets `_GC_W`
 #   instead of echoing. Same result, no subshell: the echoing form costs a FORK
 #   per word, and these loops run per-argument inside a synchronous PreToolUse
@@ -1086,6 +1185,15 @@ command_push_ref() {
                 # (`(git push origin x --delete)`) otherwise misses its literal
                 # arm and is read as an ordinary option.
                 _gc_strip_closers_var "$1"
+                # A redirection is not a refspec. Before this, `git push origin
+                # main 2>&1` counted three positionals, so the ref did not
+                # resolve and the guard fell back to the checkout's HEAD —
+                # silently defeating #219's subject resolution for the shape an
+                # agent writes most often (issue #238).
+                if _gc_redir_kind_var "${_GC_W}"; then
+                    if [ "${_GC_REDIR}" = "bare" ] && [ "$#" -ge 2 ]; then shift 2; else shift; fi
+                    continue
+                fi
                 case "${_GC_W}" in
                     '') shift; continue ;;
                     --delete|-d) return 0 ;;
@@ -1255,6 +1363,15 @@ _gc_push_seg_shape() {
         # Normalising once, here, makes flags and refspecs impossible to treat
         # differently — the class of bug, not the instance.
         _gc_strip_closers_var "$1"
+        # A redirection is not a refspec — see _gc_redir_kind. Counting them
+        # inflated the refspec count past one, so a single-ref push written
+        # `… 2>&1` was announced as carrying more than one ref: a confident
+        # over-report about a command the gate had measured correctly, which is
+        # the failure mode #198 settled as worse than silence (issue #238).
+        if _gc_redir_kind_var "${_GC_W}"; then
+            if [ "${_GC_REDIR}" = "bare" ] && [ "$#" -ge 2 ]; then shift 2; else shift; fi
+            continue
+        fi
         case "${_GC_W}" in
             '') shift ;;
             --delete|-d) _del=1; shift ;;
