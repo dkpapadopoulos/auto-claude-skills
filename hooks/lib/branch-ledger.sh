@@ -30,13 +30,45 @@ branch_ledger_dir() {
     printf '%s' "${HOME}/.claude/.skill-branch-ledger-${k}"
 }
 
+# branch_ledger_record <milestone> [<proj_root>] [<sha>]
+#
+# <sha> is OPTIONAL and records the commit the milestone is ABOUT, which is not
+# always HEAD at call time. Omitting it resolves HEAD exactly as before, so every
+# existing caller is byte-identical — the same shape #219 used when it gave
+# verdict.sh's helpers an optional trailing <commit>.
+#
+# It exists because an event can be observed long after the tree it describes:
+# a backgrounded reviewer finishes while the session keeps committing, and
+# stamping HEAD at completion names a tree the reviewer never read. Ledger
+# records are consumed with HEAD-or-ancestor acceptance, so an over-late sha
+# silently covers commits nothing reviewed — the over-claim #181 removed from
+# verdicts. A caller that knows the real subject should pass it.
 branch_ledger_record() {
-    local milestone="${1:-}" proj_root="${2:-}" dir sha
+    local milestone="${1:-}" proj_root="${2:-}" sha_in="${3:-}" dir sha
     [ -z "$milestone" ] && return 0
     dir="$(branch_ledger_dir "$proj_root")" || return 0
     [ -z "$dir" ] && return 0
     [ -z "$proj_root" ] && proj_root="$(git rev-parse --show-toplevel 2>/dev/null)"
-    sha="$(git -C "${proj_root:-.}" rev-parse HEAD 2>/dev/null || true)"
+    # "no subject supplied" and "a BAD subject supplied" are different states and
+    # must not collapse. Empty means the caller has no opinion, so HEAD is right
+    # and every existing caller keeps its exact prior behaviour. A non-hex value
+    # means the caller HAD an opinion and it is corrupt — resolving HEAD there
+    # would silently reinstate the over-late stamp this argument exists to
+    # remove, in precisely the branch that fires when something is already wrong.
+    # `unknown` is the lib's existing sentinel and is REJECTED by
+    # branch_ledger_sha_is_branch_local, so a corrupt subject fails toward
+    # under-crediting instead.
+    #
+    # Neither arm is reachable from any current caller (the only non-empty
+    # producer is `git rev-parse HEAD`, and note_dispatch blanks anything else
+    # before storing it), so no test can catch their removal — mutation-verified,
+    # 0 failures either way. Stated here rather than presented as covered, which
+    # is this change's standing rule for a knowingly-unobservable guard.
+    case "$sha_in" in
+        "") sha="$(git -C "${proj_root:-.}" rev-parse HEAD 2>/dev/null || true)" ;;
+        *[!0-9a-fA-F]*) sha="unknown" ;;
+        *) sha="$sha_in" ;;
+    esac
     mkdir -p "$dir" 2>/dev/null || return 0
     # per-milestone file (no shared-JSON read-modify-write → no concurrent race);
     # atomic write; content = "<sha> <utc-ts>"

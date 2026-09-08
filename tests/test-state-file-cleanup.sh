@@ -118,4 +118,40 @@ else
 fi
 teardown_test_env
 
+# ---------------------------------------------------------------------------
+# C6 — reviewer-dispatch pairing file (openspec/changes/reviewer-completion-
+# evidence/): stale dead-token pairings are pruned with the family; the CURRENT
+# session's pairing is preserved. A pairing GC'd mid-session would silently
+# demote every later general-purpose reviewer completion to "not a reviewer".
+# ---------------------------------------------------------------------------
+echo "--- C6: reviewer-dispatch pairing GC ---"
+setup_test_env
+mkdir -p "${HOME}/.claude"
+STALE_PAIR="${HOME}/.claude/.skill-reviewer-dispatch-session-deadbeef-old"
+STALE_DONE="${HOME}/.claude/.skill-reviewer-complete-session-deadbeef-old"
+printf 'a1b2c3 deadkey\n' > "${STALE_PAIR}"
+printf 'a1b2c3\n' > "${STALE_DONE}"
+backdate "${STALE_PAIR}"; backdate "${STALE_DONE}"
+run_hook
+TOK="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null)"
+if [ -f "${STALE_PAIR}" ] || [ -f "${STALE_DONE}" ]; then
+    _record_fail "C6a: stale dead-token pairing halves pruned" "still present"
+else
+    _record_pass "C6a: stale dead-token pairing halves pruned"
+fi
+# Both halves must survive: pruning EITHER one mid-session silently breaks
+# every later join, and the join needs both sides present.
+CUR_PAIR="${HOME}/.claude/.skill-reviewer-dispatch-${TOK}"
+CUR_DONE="${HOME}/.claude/.skill-reviewer-complete-${TOK}"
+printf 'a1b2c3 curkey\n' > "${CUR_PAIR}"
+printf 'a1b2c3\n' > "${CUR_DONE}"
+backdate "${CUR_PAIR}"; backdate "${CUR_DONE}"   # stale mtime, but it's the ACTIVE token
+run_hook
+if [ -f "${CUR_PAIR}" ] && [ -f "${CUR_DONE}" ]; then
+    _record_pass "C6b: current-session pairing halves preserved despite stale mtime"
+else
+    _record_fail "C6b: current-session pairing halves preserved despite stale mtime" "deleted"
+fi
+teardown_test_env
+
 print_summary

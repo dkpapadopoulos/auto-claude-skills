@@ -51,6 +51,8 @@ _FIELDS="$(printf '%s' "${_INPUT}" | jq -r '[
     .tool_name // "",
     ((.tool_response | objects | .is_error) // false | tostring),
     ((.tool_input | objects | .subagent_type) // "" | tostring),
+    (.session_id // "" | tostring),
+    ((.tool_response | objects | .agentId) // "" | tostring),
     ((.tool_input | objects | .description) // "" | tostring | gsub("[\\n\\r]"; " "))
   ] | join("\u001f")' 2>/dev/null)" || exit 0
 [ -z "${_FIELDS}" ] && exit 0
@@ -60,8 +62,10 @@ _FIELDS="$(printf '%s' "${_INPUT}" | jq -r '[
 # free-text description happened to contain.
 _TOOL="${_FIELDS%%$'\x1f'*}";      _R1="${_FIELDS#*$'\x1f'}"
 _IS_ERROR="${_R1%%$'\x1f'*}";      _R2="${_R1#*$'\x1f'}"
-_SUBAGENT="${_R2%%$'\x1f'*}"
-_DESC="${_R2#*$'\x1f'}"
+_SUBAGENT="${_R2%%$'\x1f'*}";      _R3="${_R2#*$'\x1f'}"
+_SID="${_R3%%$'\x1f'*}";           _R4="${_R3#*$'\x1f'}"
+_AGENT_ID="${_R4%%$'\x1f'*}"
+_DESC="${_R4#*$'\x1f'}"
 
 # Only the subagent-dispatch tool. `Agent` is the current Claude Code name;
 # `Task` is kept for older builds this plugin also ships to.
@@ -150,7 +154,16 @@ esac
 # not source success. Safe to use the command -v form HERE because this hook
 # is a recorder — a failed load costs a record, never a deny. This change does
 # not touch openspec-guard.sh's own source sites.
-_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
+if [ -z "${_PLUGIN_ROOT}" ]; then
+    # NOT `X="${VAR:-$(cd .. && pwd)}"`. A top-level assignment whose value comes
+    # from a command substitution trips this file's blanket `trap 'exit 0' ERR`
+    # AT THAT LINE when the substitution fails, killing the hook before anything
+    # below it runs — the shape CLAUDE.md calls out in publish-guard.sh. Split so
+    # the failure is handled rather than fatal.
+    _PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)" || _PLUGIN_ROOT=""
+fi
+[ -n "${_PLUGIN_ROOT}" ] || exit 0
 _LEDGER_OK=false
 # Kept on ONE physical line: tests/test-hook-source-guards.sh classifies each
 # source line by grepping single lines, so a `\`-continued guard reads to the
@@ -165,23 +178,63 @@ _LEDGER_OK=false
 # anything extra.
 branch_ledger_record "reviewer-ran" 2>/dev/null || true
 
-# D4 (design.md): this hook's write and scripts/record-review-verdict.sh's
-# read must resolve the branch-ledger key IDENTICALLY. branch_ledger_key
-# hashes the raw path string AND branch name, so a non-canonical path on
-# either side (a trailing slash, a doubled separator, an unresolved symlink)
-# produces a different key and the read silently misses — this produced a
-# false negative during PR #212's development. Both currently derive the path
-# half from `git rev-parse --show-toplevel` (this hook via
-# branch_ledger_record's arg-less fallback); any future change giving one
-# side an explicit proj_root must give it to both.
+# ---------------------------------------------------------------------------
+# Reviewer dispatch/completion JOIN (openspec/changes/reviewer-completion-
+# evidence/). `reviewer-completion-hook.sh` observes that a subagent finished;
+# this hook owns the classification. Neither can credit alone.
 #
-# The branch half carries the SAME hazard from a different cause: each side
-# derives it from its own cwd. This hook runs in the dispatching session's
-# cwd/branch; the script may run from a different worktree entirely (the
-# repo's own using-git-worktrees / agent-team-execution pattern) and reads
-# ITS cwd/branch instead. That mismatch is silent and safe — the read simply
-# misses and the derivation falls through to "asserted" (D3) — but it means
-# this write is usually invisible to that read in exactly the workflow this
-# hook was built for. See design.md Trade-offs.
+# NEITHER HOOK IS GUARANTEED TO RUN FIRST — measured end-to-end against both
+# real hooks on CLI 2.1.236: for a BACKGROUND dispatch this one fires 1.44s
+# BEFORE completion, but for a FOREGROUND dispatch it fires ~30ms AFTER it
+# (3 of 3). So each side writes its own half first and then looks for the
+# other; whichever runs second records the milestone. The first cut wrote here
+# and read there, which is a systematic no-op for every foreground reviewer.
+#
+# ORDERING WITHIN THIS FILE IS ALSO LOAD-BEARING: this runs AFTER the
+# reviewer-ran record, never before. Under this file's `trap 'exit 0' ERR` a
+# single failing command is a silent early exit — the first draft put this
+# above the record, where `wc -c < <missing file>` (a REDIRECTION failure,
+# which `2>/dev/null` does not suppress) killed the hook before it wrote
+# anything, silently deleting the pre-existing milestone. New best-effort work
+# goes below the thing that must not be lost. See CLAUDE.md #137/#198.
+_PAIR_OK=false
+# Kept on ONE physical line: tests/test-hook-source-guards.sh classifies each
+# source line by grepping single lines, so a `\`-continued guard reads to the
+# lint as a bare `. lib` and is flagged.
+# shellcheck source=lib/reviewer-pairing.sh
+# The probed symbol is the LAST function the lib defines, NOT one this hook
+# calls: a file truncated at a function boundary still sources cleanly, so
+# probing a symbol used here would pass while a later one stayed undefined. The
+# cost is that deleting or renaming that function disables the join in BOTH
+# hooks rather than erroring — which is why a cell pins "the probed symbol is the
+# lib's last definition" instead of leaving it to memory.
+. "${_PLUGIN_ROOT}/hooks/lib/reviewer-pairing.sh" 2>/dev/null && command -v reviewer_pairing_note_mismatch >/dev/null 2>&1 && _PAIR_OK=true || true
+
+if [ "${_PAIR_OK}" = "true" ] && [ -n "${_AGENT_ID}" ]; then
+    # The key binds the credit to a (repo, branch) pair. Stored at dispatch so
+    # the completion side can refuse to credit a branch the reviewer never saw:
+    # a backgrounded reviewer finishes on the parent session's clock, and that
+    # session is free to check out something else meanwhile.
+    _PAIR_KEY="$(branch_ledger_key 2>/dev/null)" || _PAIR_KEY=""
+    if [ -n "${_PAIR_KEY}" ]; then
+        # HALF ONE, written BEFORE reading the other half.
+        _PAIR_SHA="$(git rev-parse HEAD 2>/dev/null)" || _PAIR_SHA=""
+        reviewer_pairing_note_dispatch "${_SID}" "${_AGENT_ID}" "${_PAIR_KEY}" "${_PAIR_SHA}" || true
+        # HALF TWO: did this agent already finish, on THIS branch? (foreground
+        # ordering). The key comparison is not symmetry for its own sake — a
+        # membership test here was a measured false-credit path: an agent-id
+        # collision ALONE, with no matching branch and no ordering constraint, was
+        # enough to record `reviewer-returned` at SPAWN time for a reviewer that
+        # had produced nothing. Reproduced against the real hooks with a positive
+        # control; pinned by a cell.
+        _COMP_KEY="$(reviewer_pairing_complete_key "${_SID}" "${_AGENT_ID}")" || _COMP_KEY=""
+        if [ -n "${_COMP_KEY}" ] && [ "${_COMP_KEY}" = "${_PAIR_KEY}" ]; then
+            # Stamp the commit that was REVIEWED. On this path they coincide (we
+            # are at dispatch time), but passing it explicitly keeps both credit
+            # paths writing the same fact rather than relying on that coincidence.
+            branch_ledger_record "reviewer-returned" "" "${_PAIR_SHA}" 2>/dev/null || true
+        fi
+    fi
+fi
 
 exit 0
