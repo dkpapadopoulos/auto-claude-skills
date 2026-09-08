@@ -498,20 +498,27 @@ _assert_pred "single & still separates"            1 $D 'git push --delete origi
 #
 # The chain seeded at the top of this file has REVIEW and VERIFY incomplete, so
 # any DETECTED push must deny; a bypassed one produces no decision at all.
-out="$(_run 'echo a\>&git push origin main')"
-assert_contains "escaped > still reaches the gate (echo)" "deny" "$out"
-out="$(_run 'cd a\>&git push origin main')"
-assert_contains "escaped > still reaches the gate (cd)" "deny" "$out"
-out="$(_run 'true a\>&git push origin main')"
-assert_contains "escaped > still reaches the gate (true)" "deny" "$out"
-out="$(_run 'echo a\<&git push origin main')"
-assert_contains "escaped < still reaches the gate" "deny" "$out"
+# Each cell asserts WHICH gate denied, not merely that the word "deny" appears.
+# Asserting "deny" alone is correct only because a hidden push currently produces
+# NO output at all — but the guard has a substring fallback for push detection
+# when _GC_UNBALANCED is set, so if a future change ever marked these payloads
+# untrusted, that fallback would find `git push` in the raw text, deny, and every
+# one of these cells would go green while the scanner was bypassed again. Naming
+# the fail-closed gate's own remedy text is what keeps them honest.
+for _c in 'echo a\>&git push origin main' \
+          'cd a\>&git push origin main' \
+          'true a\>&git push origin main' \
+          'echo a\<&git push origin main'; do
+    out="$(_run "$_c")"
+    assert_contains "escaped operator still reaches the gate: ${_c}" \
+        "requesting-code-review has not run" "$out"
+done
 
 # NEW-2: the same root cause on the certification path. Here the ALL-form IS the
 # right instrument, because the leading real deletion keeps the command
 # detectable — so a pass genuinely means "refused to certify" rather than
 # "never saw a push".
-_assert_pred "escaped > cannot hide a push behind a deletion" 1 $D 'git push --delete origin foo; cd a\>&git push origin main\'
+_assert_pred "escaped > cannot hide a push behind a deletion" 1 $D 'git push --delete origin foo; cd a\>&git push origin main'
 
 # THE DANGEROUS DIRECTION, pinned explicitly. A refspec-less `git push` ships the
 # current branch, so it must NEVER certify as deletion-only — and redirection
