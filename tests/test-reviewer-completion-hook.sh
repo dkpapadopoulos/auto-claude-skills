@@ -81,7 +81,7 @@ _dispatch_file() { printf '%s' "${HOME}/.claude/.skill-reviewer-dispatch-session
 _complete_file() { printf '%s' "${HOME}/.claude/.skill-reviewer-complete-session-${_SID}"; }
 _reset() {
     rm -rf "$HOME"/.claude/.skill-branch-ledger-*
-    rm -f "$HOME"/.claude/.skill-reviewer-dispatch-* "$HOME"/.claude/.skill-reviewer-complete-*
+    rm -f "$HOME"/.claude/.skill-reviewer-dispatch-* "$HOME"/.claude/.skill-reviewer-complete-* "$HOME"/.claude/.skill-reviewer-saturated-*
     _CWD="$_REPO"
 }
 
@@ -212,25 +212,35 @@ else
     _record_fail "(h2) the refused credit leaves a diagnostic line" "no mismatch line recorded"
 fi
 
-# A diagnostic comment line must never be readable as a pairing record.
+# (h3) A diagnostic comment line must never be readable as a pairing RECORD.
 #
-# An earlier version of this cell was VACUOUS AND MISLEADING: it planted the
-# comment in the DISPATCH file (where note_mismatch never writes) and completed
-# agent id "#", which `awk '$1==a'` genuinely MATCHES — so the credit was refused
-# by the branch comparison, not by the property named. It also implied the lib's
-# `#` exemption is a property of the comparison; it is a property of the id
-# charset (a real id is 17 hex characters and can never be "#").
-#
-# The honest test: plant a mismatch line in the COMPLETION file whose TEXT
-# contains a real-shaped agent id, then dispatch that id. `$1` of that line is
-# "#", so an exact field lookup must not join — while a substring or
-# line-content lookup would.
+# Asserted at the LIB level, and the two previous end-to-end versions of this
+# cell were BOTH vacuous — the second one passed with its own fixture deleted.
+# The end-to-end path cannot isolate this: `$2` of a mismatch line is the word
+# `branch-mismatch`, so even if the lookup DID match, the branch comparison
+# refuses the credit and the cell goes green for the wrong reason. The only
+# honest form is to ask the reader directly.
 _reset
-_KEYNOW2="$(cd "$_REPO" && branch_ledger_key)"
-printf '# branch-mismatch cm00000000000001 dispatched=%s completed=%s\n' "$_KEYNOW2" "$_KEYNOW2" > "$(_dispatch_file)"
-_run_dispatch "cm00000000000001" "Review the diff for correctness"
-if _has; then _record_fail "(h3) a comment line is not a pairing record" "joined against a diagnostic line"
-else _record_pass "(h3) a comment line is not a pairing record"; fi
+_KEYNOW3="$(cd "$_REPO" && branch_ledger_key)"
+printf '# branch-mismatch h300000000000001 dispatched=%s completed=%s\n' "$_KEYNOW3" "$_KEYNOW3" > "$(_dispatch_file)"
+if ( . "${PROJECT_ROOT}/hooks/lib/reviewer-pairing.sh"
+     reviewer_pairing_dispatch_key "$_SID" "h300000000000001" ) >/dev/null 2>&1; then
+    _record_fail "(h3) a diagnostic line is not readable as a record" "dispatch_key matched a # line"
+else
+    _record_pass "(h3) a diagnostic line is not readable as a record"
+fi
+
+# (h3b) POSITIVE CONTROL for (h3): the same reader, same file, same id, but a
+# REAL record — must be found. Without it, (h3) passes just as well against a
+# reader that never matches anything, which is what "passes with the fixture
+# deleted" means.
+printf '%s %s\n' "h300000000000001" "$_KEYNOW3" > "$(_dispatch_file)"
+if ( . "${PROJECT_ROOT}/hooks/lib/reviewer-pairing.sh"
+     reviewer_pairing_dispatch_key "$_SID" "h300000000000001" ) >/dev/null 2>&1; then
+    _record_pass "(h3b) control: the same reader DOES find a real record"
+else
+    _record_fail "(h3b) control: the same reader DOES find a real record" "reader found nothing"
+fi
 
 # --- (h4) the DISPATCH side must branch-bind too ----------------------------
 # Measured false credit before this: the dispatch-side join credited on agent-id
@@ -249,9 +259,11 @@ else
     _record_pass "(h4) a foreign completion does not credit the dispatch side"
 fi
 
-# (h5) NEGATIVE CONTROL for (h4): the same dispatch with no completion anywhere
-# must also not credit — otherwise (h4) proves only that this harness cannot
-# credit at all.
+# (h5) SPECIFICITY control for (h4): the same dispatch with no completion
+# anywhere must also not credit. This isolates the prior completion record as the
+# single variable that differs between the two cells. It is NOT the control that
+# rules out "this harness cannot credit at all" — a second negative cannot do
+# that; (a)/(b) are the positive controls that do.
 _reset
 _run_dispatch "xrepo-2" "Review the diff for correctness"
 if _has "$_REPO"; then
@@ -261,6 +273,67 @@ else
 fi
 # ...and (a)/(b) above are the positive controls: the same harness DOES credit a
 # genuine same-branch join in both orders.
+
+# --- (r) saturation is DISTINGUISHABLE, not merely rarer --------------------
+# An absent `reviewer-returned` means "the reviewer did not return" OR "the
+# recorder stopped recording". Those are `missing` and `cannot_check`, and
+# CLAUDE.md is emphatic (IMPLEMENT shadow leg) that collapsing the second into
+# the first biases every downstream reading in the unsafe direction. Raising the
+# ceiling makes the state rarer; only the marker makes it legible.
+
+# The override is set HERE, not inherited from another cell. These cells
+# originally sat above the one that exported it and therefore ran against the
+# shipped 1 MiB ceiling: (r1) failed loudly, but (r2) PASSED VACUOUSLY — it
+# asserts an absence, so a cell that never triggers the condition looks correct.
+export REVIEWER_PAIRING_MAX_BYTES=200
+
+# (r1) a ceiling refusal leaves a marker
+_reset
+printf '%0400d\n' 0 > "$(_complete_file)"
+_run_completion "sat-1" "Findings: 1" >/dev/null
+if [ -f "${HOME}/.claude/.skill-reviewer-saturated-session-${_SID}" ]; then
+    _record_pass "(r1) a ceiling refusal leaves a saturation marker"
+else
+    _record_fail "(r1) a ceiling refusal leaves a saturation marker" "no marker written"
+fi
+
+# (r2) ordinary operation leaves NO marker. Without this, (r1) passes just as
+# well for a hook that marks unconditionally, which would make the marker
+# meaningless — the same present-but-never-absent asymmetry that let the
+# fabricated-mismatch mutation through until (j4).
+_reset
+_run_dispatch "sat-2" "Review the diff for correctness"
+_run_completion "sat-2" "Findings: 1" >/dev/null
+if [ -f "${HOME}/.claude/.skill-reviewer-saturated-session-${_SID}" ]; then
+    _record_fail "(r2) ordinary operation leaves no marker" "marker written with no refusal"
+else
+    _record_pass "(r2) ordinary operation leaves no marker"
+fi
+unset REVIEWER_PAIRING_MAX_BYTES
+
+# (r3) the reader agrees with the file, via the lib's own accessor rather than a
+# path this test re-derives.
+_reset
+( . "${PROJECT_ROOT}/hooks/lib/reviewer-pairing.sh"
+  reviewer_pairing_saturated "$_SID" ) && _R3PRE=0 || _R3PRE=1
+printf 'complete now\n' > "${HOME}/.claude/.skill-reviewer-saturated-session-${_SID}"
+( . "${PROJECT_ROOT}/hooks/lib/reviewer-pairing.sh"
+  reviewer_pairing_saturated "$_SID" ) && _R3POST=0 || _R3POST=1
+rm -f "${HOME}/.claude/.skill-reviewer-saturated-session-${_SID}"
+if [ "$_R3PRE" -eq 1 ] && [ "$_R3POST" -eq 0 ]; then
+    _record_pass "(r3) reviewer_pairing_saturated tracks the marker"
+else
+    _record_fail "(r3) reviewer_pairing_saturated tracks the marker" "pre=${_R3PRE} post=${_R3POST}"
+fi
+
+# (r4) the SHIPPED default is the documented one. The cells above drive an
+# override, so without this nothing would notice the real constant changing.
+_R4="$( . "${PROJECT_ROOT}/hooks/lib/reviewer-pairing.sh"; printf '%s' "${_REVIEWER_PAIRING_MAX_BYTES}" )"
+if [ "${_R4}" = "1048576" ]; then
+    _record_pass "(r4) the shipped ceiling is the documented 1 MiB"
+else
+    _record_fail "(r4) the shipped ceiling is the documented 1 MiB" "got ${_R4}"
+fi
 
 # ===========================================================================
 # Lookup exactness
@@ -319,10 +392,15 @@ else _record_pass "(j) recorder writes nothing to stdout and exits 0"; fi
 # happen (size ceiling, unwritable HOME). Unguarded under `trap 'exit 0' ERR`
 # that terminates the hook before the join, silently ending every credit for the
 # session. Found by a mutation whose real fault was masked by this early exit.
+# The ceiling is OVERRIDDEN rather than out-padded. Hardcoded padding silently
+# stops testing anything the moment the constant moves — and it already did once
+# here: raising the ceiling to 1 MiB left this cell padding to ~90 KB, which made
+# it vacuous, and only a mutation showed it. Driving the constant instead keeps
+# the cell tied to the mechanism and takes milliseconds.
+export REVIEWER_PAIRING_MAX_BYTES=200
 _reset
 _run_dispatch "full-1" "Review the diff for correctness"
-# push the completion half past the 64KiB ceiling
-{ head -c 1100000 /dev/zero 2>/dev/null | tr '\0' 'x'; printf '\n'; } >> "$(_complete_file)"
+printf '%0400d\n' 0 >> "$(_complete_file)"        # now over the 200-byte ceiling
 _run_completion "full-1" "Findings: 1" >/dev/null
 if _has; then _record_pass "(j2) a full completion file does not stop the join (bg order)"
 else _record_fail "(j2) a full completion file does not stop the join (bg order)" "no ledger entry"; fi
@@ -346,10 +424,7 @@ else _record_fail "(j2) a full completion file does not stop the join (bg order)
 # cannot record the marker either, and conflating them rebuilds the exact
 # collapse the marker would exist to prevent.
 _reset
-# One command, not a 30k-iteration shell loop: the cell needs the file to EXCEED
-# the ceiling, and nothing here reads its contents (no `$1` can match a real id).
-# The loop form cost seconds on every run of this file and every mutation pass.
-{ head -c 1100000 /dev/zero 2>/dev/null | tr '\0' 'x'; printf '\n'; } > "$(_complete_file)"
+printf '%0400d\n' 0 > "$(_complete_file)"          # over the overridden ceiling
 _run_completion "full-2" "Findings: 1" >/dev/null
 _run_dispatch "full-2" "Review the diff for correctness"
 if _has; then
@@ -371,6 +446,11 @@ if grep -q '^# branch-mismatch' "$(_dispatch_file)" 2>/dev/null; then
 else
     _record_pass "(j4) a non-reviewer completion leaves no mismatch line"
 fi
+
+# The overridden ceiling is scoped to the cells that need it. Leaving it set
+# would silently apply a 200-byte limit to every later cell, which is the same
+# class of cross-cell coupling that made (r2) vacuous.
+unset REVIEWER_PAIRING_MAX_BYTES
 
 # --- (k) malformed / empty input never fails --------------------------------
 _reset
@@ -460,62 +540,98 @@ else
 fi
 
 # --- (p) both pairing families are GC'd, each with its own exclusion --------
-# Behavioural pruning is asserted in tests/test-state-file-cleanup.sh. Here both
-# halves are pinned together, so adding a family's glob without its
-# current-session exclusion (which would prune the LIVE session's pairing and
-# silently break every later join) cannot pass.
+# Behavioural pruning is asserted in tests/test-state-file-cleanup.sh. Here every
+# family is pinned together, so adding a glob without its current-session
+# exclusion — which would prune the LIVE session's state and silently break every
+# later join — cannot pass. Adding a family means adding it in BOTH places, and
+# this loop is what forces that.
 _SS="${PROJECT_ROOT}/hooks/session-start-hook.sh"
 _GCOK=1
-for _k in dispatch complete; do
+for _k in dispatch complete saturated; do
     grep -q "name '\.skill-reviewer-${_k}-\*'" "$_SS" 2>/dev/null || _GCOK=0
     grep -q "! -name \"\.skill-reviewer-${_k}-\${_SESSION_TOKEN}\"" "$_SS" 2>/dev/null || _GCOK=0
 done
 if [ "$_GCOK" -eq 1 ]; then
-    _record_pass "(p) both pairing families are GC'd with current-session exclusions"
+    _record_pass "(p) all pairing families are GC'd with current-session exclusions"
 else
-    _record_fail "(p) both pairing families are GC'd with current-session exclusions" "a glob or exclusion is missing"
+    _record_fail "(p) all pairing families are GC'd with current-session exclusions" "a glob or exclusion is missing"
 fi
 
-# --- (q) writer and reader must accept and reject the SAME ids -------------
-# Asserted as AGREEMENT, not as two separate lists. If the writer's charset and
-# a reader's ever diverge, an id becomes writable but not readable — a silent
-# miss, and precisely the writer/reader split this lib exists to prevent. Two
-# independent assertions of "the writer rejects X" and "the reader rejects X"
-# would both keep passing while the two lists drifted apart.
+# --- (q) writer and reader must agree on the id charset, BOTH pairs -----------
+# Asserted as AGREEMENT rather than as two separate rejection lists: independent
+# assertions of "the writer rejects X" and "the reader rejects X" both keep
+# passing while the two lists drift apart, which is a silent miss and exactly the
+# writer/reader split this lib exists to prevent.
+#
+# BOTH pairs, deliberately. An earlier version covered only dispatch/dispatch_key
+# — and complete_key, which the branch-binding fix depends on, had zero test
+# callers, so deleting its guard produced no observable failure anywhere.
+#
+# The record is PLANTED DIRECTLY rather than written through the writer, so a
+# reader's "accept" is not confounded with "the writer happened to store it".
+#
+# LIMIT, stated rather than papered over: for an id the writer rejects, the
+# reader also fails to find a planted line (its `$1` cannot equal an id
+# containing a space), so the two agree for two different reasons. This cell
+# therefore reliably detects READER-STRICTER-THAN-WRITER drift — the direction
+# that silently loses real records — and not the converse.
 #
 # Loop is heredoc-fed, NOT piped: a piped loop runs in a subshell and its
 # _record_pass/_record_fail calls vanish from the summary (CLAUDE.md).
-# shellcheck disable=SC1090
-. "${PROJECT_ROOT}/hooks/lib/reviewer-pairing.sh"
 _QHOME="$(mktemp -d /tmp/rch-q-XXXXXX)"; _QOLD="$HOME"; export HOME="$_QHOME"; mkdir -p "$HOME/.claude"
 _QSID="qqqqqqqq-1111-2222-3333-444444444444"
 _QKEY="deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+_QD="${HOME}/.claude/.skill-reviewer-dispatch-session-${_QSID}"
+_QC="${HOME}/.claude/.skill-reviewer-complete-session-${_QSID}"
 _QAGREE=1; _QDETAIL=""
 while IFS= read -r _qid; do
     [ -n "$_qid" ] || continue
-    _qid="${_qid%\'}"; _qid="${_qid#\'}"          # strip the quoting used below
-    if reviewer_pairing_note_dispatch "$_QSID" "$_qid" "$_QKEY" 2>/dev/null; then _qw=accept; else _qw=reject; fi
-    if reviewer_pairing_dispatch_key "$_QSID" "$_qid" >/dev/null 2>&1; then _qr=accept; else _qr=reject; fi
-    if [ "$_qw" != "$_qr" ]; then
-        _QAGREE=0; _QDETAIL="${_QDETAIL} [${_qid}: writer=${_qw} reader=${_qr}]"
-    fi
+    ( . "${PROJECT_ROOT}/hooks/lib/reviewer-pairing.sh"
+      rm -f "$_QD" "$_QC"
+      reviewer_pairing_note_dispatch "$_QSID" "$_qid" "$_QKEY" >/dev/null 2>&1 && _wd=accept || _wd=reject
+      reviewer_pairing_note_complete "$_QSID" "$_qid" "$_QKEY" >/dev/null 2>&1 && _wc=accept || _wc=reject
+      printf '%s %s\n' "$_qid" "$_QKEY" > "$_QD"
+      printf '%s %s\n' "$_qid" "$_QKEY" > "$_QC"
+      reviewer_pairing_dispatch_key "$_QSID" "$_qid" >/dev/null 2>&1 && _rd=accept || _rd=reject
+      reviewer_pairing_complete_key "$_QSID" "$_qid" >/dev/null 2>&1 && _rc=accept || _rc=reject
+      [ "$_wd" = "$_rd" ] || printf 'dispatch[%s: w=%s r=%s] ' "$_qid" "$_wd" "$_rd"
+      [ "$_wc" = "$_rc" ] || printf 'complete[%s: w=%s r=%s] ' "$_qid" "$_wc" "$_rc" ) > "${_QHOME}/out" 2>/dev/null
+    _qout="$(cat "${_QHOME}/out" 2>/dev/null)"
+    if [ -n "$_qout" ]; then _QAGREE=0; _QDETAIL="${_QDETAIL} ${_qout}"; fi
 done <<'QIDS'
-'abc-1'
-'a.b_c'
-'A1'
-'0123456789abcdef0'
-'a b'
-'a/b'
-'a;b'
-'a$b'
-'a*b'
-'#'
+abc-1
+a.b_c
+A1
+0123456789abcdef0
+a b
+a/b
+a;b
+a*b
+#
 QIDS
 export HOME="$_QOLD"; rm -rf "$_QHOME"
 if [ "$_QAGREE" -eq 1 ]; then
-    _record_pass "(q) writer and reader agree on the agent-id charset"
+    _record_pass "(q) writer and reader agree on the id charset, both pairs"
 else
-    _record_fail "(q) writer and reader agree on the agent-id charset" "disagreements:${_QDETAIL}"
+    _record_fail "(q) writer and reader agree on the id charset, both pairs" "disagreements:${_QDETAIL}"
+fi
+
+# --- (s) the probed source-guard symbol IS the lib's last definition ---------
+# Both hooks deliberately probe a symbol neither of them may call, because a lib
+# truncated at a function boundary sources cleanly and would leave later
+# definitions undefined. That only works while the probed symbol really is last —
+# append a function to the lib and the guarantee silently reverts. The cost of
+# the choice is that deleting or renaming that symbol disables the join in BOTH
+# hooks without erroring, so it is pinned here rather than left to memory.
+_LASTFN="$(grep -o '^[a-z_][a-z_]*() {' "${PROJECT_ROOT}/hooks/lib/reviewer-pairing.sh" | tail -1 | sed 's/() {//')"
+_SOK=1
+for _h in reviewer-completion-hook reviewer-evidence-hook; do
+    grep -q "command -v ${_LASTFN} >/dev/null 2>&1" "${PROJECT_ROOT}/hooks/${_h}.sh" 2>/dev/null || _SOK=0
+done
+if [ -n "${_LASTFN}" ] && [ "$_SOK" -eq 1 ]; then
+    _record_pass "(s) both hooks probe the lib's last-defined function (${_LASTFN})"
+else
+    _record_fail "(s) both hooks probe the lib's last-defined function" "last='${_LASTFN}' — a hook probes something else"
 fi
 
 rm -rf "$_REPO" "$_REPO2"

@@ -142,9 +142,36 @@ must not exist. The failure is also ORDER-ASYMMETRIC: the background order keeps
 working off the separate dispatch file, so it degrades rather than stopping
 cleanly. The completion file records EVERY subagent completion (correct — it is
 the join key), which makes it fan-out-driven in exactly the agent-team sessions
-this evidence is for. Mitigated by raising the ceiling to 1 MiB (~26k
-completions), not by pruning, which would need the read-modify-write this design
-avoids. Pinned as a documented miss by cell (j3) rather than left implicit.
+this evidence is for. Mitigated two ways. Raising the ceiling to 1 MiB (~26k
+completions) makes the state rarer — but rarer is not visible, and a rarer silent
+failure is harder to diagnose when it finally happens. So the refusal also writes
+a SATURATION MARKER.
+
+The marker exists because the requirement is not really "announce" — a recorder
+must stay silent — it is that **a reader can tell the two states apart**.
+Saturation is `cannot_check`, not `missing`, and CLAUDE.md is explicit for the
+IMPLEMENT shadow leg that collapsing the second into the first "makes a
+false_block look like a true_catch" and biases the reading toward clearing. This
+is the identical error in the identical direction: an absent `reviewer-returned`
+would read as "the reviewer did not return" when the truth is "the recorder
+stopped recording".
+
+Shape: one whole-file overwrite of a fixed-size payload — `branch_ledger_record`'s
+per-milestone design, chosen there for the same reason. No read-modify-write, so
+concurrent hooks cannot race; bounded by construction, so the marker cannot
+itself saturate and need a marker of its own. Written ONLY for the ceiling
+refusal, never for a failed write: an unwritable `~/.claude` cannot record a
+marker either, so that cause is structurally unable to announce and must not
+pretend to — which is why `_reviewer_pairing_append` returns 2 for the ceiling
+and 1 for everything else.
+
+Deliberately NOT routed through `openspec-guard.sh`'s `_DEGRADED_MSG`. That
+channel means "a gate-enforcement leg fell open", and a saturated recorder
+stopped RECORDING, not ENFORCING. Putting it there would be the mirror of the
+mistake #198 warns about: replacing an under-report with a confident over-report
+that tells the user to distrust a gate which is still holding.
+
+Cell (j3) still pins the residual foreground miss as a documented miss.
 
 **A size ceiling, not a trim.** Parallel dispatches run their hooks
 concurrently, so a read-modify-write rotation would be a real race, while a short
@@ -178,7 +205,14 @@ review happened".
 not proven; 8 ids observed across the probes were 17 random hex characters and
 all distinct, including 3 dispatched in one session, so reuse is implausible but
 not excluded. Reuse now requires a collision *and* a matching branch key on
-either half. That was NOT true when first written: the dispatch-side join
+either half — but those two conjuncts are NOT independent, and pricing them as
+if they were would overstate the protection. A session normally stays on one
+branch, so a SAME-BRANCH id collision still credits `reviewer-returned` at spawn
+time for a reviewer that has produced nothing. That variant is open and is the
+ordinary case; what the binding actually closes is the cross-branch and
+cross-repo one. No clean ordering constraint exists to close the rest, and the
+residual risk rests entirely on ids being 17 random hex characters — which is
+measured only as "8 observed, all distinct", not proven. That was NOT true when first written: the dispatch-side join
 credited on membership alone, so a collision ALONE recorded `reviewer-returned`
 at spawn time for a reviewer that had produced nothing. Caught in review,
 reproduced against the real hooks with a positive control, and closed by storing
@@ -250,6 +284,17 @@ the same procedural spirit. Not built here.
 - **D5.** `session_id` and `agent_id` are validated as single path-safe segments.
   The values are harness-supplied, but a recorder must not be the component that
   turns a surprising value into a read or write outside `~/.claude`.
+- **D7.** The pairing store is two append-only files with a size ceiling, not a
+  directory of one file per agent id. The directory form would remove the ceiling
+  entirely, remove the TOCTOU, remove `awk` from a hot path, and close the
+  reader-side charset question by construction — it is the better design and is
+  recorded here as the recommended next shape. It is declined now for one
+  specific reason worth writing down: `session-start-hook.sh` prunes this family
+  with `find … -exec rm -f {} +`, which does NOT remove directories, so a
+  directory-shaped family would leak every dead session's pairing dir forever,
+  silently. Cells (p) and C6 would NOT catch that — (p) asserts glob and
+  exclusion TEXT, and C6 plants FILES. Whoever takes this must change the GC and
+  make C6 plant a directory.
 - **D6.** TWO guards are knowingly redundant and kept: the `[ -f ]` before
   `wc -c` (the `|| bytes=0` is the live handler) and `|| true` on
   `note_mismatch` (the hook exits immediately after either way, so the two paths

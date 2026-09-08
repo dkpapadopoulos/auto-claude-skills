@@ -202,6 +202,12 @@ _PAIR_OK=false
 # source line by grepping single lines, so a `\`-continued guard reads to the
 # lint as a bare `. lib` and is flagged.
 # shellcheck source=lib/reviewer-pairing.sh
+# The probed symbol is the LAST function the lib defines, NOT one this hook
+# calls: a file truncated at a function boundary still sources cleanly, so
+# probing a symbol used here would pass while a later one stayed undefined. The
+# cost is that deleting or renaming that function disables the join in BOTH
+# hooks rather than erroring — which is why a cell pins "the probed symbol is the
+# lib's last definition" instead of leaving it to memory.
 . "${_PLUGIN_ROOT}/hooks/lib/reviewer-pairing.sh" 2>/dev/null && command -v reviewer_pairing_note_mismatch >/dev/null 2>&1 && _PAIR_OK=true || true
 
 if [ "${_PAIR_OK}" = "true" ] && [ -n "${_AGENT_ID}" ]; then

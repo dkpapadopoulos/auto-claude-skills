@@ -86,12 +86,11 @@ _LAST="${_R2#*$'\x1f'}"
 # safe direction for a fidelity signal.
 [ -n "${_LAST}" ] || exit 0
 
-# #137 source-guard form: source + command -v + flag. The probed function is the
-# LAST one the lib defines, not the first one used: a file truncated at a function
-# boundary still sources cleanly, so probing an early definition would leave a
-# later one undefined and the command-not-found would trip the ERR trap.
-#
-# #137 source-guard form: source + command -v + flag. A bare `. lib` under
+# #137 source-guard form: source + command -v + flag. The probed symbol is the
+# LAST function the lib defines, not the first one used: a file truncated at a
+# function boundary still sources cleanly, so probing an early definition would
+# leave a later one undefined and the command-not-found would trip the ERR trap.
+# Pinned by a cell — if a function is appended to the lib, the probe must move. A bare `. lib` under
 # `trap 'exit 0' ERR` is a silent early exit, and `[ -f ]` proves existence, not
 # source success. Safe here because this hook is a recorder — a failed load
 # costs a record, never a deny.

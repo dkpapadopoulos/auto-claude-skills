@@ -56,14 +56,32 @@
 _reviewer_pairing_file() {
     local kind="${1:-}" sid="${2:-}"
     [ -n "$kind" ] && [ -n "$sid" ] || return 1
-    case "$kind" in dispatch|complete) ;; *) return 1 ;; esac
+    case "$kind" in dispatch|complete|saturated) ;; *) return 1 ;; esac
     case "$sid" in
         *[!A-Za-z0-9._-]*|.|..) return 1 ;;
     esac
     printf '%s' "${HOME}/.claude/.skill-reviewer-${kind}-session-${sid}"
 }
 
-# _reviewer_pairing_append <file> <line> — bounded, race-tolerant append.
+# _REVIEWER_PAIRING_MAX_BYTES — the per-file ceiling, overridable so tests can
+# exercise a REAL refusal cheaply instead of writing a megabyte of padding.
+# Precedent: IMPLEMENT_SHADOW_LOG overrides the shadow-corpus path the same way.
+# A test that hardcodes its padding silently stops testing anything the moment
+# this constant moves, which is the "mutation applied is not fault produced"
+# shape — so the cells derive their padding from this value.
+_REVIEWER_PAIRING_MAX_BYTES="${REVIEWER_PAIRING_MAX_BYTES:-1048576}"
+case "${_REVIEWER_PAIRING_MAX_BYTES}" in
+    ''|*[!0-9]*) _REVIEWER_PAIRING_MAX_BYTES=1048576 ;;
+esac
+
+# _reviewer_pairing_append <file> <line> <session_id> <kind> — bounded,
+# race-tolerant append. Returns 0 on write, 2 on CEILING refusal, 1 otherwise.
+#
+# The 2-vs-1 split is required, not cosmetic: the ceiling and a failed write are
+# different faults and only one of them can be recorded. An unwritable
+# ~/.claude cannot write a saturation marker either, so that cause is
+# STRUCTURALLY unable to announce; a marker that covered both would rebuild
+# exactly the collapse it exists to prevent.
 #
 # EXHAUSTING THE CEILING SILENCES THIS WHOLE FAMILY for the rest of the session,
 # including reviewer_pairing_note_mismatch — so the diagnostic that exists to keep
@@ -90,15 +108,44 @@ _reviewer_pairing_file() {
 # #137/#198). The `[ -f ]` only avoids a pointless fork on the common
 # first-write path; deleting it breaks nothing, so do not read it as the guard.
 _reviewer_pairing_append() {
-    local f="${1:-}" line="${2:-}" bytes=0
+    local f="${1:-}" line="${2:-}" sid="${3:-}" kind="${4:-}" bytes=0 marker
     [ -n "$f" ] && [ -n "$line" ] || return 1
     if [ -f "$f" ]; then
         bytes="$(wc -c < "$f" 2>/dev/null | tr -d ' ')" || bytes=0
         case "$bytes" in ''|*[!0-9]*) bytes=0 ;; esac
     fi
-    [ "$bytes" -lt 1048576 ] || return 1
+    if [ "$bytes" -ge "${_REVIEWER_PAIRING_MAX_BYTES}" ]; then
+        # SATURATION MARKER. The point is not to announce — a recorder must stay
+        # silent — but to make the state DISTINGUISHABLE on disk, so a reader can
+        # tell "the reviewer did not return" from "the recorder stopped
+        # recording". Those are `missing` and `cannot_check`, and CLAUDE.md is
+        # emphatic (IMPLEMENT shadow leg) that collapsing the second into the
+        # first biases every downstream reading in the unsafe direction.
+        #
+        # One whole-file overwrite of a fixed-size payload — the same shape as
+        # branch_ledger_record's per-milestone file, chosen there for the same
+        # reason: no read-modify-write, so concurrent hooks cannot race, and
+        # every writer writes the same fact. Bounded by construction, so the
+        # marker can never itself saturate and need a marker of its own.
+        marker="$(_reviewer_pairing_file saturated "$sid")" || marker=""
+        if [ -n "$marker" ]; then
+            printf '%s %s\n' "${kind:-unknown}" "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" \
+                > "$marker" 2>/dev/null || true
+        fi
+        return 2
+    fi
     printf '%s\n' "$line" >> "$f" 2>/dev/null || return 1
     return 0
+}
+
+# reviewer_pairing_saturated <session_id> — 0 iff this session's pairing store
+# stopped accepting writes. A reader that finds no `reviewer-returned` MUST
+# consult this before concluding no reviewer returned: the honest answer in that
+# case is "could not check", not "did not happen".
+reviewer_pairing_saturated() {
+    local f
+    f="$(_reviewer_pairing_file saturated "${1:-}")" || return 1
+    [ -f "$f" ]
 }
 
 # reviewer_pairing_note_dispatch <session_id> <agent_id> <ledger_key>
@@ -114,7 +161,7 @@ reviewer_pairing_note_dispatch() {
     case "$aid" in *[!A-Za-z0-9._-]*) return 1 ;; esac
     case "$key" in *[!A-Za-z0-9._-]*) return 1 ;; esac
     f="$(_reviewer_pairing_file dispatch "$sid")" || return 1
-    _reviewer_pairing_append "$f" "${aid} ${key}"
+    _reviewer_pairing_append "$f" "${aid} ${key}" "$sid" dispatch
 }
 
 # reviewer_pairing_note_complete <session_id> <agent_id> <ledger_key>
@@ -134,7 +181,7 @@ reviewer_pairing_note_complete() {
     case "$aid" in *[!A-Za-z0-9._-]*) return 1 ;; esac
     case "$key" in *[!A-Za-z0-9._-]*) return 1 ;; esac
     f="$(_reviewer_pairing_file complete "$sid")" || return 1
-    _reviewer_pairing_append "$f" "${aid} ${key}"
+    _reviewer_pairing_append "$f" "${aid} ${key}" "$sid" complete
 }
 
 # reviewer_pairing_dispatch_key <session_id> <agent_id> — prints the ledger key
@@ -152,9 +199,10 @@ reviewer_pairing_note_complete() {
 # of a mismatch line is the word `branch-mismatch`. A lookup that matched such a
 # line would hand the caller "branch-mismatch" AS A LEDGER KEY. The charset
 # validation above closes it from the other end — a caller can never ask for `#`
-# — but do not remove either guard on the grounds that the other exists. Absent or unreadable file is a
-# miss, not an error: a recorder degrades to "no record", never to a fabricated
-# one.
+# — but do not remove either guard on the grounds that the other exists.
+#
+# An absent or unreadable file is a MISS, not an error: a recorder degrades to
+# "no record", never to a fabricated one.
 reviewer_pairing_dispatch_key() {
     local sid="${1:-}" aid="${2:-}" f out
     [ -n "$aid" ] || return 1
@@ -204,6 +252,12 @@ reviewer_pairing_complete_key() {
 # ran" and "a reviewer ran and the join failed" must not look identical.
 reviewer_pairing_note_mismatch() {
     local sid="${1:-}" aid="${2:-}" dkey="${3:-}" nkey="${4:-}" f
+    # The only writer here that interpolates the id into a line without checking
+    # it. Unreachable today — the completion hook only reaches the mismatch path
+    # after dispatch_key has already rejected a bad id — but a newline-bearing id
+    # would write a FORGED, readable dispatch record, and "unreachable" is a
+    # property of one caller, not of this function.
+    case "$aid" in *[!A-Za-z0-9._-]*) return 1 ;; esac
     f="$(_reviewer_pairing_file dispatch "$sid")" || return 1
-    _reviewer_pairing_append "$f" "# branch-mismatch ${aid} dispatched=${dkey} completed=${nkey}"
+    _reviewer_pairing_append "$f" "# branch-mismatch ${aid} dispatched=${dkey} completed=${nkey}" "$sid" dispatch
 }
