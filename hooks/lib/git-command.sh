@@ -223,7 +223,30 @@ _gc_split_segments() {
                         _seg="${_seg}${_line:${_i}:$((_j-_i))}"
                         _i=$((_j-1))
                     fi ;;
-                ';'|'|'|'&') _out="${_out}${_seg}${_GC_SEP}"; _seg="" ;;
+                '&')
+                    # `&` is a control operator EXCEPT immediately after `<` or
+                    # `>`, where it belongs to a redirection (`2>&1`, `>&2`,
+                    # `3>&-`). Splitting there tore a redirection in half and
+                    # discarded whatever followed it: `git push origin main
+                    # 3>&- next` became the segment `git push origin main 3>`
+                    # plus `- next`, so the parser saw ONE refspec while bash
+                    # pushes `main` AND `next` — a confident UNDER-report, the
+                    # direction #198 calls strictly worse, introduced by the
+                    # redirection fix itself.
+                    #
+                    # It also left `2>&1` unable to certify a deletion-only
+                    # command, because the orphaned `1` is not on the inert
+                    # whitelist and the ALL-form correctly refuses to vouch for
+                    # a segment it cannot account for.
+                    #
+                    # Narrow by construction: only an `&` whose PREVIOUS
+                    # character is `<` or `>` stops being a boundary, so
+                    # `a && b`, `a & b` and a trailing `&` are untouched.
+                    case "${_seg}" in
+                        *'<'|*'>') _seg="${_seg}${_c}" ;;
+                        *) _out="${_out}${_seg}${_GC_SEP}"; _seg="" ;;
+                    esac ;;
+                ';'|'|') _out="${_out}${_seg}${_GC_SEP}"; _seg="" ;;
                 *) _seg="${_seg}${_c}" ;;
             esac
             _i=$((_i+1))
@@ -901,40 +924,53 @@ _gc_strip_closers() {
 }
 
 
-# _gc_redir_kind <word> — classify a word as a SHELL REDIRECTION.
-#   prints "glued" — the word is a complete redirection (`2>&1`, `>/tmp/o`,
-#                    `3>&-`); it consumes nothing further.
-#   prints "bare"  — the word is a redirection OPERATOR whose target is the NEXT
-#                    word (`>`, `2>`, `>>`, `<`, `<<<`); the caller must skip both.
-#   returns 1      — not a redirection.
+# _gc_redir_kind_var <word> — classify a word as a SHELL REDIRECTION, setting
+# `_GC_REDIR` and returning 0; returns 1 (and leaves _GC_REDIR empty) otherwise.
+#   _GC_REDIR=glued — a complete redirection (`2>&1`, `>/tmp/o`, `>-`, `3>&-`);
+#                     it consumes nothing further.
+#   _GC_REDIR=bare  — an operator whose target is the NEXT word (`>`, `2>`, `>>`,
+#                     `<`, `<<<`); the caller must skip both.
 #
-# STRUCTURAL, NOT AN ENUMERATION, and that is the whole point. Issue #238 was
-# reported as "`2>&1` and `> file` are counted as refspecs", and the obvious fix
-# is a list of those spellings — but this predicate family has now been bypassed
-# five times by lists of shell syntax that were each complete until they were
-# not (see CLAUDE.md on `command_push_is_all_deletions`). So this matches the
-# SHAPE a redirection has: an optional `&`, an optional file-descriptor digit
-# run, then `<` or `>`. That covers `10>`, `3>&-`, `<<<` and anything else of
-# that form without anyone having had to think of them.
+# Sets a variable rather than printing, for the same reason `_gc_strip_closers_var`
+# does: this runs per-argument inside two loops on the synchronous gate path, and
+# a command substitution per word measured ~88% slower over 200 iterations.
 #
-# A word is judged by its FIRST characters only, so a quoted word that merely
-# begins with an operator character (a ref pathologically named `">weird"`) is
-# not a redirection — the quote is the first character and the shape does not
-# match. That is deliberate: this must never swallow a real refspec.
-_gc_redir_kind() {
+# STRUCTURAL, NOT AN ENUMERATION, and the shape is: an optional `{name}` (bash
+# >= 4.1 named fd), an optional `&`, an optional file-descriptor digit run, then
+# `<` or `>`. That covers `10>`, `<<<`, `{fd}>file` without anyone having listed
+# them — this predicate family has been bypassed repeatedly by lists of shell
+# syntax that were complete until they were not.
+#
+# `-` IS NOT AN OPERATOR CHARACTER, and getting that wrong was a security
+# regression in the first cut of this helper. `-` is part of an operator only in
+# the fd-close forms `>&-` / `3>&-`, where it follows `&`. Standing alone after
+# `>` it is an ordinary FILENAME: `git push origin :scratch >- main` redirects to
+# a file named `-` and pushes BOTH `:scratch` and `main`. Treating `>-` as a bare
+# operator swallowed `main`, left "all refspecs are deletions", and made
+# command_push_is_all_deletions CERTIFY a content-shipping push — skipping all
+# four content gates. So the operator run is `[<>&]` only; `>&-` still classifies
+# as `glued` (the `-` remains, so it consumes nothing), which is what bash does.
+#
+# A word is judged by its LEADING characters, so a quoted word that merely begins
+# with an operator character — a ref pathologically named `">weird"` — is not a
+# redirection. This must never swallow a real refspec.
+_gc_redir_kind_var() {
     local _w="${1:-}" _rest
+    _GC_REDIR=""
     [ -n "${_w}" ] || return 1
-    _rest="${_w#&}"
+    case "${_w}" in
+        '{'*'}'*) _rest="${_w#*\}}" ;;      # {fd}>file
+        *) _rest="${_w}" ;;
+    esac
+    _rest="${_rest#&}"
     while :; do
         case "${_rest}" in [0-9]*) _rest="${_rest#?}" ;; *) break ;; esac
     done
     case "${_rest}" in [\<\>]*) ;; *) return 1 ;; esac
-    # Strip the operator run. Anything left is a GLUED target; nothing left
-    # means the target is the next word.
     while :; do
-        case "${_rest}" in [\<\>\&-]*) _rest="${_rest#?}" ;; *) break ;; esac
+        case "${_rest}" in [\<\>\&]*) _rest="${_rest#?}" ;; *) break ;; esac
     done
-    if [ -n "${_rest}" ]; then printf 'glued'; else printf 'bare'; fi
+    if [ -n "${_rest}" ]; then _GC_REDIR=glued; else _GC_REDIR=bare; fi
     return 0
 }
 
@@ -1128,10 +1164,10 @@ command_push_ref() {
                 # resolve and the guard fell back to the checkout's HEAD —
                 # silently defeating #219's subject resolution for the shape an
                 # agent writes most often (issue #238).
-                _kind="$(_gc_redir_kind "${_GC_W}")" && {
-                    if [ "${_kind}" = "bare" ] && [ "$#" -ge 2 ]; then shift 2; else shift; fi
+                if _gc_redir_kind_var "${_GC_W}"; then
+                    if [ "${_GC_REDIR}" = "bare" ] && [ "$#" -ge 2 ]; then shift 2; else shift; fi
                     continue
-                }
+                fi
                 case "${_GC_W}" in
                     '') shift; continue ;;
                     --delete|-d) return 0 ;;
@@ -1263,7 +1299,7 @@ command_push_subject_is_partial() {
 #   count) and is the one remaining copy; a parsing fix here must be mirrored
 #   there.
 _gc_push_seg_shape() {
-    local _u _n=0 _del=0 _refs=0 _empty=0 _broad=0 _odd=0 _a _kind
+    local _u _n=0 _del=0 _refs=0 _empty=0 _broad=0 _odd=0 _a
     # shellcheck disable=SC2086
     set -- $1
     while [ "$#" -gt 0 ]; do
@@ -1306,10 +1342,10 @@ _gc_push_seg_shape() {
         # `… 2>&1` was announced as carrying more than one ref: a confident
         # over-report about a command the gate had measured correctly, which is
         # the failure mode #198 settled as worse than silence (issue #238).
-        _kind="$(_gc_redir_kind "${_GC_W}")" && {
-            if [ "${_kind}" = "bare" ] && [ "$#" -ge 2 ]; then shift 2; else shift; fi
+        if _gc_redir_kind_var "${_GC_W}"; then
+            if [ "${_GC_REDIR}" = "bare" ] && [ "$#" -ge 2 ]; then shift 2; else shift; fi
             continue
-        }
+        fi
         case "${_GC_W}" in
             '') shift ;;
             --delete|-d) _del=1; shift ;;

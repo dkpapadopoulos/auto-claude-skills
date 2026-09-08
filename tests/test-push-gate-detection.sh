@@ -448,21 +448,24 @@ _assert_pred "redirected deletion certifies"       0 $D 'git push --delete origi
 # ...but redirection stripping must not certify a command that ships content.
 _assert_pred "redirected real push does not"       1 $D 'git push origin main > /tmp/o'
 
-# BOUNDARY, pinned deliberately rather than fixed. An `&`-bearing redirection is
-# still not certifiable, because `&` is a SEGMENT boundary: `2>&1` splits into
-# `… 2>` and `1`, and `1` is not on the inert whitelist, so the ALL-form refuses
-# to vouch for the command. That refusal is correct and must stay — widening the
-# whitelist to admit a bare number is exactly the "enumerate what looks safe"
-# move that has bypassed this predicate five times, and the cost of refusing is
-# one-directional (the command loses the deletion skip and is measured against
-# HEAD, as every push was before #229 — never a new deny).
+# `&` is a control operator EXCEPT immediately after `<` or `>`, where it is part
+# of a redirection. This was pinned here as an accepted limitation — `2>&1` split
+# into `… 2>` and `1`, the orphaned `1` was not on the inert whitelist, and the
+# ALL-form correctly refused to vouch for a segment it could not account for.
 #
-# Fixing it properly means teaching `_gc_split_segments` that the `&` in `>&` is
-# part of a redirection and not a control operator. That is the #155 scanner and
-# is deliberately out of scope here; this cell exists so the limitation is a
-# recorded decision rather than an accident, and so that a future change to the
-# scanner has something that visibly flips.
-_assert_pred "&-redirect deletion is not certified" 1 $D 'git push --delete origin foo 2>&1'
+# It stopped being acceptable once the redirection fix turned the same split into
+# an UNDER-report: `git push origin main 3>&- next` lost `next` entirely, so a
+# two-refspec push read as one. #198 calls that the strictly worse direction, and
+# it was introduced by this change, so the splitter was narrowed instead. The
+# narrowing is by construction: only an `&` whose previous character is `<` or
+# `>` stops being a boundary, so `a && b`, `a & b` and a trailing `&` are
+# untouched — pinned by the compound-command cells above and in
+# tests/test-push-gate-failclosed.sh.
+_assert_pred "&-redirect deletion now certifies"   0 $D 'git push --delete origin foo 2>&1'
+_assert_pred "...and a redirected real push does not" 1 $D 'git push origin main 2>&1'
+# The controls that must keep splitting.
+_assert_pred "&& still separates commands"         1 $D 'git push --delete origin x && git push origin main'
+_assert_pred "single & still separates"            1 $D 'git push --delete origin x & git push origin main'
 
 # THE DANGEROUS DIRECTION, pinned explicitly. A refspec-less `git push` ships the
 # current branch, so it must NEVER certify as deletion-only — and redirection
@@ -483,6 +486,50 @@ _assert_pred "redirected bare push"                1 $D 'git push > /tmp/o'
 # the redirected and unredirected forms giving different answers was the bug.
 _assert_pred "redirect target is not a refspec (ALL-form)" 0 $D 'git push --delete origin > main'
 _assert_pred "...matching the unredirected form"          0 $D 'git push --delete origin' 
+
+# --- the `-` regression: a file named `-` is NOT an operator character -------
+# Found in review, and it is the sixth-of-class pattern turned on my own fix: the
+# operator-run class included `-` unconditionally, but `-` is only an operator
+# when it follows `&` (the fd-close forms `>&-`, `3>&-`). Standing alone after
+# `>` it is an ordinary FILENAME, so `>-` stripped to empty, classified as a bare
+# operator, and swallowed the next word.
+#
+# `git push origin :scratch >- main` redirects to a file named `-` and pushes
+# BOTH `:scratch` and `main`. Reading `main` as a redirect target left
+# `refs=1 empty=1` — all refspecs are deletions — so the ALL-form CERTIFIED a
+# command shipping real content and the guard skipped all four content legs.
+# That is the one direction that is a security regression, and none of the three
+# orthogonal layers catches it (one segment, no substitution, balanced parse).
+_assert_pred "file named - does not certify"       1 $D 'git push origin :foo >- main'
+_assert_pred "append to file named -"              1 $D 'git push origin :foo >>- main'
+_assert_pred "read from file named -"              1 $D 'git push origin :foo <- main'
+_assert_pred "fd redirect to file named -"         1 $D 'git push origin :foo 2>- main'
+_assert_pred "double dash target"                  1 $D 'git push origin :foo >-- main'
+# ...and the announce layer, where the same character converted #238's confident
+# OVER-report into a confident UNDER-report on the same shape — strictly worse
+# under the #198 rule this change cites.
+_assert_pred "file named - is still multi-ref"     0 command_push_subject_is_partial 'git push origin main >- other'
+# The fd-close form must keep working, and it must consume NOTHING (bash does not
+# take a separate target for `3>&-`). A trailing-word cell cannot see the
+# difference — `$# < 2` makes both classifications shift once — so the later word
+# is what makes this observable.
+# bash reads `git push origin main 3>&- next` as TWO refspecs — `3>&-` takes no
+# separate target — so the correct answer is "partial". A TRAILING-word form
+# cannot see the bare/glued difference at all (`$# < 2` makes both shift once),
+# which is exactly why the first version of this cell passed against the defect
+# it was written for.
+_assert_pred "3>&- consumes no following word"     0 command_push_subject_is_partial 'git push origin main 3>&- next'
+
+# CONTROL, in the form that actually pins it. The earlier version asserted only
+# "not partial", which a SWALLOWED refspec also satisfies (refs=0) — so it passed
+# even when the matcher ate the ref. Asserting the resolved ref is what fails.
+assert_equals "quoted lookalike is a ref, by value" ">weird" "$(command_push_ref 'git push origin ">weird"')"
+
+# bash >= 4.1 named-fd redirection. Announce-only and the safe direction (an
+# unrecognised form over-counts and falls back to HEAD), but it is the #238
+# symptom surviving for a real form.
+_assert_pred "named-fd redirect is not a refspec"  1 command_push_subject_is_partial 'git push origin main {fd}>/tmp/o'
+assert_equals "named-fd redirect resolves the ref" "main" "$(command_push_ref 'git push origin main {fd}>/tmp/o')" 
 _assert_pred "bare colon is still not a deletion"  1 $D 'git push origin :'
 # END-TO-END: unbalanced-quote payloads carrying a real push must still DENY.
 out="$(_run "${_UB_COMMENT}")"

@@ -40,24 +40,23 @@ A word is judged by its first characters only, so a quoted word that merely
 begins with an operator character — a ref pathologically named `">weird"` — is
 not a redirection. This must never swallow a real refspec.
 
-## Known limitation, pinned rather than fixed
+## The `&` boundary, narrowed rather than accepted
 
-An `&`-bearing redirection (`2>&1`) still prevents `command_push_is_all_deletions`
-from certifying, because `&` is a SEGMENT boundary: the command splits into
-`… 2>` and `1`, and `1` is not on the inert whitelist, so the ALL-form refuses to
-vouch for it.
+`&` was a segment boundary unconditionally, so `2>&1` split into `… 2>` and `1`.
+That was first pinned here as an accepted limitation.
 
-That refusal is correct and must stay. Widening the whitelist to admit a bare
-number is exactly the "enumerate what looks safe" move that has bypassed this
-predicate before, and the cost of refusing is one-directional: the command loses
-the deletion skip and is measured against HEAD, as every push was before #229 —
-never a new deny.
+It stopped being acceptable once the redirection fix turned the same split into a
+confident UNDER-report: `git push origin main 3>&- next` lost `next`, so a
+two-refspec push read as one. #198 names that the strictly worse direction, and
+this change introduced it — so the splitter was narrowed instead.
 
-Fixing it properly means teaching `_gc_split_segments` that the `&` in `>&` is
-part of a redirection rather than a control operator. That is the #155 scanner
-and is deliberately out of scope. A cell pins the current behaviour so the
-limitation is a recorded decision, and so a future scanner change has something
-that visibly flips.
+An `&` is now a boundary unless its previous character is `<` or `>`, where it
+belongs to a redirection. Narrow by construction: `a && b`, `a & b` and a
+trailing `&` are untouched, pinned by the compound-command cells in
+`tests/test-push-gate-detection.sh` and `tests/test-push-gate-failclosed.sh`.
+
+This also removes the knock-on: `git push --delete origin foo 2>&1` now certifies
+as deletion-only, matching its unredirected form.
 
 ## Capabilities
 
