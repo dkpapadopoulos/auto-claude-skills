@@ -169,7 +169,9 @@ fi
 #
 # Residual, stated: if HEAD moved between dispatch and completion this artifact
 # has no way to SAY so; it records the reviewed commit, which is the honest
-# lower bound, not a straddle marker. The key is sha1(origin remote URL, branch) — NOT the path — so two
+# lower bound, not a straddle marker.
+#
+# The key is sha1(origin remote URL, branch) — NOT the path — so two
 # worktrees of the same repo on the same branch share a key, while a review
 # recorded on a task branch and a push made from an integration branch do not,
 # and a detached HEAD re-keys on every commit. Those misses are safe (a reader

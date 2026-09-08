@@ -168,6 +168,12 @@ reviewer_pairing_note_dispatch() {
     [ -n "$aid" ] && [ -n "$key" ] || return 1
     case "$aid" in *[!A-Za-z0-9._-]*) return 1 ;; esac
     case "$key" in *[!A-Za-z0-9._-]*) return 1 ;; esac
+    # Unreachable from the only producer (`git rev-parse HEAD`), so no test can
+    # catch its removal — mutation-verified, 0 failures. Kept because it is the
+    # FIRST of the two guards and the one that decides what reaches the ledger;
+    # blanking here means the reader falls back to HEAD, which is the older
+    # stamp, whereas a corrupt value reaching branch_ledger_record becomes the
+    # `unknown` sentinel instead. Recorded rather than presented as covered.
     case "$sha" in *[!0-9a-fA-F]*) sha="" ;; esac
     f="$(_reviewer_pairing_file dispatch "$sid")" || return 1
     _reviewer_pairing_append "$f" "${aid} ${key} ${sha}" "$sid" dispatch

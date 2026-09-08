@@ -49,9 +49,24 @@ branch_ledger_record() {
     dir="$(branch_ledger_dir "$proj_root")" || return 0
     [ -z "$dir" ] && return 0
     [ -z "$proj_root" ] && proj_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+    # "no subject supplied" and "a BAD subject supplied" are different states and
+    # must not collapse. Empty means the caller has no opinion, so HEAD is right
+    # and every existing caller keeps its exact prior behaviour. A non-hex value
+    # means the caller HAD an opinion and it is corrupt — resolving HEAD there
+    # would silently reinstate the over-late stamp this argument exists to
+    # remove, in precisely the branch that fires when something is already wrong.
+    # `unknown` is the lib's existing sentinel and is REJECTED by
+    # branch_ledger_sha_is_branch_local, so a corrupt subject fails toward
+    # under-crediting instead.
+    #
+    # Neither arm is reachable from any current caller (the only non-empty
+    # producer is `git rev-parse HEAD`, and note_dispatch blanks anything else
+    # before storing it), so no test can catch their removal — mutation-verified,
+    # 0 failures either way. Stated here rather than presented as covered, which
+    # is this change's standing rule for a knowingly-unobservable guard.
     case "$sha_in" in
         "") sha="$(git -C "${proj_root:-.}" rev-parse HEAD 2>/dev/null || true)" ;;
-        *[!0-9a-fA-F]*) sha="$(git -C "${proj_root:-.}" rev-parse HEAD 2>/dev/null || true)" ;;
+        *[!0-9a-fA-F]*) sha="unknown" ;;
         *) sha="$sha_in" ;;
     esac
     mkdir -p "$dir" 2>/dev/null || return 0
