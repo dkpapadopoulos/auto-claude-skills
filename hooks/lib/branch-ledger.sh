@@ -30,13 +30,30 @@ branch_ledger_dir() {
     printf '%s' "${HOME}/.claude/.skill-branch-ledger-${k}"
 }
 
+# branch_ledger_record <milestone> [<proj_root>] [<sha>]
+#
+# <sha> is OPTIONAL and records the commit the milestone is ABOUT, which is not
+# always HEAD at call time. Omitting it resolves HEAD exactly as before, so every
+# existing caller is byte-identical — the same shape #219 used when it gave
+# verdict.sh's helpers an optional trailing <commit>.
+#
+# It exists because an event can be observed long after the tree it describes:
+# a backgrounded reviewer finishes while the session keeps committing, and
+# stamping HEAD at completion names a tree the reviewer never read. Ledger
+# records are consumed with HEAD-or-ancestor acceptance, so an over-late sha
+# silently covers commits nothing reviewed — the over-claim #181 removed from
+# verdicts. A caller that knows the real subject should pass it.
 branch_ledger_record() {
-    local milestone="${1:-}" proj_root="${2:-}" dir sha
+    local milestone="${1:-}" proj_root="${2:-}" sha_in="${3:-}" dir sha
     [ -z "$milestone" ] && return 0
     dir="$(branch_ledger_dir "$proj_root")" || return 0
     [ -z "$dir" ] && return 0
     [ -z "$proj_root" ] && proj_root="$(git rev-parse --show-toplevel 2>/dev/null)"
-    sha="$(git -C "${proj_root:-.}" rev-parse HEAD 2>/dev/null || true)"
+    case "$sha_in" in
+        "") sha="$(git -C "${proj_root:-.}" rev-parse HEAD 2>/dev/null || true)" ;;
+        *[!0-9a-fA-F]*) sha="$(git -C "${proj_root:-.}" rev-parse HEAD 2>/dev/null || true)" ;;
+        *) sha="$sha_in" ;;
+    esac
     mkdir -p "$dir" 2>/dev/null || return 0
     # per-milestone file (no shared-JSON read-modify-write → no concurrent race);
     # atomic write; content = "<sha> <utc-ts>"

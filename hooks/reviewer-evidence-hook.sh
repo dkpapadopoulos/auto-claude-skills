@@ -218,7 +218,8 @@ if [ "${_PAIR_OK}" = "true" ] && [ -n "${_AGENT_ID}" ]; then
     _PAIR_KEY="$(branch_ledger_key 2>/dev/null)" || _PAIR_KEY=""
     if [ -n "${_PAIR_KEY}" ]; then
         # HALF ONE, written BEFORE reading the other half.
-        reviewer_pairing_note_dispatch "${_SID}" "${_AGENT_ID}" "${_PAIR_KEY}" || true
+        _PAIR_SHA="$(git rev-parse HEAD 2>/dev/null)" || _PAIR_SHA=""
+        reviewer_pairing_note_dispatch "${_SID}" "${_AGENT_ID}" "${_PAIR_KEY}" "${_PAIR_SHA}" || true
         # HALF TWO: did this agent already finish, on THIS branch? (foreground
         # ordering). The key comparison is not symmetry for its own sake — a
         # membership test here was a measured false-credit path: an agent-id
@@ -228,7 +229,10 @@ if [ "${_PAIR_OK}" = "true" ] && [ -n "${_AGENT_ID}" ]; then
         # control; pinned by a cell.
         _COMP_KEY="$(reviewer_pairing_complete_key "${_SID}" "${_AGENT_ID}")" || _COMP_KEY=""
         if [ -n "${_COMP_KEY}" ] && [ "${_COMP_KEY}" = "${_PAIR_KEY}" ]; then
-            branch_ledger_record "reviewer-returned" 2>/dev/null || true
+            # Stamp the commit that was REVIEWED. On this path they coincide (we
+            # are at dispatch time), but passing it explicitly keeps both credit
+            # paths writing the same fact rather than relying on that coincidence.
+            branch_ledger_record "reviewer-returned" "" "${_PAIR_SHA}" 2>/dev/null || true
         fi
     fi
 fi

@@ -335,6 +335,36 @@ else
     _record_fail "(r4) the shipped ceiling is the documented 1 MiB" "got ${_R4}"
 fi
 
+# --- (t) the credit is stamped with the REVIEWED commit, not with HEAD -------
+# A backgrounded reviewer finishes while the session keeps committing — the
+# normal shape of "kick off a reviewer, keep working". branch_ledger_record
+# stamps HEAD at CALL time, so before this was fixed the milestone named a tree
+# the reviewer never read. Ledger records are consumed with HEAD-or-ancestor
+# acceptance, so an over-late sha silently covers commits nothing reviewed: the
+# over-claim #181 removed from verdicts, reintroduced in a new artifact — and it
+# made this milestone LESS sha-accurate than the `reviewer-ran` it strengthens.
+#
+# `reviewer-ran` is the BUILT-IN POSITIVE CONTROL: same harness, same run, same
+# ledger, correct sha. It rules out "this harness cannot record the dispatch sha"
+# and isolates the milestone as the single variable.
+_reset
+_T_DISPATCH_SHA="$(cd "$_REPO" && git rev-parse HEAD)"
+_run_dispatch "bgsha-1" "Review the diff for correctness"
+( cd "$_REPO" && git commit -q --allow-empty -m "landed while the reviewer ran" )
+_T_LATER_SHA="$(cd "$_REPO" && git rev-parse HEAD)"
+_run_completion "bgsha-1" "Findings: 1" >/dev/null
+_T_RAN="$(branch_ledger_sha "reviewer-ran" "$_REPO")"
+_T_RET="$(branch_ledger_sha "reviewer-returned" "$_REPO")"
+if [ "$_T_DISPATCH_SHA" = "$_T_LATER_SHA" ]; then
+    _record_fail "(t) the credit names the reviewed commit" "harness did not move HEAD — cell proves nothing"
+elif [ "$_T_RAN" != "$_T_DISPATCH_SHA" ]; then
+    _record_fail "(t) the credit names the reviewed commit" "control broken: reviewer-ran sha=${_T_RAN} != dispatch ${_T_DISPATCH_SHA}"
+elif [ "$_T_RET" = "$_T_DISPATCH_SHA" ]; then
+    _record_pass "(t) the credit names the reviewed commit, not the later HEAD"
+else
+    _record_fail "(t) the credit names the reviewed commit" "reviewer-returned sha=${_T_RET} names a commit the reviewer never saw (dispatch was ${_T_DISPATCH_SHA})"
+fi
+
 # ===========================================================================
 # Lookup exactness
 # ===========================================================================

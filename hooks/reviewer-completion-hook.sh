@@ -155,8 +155,21 @@ if [ "${_DKEY}" != "${_KEY}" ]; then
     exit 0
 fi
 
-# branch_ledger_record stores "<sha> <utc-ts>", so the evidence is SHA-bound for
-# free. The key is sha1(origin remote URL, branch) — NOT the path — so two
+# The recorded sha is the DISPATCH-time commit, passed explicitly — NOT HEAD at
+# call time. This is the one place the "SHA-bound for free" wording inherited
+# from the dispatch hook would be wrong: a backgrounded reviewer finishes while
+# the session keeps committing, so HEAD here can name a tree the reviewer never
+# read, and ledger records are consumed with HEAD-or-ancestor acceptance — an
+# over-late sha silently covers commits nothing reviewed. That is the over-claim
+# #181 removed from verdicts, and it would make this milestone LESS sha-accurate
+# than the `reviewer-ran` it is meant to strengthen.
+#
+# An absent dispatch sha (a record written before the field existed) falls back
+# to HEAD, i.e. the older, less precise behaviour — never to a fabricated value.
+#
+# Residual, stated: if HEAD moved between dispatch and completion this artifact
+# has no way to SAY so; it records the reviewed commit, which is the honest
+# lower bound, not a straddle marker. The key is sha1(origin remote URL, branch) — NOT the path — so two
 # worktrees of the same repo on the same branch share a key, while a review
 # recorded on a task branch and a push made from an integration branch do not,
 # and a detached HEAD re-keys on every commit. Those misses are safe (a reader
@@ -173,6 +186,7 @@ fi
 # second surface it does not know exists. The IMPLEMENT shadow corpus settled
 # the same trade the same way: "raw command text is never written;
 # transcript_path is the adjudication pointer."
-branch_ledger_record "reviewer-returned" 2>/dev/null || true
+_DSHA="$(reviewer_pairing_dispatch_sha "${_SID}" "${_AID}")" || _DSHA=""
+branch_ledger_record "reviewer-returned" "" "${_DSHA}" 2>/dev/null || true
 
 exit 0

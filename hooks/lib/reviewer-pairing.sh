@@ -148,20 +148,29 @@ reviewer_pairing_saturated() {
     [ -f "$f" ]
 }
 
-# reviewer_pairing_note_dispatch <session_id> <agent_id> <ledger_key>
-# Records "this agent was dispatched as a reviewer, on this branch".
+# reviewer_pairing_note_dispatch <session_id> <agent_id> <ledger_key> [<sha>]
+# Records "this agent was dispatched as a reviewer, on this branch, against this
+# commit".
+#
+# The SHA is the tree the reviewer was pointed at. It is carried so the
+# completion side can stamp the milestone with the commit that was REVIEWED
+# rather than whatever HEAD happens to be when the reviewer finishes — a
+# backgrounded reviewer completes while the session keeps committing, and ledger
+# records are read with HEAD-or-ancestor acceptance, so a late sha silently
+# covers commits nothing reviewed.
 #
 # The ledger key is stored so the completion side can refuse to credit a branch
 # the reviewer never saw: branch_ledger_record derives its key from the cwd at
 # CALL time, and a backgrounded reviewer completes while the parent session is
 # free to check out something else.
 reviewer_pairing_note_dispatch() {
-    local sid="${1:-}" aid="${2:-}" key="${3:-}" f
+    local sid="${1:-}" aid="${2:-}" key="${3:-}" sha="${4:-}" f
     [ -n "$aid" ] && [ -n "$key" ] || return 1
     case "$aid" in *[!A-Za-z0-9._-]*) return 1 ;; esac
     case "$key" in *[!A-Za-z0-9._-]*) return 1 ;; esac
+    case "$sha" in *[!0-9a-fA-F]*) sha="" ;; esac
     f="$(_reviewer_pairing_file dispatch "$sid")" || return 1
-    _reviewer_pairing_append "$f" "${aid} ${key}" "$sid" dispatch
+    _reviewer_pairing_append "$f" "${aid} ${key} ${sha}" "$sid" dispatch
 }
 
 # reviewer_pairing_note_complete <session_id> <agent_id> <ledger_key>
@@ -214,6 +223,24 @@ reviewer_pairing_dispatch_key() {
     f="$(_reviewer_pairing_file dispatch "$sid")" || return 1
     [ -f "$f" ] || return 1
     out="$(awk -v a="$aid" '$1==a {print $2; exit}' "$f" 2>/dev/null)" || return 1
+    [ -n "$out" ] || return 1
+    printf '%s' "$out"
+}
+
+# reviewer_pairing_dispatch_sha <session_id> <agent_id> — prints the commit the
+# reviewer was dispatched against, or nothing.
+#
+# Empty is a legitimate answer, not an error: a record written before this field
+# existed has only two fields, and the caller then falls back to HEAD, i.e. the
+# behaviour from before. Degrading to the old, less precise stamp is correct for
+# a format change; fabricating a sha would not be.
+reviewer_pairing_dispatch_sha() {
+    local sid="${1:-}" aid="${2:-}" f out
+    [ -n "$aid" ] || return 1
+    case "$aid" in *[!A-Za-z0-9._-]*) return 1 ;; esac
+    f="$(_reviewer_pairing_file dispatch "$sid")" || return 1
+    [ -f "$f" ] || return 1
+    out="$(awk -v a="$aid" '$1==a {print $3; exit}' "$f" 2>/dev/null)" || return 1
     [ -n "$out" ] || return 1
     printf '%s' "$out"
 }

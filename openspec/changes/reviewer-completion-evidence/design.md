@@ -225,6 +225,26 @@ parent session's cwd, not the worktree), and the credit is recorded.
 miss rather than a false credit (the key field is empty, and an empty key never
 compares equal), which is the correct direction for a format change.
 
+**The credit names the REVIEWED commit, not HEAD at completion.** Found in
+review, and it mattered more than its severity suggested: `branch_ledger_record`
+stamps HEAD at call time, so a backgrounded reviewer — which finishes while the
+session keeps committing, the normal shape of "kick off a reviewer, keep
+working" — recorded a tree it never read. Ledger records are consumed with
+HEAD-or-ancestor acceptance, so that sha silently covered commits nothing
+reviewed: the over-claim #181 removed from verdicts, reintroduced in a new
+artifact. It also made the new milestone LESS sha-accurate than the
+`reviewer-ran` it exists to strengthen, and it bit exactly in the background case
+that motivated the change.
+
+The dispatch half now carries the dispatch-time sha and both credit paths pass it
+to an OPTIONAL trailing argument on `branch_ledger_record` — omitting it resolves
+HEAD, so every other caller is byte-identical (the shape #219 used for
+`verdict.sh`). A record predating the field falls back to HEAD: the older, less
+precise stamp, never a fabricated one. Residual, stated rather than implied: if
+HEAD moved between dispatch and completion this artifact cannot SAY so; it
+records the reviewed commit, which is the honest lower bound, not a straddle
+marker. Regression (t), red-green verified.
+
 ## Dissenting views
 
 **"This is a better-looking attestation, not better evidence."** Partly true and
