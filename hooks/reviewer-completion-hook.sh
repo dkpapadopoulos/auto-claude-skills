@@ -86,6 +86,11 @@ _LAST="${_R2#*$'\x1f'}"
 # safe direction for a fidelity signal.
 [ -n "${_LAST}" ] || exit 0
 
+# #137 source-guard form: source + command -v + flag. The probed function is the
+# LAST one the lib defines, not the first one used: a file truncated at a function
+# boundary still sources cleanly, so probing an early definition would leave a
+# later one undefined and the command-not-found would trip the ERR trap.
+#
 # #137 source-guard form: source + command -v + flag. A bare `. lib` under
 # `trap 'exit 0' ERR` is a silent early exit, and `[ -f ]` proves existence, not
 # source success. Safe here because this hook is a recorder — a failed load
@@ -99,7 +104,7 @@ _PAIR_OK=false
 # inside the sourced file (#192). reviewer-pairing.sh only defines functions —
 # it executes nothing at load — so there is no such command to fail.
 # shellcheck source=lib/reviewer-pairing.sh
-. "${_PLUGIN_ROOT}/hooks/lib/reviewer-pairing.sh" 2>/dev/null && command -v reviewer_pairing_note_complete >/dev/null 2>&1 && _PAIR_OK=true || true
+. "${_PLUGIN_ROOT}/hooks/lib/reviewer-pairing.sh" 2>/dev/null && command -v reviewer_pairing_note_mismatch >/dev/null 2>&1 && _PAIR_OK=true || true
 [ "${_PAIR_OK}" = "true" ] || exit 0
 
 _LEDGER_OK=false
@@ -125,7 +130,7 @@ _KEY="$(branch_ledger_key 2>/dev/null)" || _KEY=""
 # hook right here — silently skipping the join below and killing every credit
 # for the rest of the session, with no diagnostic. Found by a mutation that
 # was masked by exactly this early exit.
-reviewer_pairing_note_complete "${_SID}" "${_AID}" || true
+reviewer_pairing_note_complete "${_SID}" "${_AID}" "${_KEY}" || true
 
 # HALF TWO: was this agent dispatched as a reviewer, and on THIS branch?
 _DKEY="$(reviewer_pairing_dispatch_key "${_SID}" "${_AID}")" || _DKEY=""

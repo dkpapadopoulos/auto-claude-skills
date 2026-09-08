@@ -202,7 +202,7 @@ _PAIR_OK=false
 # source line by grepping single lines, so a `\`-continued guard reads to the
 # lint as a bare `. lib` and is flagged.
 # shellcheck source=lib/reviewer-pairing.sh
-. "${_PLUGIN_ROOT}/hooks/lib/reviewer-pairing.sh" 2>/dev/null && command -v reviewer_pairing_note_dispatch >/dev/null 2>&1 && _PAIR_OK=true || true
+. "${_PLUGIN_ROOT}/hooks/lib/reviewer-pairing.sh" 2>/dev/null && command -v reviewer_pairing_note_mismatch >/dev/null 2>&1 && _PAIR_OK=true || true
 
 if [ "${_PAIR_OK}" = "true" ] && [ -n "${_AGENT_ID}" ]; then
     # The key binds the credit to a (repo, branch) pair. Stored at dispatch so
@@ -213,8 +213,15 @@ if [ "${_PAIR_OK}" = "true" ] && [ -n "${_AGENT_ID}" ]; then
     if [ -n "${_PAIR_KEY}" ]; then
         # HALF ONE, written BEFORE reading the other half.
         reviewer_pairing_note_dispatch "${_SID}" "${_AGENT_ID}" "${_PAIR_KEY}" || true
-        # HALF TWO: did this agent already finish? (foreground ordering)
-        if reviewer_pairing_has_complete "${_SID}" "${_AGENT_ID}"; then
+        # HALF TWO: did this agent already finish, on THIS branch? (foreground
+        # ordering). The key comparison is not symmetry for its own sake — a
+        # membership test here was a measured false-credit path: an agent-id
+        # collision ALONE, with no matching branch and no ordering constraint, was
+        # enough to record `reviewer-returned` at SPAWN time for a reviewer that
+        # had produced nothing. Reproduced against the real hooks with a positive
+        # control; pinned by a cell.
+        _COMP_KEY="$(reviewer_pairing_complete_key "${_SID}" "${_AGENT_ID}")" || _COMP_KEY=""
+        if [ -n "${_COMP_KEY}" ] && [ "${_COMP_KEY}" = "${_PAIR_KEY}" ]; then
             branch_ledger_record "reviewer-returned" 2>/dev/null || true
         fi
     fi

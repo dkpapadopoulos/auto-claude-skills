@@ -203,18 +203,64 @@ fi
 # The miss must leave a TRACE. A silent miss is how the foreground ordering
 # defect nearly shipped: "no reviewer ran" and "a reviewer ran, join refused"
 # must not look identical from the outside.
-if grep -q '^# branch-mismatch mv-1 ' "$(_complete_file)" 2>/dev/null; then
+# In the DISPATCH file, deliberately: the completion file is the half that grows
+# with every subagent and approaches the ceiling, so a diagnostic stored there
+# would fall silent under the very condition that starts breaking the join.
+if grep -q '^# branch-mismatch mv-1 ' "$(_dispatch_file)" 2>/dev/null; then
     _record_pass "(h2) the refused credit leaves a diagnostic line"
 else
     _record_fail "(h2) the refused credit leaves a diagnostic line" "no mismatch line recorded"
 fi
 
-# A diagnostic comment line must never be readable as an agent id.
+# A diagnostic comment line must never be readable as a pairing record.
+#
+# An earlier version of this cell was VACUOUS AND MISLEADING: it planted the
+# comment in the DISPATCH file (where note_mismatch never writes) and completed
+# agent id "#", which `awk '$1==a'` genuinely MATCHES — so the credit was refused
+# by the branch comparison, not by the property named. It also implied the lib's
+# `#` exemption is a property of the comparison; it is a property of the id
+# charset (a real id is 17 hex characters and can never be "#").
+#
+# The honest test: plant a mismatch line in the COMPLETION file whose TEXT
+# contains a real-shaped agent id, then dispatch that id. `$1` of that line is
+# "#", so an exact field lookup must not join — while a substring or
+# line-content lookup would.
 _reset
-printf '# branch-mismatch cm-1 dispatched=x completed=y\n' > "$(_dispatch_file)"
-_run_completion "#" "Findings: 1" >/dev/null
-if _has; then _record_fail "(h3) a comment line is not a pairing record" "ledger entry written"
+_KEYNOW2="$(cd "$_REPO" && branch_ledger_key)"
+printf '# branch-mismatch cm00000000000001 dispatched=%s completed=%s\n' "$_KEYNOW2" "$_KEYNOW2" > "$(_dispatch_file)"
+_run_dispatch "cm00000000000001" "Review the diff for correctness"
+if _has; then _record_fail "(h3) a comment line is not a pairing record" "joined against a diagnostic line"
 else _record_pass "(h3) a comment line is not a pairing record"; fi
+
+# --- (h4) the DISPATCH side must branch-bind too ----------------------------
+# Measured false credit before this: the dispatch-side join credited on agent-id
+# MEMBERSHIP alone, so an id collision with no matching branch and no ordering
+# constraint recorded `reviewer-returned` at SPAWN time for a reviewer that had
+# produced nothing. Reproduced against the real hooks; the negative control below
+# isolates it to the single variable (the prior completion record).
+_reset
+_CWD="$_REPO2"
+_run_completion "xrepo-1" "Implemented something" >/dev/null   # non-reviewer completes in repo 2
+_CWD="$_REPO"
+_run_dispatch "xrepo-1" "Review the diff for correctness"      # same id dispatched in repo 1
+if _has "$_REPO"; then
+    _record_fail "(h4) a foreign completion does not credit the dispatch side" "credited from another branch's completion"
+else
+    _record_pass "(h4) a foreign completion does not credit the dispatch side"
+fi
+
+# (h5) NEGATIVE CONTROL for (h4): the same dispatch with no completion anywhere
+# must also not credit — otherwise (h4) proves only that this harness cannot
+# credit at all.
+_reset
+_run_dispatch "xrepo-2" "Review the diff for correctness"
+if _has "$_REPO"; then
+    _record_fail "(h5) control: a dispatch alone does not credit" "credited with no completion"
+else
+    _record_pass "(h5) control: a dispatch alone does not credit"
+fi
+# ...and (a)/(b) above are the positive controls: the same harness DOES credit a
+# genuine same-branch join in both orders.
 
 # ===========================================================================
 # Lookup exactness
@@ -253,11 +299,19 @@ else _record_fail "(i3) positive control: an exact planted record DOES join" "no
 # ===========================================================================
 
 # --- (j) recorder contract: nothing on stdout, exit 0, on the CREDIT path ---
+# `_run_completion` sets _STATUS, but capturing its stdout with `$( )` runs it in
+# a SUBSHELL and the assignment is discarded — an earlier version of this cell
+# read a stale _STATUS belonging to a previous cell, so the "exits 0" half
+# asserted nothing about this invocation. Capture to a file instead, so the
+# helper runs in THIS shell.
 _reset
 _run_dispatch "out-1" "Review the diff for correctness"
-_OUT="$(_run_completion "out-1" "Findings: 1")"
+_OUTFILE="${HOME}/out.txt"
+_run_completion "out-1" "Findings: 1" > "${_OUTFILE}"
+_JSTATUS="${_STATUS}"
+_OUT="$(cat "${_OUTFILE}" 2>/dev/null)"
 if [ -n "${_OUT}" ]; then _record_fail "(j) recorder writes nothing to stdout" "stdout: ${_OUT}"
-elif [ "${_STATUS}" -ne 0 ]; then _record_fail "(j) recorder exits 0" "exit ${_STATUS}"
+elif [ "${_JSTATUS}" -ne 0 ]; then _record_fail "(j) recorder exits 0" "exit ${_JSTATUS}"
 else _record_pass "(j) recorder writes nothing to stdout and exits 0"; fi
 
 # --- (j2) an exhausted completion file must not kill the join --------------
@@ -268,14 +322,55 @@ else _record_pass "(j) recorder writes nothing to stdout and exits 0"; fi
 _reset
 _run_dispatch "full-1" "Review the diff for correctness"
 # push the completion half past the 64KiB ceiling
-_i=0; : > "$(_complete_file)"
-while [ "$_i" -lt 2000 ]; do
-    printf 'padpadpadpadpadpadpadpadpadpadpadpadpadpad%s\n' "$_i" >> "$(_complete_file)"
-    _i=$(( _i + 1 ))
-done
+{ head -c 1100000 /dev/zero 2>/dev/null | tr '\0' 'x'; printf '\n'; } >> "$(_complete_file)"
 _run_completion "full-1" "Findings: 1" >/dev/null
-if _has; then _record_pass "(j2) a full completion file does not stop the join"
-else _record_fail "(j2) a full completion file does not stop the join" "no ledger entry"; fi
+if _has; then _record_pass "(j2) a full completion file does not stop the join (bg order)"
+else _record_fail "(j2) a full completion file does not stop the join (bg order)" "no ledger entry"; fi
+
+# (j3) The SAME state in the FOREGROUND order. This is the order where the
+# ceiling actually bites — the completion half cannot be published, so there is
+# nothing for the later dispatch to join against. Asserted as the DOCUMENTED
+# behaviour (no credit) rather than as a passing credit: the cell pins the limit
+# so it stays visible, it does not claim it is fixed.
+#
+# THIS IS NOT UNFIXABLE, and an earlier comment here wrongly called it
+# structural. The signal exists: `reviewer_pairing_note_complete` returns
+# non-zero at reviewer-completion-hook.sh's HALF ONE and the `|| true` discards
+# it. What is missing is somewhere to put it — the fact is SESSION-scoped ("this
+# session's completion half stopped accepting writes"), not agent-scoped, so
+# recording it needs a new state family (one more GC glob plus the paired
+# `! -name` exclusion that cell (p) already forces). Declined for this increment
+# because the ceiling is 1 MiB (~26k completions), not because it cannot be done.
+# A prerequisite if it is ever taken: `_reviewer_pairing_append` must
+# DISTINGUISH ceiling-refusal from failed-write, since an unwritable ~/.claude
+# cannot record the marker either, and conflating them rebuilds the exact
+# collapse the marker would exist to prevent.
+_reset
+# One command, not a 30k-iteration shell loop: the cell needs the file to EXCEED
+# the ceiling, and nothing here reads its contents (no `$1` can match a real id).
+# The loop form cost seconds on every run of this file and every mutation pass.
+{ head -c 1100000 /dev/zero 2>/dev/null | tr '\0' 'x'; printf '\n'; } > "$(_complete_file)"
+_run_completion "full-2" "Findings: 1" >/dev/null
+_run_dispatch "full-2" "Review the diff for correctness"
+if _has; then
+    _record_fail "(j3) foreground order at the ceiling is a documented miss" "credited unexpectedly — the ceiling may have moved; revisit the limit note"
+else
+    _record_pass "(j3) foreground order at the ceiling is a documented miss"
+fi
+
+# (j4) A non-reviewer completion must leave NO mismatch line. Without the
+# `[ -n "${_DKEY}" ]` guard the hook fabricates `# branch-mismatch` lines for
+# every ordinary subagent — a FALSE diagnostic ("never dispatched as a reviewer"
+# is not "branch mismatch") that also accelerates the ceiling above. Before this
+# cell, only the PRESENCE of a mismatch line was asserted, never its absence,
+# which is the asymmetry that let that mutation through.
+_reset
+_run_completion "plain-1" "Implemented the parser" >/dev/null
+if grep -q '^# branch-mismatch' "$(_dispatch_file)" 2>/dev/null; then
+    _record_fail "(j4) a non-reviewer completion leaves no mismatch line" "fabricated a branch-mismatch diagnostic"
+else
+    _record_pass "(j4) a non-reviewer completion leaves no mismatch line"
+fi
 
 # --- (k) malformed / empty input never fails --------------------------------
 _reset
@@ -379,6 +474,48 @@ if [ "$_GCOK" -eq 1 ]; then
     _record_pass "(p) both pairing families are GC'd with current-session exclusions"
 else
     _record_fail "(p) both pairing families are GC'd with current-session exclusions" "a glob or exclusion is missing"
+fi
+
+# --- (q) writer and reader must accept and reject the SAME ids -------------
+# Asserted as AGREEMENT, not as two separate lists. If the writer's charset and
+# a reader's ever diverge, an id becomes writable but not readable — a silent
+# miss, and precisely the writer/reader split this lib exists to prevent. Two
+# independent assertions of "the writer rejects X" and "the reader rejects X"
+# would both keep passing while the two lists drifted apart.
+#
+# Loop is heredoc-fed, NOT piped: a piped loop runs in a subshell and its
+# _record_pass/_record_fail calls vanish from the summary (CLAUDE.md).
+# shellcheck disable=SC1090
+. "${PROJECT_ROOT}/hooks/lib/reviewer-pairing.sh"
+_QHOME="$(mktemp -d /tmp/rch-q-XXXXXX)"; _QOLD="$HOME"; export HOME="$_QHOME"; mkdir -p "$HOME/.claude"
+_QSID="qqqqqqqq-1111-2222-3333-444444444444"
+_QKEY="deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+_QAGREE=1; _QDETAIL=""
+while IFS= read -r _qid; do
+    [ -n "$_qid" ] || continue
+    _qid="${_qid%\'}"; _qid="${_qid#\'}"          # strip the quoting used below
+    if reviewer_pairing_note_dispatch "$_QSID" "$_qid" "$_QKEY" 2>/dev/null; then _qw=accept; else _qw=reject; fi
+    if reviewer_pairing_dispatch_key "$_QSID" "$_qid" >/dev/null 2>&1; then _qr=accept; else _qr=reject; fi
+    if [ "$_qw" != "$_qr" ]; then
+        _QAGREE=0; _QDETAIL="${_QDETAIL} [${_qid}: writer=${_qw} reader=${_qr}]"
+    fi
+done <<'QIDS'
+'abc-1'
+'a.b_c'
+'A1'
+'0123456789abcdef0'
+'a b'
+'a/b'
+'a;b'
+'a$b'
+'a*b'
+'#'
+QIDS
+export HOME="$_QOLD"; rm -rf "$_QHOME"
+if [ "$_QAGREE" -eq 1 ]; then
+    _record_pass "(q) writer and reader agree on the agent-id charset"
+else
+    _record_fail "(q) writer and reader agree on the agent-id charset" "disagreements:${_QDETAIL}"
 fi
 
 rm -rf "$_REPO" "$_REPO2"

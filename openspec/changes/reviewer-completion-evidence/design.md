@@ -134,6 +134,18 @@ holding raw reviewer text would be a second surface it does not know exists. The
 IMPLEMENT shadow corpus settled the same trade the same way: "raw command text is
 never written; `transcript_path` is the adjudication pointer."
 
+**The size ceiling is a real limit, and exhausting it is silent.** Once the
+completion file is full, `note_mismatch` is suppressed by the same condition —
+so the diagnostic that exists to keep a refused credit visible disappears exactly
+when the join starts failing, restoring the indistinguishability this design says
+must not exist. The failure is also ORDER-ASYMMETRIC: the background order keeps
+working off the separate dispatch file, so it degrades rather than stopping
+cleanly. The completion file records EVERY subagent completion (correct — it is
+the join key), which makes it fan-out-driven in exactly the agent-team sessions
+this evidence is for. Mitigated by raising the ceiling to 1 MiB (~26k
+completions), not by pruning, which would need the read-modify-write this design
+avoids. Pinned as a documented miss by cell (j3) rather than left implicit.
+
 **A size ceiling, not a trim.** Parallel dispatches run their hooks
 concurrently, so a read-modify-write rotation would be a real race, while a short
 `printf >>` interleaves safely at line granularity. Dropping new records past the
@@ -165,8 +177,13 @@ review happened".
 **Unmeasured, and stated as such.** `agent_id` uniqueness within a session is
 not proven; 8 ids observed across the probes were 17 random hex characters and
 all distinct, including 3 dispatched in one session, so reuse is implausible but
-not excluded. Reuse would require a collision *and* a matching branch key to
-produce a false credit. `isolation: "worktree"` WAS probed after
+not excluded. Reuse now requires a collision *and* a matching branch key on
+either half. That was NOT true when first written: the dispatch-side join
+credited on membership alone, so a collision ALONE recorded `reviewer-returned`
+at spawn time for a reviewer that had produced nothing. Caught in review,
+reproduced against the real hooks with a positive control, and closed by storing
+the ledger key in the completion half too. A doc asserting double protection over
+a single-guarded path is worse than no claim — it stops the next reader looking. `isolation: "worktree"` WAS probed after
 `session-token.sh` flagged the same gap for the adjacent mechanism: both halves
 land under the same `session_id`, the ledger key matches (both hooks run in the
 parent session's cwd, not the worktree), and the credit is recorded.
@@ -233,9 +250,17 @@ the same procedural spirit. Not built here.
 - **D5.** `session_id` and `agent_id` are validated as single path-safe segments.
   The values are harness-supplied, but a recorder must not be the component that
   turns a surprising value into a read or write outside `~/.claude`.
-- **D6.** Three guards are knowingly redundant and kept: the `[ -n "${_DKEY}" ]`
-  check (the branch comparison also rejects an empty key), the `[ -f ]` before
-  `wc -c` (the `|| bytes=0` is what makes it safe), and `|| true` on
-  `note_mismatch` (the hook exits immediately after either way). No test can
-  catch their removal, and each says so in a comment rather than being presented
-  as covered.
+- **D6.** TWO guards are knowingly redundant and kept: the `[ -f ]` before
+  `wc -c` (the `|| bytes=0` is the live handler) and `|| true` on
+  `note_mismatch` (the hook exits immediately after either way, so the two paths
+  are observably identical). No test can catch their removal, and each says so in
+  a comment rather than being presented as covered.
+
+  A THIRD was claimed redundant here and was not. `[ -n "${_DKEY}" ] || exit 0`
+  is redundant *for crediting* — the branch comparison also rejects an empty key
+  — but removing it is observable and harmful: the hook then fabricates a
+  `# branch-mismatch` line for every ordinary subagent completion. That is a
+  FALSE diagnostic ("never dispatched as a reviewer" is not "branch mismatch")
+  and it multiplies the completion file's growth rate, bringing the ceiling below
+  closer. Caught in review; the gap was that only the PRESENCE of a mismatch line
+  was ever asserted, never its absence. Cell (j4) closes it.
