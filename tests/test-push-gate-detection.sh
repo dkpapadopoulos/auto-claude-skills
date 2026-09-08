@@ -462,7 +462,27 @@ _assert_pred "redirected real push does not"       1 $D 'git push origin main > 
 # is deliberately out of scope here; this cell exists so the limitation is a
 # recorded decision rather than an accident, and so that a future change to the
 # scanner has something that visibly flips.
-_assert_pred "&-redirect deletion is not certified" 1 $D 'git push --delete origin foo 2>&1' 
+_assert_pred "&-redirect deletion is not certified" 1 $D 'git push --delete origin foo 2>&1'
+
+# THE DANGEROUS DIRECTION, pinned explicitly. A refspec-less `git push` ships the
+# current branch, so it must NEVER certify as deletion-only — and redirection
+# stripping is exactly the kind of change that could have made it, by removing
+# the words that previously inflated the refspec count. It does not: the ALL-form
+# requires an explicit deletion flag or an empty-source refspec, neither of which
+# a redirect supplies. `git push` alone is already pinned above (line ~211); these
+# add the REDIRECTED forms, which are the ones this change touches.
+_assert_pred "redirected refspec-less push"        1 $D 'git push origin > /tmp/o'
+_assert_pred "redirected refspec-less push, 2>&1"  1 $D 'git push origin 2>&1'
+_assert_pred "redirected bare push"                1 $D 'git push > /tmp/o'
+
+# Behaviour this change deliberately ALIGNED rather than left inconsistent.
+# `git push --delete origin > main` used to count `>` and `main` as two refspecs
+# and so refused; it now reads as a deletion with a redirect and certifies —
+# matching `git push --delete origin`, which certified all along. Both ship no
+# content (git rejects a --delete with no refspec), so the skip is harmless, and
+# the redirected and unredirected forms giving different answers was the bug.
+_assert_pred "redirect target is not a refspec (ALL-form)" 0 $D 'git push --delete origin > main'
+_assert_pred "...matching the unredirected form"          0 $D 'git push --delete origin' 
 _assert_pred "bare colon is still not a deletion"  1 $D 'git push origin :'
 # END-TO-END: unbalanced-quote payloads carrying a real push must still DENY.
 out="$(_run "${_UB_COMMENT}")"
