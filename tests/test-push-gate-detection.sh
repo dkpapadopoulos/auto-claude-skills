@@ -395,6 +395,74 @@ _assert_pred "force-marked deletion is partial"    0 command_push_subject_is_par
 # A bare `:` must stay announce-worthy while NOT being a deletion — the two
 # callers disagree about it on purpose, which is why the shape carries `odd`.
 _assert_pred "bare colon is still partial"         0 command_push_subject_is_partial 'git push origin :'
+
+# --- issue #238: shell redirection operands are not refspecs ----------------
+# `git push … 2>&1 | tail -N` is what an agent naturally writes, and the
+# redirection words were counted as refspecs. Two consequences, and the second
+# is the one the issue does not name: the SUBJECT advisory fired on a push the
+# gate had measured correctly (a confident over-report, which this repo already
+# decided is worse than silence), AND `command_push_ref` returned EMPTY, so the
+# gate silently fell back to measuring HEAD instead of the named ref — defeating
+# #219's subject resolution for any redirected command.
+#
+# Pipes were already correct because they are segment boundaries; redirections
+# are not, so they had to be recognised as words.
+#
+# THE MATCHER IS STRUCTURAL, NOT AN ENUMERATION. This predicate family has been
+# bypassed five times by lists of shell syntax that turned out to be incomplete,
+# so the test drives the SHAPE — an optional `&`/fd-digits run, then `<` or `>` —
+# rather than a catalogue of spellings, and includes forms nobody wrote down.
+_assert_pred "stderr-to-stdout is not a refspec"   1 command_push_subject_is_partial 'git push origin main 2>&1'
+_assert_pred "glued stdout redirect"               1 command_push_subject_is_partial 'git push origin main >/tmp/o'
+_assert_pred "spaced stdout redirect"              1 command_push_subject_is_partial 'git push origin main > /tmp/o'
+_assert_pred "append redirect"                     1 command_push_subject_is_partial 'git push origin main >> /tmp/o'
+_assert_pred "spaced fd redirect"                  1 command_push_subject_is_partial 'git push origin main 2> /tmp/o'
+_assert_pred "both streams redirect"               1 command_push_subject_is_partial 'git push origin main &> /tmp/o'
+_assert_pred "multi-digit fd redirect"             1 command_push_subject_is_partial 'git push origin main 10> /tmp/o'
+_assert_pred "fd duplication to close"             1 command_push_subject_is_partial 'git push origin main 3>&-'
+_assert_pred "stdin redirect"                      1 command_push_subject_is_partial 'git push origin main < /dev/null'
+_assert_pred "herestring"                          1 command_push_subject_is_partial 'git push origin main <<< x'
+_assert_pred "redirect plus pipe, the live shape"  1 command_push_subject_is_partial 'git push -u origin feat/x 2>&1 | tail -8'
+
+# The ref must still RESOLVE through a redirection — this is the half that
+# silently defeated #219, and an "is not partial" assertion alone would pass
+# while the ref came back empty.
+assert_equals "ref resolves through 2>&1"          "main" "$(command_push_ref 'git push origin main 2>&1')"
+assert_equals "ref resolves through a redirect"    "main" "$(command_push_ref 'git push origin main > /tmp/o')"
+assert_equals "ref resolves, live shape"           "feat/x" "$(command_push_ref 'git push -u origin feat/x 2>&1 | tail -8')"
+
+# CONTROLS — stripping must not swallow a real refspec, and must not invent one.
+_assert_pred "two refs with a redirect is partial" 0 command_push_subject_is_partial 'git push origin a b > /tmp/o'
+_assert_pred "--all with a redirect is partial"    0 command_push_subject_is_partial 'git push --all origin 2>&1'
+_assert_pred "deletion with a redirect is partial" 0 command_push_subject_is_partial 'git push --delete origin x 2>&1'
+# A redirect TARGET is consumed with its bare operator, so the word after `>`
+# is not counted — but a refspec BEFORE it still is.
+assert_equals "target after bare > is not the ref" "main" "$(command_push_ref 'git push origin main > next')"
+# A quoted word that merely begins with the operator character is NOT a
+# redirection; it is a (pathological) ref name, and must not be stripped.
+_assert_pred "quoted operator-lookalike is a ref"  1 command_push_subject_is_partial 'git push origin ">weird"'
+
+# The ALL-form sees through redirections too — a redirect ships no content, so a
+# redirected deletion is still deletion-only.
+_assert_pred "redirected deletion certifies"       0 $D 'git push --delete origin foo > /tmp/o'
+# ...but redirection stripping must not certify a command that ships content.
+_assert_pred "redirected real push does not"       1 $D 'git push origin main > /tmp/o'
+
+# BOUNDARY, pinned deliberately rather than fixed. An `&`-bearing redirection is
+# still not certifiable, because `&` is a SEGMENT boundary: `2>&1` splits into
+# `… 2>` and `1`, and `1` is not on the inert whitelist, so the ALL-form refuses
+# to vouch for the command. That refusal is correct and must stay — widening the
+# whitelist to admit a bare number is exactly the "enumerate what looks safe"
+# move that has bypassed this predicate five times, and the cost of refusing is
+# one-directional (the command loses the deletion skip and is measured against
+# HEAD, as every push was before #229 — never a new deny).
+#
+# Fixing it properly means teaching `_gc_split_segments` that the `&` in `>&` is
+# part of a redirection and not a control operator. That is the #155 scanner and
+# is deliberately out of scope here; this cell exists so the limitation is a
+# recorded decision rather than an accident, and so that a future change to the
+# scanner has something that visibly flips.
+_assert_pred "&-redirect deletion is not certified" 1 $D 'git push --delete origin foo 2>&1' 
 _assert_pred "bare colon is still not a deletion"  1 $D 'git push origin :'
 # END-TO-END: unbalanced-quote payloads carrying a real push must still DENY.
 out="$(_run "${_UB_COMMENT}")"

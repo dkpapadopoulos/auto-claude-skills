@@ -901,6 +901,43 @@ _gc_strip_closers() {
 }
 
 
+# _gc_redir_kind <word> — classify a word as a SHELL REDIRECTION.
+#   prints "glued" — the word is a complete redirection (`2>&1`, `>/tmp/o`,
+#                    `3>&-`); it consumes nothing further.
+#   prints "bare"  — the word is a redirection OPERATOR whose target is the NEXT
+#                    word (`>`, `2>`, `>>`, `<`, `<<<`); the caller must skip both.
+#   returns 1      — not a redirection.
+#
+# STRUCTURAL, NOT AN ENUMERATION, and that is the whole point. Issue #238 was
+# reported as "`2>&1` and `> file` are counted as refspecs", and the obvious fix
+# is a list of those spellings — but this predicate family has now been bypassed
+# five times by lists of shell syntax that were each complete until they were
+# not (see CLAUDE.md on `command_push_is_all_deletions`). So this matches the
+# SHAPE a redirection has: an optional `&`, an optional file-descriptor digit
+# run, then `<` or `>`. That covers `10>`, `3>&-`, `<<<` and anything else of
+# that form without anyone having had to think of them.
+#
+# A word is judged by its FIRST characters only, so a quoted word that merely
+# begins with an operator character (a ref pathologically named `">weird"`) is
+# not a redirection — the quote is the first character and the shape does not
+# match. That is deliberate: this must never swallow a real refspec.
+_gc_redir_kind() {
+    local _w="${1:-}" _rest
+    [ -n "${_w}" ] || return 1
+    _rest="${_w#&}"
+    while :; do
+        case "${_rest}" in [0-9]*) _rest="${_rest#?}" ;; *) break ;; esac
+    done
+    case "${_rest}" in [\<\>]*) ;; *) return 1 ;; esac
+    # Strip the operator run. Anything left is a GLUED target; nothing left
+    # means the target is the next word.
+    while :; do
+        case "${_rest}" in [\<\>\&-]*) _rest="${_rest#?}" ;; *) break ;; esac
+    done
+    if [ -n "${_rest}" ]; then printf 'glued'; else printf 'bare'; fi
+    return 0
+}
+
 # _gc_strip_closers_var <word> — like _gc_strip_closers, but sets `_GC_W`
 #   instead of echoing. Same result, no subshell: the echoing form costs a FORK
 #   per word, and these loops run per-argument inside a synchronous PreToolUse
@@ -1086,6 +1123,15 @@ command_push_ref() {
                 # (`(git push origin x --delete)`) otherwise misses its literal
                 # arm and is read as an ordinary option.
                 _gc_strip_closers_var "$1"
+                # A redirection is not a refspec. Before this, `git push origin
+                # main 2>&1` counted three positionals, so the ref did not
+                # resolve and the guard fell back to the checkout's HEAD —
+                # silently defeating #219's subject resolution for the shape an
+                # agent writes most often (issue #238).
+                _kind="$(_gc_redir_kind "${_GC_W}")" && {
+                    if [ "${_kind}" = "bare" ] && [ "$#" -ge 2 ]; then shift 2; else shift; fi
+                    continue
+                }
                 case "${_GC_W}" in
                     '') shift; continue ;;
                     --delete|-d) return 0 ;;
@@ -1217,7 +1263,7 @@ command_push_subject_is_partial() {
 #   count) and is the one remaining copy; a parsing fix here must be mirrored
 #   there.
 _gc_push_seg_shape() {
-    local _u _n=0 _del=0 _refs=0 _empty=0 _broad=0 _odd=0 _a
+    local _u _n=0 _del=0 _refs=0 _empty=0 _broad=0 _odd=0 _a _kind
     # shellcheck disable=SC2086
     set -- $1
     while [ "$#" -gt 0 ]; do
@@ -1255,6 +1301,15 @@ _gc_push_seg_shape() {
         # Normalising once, here, makes flags and refspecs impossible to treat
         # differently — the class of bug, not the instance.
         _gc_strip_closers_var "$1"
+        # A redirection is not a refspec — see _gc_redir_kind. Counting them
+        # inflated the refspec count past one, so a single-ref push written
+        # `… 2>&1` was announced as carrying more than one ref: a confident
+        # over-report about a command the gate had measured correctly, which is
+        # the failure mode #198 settled as worse than silence (issue #238).
+        _kind="$(_gc_redir_kind "${_GC_W}")" && {
+            if [ "${_kind}" = "bare" ] && [ "$#" -ge 2 ]; then shift 2; else shift; fi
+            continue
+        }
         case "${_GC_W}" in
             '') shift ;;
             --delete|-d) _del=1; shift ;;
