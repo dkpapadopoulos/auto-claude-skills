@@ -242,7 +242,33 @@ _gc_split_segments() {
                     # Narrow by construction: only an `&` whose PREVIOUS
                     # character is `<` or `>` stops being a boundary, so
                     # `a && b`, `a & b` and a trailing `&` are untouched.
+                    # An ESCAPED `>` is a literal character in a filename, not
+                    # an operator, so the `&` after it IS a control operator and
+                    # must still split. This scanner does not interpret backslash
+                    # escapes (its own header says so), and until this arm existed
+                    # that ceiling could only ever cause OVER-splitting — the safe
+                    # direction. Merging is a new capability, and merging is what
+                    # makes an escape dangerous:
+                    #
+                    #   echo a\>&git push origin main
+                    #
+                    # Real bash prints `a>`, backgrounds it, and RUNS THE PUSH.
+                    # Without this arm the whole command collapsed into one
+                    # segment whose first word is `echo`, so `_gc_segment_git_sub`
+                    # never reported `push`, no push segment was found, and EVERY
+                    # gate was skipped — including the fail-closed REVIEW/VERIFY
+                    # gate. Measured across `echo`, `cd`, `true` and a brace
+                    # group, so it is the class and not one spelling; and none of
+                    # the three orthogonal layers catches it (no substitution
+                    # syntax, `\>` toggles no quote state so the parse is
+                    # balanced, and the inert whitelist is never consulted because
+                    # DETECTION already failed).
+                    #
+                    # `a\\>` (escaped backslash, then a real operator) also takes
+                    # this arm and over-splits. That is the safe direction and is
+                    # left deliberately: a merge may never remove a command.
                     case "${_seg}" in
+                        *'\<'|*'\>') _out="${_out}${_seg}${_GC_SEP}"; _seg="" ;;
                         *'<'|*'>') _seg="${_seg}${_c}" ;;
                         *) _out="${_out}${_seg}${_GC_SEP}"; _seg="" ;;
                     esac ;;

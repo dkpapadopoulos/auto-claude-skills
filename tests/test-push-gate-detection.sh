@@ -467,6 +467,52 @@ _assert_pred "...and a redirected real push does not" 1 $D 'git push origin main
 _assert_pred "&& still separates commands"         1 $D 'git push --delete origin x && git push origin main'
 _assert_pred "single & still separates"            1 $D 'git push --delete origin x & git push origin main'
 
+# --- an ESCAPED operator must not merge two commands ------------------------
+# The `&` narrowing above created a MERGE capability, and merging is what makes
+# this scanner's documented "does not interpret backslash escapes" ceiling
+# dangerous. Before the narrowing an escape could only cause OVER-splitting —
+# the safe direction. After it, a word ending in `\>` made the `&` stop being a
+# boundary, so the whole command collapsed into ONE segment whose first word is
+# `echo`/`cd`/`true`, `_gc_segment_git_sub` never reported `push`, and no push
+# segment was found at all.
+#
+#   echo a\>&git push origin main
+#
+# Real bash prints `a>`, backgrounds it, and RUNS THE PUSH. This is the
+# DETECTION path, not the certification path: it does not need a deletion, does
+# not consult the inert whitelist, and is not narrowed by _SUBJ_DELETION_ONLY —
+# EVERY gate was skipped, including the fail-closed REVIEW/VERIFY gate. All three
+# orthogonal layers miss it by construction (no substitution syntax; `\>` toggles
+# no quote state so the parse is balanced; detection fails before the whitelist
+# is reached).
+#
+# Measured across four different first words, so these pin the CLASS.
+# ASSERTED END TO END, not through the ALL-form. The obvious unit cell here —
+# "command_push_is_all_deletions refuses it" — is VACUOUS for this defect and was
+# written that way first: when the bypass hides the push, the merged segment has
+# no deletion either, so the ALL-form refuses for the WRONG reason and the cell
+# passes against the bug. Mutation-verified: deleting the escaped-operator arm
+# failed the e2e cells and the deletion cell, and left all four ALL-form cells
+# green. Only a guard-level assertion separates "we measured the wrong thing"
+# from "we did not gate at all".
+#
+# The chain seeded at the top of this file has REVIEW and VERIFY incomplete, so
+# any DETECTED push must deny; a bypassed one produces no decision at all.
+out="$(_run 'echo a\>&git push origin main')"
+assert_contains "escaped > still reaches the gate (echo)" "deny" "$out"
+out="$(_run 'cd a\>&git push origin main')"
+assert_contains "escaped > still reaches the gate (cd)" "deny" "$out"
+out="$(_run 'true a\>&git push origin main')"
+assert_contains "escaped > still reaches the gate (true)" "deny" "$out"
+out="$(_run 'echo a\<&git push origin main')"
+assert_contains "escaped < still reaches the gate" "deny" "$out"
+
+# NEW-2: the same root cause on the certification path. Here the ALL-form IS the
+# right instrument, because the leading real deletion keeps the command
+# detectable — so a pass genuinely means "refused to certify" rather than
+# "never saw a push".
+_assert_pred "escaped > cannot hide a push behind a deletion" 1 $D 'git push --delete origin foo; cd a\>&git push origin main\'
+
 # THE DANGEROUS DIRECTION, pinned explicitly. A refspec-less `git push` ships the
 # current branch, so it must NEVER certify as deletion-only — and redirection
 # stripping is exactly the kind of change that could have made it, by removing
