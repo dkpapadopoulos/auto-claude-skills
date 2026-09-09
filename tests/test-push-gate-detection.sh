@@ -520,6 +520,53 @@ done
 # "never saw a push".
 _assert_pred "escaped > cannot hide a push behind a deletion" 1 $D 'git push --delete origin foo; cd a\>&git push origin main'
 
+# --- NEW-3: the HEREDOC seam ------------------------------------------------
+#
+#   cat <<EOF&git push origin main
+#   EOF
+#
+# Real bash backgrounds `cat` with the heredoc attached and RUNS THE PUSH
+# (measured with a file-creation oracle and a PATH-shimmed `git`, never with
+# stdout text: bash quotes an offending command back in its syntax-error
+# message, so grepping combined output for a marker reports commands that never
+# ran — that mistake produced a phantom finding while this cell was written).
+#
+# WHY IT EXISTS, stated precisely because the obvious reason is wrong. Review of
+# #242 proposed replacing the `'&')` arm's buffer-tail inspection with a flag
+# raised when the scanner appends `<`/`>`. An escape-aware flag passes the four
+# escaped-operator cells above AND this one, so this cell is NOT "the case a
+# careful flag still gets wrong" — an earlier draft said that and it was
+# measured false. What it pins is a DIFFERENT and likelier error: raising the
+# flag on the `'<'` arm's HEREDOC branch. That variant leaves all five cells
+# above green and merges this command, so before this cell the entire suite
+# passed while detection was bypassed. It is the seam the rest of the suite
+# does not cover, which is the whole of its claim to a place here.
+#
+# THE `EOF` TERMINATOR IS LOAD-BEARING. Without it `_pending` stays non-empty,
+# so `_GC_UNBALANCED=1`, so the guard takes its fail-closed substring path,
+# finds `git push` in the raw text and denies — and the cell passes while the
+# scanner is bypassed. Measured both ways.
+#
+# That prose is not enough on its own, so the precondition is ASSERTED. The
+# terminator is not the only route to an unbalanced parse: anything that stops
+# `cat` classifying as a heredoc data sink (see the sink list in
+# git-command.sh) also sends this payload down the substring path, and the cell
+# would sit green forever. A cell whose non-vacuity rests on a comment pins
+# nothing.
+_assert_pred "NEW-3 payload parses balanced (else the cell below is vacuous)" 0 \
+    command_parse_balanced 'cat <<EOF&git push origin main
+EOF'
+# Asserts the remedy text, not bare "deny", for the M9 reason: it pins WHICH
+# gate denied, so a future change that widens a skip and shifts the deny to
+# VERIFY or routing-governance is caught rather than absorbed. It does NOT
+# distinguish the precise path from the substring fallback — both reach the
+# same message — which is exactly why the balanced-parse assertion above has to
+# carry that half.
+out="$(_run 'cat <<EOF&git push origin main
+EOF')"
+assert_contains "heredoc operator cannot hide a trailing push" \
+    "requesting-code-review has not run" "$out"
+
 # THE DANGEROUS DIRECTION, pinned explicitly. A refspec-less `git push` ships the
 # current branch, so it must NEVER certify as deletion-only — and redirection
 # stripping is exactly the kind of change that could have made it, by removing

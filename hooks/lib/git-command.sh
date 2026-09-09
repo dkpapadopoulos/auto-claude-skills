@@ -267,6 +267,39 @@ _gc_split_segments() {
                     # `a\\>` (escaped backslash, then a real operator) also takes
                     # this arm and over-splits. That is the safe direction and is
                     # left deliberately: a merge may never remove a command.
+                    # THE INVARIANT, stated because it is NOT what it looks
+                    # like. A bare terminal `<`/`>` does NOT mean "an operator
+                    # was just appended": this scanner has no escape mode, so
+                    # `a\>` also ends in a bare `>`. Escaped or not, the
+                    # character goes through the SAME arm — the default arm for
+                    # `>` (there is no `'>'` arm), the `'<'` arm's first branch
+                    # for `<` — so nothing upstream distinguishes them. The
+                    # `*'\<'|*'\>'` arm below is the SOLE discriminator, and
+                    # deleting it restores the bypass described above (measured:
+                    # the escaped-operator cells go red).
+                    #
+                    # ON REPLACING THIS WITH A FLAG (recommended in review of
+                    # #242, as "one variable, single writer"). The naive form —
+                    # set on ANY normal-mode `<`/`>` append — is a BYPASS, not a
+                    # cosmetic change: it is set for `a\>` too, so it merges
+                    # `echo a\>&git push origin main`, which real bash executes.
+                    # Detection then fails outright and every gate is skipped,
+                    # including the fail-closed REVIEW/VERIFY gate.
+                    #
+                    # An escape-AWARE flag is, however, perfectly constructible
+                    # (skip the raise when the buffer already ends in `\`), and
+                    # such a variant passes the whole detection suite. So the
+                    # honest objection is NOT "it cannot be done" — an earlier
+                    # draft of this comment claimed that and was wrong. It is
+                    # that the flag moves one correctness obligation, today
+                    # discharged by a single pattern in one place, onto every
+                    # append site in the scanner. The realistic mistake is not
+                    # forgetting the escape: it is raising the flag on the `'<'`
+                    # arm's HEREDOC branch, which merges
+                    # `cat <<EOF&git push origin main` while leaving the
+                    # escaped-operator cells green. That seam is pinned
+                    # separately in tests/test-push-gate-detection.sh (NEW-3),
+                    # because it is the one the rest of the suite does not catch.
                     case "${_seg}" in
                         *'\<'|*'\>') _out="${_out}${_seg}${_GC_SEP}"; _seg="" ;;
                         *'<'|*'>') _seg="${_seg}${_c}" ;;
