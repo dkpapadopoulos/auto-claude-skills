@@ -727,9 +727,20 @@ assert_file_contains "jira-report-back redacts secrets/PII" \
 # the wrong direction. It had drifted to 66 words of headroom (11,434), i.e. it
 # was about to fail an unrelated PR having never once forced a reduction.
 #
-# The baseline below is the committed high-water mark. Growth fails. When you
-# genuinely reduce the file (extract to references/, deduplicate), LOWER this
-# number in the same commit — that is the ratchet, and it only turns one way.
+# What this actually enforces: no SILENT drift, in either direction. The
+# baseline is pinned to the exact current size, so headroom is deliberately
+# ZERO — any growth fails and can only proceed by editing the constant, which
+# puts the decision in the diff where a reviewer sees it. That visibility is
+# the control; the number is not sacred.
+#
+#   Growing the file    -> raise this constant IN THE SAME COMMIT and say why in
+#                          the message. Prefer extracting to references/ first;
+#                          a raise is allowed, but never silently.
+#   Shrinking the file  -> LOWER it in the same commit, or the staleness leg
+#                          below fails and the reduction is banked as new slack.
+#
+# A never-raise rule was considered and rejected: the file is a living skill, so
+# an absolute rule would simply be broken in contradiction of its own comment.
 # ---------------------------------------------------------------------------
 INCIDENT_SKILL_WORD_BASELINE=11434
 word_count=$(wc -w < "${SKILL_FILE}" | tr -d ' ')
@@ -737,7 +748,7 @@ if [ "$word_count" -le "${INCIDENT_SKILL_WORD_BASELINE}" ]; then
     _record_pass "SKILL.md: word count within baseline ${INCIDENT_SKILL_WORD_BASELINE} (${word_count})"
 else
     _record_fail "SKILL.md: word count ${word_count} exceeds baseline ${INCIDENT_SKILL_WORD_BASELINE}" \
-        "Extract heavy content to references/ or deduplicate. Do NOT raise the baseline — it only ratchets down."
+        "Extract heavy content to references/ or deduplicate. If the growth is intended, raise INCIDENT_SKILL_WORD_BASELINE to ${word_count} in this commit and state the reason in the commit message — visibly, never silently."
 fi
 
 # The ratchet is only real if a reduction is recorded. If the file has dropped

@@ -18,6 +18,12 @@ echo "=== test-readme-inventory.sh ==="
 README="${PROJECT_ROOT}/README.md"
 assert_file_exists "README.md exists" "${README}"
 
+# Scope every link assertion to the Bundled Skills TABLE, not the whole file.
+# The failure messages say "README table", so they must test the table: a row
+# deleted from the table and re-added as prose elsewhere would otherwise pass.
+TABLE="$(awk '/^## Bundled Skills/{f=1;next} f&&/^## /{exit} f' "${README}" 2>/dev/null)"
+assert_not_empty "Bundled Skills table block is extractable" "${TABLE}"
+
 # --- Authority 1: the filesystem -------------------------------------------
 dir_count="$(find "${PROJECT_ROOT}/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
 
@@ -43,7 +49,7 @@ missing=0
 while IFS= read -r d; do
     [ -z "${d}" ] && continue
     name="$(basename "${d}")"
-    if ! grep -qF "skills/${name}/SKILL.md" "${README}" 2>/dev/null; then
+    if ! printf '%s' "${TABLE}" | grep -qF "skills/${name}/SKILL.md" 2>/dev/null; then
         _record_fail "README table is missing skill: ${name}" \
             "Add a row linking skills/${name}/SKILL.md, or remove the skill."
         missing=$((missing + 1))
@@ -64,7 +70,7 @@ while IFS= read -r name; do
         stale=$((stale + 1))
     fi
 done <<EOF
-$(grep -oE 'skills/[a-z0-9-]+/SKILL\.md' "${README}" 2>/dev/null | sed 's|skills/||; s|/SKILL\.md||' | sort -u)
+$(printf '%s' "${TABLE}" | grep -oE 'skills/[a-z0-9-]+/SKILL\.md' | sed 's|skills/||; s|/SKILL\.md||' | sort -u)
 EOF
 [ "${stale}" -eq 0 ] && _record_pass "every README row points at a real skill directory"
 

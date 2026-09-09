@@ -137,23 +137,21 @@ assert_contains "agent-safety-review: autonomy ladder rungs" "execute-reversible
 assert_contains "agent-safety-review: additive-only note (does not change trifecta)" "does not change the trifecta" "${SAFETY_CONTENT}"
 assert_contains "agent-safety-review: output autonomy row" "Autonomy:" "${SAFETY_CONTENT}"
 
-# Summary
-echo ""
-echo "=============================="
-echo "Tests run:    ${TESTS_RUN}"
-echo "Tests passed: ${TESTS_PASSED}"
-echo "Tests failed: ${TESTS_FAILED}"
-echo "=============================="
-
 # ---------------------------------------------------------------------------
 # Do-not-flag list + authorship guard (adopt-review-independence)
 #
-# GOVERNANCE INVARIANT: the do-not-flag list is a REVIEWER SCOPE rule, never a
-# lead-side demotion filter. A provenance filter applied at synthesis would
-# demote exactly the structural security/governance findings that the severity
-# floor and the Evidence exception exist to protect. If a future edit turns
-# this into a filter, or extends it past the two ownership categories, these
-# assertions must fail.
+# GOVERNANCE INVARIANT: the do-not-flag list is a REVIEWER SCOPE rule with
+# exactly TWO ownership categories. It must never become a synthesis-side
+# provenance filter, and must never grow a category that demotes a finding by
+# its provenance — either shape would suppress the structural security and
+# governance findings that the severity floor and the Evidence exception exist
+# to protect.
+#
+# These assertions are SEMANTIC, not substring greps, because a grep cannot
+# tell a refusal from an embrace: an earlier draft asserted the presence of the
+# word "speculative" and was satisfied by unrelated pre-existing text in the
+# quality-reviewer lens, so it passed against a doc that ADDED a `speculative`
+# row. Adding a third row and adding a §4 filter step were both green.
 # ---------------------------------------------------------------------------
 ATR="${PROJECT_ROOT}/skills/agent-team-review/SKILL.md"
 assert_file_exists "agent-team-review SKILL.md exists" "${ATR}"
@@ -162,25 +160,45 @@ atr="$(cat "${ATR}" 2>/dev/null)"
 assert_contains "do-not-flag list present"                 "Do not flag"                        "${atr}"
 assert_contains "do-not-flag is reviewer scope, not a lead filter" \
     "NOT a filter the lead applies afterwards"                                                  "${atr}"
-assert_contains "do-not-flag: pre-existing category"       "pre-existing"                       "${atr}"
-assert_contains "do-not-flag: tool-owned category"         "tool-owned"                         "${atr}"
-assert_contains "do-not-flag names the owning skills"      "project-verification"               "${atr}"
-assert_contains "do-not-flag refuses the speculative category" \
-    "speculative"                                                                               "${atr}"
-assert_contains "do-not-flag protects security/governance from provenance demotion" \
-    "structural \`security\` and \`governance\` findings"                                       "${atr}"
-assert_contains "trivial is not droppable"                 "Trivial is not the same as droppable" "${atr}"
 
+# (a) EXACTLY TWO do-not-raise rows. A third row is the mutation that a
+#     presence-grep cannot see. Count rows in the table between the heading and
+#     the paragraph that closes it.
+dnf_rows="$(awk '/^\*\*Do not flag/{f=1} f&&/^\| `[a-z-]+` /{n++} f&&/^The list stops at two/{exit} END{print n+0}' "${ATR}")"
+assert_equals "do-not-flag table has exactly 2 rows" "2" "${dnf_rows}"
+assert_contains "do-not-flag row: pre-existing"            '| `pre-existing`'                   "${atr}"
+assert_contains "do-not-flag row: tool-owned"              '| `tool-owned`'                     "${atr}"
+
+# (b) The forbidden shapes, asserted as ABSENT rather than inferred from prose.
+assert_not_contains "no speculative do-not-raise row"      '| `speculative`'                    "${atr}"
+assert_not_contains "no synthesis-side provenance filter"  "Provenance filter"                  "${atr}"
+assert_not_contains "no category-based drop at synthesis"  "drop any finding whose category"    "${atr}"
+
+# (c) §4 synthesis must carry exactly ONE numbered drop/demote step (the
+#     severity floor). A second one is the lead-filter mutation.
+floor_steps="$(awk '/^### 4\. Lead Synthesis/{f=1} f&&/^[0-9]+\. \*\*Severity floor/{n++} f&&/^### 4a\./{exit} END{print n+0}' "${ATR}")"
+assert_equals "§4 has exactly one severity-floor step" "1" "${floor_steps}"
+assert_contains "severity floor still protects security/governance" \
+    'Never drop or demote `security` or `governance` findings'                                  "${atr}"
+
+# (d) The authorship guard withdraws the CLAIM. Pin the operative clause, not a
+#     prefix — "keep every" survives a rewrite to "keep every finding, but
+#     demote each one severity level", which is the shape the skill forbids.
 assert_contains "authorship guard present"                 "Authorship guard"                   "${atr}"
 assert_contains "authorship guard: self-review is convention-checking" \
     "convention-checking"                                                                       "${atr}"
-assert_contains "authorship guard withdraws the CLAIM, not the findings" \
-    "keep every"                                                                                "${atr}"
+assert_contains "authorship guard keeps earned severity"   "at the severity its evidence earns" "${atr}"
+assert_not_contains "authorship guard does not demote per level" "demote each"                  "${atr}"
+assert_not_contains "authorship guard does not demote by level"  "one severity level"           "${atr}"
+assert_not_contains "authorship guard does not downgrade findings" "downgrade the finding"      "${atr}"
 
-# The guard must not become a severity demotion — that would reintroduce the
-# confidence-weighted-demotion failure the skill already forbids.
-assert_not_contains "authorship guard does not demote findings by severity" \
-    "downgrade the finding"                                                                     "${atr}"
+# Summary
+echo ""
+echo "=============================="
+echo "Tests run:    ${TESTS_RUN}"
+echo "Tests passed: ${TESTS_PASSED}"
+echo "Tests failed: ${TESTS_FAILED}"
+echo "=============================="
 
 if [ "${TESTS_FAILED}" -gt 0 ]; then
     echo ""

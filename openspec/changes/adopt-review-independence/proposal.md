@@ -17,9 +17,12 @@ ACS's own enforcement already assumes:
   by evidence and design-doc mapping, never by provenance. Because
   `project-verification` and `security-scanner` are separate skills, a reviewer
   restating lint/type/test/SAST output is duplicated **by construction**.
-- **No authorship guard.** ACS enforces reviewer dispatch mechanically (#241)
-  but no owned file states *why* same-context self-review is unreliable, so
-  "I'll review it myself" is unopposed wherever the gate is advisory.
+- **No authorship guard.** ACS credits the REVIEW milestone on a Skill return;
+  observed dispatch and completion are recorded as advisory evidence only and
+  NO gate reads them (#241: "No gate reads the new milestone in this change";
+  `grep -c reviewer-returned hooks/openspec-guard.sh` is 0). So a self-review
+  reaches SHIP with a green gate, and no owned file states why that is
+  unreliable.
 
 ## What Changes
 

@@ -114,7 +114,7 @@ The plugin works without every companion integration — it discovers what's ins
 
 ## Bundled Skills
 
-This plugin ships 23 skills that phase composition selects automatically. Each is registered in `config/default-triggers.json` and discoverable at session start. Invoke one explicitly when the routing hasn't picked it up yet.
+This plugin ships 23 skills that phase composition selects automatically. All but `unified-context-stack` (which registers as a plugin) are listed in `config/default-triggers.json` and discoverable at session start. Invoke one explicitly when the routing hasn't picked it up yet.
 
 | Phase | Skill | Purpose |
 |-------|-------|---------|

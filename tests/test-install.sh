@@ -167,10 +167,14 @@ else
         "file is not executable"
 fi
 
-# Test 9: All bundled skills exist on disk AND are mentioned in README.
-# The README Bundled Skills table is the user-facing inventory; keeping it in
-# sync with skills/ is mandatory so readers don't think a skill is missing.
-README_CONTENT="$(cat "${PLUGIN_ROOT}/README.md")"
+# Test 9: the named bundled skills still exist on disk (deletion guard).
+#
+# The README half of this test was REMOVED. It asserted README<->skills/ sync
+# from a hardcoded 18-name list, which drifted: the list omitted 5 owned skills
+# and was the origin of the stale "18 skills" prose. That invariant now lives in
+# tests/test-readme-inventory.sh, which DERIVES the population and asserts both
+# directions, so a hardcoded list here is a second, silently-staler authority for
+# the same thing. This loop keeps only the deletion guard.
 for skill_name in \
     agent-safety-review \
     agent-team-execution \
@@ -194,10 +198,6 @@ do
     assert_file_exists \
         "skills/${skill_name}/SKILL.md exists" \
         "${PLUGIN_ROOT}/skills/${skill_name}/SKILL.md"
-    assert_contains \
-        "README references ${skill_name}" \
-        "${skill_name}" \
-        "${README_CONTENT}"
 done
 
 # Test 10: .claude-plugin/plugin.json exists and is valid JSON
