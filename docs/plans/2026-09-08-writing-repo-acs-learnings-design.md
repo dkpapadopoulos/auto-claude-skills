@@ -264,3 +264,135 @@ wrong tool for almost all of it.
 4. **Knowledge facts**: squash-merge `-D`, `$primary` resolution, dep re-install, parallel-session process hygiene, worktree leftover rule. Five files via `capture-knowledge`.
 5. **CLAUDE.md diet** (Part 1 §1), using the tighten-pass method from §A and the `docs/research/` shape from §G. Largest payoff, most review-sensitive, so last.
 6. **Design doc, not code**: project-level config layer.
+
+---
+
+# Part 3 — Independent assessment, comparison, and consolidated recommendations
+
+## Method, and what it is not
+
+The request was a Codex run. Codex is unavailable in this environment: no CLI,
+no credentials, and the proxy answers 403 to CONNECT for api.openai.com. The
+prompt is committed as `2026-09-08-codex-cold-assessment-prompt.md` for a local
+run. The substitute here was the closest available: a fresh-context agent on a
+different Claude model (Opus), reading a worktree at origin/main that contained
+none of Parts 1–2, barred from git logs. Same family, so it buys context
+isolation (the mechanism the author's own synthesis calls load-bearing) but not
+family diversity. Its full output and both sparring rounds are in
+`2026-09-08-independent-assessment-opus.md`.
+
+Two calibration notes. Every number it reported was re-measured before use;
+one was off (CLAUDE.md 14,167 vs 13,877 on origin/main), the rest held. In the
+sparring rounds it conceded eight of ten challenges, which is a sycophancy
+risk. Each concession came with a new measurement rather than agreement, and
+the one point it held (confidence bands) is the one where this session's Part 2
+was wrong. I treat the exchange as reasoned, not compliant.
+
+## Where the two assessments converged independently
+
+- CLAUDE.md relocation is the top item in both, on the same evidence.
+- Do-not-flag list and authorship guard into the reviewer brief.
+- Cross-family review is a secondary lever; both cite the synthesis line
+  "context isolation is the load-bearing part" against the README's claim.
+- Autonomy boundary: ACS's push gate is right for the unattended case;
+  auto-task's `--ship` is a personal risk setting.
+- ACS is ahead on evals, deterministic enforcement, and adjudication rigor.
+- Skip vendoring; skip the task store; defer the kaizen sweep.
+
+## What the independent run found that Parts 1–2 missed
+
+- **The bloat is entirely in test-backed bullets.** Gotchas naming a test:
+  19 bullets, 12,881 words, largest 3,284. Gotchas naming none: 11 bullets,
+  405 words, largest 125. So the essay's "evidence-of-need" criterion and a
+  relocation of the test-backed bullets select the same text. This settles the
+  "which words go" question mechanically.
+- **The migration is already started.** `.claude/knowledge/bash32-arithmetic-quoting.md`
+  carries `source: CLAUDE.md:Gotchas` while the full bullet still sits in
+  CLAUDE.md. Part 1 proposed the pattern; it exists, half done.
+- **Superpowers is a hard dependency the README files as optional.** Six of
+  eight phase drivers and both push-gate milestones are superpowers skills;
+  README line 113 says the plugin works without every companion integration.
+- **README says 18 skills; `skills/` has 23.**
+- **The incident-analysis cap is a ratchet, not a constraint**: 11,500 against
+  a file at 11,223.
+- **The IMPLEMENT shadow corpus cannot terminate at the observed rate**, and
+  CLAUDE.md never says so in one place; it is assembled from three bullets.
+- **A better mechanism for the DESIGN→PLAN clarity check**: the cold-read
+  verdict written as an artifact, and the existing design-guard grep extended
+  to check it exists (same posture as `project-verification`: forgeable, but
+  skipping costs an affirmative false artifact instead of nothing).
+- **Verify-Before-Post at the reviewer** (trace the causal chain before
+  surfacing) is the stronger borrow from `review-code`; it is ACS's own
+  evidence rule applied one round earlier.
+
+## What Parts 1–2 found that the independent run missed
+
+Explicit `git add <paths>`, Implementation Notes at end of implementation,
+review-loop's conjunctive convergence rule, the SCOPE MANIFEST vs "no new file
+names" tension, review-task's evidence standard, ship-task mechanics as
+knowledge facts, preflight degradation recording, config layering, and the
+research-skill rules. It conceded all four it was asked about and sharpened
+one: the push gate cannot see `git add -A` because staging precedes the commit
+it measures.
+
+## Positions this session changed after sparring
+
+1. **Confidence bands: withdrawn.** Part 2 §D recommended `review-code`'s
+   80/50 scheme. `agent-team-review` line 215 forbids confidence-weighted
+   drop or demote rules, and the argument holds: a self-rated bucket is a
+   cheaper competing gate against the evidence rule. Replace with the
+   do-not-flag list plus Verify-Before-Post.
+2. **CLAUDE.md diet mechanism.** Not a word ceiling. The invariant is
+   structural: a gotcha bullet that names a `tests/test-*.sh` must be an index
+   line; a bullet naming no test is unconstrained. Home is `.claude/knowledge/`
+   (finish the migration), not a new tree.
+3. **DESIGN→PLAN clarity check.** Upgraded from a hint to a verdict artifact
+   plus design-guard existence check.
+4. **Cross-family.** Both sides now rank the companion composition entry
+   second (data edit, free when absent); the `agent-team-review` lens swap
+   stays later.
+5. **openspec hygiene.** No `status:` field (same writer as the archive step,
+   so it would lie by the same path). No script yet either: hand-label ~10
+   active dirs shipped/in-flight first, then test a predicate against labels.
+6. **`git add -A`.** Advisory permanently. The real control is worktree
+   isolation, already REQUIRED in the IMPLEMENT sequence.
+
+## Positions where this session overrules the independent run's final word
+
+- Its "spec fold is dead" measurement (0 of 6 active changes folded into
+  `openspec/specs/`) is circular: folding happens at archive, and an archived
+  change checks out (incident-analysis-v1.3's requirement is present in the
+  canonical spec). The predicate measured archival, not shipping. Its
+  conclusion (label by hand first) survives; the evidence for it does not.
+- Its `git add -A` advisory firing condition included "tracked modifications
+  the current task did not touch", which fires on the user's own in-progress
+  edits. Keep only the `git worktree list` more-than-one-entry clause.
+
+## Consolidated recommendations (supersedes Part 2's PR order)
+
+1. **Finish the gotcha migration.** Move the 19 test-backed bullets to
+   `.claude/knowledge/` (type `gotcha`, `source: CLAUDE.md:Gotchas`), leave
+   one index line each, add the structural-invariant test. Returns roughly
+   17k tokens per session. Pure relocation.
+2. **Composition data edits.** core-skills companion entries (PLAN panel
+   gated on Codex and not-lite, DISCOVER research, REVIEW software-design
+   lens), PLAN hints (nervous-about, contracts-not-internals, seams, one
+   self-audit), IMPLEMENT hints (explicit `git add`, three-red rule,
+   unrelated-failure rule, Implementation Notes), REVIEW hint (merge-base
+   range). Fix SCOPE MANIFEST: `Create:` as directory glob.
+3. **`agent-team-review` contract.** Do-not-flag list, Verify-Before-Post at
+   the reviewer, anti-sycophancy line, authorship guard, cited disposition
+   categories with never-auto-reject Critical/Major, round cap plus drift
+   clause, autofix classification without the lane. No confidence bands.
+4. **DESIGN→PLAN clarify verdict.** Cold-read subagent writes a verdict
+   section; design-guard checks it exists.
+5. **Truth-in-docs.** README: 23 skills; superpowers declared as a dependency
+   with its fallback stated. CLAUDE.md: one sentence stating the IMPLEMENT
+   corpus does not terminate at the observed rate. Incident-analysis cap set
+   below the current value or replaced by the structural rule.
+6. **Knowledge facts and preflight.** Ship mechanics, parallel-session
+   process hygiene, worktree leftover rule; `degradations[]` on the verdict.
+7. **Deferred, with the precondition named.** Kaizen sweep and archive-lag
+   check after hand-labelling; project config layer after a design doc;
+   forward-only `deletion_only` discriminator on shadow records before the
+   next narrowing predicate bump.
