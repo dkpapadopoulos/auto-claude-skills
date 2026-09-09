@@ -114,7 +114,7 @@ The plugin works without every companion integration — it discovers what's ins
 
 ## Bundled Skills
 
-This plugin ships 18 skills that phase composition selects automatically. Each is registered in `config/default-triggers.json` and discoverable at session start. Invoke one explicitly when the routing hasn't picked it up yet.
+This plugin ships 23 skills that phase composition selects automatically. All but `unified-context-stack` (which registers as a plugin) are listed in `config/default-triggers.json` and discoverable at session start. Invoke one explicitly when the routing hasn't picked it up yet.
 
 | Phase | Skill | Purpose |
 |-------|-------|---------|
@@ -136,6 +136,11 @@ This plugin ships 18 skills that phase composition selects automatically. Each i
 | SHIP | [deploy-gate](skills/deploy-gate/SKILL.md) | Pre-ship deployment readiness checklist — verifies configuration, documentation, and CI status |
 | LEARN | [outcome-review](skills/outcome-review/SKILL.md) | Queries PostHog metrics, synthesizes outcome report with per-hypothesis validation, creates follow-up Jira work (gated) |
 | Cross-cutting | [unified-context-stack](skills/unified-context-stack/SKILL.md) | Tiered retrieval across External / Internal / Historical / Intent Truth with graceful degradation |
+| REVIEW | [project-verification](skills/project-verification/SKILL.md) | Discovers the repo's declared test/lint/type gate, runs it locally, and emits structured pass/fail evidence |
+| REVIEW | [supply-chain-investigation](skills/supply-chain-investigation/SKILL.md) | Advisory-driven org-wide audit of a published supply-chain attack on a registry package |
+| IMPLEMENT | [authorial-judgment](skills/authorial-judgment/SKILL.md) | Post-draft revision pass for persuasive prose — essays, posts, talks; not for README/API docs or code |
+| LEARN | [capture-knowledge](skills/capture-knowledge/SKILL.md) | Human-gated capture of a durable team fact into `.claude/knowledge/`, with source-verify and secret-scan |
+| LEARN | [improvement-miner](skills/improvement-miner/SKILL.md) | Sweeps eval baselines, gate-status and memory feedback into a ranked proposal report; approved items become GitHub issues |
 
 ## Optional Integrations
 

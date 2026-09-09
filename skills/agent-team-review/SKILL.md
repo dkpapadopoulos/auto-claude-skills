@@ -59,6 +59,37 @@ Each reviewer gets:
 Reviewers work independently using Read, Grep, and analysis tools. They do NOT modify the
 shared working tree; a reviewer that must RUN something works in its own detached worktree.
 
+**Do not flag — reviewer scope, two categories only.** These are *scope* rules for what a
+reviewer raises, NOT a filter the lead applies afterwards. The lead never demotes a
+delivered finding on these grounds — §4 step 3 and the `security`/`governance` exception
+below it are unaffected.
+
+| Do not raise | Why | Raise it anyway when |
+|---|---|---|
+| `pre-existing` — a defect on the merge base that appears in no changed hunk | The review is of this change; unchanged code was already shipped and reviewed | The diff changes its blast radius, or the change makes it newly reachable |
+| `tool-owned` — lint, formatting, type errors, test failures, SAST results | `project-verification` and `security-scanner` are separate skills, so restating their output is duplication **by construction** | The gate did not run. Then the finding is *that the gate did not run*, not the individual violation |
+
+The list stops at two entries deliberately. Broader provenance categories — notably
+"speculative" — would demote exactly the structural `security` and `governance` findings
+that §4 and the Evidence rule protect, which is the hole those rules exist to close. Do
+not extend this table without re-reading both.
+
+**Trivial is not the same as droppable.** A finding small enough to fix in one line is
+still reported; these two categories are about *ownership*, not size.
+
+**Authorship guard.** A review produced by the context that wrote the diff is not an
+independent review. If you authored the change under review in this context, say so
+plainly in the report and describe the pass as **convention-checking**, not review — the
+weak arm in the evidence for review fan-out is same-context self-assessment, and the
+independence claim is what fails, not the findings. Withdraw the claim; keep every
+finding at the severity its evidence earns.
+
+Say it explicitly because nothing else will. The push gate's STATUS layer credits a
+Skill return, not a review that happened, and observed dispatch is recorded only as
+advisory evidence — so a self-review reaches SHIP with a green gate and no signal that
+the independence was never there. Context isolation is the mechanism doing the work; this
+paragraph is the only place that records when it was absent.
+
 **Collect the reports — they do not arrive on their own.** A background reviewer in this
 harness signals idle with no findings attached, because its final text is a return value,
 not a message to the lead. Observed on one push-gate change: of four reviewers, three went
