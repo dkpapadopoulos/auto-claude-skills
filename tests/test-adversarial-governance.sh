@@ -144,6 +144,44 @@ echo "Tests run:    ${TESTS_RUN}"
 echo "Tests passed: ${TESTS_PASSED}"
 echo "Tests failed: ${TESTS_FAILED}"
 echo "=============================="
+
+# ---------------------------------------------------------------------------
+# Do-not-flag list + authorship guard (adopt-review-independence)
+#
+# GOVERNANCE INVARIANT: the do-not-flag list is a REVIEWER SCOPE rule, never a
+# lead-side demotion filter. A provenance filter applied at synthesis would
+# demote exactly the structural security/governance findings that the severity
+# floor and the Evidence exception exist to protect. If a future edit turns
+# this into a filter, or extends it past the two ownership categories, these
+# assertions must fail.
+# ---------------------------------------------------------------------------
+ATR="${PROJECT_ROOT}/skills/agent-team-review/SKILL.md"
+assert_file_exists "agent-team-review SKILL.md exists" "${ATR}"
+atr="$(cat "${ATR}" 2>/dev/null)"
+
+assert_contains "do-not-flag list present"                 "Do not flag"                        "${atr}"
+assert_contains "do-not-flag is reviewer scope, not a lead filter" \
+    "NOT a filter the lead applies afterwards"                                                  "${atr}"
+assert_contains "do-not-flag: pre-existing category"       "pre-existing"                       "${atr}"
+assert_contains "do-not-flag: tool-owned category"         "tool-owned"                         "${atr}"
+assert_contains "do-not-flag names the owning skills"      "project-verification"               "${atr}"
+assert_contains "do-not-flag refuses the speculative category" \
+    "speculative"                                                                               "${atr}"
+assert_contains "do-not-flag protects security/governance from provenance demotion" \
+    "structural \`security\` and \`governance\` findings"                                       "${atr}"
+assert_contains "trivial is not droppable"                 "Trivial is not the same as droppable" "${atr}"
+
+assert_contains "authorship guard present"                 "Authorship guard"                   "${atr}"
+assert_contains "authorship guard: self-review is convention-checking" \
+    "convention-checking"                                                                       "${atr}"
+assert_contains "authorship guard withdraws the CLAIM, not the findings" \
+    "keep every"                                                                                "${atr}"
+
+# The guard must not become a severity demotion — that would reintroduce the
+# confidence-weighted-demotion failure the skill already forbids.
+assert_not_contains "authorship guard does not demote findings by severity" \
+    "downgrade the finding"                                                                     "${atr}"
+
 if [ "${TESTS_FAILED}" -gt 0 ]; then
     echo ""
     echo "Failures:"
