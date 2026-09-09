@@ -595,3 +595,268 @@ in the same direction — toward comfort. Re-measure before quoting, and
 prefer a derived count to a written one. The same applies to environment
 facts: "Codex is unavailable" was inherited across a session boundary
 without a four-second re-test.
+
+---
+
+# Part 5 — Completing the un-mined material
+
+Part 2 read the four book-lens skills "by heading" and listed
+`create-design-brief` / `ingest-design` in scope while giving them no verdict
+row; Part 1 reduced `research` to three rules. This part closes those three
+gaps by reading the content, and applies Part 4's caution against bulk prose
+injection to every verdict.
+
+## A. The four book lenses — the split Part 2's heading-level pass hid
+
+`software-design` (1,966 w), `clean-code` (1,809 w), `ddd` (1,997 w),
+`goos` (2,001 w). Reading them changes the verdict, because **the four do not
+transfer equally, and the axis is what ACS is being asked about.**
+
+ACS wears two hats. It is (a) a Bash-3.2 + JSON + markdown codebase, and
+(b) a plugin that reviews *other people's* code. As lenses for consuming
+repos, all four are useful and the Part 2 verdict (companion entry, don't
+own) stands. As lenses for **ACS's own code**, `ddd` and `goos` largely do
+not apply — there are no aggregates, bounded contexts, value objects, or
+mocks-of-types-you-own in a hooks codebase. Recommending all four uniformly
+would have been the category confusion Codex named.
+
+Two of them, though, are sharper on ACS than a generic lens has any right
+to be:
+
+**`software-design`'s Red Flags checklist (15 rows) names ACS's own
+recurring bug classes.** This is the finding of Part 5:
+
+| Red flag (verbatim diagnostic) | The ACS defect it describes |
+|---|---|
+| Information Leakage — "does the same design decision appear in multiple modules?" | **#166**: the merge-advisory rule lived in two places; `_flush_push_advisories` was narrowed and the SHIP-phase `_WARNINGS` fold-in was not. CLAUDE.md's fix is "both callers now share the helper; a third MUST call it rather than re-deriving." |
+| Repetition — "does the same pattern appear in multiple places, suggesting a missing abstraction?" | The **6-copy token incantation**, retired into `scripts/persist-state.sh`; and the retired 6-copy pin `test-openspec-state-token-symmetry.sh`. |
+| Implementation Contaminates Interface | The `_gc_*` predicate family, where callers must know that `set --` inside the loop clobbers `$1`. |
+| Hard to Describe — "difficult to write a simple, complete comment? (design may need restructuring)" | The 2,553-word and 3,285-word gotcha bullets. The checklist reads the CLAUDE.md bloat as a *design* symptom, not a documentation one. |
+
+That last row is the useful reframe: Part 1 treated the giant bullets as a
+docs problem to relocate. This lens says a rule that takes 3,285 words to
+state is evidence the underlying mechanism is too entangled to describe —
+which is a different remedy (simplify `openspec-guard.sh`) than either
+relocation or compression. Not actionable this quarter; worth recording as
+the third reading of the same evidence.
+
+**`goos`'s "Listening to the Tests" table** (7 symptom → diagnosis →
+refactoring rows) opens with: *"Test difficulty is the primary design
+feedback signal. When a test is hard to write, do not blame the test — fix
+the design."* ACS's test suite needs detached worktrees, seeded verdicts,
+fabricated tokens, mutation matrices, per-shell control legs, and
+FIFO-driven watchdogs. CLAUDE.md narrates that scaffolding as diligence.
+Three of the seven rows fit directly: *long complicated setup* → too many
+responsibilities; *duplicated test setup* → missing abstraction; *tests are
+fragile* → the line-number-keyed allowlist that "rots silently". Same
+conclusion as above from an independent direction, which is worth more than
+either alone.
+
+`clean-code`'s checklist contributes one item ACS should adopt outright:
+**G27, "structure enforces design — constraints enforced by the type system
+or architecture, not just naming conventions."** ACS learned exactly this
+when it re-keyed the source-guard allowlist from line numbers to text
+(numbers drift, text stops matching when touched). G27 is the general form.
+
+| Lens | Own codebase | Consuming repos |
+|---|---|---|
+| `software-design` | **Adopt** — red-flags table as the `quality` lens reference; it predicts ACS's real bug classes | Adopt via companion |
+| `clean-code` | **Adopt G27 only**; rest is parity with existing review rules | Adopt via companion |
+| `goos` | **Adopt the one table** ("Listening to the Tests") as a test-health reference | Companion, when the repo is OO |
+| `ddd` | **Skip** — no domain model in a hooks codebase | Companion, when the repo is OO |
+
+## B. `research` — eight mechanics Part 1 missed
+
+Part 1 §4 took three rules (pre-commit criteria, cite-or-flag, echo vs
+independent). The skill carries more, and several are directly useful to ACS:
+
+1. **Scope tiers with a never-skipped approval gate.** Light (1–2 agents, no
+   review loop) / Standard (3–5, one round) / Deep (full protocol), presented
+   with the plan; *"Never skip the user approval gate, even for Light scope."*
+   ACS's `agent-team-review` and `agent-team-execution` scale team size by
+   file count with no such presented-and-approved step.
+2. **Escalation on discovered complexity.** A Light agent returning
+   conflicting evidence escalates to Standard *with user confirmation* —
+   the scope decision is revisable mid-run, which ACS's file-count triggers
+   are not.
+3. **WIP directory with three named recovery choices.** `docs/research/wip/{slug}/{agent}.md`,
+   and on re-entry: Resume (skip agents with output files) / Synthesise now /
+   Restart. **This one collides with an existing ACS decision and must not be
+   copied naively.** `agent-team-execution` already handles in-session
+   failure (four rows: stall, repeated rejection, cross-boundary block,
+   crashed → Lead reassigns), and its Red Flags explicitly forbid *"polling
+   files for status — all status flows through SendMessage."* What ACS lacks
+   is not status recovery but **durable per-agent output**, so a fan-out
+   whose Lead dies or whose session ends cannot be resumed. Adopt only that
+   half: agents write their report to a path, the Lead still learns status
+   via SendMessage. Framed as status files it contradicts the skill; framed
+   as output persistence it complements it.
+4. **A mandated contrarian track** — at least one agent explores "evidence
+   against the emerging thesis." ACS is closer here than it looks and the
+   gap is narrower than "no adversarial lens": `agent-team-review` ships an
+   `adversarial-reviewer`, but its scope is **Governance** — "HITL bypass,
+   scope expansion, safety gate weakening, permission escalation."
+   That is adversarial about *safety*, not about *merits*. No ACS lens is
+   chartered to argue the change is the wrong solution to the problem. That
+   is the real gap, and it is a one-line charter addition rather than a new
+   agent.
+5. **Search-vocabulary diversity** — "domain-native jargon, not just the
+   user's original phrasing." Cheap and absent from ACS's research hints.
+6. **Re-read the Problem Anchor before every step.** Literally repeated at
+   the head of Steps 3, 4, and 5. A one-line anti-drift device; ACS's
+   multi-round skills restate goals once.
+7. **Pre-mortem inside synthesis** — "assume the main conclusions are wrong;
+   why? state the key assumptions and what changes if each is false."
+8. **Two reviewers with *different* prompts** (accuracy/gaps vs
+   synthesis-quality/non-obvious), framed **cooperatively** — "what's missing
+   or unsupported?", explicitly *not* adversarial. Note this is the opposite
+   framing from `review-loop`'s adversarial mandate; the split is by artifact
+   type (research document vs code diff), and ACS should keep them distinct
+   rather than picking one.
+
+Plus the convergence test worth stealing verbatim: *"did this round produce
+actionable feedback that would change the document?"* — with a hard cap of 3
+described as "a safety net, not a target."
+
+And a naming dividend: `research` writes to **`docs/research/{date}-{slug}.md`**,
+which is precisely the home Part 2 §G proposed for ACS's relocated gotcha
+narratives. Adopting the convention and executing the CLAUDE.md diet are the
+same move, and the skill supplies the directory shape.
+
+## C. The design-handoff pair — the verdict Part 2 owed
+
+`create-design-brief` (900 w) and `ingest-design` (749 w) are a bidirectional
+bridge between a repo and a separate Claude Design project over the
+`DesignSync` MCP tool. **Skip the bridge** — it is a two-product workflow
+outside ACS's routing scope (and `runtime-validation` already owns UI
+evidence). Two rules inside them are worth more than the bridge:
+
+- **"Carry only the reality the other side can't infer; don't restate what it
+  already knows."** `create-design-brief` Step 2 says explicitly: don't
+  restate the design system's own tokens — it has those; carry the frontend
+  reality it cannot see. This is the single best statement of the context-
+  injection principle in either repo, and it cuts three ways for ACS: it is
+  the real argument for the CLAUDE.md diet (stop restating what the model
+  infers from the code), the rule for the cross-family panel prompt (Codex
+  needs repo orientation; Claude does not), and the test for every
+  session-start injection ACS adds.
+- **Document the deliberate carve-out inside the skill.** `ingest-design`
+  spends a paragraph explaining why it does *not* call `create-task`, and
+  names itself "a deliberate carve-out from any 'always use `/at:create-task`'
+  project rule, justified because the handoff defines the work." ACS has the
+  same need and handles it out-of-band: `phase_attest` records a skip at
+  runtime, but no owned SKILL.md states which mandatory step it legitimately
+  bypasses and why. Stating it in the skill converts a runtime attestation
+  into a reviewable design decision.
+
+Both also declare a stop boundary in the Goal line ("stops before
+exploration" / "ingestion only: stops before implementation"). Parity —
+ACS skills mostly do this — but a good habit to keep enforcing.
+
+## D. `panel` / `synthesize` — exact mechanics, and one separation worth copying
+
+Part 2 listed these roughly right; the precise details matter for the
+companion entry:
+
+- **`panel` deliberately does not synthesise.** Step 4: "Present all
+  responses verbatim, each directly attributed to its model, including the
+  paths to the raw responses. Do not synthesise, reconcile, or edit." The
+  merge is a separate skill the caller composes. That separation is why a
+  panel result can be audited; ACS's `design-debate` merges internally.
+- **Prompt is mandatory — fail loudly, don't infer.** The opposite of `sop`,
+  which infers the question from the conversation. Two skills, two contracts,
+  each stated.
+- **Skill-reference expansion with cycle protection** — inline each
+  referenced `SKILL.md` at most once, never re-expand. This is how a
+  non-Claude panelist gets ACS's actual rules rather than a paraphrase, and
+  it is the mechanism ACS would need for a `sop` equivalent, since ACS's
+  skills are the thing under discussion.
+- Raw responses persisted to `/tmp/panel-<timestamp>-<slot>.md` and cited by
+  path.
+- **`synthesize`'s merge rubric**, four rows: agreement (≥2) → high
+  confidence; unique to one → re-examine against source, discard if
+  speculative; **contradiction → assess evidence quality each side and
+  "decide on substance, do not vote"**; **gap (none caught) → flag as a panel
+  limitation.** Plus a drift check on the panelists themselves: "re-read the
+  original prompt and flag any content that violates, ignores, or goes beyond
+  what was instructed."
+
+Two of those are directly usable in `agent-team-review`'s synthesis step:
+"decide on substance, do not vote" (consistent with §4a, which already
+forbids resolving a causal finding by consensus) and "gap → flag as a panel
+limitation", which gives the lead a way to record what the lens set could not
+cover — the honest counterpart to ACS's existing coverage rule.
+
+## E. `config` — two details worth copying regardless of the config decision
+
+Independent of whether ACS adds a project config layer (Part 2 §G, still
+"design doc first"):
+
+- **Closed provenance vocabulary.** Every resolved leaf carries exactly one
+  of `default | detected | project | local`, and `detected` may append the
+  fact (`[detected: codex on PATH]`). ACS's `/setup` and session-start report
+  capability booleans (`serena=true`, `codex present`) with no record of
+  *how* each was determined; a closed provenance tag is what makes a
+  resolved-config dump auditable.
+- **Heading lint that refuses to guess.** An unrecognised `##` heading warns
+  and is ignored — *"never guess a near-miss to a canonical heading."*
+  ACS's config is jq-parsed JSON, where an unrecognised key is silently
+  dropped. Given that ACS already learned duplicate YAML keys parse fine and
+  silently drop a block, a warn-on-unknown-key lint over
+  `~/.claude/skill-config.json` is the same lesson.
+
+## F. Two authoring practices from `auto-task`'s Guidance block
+
+- **"Guidance (DO NOT IGNORE!)" with `<!-- Curate as we go along. -->`** at
+  the top of the orchestrator: 6 bullets of hard-won operational rules,
+  ahead of the steps. Part 2 §G already proposed this shape for ACS's
+  3k-word skills. Reading it confirms the discipline: every bullet is an
+  observed failure (subagent hangs, `pkill` collisions, harness worktree
+  paths breaking editor handoff), none is a generic exhortation.
+- **A parked rule kept visible as an HTML comment.** One bullet — treating a
+  `status: new` task with locked decisions as ready-for-dev — sits commented
+  out in place. It records a considered-and-rejected (or not-yet-enabled)
+  decision *at the point it would apply*, rather than in a changelog. ACS
+  currently carries this kind of thing as prose inside CLAUDE.md gotchas
+  ("WITHDRAWING the flip was drafted and REJECTED"); at-the-point-of-use is
+  cheaper to find and harder to leave stale.
+
+## G. How Part 5 changes the Part 4 ranking
+
+It does not reorder the top three. It adds substance to items already ranked
+and supplies one new candidate:
+
+- **Reinforces #2 (`sop`-equivalent).** `panel`'s skill-reference expansion
+  with cycle protection is the missing mechanism: to get a useful second
+  opinion *about an ACS skill*, the external model needs the SKILL.md inlined,
+  not named. Build the expansion, or the second opinion is uninformed.
+- **Reinforces #5 (CLAUDE.md as compression).** Three independent readings
+  now converge: the essay's evidence-of-need criterion, `software-design`'s
+  "Hard to Describe ⇒ design smell", and `create-design-brief`'s "don't
+  restate what the other side already knows." The last is the one to put in
+  the PR description, because it survives Codex's objection — it argues for
+  *deleting what is inferable*, not for relocating what is authoritative.
+  `docs/research/{date}-{slug}.md` is the destination.
+- **Adds a new candidate, above #6: the `research` mechanics as a
+  fan-out-hardening pass.** Four small independent edits, each addressing a
+  verified gap: durable per-agent output for cross-session resume (not status
+  files — see §B.3), the presented-and-approved scope tier, mid-run
+  escalation on discovered complexity, and a merits-contrarian charter to sit
+  beside the existing governance-scoped `adversarial-reviewer` (§B.4).
+  Two files (`agent-team-execution`, `agent-team-review`), no hook changes.
+  Cheaper than the review-contract work, and §B.3's collision is the reason
+  to do it deliberately rather than by copying.
+- **Records, does not action, the sharpest structural finding**: two
+  independent lenses say ACS's guard is over-entangled — 3,285 words to
+  state one rule, and a test suite that needs worktrees and mutation
+  matrices to pin it. That is an argument for simplifying
+  `openspec-guard.sh`, which no recommendation in this document proposes and
+  none should until someone budgets it properly.
+
+## H. Scope note
+
+Everything in Part 5 is text and data: SKILL.md sections, config entries,
+`.claude/knowledge/` facts, and one directory convention. Nothing here
+changes a hook, a predicate, or a gate decision, which is deliberate given
+Part 4's finding that the source repos are prompt-only pipelines whose
+conventions do not carry semantics onto enforcement surfaces.
