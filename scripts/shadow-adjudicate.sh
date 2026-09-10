@@ -263,6 +263,17 @@ cmd_next() {
     # the same reason as _episode_wb: a JSON string "true" must not qualify.
     _line="$(_shadow_tsv 'select((.ts // "") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
               | select(has("would_block") and ((.would_block|type) == "boolean") and .would_block == true)
+              # An ADVISORY-SILENT record must not be queued either: the leg said
+              # nothing about it, so it cannot contain a false block, and offering
+              # it spends operator time on the one population that provably
+              # cannot inform the measurement. Same reason attested records are
+              # not offered. The field arrives in SCHEMA 4; predicate_version 5
+              # is the separate thing that excludes the older firing population.
+              # Conflating the two version counters is how a later reader talks
+              # itself into the wrong exclusion, so they are named apart here.
+              # Records written before schema 4 carry no such field and fall
+              # through this filter unchanged.
+              | select((has("advisory_emitted") | not) or ((.advisory_emitted|type) != "boolean") or .advisory_emitted == true)
               | [.record_id,.ts,.repo,.branch,.action,.diff_base,
                  (.impl_in_chain|tostring),(.material_source|tostring),
                  .impl_evidence_kind,.transcript_path,
@@ -369,8 +380,33 @@ cmd_next() {
 # rather than discovered later, because an undefined rule is how this instrument
 # came to be wrong in the first place.
 #
-# Membership is read from `would_block` ONLY, never inferred from
-# `impl_evidence_kind`. The two correlate perfectly in today's data, which is
+# SECOND MEMBERSHIP FIELD, schema 4 (#245): `advisory_emitted`. `would_block`
+# turned out not to mean what the rate needed, in two ways that had nothing to do
+# with each other: on the gh-merge path it is passed as a hardcoded literal, so a
+# merge whose subject never resolved asserted a block the leg would not perform;
+# and a deletion-shaped command that lost its certification to an unaccountable
+# pipeline segment produced a would_block record while shipping no content. Both
+# are events the leg SAID NOTHING about, so neither could have blocked anyone,
+# and both were adjudicable only as false blocks — moving the pre-registered rate
+# for a reason unrelated to the predicate under test.
+#
+# Recording what the leg actually did retires that class instead of filtering one
+# instance of it: the next premise-false shape drops out without another reader
+# fix. An episode joins the rate only when a record both would have blocked AND
+# produced an advisory. The exclusion is REPORTED, never silent.
+#
+# ONLY AN EXPLICIT `false` EXCLUDES, and the asymmetry with `would_block` is
+# deliberate rather than an oversight. For `would_block`, an unknown folded into
+# the population would DILUTE the denominator, so it is malformed. Here the
+# directions are reversed: excluding an episode is what biases the rate toward
+# CLEARING the deny-flip, so an absent or malformed `advisory_emitted` must
+# resolve to "assume the leg spoke" and stay in. A producer bug that drops the
+# field then costs a possibly-spurious episode in the denominator — the safe
+# direction — instead of silently shrinking the population the bar is measured
+# over. Records written before schema 4 carry no such field and are unaffected.
+#
+# Membership is read from `would_block` and `advisory_emitted` ONLY, never
+# inferred from `impl_evidence_kind`. The two correlate perfectly in today's data, which is
 # precisely the trap: that field is format-frozen and describes EVIDENCE, not
 # rate membership, and coupling them would re-create the implicit contract that
 # broke this reader.
@@ -378,7 +414,7 @@ cmd_next() {
 # A missing or non-boolean value is "malformed", never silently "no": folding an
 # unknown into the population that looks safe is the same bias in miniature.
 _episode_wb() {
-    local _ids="${1:-}" _id _v _sawtrue=false _sawbad=false _oifs
+    local _ids="${1:-}" _id _v _sawtrue=false _sawbad=false _sawsilent=false _oifs
     [ -n "${_ids}" ] && [ -f "${SHADOW_LOG}" ] || { echo malformed; return 0; }
     command -v jq >/dev/null 2>&1 || { echo malformed; return 0; }
     _oifs="$IFS"; IFS=,
@@ -386,20 +422,37 @@ _episode_wb() {
         # Type-checked, not `tostring`: a JSON *string* "true" would otherwise be
         # indistinguishable from the boolean and would silently join the rate
         # population.
+        # Emits one of: true | false | SILENT | MALFORMED.
+        # SILENT = would_block true but the leg emitted no advisory, i.e. an
+        # event nobody could have been blocked by. Reported separately rather
+        # than folded into `false`, which means "attestation satisfied the leg" —
+        # a different state that #169 records deliberately.
         _v="$(jq -r --arg id "${_id}" \
              'select(.record_id == $id)
-              | if (has("would_block") and ((.would_block|type) == "boolean"))
-                then (.would_block|tostring) else "MALFORMED" end' \
+              | if (has("would_block") and ((.would_block|type) == "boolean")) | not
+                then "MALFORMED"
+                elif (.would_block == false) then "false"
+                elif (has("advisory_emitted") and ((.advisory_emitted|type) == "boolean")
+                      and .advisory_emitted == false) then "SILENT"
+                else "true" end' \
              "${SHADOW_LOG}" 2>/dev/null | head -1)"
         case "${_v}" in
-            true)  _sawtrue=true ;;
-            false) ;;
-            *)     _sawbad=true ;;
+            true)   _sawtrue=true ;;
+            false)  ;;
+            SILENT) _sawsilent=true ;;
+            *)      _sawbad=true ;;
         esac
     done
     IFS="$_oifs"
-    if [ "${_sawtrue}" = true ]; then echo yes;       return 0; fi
-    if [ "${_sawbad}"  = true ]; then echo malformed; return 0; fi
+    # Order is UNCHANGED from before the silent arm existed: any would-block wins
+    # (the anchor-independent ANY rule), then malformed. `silent` is appended
+    # LAST so an episode holding both a real would-block and a silent record
+    # still counts — narrowing that would quietly drop episodes the rate is
+    # entitled to. Only an episode whose would-block records are ALL silent is
+    # excluded, which is exactly the premise-false population.
+    if [ "${_sawtrue}"   = true ]; then echo yes;       return 0; fi
+    if [ "${_sawbad}"    = true ]; then echo malformed; return 0; fi
+    if [ "${_sawsilent}" = true ]; then echo silent;    return 0; fi
     echo no
 }
 
@@ -440,7 +493,7 @@ _episode_verdict() {
 # cmd_status — episode-level readout. Observational; always exits 0.
 cmd_status() {
     local _tot=0 _lab=0 _fb=0 _tc=0 _unk=0 _agent=0 _unlab=0 _v1=0
-    local _wbep=0 _attep=0 _malwb=0 _wb
+    local _wbep=0 _attep=0 _malwb=0 _silep=0 _wb
     local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
     local _den _wc_k _wc_n _band_hdl _band_wc
     local _badts=0 _unparsed=0 _lines=0 _parsed=0
@@ -483,9 +536,10 @@ cmd_status() {
         # repos, which is the same dilution one level up.
         _wb="$(_episode_wb "${_ids}")"
         case "${_wb}" in
-            yes) _wbep=$(( _wbep + 1 )) ;;
-            no)  _attep=$(( _attep + 1 )); continue ;;
-            *)   _malwb=$(( _malwb + 1 )); continue ;;
+            yes)    _wbep=$(( _wbep + 1 )) ;;
+            no)     _attep=$(( _attep + 1 )); continue ;;
+            silent) _silep=$(( _silep + 1 )); continue ;;
+            *)      _malwb=$(( _malwb + 1 )); continue ;;
         esac
         _vc="$(_episode_verdict "${_ids}")"
         _v="$(printf '%s' "${_vc}" | sed -n 1p)"
@@ -514,6 +568,8 @@ EOF
     printf '  episodes          %s\n' "${_tot}"
     printf '  would-block       %s   <- the ONLY population the rate is computed over\n' "${_wbep}"
     printf '  attestation-only  %s   <- observation (#169): attestation satisfied the leg; cannot contain a false block\n' "${_attep}"
+    [ "${_silep}" -gt 0 ] && \
+        printf '  advisory-silent   %s   <- excluded: the leg emitted no advisory, so nobody could have been blocked; the premise was never established\n' "${_silep}"
     [ "${_malwb}" -gt 0 ] && \
         printf '  malformed would_block %s   <- excluded: field missing or not boolean; NOT counted as attestation-only\n' "${_malwb}"
     printf '  adjudicated       %s   (human-claimed)\n' "${_lab}"

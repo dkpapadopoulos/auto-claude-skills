@@ -13,6 +13,37 @@ assert_equals "number after flags"           "7" "$(pr_ref_from_command 'gh pr m
 assert_equals "rest api merge path"          "7" "$(pr_ref_from_command 'gh api repos/o/r/pulls/7/merge')"
 assert_equals "delete-branch flag ignored"  "12" "$(pr_ref_from_command 'gh pr merge 12 --squash --delete-branch')"
 
+# --- redirection operands are not PR refs (#238 class, applied here) --------
+# `2>&1` is a digit-leading token, so the ambiguity guard counted it as a second
+# candidate and returned nothing. Measured consequence: 14 of 14 gh-merge shadow
+# records across 39 days carry diff_base "unresolved" -- this leg has NEVER once
+# resolved in production, and `2>&1 | tail -N` is what an agent naturally writes.
+# The fix reuses git-command.sh's STRUCTURAL _gc_redir_kind_var rather than
+# listing redirection spellings, because this predicate family has been bypassed
+# repeatedly by lists that were complete until they were not.
+assert_equals "stderr redirection is not a second ref"   "212" \
+    "$(pr_ref_from_command 'gh pr merge 212 --squash 2>&1')"
+assert_equals "redirection plus pipeline stage"          "212" \
+    "$(pr_ref_from_command 'gh pr merge 212 --squash --delete-branch 2>&1 | tail -6')"
+assert_equals "fd-close redirection"                     "212" \
+    "$(pr_ref_from_command 'gh pr merge 212 3>&- --squash')"
+assert_equals "bare operator consumes its target"        "212" \
+    "$(pr_ref_from_command 'gh pr merge 212 --squash > 99.log')"
+assert_equals "named-fd redirection"                     "212" \
+    "$(pr_ref_from_command 'gh pr merge 212 --squash {fd}>/tmp/7.log')"
+
+# CONTROLS -- the ambiguity guard must survive the fix. A genuinely ambiguous
+# command still returns nothing: a plausible wrong label is worse than none.
+assert_equals "genuine ambiguity still refuses"          "" \
+    "$(pr_ref_from_command 'gh pr merge --title \"PR 42 notes\" 99')"
+assert_equals "two bare numbers still refuse"            "" \
+    "$(pr_ref_from_command 'gh pr merge 42 99')"
+# A redirection TARGET is a filename, not a ref: `>` is a bare operator, so the
+# word after it must be skipped too, and skipping it must not also swallow a
+# real ref that follows.
+assert_equals "redirection target is skipped, ref after it still found" "212" \
+    "$(pr_ref_from_command 'gh pr merge --squash > 99.log 212')"
+
 # Fix round 1, IMPORTANT 1a: a digit-leading token BEFORE the literal `merge`
 # token (e.g. a flag value like `--org 42`) must never be mistaken for the PR
 # ref -- the loop must gate the digit test on having seen `merge` first.

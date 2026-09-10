@@ -1661,3 +1661,85 @@ command_push_is_all_deletions() {
     return 0
 }
 
+# command_push_recognised_are_all_deletions <command>
+#
+# ADVISORY-ONLY, AND DELIBERATELY WEAKER THAN THE PREDICATE ABOVE. Returns 0
+# when every RECOGNISED push segment in the command deletes a ref. It says
+# NOTHING about segments it does not recognise, so it is NOT a certification
+# that the command ships no content and MUST NEVER be used to skip a gate.
+#
+# WHY IT EXISTS. The strict form requires every segment to be accounted for,
+# because that claim is what lets four content-dependent legs be skipped. A
+# trailing `| tail -N` is an unaccountable segment, and `_gc_seg_is_inert`
+# correctly refuses to vouch for it -- it cannot tell `tail` from `./deploy.sh`.
+# There is no sound widening of that whitelist: the right-hand side of a pipe
+# executes arbitrarily, so `git push --delete origin x | ./deploy.sh` runs
+# deploy.sh. The refusal is right.
+#
+# What was wrong was the CONSEQUENCE. With certification lost, the subject falls
+# back to the checkout HEAD, and the IMPLEMENT leg then states "this push edits
+# source" about a command whose pushes ship nothing, and writes a shadow record
+# whose premise is false.
+#
+# BE PRECISE ABOUT THE WARRANT, because the looser phrasing is the misreading
+# that would license misuse: what this establishes is only that every RECOGNISED
+# push is deletion-shaped. It does NOT establish that the command ships nothing.
+# `git push origin --delete x | ./deploy.sh` is accepted here, and deploy.sh may
+# push anything at all. That is tolerable for the two things this predicate
+# drives -- a sentence and a corpus-membership flag -- and is exactly why it may
+# not drive a gate. The residual cost is bounded and one-directional: such a
+# command loses one shadow episode, never a deny. CLAUDE.md justifies the lost-skip cost as "one-directional
+# ... never a new deny", which is true of ENFORCEMENT and does not transfer to
+# MEASUREMENT or to what the gate SAYS. Measured in the live corpus: 2 of 12 v4
+# would-block episodes are deletion-shaped commands recorded as content pushes,
+# and `2>&1 | tail -N` is the shape an agent naturally writes.
+#
+# So this predicate answers only the question needed to stop asserting something
+# false, and the strict form keeps governing every skip. The three orthogonal
+# layers still apply here -- substitution refusal, balanced parse, and the
+# broad-flag disqualifier -- because each blocks a different way of being wrong
+# about which pushes are even present; only the segment whitelist is dropped,
+# and dropping it is exactly what makes this claim weaker.
+#
+# PAIRED: a caller that skips, suppresses or shortcuts a DENY on the strength of
+# this predicate has misused it. tests/test-push-gate-detection.sh pins the
+# asymmetry (every advisory-form cell has a strict-form control), and
+# tests/test-push-gate-implement-leg.sh pins that the deny legs are unmoved.
+command_push_recognised_are_all_deletions() {
+    local _cmd="$1"
+    local _segs _oldifs _seg _shape _found=0
+    case "$1" in
+        *'$('*|*'`'*|*'<('*|*'>('*|*'=('*|*'${ '*|*'${|'*) return 1 ;;
+    esac
+    _segs="$(_gc_split_segments "$1")"
+    _oldifs="$IFS"
+    IFS="${_GC_SEP}"
+    for _seg in ${_segs}; do
+        IFS="${_oldifs}"
+        # THE ONE DIFFERENCE from the strict form: an unrecognised segment is
+        # skipped rather than disqualifying the command. That is the whole of
+        # the weakening, and it is why the result may not gate.
+        if [ "$(_gc_segment_git_sub "${_seg}")" != "push" ]; then
+            IFS="${_GC_SEP}"
+            continue
+        fi
+        _shape="$(_gc_push_seg_shape "${_seg}")"
+        if [ -z "${_shape}" ]; then IFS="${_oldifs}"; return 1; fi
+        _found=1
+        # shellcheck disable=SC2086
+        set -- ${_shape}   # <del> <refs> <empty> <broad> <odd>
+        if [ "$4" -ne 0 ]; then IFS="${_oldifs}"; return 1; fi
+        if [ "$1" -eq 1 ]; then IFS="${_GC_SEP}"; continue; fi
+        if [ "$2" -ge 1 ] && [ "$2" -eq "$3" ]; then IFS="${_GC_SEP}"; continue; fi
+        IFS="${_oldifs}"; return 1
+    done
+    IFS="${_oldifs}"
+    [ "${_found}" -eq 1 ] || return 1
+    # `_cmd`, not `$1`: `set -- ${_shape}` above replaced the positional
+    # parameters, and reading `$1` here would hand the balance check a shape
+    # digit. That exact slip re-opened a bypass in the strict predicate once.
+    command -v command_parse_balanced >/dev/null 2>&1 || return 1
+    command_parse_balanced "${_cmd}" || return 1
+    return 0
+}
+

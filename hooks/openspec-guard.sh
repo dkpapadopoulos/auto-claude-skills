@@ -1229,16 +1229,41 @@ EOF
                 # label instead of being mislabeled unresolved). Push keeps its
                 # original, narrower gate (material-only) — this branch never
                 # widens what a push records.
+                # A command whose every RECOGNISED push deletes a ref ships no
+                # content, so saying "this push edits source" about it is false.
+                # The strict certification above could not establish that — an
+                # unaccountable trailing segment (`| tail -2`) makes
+                # `_gc_seg_is_inert` refuse, correctly, since it cannot tell
+                # `tail` from `./deploy.sh` — and the subject then fell back to
+                # the checkout HEAD. That fallback is defensible for a gate
+                # DECISION and is not defensible for a STATEMENT, which is the
+                # distinction CLAUDE.md's "never a new deny" note does not draw.
+                #
+                # Advisory-only, and it must stay that way: this predicate is
+                # weaker than certification and cannot skip a leg. Nothing below
+                # changes any deny — `_SUBJ_DELETION_ONLY` still governs the
+                # four content-dependent legs, from the strict form alone.
+                _impl_recog_del=false
+                if [ "${_impl_material}" = "true" ] \
+                   && command -v command_push_recognised_are_all_deletions >/dev/null 2>&1 \
+                   && command_push_recognised_are_all_deletions "${_COMMAND}"; then
+                    _impl_recog_del=true
+                fi
                 if [ "${_impl_ok}" = "false" ] && \
                    { [ "${_impl_material}" = "true" ] || [ "${_pe_action}" = "gh-merge" ]; }; then
-                    if [ "${_impl_material}" = "true" ]; then
+                    if [ "${_impl_material}" = "true" ] && [ "${_impl_recog_del}" != "true" ]; then
                         _IMPL_TEXT="IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: phase_attest executing-plans \"<reason>\". (advisory; will become a deny after backtest)"
                         _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }${_IMPL_TEXT}"
                         _IMPL_MSG="${_IMPL_MSG}${_IMPL_MSG:+; }${_IMPL_TEXT}"
                         command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "${_pe_action}" "executing-plans"
                     fi
                     if command -v implement_shadow_record >/dev/null 2>&1; then
-                        implement_shadow_record "${_pe_action}" "${_SUBJ_ROOT}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" "${_impl_db}" "${_impl_material}" "true" "${_impl_detail}" "${_SUBJ_REV}" || true
+                        # `advisory_emitted` mirrors the branch above: an event the
+                        # leg said nothing about is recorded, but is not part of the
+                        # population a false-block rate is computed over.
+                        _impl_ae=true
+                        { [ "${_impl_material}" != "true" ] || [ "${_impl_recog_del}" = "true" ]; } && _impl_ae=false
+                        implement_shadow_record "${_pe_action}" "${_SUBJ_ROOT}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" "${_impl_db}" "${_impl_material}" "true" "${_impl_detail}" "${_SUBJ_REV}" "${_impl_ae}" || true
                     fi
                 fi
                 # Attestation-resolved episodes are recorded too, as
@@ -1251,7 +1276,10 @@ EOF
                 if [ "${_impl_ev}" = "attested" ] && \
                    { [ "${_impl_material}" = "true" ] || [ "${_pe_action}" = "gh-merge" ]; }; then
                     if command -v implement_shadow_record >/dev/null 2>&1; then
-                        implement_shadow_record "${_pe_action}" "${_SUBJ_ROOT}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "attested" "${_impl_db}" "${_impl_material}" "false" "${_impl_detail}" "${_SUBJ_REV}" || true
+                        # An attested episode emits no advisory either; it is already
+                        # outside the rate via would_block:false, and recording the
+                        # field honestly keeps the two membership signals consistent.
+                        implement_shadow_record "${_pe_action}" "${_SUBJ_ROOT}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "attested" "${_impl_db}" "${_impl_material}" "false" "${_impl_detail}" "${_SUBJ_REV}" "false" || true
                     fi
                 fi
             fi

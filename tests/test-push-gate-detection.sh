@@ -643,5 +643,73 @@ out="$(_run "${_MLQ}")"
 assert_not_contains "quoted-newline payload still allowed" '"deny"' "${out:-}"
 
 export HOME="$_OLDHOME"
+
+# ---------------------------------------------------------------------------
+# command_push_recognised_are_all_deletions -- the WEAKER, ADVISORY-ONLY form.
+#
+# The strict `command_push_is_all_deletions` requires EVERY segment to be
+# accounted for, because certifying "this command ships no content" is what
+# lets four content-dependent gate legs be skipped. A trailing `| tail -N` is an
+# unaccountable segment, and the whitelist correctly cannot tell `tail` from
+# `./deploy.sh` -- so the strict form refuses, the gate falls back to measuring
+# the checkout HEAD, and the IMPLEMENT leg then asserts "this push edits source"
+# of a command that ships nothing. Measured in the live corpus: 2 of 12 v4
+# would-block episodes are deletion-shaped commands recorded as content pushes,
+# and `2>&1 | tail -N` is the shape an agent naturally writes.
+#
+# This predicate answers the weaker question -- "is every RECOGNISED push in
+# this command a deletion?" -- which is exactly the claim needed to stop SAYING
+# something false, and is NOT sufficient to skip a gate. The asymmetry is the
+# whole design: the cells below pin both halves.
+# ---------------------------------------------------------------------------
+echo "-- recognised-deletions (advisory-only) --"
+
+_rad() { if command_push_recognised_are_all_deletions "$1"; then echo yes; else echo no; fi; }
+_strict() { if command_push_is_all_deletions "$1"; then echo yes; else echo no; fi; }
+
+assert_equals "advisory form: deletion with a pipeline stage" "yes" \
+    "$(_rad 'git push origin --delete scratch 2>&1 | tail -2')"
+assert_equals "advisory form: bare deletion"                  "yes" \
+    "$(_rad 'git push origin --delete scratch')"
+assert_equals "advisory form: deletion piped to an unknown command" "yes" \
+    "$(_rad 'git push origin --delete scratch | ./deploy.sh')"
+
+# The weaker claim is WEAKER: it says nothing about a second content-shipping
+# command. That is precisely why it must never gate, and the paired cells below
+# assert the strict form still refuses every one of these.
+assert_equals "strict form still refuses a pipeline stage"    "no" \
+    "$(_strict 'git push origin --delete scratch 2>&1 | tail -2')"
+assert_equals "strict form still refuses an unknown command"  "no" \
+    "$(_strict 'git push origin --delete scratch | ./deploy.sh')"
+assert_equals "strict form still certifies a bare deletion"   "yes" \
+    "$(_strict 'git push origin --delete scratch')"
+
+# A real push anywhere among the RECOGNISED pushes disqualifies both forms.
+assert_equals "advisory form: deletion plus a real push"      "no" \
+    "$(_rad 'git push origin --delete scratch && git push origin main')"
+assert_equals "advisory form: ordinary push"                  "no" \
+    "$(_rad 'git push origin main | tail -2')"
+assert_equals "advisory form: --all is never a deletion"      "no" \
+    "$(_rad 'git push --all origin')"
+assert_equals "advisory form: --mirror is never a deletion"   "no" \
+    "$(_rad 'git push --mirror origin')"
+assert_equals "advisory form: --tags is never a deletion"     "no" \
+    "$(_rad 'git push origin --delete scratch --tags')"
+
+# The three orthogonal layers apply to the advisory form too. Each is a
+# DIFFERENT failure mode and none subsumes another, so each gets its own cell:
+# a substitution runs wherever it appears (including inside the deletion's own
+# arguments); an unbalanced parse means the segmentation itself is untrustworthy.
+assert_equals "advisory form: substitution refuses"           "no" \
+    "$(_rad 'git push origin --delete scratch && cd $(git push origin main)')"
+assert_equals "advisory form: substitution inside the deletion refuses" "no" \
+    "$(_rad 'git push origin --delete $(git push origin main)')"
+assert_equals "advisory form: zsh process substitution refuses" "no" \
+    "$(_rad 'git push origin --delete scratch && cd =(git push origin main)')"
+assert_equals "advisory form: unbalanced parse refuses"       "no" \
+    "$(_rad 'git push origin --delete scratch; cd \\'"'"'; git push origin main')"
+assert_equals "advisory form: no push at all"                 "no" \
+    "$(_rad 'echo hello')"
+
 print_summary
 exit $?

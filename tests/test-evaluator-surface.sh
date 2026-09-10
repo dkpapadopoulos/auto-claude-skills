@@ -226,6 +226,40 @@ assert_not_contains "advisory file list has no trailing space"   " )"           
 out="$(run_guard_in "${REPO}" "feat2")"
 assert_not_contains "clean branch => no evaluator advisory"      "EVALUATOR SURFACE"   "${out:-}"
 
+# --- The deletion-only skip on THIS leg is pinned by the STRICT form (#245) ---
+# The evaluator-surface leg skips on `_SUBJ_DELETION_ONLY`, which derives from
+# `command_push_is_all_deletions` -- the strict predicate that requires EVERY
+# segment to be accounted for. Nothing asserted that until now: swapping this
+# one site to the weaker recognised-deletions predicate ran the whole push-gate
+# suite green (measured), because the deny-armed cells in
+# test-push-gate-subject.sh cover the two legs that DENY and this leg never
+# denies. An advisory leg is still user-visible output, and an unpinned skip is
+# how a predicate quietly migrates from the advisory path onto the gate path.
+run_guard_cmd() {
+    local repo="$1" branch="$2" cmd="$3"
+    ( cd "${repo}" && git checkout -q "${branch}" && \
+      _mkinput "${cmd}" | ACSM_SKIP_PUSH_GATE=1 CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null )
+}
+
+# A command the STRICT form certifies: the advisory is correctly skipped, since
+# the branch diff describes a commit this command does not push.
+out="$(run_guard_cmd "${REPO}" "feat" 'git push origin --delete scratch')"
+assert_not_contains "certified deletion => no evaluator advisory" "EVALUATOR SURFACE" "${out:-}"
+
+# THE PIN. The same deletion with a trailing pipeline stage is refused by the
+# strict form, so this leg must still run and still advise. Wiring the weaker
+# predicate in here suppresses it -- which is exactly the misuse the weaker
+# predicate's contract forbids, and this is the cell that catches it.
+out="$(run_guard_cmd "${REPO}" "feat" 'git push origin --delete scratch 2>&1 | tail -2')"
+assert_contains "uncertifiable deletion => evaluator advisory STILL emitted" \
+    "EVALUATOR SURFACE" "${out:-<empty>}"
+
+# Control: an ordinary push on the same branch advises, so the cell above cannot
+# pass merely because this branch always advises regardless of the command.
+out="$(run_guard_cmd "${REPO}" "feat" 'git push origin HEAD')"
+assert_contains "control: ordinary push on the same branch advises" \
+    "EVALUATOR SURFACE" "${out:-<empty>}"
+
 # #189 e2e: the runner-only branch must reach the user as a real advisory, not
 # merely satisfy the predicate.
 out="$(run_guard_in "${REPO}" "feat3")"

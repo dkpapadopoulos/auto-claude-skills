@@ -603,6 +603,66 @@ eq "mixed episode (attested FIRST) counts as would-block too" "1" \
 recnowb x1 "2026-08-01T10:00:00Z" "/repo/A" "feat/x" "tokX"
 eq "a record with no would_block field is reported as excluded" "1" \
    "$(status | grep -c 'malformed would_block')"
+
+# ---------------------------------------------------------------------------
+# advisory_emitted: the SECOND membership field (schema 4, #245).
+#
+# `would_block` alone was not the rate population. Two unrelated shapes produced
+# `would_block:true` for events the leg said nothing about: a gh-merge whose
+# subject never resolved (the flag is passed as a literal on that path), and a
+# deletion-shaped command whose certification was defeated by an unaccountable
+# pipeline segment. Neither could have blocked anyone, and both were adjudicable
+# only as false blocks — moving the pre-registered rate for a reason unrelated to
+# the predicate under test.
+# ---------------------------------------------------------------------------
+recae() { # recae <id> <ts> <repo> <branch> <token> <would_block> <advisory_emitted>
+  printf '{"record_id":"%s","ts":"%s","repo":"%s","branch":"%s","session_token":"%s","predicate_version":'"${_PV}"',"action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"none","transcript_path":"/tmp/t.jsonl","gate":"push-implement","would_block":%s,"advisory_emitted":%s,"schema_version":4}\n' \
+    "$1" "$2" "$3" "$4" "$5" "$6" "$7" >> "$IMPLEMENT_SHADOW_LOG"
+}
+
+: > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
+recae s1 "2026-08-01T10:00:00Z" "/repo/A" "feat/x" "tokS" true false
+recae r1 "2026-08-01T11:00:00Z" "/repo/A" "feat/y" "tokR" true true
+eq "a silent would-block episode is NOT in the rate population" "1" \
+   "$(status | grep -c 'would-block  *1')"
+eq "the silent episode is reported, not dropped" "1" \
+   "$(status | grep -c 'advisory-silent  *1')"
+eq "a silent episode is NOT counted as attestation-only" "1" \
+   "$(status | grep -c 'attestation-only  *0')"
+
+# --next must not spend operator time on a population that cannot contain a
+# false block, for the same reason attested records are never offered.
+: > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
+recae s2 "2026-08-01T10:00:00Z" "/repo/A" "feat/x" "tokS" true false
+eq "--next does NOT offer an advisory-silent record" "" \
+   "$("$SCRIPT" --next 2>/dev/null | grep -c '^s2' | tr -d ' ' | sed 's/^0$//')"
+
+# THE DIRECTION-OF-SAFETY RULE, and it is the opposite of would_block's.
+# Excluding an episode biases the rate toward CLEARING the deny-flip, so an
+# absent or malformed advisory_emitted must resolve to "assume the leg spoke"
+# and STAY IN. A producer bug that drops the field then costs a possibly
+# spurious episode in the denominator, never a silently smaller population.
+: > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
+recwb m1 "2026-08-01T10:00:00Z" "/repo/A" "feat/x" "tokM" true
+eq "a record with NO advisory_emitted stays in the rate population" "1" \
+   "$(status | grep -c 'would-block  *1')"
+: > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
+recae m2 "2026-08-01T10:00:00Z" "/repo/A" "feat/x" "tokM" true '"yes"'
+eq "a NON-BOOLEAN advisory_emitted stays in the rate population" "1" \
+   "$(status | grep -c 'would-block  *1')"
+
+# A mixed episode keeps counting: only an episode whose would-block records are
+# ALL silent is excluded. Narrowing that would drop episodes the rate is
+# entitled to, and the ANY rule must stay anchor-independent, so both orders are
+# pinned.
+: > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
+recae x1 "2026-08-01T10:00:00Z" "/repo/A" "feat/x" "tokX" true false
+recae x2 "2026-08-01T10:05:00Z" "/repo/A" "feat/x" "tokX" true true
+eq "mixed episode (silent first) still counts" "1" "$(status | grep -c 'would-block  *1')"
+: > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
+recae y1 "2026-08-01T10:00:00Z" "/repo/A" "feat/x" "tokY" true true
+recae y2 "2026-08-01T10:05:00Z" "/repo/A" "feat/x" "tokY" true false
+eq "mixed episode (speaking first) still counts" "1" "$(status | grep -c 'would-block  *1')"
 eq "...and is NOT silently counted as attestation-only" "0" \
    "$(status | grep -c 'attestation-only  *1')"
 

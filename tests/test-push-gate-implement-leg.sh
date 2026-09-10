@@ -23,12 +23,12 @@ export IMPLEMENT_SHADOW_LOG="${_u_home}/shadow.jsonl"
 # shellcheck disable=SC1090
 . "${PROJECT_ROOT}/hooks/lib/implement-shadow.sh"
 
-assert_equals "schema_version is 3" "3" "${IMPLEMENT_SHADOW_SCHEMA_VERSION}"
+assert_equals "schema_version is 4" "4" "${IMPLEMENT_SHADOW_SCHEMA_VERSION}"
 # 3 (#219): the push path now measures the tree and ref the command names, not
 # the session cwd — that changes WHEN the leg fires, so v2 records are no longer
 # poolable. Bumping this pin without bumping the constant, or vice versa, is the
 # mistake it exists to catch.
-assert_equals "predicate_version is 4 (#229 deletion subject)" "4" \
+assert_equals "predicate_version is 5 (#245 redirection parser + advisory_emitted)" "5" \
     "${IMPLEMENT_SHADOW_PREDICATE_VERSION}"
 
 implement_shadow_record push "${PROJECT_ROOT}" tok /tmp/t.jsonl none branch-local true
@@ -72,9 +72,9 @@ assert_equals "cannot_check is preserved per leg" "cannot_check" \
     "$(jq -r '.impl_evidence_detail.bridge' "${IMPLEMENT_SHADOW_LOG}")"
 assert_equals "missing is distinguishable from cannot_check" "missing" \
     "$(jq -r '.impl_evidence_detail.ledger' "${IMPLEMENT_SHADOW_LOG}")"
-assert_equals "schema_version on a detailed record is 3" "3" \
+assert_equals "schema_version on a detailed record is 4" "4" \
     "$(jq -r '.schema_version' "${IMPLEMENT_SHADOW_LOG}")"
-assert_equals "predicate_version is 4 so v3 records are NOT pooled" "4" \
+assert_equals "predicate_version is 5 so v4 records are NOT pooled" "5" \
     "$(jq -r '.predicate_version' "${IMPLEMENT_SHADOW_LOG}")"
 
 # An omitted detail must be null, NOT a fabricated all-missing object. "not
@@ -297,8 +297,8 @@ assert_json_valid "shadow record is valid json" "$IMPLEMENT_SHADOW_LOG"
 assert_contains "record names the gate"        '"gate":"push-implement"' "${_rec}"
 assert_contains "record marks a would-block"   '"would_block":true'      "${_rec}"
 assert_contains "record carries action push"   '"action":"push"'         "${_rec}"
-assert_contains "record carries schema_version"    '"schema_version":3'    "${_rec}"
-assert_contains "record carries predicate_version" '"predicate_version":4' "${_rec}"
+assert_contains "record carries schema_version"    '"schema_version":4'    "${_rec}"
+assert_contains "record carries predicate_version" '"predicate_version":5' "${_rec}"
 assert_contains "record carries a record_id"   '"record_id":'            "${_rec}"
 assert_contains "record carries a ts"          '"ts":'                   "${_rec}"
 assert_contains "record carries the transcript pointer" '"transcript_path":' "${_rec}"
@@ -424,7 +424,7 @@ _rec="$(cat "$IMPLEMENT_SHADOW_LOG")"
 assert_equals "merge writes one record" "1" "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
 assert_contains "merge record names the PR as its subject" '"diff_base":"pr:7"' "${_rec}"
 assert_contains "merge record still marks material source"  '"material_source":true' "${_rec}"
-assert_contains "predicate_version bumped to 4 (#229)"        '"predicate_version":4' "${_rec}"
+assert_contains "predicate_version bumped to 5 (#245)"        '"predicate_version":5' "${_rec}"
 assert_not_contains "merge did not become a deny" "permissionDecision" "${out:-}"
 
 # Unresolvable PR -> unresolved, record still written, still no deny.
@@ -691,6 +691,47 @@ out="$(run_guard 'git push --delete origin feature/x; git push origin HEAD')"
 assert_contains "deletion + real push still raises the advisory" "IMPLEMENT:" "${out:-<empty>}"
 assert_equals "deletion + real push still appends a record" "1" \
     "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+
+# --- A deletion the STRICT form cannot certify (#245) -----------------------
+# `| tail -2` is an unaccountable segment, so `_gc_seg_is_inert` refuses and the
+# strict certification is lost -- correctly: it cannot tell `tail` from
+# `./deploy.sh`, and the right-hand side of a pipe executes arbitrarily. Before
+# this change the subject then fell back to the checkout HEAD and the leg
+# asserted "this push edits source" of a command shipping nothing, writing a
+# would-block record with a false premise. Two of the twelve v4 would-block
+# episodes in the live corpus are exactly this shape, and `2>&1 | tail -N` is
+# what an agent naturally writes.
+#
+# The advisory and the record's membership now follow the WEAKER
+# recognised-deletions predicate. Enforcement does NOT: `_SUBJ_DELETION_ONLY`
+# still governs the four content-dependent legs from the strict form alone.
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(run_guard 'git push --delete origin feature/x 2>&1 | tail -2')"
+assert_not_contains "uncertifiable deletion raises no IMPLEMENT advisory" "IMPLEMENT:" "${out:-}"
+assert_equals "uncertifiable deletion records advisory_emitted false" "false" \
+    "$(jq -r '.advisory_emitted' "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | head -1)"
+# RECORDED, not dropped: "the leg said nothing" and "the event never happened"
+# are different states, and the reader must exclude on the field rather than on
+# an absence it cannot see.
+assert_equals "uncertifiable deletion still appends a record" "1" \
+    "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+
+# CONTROL -- the same command SHAPE carrying a real push keeps the advisory.
+# Without it, suppressing the advisory unconditionally passes every cell above.
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(run_guard 'git push origin HEAD 2>&1 | tail -2')"
+assert_contains "control: ordinary push with a pipeline stage still advises" "IMPLEMENT:" "${out:-<empty>}"
+assert_equals "control: ordinary push records advisory_emitted true" "true" \
+    "$(jq -r '.advisory_emitted' "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | head -1)"
+
+# CONTROL -- a deletion MIXED with a real push is deletion-only under neither
+# form. This is the case the weaker predicate is allowed to answer, so getting
+# it wrong here would be exactly the misuse the design forbids.
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(run_guard 'git push --delete origin feature/x 2>&1 | tail -2 && git push origin HEAD')"
+assert_contains "control: deletion mixed with a real push still advises" "IMPLEMENT:" "${out:-<empty>}"
+assert_equals "control: mixed command records advisory_emitted true" "true" \
+    "$(jq -r '.advisory_emitted' "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | head -1)"
 export HOME="$_OLDHOME"
 rm -rf "${_REPO}" "${_THOME}" 2>/dev/null
 print_summary
