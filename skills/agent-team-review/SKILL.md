@@ -126,8 +126,9 @@ After collecting the reports per §3 — including any lens recorded as uncovere
 1. Group findings by severity (blocking → warning → suggestion)
 2. Deduplicate overlapping findings
 3. **Severity floor.** Drop `quality`- and `spec`-category `suggestion`-severity findings that do not map to a capability named in the design doc, and demote any `quality`/`spec` `blocking` finding whose `Evidence` lacks an observable failure path to `warning`. **Never drop or demote `security` or `governance` findings on these bases** — those catch unplanned risks no design doc anticipated, and may rest on structural criteria (e.g. removing or weakening a safety constraint) rather than a runnable failure path. This curbs the bot-asymptote nit accretion (advisory findings that accumulate every round without ever being actionable).
-4. Adjudicate per §4a every finding you are about to accept or reject at `blocking` or `warning` — a `suggestion` needs one only if you intend to action it
-5. Present unified report to user
+4. **Autofix validation — the token never self-certifies.** The lead validates every `Autofix:` line independently against the four eligibility conditions, checks the `old` text is present, unique, and unstale against the tree, and deduplicates overlapping or conflicting edits. This validation IS the finding's adjudication — a mechanical edit has no manipulable causal variable, so per §4a it is disposed on its own terms. A validated line routes past the severity floor into the autofix batch; a line that fails validation loses the routing — the finding reverts to a normal suggestion under normal floor rules, and the failed validation is reported. After the verdict, present the batch for per-item approval ("apply all except …" supported), listing every old→new edit. On approval, apply, then assert the applied diff is byte-identical to the approved batch — on mismatch, revert and return to IMPLEMENT. Application happens before verification and verdict recording, so the recorded verdict describes the final tree state.
+5. Adjudicate per §4a every finding you are about to accept or reject at `blocking` or `warning` — a `suggestion` needs one only if you intend to action it
+6. Present unified report to user
 
 **Dropped findings stay visible.** Never silently discard a floored finding — the count and one-line reason for each is reported under "Dropped (below severity floor)" in the summary, so the user can audit the filter and the `doubt theater` signal (systematic non-actioning) remains detectable.
 
@@ -266,6 +267,7 @@ Evidence: observable failure path or concrete reproduction — what input/call t
 Oracle: what observably differs when the claim holds — an exit code, an emitted field, a log line, a recorded artifact, a count (omit for a structural finding)
 Issue: SQL injection via unsanitized input
 Suggestion: Use parameterized queries
+Autofix: exact old→new edit; suggestion severity only; omit unless all four eligibility conditions hold
 ```
 
 **Evidence is mandatory.** A finding may be classified `blocking` only if its `Evidence` describes an **observable failure path** — a concrete input, call, or sequence that produces the failure. A theoretical or stylistic concern with no demonstrable failure path is at most a `warning` (or a `suggestion`). This is the cheapest false-positive control: a real defect can name how it breaks; a nit cannot.
@@ -273,6 +275,8 @@ Suggestion: Use parameterized queries
 **Exception — `security` and `governance` findings may be `blocking` on structural grounds** (per the adversarial-reviewer's criterion: a finding is blocking if it removes or weakens an existing safety constraint) even without a runnable proof-of-concept. Do not demote them for lacking an observable failure path.
 
 **Confidence is advisory only.** The `Confidence` field is context for the user's judgment — it is **not** a filter or demotion input, and the synthesis step never gates on it. The evidence / observable-failure-path rule, not self-rated confidence, is the discriminator: self-rated confidence is exactly the self-preferential-bias signal this design avoids, so do not add confidence-weighted drop/demote rules.
+
+**`Autofix:` marks mechanically certain trivia, additive to `Suggestion:` and never replacing it.** Eligible only when all four hold: the fix is a single exact text transformation stateable precisely; it is essentially certain to be correct and complete; it touches only code this diff introduced or changed; it has zero behavioural ambiguity. Only `suggestion`-severity findings may carry it — `blocking` and `warning` findings never carry the bypass and keep the full return-to-IMPLEMENT path, even when a reviewer attaches the line.
 
 ### Lead → User: Review Summary
 
@@ -293,6 +297,9 @@ Dropped (below severity floor):
 
 Open (could not adjudicate):
 - (per finding: severity, and why the single-fault control was not obtainable, or "none")
+
+Autofix applied:
+- (per applied edit: file:line, old→new, or "none")
 
 Verdict: blocking_issues | clean | suggestions_only
 ```
