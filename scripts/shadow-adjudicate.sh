@@ -267,8 +267,12 @@ cmd_next() {
               # nothing about it, so it cannot contain a false block, and offering
               # it spends operator time on the one population that provably
               # cannot inform the measurement. Same reason attested records are
-              # not offered. Schema <5 records carry no such field and are
-              # unaffected (they are excluded by predicate_version anyway).
+              # not offered. The field arrives in SCHEMA 4; predicate_version 5
+              # is the separate thing that excludes the older firing population.
+              # Conflating the two version counters is how a later reader talks
+              # itself into the wrong exclusion, so they are named apart here.
+              # Records written before schema 4 carry no such field and fall
+              # through this filter unchanged.
               | select((has("advisory_emitted") | not) or ((.advisory_emitted|type) != "boolean") or .advisory_emitted == true)
               | [.record_id,.ts,.repo,.branch,.action,.diff_base,
                  (.impl_in_chain|tostring),(.material_source|tostring),

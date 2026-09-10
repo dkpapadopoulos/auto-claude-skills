@@ -1678,8 +1678,17 @@ command_push_is_all_deletions() {
 #
 # What was wrong was the CONSEQUENCE. With certification lost, the subject falls
 # back to the checkout HEAD, and the IMPLEMENT leg then states "this push edits
-# source" about a command that ships nothing, and writes a shadow record whose
-# premise is false. CLAUDE.md justifies the lost-skip cost as "one-directional
+# source" about a command whose pushes ship nothing, and writes a shadow record
+# whose premise is false.
+#
+# BE PRECISE ABOUT THE WARRANT, because the looser phrasing is the misreading
+# that would license misuse: what this establishes is only that every RECOGNISED
+# push is deletion-shaped. It does NOT establish that the command ships nothing.
+# `git push origin --delete x | ./deploy.sh` is accepted here, and deploy.sh may
+# push anything at all. That is tolerable for the two things this predicate
+# drives -- a sentence and a corpus-membership flag -- and is exactly why it may
+# not drive a gate. The residual cost is bounded and one-directional: such a
+# command loses one shadow episode, never a deny. CLAUDE.md justifies the lost-skip cost as "one-directional
 # ... never a new deny", which is true of ENFORCEMENT and does not transfer to
 # MEASUREMENT or to what the gate SAYS. Measured in the live corpus: 2 of 12 v4
 # would-block episodes are deletion-shaped commands recorded as content pushes,

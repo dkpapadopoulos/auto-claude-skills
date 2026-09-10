@@ -54,6 +54,10 @@ continue to require that every segment be accounted for.
 - **THEN** the advisory MUST be emitted as before
 - **AND** the record MUST mark that an advisory was emitted
 
+Every leg that skips on the strict certification MUST have that skip asserted,
+including legs that only emit an advisory. An unasserted skip is how a weaker
+predicate migrates onto the gate path unnoticed.
+
 #### Scenario: The weaker predicate never widens a gate
 
 - **GIVEN** a command that the weaker predicate accepts and the strict
@@ -83,3 +87,11 @@ reported alongside the rate, never dropped silently.
 - **GIVEN** a would-block record with no recorded advisory field
 - **WHEN** the corpus status is computed
 - **THEN** the episode MUST remain in the rate population
+
+#### Scenario: An advisory leg's skip is bound to the strict predicate
+
+- **GIVEN** a command whose recognised pushes all delete a reference but whose
+  certification is refused because a segment cannot be accounted for
+- **WHEN** a leg that skips on deletion-only subjects runs
+- **THEN** that leg MUST still run, because certification was not established
+- **AND** this MUST hold for advisory legs as well as denying ones
