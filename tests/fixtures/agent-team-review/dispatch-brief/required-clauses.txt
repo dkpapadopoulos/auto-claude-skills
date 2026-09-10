@@ -46,3 +46,20 @@ Read-only in the shared tree
 do NOT modify any files
 do not manufacture findings
 VERIFIED by running from what you INFERRED by reading
+
+# --- Clause 5 (#245): the reviewer-facing scope rule must REACH the reviewer ---
+# Protocol §3 carries the lead's copy of the two-category do-not-flag table, but
+# §3 is prose the LEAD reads. A spawned reviewer sees only its own prompt, so the
+# reviewer-facing half was claimed and never delivered. These needles pin the
+# delivered copy; Control 4 in the test pins the four copies byte-identical.
+Do not raise `pre-existing`
+Do not raise `tool-owned`
+Nothing else is out of scope
+about OWNERSHIP, not size
+
+# --- Clause 6 (#245 review): the "raise it anyway" exceptions are the safety-bearing
+# half of the scope rule. Deleting them from all four copies satisfies Control 4
+# (byte-identity across lenses) and every Clause-5 needle, because those pin only the
+# prohibitions. Measured: with all 16 exception lines stripped, both suites ran green.
+Raise it anyway when the diff changes its blast radius
+Raise it anyway when the gate did not run

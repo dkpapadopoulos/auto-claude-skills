@@ -87,17 +87,20 @@ _ART="$HOME/.claude/.skill-review-verdict-${_TOK}"
 _bool() { if "$@" >/dev/null 2>&1; then echo 0; else echo 1; fi; }
 
 _write_verdict() { # <verdict> <head_sha> [unresolved_blocking]
-    # schema_version:2 + dispatch_evidence, matching the real writer's shape
-    # (issue: an all-schema-1, no-dispatch_evidence fixture here meant the
-    # guard e2e below was never driven with a dispatch field present, so
-    # "dispatch_evidence is never a deny predicate" was an untested claim).
+    # MUST match the real writer's CURRENT shape — schema 3, every provenance field
+    # present. The previous version of this comment claimed that and had gone stale:
+    # it was written because an all-schema-1 fixture meant the guard e2e was never
+    # driven with `dispatch_evidence` at all, making "dispatch_evidence is never a
+    # deny predicate" an untested claim — and then the writer moved to schema 3 with
+    # `independence` while the fixture stayed at 2, reintroducing the same hole for
+    # the new field. Keep this in step with record-review-verdict.sh's jq object.
     jq -nc --arg v "$1" --arg h "$2" --arg b "${BASE_SHA}" \
            --argjson ub "${3:-0}" \
-        '{schema_version:2,provider:"local-agent",reviewed_base_sha:$b,
+        '{schema_version:3,provider:"local-agent",reviewed_base_sha:$b,
           reviewed_head_sha:$h,changed_file_digest:"deadbeefcafe",
           changed_file_count:1,findings_total:0,unresolved_blocking:$ub,
           verdict:$v,dispatch_attempted:true,dispatch_succeeded:true,
-          dispatch_evidence:"observed",
+          dispatch_evidence:"observed",independence:"dispatch-observed",
           ts:"2026-08-25T00:00:00Z",writer:"test"}' > "${_ART}"
 }
 
@@ -184,7 +187,7 @@ if [ -f "${WRITER}" ]; then
         assert_equals "writer output is clean per the reader" "0" "$(_bool review_verdict_is_clean "${_TOK}")"
         assert_equals "writer records the provider" "local-agent" \
             "$(review_verdict_field "${_TOK}" provider 2>/dev/null)"
-        assert_equals "writer records schema_version" "2" \
+        assert_equals "writer records schema_version" "3" \
             "$(review_verdict_field "${_TOK}" schema_version 2>/dev/null)"
     else
         _record_fail "writer produced an artifact" "no file at ${_ART} after invoking ${WRITER}"
@@ -238,6 +241,28 @@ assert_not_contains "review advisory never denies"            '"deny"'         "
 _write_verdict clean "${_NEWHEAD}"
 out="$(_run_guard)"
 assert_not_contains "clean verdict at HEAD => no review advisory" "REVIEW VERDICT" "${out:-}"
+
+# (j) #245: `independence` is provenance, NEVER a predicate. Same rule #197
+#     set for dispatch_evidence, asserted the same way: the guard's output must
+#     be BYTE-IDENTICAL across the two values, so the field cannot be gating
+#     even indirectly (an advisory that mentioned it would differ here).
+_write_verdict clean "${_NEWHEAD}"
+jq -c '. + {independence:"dispatch-observed"}' "${_ART}" > "${_ART}.tmp" && mv "${_ART}.tmp" "${_ART}"
+_indep_out="$(_run_guard)"
+# Every value of the field must be inert, not just the two the first cut compared.
+# A newly-added value is exactly where a future gate would be wired in, so the
+# rotation covers the whole value set (review finding).
+jq -c '. + {independence:"pr-review-imported"}' "${_ART}" > "${_ART}.tmp" && mv "${_ART}.tmp" "${_ART}"
+_imported_out="$(_run_guard)"
+jq -c '. + {independence:"self-authored"}' "${_ART}" > "${_ART}.tmp" && mv "${_ART}.tmp" "${_ART}"
+_self_out="$(_run_guard)"
+if [ "${_indep_out}" = "${_self_out}" ] && [ "${_indep_out}" = "${_imported_out}" ]; then
+    _record_pass "independence is never a deny predicate (guard output identical across every value)"
+else
+    _record_fail "independence is never a deny predicate (guard output identical across every value)" \
+        "a value changed the guard's output: dispatch-observed=[${_indep_out}] self-authored=[${_self_out}] pr-review-imported=[${_imported_out}]"
+fi
+assert_not_contains "self-authored verdict never denies" '"deny"' "${_self_out:-}"
 
 # ---------------------------------------------------------------------------
 # 7. Fail-open: with the reader lib ABSENT the gate must not deny and must not
@@ -387,7 +412,86 @@ assert_equals "absent dispatch is not observed"  "asserted" "$(_odt_field dispat
 assert_equals "absent dispatch is false"         "false"    "$(_odt_field dispatch_attempted)"
 
 # (d) the schema version is bumped
-assert_equals "writer records schema_version 2" "2" "$(_odt_field schema_version)"
+assert_equals "writer records schema_version 3" "3" "$(_odt_field schema_version)"
+
+# ---------------------------------------------------------------------------
+# (I3) Authorship provenance (#245 item 2). The skill's authorship guard asks a
+# self-reviewing context to withdraw the independence CLAIM, and says plainly
+# that nothing else will — the artifact had no field for it, so the declaration
+# lived only in prose a reader never sees.
+#
+# `independence` is recorded on the ARTIFACT, not as a branch-ledger record.
+# Two reasons, and the second is the one that matters: the ledger's content is
+# the documented two-field `<sha> <utc-ts>` line that `branch_ledger_sha` cuts
+# by position (#133 chose a sidecar over widening it for exactly this), and an
+# ABSENT ledger sidecar is indistinguishable from "a reviewer was independent",
+# so the miss modes that lib already documents (branch divergence, detached
+# HEAD) would each read as a clean independence claim. On the artifact the
+# field is always present, and its absence is a schema-2 record rather than an
+# assertion about the review.
+#
+# It is provenance, never a predicate: #197's spec forbids a dispatch field
+# from gating alone or collapsed, and cell (j) pins that for this field too.
+# ---------------------------------------------------------------------------
+find "$HOME/.claude" -maxdepth 1 -type d -name '.skill-branch-ledger-*' -exec rm -rf {} + 2>/dev/null
+_odt_record
+assert_equals "(e) no observation, no claim => unknown" "unknown" "$(_odt_field independence)"
+
+branch_ledger_record "reviewer-ran" "$_ODT_REPO"
+_odt_record
+assert_equals "(f) an observed reviewer records what was measured" \
+    "dispatch-observed" "$(_odt_field independence)"
+
+# An admission against interest outranks the observation: the caller is saying
+# the context that wrote the diff also reviewed it, which an observed DISPATCH
+# cannot refute (the dispatch may have been for something else entirely).
+_odt_record --self-authored
+assert_equals "(g) a self-authorship claim outranks an observation" \
+    "self-authored" "$(_odt_field independence)"
+# The flag must not disturb the telemetry it sits beside, asserted HERE because this
+# is the only configuration in which the claim is testable: the ledger is present, so
+# `observed` is the value a clobber would destroy. Asserting it after the ledger has
+# been deleted (cell (i) below) is satisfied by the fallback path — `asserted` is the
+# answer whatever the flag does, and the exact clobber the cell is named for ran green.
+assert_equals "(g) --self-authored does not clobber an OBSERVED dispatch" \
+    "observed" "$(_odt_field dispatch_evidence)"
+
+find "$HOME/.claude" -maxdepth 1 -type d -name '.skill-branch-ledger-*' -exec rm -rf {} + 2>/dev/null
+_odt_record --self-authored
+assert_equals "(h) self-authored with no observation" "self-authored" "$(_odt_field independence)"
+
+# (i) with no ledger, the flag still leaves the telemetry at its honest default.
+# Weak by construction (see (g)): `asserted` is the no-ledger answer regardless.
+assert_equals "(i) --self-authored with no ledger leaves dispatch_evidence asserted" \
+    "asserted" "$(_odt_field dispatch_evidence)"
+
+# (k) The guard-e2e fixture must carry the SAME FIELD SET the real writer produces.
+# Derived from the producer, never from this file's idea of the format: the writer has
+# just run above, so its artifact is the authority. This exists because the fixture had
+# already drifted once — it sat at schema 1 while the writer emitted `dispatch_evidence`,
+# which left "dispatch_evidence is never a deny predicate" untested in the guard e2e —
+# and then drifted again the same way when the writer moved to schema 3. Reverting the
+# fixture to schema 2 was measured to fail NOTHING before this cell existed.
+# ORDER MATTERS: `_write_verdict` writes to the SAME artifact path the writer just
+# produced, so the writer's shape must be captured BEFORE the fixture is generated.
+# Reading it afterwards compares the fixture with itself and passes unconditionally.
+_WRITER_ART="$(review_verdict_artifact_path "${_TOK}" 2>/dev/null)"
+_writer_keys="$(jq -S -c 'keys' "${_WRITER_ART}" 2>/dev/null)"
+_writer_schema="$(jq -r '.schema_version' "${_WRITER_ART}" 2>/dev/null)"
+_write_verdict clean "${BASE_SHA}"
+_fixture_keys="$(jq -S -c 'keys' "${_ART}" 2>/dev/null)"
+_fixture_schema="$(jq -r '.schema_version' "${_ART}" 2>/dev/null)"
+if [ -z "${_writer_keys}" ] || [ -z "${_fixture_keys}" ]; then
+    _record_fail "guard-e2e fixture matches the writer's field set" \
+        "could not read one of the two artifacts (writer=[${_writer_keys}] fixture=[${_fixture_keys}]) — this assertion proves nothing"
+elif [ "${_writer_keys}" = "${_fixture_keys}" ]; then
+    _record_pass "guard-e2e fixture carries the writer's exact field set"
+else
+    _record_fail "guard-e2e fixture carries the writer's exact field set" \
+        "writer=${_writer_keys} fixture=${_fixture_keys} — _write_verdict has drifted from record-review-verdict.sh"
+fi
+assert_equals "guard-e2e fixture carries the writer's schema_version" \
+    "${_writer_schema}" "${_fixture_schema}"
 
 # ---------------------------------------------------------------------------
 # (I2) `imported` MUST require a RESOLVABLE PR, not just the flag. The old
@@ -452,6 +556,30 @@ if [ "$(_probe_gh "${_FAKEGH}")" = "yes" ]; then
         PATH="${_FAKEGH}" bash "${PROJECT_ROOT}/scripts/record-review-verdict.sh" \
         --from-github 1 ) >/dev/null 2>&1
     assert_equals "imported outranks a real observation" "imported" "$(_odt_field dispatch_evidence)"
+    # The `imported` arm of the independence rule, which cells (e)-(i) never reach:
+    # without this, collapsing `observed|imported` to `observed` in the case arm
+    # passes the whole suite while a real PR-review import records `unknown`.
+    # NOT `dispatch-observed`: the import path runs `gh pr view` and observes no
+    # dispatch, so collapsing the two named a measurement that never happened
+    # (cross-family review finding). Each value names what was actually measured.
+    assert_equals "an imported PR review records pr-review-imported, not a dispatch" \
+        "pr-review-imported" "$(_odt_field independence)"
+
+    # THE PRECEDENCE ARGUMENT'S LOAD-BEARING HALF (review finding). The script
+    # argues that `--self-authored` may outrank an import because nothing is
+    # destroyed: the import stays readable in `dispatch_evidence`. That claim was
+    # argued in a comment and asserted nowhere -- mutating the writer to clear
+    # `DISPATCH_EVIDENCE` whenever `SELF_AUTHORED=true` would destroy exactly the
+    # information the argument rests on, with the suite still green. Both fields
+    # are asserted here because the argument is about the PAIR, not either one.
+    rm -f "${_ART}"
+    ( cd "$_ODT_REPO" && SKILL_SESSION_TOKEN="$_TOK" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        PATH="${_FAKEGH}" bash "${PROJECT_ROOT}/scripts/record-review-verdict.sh" \
+        --from-github 1 --self-authored ) >/dev/null 2>&1
+    assert_equals "a declared self-review outranks an import" \
+        "self-authored" "$(_odt_field independence)"
+    assert_equals "...and the import is NOT destroyed by that precedence" \
+        "imported" "$(_odt_field dispatch_evidence)"
 else
     _record_fail "could build a resolvable-gh PATH for the precedence test" \
         "gh not resolvable on the fake PATH"
