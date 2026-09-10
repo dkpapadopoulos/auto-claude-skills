@@ -17,11 +17,17 @@ Provenance is the part that is currently unrecoverable.
 ## What Changes
 
 - `record-review-verdict.sh` gains `--self-authored` and always records an
-  `independence` field: `self-authored`, `independent`, or `unknown`.
+  `independence` field: `self-authored`, `dispatch-observed`, or `unknown`. The middle
+  value is named for what was measured: `reviewer-ran` witnesses a DISPATCH, never a
+  return and never that the subagent read this diff, so any reviewer dispatched earlier
+  on the branch sets it. Calling it `independent` would assert of a stale observation
+  exactly what the `unknown` default refuses to assert of an absent one (review finding).
 - `schema_version` 2 → 3. `predicate_version` is untouched — this describes a
   record, it does not change any fire condition, so existing shadow records stay
-  poolable. This supersedes the numeric clause in the active
-  `observed-dispatch-telemetry` delta, which pinned the literal value 2.
+  poolable. The active `observed-dispatch-telemetry` delta pinned the literal value 2,
+  so this change AMENDS that clause in place rather than narrating a supersession the
+  spec corpus does not record — two active deltas asserting different literals for the
+  same field is a contradiction `openspec validate` passes straight over (review finding).
 - The skill's authorship guard and its verdict-recording rules name the flag, so
   the prose and the mechanism are pinned to each other in both directions.
 

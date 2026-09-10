@@ -188,9 +188,20 @@ while IFS= read -r _lens; do
         s && /^[[:space:]]*## / { exit }
         s
     ' "${ATR}")"
+    # Counted as LIST ITEMS, not by matching one verb. A reviewer added a third
+    # category worded "Do not report `speculative` findings" to all four blocks and
+    # ran both suites green: a `Do not raise` grep, its literal-`speculative` absence
+    # assertion, and the lead/reviewer category-set pairing all match on the verb, so
+    # a different verb evades every one of them. The block is exactly three bullets:
+    # two prohibitions and the closing "Nothing else is out of scope" line.
+    _items="$(printf '%s\n' "${_scope}" | grep -c '^[[:space:]]*- ')"
+    assert_equals "${_lens}: reviewer scope block is exactly three bullets" "3" "${_items}"
     _cats="$(printf '%s\n' "${_scope}" | grep -c 'Do not raise `[a-z-]*`')"
     assert_equals "${_lens}: reviewer scope block stops at two categories" "2" "${_cats}"
+    # Verb-agnostic: any bullet that withholds a finding by naming `speculative`.
     assert_not_contains "${_lens}: no speculative category in the delivered copy" \
+        'speculative` findings' "${_scope}"
+    assert_not_contains "${_lens}: no speculative prohibition in the delivered copy" \
         'Do not raise `speculative`' "${_scope}"
 done <<'LENS_EOF'
 security-reviewer
@@ -240,7 +251,16 @@ else
         "no --self-authored) arm in ${_rrv} — the skill instructs an argument the script rejects"
 fi
 # Provenance, never a gate (#197). The guard must not branch on the field.
-if grep -q 'independence' "${PROJECT_ROOT}/hooks/openspec-guard.sh" 2>/dev/null; then
+# Comment lines are excluded: #197 forbids gating, not describing, and a total ban on
+# the literal would forbid the guard ever explaining WHY it does not read the field.
+# An absence grep must first prove it is reading the right file: `grep -q` exits 2 on a
+# missing path, so a renamed or moved guard would turn this into a permanent silent
+# green (verified). Require a known-present needle to match before trusting the absence.
+_guard="${PROJECT_ROOT}/hooks/openspec-guard.sh"
+if ! grep -q 'review_verdict_is_clean' "${_guard}" 2>/dev/null; then
+    _record_fail "push-gate absence check is reading the real guard" \
+        "no 'review_verdict_is_clean' in ${_guard} — moved, renamed, or unreadable, so the absence assertion below proves nothing"
+elif grep -v '^[[:space:]]*#' "${_guard}" 2>/dev/null | grep -q 'independence'; then
     _record_fail "independence is not read by the push gate" \
         "openspec-guard.sh references 'independence' — #197 forbids provenance from gating"
 else

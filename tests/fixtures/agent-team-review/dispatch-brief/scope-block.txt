@@ -1,0 +1,9 @@
+    - Do not raise `pre-existing` — a defect on the merge base that appears in no
+      changed hunk. Raise it anyway when the diff changes its blast radius, or makes
+      it newly reachable.
+    - Do not raise `tool-owned` — lint, formatting, type errors, test failures, SAST
+      results. Raise it anyway when the gate did not run: then the finding is *that
+      the gate did not run*, not the individual violation.
+    - Nothing else is out of scope. These two categories are about OWNERSHIP, not size
+      — a one-line fix is still reported — and no other provenance label, "speculative"
+      included, is grounds for withholding a finding.

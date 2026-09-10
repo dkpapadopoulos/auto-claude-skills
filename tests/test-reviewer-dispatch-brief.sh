@@ -107,6 +107,12 @@ _require_needle "Do not raise \`pre-existing\`"
 _require_needle "Do not raise \`tool-owned\`"
 _require_needle "Nothing else is out of scope"
 _require_needle "about OWNERSHIP, not size"
+# The exceptions, added after a reviewer deleted all 16 of their lines from the four
+# delivered blocks and ran both suites green. They are the safety-bearing half: they
+# are what stops a reviewer suppressing a pre-existing defect the diff made newly
+# reachable, and what makes "the gate did not run" itself reportable.
+_require_needle "Raise it anyway when the diff changes its blast radius"
+_require_needle "Raise it anyway when the gate did not run"
 
 # --- Control 2: non-vacuity floor ------------------------------------------
 # Secondary to Control 1 (which a shrinking fixture trips first), but it also
@@ -116,11 +122,11 @@ _require_needle "about OWNERSHIP, not size"
 # headroom between them is a set of needles that can be deleted without tripping
 # either control — which is exactly how the second leak opened. Raise both together
 # when adding a needle.
-if [ "${CLAUSE_COUNT}" -ge 18 ]; then
+if [ "${CLAUSE_COUNT}" -ge 20 ]; then
     _record_pass "clause fixture non-vacuous (${CLAUSE_COUNT} needles)"
 else
     _record_fail "clause fixture non-vacuous" \
-        "expected >= 18 needles, got ${CLAUSE_COUNT} — assertions below prove nothing"
+        "expected >= 20 needles, got ${CLAUSE_COUNT} — assertions below prove nothing"
 fi
 
 # --- Discover the lens population -------------------------------------------
@@ -170,7 +176,19 @@ _block_has() {
 }
 
 CONTRACT_REF=""
+# The canonical delivered Scope block. Hand-authored and committed, NEVER generated
+# from SKILL.md — a fixture derived from the subject only ever agrees with itself.
+SCOPE_FIXTURE="${FIXTURE_DIR}/scope-block.txt"
 SCOPE_REF=""
+if [ -f "${SCOPE_FIXTURE}" ]; then
+    SCOPE_REF="$(cat "${SCOPE_FIXTURE}")"
+fi
+if [ -n "${SCOPE_REF}" ]; then
+    _record_pass "committed scope-block fixture present"
+else
+    _record_fail "committed scope-block fixture present" \
+        "no readable ${SCOPE_FIXTURE} — the per-lens scope assertions below prove nothing"
+fi
 while IFS= read -r lens; do
     [ -n "${lens}" ] || continue
     BLOCK="$(_lens_block "${lens}")"
@@ -225,17 +243,24 @@ EOF
         f && /^[[:space:]]*## / { exit }
         f
     ')"
+    #
+    # Compared against a COMMITTED fixture, not against the first lens. Lens-to-lens
+    # identity is satisfied by mutating all four the same way, and a reviewer used
+    # exactly that: deleting both "Raise it anyway" exceptions from all four blocks,
+    # and separately adding a third category worded "Do not report ...", each ran the
+    # whole suite green. Byte-equality against a fixture fails on ANY edit — deletion,
+    # addition, or rewording — in one or in all four.
     if [ -z "${SCOPE}" ]; then
         _record_fail "${lens}: Scope block extracted" \
             "empty — §3's reviewer-facing scope rule is not delivered to this lens"
     elif [ -z "${SCOPE_REF}" ]; then
-        SCOPE_REF="${SCOPE}"
-        _record_pass "${lens}: Scope block extracted (reference copy)"
+        _record_fail "${lens}: Scope block matches the committed fixture" \
+            "fixture ${SCOPE_FIXTURE} is missing or empty — this assertion proves nothing"
     elif [ "${SCOPE}" = "${SCOPE_REF}" ]; then
-        _record_pass "${lens}: Scope block identical to the other lenses"
+        _record_pass "${lens}: Scope block matches the committed fixture byte-for-byte"
     else
-        _record_fail "${lens}: Scope block identical to the other lenses" \
-            "this lens's scope rule has drifted from the reference copy"
+        _record_fail "${lens}: Scope block matches the committed fixture byte-for-byte" \
+            "this lens's scope rule differs from tests/fixtures/agent-team-review/dispatch-brief/scope-block.txt"
     fi
 done <<EOF
 ${LENSES}

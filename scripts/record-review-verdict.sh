@@ -166,8 +166,15 @@ fi
 #                  may have been for something else entirely), and treating the
 #                  observation as the stronger signal would let the one honest
 #                  declaration the skill asks for be overwritten by telemetry.
-#   independent    a dispatch was OBSERVED (or a real PR review imported) and no
-#                  self-authorship was declared.
+#   dispatch-observed
+#                  a reviewer dispatch was OBSERVED on this branch (or a real PR
+#                  review was imported) and no self-authorship was declared. It is
+#                  named for WHAT WAS MEASURED, not for the conclusion someone would
+#                  like to draw: `reviewer-ran` witnesses a DISPATCH, never a return
+#                  and never that the subagent read THIS diff. Any reviewer dispatched
+#                  earlier on the branch sets it, so calling it `independent` would
+#                  assert of a stale observation exactly what the paragraph below
+#                  refuses to assert of an absent one.
 #   unknown        neither. Never "independent" by default: an absent signal is
 #                  not evidence of independence, and defaulting the other way
 #                  would manufacture the exact claim #197 exists to stop being
@@ -179,7 +186,7 @@ fi
 # an independence claim under the miss modes branch-ledger.sh already documents.
 INDEPENDENCE="unknown"
 case "${DISPATCH_EVIDENCE}" in
-    observed|imported) INDEPENDENCE="independent" ;;
+    observed|imported) INDEPENDENCE="dispatch-observed" ;;
 esac
 [ "${SELF_AUTHORED}" = "true" ] && INDEPENDENCE="self-authored"
 

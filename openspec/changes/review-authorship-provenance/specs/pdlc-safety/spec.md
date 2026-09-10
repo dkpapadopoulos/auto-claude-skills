@@ -5,20 +5,28 @@
 ### Requirement: The review verdict MUST record whether the review was independent
 
 The review verdict artifact MUST record an `independence` field with one of
-exactly three values: `self-authored`, `independent`, or `unknown`.
+exactly three values: `self-authored`, `dispatch-observed`, or `unknown`.
 
 `self-authored` MUST be recorded when the caller declares that the reviewing
 context authored the diff under review, and MUST take precedence over an
 observed or imported dispatch — a witnessed dispatch cannot refute the
-declaration. `independent` MUST be recorded only when a dispatch was observed
-or a pull-request review was imported and no self-authorship was declared. Every
-other case MUST record `unknown`; absence of a signal MUST NOT be recorded as
-`independent`.
+declaration. `dispatch-observed` MUST be recorded only when a reviewer dispatch
+was observed on this branch or a pull-request review was imported, and no
+self-authorship was declared. Every other case MUST record `unknown`; absence of
+a signal MUST NOT be recorded as a positive claim.
+
+The value MUST be named for what was measured. A dispatch record witnesses that a
+reviewer subagent was dispatched — not that it returned, and not that it read the
+diff under review — so no value of this field MUST assert that a review was
+independent. A reader that needs that conclusion MUST draw it itself.
 
 `independence` MUST remain provenance. It MUST NOT, alone or collapsed with any
 other field, act as a deny predicate.
 
-`schema_version` MUST be incremented to 3. `predicate_version` MUST NOT change:
+`schema_version` MUST be incremented to 3 — the current value for this artifact,
+superseding the literal `2` pinned by `observed-dispatch-telemetry`, whose clause is
+amended in the same change to stop pinning a numeral. `predicate_version` MUST NOT
+change:
 this adds a descriptive field and alters no fire condition, so existing records
 remain poolable and no pre-registered observation horizon is restarted.
 
@@ -29,11 +37,11 @@ remain poolable and no pre-registered observation horizon is restarted.
 - **THEN** `independence` is `self-authored`
 - **AND** it is `self-authored` even when a reviewer dispatch was observed
 
-#### Scenario: An observed dispatch with no declaration is independent
+#### Scenario: An observed dispatch with no declaration records what was measured
 
 - **GIVEN** a reviewer subagent dispatch recorded for this branch
 - **WHEN** the verdict is recorded without the self-authorship flag
-- **THEN** `independence` is `independent`
+- **THEN** `independence` is `dispatch-observed`
 
 #### Scenario: No signal is not an independence claim
 
@@ -45,6 +53,6 @@ remain poolable and no pre-registered observation horizon is restarted.
 #### Scenario: The field never changes a gate decision
 
 - **GIVEN** two otherwise identical clean verdicts covering HEAD
-- **WHEN** one records `independence: "independent"` and the other
+- **WHEN** one records `independence: "dispatch-observed"` and the other
   `independence: "self-authored"`
 - **THEN** the push gate's output MUST be identical for both

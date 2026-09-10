@@ -56,3 +56,10 @@ Do not raise `pre-existing`
 Do not raise `tool-owned`
 Nothing else is out of scope
 about OWNERSHIP, not size
+
+# --- Clause 6 (#245 review): the "raise it anyway" exceptions are the safety-bearing
+# half of the scope rule. Deleting them from all four copies satisfies Control 4
+# (byte-identity across lenses) and every Clause-5 needle, because those pin only the
+# prohibitions. Measured: with all 16 exception lines stripped, both suites ran green.
+Raise it anyway when the diff changes its blast radius
+Raise it anyway when the gate did not run

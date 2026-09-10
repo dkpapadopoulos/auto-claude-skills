@@ -17,7 +17,11 @@ The artifact MUST NOT report `observed` for a value it did not measure. Absence
 of an observation MUST record as "not observed" and MUST NOT be rendered as an
 observed negative.
 
-`schema_version` MUST be incremented to 2. `predicate_version` MUST NOT change:
+`schema_version` MUST be incremented (this change takes it to 2; the current value
+is set by the most recent delta over this artifact — see `review-authorship-provenance`,
+which takes it to 3). Pinning a literal here made this requirement contradict a later
+one over the same field, which strict validation cannot see. `predicate_version` MUST
+NOT change:
 this adds a descriptive field and alters no fire condition, so existing records
 remain poolable and the pre-registered observation horizon is not restarted.
 
