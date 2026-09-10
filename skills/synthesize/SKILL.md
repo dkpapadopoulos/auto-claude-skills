@@ -1,6 +1,7 @@
 ---
 name: synthesize
 description: Use to combine N independent perspectives on a prompt into one synthesis without forcing consensus. Composition-only — reached from panel's flow or invoked by name.
+disable-model-invocation: true
 ---
 
 # Synthesize
