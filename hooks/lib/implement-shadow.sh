@@ -38,7 +38,14 @@
 # That schema-3 change did NOT bump predicate_version: it changed what the
 # record DESCRIBES, not when the leg fires. (The separate #219 bump below did
 # change when the leg fires — the two are independent axes on purpose.)
-IMPLEMENT_SHADOW_SCHEMA_VERSION=3
+# 4 (2026-09-10): adds `advisory_emitted` — whether the leg actually SAID
+# anything for this event. The rate population had been inferred from
+# `would_block`, which is passed as a literal on the gh-merge path and so
+# asserts a block the leg would not perform; and a deletion-shaped command that
+# lost its certification produced a would_block record while shipping nothing.
+# Membership is now a recorded observation rather than an inference, which
+# retires that whole class instead of filtering one instance of it.
+IMPLEMENT_SHADOW_SCHEMA_VERSION=4
 # 2 (#161): merge-path material_source is now measured against the merged PR's
 # file list, not the branch-local delta. v1 merge records measured a different
 # subject and MUST NOT be pooled with v2.
@@ -64,9 +71,23 @@ IMPLEMENT_SHADOW_SCHEMA_VERSION=3
 # corpus held ZERO records at the time of the change (the #219 bump had landed
 # only days earlier), so nothing accumulated was discarded. Do not read this as
 # licence to bump freely — measure the live corpus first, the way #199 did.
-IMPLEMENT_SHADOW_PREDICATE_VERSION=4
+# v5 (2026-09-10): TWO firing-behaviour changes, either of which forces the bump
+# on this file's own rule. (1) `pr_ref_from_command` now skips shell redirection
+# operands, so a merge written with `2>&1` resolves its PR instead of recording
+# `unresolved` — merges begin emitting advisories they never emitted, and their
+# material_source becomes a real measurement rather than a constant false. (2)
+# the IMPLEMENT leg no longer asserts "this push edits source" for a command
+# whose every recognised push deletes a ref, so those events stop producing an
+# advisory and are marked `advisory_emitted:false`.
+#
+# Measured before taking it, per #199: the live v4 corpus held 12 would-block
+# episodes, of which at least 3 were known-bad (one unresolved merge, two
+# deletion-shaped commands recorded as content pushes) against a floor of 29 —
+# 0.9^12 = 0.282, nowhere near the 0.05 the rule needs, so nothing measurable
+# was discarded. v4 records MUST NOT be pooled with v5.
+IMPLEMENT_SHADOW_PREDICATE_VERSION=5
 
-# implement_shadow_record <action> <repo> <session_token> <transcript_path> <evidence_kind> <diff_base> <material_source> [would_block] [evidence_detail] [rev]
+# implement_shadow_record <action> <repo> <session_token> <transcript_path> <evidence_kind> <diff_base> <material_source> [would_block] [evidence_detail] [rev] [advisory_emitted]
 #   action: push | gh-merge
 #   evidence_kind: which evidence classes were tried and missed (e.g. "none")
 #   diff_base: what the material-source check was measured against
@@ -110,6 +131,11 @@ implement_shadow_record() {
     command -v jq >/dev/null 2>&1 || return 0
     local _act="${1:-unknown}" _repo="${2:-}" _tok="${3:-}" _tp="${4:-}" _ev="${5:-none}" _db="${6:-branch-local}"
     local _ms="${7:-true}" _wb="${8:-true}" _ed="${9:-}" _rev="${10:-HEAD}"
+    local _ae="${11:-true}"
+    # Only the two literals are accepted. A caller passing anything else has a
+    # bug, and coercing it would put a fabricated membership value into the one
+    # field the rate is computed over.
+    case "${_ae}" in true|false) ;; *) _ae="true" ;; esac
     local _log _dir _ts _nonce _rid _branch _head
     _log="${IMPLEMENT_SHADOW_LOG:-${HOME}/.claude/.push-implement-shadow.jsonl}"
     _dir="$(dirname "${_log}" 2>/dev/null)" || return 0
@@ -154,6 +180,7 @@ implement_shadow_record() {
         --arg repo "${_repo}" --arg branch "${_branch}" --arg head "${_head}" \
         --arg tok "${_tok}" --arg tp "${_tp}" --arg ev "${_ev}" --arg db "${_db}" \
         --argjson ms "${_ms}" --argjson wb "${_wb}" --arg ed "${_ed}" \
+        --argjson ae "${_ae}" \
         '{schema_version:$sv,record_id:$rid,ts:$ts,predicate_version:$pv,
           gate:"push-implement",would_block:$wb,action:$act,
           repo:$repo,branch:$branch,head_sha:$head,
@@ -168,6 +195,7 @@ implement_shadow_record() {
                         | {(.[0]): .[1]} ]
                       | if length == 0 then null else add end )
                end),
+          advisory_emitted:$ae,
           session_token:$tok,transcript_path:$tp}' \
         >> "${_log}" 2>/dev/null || return 0
     return 0

@@ -22,9 +22,43 @@
 
 PR_DIFF_GH_TIMEOUT="${PR_DIFF_GH_TIMEOUT:-10}"
 
+# `_gc_redir_kind_var` (git-command.sh) classifies a word as a shell redirection.
+# Borrowed rather than reimplemented: that helper is STRUCTURAL (an optional
+# `{name}` fd, an optional `&`, an optional digit run, then `<` or `>`), and this
+# predicate family has been bypassed repeatedly by hand-written lists of
+# redirection spellings that were complete until they were not.
+#
+# openspec-guard.sh already sources git-command.sh before this file, so the
+# common case defines nothing new; the source is a fallback for a direct caller
+# (the tests) and is skipped when the function is already present. Guarded per
+# CLAUDE.md's #137 form: a `[ -f ]` test proves existence, not that the source
+# succeeded, so availability is decided by `command -v` afterwards.
+#
+# DEGRADATION IS TODAY'S BEHAVIOUR, NOT A NEW FAILURE: with the helper absent,
+# `_prd_redir_ok` stays false, no word is skipped, and a redirection operand is
+# counted as a ref candidate exactly as it was before this change — i.e. an
+# ambiguous command resolves to nothing. Advisory path, so that is a lost
+# measurement, never a gate decision (this lib is deliberately excluded from
+# _GATE_ENFORCE_LIBS).
+_prd_redir_ok=false
+if command -v _gc_redir_kind_var >/dev/null 2>&1; then
+    _prd_redir_ok=true
+else
+    _prd_lib_dir=""
+    if [ -n "${BASH_SOURCE:-}" ]; then
+        _prd_lib_dir=$(dirname "${BASH_SOURCE}") || _prd_lib_dir=""
+    fi
+    if [ -n "${_prd_lib_dir}" ] && [ -f "${_prd_lib_dir}/git-command.sh" ]; then
+        . "${_prd_lib_dir}/git-command.sh" 2>/dev/null || true
+        command -v _gc_redir_kind_var >/dev/null 2>&1 && _prd_redir_ok=true
+    fi
+    unset _prd_lib_dir
+fi
+
 # pr_ref_from_command <command> -> bare PR number, or nothing
 pr_ref_from_command() {
     local _cmd="${1:-}" _cand="" _tok _seen_merge="" _restore_glob=1 _ndigit=0
+    local _skip_next=""
     case "${_cmd}" in
         *pulls/*/merge*)
             # gh api repos/o/r/pulls/7/merge
@@ -53,6 +87,17 @@ pr_ref_from_command() {
             case $- in *f*) _restore_glob=0 ;; esac
             set -f
             for _tok in ${_cmd}; do
+                # A SHELL REDIRECTION IS NOT A REF. `2>&1` is digit-leading, so
+                # before this it counted as a second candidate and the ambiguity
+                # guard below returned nothing -- which is why every one of the
+                # 14 gh-merge shadow records ever written says "unresolved".
+                # A `bare` operator (`>`, `2>`, `<<<`) takes the NEXT word as its
+                # target, so that word is a filename and must be skipped too.
+                if [ -n "${_skip_next}" ]; then _skip_next=""; continue; fi
+                if [ "${_prd_redir_ok}" = "true" ] && _gc_redir_kind_var "${_tok}"; then
+                    [ "${_GC_REDIR}" = "bare" ] && _skip_next=1
+                    continue
+                fi
                 if [ -z "${_seen_merge}" ]; then
                     case "${_tok}" in
                         merge) _seen_merge=1 ;;
