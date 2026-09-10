@@ -468,6 +468,24 @@
       "enabled": true
     },
     {
+      "name": "panel",
+      "role": "domain",
+      "phase": "PLAN",
+      "triggers": [
+        "(panel of models|model panel|cross.?model (review|opinion|perspective|pass|panel))",
+        "(second opinion from (another|a (second|different)) model|(ask|consult) codex)"
+      ],
+      "keywords": [],
+      "trigger_mode": "regex",
+      "priority": 16,
+      "precedes": [],
+      "requires": [],
+      "description": "Independent cross-family perspectives on one prompt — fresh contexts, single round, no cross-talk, verbatim attributed delivery. Opt-in; phase-agnostic by contract.",
+      "invoke": "Skill(auto-claude-skills:panel)",
+      "available": false,
+      "enabled": true
+    },
+    {
       "name": "batch-scripting",
       "role": "workflow",
       "phase": "IMPLEMENT",
