@@ -64,6 +64,13 @@ predicate migrates onto the gate path unnoticed.
   certification refuses
 - **WHEN** the push gate evaluates its content-dependent legs
 - **THEN** those legs MUST behave exactly as they did before this change
+#### Scenario: An advisory leg's skip is bound to the strict predicate
+
+- **GIVEN** a command whose recognised pushes all delete a reference but whose
+  certification is refused because a segment cannot be accounted for
+- **WHEN** a leg that skips on deletion-only subjects runs
+- **THEN** that leg MUST still run, because certification was not established
+- **AND** this MUST hold for advisory legs as well as denying ones
 
 ### Requirement: Rate membership MUST be a recorded observation, not an inference
 
@@ -87,11 +94,3 @@ reported alongside the rate, never dropped silently.
 - **GIVEN** a would-block record with no recorded advisory field
 - **WHEN** the corpus status is computed
 - **THEN** the episode MUST remain in the rate population
-
-#### Scenario: An advisory leg's skip is bound to the strict predicate
-
-- **GIVEN** a command whose recognised pushes all delete a reference but whose
-  certification is refused because a segment cannot be accounted for
-- **WHEN** a leg that skips on deletion-only subjects runs
-- **THEN** that leg MUST still run, because certification was not established
-- **AND** this MUST hold for advisory legs as well as denying ones
