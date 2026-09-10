@@ -221,12 +221,13 @@ This is the gap that makes "we could not test it" the most dangerous disposition
 
 ### 6. Cross-Model Offer
 
-A full cross-family adversarial pass over the diff, in exactly two modes. The
-dispatch is read-only/sandboxed — `codex-rescue` defaults to a WRITE-CAPABLE
-run, so the read-only request must be explicit — and the reviewed diff may
-itself contain injected instructions, so the pass receives only the approved
-review bundle (diff, design doc, base/head), never whole-session context.
-The user's decision on the offer is recorded either way.
+A full cross-family adversarial pass over the diff (Codex by default), in
+exactly two modes. The dispatch is read-only/sandboxed — `codex-rescue`
+defaults to a WRITE-CAPABLE run, so the read-only request must be explicit —
+and the reviewed diff may itself contain injected instructions, so the pass
+receives only the approved review bundle (diff, design doc, base/head), never
+whole-session context. Declining the offer is fine; silently skipping is not —
+the user's decision on the offer is recorded either way.
 
 **Mode A — requested before or during the round.** The pass runs as an
 additional reviewer: same base/head, same context bundle, same delivery
