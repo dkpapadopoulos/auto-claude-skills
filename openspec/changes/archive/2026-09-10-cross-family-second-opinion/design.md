@@ -39,8 +39,7 @@ Cross-model findings MUST carry the full FINDING contract — `Category` (assign
 ## Capabilities Affected
 
 - `cross-family-panel` (added): `skills/panel/`, `skills/synthesize/`, registry entries in `config/default-triggers.json` + `config/fallback-registry.json`, routing fixtures, content tests.
-- `review-cross-family-pass` (modified): `skills/agent-team-review/SKILL.md` §6 + verdict recording order.
-- `review-autofix-lane` (modified): `skills/agent-team-review/SKILL.md` finding contract, §4 lead synthesis, review summary format.
+- `adversarial-review` (modified): `skills/agent-team-review/SKILL.md` §6 + verdict recording order, finding contract, §4 lead synthesis, review summary format.
 
 ## Trade-offs
 
@@ -79,4 +78,11 @@ All three legs present: private data (repo code/design content in prompts and di
 
 ## Acceptance Scenarios
 
-See `specs/cross-family-panel/spec.md`, `specs/review-cross-family-pass/spec.md`, `specs/review-autofix-lane/spec.md`. Test plan beyond the scenarios: positive and negative routing cases per trigger family (not one pair); degradation cells for default-roster vs explicitly-requested panelist; injection/payload cells; autofix eligibility, stale-edit, and overlapping-edit cells; an end-to-end cell proving an accepted cross-model blocking finding changes the recorded verdict.
+See `specs/cross-family-panel/spec.md` and `specs/adversarial-review/spec.md`. Test plan beyond the scenarios: positive and negative routing cases per trigger family (not one pair); degradation cells for default-roster vs explicitly-requested panelist; injection/payload cells; autofix eligibility, stale-edit, and overlapping-edit cells; an end-to-end cell proving an accepted cross-model blocking finding changes the recorded verdict.
+
+## Implementation Notes (synced at ship time)
+
+- Two governance-pinned phrases from the pre-existing §6 ("Codex" named capital-C; "Declining the offer is fine; silently skipping is not") were restored into the widened §6 after `tests/test-adversarial-governance.sh` caught their removal — both invariants were already spec-required, so the skill text moved, never the test.
+- The whole-branch review added two §4 ordering clarifications: Autofix-carrying suggestions are deferred past the severity floor to the validation step, and the autofix batch is presented only after §6 resolves (an accepted Mode B pass reviews the pre-application tree; validated cross-model `Autofix:` lines join the same batch).
+- The panel trigger gained a word boundary — `(^|[^a-z])(ask|consult) codex` — after review measured "task codex" as a false positive.
+- Capability taxonomy at ship: the two review delta specs merged under the existing `adversarial-review` capability (noun/subsystem match) instead of shipping as two new micro-capabilities; `cross-family-panel` remains the one new capability.

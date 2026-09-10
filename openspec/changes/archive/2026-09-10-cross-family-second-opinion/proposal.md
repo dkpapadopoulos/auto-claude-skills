@@ -17,8 +17,7 @@ Adopted from Patric Fornasier's "Getting Out of the Loop" (patforna/writing) and
 - `cross-family-panel` — panel + synthesize skills, routing entries, degradation contract.
 
 ### Modified
-- `review-cross-family-pass` — agent-team-review §6 Cross-Model Offer scope.
-- `review-autofix-lane` — agent-team-review finding contract + lead synthesis.
+- `adversarial-review` — agent-team-review §6 Cross-Model Offer scope (two-mode cross-family pass) and the autofix lane (finding contract + lead synthesis).
 
 ## Impact
 
