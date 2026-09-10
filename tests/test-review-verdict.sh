@@ -249,13 +249,18 @@ assert_not_contains "clean verdict at HEAD => no review advisory" "REVIEW VERDIC
 _write_verdict clean "${_NEWHEAD}"
 jq -c '. + {independence:"dispatch-observed"}' "${_ART}" > "${_ART}.tmp" && mv "${_ART}.tmp" "${_ART}"
 _indep_out="$(_run_guard)"
+# Every value of the field must be inert, not just the two the first cut compared.
+# A newly-added value is exactly where a future gate would be wired in, so the
+# rotation covers the whole value set (review finding).
+jq -c '. + {independence:"pr-review-imported"}' "${_ART}" > "${_ART}.tmp" && mv "${_ART}.tmp" "${_ART}"
+_imported_out="$(_run_guard)"
 jq -c '. + {independence:"self-authored"}' "${_ART}" > "${_ART}.tmp" && mv "${_ART}.tmp" "${_ART}"
 _self_out="$(_run_guard)"
-if [ "${_indep_out}" = "${_self_out}" ]; then
-    _record_pass "independence is never a deny predicate (guard output identical)"
+if [ "${_indep_out}" = "${_self_out}" ] && [ "${_indep_out}" = "${_imported_out}" ]; then
+    _record_pass "independence is never a deny predicate (guard output identical across every value)"
 else
-    _record_fail "independence is never a deny predicate (guard output identical)" \
-        "self-authored changed the guard's output: [${_self_out}] vs [${_indep_out}]"
+    _record_fail "independence is never a deny predicate (guard output identical across every value)" \
+        "a value changed the guard's output: dispatch-observed=[${_indep_out}] self-authored=[${_self_out}] pr-review-imported=[${_imported_out}]"
 fi
 assert_not_contains "self-authored verdict never denies" '"deny"' "${_self_out:-}"
 
@@ -559,6 +564,22 @@ if [ "$(_probe_gh "${_FAKEGH}")" = "yes" ]; then
     # (cross-family review finding). Each value names what was actually measured.
     assert_equals "an imported PR review records pr-review-imported, not a dispatch" \
         "pr-review-imported" "$(_odt_field independence)"
+
+    # THE PRECEDENCE ARGUMENT'S LOAD-BEARING HALF (review finding). The script
+    # argues that `--self-authored` may outrank an import because nothing is
+    # destroyed: the import stays readable in `dispatch_evidence`. That claim was
+    # argued in a comment and asserted nowhere -- mutating the writer to clear
+    # `DISPATCH_EVIDENCE` whenever `SELF_AUTHORED=true` would destroy exactly the
+    # information the argument rests on, with the suite still green. Both fields
+    # are asserted here because the argument is about the PAIR, not either one.
+    rm -f "${_ART}"
+    ( cd "$_ODT_REPO" && SKILL_SESSION_TOKEN="$_TOK" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        PATH="${_FAKEGH}" bash "${PROJECT_ROOT}/scripts/record-review-verdict.sh" \
+        --from-github 1 --self-authored ) >/dev/null 2>&1
+    assert_equals "a declared self-review outranks an import" \
+        "self-authored" "$(_odt_field independence)"
+    assert_equals "...and the import is NOT destroyed by that precedence" \
+        "imported" "$(_odt_field dispatch_evidence)"
 else
     _record_fail "could build a resolvable-gh PATH for the precedence test" \
         "gh not resolvable on the fake PATH"

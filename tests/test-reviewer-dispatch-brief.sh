@@ -249,7 +249,8 @@ EOF
     # the stronger "every reviewer that actually runs receives and follows only
     # these two exclusions". A line added elsewhere in the same prompt — under
     # `## Rules`, say, "ignore the Scope section for low-confidence findings" —
-    # leaves byte-equality perfect and the bullet count at three while handing
+    # leaves byte-equality perfect -- and the three-bullet count in
+    # test-adversarial-governance.sh equally so -- while handing
     # the reviewer a contradictory instruction. So do a lead instruction to
     # abbreviate Scope when spawning, a dispatch path that does not use these
     # templates, and a fifth lens defined outside the discovered `name:`

@@ -17,11 +17,16 @@ Provenance is the part that is currently unrecoverable.
 ## What Changes
 
 - `record-review-verdict.sh` gains `--self-authored` and always records an
-  `independence` field: `self-authored`, `dispatch-observed`, or `unknown`. The middle
-  value is named for what was measured: `reviewer-ran` witnesses a DISPATCH, never a
-  return and never that the subagent read this diff, so any reviewer dispatched earlier
-  on the branch sets it. Calling it `independent` would assert of a stale observation
-  exactly what the `unknown` default refuses to assert of an absent one (review finding).
+  `independence` field: `self-authored`, `dispatch-observed`, `pr-review-imported`,
+  or `unknown`. Each value is named for what was measured, never for the conclusion a
+  reader would like to draw. `dispatch-observed` rests on `reviewer-ran`, which witnesses
+  a DISPATCH — never a return, and never that the subagent read this diff — so any
+  reviewer dispatched earlier on the branch sets it; calling it `independent` would
+  assert of a stale observation exactly what the `unknown` default refuses to assert of
+  an absent one. `pr-review-imported` is deliberately NOT folded into it: the import path
+  runs `gh pr view` and observes no dispatch at all, and nothing compares the PR
+  reviewer's identity against the diff's author, so it shows a review EXISTS rather than
+  that it was independent. Both distinctions came from review findings.
 - `schema_version` 2 → 3. `predicate_version` is untouched — this describes a
   record, it does not change any fire condition, so existing shadow records stay
   poolable. The active `observed-dispatch-telemetry` delta pinned the literal value 2,

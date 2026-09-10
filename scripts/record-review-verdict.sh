@@ -159,7 +159,7 @@ fi
 # to withdraw the independence CLAIM, and states plainly that nothing else will.
 # This is that "nothing else", in a field a reader can act on.
 #
-# Three values, and the ordering is deliberate:
+# Four values, and the ordering is deliberate:
 #   self-authored  the caller says the reviewing context wrote the diff. An
 #                  ADMISSION AGAINST INTEREST, so it outranks an observed
 #                  dispatch — a witnessed spawn cannot refute it (the dispatch
