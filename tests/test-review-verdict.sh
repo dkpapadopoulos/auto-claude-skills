@@ -554,8 +554,11 @@ if [ "$(_probe_gh "${_FAKEGH}")" = "yes" ]; then
     # The `imported` arm of the independence rule, which cells (e)-(i) never reach:
     # without this, collapsing `observed|imported` to `observed` in the case arm
     # passes the whole suite while a real PR-review import records `unknown`.
-    assert_equals "an imported PR review also records dispatch-observed" \
-        "dispatch-observed" "$(_odt_field independence)"
+    # NOT `dispatch-observed`: the import path runs `gh pr view` and observes no
+    # dispatch, so collapsing the two named a measurement that never happened
+    # (cross-family review finding). Each value names what was actually measured.
+    assert_equals "an imported PR review records pr-review-imported, not a dispatch" \
+        "pr-review-imported" "$(_odt_field independence)"
 else
     _record_fail "could build a resolvable-gh PATH for the precedence test" \
         "gh not resolvable on the fake PATH"

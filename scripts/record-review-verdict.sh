@@ -166,9 +166,18 @@ fi
 #                  may have been for something else entirely), and treating the
 #                  observation as the stronger signal would let the one honest
 #                  declaration the skill asks for be overwritten by telemetry.
+#   pr-review-imported
+#                  a real pull-request review was RESOLVED from GitHub. Kept
+#                  separate from the value below because collapsing them was a
+#                  factual error: the import path runs `gh pr view` and observes
+#                  no dispatch at all, so labelling it `dispatch-observed` named
+#                  a measurement that never happened. It is also not
+#                  `independent`: nothing here compares the PR reviewer's
+#                  identity against the diff's author, so the import shows a
+#                  review EXISTS, not that it was independent of the author.
 #   dispatch-observed
-#                  a reviewer dispatch was OBSERVED on this branch (or a real PR
-#                  review was imported) and no self-authorship was declared. It is
+#                  a reviewer dispatch was OBSERVED on this branch and no
+#                  self-authorship was declared. It is
 #                  named for WHAT WAS MEASURED, not for the conclusion someone would
 #                  like to draw: `reviewer-ran` witnesses a DISPATCH, never a return
 #                  and never that the subagent read THIS diff. Any reviewer dispatched
@@ -180,13 +189,23 @@ fi
 #                  would manufacture the exact claim #197 exists to stop being
 #                  asserted for free.
 #
+# PRECEDENCE, and why nothing is lost. `--self-authored` still wins over an
+# import. The two are genuinely separate facts — the flag describes the context
+# RECORDING the verdict, the import describes a review by someone else — so
+# neither refutes the other, and a single field has to choose. It chooses the
+# value that does not flatter the verdict, on the same admission-against-interest
+# reasoning as above. No information is destroyed by that choice: the import
+# stays visible in `dispatch_evidence: "imported"`, so a reader sees both facts
+# in the two fields that measured them.
+#
 # NOT a gate, alone or collapsed (#197's spec forbids it), and NOT written to
 # the branch ledger: that file's content is the documented `<sha> <utc-ts>` pair
 # read by position, and an absent sidecar there would be indistinguishable from
 # an independence claim under the miss modes branch-ledger.sh already documents.
 INDEPENDENCE="unknown"
 case "${DISPATCH_EVIDENCE}" in
-    observed|imported) INDEPENDENCE="dispatch-observed" ;;
+    observed) INDEPENDENCE="dispatch-observed" ;;
+    imported) INDEPENDENCE="pr-review-imported" ;;
 esac
 [ "${SELF_AUTHORED}" = "true" ] && INDEPENDENCE="self-authored"
 

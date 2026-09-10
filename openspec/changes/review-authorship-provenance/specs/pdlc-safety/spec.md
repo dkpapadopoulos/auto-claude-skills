@@ -5,14 +5,17 @@
 ### Requirement: The review verdict MUST record whether the review was independent
 
 The review verdict artifact MUST record an `independence` field with one of
-exactly three values: `self-authored`, `dispatch-observed`, or `unknown`.
+exactly four values: `self-authored`, `dispatch-observed`, `pr-review-imported`,
+or `unknown`.
 
 `self-authored` MUST be recorded when the caller declares that the reviewing
 context authored the diff under review, and MUST take precedence over an
 observed or imported dispatch — a witnessed dispatch cannot refute the
 declaration. `dispatch-observed` MUST be recorded only when a reviewer dispatch
-was observed on this branch or a pull-request review was imported, and no
-self-authorship was declared. Every other case MUST record `unknown`; absence of
+was observed on this branch and no self-authorship was declared.
+`pr-review-imported` MUST be recorded only when a pull-request review was
+resolved and no self-authorship was declared; it MUST NOT be collapsed into
+`dispatch-observed`, because the import path observes no dispatch. Every other case MUST record `unknown`; absence of
 a signal MUST NOT be recorded as a positive claim.
 
 The value MUST be named for what was measured. A dispatch record witnesses that a

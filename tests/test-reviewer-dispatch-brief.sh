@@ -244,6 +244,21 @@ EOF
         f
     ')"
     #
+    # WHAT THIS DOES NOT COVER, stated rather than implied. The invariant pinned
+    # here is "each static Scope block contains exactly the canonical text", NOT
+    # the stronger "every reviewer that actually runs receives and follows only
+    # these two exclusions". A line added elsewhere in the same prompt — under
+    # `## Rules`, say, "ignore the Scope section for low-confidence findings" —
+    # leaves byte-equality perfect and the bullet count at three while handing
+    # the reviewer a contradictory instruction. So do a lead instruction to
+    # abbreviate Scope when spawning, a dispatch path that does not use these
+    # templates, and a fifth lens defined outside the discovered `name:`
+    # population. A keyword blocklist for "contradictory" phrasing was
+    # considered and rejected: it is the fitted-heuristic shape this repo has
+    # been bitten by, and it would buy false comfort rather than coverage.
+    # (Cross-family review finding; the boundary is real and is documented here
+    # instead of being papered over.)
+    #
     # Compared against a COMMITTED fixture, not against the first lens. Lens-to-lens
     # identity is satisfied by mutating all four the same way, and a reviewer used
     # exactly that: deleting both "Raise it anyway" exceptions from all four blocks,

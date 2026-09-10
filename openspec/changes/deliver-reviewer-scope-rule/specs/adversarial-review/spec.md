@@ -14,6 +14,14 @@ the two copies MUST carry the same category set, the reviewer-facing copies MUST
 be identical to one another, and both facts MUST be asserted by a test — a
 comment pairing the copies is not sufficient.
 
+The assertion available here is that each spawn template CARRIES the canonical
+text. It is NOT an assertion that a reviewer receives only these exclusions: a
+contradictory instruction elsewhere in the same prompt, a dispatch path that does
+not use these templates, or a lens defined outside the template section all
+remain outside what any static check can see. That boundary MUST be stated
+wherever the guarantee is claimed, rather than left to be inferred from a passing
+gate.
+
 #### Scenario: A lens prompt omits the scope rule
 
 - **GIVEN** the reviewer spawn templates in `agent-team-review`
