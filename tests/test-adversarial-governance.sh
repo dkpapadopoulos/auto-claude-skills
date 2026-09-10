@@ -171,6 +171,39 @@ assert_contains "do-not-flag row: tool-owned"              '| `tool-owned`'     
 
 # (b) The forbidden shapes, asserted as ABSENT rather than inferred from prose.
 assert_not_contains "no speculative do-not-raise row"      '| `speculative`'                    "${atr}"
+
+# (a2) #245 — the SAME invariant on the copy that actually reaches a reviewer.
+#      §3 is prose the lead reads; a spawned reviewer sees only its own prompt,
+#      so the two-category ceiling has to hold in the delivered text as well, or
+#      a third category can be added where the lead-side assertion cannot see it.
+#      Counted per lens, not whole-file: a whole-file count cannot tell "two
+#      categories in each of four prompts" from "eight in one".
+while IFS= read -r _lens; do
+    [ -n "${_lens}" ] || continue
+    _scope="$(awk -v lens="${_lens}" '
+        $0 ~ "^[[:space:]]*name: \"" lens "\"" { f=1; next }
+        f && /^[[:space:]]*name: "/ { exit }
+        f && /^## / { exit }
+        f && /^[[:space:]]*## Scope/ { s=1; next }
+        s && /^[[:space:]]*## / { exit }
+        s
+    ' "${ATR}")"
+    _cats="$(printf '%s\n' "${_scope}" | grep -c 'Do not raise `[a-z-]*`')"
+    assert_equals "${_lens}: reviewer scope block stops at two categories" "2" "${_cats}"
+    assert_not_contains "${_lens}: no speculative category in the delivered copy" \
+        'Do not raise `speculative`' "${_scope}"
+done <<'LENS_EOF'
+security-reviewer
+quality-reviewer
+spec-reviewer
+adversarial-reviewer
+LENS_EOF
+
+# (a3) The lead-side table must SAY where the reviewer copy lives, so the next
+#      editor changes both. Without this the two copies drift silently, which is
+#      the #166 shape this pairing note exists to prevent.
+assert_contains "do-not-flag table names its paired reviewer copy" \
+    "the reviewer's copy ships in the spawn" "${atr}"
 assert_not_contains "no synthesis-side provenance filter"  "Provenance filter"                  "${atr}"
 assert_not_contains "no category-based drop at synthesis"  "drop any finding whose category"    "${atr}"
 

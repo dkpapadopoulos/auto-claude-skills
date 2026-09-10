@@ -100,6 +100,13 @@ _require_needle "VERIFIED by running from what you INFERRED by reading"
 _require_needle "mktemp -d"
 _require_needle "Confirm your worktree matches the subject"
 _require_needle "Review range: {base_sha}..{head_sha}"
+# #245: the reviewer-facing half of Protocol §3's do-not-flag table. Anchored
+# here for the same reason as every needle above — a needle deleted from the
+# fixture silently deletes its own per-lens assertion.
+_require_needle "Do not raise \`pre-existing\`"
+_require_needle "Do not raise \`tool-owned\`"
+_require_needle "Nothing else is out of scope"
+_require_needle "about OWNERSHIP, not size"
 
 # --- Control 2: non-vacuity floor ------------------------------------------
 # Secondary to Control 1 (which a shrinking fixture trips first), but it also
@@ -109,11 +116,11 @@ _require_needle "Review range: {base_sha}..{head_sha}"
 # headroom between them is a set of needles that can be deleted without tripping
 # either control — which is exactly how the second leak opened. Raise both together
 # when adding a needle.
-if [ "${CLAUSE_COUNT}" -ge 14 ]; then
+if [ "${CLAUSE_COUNT}" -ge 18 ]; then
     _record_pass "clause fixture non-vacuous (${CLAUSE_COUNT} needles)"
 else
     _record_fail "clause fixture non-vacuous" \
-        "expected >= 14 needles, got ${CLAUSE_COUNT} — assertions below prove nothing"
+        "expected >= 18 needles, got ${CLAUSE_COUNT} — assertions below prove nothing"
 fi
 
 # --- Discover the lens population -------------------------------------------
@@ -163,6 +170,7 @@ _block_has() {
 }
 
 CONTRACT_REF=""
+SCOPE_REF=""
 while IFS= read -r lens; do
     [ -n "${lens}" ] || continue
     BLOCK="$(_lens_block "${lens}")"
@@ -205,9 +213,52 @@ EOF
         _record_fail "${lens}: Delivery Contract identical to the other lenses" \
             "this lens's contract has drifted from the reference copy"
     fi
+    # --- Control 4 (#245): the four Scope blocks must be IDENTICAL ----------
+    # Protocol §3 keeps the lead's copy of the same two categories, so this rule
+    # now lives in five places by design. Duplication is the only delivery
+    # mechanism a subagent prompt has (Control 3, same reasoning), and its one
+    # cost is drift: without this, a lens whose scope block grew a third category
+    # or lost the "raise it anyway" exceptions still passes as long as the four
+    # needles survive somewhere in the block.
+    SCOPE="$(printf '%s\n' "${BLOCK}" | awk '
+        /^[[:space:]]*## Scope/ { f=1; next }
+        f && /^[[:space:]]*## / { exit }
+        f
+    ')"
+    if [ -z "${SCOPE}" ]; then
+        _record_fail "${lens}: Scope block extracted" \
+            "empty — §3's reviewer-facing scope rule is not delivered to this lens"
+    elif [ -z "${SCOPE_REF}" ]; then
+        SCOPE_REF="${SCOPE}"
+        _record_pass "${lens}: Scope block extracted (reference copy)"
+    elif [ "${SCOPE}" = "${SCOPE_REF}" ]; then
+        _record_pass "${lens}: Scope block identical to the other lenses"
+    else
+        _record_fail "${lens}: Scope block identical to the other lenses" \
+            "this lens's scope rule has drifted from the reference copy"
+    fi
 done <<EOF
 ${LENSES}
 EOF
+
+# --- Control 5 (#245): the lead's copy and the reviewers' copy must agree ----
+# The two copies carry the SAME two ownership categories. §3 is a markdown table
+# (`| \`pre-existing\` |`), the prompt is a bullet (``Do not raise \`pre-existing\```),
+# so neither text can be derived from the other by grep — the pairing is asserted
+# on the CATEGORY SET, which is what must not diverge. A category added to one
+# copy and not the other fails here rather than shipping a reviewer that scopes
+# itself by a rule the lead does not hold.
+LEAD_CATS="$(awk '/^\*\*Do not flag/{f=1} f&&match($0, /^\| `[a-z-]+`/){c=substr($0, RSTART+3, RLENGTH-4); print c} f&&/^The list stops at two/{exit}' "${SKILL}" | sort)"
+REV_CATS="$(printf '%s\n' "${SCOPE_REF}" | awk 'match($0, /Do not raise `[a-z-]+`/){c=substr($0, RSTART+14, RLENGTH-15); print c}' | sort)"
+if [ -z "${LEAD_CATS}" ] || [ -z "${REV_CATS}" ]; then
+    _record_fail "lead and reviewer scope categories both extracted" \
+        "one side is empty (lead=[${LEAD_CATS}] reviewer=[${REV_CATS}]) — the pairing assertion below proves nothing"
+elif [ "${LEAD_CATS}" = "${REV_CATS}" ]; then
+    _record_pass "lead §3 table and reviewer Scope block carry the same categories"
+else
+    _record_fail "lead §3 table and reviewer Scope block carry the same categories" \
+        "lead=[${LEAD_CATS}] reviewer=[${REV_CATS}] — the two copies have diverged"
+fi
 
 # --- Lead-side collection protocol -----------------------------------------
 # The Verification section already asserted the OUTCOME ("every spawned reviewer

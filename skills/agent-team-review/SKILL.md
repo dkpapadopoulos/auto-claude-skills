@@ -74,6 +74,16 @@ The list stops at two entries deliberately. Broader provenance categories — no
 that §4 and the Evidence rule protect, which is the hole those rules exist to close. Do
 not extend this table without re-reading both.
 
+**PAIRED — this table is the LEAD's copy; the reviewer's copy ships in the spawn
+template.** A reviewer sees only its own prompt, so a scope rule stated only here
+constrains nobody: it was claimed as reviewer scope and delivered to no reviewer
+until #245. The same two categories are carried verbatim in every lens prompt's
+`## Scope` block. `tests/test-reviewer-dispatch-brief.sh` asserts each lens carries
+them, that the four copies are byte-identical, and that the category SET here and
+in the prompts is the same; `tests/test-adversarial-governance.sh` asserts the
+delivered copy still stops at two. Editing one copy fails the gate — fix that by
+editing the other, never by deleting the assertion.
+
 **Trivial is not the same as droppable.** A finding small enough to fix in one line is
 still reported; these two categories are about *ownership*, not size.
 
@@ -315,6 +325,17 @@ Task tool (general-purpose):
     Diff: {diff}
     Files changed: {files}
 
+    ## Scope: two categories not to raise
+    - Do not raise `pre-existing` — a defect on the merge base that appears in no
+      changed hunk. Raise it anyway when the diff changes its blast radius, or makes
+      it newly reachable.
+    - Do not raise `tool-owned` — lint, formatting, type errors, test failures, SAST
+      results. Raise it anyway when the gate did not run: then the finding is *that
+      the gate did not run*, not the individual violation.
+    - Nothing else is out of scope. These two categories are about OWNERSHIP, not size
+      — a one-line fix is still reported — and no other provenance label, "speculative"
+      included, is grounds for withholding a finding.
+
     ## Rules
     - Read-only in the shared tree: do NOT modify any files there.
     - Own worktree for anything that executes or mutates. If your lens needs to run
@@ -381,6 +402,17 @@ Task tool (general-purpose):
     Diff: {diff}
     Files changed: {files}
 
+    ## Scope: two categories not to raise
+    - Do not raise `pre-existing` — a defect on the merge base that appears in no
+      changed hunk. Raise it anyway when the diff changes its blast radius, or makes
+      it newly reachable.
+    - Do not raise `tool-owned` — lint, formatting, type errors, test failures, SAST
+      results. Raise it anyway when the gate did not run: then the finding is *that
+      the gate did not run*, not the individual violation.
+    - Nothing else is out of scope. These two categories are about OWNERSHIP, not size
+      — a one-line fix is still reported — and no other provenance label, "speculative"
+      included, is grounds for withholding a finding.
+
     ## Rules
     - Read-only in the shared tree: do NOT modify any files there.
     - Own worktree for anything that executes or mutates. If your lens needs to run
@@ -442,6 +474,17 @@ Task tool (general-purpose):
     Diff: {diff}
     Files changed: {files}
 
+    ## Scope: two categories not to raise
+    - Do not raise `pre-existing` — a defect on the merge base that appears in no
+      changed hunk. Raise it anyway when the diff changes its blast radius, or makes
+      it newly reachable.
+    - Do not raise `tool-owned` — lint, formatting, type errors, test failures, SAST
+      results. Raise it anyway when the gate did not run: then the finding is *that
+      the gate did not run*, not the individual violation.
+    - Nothing else is out of scope. These two categories are about OWNERSHIP, not size
+      — a one-line fix is still reported — and no other provenance label, "speculative"
+      included, is grounds for withholding a finding.
+
     ## Rules
     - Read-only in the shared tree: do NOT modify any files there.
     - Own worktree for anything that executes or mutates. If your lens needs to run
@@ -502,6 +545,17 @@ Task tool (general-purpose):
     Design doc: {design_doc}
     Diff: {diff}
     Files changed: {files}
+
+    ## Scope: two categories not to raise
+    - Do not raise `pre-existing` — a defect on the merge base that appears in no
+      changed hunk. Raise it anyway when the diff changes its blast radius, or makes
+      it newly reachable.
+    - Do not raise `tool-owned` — lint, formatting, type errors, test failures, SAST
+      results. Raise it anyway when the gate did not run: then the finding is *that
+      the gate did not run*, not the individual violation.
+    - Nothing else is out of scope. These two categories are about OWNERSHIP, not size
+      — a one-line fix is still reported — and no other provenance label, "speculative"
+      included, is grounds for withholding a finding.
 
     ## Rules
     - Read-only in the shared tree: do NOT modify any files there.

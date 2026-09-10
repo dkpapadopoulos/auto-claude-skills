@@ -46,3 +46,13 @@ Read-only in the shared tree
 do NOT modify any files
 do not manufacture findings
 VERIFIED by running from what you INFERRED by reading
+
+# --- Clause 5 (#245): the reviewer-facing scope rule must REACH the reviewer ---
+# Protocol §3 carries the lead's copy of the two-category do-not-flag table, but
+# §3 is prose the LEAD reads. A spawned reviewer sees only its own prompt, so the
+# reviewer-facing half was claimed and never delivered. These needles pin the
+# delivered copy; Control 4 in the test pins the four copies byte-identical.
+Do not raise `pre-existing`
+Do not raise `tool-owned`
+Nothing else is out of scope
+about OWNERSHIP, not size
