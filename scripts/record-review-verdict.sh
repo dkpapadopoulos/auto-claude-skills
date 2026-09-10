@@ -24,16 +24,22 @@ _PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "${_HERE}/.." && pwd)}"
 
 PROVIDER=""; VERDICT=""; BASE=""; HEAD_ARG=""; FINDINGS=""; UNRESOLVED=""
 FROM_GH=""; DISPATCH_ATTEMPTED="false"; DISPATCH_SUCCEEDED="false"
+SELF_AUTHORED="false"
 
 _usage() {
     cat >&2 <<'EOF'
 usage: record-review-verdict.sh --provider <p> --verdict <v> [--base SHA --head SHA]
                                 [--findings N] [--unresolved-blocking N]
                                 [--dispatch-attempted] [--dispatch-succeeded]
+                                [--self-authored]
        record-review-verdict.sh --from-github <pr-number> [--provider github-import]
 
   --verdict   clean | findings-open | could-not-review
   --provider  local-agent | human | agent-team-review | github-import
+  --self-authored
+              the reviewing context also AUTHORED the diff. Records
+              independence:"self-authored" — the machine-readable half of the
+              skill's authorship guard. Provenance only; it never gates.
 
 A clean verdict REQUIRES --base and --head (or a resolvable PR); without a
 reviewed subject the verdict is downgraded to could-not-review.
@@ -51,6 +57,7 @@ while [ $# -gt 0 ]; do
         --from-github)          FROM_GH="${2:-}"; shift 2 ;;
         --dispatch-attempted)   DISPATCH_ATTEMPTED="true"; shift ;;
         --dispatch-succeeded)   DISPATCH_SUCCEEDED="true"; shift ;;
+        --self-authored)        SELF_AUTHORED="true"; shift ;;
         -h|--help)              _usage; exit 0 ;;
         *) echo "record-review-verdict: unknown argument '$1'" >&2; _usage; exit 2 ;;
     esac
@@ -147,6 +154,35 @@ else
     fi
 fi
 
+# ---- authorship provenance (#245) ------------------------------------------
+# agent-team-review's authorship guard asks a context that reviewed its own diff
+# to withdraw the independence CLAIM, and states plainly that nothing else will.
+# This is that "nothing else", in a field a reader can act on.
+#
+# Three values, and the ordering is deliberate:
+#   self-authored  the caller says the reviewing context wrote the diff. An
+#                  ADMISSION AGAINST INTEREST, so it outranks an observed
+#                  dispatch — a witnessed spawn cannot refute it (the dispatch
+#                  may have been for something else entirely), and treating the
+#                  observation as the stronger signal would let the one honest
+#                  declaration the skill asks for be overwritten by telemetry.
+#   independent    a dispatch was OBSERVED (or a real PR review imported) and no
+#                  self-authorship was declared.
+#   unknown        neither. Never "independent" by default: an absent signal is
+#                  not evidence of independence, and defaulting the other way
+#                  would manufacture the exact claim #197 exists to stop being
+#                  asserted for free.
+#
+# NOT a gate, alone or collapsed (#197's spec forbids it), and NOT written to
+# the branch ledger: that file's content is the documented `<sha> <utc-ts>` pair
+# read by position, and an absent sidecar there would be indistinguishable from
+# an independence claim under the miss modes branch-ledger.sh already documents.
+INDEPENDENCE="unknown"
+case "${DISPATCH_EVIDENCE}" in
+    observed|imported) INDEPENDENCE="independent" ;;
+esac
+[ "${SELF_AUTHORED}" = "true" ] && INDEPENDENCE="self-authored"
+
 # ---- resolve + validate the reviewed subject -------------------------------
 [ -n "${HEAD_ARG}" ] || HEAD_ARG="$(git -C "${_ROOT:-.}" rev-parse HEAD 2>/dev/null)" || HEAD_ARG=""
 _resolve() { git -C "${_ROOT:-.}" rev-parse --verify "${1}^{commit}" 2>/dev/null; }
@@ -195,14 +231,16 @@ jq -nc \
     --argjson da "${DISPATCH_ATTEMPTED}" \
     --argjson ds "${DISPATCH_SUCCEEDED}" \
     --arg de "${DISPATCH_EVIDENCE}" \
-    '{schema_version:2, provider:$provider,
+    --arg ind "${INDEPENDENCE}" \
+    '{schema_version:3, provider:$provider,
       reviewed_base_sha:$base, reviewed_head_sha:$head,
       changed_file_digest:$digest, changed_file_count:$fc,
       findings_total:$ft, unresolved_blocking:$ub, verdict:$verdict,
       dispatch_attempted:$da, dispatch_succeeded:$ds, dispatch_evidence:$de,
+      independence:$ind,
       ts:$ts, writer:"record-review-verdict.sh"}' > "${TMP}" 2>/dev/null \
   || { rm -f "${TMP}"; echo "record-review-verdict: failed to build the record" >&2; exit 2; }
 
 mv -f "${TMP}" "${OUT}" 2>/dev/null || { rm -f "${TMP}"; exit 2; }
 echo "review verdict written: ${OUT}"
-jq -c '{provider,verdict,reviewed_head_sha,changed_file_count,unresolved_blocking}' "${OUT}" 2>/dev/null
+jq -c '{provider,verdict,reviewed_head_sha,changed_file_count,unresolved_blocking,independence}' "${OUT}" 2>/dev/null

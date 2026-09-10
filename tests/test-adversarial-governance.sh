@@ -225,6 +225,28 @@ assert_not_contains "authorship guard does not demote per level" "demote each"  
 assert_not_contains "authorship guard does not demote by level"  "one severity level"           "${atr}"
 assert_not_contains "authorship guard does not downgrade findings" "downgrade the finding"      "${atr}"
 
+# (e) #245 — the guard's "nothing else will" is now false: the verdict artifact
+#     carries the declaration. Pin the prose to the MECHANISM in both
+#     directions, so neither can be removed while the other keeps claiming it.
+#     The second assertion reads the real producer rather than a copy of the
+#     flag name, which is the only way a renamed flag fails here instead of
+#     shipping a skill that instructs an unknown argument.
+assert_contains "authorship guard names the recording flag" "--self-authored" "${atr}"
+_rrv="${PROJECT_ROOT}/scripts/record-review-verdict.sh"
+if grep -q -- '--self-authored)' "${_rrv}" 2>/dev/null; then
+    _record_pass "record-review-verdict.sh accepts the flag the skill instructs"
+else
+    _record_fail "record-review-verdict.sh accepts the flag the skill instructs" \
+        "no --self-authored) arm in ${_rrv} — the skill instructs an argument the script rejects"
+fi
+# Provenance, never a gate (#197). The guard must not branch on the field.
+if grep -q 'independence' "${PROJECT_ROOT}/hooks/openspec-guard.sh" 2>/dev/null; then
+    _record_fail "independence is not read by the push gate" \
+        "openspec-guard.sh references 'independence' — #197 forbids provenance from gating"
+else
+    _record_pass "independence is not read by the push gate"
+fi
+
 # Summary
 echo ""
 echo "=============================="

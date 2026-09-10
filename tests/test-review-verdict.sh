@@ -184,7 +184,7 @@ if [ -f "${WRITER}" ]; then
         assert_equals "writer output is clean per the reader" "0" "$(_bool review_verdict_is_clean "${_TOK}")"
         assert_equals "writer records the provider" "local-agent" \
             "$(review_verdict_field "${_TOK}" provider 2>/dev/null)"
-        assert_equals "writer records schema_version" "2" \
+        assert_equals "writer records schema_version" "3" \
             "$(review_verdict_field "${_TOK}" schema_version 2>/dev/null)"
     else
         _record_fail "writer produced an artifact" "no file at ${_ART} after invoking ${WRITER}"
@@ -238,6 +238,23 @@ assert_not_contains "review advisory never denies"            '"deny"'         "
 _write_verdict clean "${_NEWHEAD}"
 out="$(_run_guard)"
 assert_not_contains "clean verdict at HEAD => no review advisory" "REVIEW VERDICT" "${out:-}"
+
+# (j) #245: `independence` is provenance, NEVER a predicate. Same rule #197
+#     set for dispatch_evidence, asserted the same way: the guard's output must
+#     be BYTE-IDENTICAL across the two values, so the field cannot be gating
+#     even indirectly (an advisory that mentioned it would differ here).
+_write_verdict clean "${_NEWHEAD}"
+jq -c '. + {independence:"independent"}' "${_ART}" > "${_ART}.tmp" && mv "${_ART}.tmp" "${_ART}"
+_indep_out="$(_run_guard)"
+jq -c '. + {independence:"self-authored"}' "${_ART}" > "${_ART}.tmp" && mv "${_ART}.tmp" "${_ART}"
+_self_out="$(_run_guard)"
+if [ "${_indep_out}" = "${_self_out}" ]; then
+    _record_pass "independence is never a deny predicate (guard output identical)"
+else
+    _record_fail "independence is never a deny predicate (guard output identical)" \
+        "self-authored changed the guard's output: [${_self_out}] vs [${_indep_out}]"
+fi
+assert_not_contains "self-authored verdict never denies" '"deny"' "${_self_out:-}"
 
 # ---------------------------------------------------------------------------
 # 7. Fail-open: with the reader lib ABSENT the gate must not deny and must not
@@ -387,7 +404,49 @@ assert_equals "absent dispatch is not observed"  "asserted" "$(_odt_field dispat
 assert_equals "absent dispatch is false"         "false"    "$(_odt_field dispatch_attempted)"
 
 # (d) the schema version is bumped
-assert_equals "writer records schema_version 2" "2" "$(_odt_field schema_version)"
+assert_equals "writer records schema_version 3" "3" "$(_odt_field schema_version)"
+
+# ---------------------------------------------------------------------------
+# (I3) Authorship provenance (#245 item 2). The skill's authorship guard asks a
+# self-reviewing context to withdraw the independence CLAIM, and says plainly
+# that nothing else will — the artifact had no field for it, so the declaration
+# lived only in prose a reader never sees.
+#
+# `independence` is recorded on the ARTIFACT, not as a branch-ledger record.
+# Two reasons, and the second is the one that matters: the ledger's content is
+# the documented two-field `<sha> <utc-ts>` line that `branch_ledger_sha` cuts
+# by position (#133 chose a sidecar over widening it for exactly this), and an
+# ABSENT ledger sidecar is indistinguishable from "a reviewer was independent",
+# so the miss modes that lib already documents (branch divergence, detached
+# HEAD) would each read as a clean independence claim. On the artifact the
+# field is always present, and its absence is a schema-2 record rather than an
+# assertion about the review.
+#
+# It is provenance, never a predicate: #197's spec forbids a dispatch field
+# from gating alone or collapsed, and cell (j) pins that for this field too.
+# ---------------------------------------------------------------------------
+find "$HOME/.claude" -maxdepth 1 -type d -name '.skill-branch-ledger-*' -exec rm -rf {} + 2>/dev/null
+_odt_record
+assert_equals "(e) no observation, no claim => unknown" "unknown" "$(_odt_field independence)"
+
+branch_ledger_record "reviewer-ran" "$_ODT_REPO"
+_odt_record
+assert_equals "(f) an observed reviewer is independent" "independent" "$(_odt_field independence)"
+
+# An admission against interest outranks the observation: the caller is saying
+# the context that wrote the diff also reviewed it, which an observed DISPATCH
+# cannot refute (the dispatch may have been for something else entirely).
+_odt_record --self-authored
+assert_equals "(g) a self-authorship claim outranks an observation" \
+    "self-authored" "$(_odt_field independence)"
+
+find "$HOME/.claude" -maxdepth 1 -type d -name '.skill-branch-ledger-*' -exec rm -rf {} + 2>/dev/null
+_odt_record --self-authored
+assert_equals "(h) self-authored with no observation" "self-authored" "$(_odt_field independence)"
+
+# (i) the flag must not disturb the dispatch telemetry it sits beside
+assert_equals "(i) --self-authored leaves dispatch_evidence alone" \
+    "asserted" "$(_odt_field dispatch_evidence)"
 
 # ---------------------------------------------------------------------------
 # (I2) `imported` MUST require a RESOLVABLE PR, not just the flag. The old

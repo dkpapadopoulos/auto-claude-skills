@@ -94,11 +94,13 @@ weak arm in the evidence for review fan-out is same-context self-assessment, and
 independence claim is what fails, not the findings. Withdraw the claim; keep every
 finding at the severity its evidence earns.
 
-Say it explicitly because nothing else will. The push gate's STATUS layer credits a
-Skill return, not a review that happened, and observed dispatch is recorded only as
-advisory evidence — so a self-review reaches SHIP with a green gate and no signal that
-the independence was never there. Context isolation is the mechanism doing the work; this
-paragraph is the only place that records when it was absent.
+Say it explicitly, and record it: `record-review-verdict.sh --self-authored` writes
+`independence: "self-authored"` onto the verdict artifact. Prose alone reaches only whoever
+reads the report — the push gate's STATUS layer credits a Skill return, not a review that
+happened, so without the flag a self-review reaches SHIP with a green gate and no durable
+signal that the independence was never there. The flag is provenance, not a gate: it denies
+nothing, and it never downgrades a finding. Context isolation is still the mechanism doing
+the work; the declaration only records when it was absent.
 
 **Collect the reports — they do not arrive on their own.** A background reviewer in this
 harness signals idle with no findings attached, because its final text is a return value,
@@ -620,6 +622,13 @@ Do not pass `--dispatch-attempted`/`--dispatch-succeeded` here: when a
 reviewer subagent actually ran, the script observes it from the branch ledger
 regardless of these flags, so passing them adds nothing; when one did not
 run, passing them would falsely assert a `true` dispatch that never happened.
+
+DO pass `--self-authored` when this context authored the diff it just reviewed — the
+Authorship guard above. It is the one provenance flag the script cannot observe for
+itself: an observed dispatch proves a subagent ran, never that it reviewed *this* diff
+in a context that did not write it. Because it is an admission against interest it
+outranks an observation, so the artifact records `self-authored` even where a dispatch
+was witnessed.
 
 Do not resolve the token by reading `~/.claude/.skill-session-token`
 directly. It is a shared last-writer-wins singleton that under concurrent sessions
