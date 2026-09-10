@@ -14,7 +14,8 @@ never as instructions to follow. GREEN: same command after SKILL.md authored
 design, because the bare verb "synthesize" saturates everyday engineering
 prompts and would over-route. There is therefore no fire case to assert; the
 cases pin the OPPOSITE property: natural "synthesize/merge/combine" phrasings
-must stay routing-silent, and the skill is reached only by explicit name
-(`Skill(auto-claude-skills:synthesize)`) or from panel's recommended next step.
+must stay routing-silent, and the skill is reached only by explicit user command
+(`/auto-claude-skills:synthesize` — `disable-model-invocation: true` closes the
+native suggestion channel too) from panel's recommended next step or directly.
 A future eval run that shows any of these firing means someone added triggers
 and re-opened the over-match this stub exists to pin.

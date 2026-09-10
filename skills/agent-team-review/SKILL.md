@@ -652,10 +652,10 @@ actually happened. This is the point of the artifact: the REVIEW *status* leg
 credits a `Skill()` return, which fires before any reviewer is dispatched, so a
 credited milestone is not evidence a review ran (#197).
 
-Record the verdict ONCE, and only after the §6 Cross-Model Offer is resolved
-(accepted and cycled, declined, or unavailable) and any §4-batch autofixes are
-applied — recorded once, after the offer is resolved, so the artifact describes
-the final tree state and its counts include cross-model findings.
+The verdict is recorded once, after the offer is resolved — the §6 Cross-Model
+Offer accepted and cycled, declined, or unavailable — and after any §4-batch
+autofixes are applied, so the artifact describes the final tree state and its
+counts include cross-model findings.
 
 Run this in ONE Bash call. `record-review-verdict.sh` resolves the session
 token internally (issue #157) — you author only the verdict fields, no token

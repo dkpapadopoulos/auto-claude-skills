@@ -42,4 +42,4 @@ Write raw responses into a per-run scratch directory created with `mktemp -d` an
 
 ## Step 6: Deliver
 
-Present every response verbatim, each attributed to its model, with the scratch paths. Do not merge, reconcile, or edit. Recommend `Skill(auto-claude-skills:synthesize)` as the explicit next step — the caller decides; never silently chain into it.
+Present every response verbatim, each attributed to its model, with the scratch paths. Do not merge, reconcile, or edit. Recommend `/auto-claude-skills:synthesize` as the explicit next step — synthesize carries `disable-model-invocation: true`, so the user invokes it by command; the caller decides, never silently chain into it.
