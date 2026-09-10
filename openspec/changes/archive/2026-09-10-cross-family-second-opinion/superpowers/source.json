@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": "",
+  "plan_path": "",
+  "spec_path": "",
+  "sp_plan_path": "",
+  "sp_spec_path": "",
+  "change_slug": "cross-family-second-opinion",
+  "capability_slug": "cross-family-panel",
+  "source_branch": "cross-family-second-opinion",
+  "base_commit": "79181fe72dccaacde12be997547fd7aa23fa8351",
+  "openspec_surface": "none",
+  "archived_at": "2026-09-10T11:36:42Z"
+}

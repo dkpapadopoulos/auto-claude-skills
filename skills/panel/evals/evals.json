@@ -1,0 +1,12 @@
+[
+  {"query": "run a panel of models on this design", "should_trigger": true},
+  {"query": "get a second opinion from another model on this migration plan", "should_trigger": true},
+  {"query": "ask codex to weigh in on this approach", "should_trigger": true},
+  {"query": "i want a cross-model review of the caching tradeoff", "should_trigger": true},
+  {"query": "give me a model panel on these two options", "should_trigger": true},
+  {"query": "consult codex about the schema change", "should_trigger": true},
+  {"query": "let's debate the tradeoffs between a monolith and microservices architecture", "should_trigger": false},
+  {"query": "cross-check the config against the fallback registry", "should_trigger": false},
+  {"query": "add an independent perspectives section to the report", "should_trigger": false},
+  {"query": "get a second opinion from the reviewer before merging", "should_trigger": false}
+]

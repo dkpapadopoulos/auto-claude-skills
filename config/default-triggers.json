@@ -421,6 +421,35 @@
       "invoke": "Skill(auto-claude-skills:design-debate)"
     },
     {
+      "name": "panel",
+      "role": "domain",
+      "phase": "PLAN",
+      "triggers": [
+        "(panel of models|model panel|cross.?model (review|opinion|perspective|pass|panel))",
+        "(second opinion from (another|a (second|different)) model|(^|[^a-z])(ask|consult) codex)"
+      ],
+      "keywords": [],
+      "trigger_mode": "regex",
+      "priority": 16,
+      "precedes": [],
+      "requires": [],
+      "description": "Independent cross-family perspectives on one prompt — fresh contexts, single round, no cross-talk, verbatim attributed delivery. Opt-in; phase-agnostic by contract.",
+      "invoke": "Skill(auto-claude-skills:panel)"
+    },
+    {
+      "name": "synthesize",
+      "role": "domain",
+      "phase": "PLAN",
+      "triggers": [],
+      "keywords": [],
+      "trigger_mode": "regex",
+      "priority": 10,
+      "precedes": [],
+      "requires": [],
+      "description": "Merge N independent perspectives without forcing consensus — agreement taken, contradictions decided on evidence, disagreements surfaced. Composition-only; invoked by name.",
+      "invoke": "Skill(auto-claude-skills:synthesize)"
+    },
+    {
       "name": "batch-scripting",
       "role": "workflow",
       "phase": "IMPLEMENT",
