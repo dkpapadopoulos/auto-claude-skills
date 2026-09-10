@@ -30,7 +30,11 @@ PR_DIFF_GH_TIMEOUT="${PR_DIFF_GH_TIMEOUT:-10}"
 #
 # openspec-guard.sh already sources git-command.sh before this file, so the
 # common case defines nothing new; the source is a fallback for a direct caller
-# (the tests) and is skipped when the function is already present. Guarded per
+# (the tests) and is skipped when the function is already present. From the guard
+# the fallback is UNREACHABLE — both libs resolve from the same `_GC_ROOT` and
+# git-command.sh loads first — so it is not a supported degradation path for the
+# gate, and this advisory-only lib does not thereby acquire a runtime dependency
+# on a `_GATE_ENFORCE_LIBS` member (review note). Guarded per
 # CLAUDE.md's #137 form: a `[ -f ]` test proves existence, not that the source
 # succeeded, so availability is decided by `command -v` afterwards.
 #

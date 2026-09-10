@@ -39,7 +39,11 @@
 # record DESCRIBES, not when the leg fires. (The separate #219 bump below did
 # change when the leg fires — the two are independent axes on purpose.)
 # 4 (2026-09-10): adds `advisory_emitted` — whether the leg actually SAID
-# anything for this event. The rate population had been inferred from
+# anything for this event. Recorded AT THE LEG: a deny firing further down drops
+# `_STALE_MSG` wholesale (#198), so a `true` here means the leg emitted, not that
+# the user necessarily read it. That over-includes rather than under-includes,
+# which is the safe direction for this field, but do not read it as "the text
+# reached a human". The rate population had been inferred from
 # `would_block`, which is passed as a literal on the gh-merge path and so
 # asserts a block the leg would not perform; and a deletion-shaped command that
 # lost its certification produced a would_block record while shipping nothing.
@@ -132,9 +136,14 @@ implement_shadow_record() {
     local _act="${1:-unknown}" _repo="${2:-}" _tok="${3:-}" _tp="${4:-}" _ev="${5:-none}" _db="${6:-branch-local}"
     local _ms="${7:-true}" _wb="${8:-true}" _ed="${9:-}" _rev="${10:-HEAD}"
     local _ae="${11:-true}"
-    # Only the two literals are accepted. A caller passing anything else has a
-    # bug, and coercing it would put a fabricated membership value into the one
-    # field the rate is computed over.
+    # Only the two literals are accepted; anything else RESOLVES TO `true`, and
+    # the comment must say so rather than argue against the line below it. Two
+    # reasons it resolves rather than rejecting: a non-JSON value would make the
+    # `--argjson ae` below fail and lose the entire record, which is worse than a
+    # possibly-spurious episode; and `true` is the INCLUSIVE direction, matching
+    # the absent-field rule in shadow-adjudicate.sh, because excluding is what
+    # biases the measured rate toward clearing the deny-flip. A caller passing
+    # anything else still has a bug.
     case "${_ae}" in true|false) ;; *) _ae="true" ;; esac
     local _log _dir _ts _nonce _rid _branch _head
     _log="${IMPLEMENT_SHADOW_LOG:-${HOME}/.claude/.push-implement-shadow.jsonl}"
