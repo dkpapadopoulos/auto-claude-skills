@@ -1,0 +1,8 @@
+[
+  {"query": "synthesize these two perspectives into one recommendation", "should_trigger": false},
+  {"query": "synthesize the results from the last three runs", "should_trigger": false},
+  {"query": "can you synthesize the reviewer feedback into a summary", "should_trigger": false},
+  {"query": "synthesize a plan from these notes", "should_trigger": false},
+  {"query": "merge the panel outputs without forcing consensus", "should_trigger": false},
+  {"query": "combine the two model responses and flag disagreements", "should_trigger": false}
+]
