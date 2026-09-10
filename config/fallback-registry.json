@@ -486,6 +486,21 @@
       "enabled": true
     },
     {
+      "name": "synthesize",
+      "role": "domain",
+      "phase": "PLAN",
+      "triggers": [],
+      "keywords": [],
+      "trigger_mode": "regex",
+      "priority": 10,
+      "precedes": [],
+      "requires": [],
+      "description": "Merge N independent perspectives without forcing consensus — agreement taken, contradictions decided on evidence, disagreements surfaced. Composition-only; invoked by name.",
+      "invoke": "Skill(auto-claude-skills:synthesize)",
+      "available": false,
+      "enabled": true
+    },
+    {
       "name": "batch-scripting",
       "role": "workflow",
       "phase": "IMPLEMENT",
