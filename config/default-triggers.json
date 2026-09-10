@@ -426,7 +426,7 @@
       "phase": "PLAN",
       "triggers": [
         "(panel of models|model panel|cross.?model (review|opinion|perspective|pass|panel))",
-        "(second opinion from (another|a (second|different)) model|(ask|consult) codex)"
+        "(second opinion from (another|a (second|different)) model|(^|[^a-z])(ask|consult) codex)"
       ],
       "keywords": [],
       "trigger_mode": "regex",

@@ -37,7 +37,8 @@ replaces the prior verdict|accepted blocking finding replaces clean
 caps it at `suggestions_only`|accepted warning caps the verdict
 assigned from the defect|category never from reviewer identity
 skipped — a same-family substitute|no-second-family skips, never fakes
-read-only|dispatch read-only (write-capable default named)
+read-only/sandboxed — `codex-rescue`|dispatch read-only, tied to §6's own sentence
+WRITE-CAPABLE|write-capable default named
 NEEDLES
 
 # Negative pin: §6 must no longer scope the offer to external-fact claims.

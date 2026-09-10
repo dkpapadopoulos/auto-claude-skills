@@ -120,11 +120,11 @@ This plugin ships 25 skills that phase composition selects automatically. All bu
 |-------|-------|---------|
 | DISCOVER | [product-discovery](skills/product-discovery/SKILL.md) | Pulls Jira/Confluence context and synthesizes a discovery brief with structured hypothesis fields |
 | DESIGN | [design-debate](skills/design-debate/SKILL.md) | Multi-Agent Debate for complex designs — architect + critic + pragmatist with convergence |
-| PLAN | [panel](skills/panel/SKILL.md) | Independent cross-family perspectives — Claude + Codex, single round, verbatim attributed delivery |
-| PLAN | [synthesize](skills/synthesize/SKILL.md) | Disagreement-preserving merge of panel output — composition-only |
 | DESIGN | [prototype-lab](skills/prototype-lab/SKILL.md) | Produces 3 thin comparable variants of a proposed design with a mandatory human validation plan |
 | DESIGN | [agent-safety-review](skills/agent-safety-review/SKILL.md) | Evaluates autonomous-agent designs for the lethal trifecta (private data + untrusted input + outbound action) |
 | DESIGN | [skill-scaffold](skills/skill-scaffold/SKILL.md) | Emits repo-native seed files (SKILL.md skeleton, routing entry, test snippets) when creating new skills |
+| PLAN | [panel](skills/panel/SKILL.md) | Independent cross-family perspectives — Claude + Codex, single round, verbatim attributed delivery |
+| PLAN | [synthesize](skills/synthesize/SKILL.md) | Disagreement-preserving merge of panel output — composition-only |
 | IMPLEMENT | [agent-team-execution](skills/agent-team-execution/SKILL.md) | Executes plans with 3+ independent file-disjoint tasks via parallel specialist agents with shared contracts |
 | IMPLEMENT | [batch-scripting](skills/batch-scripting/SKILL.md) | Bulk file operations using `claude -p` with manifest, dry-run, and log-based retry |
 | REVIEW | [agent-team-review](skills/agent-team-review/SKILL.md) | Multi-perspective parallel code review (security, quality, spec compliance, adversarial governance) |
