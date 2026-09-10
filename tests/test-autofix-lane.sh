@@ -30,11 +30,11 @@ while IFS='|' read -r needle label; do
 done <<'NEEDLES'
 Autofix:|contract line exists
 additive to `Suggestion:`|autofix never replaces Suggestion
-`suggestion`-severity findings|severity cap stated
+Only `suggestion`-severity findings may carry|severity cap stated
 never self-certif|token never self-certifies
 validates every|lead validates each line independently
 unique, and unstale|old-text staleness/uniqueness check
-deduplicate|overlapping edits deduplicated
+deduplicates overlapping or conflicting edits|overlapping edits deduplicated
 reverts to a normal suggestion|failed validation loses the routing
 per-item|approval is per-item
 apply all except|partial approval supported
