@@ -4,6 +4,12 @@ For reviewers of `fix/composition-defects`. Derived from the audit's fix plan
 (`docs/research/2026-09-11-sdlc-composition/fix-plan-acs-defects.md` at audit commit
 `8c027b9`, on the unmerged `codex/sdlc-composition-audit` branch).
 
+**The approved contracts are specified in
+[`openspec/changes/composition-contract-fixes/`](../../openspec/changes/composition-contract-fixes/):**
+`design.md` carries the four contracts and the dissenting views that were rejected;
+`specs/skill-routing/spec.md` carries them as RFC 2119 requirements with acceptance
+scenarios. This file states how a reviewer checks them and what must not move.
+
 ## Acceptance is behavioural, and separate from the probes
 
 The ported probes are frozen observations and non-regression detectors. They are not
