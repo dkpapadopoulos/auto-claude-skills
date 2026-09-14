@@ -26,6 +26,7 @@ development data, because any fix will be written while looking at them.
 |---|---|---|
 | `intent-routing/intent_probe.py` | deterministic, free, no model call | **yes** — via `tests/test-routing-probe-regression.sh` |
 | `native-contracts/conformance.py` | **paid and non-deterministic** — launches a real model against a budget | **no, deliberately** |
+| instrument tests for both classifiers | deterministic, free, provider stubbed | **yes** — via `tests/test-probe-instrument-tests.sh` |
 
 The native runner is explicitly invoked, with a budget and retained evidence. Its
 results can move without any product change, so it must never gate the normal suite:
@@ -65,14 +66,20 @@ would have broken them silently:
 the other was *coincidentally* right — which would have kept working until someone
 moved the file again. Both now walk up to the root by marker.
 
-## Known gap
-
-`conformance.py` has **no instrument tests**. The audit never wrote any; its
-classifier was corrected twice by reading traces rather than by a failing test. Anyone
-extending it should fix that first.
-
 ## Instrument tests
 
 ```sh
-cd tests/probes/intent-routing && python3 -m unittest test_intent_probe   # 15 tests
+cd tests/probes/intent-routing   && python3 -m unittest test_intent_probe  # 15 tests
+cd tests/probes/native-contracts && python3 -m unittest test_conformance   # 29 tests
 ```
+
+Both run in the suite via `tests/test-probe-instrument-tests.sh`. The conformance
+tests replace `subprocess.Popen` module-wide and assert that stub is in place, so they
+cannot launch a paid run; the paid runner itself stays unwired.
+
+`conformance.py`'s classifier previously had no tests — the gap this section used to
+record. Writing them surfaced four live defects, now fixed and pinned: a truncated
+provider run was scored as clean; a second call to the same skill was invisible
+because outcomes are keyed by name; an absence whose precondition never held counted
+as conformance; and the runner exited 0 after reporting violations. Fixture
+provenance is in `native-contracts/fixtures/PROVENANCE.md`.

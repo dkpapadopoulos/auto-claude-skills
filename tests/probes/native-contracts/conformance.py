@@ -46,6 +46,15 @@ TIMEOUT = 300
 
 CONSULTATION = ("panel", "synthesize", "design-debate")
 
+# An absence is only informative if the thing absent COULD have happened.
+# A2 and B2 recorded "did not synthesize" while no perspectives existed to
+# synthesize -- dispatch was withheld, so the absence carried no information.
+# Keyed by bare skill name; a skill not listed here has no declared
+# precondition and its absence is taken as informative.
+ABSENCE_PRECONDITION = {
+    "synthesize": lambda parsed: parsed["subagent_dispatches"] > 0,
+}
+
 
 def sha256_file(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -103,6 +112,12 @@ def parse_stream(path):
             outcomes[name] = "no_result"
         else:
             outcomes[name] = "succeeded"
+    # A second call to the same skill overwrites the first in `outcomes`,
+    # which is keyed by NAME. Record the repetition before it disappears:
+    # duplicate successful calls can otherwise produce a false conclusion.
+    bare = [s.split(":")[-1] for s in skills if s]
+    duplicates = sorted({name for name in bare if bare.count(name) > 1})
+    unmatched = sorted(set(results) - set(pending))
     dispatched = [t for t in tools if t in ("Agent", "Task")]
     result = [e for e in events if e.get("type") == "result"]
     return {
@@ -115,7 +130,9 @@ def parse_stream(path):
                                     if v == "succeeded"}),
         "skills_refused": sorted({k.split(":")[-1] for k, v in outcomes.items()
                                   if v.startswith("refused")}),
-        "skills_bare": sorted({s.split(":")[-1] for s in skills if s}),
+        "skills_bare": sorted(set(bare)),
+        "duplicate_skill_calls": duplicates,
+        "unmatched_results": unmatched,
         "tools_used": sorted(set(tools)),
         "subagent_dispatches": len(dispatched),
         "tool_denials": denials,
@@ -130,6 +147,20 @@ def judge(case, parsed):
     """Compare the observation against the case's frozen contract."""
     # Expectations are judged on SUCCEEDED calls, never on attempts.
     invoked = set(parsed["skills_succeeded"])
+
+    # A run that did not complete cleanly is UNSCORED, not clean. Pooling it with
+    # conformant runs scores whatever landed before the provider cut the run off;
+    # the r4 trace carries subtype "success" with is_error true and a session
+    # limit, so subtype alone is not enough to tell.
+    if parsed["is_error"] or parsed["result_subtype"] != "success":
+        disposition = "unscored_provider_error"
+    elif parsed["duplicate_skill_calls"]:
+        disposition = "inconclusive_duplicate_calls"
+    elif parsed["unmatched_results"]:
+        disposition = "inconclusive_unmatched_results"
+    else:
+        disposition = "scored"
+
     violations = []
     for name in case.get("expect_present", []):
         if name not in invoked:
@@ -138,16 +169,41 @@ def judge(case, parsed):
         if name in invoked:
             violations.append(f"expected absent: {name}")
     consulted = sorted(invoked & set(CONSULTATION))
+    uninformative = sorted(
+        name for name in case.get("expect_absent", [])
+        if name in ABSENCE_PRECONDITION and not ABSENCE_PRECONDITION[name](parsed))
     return {
+        "disposition": disposition,
+        "uninformative_absences": uninformative,
         "consultation_skills_succeeded": consulted,
         "consultation_skills_attempted": sorted(set(parsed["skills_bare"]) & set(CONSULTATION)),
-        "satisfied": not violations,
+        # Only a scored run can be satisfied. An unscored or inconclusive run
+        # is never a pass, however few violations it happens to show.
+        "satisfied": disposition == "scored" and not violations,
         "violations": violations,
         # A case whose only expectations are absences, met by invoking nothing at
         # all, is satisfied trivially. Say so rather than counting it as conformance.
         "vacuous": (not violations and not invoked
                     and not case.get("expect_present")),
     }
+
+
+def exit_code(records):
+    """Non-zero when any case is unsatisfied or could not be scored.
+
+    The runner is paid and non-deterministic and must not be wired to a gate --
+    but an instrument that reports a violation and exits 0 cannot be wired to one
+    safely either.
+    """
+    for record in records:
+        # `--out` without `--live` prepares manifests and scores nothing. Such a
+        # record carries no disposition, and calling that a failure would make
+        # preparing a run report as a failing one.
+        if record.get("prepared_only"):
+            continue
+        if record.get("disposition") != "scored" or not record.get("satisfied"):
+            return 1
+    return 0
 
 
 def run_case(case, out, live):
@@ -216,14 +272,15 @@ def main():
         record = run_case(case, out, arguments.live)
         records.append(record)
         print(json.dumps({k: record.get(k) for k in
-                          ("case", "skills_bare", "consultation_skills_invoked",
-                           "satisfied", "vacuous", "violations", "returncode")}), flush=True)
+                          ("case", "skills_bare", "consultation_skills_succeeded",
+                           "satisfied", "vacuous", "violations", "returncode",
+                           "disposition")}), flush=True)
     (out / "summary.json").write_text(json.dumps(
         {"protocol": spec["protocol"], "acs_plugin_version": json.loads(
             (ACS / ".claude-plugin" / "plugin.json").read_text())["version"],
          "cli": subprocess.run([CLI, "--version"], capture_output=True, text=True).stdout.strip(),
          "cases": records}, indent=2) + "\n")
-    return 0
+    return exit_code(records)
 
 
 if __name__ == "__main__":

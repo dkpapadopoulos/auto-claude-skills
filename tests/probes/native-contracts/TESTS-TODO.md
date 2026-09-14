@@ -1,9 +1,16 @@
 # Prerequisite: instrument tests for `conformance.py`
 
-**Bounded prerequisite, not another instrument audit.** Do this before extending the
-runner. `conformance.py` ships with **no tests**; its classifier was corrected twice
-during the audit by reading traces, which is how both defects were found and is not a
-repeatable method.
+> **Status: done.** Implemented as `test_conformance.py` (29 tests), with fixture
+> derivation recorded in `fixtures/PROVENANCE.md` and the suite wiring in
+> `tests/test-probe-instrument-tests.sh`. The six cases below produced four real
+> classifier fixes; the two *Also assert* items are covered by
+> `AbsenceWithoutPreconditionTest` and `ExitCodeTest`. One deviation is recorded
+> below. This file is retained as the contract those tests pin.
+
+**Bounded prerequisite, not another instrument audit.** It was done before extending
+the runner. `conformance.py` shipped with **no tests**; its classifier was corrected
+twice during the audit by reading traces, which is how both defects were found and is
+not a repeatable method.
 
 ## Rule
 
@@ -39,6 +46,20 @@ under `.audit-private/`, with published observations under
 - **Exit code.** `conformance.py` currently exits 0 after reporting violations. If it
   is ever wired to a gate it needs a meaningful failure exit — and it should not be
   wired, because it is paid and non-deterministic.
+
+## Deviation: the duplicate-results fixture
+
+No retained trace contains a duplicate call — every `stdout.jsonl` under
+`.audit-private/` and every `.jsonl` under the audit's research tree was scanned for a
+repeated `Skill` invocation or a repeated `tool_result` per `tool_use_id`. The defect
+was an independent-review finding recorded in `progress-2026-09-12.md`, not a trace
+observation, and the audit's own test for it (`native/test_native.py`) hand-writes its
+rows — which is what the rule above forbids, so those tests were not ported.
+
+The fixture is therefore **constructed by duplicating a real pair** from the B3 trace
+under distinct tool-use ids. Every byte is still sourced from a retained stream, and
+the construction is the same class as the truncation specified for the missing-result
+case. Recorded in `fixtures/PROVENANCE.md`.
 
 ## Porting note
 
