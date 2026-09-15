@@ -1,0 +1,165 @@
+{
+  "protocol": "consultation-acceptance-holdout-v2",
+  "authoring_rule": "Authored by a subagent from category descriptions ONLY, round 2. Barred from reading any repository file, and it recorded zero tool uses. Round 1 (tests/probes/consultation-acceptance/cases.json) became development data: while fixing a control regression the session inspected WHICH round-1 prompts failed and widened the predicate's cue window accordingly. That is exactly the contamination this rule exists to prevent, so round 1 can no longer serve as independent evidence and this set replaces it for that purpose.",
+  "frozen": "Committed before being measured. Spend it on acceptance, then STOP: do not adjust any predicate after seeing which of these fail, or round 2 is burned the same way round 1 was and a round 3 becomes necessary.",
+  "categories": {
+    "consult_pure": "wants only another model's opinion; several deliberately name an engineering noun as the SUBJECT of that opinion, which is the case most likely to be misclassified",
+    "consult_then_work": "an outside opinion AND work following from it; the workflow must survive",
+    "delegate_work": "asks another model to DO the work rather than give a view",
+    "dev_only": "ordinary development, no other model; some use panel/debate/opinion/second in an ordinary sense",
+    "orchestration": "coordinating parallel agents doing development, not seeking opinions",
+    "resume": "short continuations of work already underway"
+  },
+  "cases": [
+    {
+      "id": "cp-1",
+      "contract": "consult_pure",
+      "prompt": "ask gpt-5 what it thinks of the migration plan for moving the sessions table off postgres. just want its read, nothing else"
+    },
+    {
+      "id": "cp-2",
+      "contract": "consult_pure",
+      "prompt": "can you get gemini's take on whether our blue/green deployment setup has any obvious failure modes? curious what an outside model says, not looking for changes yet"
+    },
+    {
+      "id": "cp-3",
+      "contract": "consult_pure",
+      "prompt": "i'd like a second set of eyes from codex on the retry backoff fix i wrote yesterday — purely its assessment, dont touch the code"
+    },
+    {
+      "id": "cp-4",
+      "contract": "consult_pure",
+      "prompt": "run this past o3 and tell me what it says about the testing strategy for the payments module. reporting back is all i need"
+    },
+    {
+      "id": "cp-5",
+      "contract": "consult_pure",
+      "prompt": "what would another model say about this? pasting the refactor summary below. only after its opinion, no edits pls"
+    },
+    {
+      "id": "cw-1",
+      "contract": "consult_then_work",
+      "prompt": "check with gpt-5 about the best way to structure the cache invalidation, then go ahead and wire it up in the service layer"
+    },
+    {
+      "id": "cw-2",
+      "contract": "consult_then_work",
+      "prompt": "get gemini to weigh in on which auth library we should pick, and once you have its answer swap out the current one across the handlers"
+    },
+    {
+      "id": "cw-3",
+      "contract": "consult_then_work",
+      "prompt": "i want codex's read on why the flaky integration test keeps timing out. after that comes back, whatever it points at, patch it"
+    },
+    {
+      "id": "cw-4",
+      "contract": "consult_then_work",
+      "prompt": "ask o3 to critique my schema design. use whatever it suggests to update the migration files afterwards"
+    },
+    {
+      "id": "cw-5",
+      "contract": "consult_then_work",
+      "prompt": "second opinion from another model on the rate limiter approach please — assuming it agrees with the token bucket idea, implement it in middleware"
+    },
+    {
+      "id": "dw-1",
+      "contract": "delegate_work",
+      "prompt": "have codex rewrite the csv parser so it streams instead of loading the whole file"
+    },
+    {
+      "id": "dw-2",
+      "contract": "delegate_work",
+      "prompt": "gpt-5: go through the utils folder and delete every function nothing imports"
+    },
+    {
+      "id": "dw-3",
+      "contract": "delegate_work",
+      "prompt": "hand this ticket to gemini and let it do the actual edits to the notification worker"
+    },
+    {
+      "id": "dw-4",
+      "contract": "delegate_work",
+      "prompt": "tell o3 to add type hints across the whole api package and fix whatever mypy complains about"
+    },
+    {
+      "id": "dw-5",
+      "contract": "delegate_work",
+      "prompt": "send the failing spec to the other model and have it produce the fix directly in the repo"
+    },
+    {
+      "id": "do-1",
+      "contract": "dev_only",
+      "prompt": "the settings panel collapses when you resize below 900px, can you fix the flexbox on it"
+    },
+    {
+      "id": "do-2",
+      "contract": "dev_only",
+      "prompt": "add a debate tab to the forum component so threads can show pro and con replies side by side"
+    },
+    {
+      "id": "do-3",
+      "contract": "dev_only",
+      "prompt": "give the upload retry a second attempt before it gives up, right now it bails immediately"
+    },
+    {
+      "id": "do-4",
+      "contract": "dev_only",
+      "prompt": "my opinion is the caching layer is overengineered — strip it back to a plain lru and delete the redis client"
+    },
+    {
+      "id": "do-5",
+      "contract": "dev_only",
+      "prompt": "parse_config throws on empty env files, needs to return defaults instead. add a test too"
+    },
+    {
+      "id": "or-1",
+      "contract": "orchestration",
+      "prompt": "spin up three agents, one per package, and have them work the refactor tasks in parallel"
+    },
+    {
+      "id": "or-2",
+      "contract": "orchestration",
+      "prompt": "the frontend worker finished, kick off the backend one now and keep the docs task queued behind it"
+    },
+    {
+      "id": "or-3",
+      "contract": "orchestration",
+      "prompt": "split the plan across subagents by file so nothing overlaps, report back when all of them land"
+    },
+    {
+      "id": "or-4",
+      "contract": "orchestration",
+      "prompt": "agent 2 is stuck on the auth task, reassign it and let the others keep going"
+    },
+    {
+      "id": "or-5",
+      "contract": "orchestration",
+      "prompt": "coordinate the team of workers through the remaining checklist items, one task each, merge as they complete"
+    },
+    {
+      "id": "rs-1",
+      "contract": "resume",
+      "prompt": "keep going"
+    },
+    {
+      "id": "rs-2",
+      "contract": "resume",
+      "prompt": "continue"
+    },
+    {
+      "id": "rs-3",
+      "contract": "resume",
+      "prompt": "next one"
+    },
+    {
+      "id": "rs-4",
+      "contract": "resume",
+      "prompt": "yep proceed"
+    },
+    {
+      "id": "rs-5",
+      "contract": "resume",
+      "prompt": "carry on with that"
+    }
+  ]
+}
