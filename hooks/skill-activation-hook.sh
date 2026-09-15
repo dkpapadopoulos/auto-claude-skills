@@ -64,6 +64,73 @@ _comp_active() {
   jq -e '(.chain // [] | length) > (.completed // [] | length)' "$_f" >/dev/null 2>&1
 }
 
+# --- consultation-versus-development discrimination (contracts C2/C3) ----
+#
+# A consultation request asks ANOTHER MODEL for its view. It is phase-agnostic: it can
+# happen during DESIGN, during REVIEW, or with no development work in flight at all.
+# Measured before this guard existed: "ask codex to weigh in on this approach" started
+# a full seven-step DESIGN->SHIP workflow, because `approach` matches brainstorming's
+# trigger and brainstorming is a role=process skill, which is what
+# _walk_composition_chain anchors on. The chain appeared because a development process
+# skill co-selected -- NOT because any consultation skill declares a phase.
+#
+# The rule is deliberately NOT "suppress the chain on consultation prompts". design.md
+# rejects that: it would strand a development session that pauses to consult. The rule
+# is: do not START an unrelated workflow, and do not DISTURB one in progress.
+#
+# Both patterns are KNOWN-INCOMPLETE enumerations. Their failure directions are NOT the
+# same, and an earlier version of this comment claimed they were:
+#
+#   _CONSULT_PARTICIPANT is a PRECONDITION -- a miss returns 1, the walker runs, and the
+#   result is today's behaviour. Fails safe.
+#   _DEV_WORK is a VETO -- a miss falls through to `return 0`, i.e. to SUPPRESSION.
+#   Fails UNSAFE. Every verb missing from it turns a mixed request into a
+#   consultation-only one.
+#
+# So the two lists carry different risk and deserve different bias: keep the participant
+# list narrow, and keep the dev-work list GENEROUS.
+#
+# `agent`/`agents` is deliberately NOT accepted bare: it is this repo's own orchestration
+# vocabulary, and "the other agent is stuck; take over and continue the plan" is a
+# development prompt, not a consultation. It must be qualified by a model-ish word.
+_CONSULT_PARTICIPANT='(^|[^a-z])(codex|gpt-?[0-9]|gemini|o3|chatgpt)($|[^a-z])|(another|other|second|different|independent|several|multiple|two|three|each) +([a-z]+ +)?(model|models|llm|llms)($|[^a-z])|(model|llm) +agents?($|[^a-z])|second opinion|(panel of models|model panel|standalone panel)'
+
+# Development work the requester wants DONE, as opposed to an opinion they want heard.
+# Its presence makes a request MIXED, and a mixed request keeps its chain.
+#
+# POSITIONAL, not vocabulary-presence, and that distinction is the whole design. A
+# version of this matched a dev stem ANYWHERE in the prompt. Measured, it vetoed 7 of 7
+# genuine consultations -- "what does codex think of the proposed FIX", "an opinion on
+# the IMPLEMENTation tradeoffs", "a second opinion on the TEST strategy" -- because a
+# consultation about engineering always names its subject. On the 50 held-out prompts it
+# put spurious chains back to 7 of 7, exactly the no-guard number: the feature was inert
+# while appearing to be implemented.
+#
+# Work is REQUESTED in three shapes, and mentioning a dev noun is none of them:
+#   1. after a sequencing cue   -- "ask codex, THEN implement it"
+#   2. as an opening imperative -- "build the thing, and ask codex what it thinks"
+#   3. addressed at a participant -- "codex, optimize this algorithm"
+# Shape 3 exists because those prompts delegate work rather than seek an opinion, and
+# without it they classified as consultation-only.
+#
+# The failure direction is now affordable in a way it was not before: suppression is
+# DISPLAY-only, so a missed veto hides a chain rather than disarming the push gate.
+# That is what allows this rule to be precise instead of paranoid.
+_DEV_VERB='(implement|build|writ|refactor|fix|migrat|renam|scaffold|deploy|rewrit|appl|add|updat|creat|chang|remov|delet|commit|push|ship|merg|execut|split|bump|revert|patch|optimi|harden|roll.?back)'
+# The gap after a sequencing cue is `[^.!?]{0,60}`, not a couple of words: a cue is
+# routinely followed by a whole clause -- "then ONCE WE'VE PICKED ONE, go implement it",
+# "and after we decide, ACTUALLY apply the migration". A two-word window missed both,
+# and punctuation broke the word-run besides. Stopping at sentence punctuation keeps the
+# verb in the same clause as its cue, so a later unrelated sentence cannot veto.
+_DEV_WORK="(then|and then|after (that|we|you|which)|once we|once you|afterwards|finally)[^.!?]{0,60}${_DEV_VERB}|^ *${_DEV_VERB}|(codex|gemini|gpt-?[0-9]|o3|chatgpt|model|llm)[ ,:]+ *(please +)?${_DEV_VERB}"
+
+# True when the prompt asks for another model's input and asks for NO work to follow.
+_prompt_is_consultation_only() {
+  [[ "$P" =~ $_CONSULT_PARTICIPANT ]] || return 1
+  [[ "$P" =~ $_DEV_WORK ]] && return 1
+  return 0
+}
+
 # =================================================================
 # EARLY EXITS
 # =================================================================
@@ -236,9 +303,19 @@ _score_skills() {
               _best=30
               break
             fi
-            # A word-prefix hit is worth keeping, but keep scanning: a whole-word hit
-            # later in the prompt outranks it.
-            [[ "$_left_ok" -eq 1 ]] && _best=10
+            # A hit touching a word boundary on EITHER side is morphology, not an
+            # accident, and stays a match at partial quality:
+            #   left edge  -> `debug` in "debugging"   (suffixed)
+            #   right edge -> `check` in "recheck"     (prefixed)
+            # Only a hit interior to a word on BOTH sides is rejected -- `hang` inside
+            # "changes". Requiring the LEFT edge specifically was wrong and measured so:
+            # "recheck the diff for the auth module" and "redeploy the service to
+            # staging" dropped to ZERO routing, losing verification-before-completion,
+            # a push-gate milestone, from a genuine redeploy turn. Keep scanning either
+            # way: a whole-word hit later in the prompt still outranks this.
+            if [[ "$_left_ok" -eq 1 ]] || [[ "$_right_ok" -eq 1 ]]; then
+              _best=10
+            fi
 
             # Advance one char past match start and retry regex
             _skip=$((${#_pre} + 1))
@@ -1473,7 +1550,37 @@ esac
 
 # --- Build skill display lines and walk composition chain ---
 _build_skill_lines
+# The walker ALWAYS runs. The spec requires only that a consultation not cause a chain
+# to be RENDERED; skipping the walk suppressed the chain STATE instead, and that is a
+# push-gate BYPASS rather than a display change:
+#
+#   openspec-guard.sh gates its whole chain block on the state file existing, and the
+#   state write lives inside the walker. With no file, Check 1 (deny:chain-review) and
+#   Check 2 (deny:chain-verify) never run. Measured: `git push origin feat` after
+#   "commit and push this, but ask codex first" went DENY -> allow, and reverted to DENY
+#   when this one predicate was forced to return 1. Four other phrasings flipped the
+#   same way, as did two ordinary agent-team prompts -- which are the HIGHEST-autonomy
+#   development workflow in the registry, not adversarial input.
+#
+# So: walk, write state, gate exactly as before, and clear only what is DISPLAYED. The
+# cost is that a consultation turn still records development progress it did not make.
+# That is a fabrication worth fixing on its own, but it is the status quo, it is not
+# gate evidence (gating milestones are excluded from the walker's prefix), and it errs
+# toward the gate FIRING rather than toward it being skipped.
+#
+# These globals are also the walker's outputs and must stay defined regardless: the hook
+# runs under `set -u` and the renderer reads them unconditionally. Leaving them unset
+# once made the hook die and emit NOTHING, and every test still passed, because "no
+# chain was started" is satisfied just as well by a crash as by a deliberate skip.
+COMPOSITION_CHAIN=""
+COMPOSITION_DIRECTIVE=""
 _walk_composition_chain
+if _prompt_is_consultation_only; then
+  COMPOSITION_CHAIN=""
+  COMPOSITION_DIRECTIVE=""
+  [[ -n "${SKILL_EXPLAIN:-}" ]] && \
+    printf '[skill-hook]   [consultation] chain DISPLAY suppressed; state NOT suppressed\n' >&2
+fi
 
 # =================================================================
 # RED FLAGS: Phase-aware enforcement checklists

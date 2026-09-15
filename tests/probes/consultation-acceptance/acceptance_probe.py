@@ -63,7 +63,13 @@ def run_hook(home, prompt, transcript):
     result = subprocess.run(["/bin/bash", str(ROOT / "hooks" / "skill-activation-hook.sh")],
                             input=json.dumps(payload), text=True, capture_output=True,
                             env=env, cwd=ROOT, timeout=30)
-    return result.stdout
+    # The exit status is the ONLY thing separating "the hook chose nothing" from "the
+    # hook died". Both print nothing. The hook runs under `set -u` and is fail-open, so
+    # an unbound variable exits non-zero with empty stdout -- and that is exactly the
+    # bug this package was written to measure. Discarding the status here made 21 of 50
+    # baseline records rest on an inference the probe had no way to justify.
+    return {"stdout": result.stdout, "returncode": result.returncode,
+            "stderr": result.stderr[-2000:]}
 
 
 def prepare_home(home):
@@ -86,15 +92,19 @@ def read_state(home):
     """
     states = sorted((home / ".claude").glob(".skill-composition-state-*"))
     if not states:
-        return {"chain": None, "completed": None}
+        return {"chain": None, "completed": None, "readable": True}
     try:
         state = json.loads(states[0].read_text())
     except (json.JSONDecodeError, OSError):
-        return {"chain": "unreadable", "completed": "unreadable"}
-    return {"chain": state.get("chain"), "completed": state.get("completed")}
+        # NOT a string sentinel: the caller takes len() of this, and len("unreadable")
+        # is 10 -- an unreadable state file would be recorded as a plausible 10-step
+        # chain rather than as an error.
+        return {"chain": None, "completed": None, "readable": False}
+    return {"chain": state.get("chain"), "completed": state.get("completed"),
+            "readable": True}
 
 
-def observe(stdout):
+def observe(run):
     """Selection is read from the ACTIVATION block ONLY.
 
     The rendered composition chain lists future-phase skills as Skill(...) step lines
@@ -103,19 +113,28 @@ def observe(stdout):
     selection to twelve when this runner was first written. The frozen probe carries
     the same warning; the rule is load-bearing, not stylistic.
     """
+    stdout = run["stdout"]
     if stdout.strip() == "":
-        # The hook's NO-ACTIVATION result, not a parse failure. Collapsing the two
-        # would report a correct "nothing selected" as a broken instrument.
-        return {"activated": False, "parsed": True, "selected": [], "chain_rendered": None}
+        if run["returncode"] != 0 or run["stderr"].strip():
+            # The hook DIED. Never record this as a no-activation: a crashed hook and a
+            # deliberate silence are byte-identical on stdout, and only one of them is a
+            # measurement.
+            return {"activated": None, "parsed": False, "hook_failed": True,
+                    "returncode": run["returncode"], "stderr_tail": run["stderr"][-300:],
+                    "selected": [], "chain_rendered": None}
+        return {"activated": False, "parsed": True, "hook_failed": False,
+                "selected": [], "chain_rendered": None}
     try:
         context = json.loads(stdout)["hookSpecificOutput"]["additionalContext"]
     except (json.JSONDecodeError, KeyError, TypeError):
-        return {"activated": None, "parsed": False, "selected": [], "chain_rendered": None}
+        return {"activated": None, "parsed": False, "hook_failed": False,
+                "selected": [], "chain_rendered": None}
     chain = CHAIN_LINE.search(context)
     region = context[:chain.start()] if chain else context
     return {
         "activated": bool(ACTIVATION_HEAD.search(context)),
         "parsed": True,
+        "hook_failed": False,
         "selected": sorted({name for _plugin, name in SKILL_CALL.findall(region)}),
         "chain_rendered": chain.group(1).strip() if chain else None,
     }
@@ -127,17 +146,29 @@ def run_case(case):
         transcript = prepare_home(home)
         record = {"case": case["id"], "contract": case["contract"]}
         if case["contract"] in SEQUENTIAL:
-            run_hook(home, PREAMBLE, transcript)
+            pre_run = run_hook(home, PREAMBLE, transcript)
+            record["preamble_returncode"] = pre_run["returncode"]
             before = read_state(home)
-            record["preamble_chain_length"] = len(before["chain"] or [])
+            record["preamble_chain_length"] = (
+                len(before["chain"]) if isinstance(before["chain"], list)
+                else (0 if before["readable"] else None))
             record["preamble_completed"] = before["completed"]
         started = time.monotonic()
-        stdout = run_hook(home, case["prompt"], transcript)
+        run = run_hook(home, case["prompt"], transcript)
         record["elapsed_seconds"] = round(time.monotonic() - started, 3)
-        record.update(observe(stdout))
+        record["returncode"] = run["returncode"]
+        record.update(observe(run))
         after = read_state(home)
         record["chain_persisted"] = after["chain"]
-        record["chain_persisted_length"] = len(after["chain"] or [])
+        record["state_readable"] = after["readable"]
+        chain_after = after["chain"]
+        # Three distinct states, and collapsing any two loses the measurement:
+        #   a list  -> that many steps
+        #   absent, but the directory was readable -> 0 steps (no chain was started)
+        #   unreadable -> None, because we do not know
+        record["chain_persisted_length"] = (
+            len(chain_after) if isinstance(chain_after, list)
+            else (0 if after["readable"] else None))
         record["completed_persisted"] = after["completed"]
         return record
 
@@ -156,11 +187,14 @@ def main():
                "note": ("OBSERVATION ONLY. No pass/fail: the contracts these prompts will "
                         "be judged against are not implemented yet, and a criterion "
                         "written now would encode today's defects as the target."),
+               "all_hook_exit_zero": all(r.get("returncode") == 0 for r in records),
+               "hook_failures": [r["case"] for r in records if r.get("hook_failed")],
                "records": records}
     out.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n")
     for record in records:
         print(json.dumps({k: record.get(k) for k in
-                          ("case", "contract", "selected", "chain_persisted_length")},
+                          ("case", "contract", "selected", "chain_persisted_length",
+                           "parsed", "returncode", "hook_failed")},
                          ensure_ascii=False), flush=True)
     return 0
 

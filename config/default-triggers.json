@@ -131,7 +131,7 @@
       ],
       "keywords": [],
       "trigger_mode": "regex",
-      "priority": 35,
+      "priority": 32,
       "precedes": [
         "verification-before-completion"
       ],
