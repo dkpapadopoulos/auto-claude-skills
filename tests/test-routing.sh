@@ -328,6 +328,8 @@ install_registry() {
         "(supply.?chain|compromised|malicious|hijack|backdoor|typosquat).*(package|dependency|version|publish|registry)",
         "(npm|maven|pypi|pip|gradle).*(attack|compromise|backdoor|malicious|hijack)"
       ],
+      "_comment": "keywords MIRROR config/default-triggers.json. They were missing here, so this fixture entry had no route for the canonical phrasing 'supply chain attack' (neither trigger matches it: the first needs a package/dependency/version word AFTER the phrase, the second needs an ecosystem name). The skill fired on the name-segment boost instead, and removing that boost exposed the gap. Production was never affected -- the real registry carries these keywords -- so this restores fixture/production parity rather than relaxing the test.",
+      "keywords": ["supply chain attack", "compromised package", "malicious package", "dependency compromise", "package hijack", "typosquat"],
       "trigger_mode": "regex",
       "priority": 40,
       "invoke": "Skill(auto-claude-skills:supply-chain-investigation)",
@@ -928,12 +930,19 @@ test_completed_uses_current_idx_floor() {
     jq -n '{skill:"security-scanner",phase:"REVIEW"}' \
         > "${HOME}/.claude/.skill-last-invoked-${token}"
 
-    # Prompt matches openspec-ship triggers (archive.*feature + as.?built + openspec)
-    # The test registry makes openspec-ship.requires = [verification-before-completion]
-    # and openspec-ship.precedes = [finishing-a-development-branch]. So the built
-    # chain is [verification-before-completion, openspec-ship, finishing], with
-    # _current_idx = 1 (openspec-ship).
-    jq -n --arg p "archive this feature as built openspec" '{"prompt":$p}' | \
+    # Anchors executing-plans, so the chain is
+    # [brainstorming, writing-plans, executing-plans] with _current_idx = 2.
+    #
+    # The predecessors MUST be non-gating skills for this test to mean anything.
+    # This scenario used to use "archive this feature as built openspec" on the
+    # stated grounds that it anchors openspec-ship at _current_idx = 1. It did not:
+    # `spec` matched INSIDE "open-spec", so the prompt actually built the DESIGN
+    # chain and the assertions below passed against the wrong chain entirely. With
+    # infix matching removed (test 29.2) it correctly builds the SHIP chain -- whose
+    # only predecessor is verification-before-completion, a GATING MILESTONE the
+    # walker must never backfill (audit F1). The floor would then be untestable
+    # there, and asserting completed == [] would silently retire this test's subject.
+    jq -n --arg p "implement the rest of the tasks" '{"prompt":$p}' | \
         CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
         bash "${HOOK}" >/dev/null 2>&1
 
@@ -1068,11 +1077,17 @@ test_completed_resets_when_chain_differs() {
     local token="completed-chain-switch-$$"
     printf '%s' "${token}" > "${HOME}/.claude/.skill-session-token"
 
-    # On-disk state belongs to the SHIP chain. The prompt's "openspec" hits
-    # writing-plans' `spec` trigger, anchoring a DIFFERENT chain
-    # ([brainstorming, writing-plans, executing-plans]) — verified behavior.
-    # The old chain's completed entries must NOT be unioned into the new
-    # chain's state: chain switch is a legitimate reset.
+    # On-disk state belongs to the SHIP chain. The prompt anchors a DIFFERENT chain
+    # ([brainstorming, writing-plans, executing-plans]). The old chain's completed
+    # entries must NOT be unioned into the new chain's state: a chain switch is a
+    # legitimate reset.
+    #
+    # This used to be built with "archive this feature as built openspec", on the
+    # stated grounds that its "openspec" hits writing-plans' `spec` trigger. That was
+    # an INFIX match -- `spec` inside "open-spec" -- and it no longer matches (test
+    # 29.2), so that prompt now correctly KEEPS the SHIP chain where openspec-ship
+    # belongs, and switches nothing. A scenario must not be built on a false
+    # positive: fixing the false positive stops the test exercising its invariant.
     jq -n '{
         chain: ["verification-before-completion","openspec-ship","finishing-a-development-branch"],
         completed: ["verification-before-completion","openspec-ship"],
@@ -1082,7 +1097,7 @@ test_completed_resets_when_chain_differs() {
     jq -n '{skill:"verification-before-completion",phase:"SHIP"}' \
         > "${HOME}/.claude/.skill-last-invoked-${token}"
 
-    jq -n --arg p "archive this feature as built openspec" '{"prompt":$p}' | \
+    jq -n --arg p "let's design a brand new caching layer" '{"prompt":$p}' | \
         CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
         bash "${HOOK}" >/dev/null 2>&1
 
@@ -2274,6 +2289,147 @@ NAMEREG
 }
 
 # ---------------------------------------------------------------------------
+# 29.1. A hyphen SEGMENT of a skill name is not a selection signal
+# ---------------------------------------------------------------------------
+# Measured before this was removed: the >=6-character segment boost selected a skill
+# with NO trigger match on six (prompt, skill) pairs across a 63-prompt corpus, and
+# every one of the six was wrong. The segments that fired were `design`, `agents`,
+# `implementation`, `project` -- and `before`, a preposition sitting in
+# `verification-before-completion` as connective grammar. The >=6 guard was written to
+# exclude common words like "test" and "code", but `design`, `review` and `deploy` are
+# all exactly 6, so it did not hold at its own threshold.
+#
+# A hyphen is a naming convention. It is not evidence that each component is a command.
+# Ordinary language belongs to the trigger regexes; the FULL name stays a signal
+# (test 29), because a multi-word name requires the literal hyphenated token.
+# ---------------------------------------------------------------------------
+test_name_segment_is_not_a_signal() {
+    echo "-- test: hyphen segment does not select --"
+    setup_test_env
+
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    mkdir -p "$(dirname "${cache_file}")"
+    cat > "${cache_file}" <<'SEGREG'
+{
+  "version": "test",
+  "skills": [
+    {
+      "name": "widget-inspection",
+      "role": "domain",
+      "triggers": ["(never-match-this-nonsense-string)"],
+      "priority": 10,
+      "invoke": "Skill(mock:widget-inspection)",
+      "available": true,
+      "enabled": true
+    }
+  ],
+  "methodology_hints": [],
+  "phase_compositions": {}
+}
+SEGREG
+
+    local output context
+    # "inspection" is a >=6 segment of the name, used here as ordinary English.
+    output="$(run_hook "the inspection step keeps timing out on large payloads")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "segment alone does not select" "mock:widget-inspection)" "${context}"
+
+    # Control: the FULL hyphenated name still selects, so this asserts the segment
+    # rule specifically and not that the skill became unreachable.
+    output="$(run_hook "run widget-inspection on this")"
+    context="$(extract_context "${output}")"
+    assert_contains "full name still selects" "mock:widget-inspection)" "${context}"
+
+    teardown_test_env
+}
+
+# ---------------------------------------------------------------------------
+# 29.2. A trigger matching INSIDE a word is not a match
+# ---------------------------------------------------------------------------
+# Measured: the trigger alternative `hang` matched "c-hang-es" in "please review the
+# code changes in this pull request", scoring systematic-debugging 60 (substring=10 +
+# priority=50) against requesting-code-review's 55 (boundary=30 + priority=25) -- a
+# clean word-boundary match on the right skill losing to an accidental infix on the
+# wrong one. Removing the name-segment boost exposed this; the +20 had been masking it.
+#
+# Substring matching itself is legitimate and must stay: it is what lets the trigger
+# `debug` match "debugging". The distinction is positional, not a matter of weight --
+# a match starting at a word BOUNDARY is stemming, a match starting mid-word is an
+# accident. Re-weighting was rejected: priority spans 10..200 in the real registry, so
+# any additive weight large enough to dominate it would swamp priority entirely.
+# ---------------------------------------------------------------------------
+test_infix_match_is_not_a_match() {
+    echo "-- test: infix is not a match --"
+    setup_test_env
+
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    mkdir -p "$(dirname "${cache_file}")"
+    cat > "${cache_file}" <<'INFIXREG'
+{
+  "version": "test",
+  "skills": [
+    {
+      "name": "hang-watcher",
+      "role": "domain",
+      "triggers": ["(hang)"],
+      "priority": 50,
+      "invoke": "Skill(mock:hang-watcher)",
+      "available": true,
+      "enabled": true
+    },
+    {
+      "name": "stem-tool",
+      "role": "domain",
+      "triggers": ["(debug)"],
+      "priority": 50,
+      "invoke": "Skill(mock:stem-tool)",
+      "available": true,
+      "enabled": true
+    }
+  ],
+  "methodology_hints": [],
+  "phase_compositions": {}
+}
+INFIXREG
+
+    local output context
+
+    # `hang` inside `changes` starts mid-word: an accident, not a match.
+    output="$(run_hook "please review the code changes in this pull request")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "infix does not match" "mock:hang-watcher)" "${context}"
+
+    # Control: the same trigger as a whole word DOES match, so the rule is positional
+    # and has not simply disabled the trigger.
+    output="$(run_hook "the server will hang under load")"
+    context="$(extract_context "${output}")"
+    assert_contains "whole word still matches" "mock:hang-watcher)" "${context}"
+
+    # Control: a word-PREFIX match is stemming and must survive -- this is the case
+    # substring matching exists for.
+    output="$(run_hook "debugging the parser again")"
+    context="$(extract_context "${output}")"
+    assert_contains "word-prefix stemming still matches" "mock:stem-tool)" "${context}"
+
+    # Control: a HYPHEN is a word separator, so a match preceded by one is at a word
+    # boundary and not an infix. The first cut of this rule counted `-` as a word
+    # character, which made every hyphenated compound an infix -- measured, "run
+    # agent-team-review on this branch" lost BOTH of that skill's trigger regexes
+    # (each matches preceded by `-`) and the skill dropped out of the required-role
+    # pass, so typing a skill's exact name stopped selecting it. Note this is the
+    # OPPOSITE of the name matcher's rule (test 29), where `-` IS a word character so
+    # that `debug` does not match inside `debug-advanced`. Both are deliberate.
+    # The prompt deliberately does NOT contain the skill name "hang-watcher": that
+    # would score +100 on its own and the assertion would pass even with trigger
+    # matching broken, which is the failure mode this whole test exists to catch.
+    output="$(run_hook "we hit a watchdog-hang in production last night")"
+    context="$(extract_context "${output}")"
+    assert_contains "hyphen-adjacent match is not an infix" "mock:hang-watcher)" "${context}"
+
+    teardown_test_env
+}
+
+# ---------------------------------------------------------------------------
 # 29.5. Trigger word-boundary excludes dot (file extension separator)
 # ---------------------------------------------------------------------------
 test_trigger_boundary_excludes_dot() {
@@ -2511,6 +2667,8 @@ test_missing_triggers_handled
 test_phase_uses_process_precedence
 test_eval_phase_uses_process
 test_name_boost_boundary_aware
+test_name_segment_is_not_a_signal
+test_infix_match_is_not_a_match
 test_trigger_boundary_excludes_dot
 test_domain_instruction_no_process
 test_incident_analysis_hint_fires
@@ -2571,11 +2729,13 @@ test_trend_analyzer_no_false_positive() {
     ia_line="$(printf '%s' "${stderr_content}" | grep 'incident-analysis:' | grep -v 'incident-trend-analyzer')"
     assert_contains "incident-analysis has trigger match" "boundary=" "${ia_line}"
 
-    # incident-trend-analyzer should NOT have a trigger match — only name-boost
+    # incident-trend-analyzer should NOT have a trigger match. It used to appear
+    # anyway via the name-segment boost (`incident`, `analyzer`); with that boost
+    # removed it does not appear at all, which is what this test's name asks for.
     local trend_line
     trend_line="$(printf '%s' "${stderr_content}" | grep 'incident-trend-analyzer:')"
     assert_not_contains "trend-analyzer has no trigger match" "boundary=" "${trend_line}"
-    assert_contains "trend-analyzer only has name-boost" "name-boost=" "${trend_line}"
+    assert_contains "trend-analyzer does not match at all" "no-match" "${trend_line}"
 
     teardown_test_env
 }
@@ -3886,38 +4046,43 @@ test_full_format_only_prompt_1() {
 }
 test_full_format_only_prompt_1
 
-# --- Test: name_boost segment reduced from 40 to 20 ---
+# --- Test: the name_boost SEGMENT rule is gone ---
+# This test was introduced when the segment boost was reduced from 40 to 20. The
+# mechanism has since been removed outright (see test 29.1 for why), so the test now
+# asserts its absence. It is kept rather than deleted because it runs against the
+# suite's own registry fixture and pins the resulting SCORE, which 29.1 -- running on
+# a two-skill synthetic registry -- cannot do.
 test_name_boost_segment_reduced() {
     setup_test_env
     install_registry
 
     # "build a component and review it" — both brainstorming and requesting-code-review match.
-    # requesting-code-review: trigger "review" boundary=30 + priority=51 + name_boost(segment "review" 6 chars)
-    # With name_boost=20: 30+51+20=101.  With old name_boost=40: 30+51+40=121.
-    # brainstorming: trigger "build" boundary=30 + priority=30 = 60 (no name_boost).
-    # The role cap (max 1 process) reserves the top process skill (requesting-code-review).
-    # Verify: requesting-code-review gets name-boost=20 (not 40) via SKILL_EXPLAIN stderr.
+    # requesting-code-review: trigger "review" boundary=30 + priority=25 = 55. The word
+    # "review" is also a segment of the skill name and used to add a further +20; it
+    # no longer does, and the skill still wins the single process slot on its trigger.
     local explain_output
     explain_output="$(jq -n --arg p "build a component and review it" '{"prompt":$p}' | \
         SKILL_EXPLAIN=1 CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
         bash "${HOOK}" 2>&1 1>/dev/null)"
 
-    # name-boost=20 should appear in explain output (not name-boost=40)
-    assert_contains "name-boost should be 20" "name-boost=20" "$explain_output"
-
-    # Verify name-boost=40 does NOT appear (confirms the reduction)
-    if printf '%s' "$explain_output" | grep -q "name-boost=40"; then
-        _record_fail "name-boost should not be 40" "found name-boost=40 in explain output"
+    # No segment boost survives, at any value. Asserting the absence of BOTH historical
+    # values rather than just one: a lone "not 40" assertion passed throughout the
+    # mechanism's life and would pass again if it were reinstated at 20.
+    if printf '%s' "$explain_output" | grep -qE "name-boost=(20|40)"; then
+        _record_fail "no name-segment boost remains" "found a segment-sized name-boost"
     else
-        _record_pass "name-boost should not be 40"
+        _record_pass "no name-segment boost remains"
     fi
 
-    # requesting-code-review should score 75 (boundary=30 + priority=25 + name_boost=20)
-    if printf '%s' "$explain_output" | grep -q "requesting-code-review.* = 75"; then
-        _record_pass "requesting-code-review score is 75"
+    # requesting-code-review scores 55 (boundary=30 + priority=25), and still wins the
+    # process slot -- the point being that it never needed the boost to do so.
+    if printf '%s' "$explain_output" | grep -q "requesting-code-review.* = 55"; then
+        _record_pass "requesting-code-review score is 55"
     else
-        _record_fail "requesting-code-review score is 75" "expected score 75 in explain output"
+        _record_fail "requesting-code-review score is 55" "expected score 55 in explain output"
     fi
+    assert_contains "requesting-code-review still wins the process slot" \
+        "requesting-code-review" "$explain_output"
 
     teardown_test_env
 }
@@ -3996,12 +4161,13 @@ test_false_positive_defense() {
     assert_equals "FP03: database config location -> zero match" "" "${ctx}"
 
     # 4. "show me the recent changes to this file" — should NOT match anything
-    # KNOWN FALSE POSITIVE: "changes" contains substring "hang" which triggers systematic-debugging
-    # assert_equals "FP04: show recent changes -> zero match" "" "${ctx}"
+    # Was a KNOWN FALSE POSITIVE: "changes" contains the substring "hang", which
+    # matched systematic-debugging's trigger mid-word. The intended assertion below
+    # was commented out and replaced by one asserting the false positive. It now
+    # holds: a match starting mid-word is no longer a match (test 29.2).
     output="$(run_hook "show me the recent changes to this file")"
     ctx="$(extract_context "${output}")"
-    assert_contains "FP04: 'changes' substring-matches 'hang' in systematic-debugging" "systematic-debugging" "${ctx}"
-    assert_not_contains "FP04: should not trigger brainstorming" "brainstorming" "${ctx}"
+    assert_equals "FP04: show recent changes -> zero match" "" "${ctx}"
 
     # 5. "what does this error message mean" — may match debugging (acceptable)
     # KNOWN FALSE POSITIVE: "error" is a word-boundary match for systematic-debugging

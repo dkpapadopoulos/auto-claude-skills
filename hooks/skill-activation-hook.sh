@@ -151,30 +151,25 @@ _score_skills() {
   while IFS="$FS" read -r skill_name skill_name_lower skill_role skill_priority skill_invoke skill_phase triggers_joined keywords_joined _required_when; do
     [[ -z "$skill_name" ]] && continue
 
-    # Name boost: full name match (100) or hyphen-segment match (20).
-    # Full: "frontend-design" as whole word in prompt -> 100
-    # Segment: "frontend" as whole word (segment of "frontend-design") -> 20
+    # Name boost: the FULL hyphenated name as a whole word -> 100. Nothing else.
+    #
+    # A hyphen-SEGMENT boost (+20 for any segment >=6 chars) used to live here. It was
+    # removed after measurement: across a 63-prompt corpus it produced six selections
+    # with no trigger match, and every one was wrong. The segments that fired were
+    # `design`, `agents`, `implementation`, `project`, and `before` -- a preposition
+    # sitting in `verification-before-completion` as connective grammar. The >=6 guard
+    # existed to exclude common words like "test"/"code"/"plan", but `design`, `review`
+    # and `deploy` are all exactly 6, so it never held at its own threshold.
+    #
+    # A hyphen is a naming convention, not evidence that each component is a command.
+    # Ordinary language is the trigger regexes' job. This boost survives because a
+    # multi-word name requires the literal hyphenated token, which a user types
+    # deliberately -- note that is a strong signal of REFERENCE, not proof of a request
+    # ("do not use design-debate" still matches), so it is a ranking aid and must not be
+    # read as authorisation by anything downstream.
     name_boost=0
     if [[ "$P" =~ (^|[^a-z0-9-])${skill_name_lower}($|[^a-z0-9-]) ]]; then
       name_boost=100
-    elif [[ "$skill_name_lower" == *-* ]]; then
-      _seg_remaining="$skill_name_lower"
-      while [[ -n "$_seg_remaining" ]]; do
-        if [[ "$_seg_remaining" == *-* ]]; then
-          _seg="${_seg_remaining%%-*}"
-          _seg_remaining="${_seg_remaining#*-}"
-        else
-          _seg="$_seg_remaining"
-          _seg_remaining=""
-        fi
-        # Skip segments shorter than 6 chars to avoid false positives on
-        # common words like "test", "code", "plan" that are also trigger words
-        [[ "${#_seg}" -lt 6 ]] && continue
-        if [[ "$P" =~ (^|[^a-z0-9])${_seg}($|[^a-z0-9]) ]]; then
-          name_boost=20
-          break
-        fi
-      done
     fi
 
     # Score triggers (iterate using string splitting — no per-trigger jq fork)
@@ -199,7 +194,20 @@ _score_skills() {
           # "debug"), even when a word-boundary match exists later (e.g.
           # standalone "error").  Re-try on progressively shorter suffixes
           # until a boundary hit is found or the string is exhausted.
-          _best=10
+          # Match quality is POSITIONAL, and the left edge is what decides whether a
+          # partial-word hit is meaningful at all:
+          #   both edges at a boundary -> whole word            -> 30
+          #   left edge at a boundary  -> stemming ("debug" in
+          #                               "debugging")          -> 10
+          #   left edge mid-word       -> an accident ("hang" in
+          #                               "changes")            -> NOT a match
+          # The third case used to score 10 like the second. Measured consequence:
+          # systematic-debugging scored 60 (10 + priority 50) on "please review the
+          # code changes in this pull request" and beat requesting-code-review's 55
+          # (30 + priority 25) -- a clean word match losing to an infix accident.
+          # Re-weighting cannot fix this: priority spans 10..200 in the real registry,
+          # so any additive weight able to dominate it would swamp priority outright.
+          _best=0
           _scan="$P"
           _offset=0
           while true; do
@@ -209,14 +217,28 @@ _score_skills() {
             _pre="${_scan%%"$matched"*}"
             _abs=$((_offset + ${#_pre}))
             _aft=$((_abs + ${#matched}))
-            _wb=1
-            [[ "$_abs" -gt 0 ]] && [[ "${P:$((_abs-1)):1}" =~ [a-z0-9_.-] ]] && _wb=0
-            [[ "$_aft" -lt "${#P}" ]] && [[ "${P:${_aft}:1}" =~ [a-z0-9_.-] ]] && _wb=0
+            # A HYPHEN IS A WORD SEPARATOR HERE, unlike in the name matcher above.
+            # `team-review` is two words, so a trigger matching `team.review` inside
+            # "agent-team-review" is a real match; `hang` inside "changes" is not.
+            # Counting `-` as a word character made every hyphenated compound an
+            # infix: measured, "run agent-team-review on this branch" dropped BOTH of
+            # that skill's trigger regexes (each matches preceded by `-`), taking it
+            # from 140 to 120 and out of the required-role pass entirely -- a user
+            # typing a skill's exact name stopped getting it. The name matcher keeps
+            # `-` as a word character on purpose, so that `debug` does not match
+            # inside `debug-advanced`; these two rules are deliberately different.
+            _left_ok=1
+            [[ "$_abs" -gt 0 ]] && [[ "${P:$((_abs-1)):1}" =~ [a-z0-9_.] ]] && _left_ok=0
+            _right_ok=1
+            [[ "$_aft" -lt "${#P}" ]] && [[ "${P:${_aft}:1}" =~ [a-z0-9_.] ]] && _right_ok=0
 
-            if [[ "$_wb" -eq 1 ]]; then
+            if [[ "$_left_ok" -eq 1 ]] && [[ "$_right_ok" -eq 1 ]]; then
               _best=30
               break
             fi
+            # A word-prefix hit is worth keeping, but keep scanning: a whole-word hit
+            # later in the prompt outranks it.
+            [[ "$_left_ok" -eq 1 ]] && _best=10
 
             # Advance one char past match start and retry regex
             _skip=$((${#_pre} + 1))
@@ -225,10 +247,13 @@ _score_skills() {
             [[ -z "$_scan" ]] && break
             [[ "$_scan" =~ $trigger ]] || break
           done
+          # _best == 0 means every hit was mid-word: the regex matched, but nothing
+          # it matched was a word. Adding 0 keeps the skill below the
+          # trigger_score > 0 selection gate, which is the intended outcome.
           trigger_score=$((trigger_score + _best))
           # Collect explain data for this trigger hit
-          if [[ -n "${SKILL_EXPLAIN:-}" ]]; then
-            _btype="substring"
+          if [[ -n "${SKILL_EXPLAIN:-}" ]] && [[ "$_best" -gt 0 ]]; then
+            _btype="word-prefix"
             [[ "$_best" -eq 30 ]] && _btype="boundary"
             _explain_parts="${_explain_parts} ${_btype}=${_best}"
           fi
