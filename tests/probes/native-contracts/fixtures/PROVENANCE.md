@@ -30,6 +30,7 @@ paths → `/tmp/SANITISED-WORKSPACE`). Nothing else was rewritten.
 | `provider-truncation.jsonl` | provider truncation | r4 | Excerpt: `init`, the first four assistant/user events, the `result` event carrying `subtype: "success"` with `is_error: true` and *"You've hit your session limit"*. Verbatim. |
 | `no-result.jsonl` | missing result | b3 | **Constructed** by truncation: the real stream with the `synthesize` `tool_result` dropped, leaving a `tool_use` unmatched. `TESTS-TODO.md` specifies this construction. |
 | `duplicate-results.jsonl` | duplicate results | b3 | **Constructed** by duplication: the real `panel` `tool_use`/`tool_result` pair emitted twice under distinct ids. |
+| `stream-corrupt.jsonl` | stream corruption | b3, via `succeeded-and-refused` | **Constructed** by byte-truncating ONE line of that fixture -- the assistant event carrying the `panel` `tool_use` -- so the line is present but does not parse. Every other byte is the real trace. |
 | `absence-without-precondition.jsonl` | supports the "absence with no precondition" assertion | a2 | The A2 run entire, 23 events: it recorded "did not synthesize" while no perspectives existed to synthesize. Verbatim. |
 
 ## Why `duplicate-results.jsonl` is constructed

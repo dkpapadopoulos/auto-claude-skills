@@ -21,6 +21,13 @@ PASS=0; FAIL=0
 if ! command -v jq >/dev/null 2>&1; then
   echo "SKIP: jq not available — consultation routing NOT checked"; exit 0
 fi
+# Without this guard a missing interpreter is indistinguishable from a routing
+# regression: _new_home's registry write fails, no prompt anchors a chain, the three
+# C3 cells pass and the two development controls fail. The suite would report a
+# routing defect for a missing tool.
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "SKIP: python3 not available — consultation routing NOT checked"; exit 0
+fi
 
 _pass() { PASS=$((PASS+1)); echo "  PASS: $1"; }
 _fail() { FAIL=$((FAIL+1)); echo "  FAIL: $1"; echo "        $2"; }

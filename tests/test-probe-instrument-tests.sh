@@ -19,6 +19,16 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 FAIL=0
+# Floor per suite. The count was extracted and printed but never compared, so renaming
+# a TestCase class so unittest stops collecting it left status 0 and a smaller number
+# nobody checked. Python >=3.12 errors on zero collected; 3.11 and earlier report OK.
+_floor_for() {
+  case "$1" in
+    intent-routing/test_intent_probe)      printf '15' ;;
+    native-contracts/test_conformance)     printf '30' ;;
+    *)                                     printf '1'  ;;
+  esac
+}
 for suite in intent-routing/test_intent_probe native-contracts/test_conformance; do
   dir="${ROOT}/tests/probes/${suite%/*}"
   module="${suite##*/}"
@@ -33,6 +43,10 @@ for suite in intent-routing/test_intent_probe native-contracts/test_conformance;
   if [ "$status" -ne 0 ]; then
     echo "FAIL: ${suite}"
     printf '%s\n' "$out" | tail -20
+    FAIL=$((FAIL + 1))
+  elif [ "${count:-0}" -lt "$(_floor_for "$suite")" ]; then
+    echo "FAIL: ${suite} ran ${count:-0} tests, below the floor of $(_floor_for "$suite")"
+    echo "      (a whole TestCase class silently uncollected looks like a smaller pass)"
     FAIL=$((FAIL + 1))
   else
     echo "  ok: ${suite} (${count:-?} tests)"

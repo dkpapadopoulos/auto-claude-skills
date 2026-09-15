@@ -183,4 +183,34 @@ assert_equals "composition state is written for a consultation turn" \
     "true" "$([ -f "${_COMP}" ] && echo true || echo false)"
 _cleanup
 
+# --- 5. KNOWN GAP, pinned: cancellation waives the chain checks -----------------
+# Not introduced by the consultation guard -- measured identical on the tree that
+# predates it. Recorded here because it is the SAME mechanism the guard's bypass used:
+# no state file means openspec-guard.sh skips its chain block entirely.
+#
+# A bare pure-cancel prompt ("cancel", "stop", "nevermind") deletes the composition
+# state. Measured across all eight combinations of (review evidence, clean verdict,
+# cancelled), it changes the outcome in EXACTLY ONE: with both already present. So it
+# is not "type cancel to skip the gates" -- it downgrades chain-VERIFY to
+# verdict-VERIFY, and this repo holds those to be different things.
+#
+# Pinned rather than fixed: a fix is a decision about cancellation semantics, and the
+# obvious one would false-block a user who genuinely cancelled and genuinely verified.
+# These cells fail if the gap WIDENS -- if cancelling ever helps without that evidence.
+for _ev in "none" "review-only" "verdict-only"; do
+    _new_session
+    case "${_ev}" in
+        none)        rm -f "${HOME}/.claude/.skill-invocation-evidence-${_TOK}" \
+                           "${HOME}/.claude/.skill-project-verified-${_TOK}" ;;
+        review-only) rm -f "${HOME}/.claude/.skill-project-verified-${_TOK}" ;;
+        verdict-only) rm -f "${HOME}/.claude/.skill-invocation-evidence-${_TOK}" ;;
+    esac
+    _turn "let's design and build a new caching layer"
+    _turn "cancel"
+    out="$(_push)"
+    assert_contains "cancel does NOT waive the gate without full evidence (${_ev})" \
+        '"deny"' "${out:-<empty>}"
+    _cleanup
+done
+
 print_summary

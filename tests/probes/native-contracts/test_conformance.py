@@ -243,6 +243,39 @@ class ExitCodeTest(unittest.TestCase):
         self.assertNotEqual(conformance.exit_code([{"case": "x"}]), 0)
 
 
+class StreamCorruptionTest(unittest.TestCase):
+    """An undecodable line must make the run UNSCORED, not quietly shorter.
+
+    The parser skipped undecodable lines silently. Measured on the corrupt fixture
+    before the fix: `expected absent: panel` disappeared and the case reported
+    satisfied, exit 0 -- a violation became a clean pass because the event carrying the
+    violation stopped existing.
+    """
+
+    def test_corruption_is_counted(self):
+        self.assertGreater(parse("stream-corrupt.jsonl")["decode_failures"], 0)
+
+    def test_intact_fixture_has_no_corruption(self):
+        """Control: the counter must not fire on a healthy stream."""
+        self.assertEqual(parse("succeeded-and-refused.jsonl")["decode_failures"], 0)
+
+    def test_corrupt_stream_is_unscored(self):
+        result = verdict({"expect_absent": ["panel"]}, "stream-corrupt.jsonl")
+        self.assertEqual(result["disposition"], "unscored_stream_corrupt")
+
+    def test_corrupt_stream_is_never_satisfied(self):
+        """The defect: the intact stream VIOLATES this expectation. The corrupt one
+        must not report satisfied just because the offending event vanished."""
+        intact = verdict({"expect_absent": ["panel"]}, "succeeded-and-refused.jsonl")
+        corrupt = verdict({"expect_absent": ["panel"]}, "stream-corrupt.jsonl")
+        self.assertFalse(intact["satisfied"])
+        self.assertFalse(corrupt["satisfied"])
+
+    def test_corrupt_stream_exits_non_zero(self):
+        self.assertNotEqual(conformance.exit_code(
+            [{"satisfied": False, "disposition": "unscored_stream_corrupt"}]), 0)
+
+
 class ProgressLineTest(unittest.TestCase):
     """The progress line printed per case must name keys the record actually has.
 
@@ -272,6 +305,18 @@ class ProgressLineTest(unittest.TestCase):
 
 class FixtureProvenanceTest(unittest.TestCase):
     """The fixtures are the durable copy of untracked source traces."""
+
+    def test_fixture_count_has_a_floor(self):
+        """A glob with no floor passes with zero iterations. Emptying or renaming the
+        fixtures directory would make the three tests below vacuous, and the module's
+        first rule -- every fixture derives from a retained real trace -- would then be
+        enforced by nothing. The count is also cross-checked against PROVENANCE.md, so
+        the two authorities must agree."""
+        fixtures = sorted(FIXTURES.glob("*.jsonl"))
+        self.assertGreaterEqual(len(fixtures), 7)
+        recorded = (FIXTURES / "PROVENANCE.md").read_text()
+        for fixture in fixtures:
+            self.assertIn(fixture.name, recorded)
 
     def test_every_fixture_is_recorded_in_provenance(self):
         recorded = (FIXTURES / "PROVENANCE.md").read_text()

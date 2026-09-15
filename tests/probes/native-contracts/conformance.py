@@ -63,12 +63,20 @@ def sha256_file(path):
 def parse_stream(path):
     """Positive classification from the retained stream."""
     events = []
+    decode_failures = 0
     for line in path.read_text().splitlines():
         if line.strip():
             try:
                 events.append(json.loads(line))
             except json.JSONDecodeError:
-                pass
+                # Counted, never ignored. Silently dropping an undecodable line makes a
+                # truncated stream look like a shorter clean one: measured, truncating
+                # ONE line of a real fixture (the assistant event carrying the `panel`
+                # tool_use) turned `satisfied: False, violations: [expected absent:
+                # panel]` into `satisfied: True` with exit 0. The disposition machinery
+                # exists to stop truncated runs being pooled as clean, and it was blind
+                # to the one failure mode that actually eats events.
+                decode_failures += 1
     skills, tools, denials, models = [], [], [], set()
     pending, results = {}, {}
     init = None
@@ -122,6 +130,7 @@ def parse_stream(path):
     result = [e for e in events if e.get("type") == "result"]
     return {
         "events": len(events),
+        "decode_failures": decode_failures,
         "init_model": (init or {}).get("model"),
         "assistant_models": sorted(models),
         "skills_attempted": skills,
@@ -152,7 +161,9 @@ def judge(case, parsed):
     # conformant runs scores whatever landed before the provider cut the run off;
     # the r4 trace carries subtype "success" with is_error true and a session
     # limit, so subtype alone is not enough to tell.
-    if parsed["is_error"] or parsed["result_subtype"] != "success":
+    if parsed.get("decode_failures"):
+        disposition = "unscored_stream_corrupt"
+    elif parsed["is_error"] or parsed["result_subtype"] != "success":
         disposition = "unscored_provider_error"
     elif parsed["duplicate_skill_calls"]:
         disposition = "inconclusive_duplicate_calls"
