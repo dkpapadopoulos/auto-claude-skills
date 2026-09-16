@@ -117,6 +117,24 @@
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/serena-observer.sh"
           }
         ]
+      },
+      {
+        "matcher": "^(Task|Agent)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/outbound-consent-hook.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/outbound-consent-hook.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [

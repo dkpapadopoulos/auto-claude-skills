@@ -27,6 +27,13 @@ Append verbatim to the prompt:
 
 Cross-family dispatch sends content off this machine. Before dispatching, state the destination provider (e.g. Codex / OpenAI) and show what will be sent — the prompt, any expanded skill bodies, and nothing else (least-data: never whole-session context). Run secret detection (gitleaks) over the outbound payload when available; announce when it is not available. **Require an explicit, affirmative go-ahead before dispatching. Being routed here is NOT consent.** Routing can fire on a prompt that never asked for a panel; treating the invocation as the go-ahead makes a routing false positive indistinguishable from a user request, which is the one failure that sends content off the machine by accident. Ask, and wait for an answer — even when the user named a model, where the cost is one cheap confirmation. If the payload grew beyond what they approved, ask again.
 
+**Record the answer** once they approve, in the same turn, before dispatching:
+`bash "${CLAUDE_PLUGIN_ROOT}/scripts/record-outbound-consent.sh" <skill-name>`
+A PreToolUse observer (`hooks/outbound-consent-hook.sh`) reports any cross-family
+dispatch with no consent on record. It is ADVISORY — it cannot stop a send, so it
+measures this gate rather than enforcing it. Skipping the record does not make the
+dispatch legitimate; it makes it an unconsented send that shows up as one.
+
 ## Step 4: Resolve the Roster
 
 Default: the strongest available Claude model + Codex (via the codex plugin's `codex-rescue` subagent). Availability is probed at dispatch, never assumed from cached or inherited beliefs.

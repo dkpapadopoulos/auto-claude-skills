@@ -61,6 +61,13 @@ from a user request, which is the one failure that sends content off the machine
 accident. Ask, and wait for an answer — even when the user named a model, where the cost
 is one cheap confirmation. If the payload grew beyond what they approved, ask again.
 
+**Record the answer** once they approve, in the same turn, before dispatching:
+`bash "${CLAUDE_PLUGIN_ROOT}/scripts/record-outbound-consent.sh" <skill-name>`
+A PreToolUse observer (`hooks/outbound-consent-hook.sh`) reports any cross-family
+dispatch with no consent on record. It is ADVISORY — it cannot stop a send, so it
+measures this gate rather than enforcing it. Skipping the record does not make the
+dispatch legitimate; it makes it an unconsented send that shows up as one.
+
 State the MODE in the preview. It is the user's only chance to catch the expensive
 mistake — a payload that includes your prior answer when they asked for an independent
 read.
