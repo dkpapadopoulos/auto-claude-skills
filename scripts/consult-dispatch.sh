@@ -84,8 +84,8 @@ frozen package: ${_pkg}
 
 Now ask the user with AskUserQuestion — exactly ONE question, single-select:
   question: "<one line: what is sent, to whom> [egress-consent:${_d}]"
-  option 1: label "${EGRESS_APPROVE_LABEL}"  preview: the COMPLETE package text, verbatim
-  option 2: label "${EGRESS_DECLINE_LABEL}"   (no preview)
+  option 1: label "${EGRESS_DECLINE_LABEL}"   (no preview) — FIRST, so the default declines
+  option 2: label "${EGRESS_APPROVE_LABEL}"  preview: the COMPLETE package text, verbatim
 The marker goes in the question text only. Never pre-fill answers or annotations.
 The preview must be the whole package; say in the question that Codex runs read-only
 but its sandbox can still read other files on this machine.

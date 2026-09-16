@@ -77,6 +77,8 @@ def marked: (.question | strs) | contains("[egress-consent:");
          | any(contains("[egress-consent:"))) then "marker-in-option"
    elif ([(($m[0].options | arrays)[]? | objects | select(.label == $L))] | length) != 1
      then "approve-label-count"
+   elif ((($m[0].options | arrays)[0] | objects | .label) // "") == $L
+     then "approve-option-first"
    elif ([(($m[0].options | arrays)[]? | objects | select(.label == $L))][0].preview | strs) == ""
      then "approve-preview-missing"
    elif ([(($m[0].options | arrays)[]? | objects | select(.label == $L))][0].preview | strs | explode | any(. == 0))
@@ -110,7 +112,7 @@ if [ "${_SUBAGENT}" = "1" ]; then
     exit 0
 fi
 if [ "${_VERDICT}" != "ok" ]; then
-    _deny "${_VERDICT} — a consent question needs exactly one question carrying one [egress-consent:<digest>] marker in its text, single-select, unique question texts, exactly one \"${EGRESS_APPROVE_LABEL}\" option whose preview is the complete package, and no marker anywhere else."
+    _deny "${_VERDICT} — a consent question needs exactly one question carrying one [egress-consent:<digest>] marker in its text, single-select, unique question texts, \"${EGRESS_DECLINE_LABEL}\" as the FIRST (default) option so a reflexive Enter never approves, exactly one \"${EGRESS_APPROVE_LABEL}\" option whose preview is the complete package, and no marker anywhere else."
     exit 0
 fi
 

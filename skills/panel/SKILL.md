@@ -39,9 +39,10 @@ the machine by accident.
    it freezes the package and prints its digest and the exact question to ask.
 3. Ask with `AskUserQuestion`, exactly as `prepare` prints: ONE single-select question
    whose text names the destination provider (Codex / OpenAI) and ends with
-   `[egress-consent:<digest>]`; an option labelled `Approve and send` whose preview is the
-   complete package, verbatim — this is how the user sees what will be sent; and an
-   option labelled `Do not send`. Say in the question that Codex runs read-only but its
+   `[egress-consent:<digest>]`; FIRST an option labelled `Do not send` (the default, so a
+   reflexive Enter declines); then an option labelled `Approve and send` whose
+   preview is the complete package, verbatim — this is how the user sees
+   what will be sent. Say in the question that Codex runs read-only but its
    sandbox can still read other files on this machine. Never pre-fill answers or
    annotations: a hook denies a consent question that arrives pre-answered, and only the
    user's own answer produces an approval. Ask even when the user named a model — the

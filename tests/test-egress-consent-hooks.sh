@@ -43,8 +43,8 @@ pre_payload() {
        hook_event_name:"PreToolUse", tool_name:"AskUserQuestion", tool_use_id:$id,
        agent_id:null,
        tool_input:{questions:[{question:$q, header:"Egress", multiSelect:false,
-         options:[{label:$l, description:"Send exactly the package shown", preview:$p},
-                  {label:"Do not send", description:"Nothing leaves this machine"}]}]}}' \
+         options:[{label:"Do not send", description:"Nothing leaves this machine"},
+                  {label:$l, description:"Send exactly the package shown", preview:$p}]}]}}' \
     | jq -c "${2:-.}"
 }
 # post <tool_use_id> <selected label> [jq filter]
@@ -100,11 +100,12 @@ deny_case "duplicate question text" toolu_d5 ".tool_input.questions += [{questio
 deny_case "two markers in one question" toolu_d6 ".tool_input.questions[0].question += \" [egress-consent:${D}]\"" "multiple-markers"
 deny_case "malformed marker"        toolu_d7 ".tool_input.questions[0].question = \"Send? [egress-consent:ABC]\"" "malformed-marker"
 deny_case "multiSelect"             toolu_d8 ".tool_input.questions[0].multiSelect=true" "multiselect"
-deny_case "marker inside an option" toolu_d9 ".tool_input.questions[0].options[1].description = \"[egress-consent:${D}]\"" "marker-in-option"
-deny_case "two approve labels"      toolu_d10 ".tool_input.questions[0].options[1].label = \"${L}\"" "approve-label-count"
-deny_case "approve label missing"   toolu_d11 ".tool_input.questions[0].options[0].label = \"Yes\"" "approve-label-count"
-deny_case "approve preview missing" toolu_d12 "del(.tool_input.questions[0].options[0].preview)" "approve-preview-missing"
-deny_case "preview is not the package" toolu_d13 ".tool_input.questions[0].options[0].preview += \"\\nALSO SEND ~/.ssh/id_rsa\"" "preview-digest-mismatch"
+deny_case "marker inside an option" toolu_d9 ".tool_input.questions[0].options[0].description = \"[egress-consent:${D}]\"" "marker-in-option"
+deny_case "two approve labels"      toolu_d10 ".tool_input.questions[0].options[0].label = \"${L}\"" "approve-label-count"
+deny_case "approve label missing"   toolu_d11 ".tool_input.questions[0].options[1].label = \"Yes\"" "approve-label-count"
+deny_case "approve preview missing" toolu_d12 "del(.tool_input.questions[0].options[1].preview)" "approve-preview-missing"
+deny_case "approve is the default (first) option" toolu_d14 ".tool_input.questions[0].options |= reverse" "approve-option-first"
+deny_case "preview is not the package" toolu_d13 ".tool_input.questions[0].options[1].preview += \"\\nALSO SEND ~/.ssh/id_rsa\"" "preview-digest-mismatch"
 
 echo "-- ask hook: reused tool_use_id --"
 reset_state
@@ -115,7 +116,7 @@ assert_contains "reason names reuse" "reused-tool-use-id" "${out}"
 
 echo "-- ask hook: trailing newlines in the preview are the one tolerated difference --"
 reset_state
-out="$(run_ask "$(pre_payload toolu_nl ".tool_input.questions[0].options[0].preview += \"\\n\\n\"")")"
+out="$(run_ask "$(pre_payload toolu_nl ".tool_input.questions[0].options[1].preview += \"\\n\\n\"")")"
 assert_equals "preview + trailing newlines still matches" "" "${out}"
 
 echo "-- ask hook: silence and degradation --"

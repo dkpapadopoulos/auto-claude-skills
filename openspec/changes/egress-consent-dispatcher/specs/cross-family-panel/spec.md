@@ -15,7 +15,8 @@ as a clean ask at PreToolUse and has not been consumed; the answer for that ques
 exactly `Approve and send`; and the harness-returned preview annotation for that question
 exists and hashes to the digest. A marked question MUST be denied at PreToolUse when its
 input contains an `answers` or `annotations` key, when it comes from a subagent, when its `tool_use_id` was
-already recorded, or when it violates the consent-question schema. Receipt files are
+already recorded, when its first (default) option is the approve label, or when it
+violates the consent-question schema. Receipt files are
 agent-writable, so these rules defend against a skipped ask, not a deliberate forgery.
 Session identity MUST be resolved without the shared singleton on both sides. When the
 dispatcher cannot verify consent it MUST refuse and MUST say that verification could not

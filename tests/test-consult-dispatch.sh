@@ -74,8 +74,8 @@ approve() {
         '{transcript_path:$tp, tool_use_id:$id, agent_id:null, hook_event_name:"PreToolUse",
           tool_name:"AskUserQuestion",
           tool_input:{questions:[{question:$q, header:"Egress", multiSelect:false,
-            options:[{label:"Approve and send", description:"send", preview:$p},
-                     {label:"Do not send", description:"keep"}]}]}}')"
+            options:[{label:"Do not send", description:"keep"},
+                     {label:"Approve and send", description:"send", preview:$p}]}]}}')"
     hook "${ASK_HOOK}" "${_pre}"
     [ "${_label}" = "Approve and send" ] && _ann="$(jq -nc --arg q "${_q}" --arg p "$2" '{($q):{preview:$p}}')"
     _post="$(printf '%s' "${_pre}" | jq -c --arg q "${_q}" --arg l "${_label}" --argjson a "${_ann}" \

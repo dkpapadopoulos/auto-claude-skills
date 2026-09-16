@@ -11,8 +11,8 @@ panel / second-opinion (model turn)
   3. AskUserQuestion  (strict schema — anything else is not a consent question)
         exactly ONE question carries [egress-consent:<digest>], in its question text only
         multiSelect false; question texts unique within the call
+        FIRST option "Do not send" — the highlighted default, so a reflexive Enter declines
         exactly one option labelled "Approve and send"; its preview = the package text
-        a "Do not send" option (any preview on it never qualifies)
      PreToolUse  hooks/egress-consent-ask-hook.sh
         marker present AND tool_input has `answers` or `annotations` -> DENY (pre-answered)
         marker present AND agent_id non-null                    -> DENY (subagent cannot ask)
@@ -63,6 +63,15 @@ truncates or collapses a long preview still returns the full value, and the hash
 passes. The guarantee is therefore **"the user approved the supplied preview, which is
 byte-identical to what is sent, modulo trailing newlines"**, not "the user read every byte". The question text tells
 the user the preview is the complete package; very large packages are a residual risk.
+
+### Decline is the default option
+
+Found in the live run (2026-09-16): two dialogs whose question text asked the user to pick
+"Do not send" came back "Approve and send", with the approve option listed first. Whether
+that was a deliberate choice or Enter on the highlighted default is not observable from the
+payload (`duration_ms` is 0, no auto-continue timeout is configured). Either way, egress
+must not be the default: the ask hook denies a consent question whose FIRST option is the
+approve label (`approve-option-first`), and `prepare` prints the decline option first.
 
 ### Pre-filled `annotations` and the `Other` answer
 
