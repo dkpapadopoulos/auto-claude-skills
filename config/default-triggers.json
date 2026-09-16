@@ -453,7 +453,7 @@
       "phase": "PLAN",
       "triggers": [
         "(panel of models|model panel|cross.?model (review|opinion|perspective|pass|panel))",
-        "(^|[^a-z])(ask|consult|poll|get|run) [^.!?;:]{0,20}(codex|gemini|gpt-?[0-9]|o3|chatgpt)[^.!?;:]{0,30}(^|[^a-z])(and|,) *[^.!?;:]{0,20}(codex|gemini|gpt-?[0-9]|o3|chatgpt)",
+        "(^|[^a-z])(ask|consult|poll|get|run|put|paste|send|take|give|hand|show) [^.!?;:]{0,20}(codex|gemini|gpt-?[0-9]|o3|chatgpt)[^.!?;:]{0,30}(^|[^a-z])(and|,) *[^.!?;:]{0,20}(codex|gemini|gpt-?[0-9]|o3|chatgpt)",
         "(^|[^a-z])standalone panel($|[^a-z])[^.!?;:]{0,60}(^|[^a-z])(model|llm|codex|gemini|gpt-?[0-9]|o3|chatgpt)s?($|[^a-z])|(^|[^a-z])(model|llm|codex|gemini|gpt-?[0-9]|o3|chatgpt)s?($|[^a-z])[^.!?;:]{0,60}(^|[^a-z])standalone panel($|[^a-z])",
         "(^|[^a-z])(answer|response|take|opinion)s?($|[^a-z])[^.!?;:]{0,60}(unmerged|side.?by.?side|verbatim)($|[^a-z])[^.!?;:]{0,60}(^|[^a-z])(model|llm|codex|gemini|gpt-?[0-9]|o3|chatgpt)s?($|[^a-z])|(^|[^a-z])(model|llm|codex|gemini|gpt-?[0-9]|o3|chatgpt)s?($|[^a-z])[^.!?;:]{0,80}(^|[^a-z])(answer|response|take|opinion)s?($|[^a-z])[^.!?;:]{0,60}(unmerged|side.?by.?side|verbatim)($|[^a-z])",
         "(^|[^a-z])(answer|response|take|opinion)s?($|[^a-z])[^.!?;:]{0,60}(^|[^a-z])(model|llm|codex|gemini|gpt-?[0-9]|o3|chatgpt)s?($|[^a-z])[^.!?;:]{0,60}(unmerged|side.?by.?side|verbatim)($|[^a-z])",

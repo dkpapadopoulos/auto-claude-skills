@@ -82,3 +82,12 @@ NO_MATCH: create a standalone panel showing candidate responses
 NO_MATCH: write a classroom exercise where pupils argue both sides of the motion
 NO_MATCH: summarize how the attorneys rebut each other in this transcript
 NO_MATCH: animate a back and forth between two agents in the evacuation simulation
+
+# TWO NAMED VENDORS => panel, WHATEVER THE VERB (round-5 finding, and a regression I
+# introduced). second-opinion gained "put|paste|send|take|give|hand" for its own recall
+# fix; panel's two-vendor clause still listed only ask|consult|poll|get|run, so
+# "put this to codex and gemini separately" routed to the ONE-model skill. That is a
+# contract violation, not a miss: the user asked for several models and would have got
+# one. The verb sets are now aligned. Naming two participants is the signal; the verb is not.
+MATCH: put this to codex and gemini separately and show me what each one says
+MATCH: paste this question to codex and gemini and show both answers
