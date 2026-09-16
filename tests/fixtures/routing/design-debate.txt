@@ -15,3 +15,11 @@ NO_MATCH: was the npm package compromised in the latest attack
 MATCH: weigh these two options and tell me which is better
 MATCH: help me weigh up the different approaches
 NO_MATCH: ask codex to weigh in on this approach
+# The determiner list was incomplete AND irregular: a bare `a` branch admitted any
+# a-word by prefix, so "weigh another approach" matched accidentally rather than by
+# design, while "weigh my options" missed. Each determiner is now a whole word.
+MATCH: weigh my options
+MATCH: weigh those options
+MATCH: weigh possible approaches
+MATCH: weigh pros and cons of this approach
+

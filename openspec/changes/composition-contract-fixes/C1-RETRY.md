@@ -120,3 +120,19 @@ They cannot support an *acceptance* claim about paraphrases nobody has seen.
 So: a retry can be validated deterministically against the fixtures, and MUST NOT be
 reported as accepted against held-out paraphrases without a round-3 set authored by
 someone who has not seen the predicate.
+
+### Round 3 is BLOCKED, not skipped
+
+Attempted 2026-09-16 and not obtained: the subagent pool hit an account session limit
+(resets 04:10 Europe/Zurich). Codex cannot substitute as the author — it has now been
+shown the full trigger text across four review rounds, so anything it writes is fitted to
+the patterns by construction, which is exactly the contamination the authoring rule
+exists to prevent.
+
+To unblock: dispatch a fresh agent given ONLY the six contract descriptions, explicitly
+barred from reading `config/`, `hooks/`, and both existing prompt sets, and verify it
+recorded **zero tool uses** before trusting the result. Then freeze it in a commit before
+measuring, spend it once, and report the number whatever it says.
+
+Until that exists, the honest claim for this work is "validated deterministically against
+fixtures and the frozen baseline" — NOT "accepted".

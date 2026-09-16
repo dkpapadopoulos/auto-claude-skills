@@ -410,7 +410,7 @@
       "role": "domain",
       "phase": "DESIGN",
       "triggers": [
-        "(trade.?off|debate|compare.*(option|approach|design)|weigh +(the|up|these|our|both|two|a|few|different|several|all|each|which|relative|competing|3|4|5)[^.!?]{0,40}(option|approach|alternative|tradeoff)|weigh +(option|approach|alternative|tradeoff)|pro.?con|alternative|architecture)"
+        "(trade.?off|debate|compare.*(option|approach|design)|weigh +(the|up|these|those|this|our|your|my|their|its|both|two|three|four|five|six|a|an|another|each|which|what|whether|few|several|all|possible|competing|relative|different|any|[0-9]+) +[^.!?;:]{0,40}(option|approach|alternative|tradeoff)|weigh +(option|approach|alternative|tradeoff)|pros? and cons?|pro.?con|alternative|architecture)"
       ],
       "keywords": [],
       "trigger_mode": "regex",
@@ -426,12 +426,12 @@
       "phase": "PLAN",
       "triggers": [
         "(^|[^a-z])(ask|consult) +(the +)?(codex|gemini|gpt-?[0-9]|o3|chatgpt)($|[^a-z])",
-        "(^|[^a-z])(run (this|it) +(by|past)|check with) +(the +)?(codex|gemini|gpt-?[0-9]|o3|chatgpt)($|[^a-z])|(^|[^a-z])(send|hand) +(this|it) +to +(the +)?(codex|gemini|gpt-?[0-9]|o3|chatgpt)[^.!?]{0,30}(^|[^a-z])(second opinion|opinion|perspective|critique|assessment|second look|weigh in|sanity.?check|double.?check|poke holes|red.?team|tear apart|think|independent read|set of eyes)($|[^a-z])",
-        "(another|a second|a different|an independent|an outside|an external|one other|a separate|the other) +(model|llm)($|[^a-z])[^.!?]{0,40}(^|[^a-z])(second opinion|opinion|perspective|critique|assessment|second look|weigh in|sanity.?check|double.?check|poke holes|red.?team|tear apart|think|independent read|set of eyes)($|[^a-z])|(^|[^a-z])(second opinion|opinion|perspective|critique|assessment|second look|weigh in|sanity.?check|double.?check|poke holes|red.?team|tear apart|think|independent read|set of eyes)($|[^a-z])[^.!?]{0,40}(another|a second|a different|an independent|an outside|an external|one other|a separate|the other) +(model|llm)($|[^a-z])",
-        "(second|2nd) opinion[^.!?]{0,40}((codex|gemini|gpt-?[0-9]|o3|chatgpt)|(another|a second|a different|an independent|an outside|an external|one other|a separate|the other) +(model|llm))",
-        "(^|[^a-z])(have|ask|get|tell) +((codex|gemini|gpt-?[0-9]|o3|chatgpt)|(another|a second|a different|an independent|an outside|an external|one other|a separate|the other) +(model|llm))[^.!?]{0,20}(critique|review|check|look at|weigh in|think|grade)",
-        "(^|[^a-z])(codex|gemini|gpt-?[0-9]|o3|chatgpt)[^.!?]{0,30}(^|[^a-z])(second opinion|opinion|perspective|critique|assessment|second look|weigh in|sanity.?check|double.?check|poke holes|red.?team|tear apart|think|independent read|set of eyes)($|[^a-z])",
-        "(^|[^a-z])(second opinion|opinion|perspective|critique|assessment|second look|weigh in|sanity.?check|double.?check|poke holes|red.?team|tear apart|think|independent read|set of eyes)($|[^a-z])[^.!?]{0,20}(from|by) +(the +)?(codex|gemini|gpt-?[0-9]|o3|chatgpt)($|[^a-z])"
+        "(^|[^a-z])(run (this|it) +(by|past)|check with) +(the +)?(codex|gemini|gpt-?[0-9]|o3|chatgpt)($|[^a-z])|(^|[^a-z])(send|hand) +(this|it) +to +(the +)?(codex|gemini|gpt-?[0-9]|o3|chatgpt)[^.!?;:]{0,30}(^|[^a-z])(second opinion|opinion|perspective|critique|assessment|second look|weigh in|sanity.?check|double.?check|poke holes|red.?team|tear apart|think|independent read|set of eyes)($|[^a-z])",
+        "(another|a second|a different|an independent|an outside|an external|one other|a separate|the other) +(model|llm)($|[^a-z])[^.!?;:]{0,40}(^|[^a-z])(second opinion|opinion|perspective|critique|assessment|second look|weigh in|sanity.?check|double.?check|poke holes|red.?team|tear apart|think|independent read|set of eyes)($|[^a-z])|(^|[^a-z])(second opinion|opinion|perspective|critique|assessment|second look|weigh in|sanity.?check|double.?check|poke holes|red.?team|tear apart|think|independent read|set of eyes)($|[^a-z])[^.!?;:]{0,40}(another|a second|a different|an independent|an outside|an external|one other|a separate|the other) +(model|llm)($|[^a-z])",
+        "(second|2nd) opinion[^.!?;:]{0,40}((codex|gemini|gpt-?[0-9]|o3|chatgpt)|(another|a second|a different|an independent|an outside|an external|one other|a separate|the other) +(model|llm))",
+        "(^|[^a-z])(have|ask|get|tell) +((codex|gemini|gpt-?[0-9]|o3|chatgpt)|(another|a second|a different|an independent|an outside|an external|one other|a separate|the other) +(model|llm))[^.!?;:]{0,20}(critique|review|check|look at|weigh in|think|grade)",
+        "(^|[^a-z])(codex|gemini|gpt-?[0-9]|o3|chatgpt)[^.!?;:]{0,30}(^|[^a-z])(second opinion|opinion|perspective|critique|assessment|second look|weigh in|sanity.?check|double.?check|poke holes|red.?team|tear apart|think|independent read|set of eyes)($|[^a-z])",
+        "(^|[^a-z])(second opinion|opinion|perspective|critique|assessment|second look|weigh in|sanity.?check|double.?check|poke holes|red.?team|tear apart|think|independent read|set of eyes)($|[^a-z])[^.!?;:]{0,20}(from|by) +(the +)?(codex|gemini|gpt-?[0-9]|o3|chatgpt)($|[^a-z])"
       ],
       "keywords": [],
       "trigger_mode": "regex",
@@ -447,7 +447,7 @@
       "phase": "PLAN",
       "triggers": [
         "(panel of models|model panel|cross.?model (review|opinion|perspective|pass|panel))",
-        "(^|[^a-z])(ask|consult|poll|get|run) [^.!?]{0,20}(codex|gemini|gpt-?[0-9]|o3|chatgpt)[^.!?]{0,30}(^|[^a-z])(and|,) *[^.!?]{0,20}(codex|gemini|gpt-?[0-9]|o3|chatgpt)"
+        "(^|[^a-z])(ask|consult|poll|get|run) [^.!?;:]{0,20}(codex|gemini|gpt-?[0-9]|o3|chatgpt)[^.!?;:]{0,30}(^|[^a-z])(and|,) *[^.!?;:]{0,20}(codex|gemini|gpt-?[0-9]|o3|chatgpt)"
       ],
       "keywords": [],
       "trigger_mode": "regex",

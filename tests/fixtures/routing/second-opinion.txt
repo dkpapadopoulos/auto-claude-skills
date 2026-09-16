@@ -71,3 +71,10 @@ NO_MATCH: we need to get codex installed on this machine
 NO_MATCH: get a second opinion from the reviewer before merging
 NO_MATCH: please review my opinion on the caching strategy
 NO_MATCH: add an independent perspectives section to the report
+# Gap expressions stop at ; and : as well as . ! ? -- otherwise they bridge separate
+# statements into an apparent consultation. NOTE: the class is [^.!?;:] and must NOT
+# gain a \n escape: a bash ERE bracket expression does not interpret it, so [^.!?;:\n]
+# excludes the LETTER n and no gap can span a word like "conclusion".
+NO_MATCH: we swapped in a different model; unrelated: send the critique to the team
+MATCH: double-check my conclusion with a second model
+
