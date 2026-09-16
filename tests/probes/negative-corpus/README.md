@@ -29,4 +29,5 @@ line is a new false dispatch until proven otherwise; a vanished line is lost rec
 Known limit: the registry is built in a synthetic HOME, so plugin-discovered skills that
 could outscore a consultation skill are absent (see memory note "routing A/B needs
 available skills"). Grow the corpus by adding prompts from real false dispatches; never
-delete lines — deprecate them in a comment block with a date and reason instead.
+delete lines (`scan.sh` reads every line as a prompt, so there is no comment syntax;
+record a retired prompt's reason in this README instead).
