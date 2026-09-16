@@ -4,7 +4,7 @@
 #
 # WHY THIS EXISTS: panel and second-opinion must send through consult-dispatch.sh, which
 # REFUSES without the user's approval of the exact package (see
-# openspec/changes/egress-consent-dispatcher). Everything else that reaches a vendor —
+# openspec/changes/archive/2026-09-17-egress-consent-dispatcher). Everything else that reaches a vendor —
 # /codex:rescue, a direct `codex exec`, a proactive codex-rescue subagent, or a skill that
 # skipped the dispatcher — is not consent-gated. This hook makes that traffic visible and
 # writes a text-free record of it, so any future deny on bypasses is earned from data

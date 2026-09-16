@@ -20,7 +20,7 @@
 # Receipt files live in ~/.claude and are agent-writable: this defends against a model
 # that SKIPS the ask, not one that forges a file (see the design's threat model).
 # No `trap 'exit 0' ERR` on purpose: every failure path below is explicit.
-# Design: openspec/changes/egress-consent-dispatcher/design.md
+# Design: openspec/changes/archive/2026-09-17-egress-consent-dispatcher/design.md
 
 _json_escape() {
     printf '%s' "$1" | LC_ALL=C tr -d '\000-\037' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'

@@ -13,7 +13,7 @@
 # Background-task notifications (also delivered as UserPromptSubmit) are ignored.
 # Runs on every prompt, so the common case (no approvals at all) exits before any fork.
 # Fails open and announces only when approvals exist and cannot be withdrawn.
-# Design: openspec/changes/egress-consent-dispatcher/design.md
+# Design: openspec/changes/archive/2026-09-17-egress-consent-dispatcher/design.md
 
 _any=false
 for _f in "${HOME}"/.claude/.skill-egress-receipt-*; do

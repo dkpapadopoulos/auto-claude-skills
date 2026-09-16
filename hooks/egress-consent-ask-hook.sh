@@ -19,7 +19,7 @@
 # silent, and states truthfully whether earlier approvals were withdrawn.
 #
 # No `trap 'exit 0' ERR` on purpose: every failure path below is explicit.
-# Design: openspec/changes/egress-consent-dispatcher/design.md
+# Design: openspec/changes/archive/2026-09-17-egress-consent-dispatcher/design.md
 
 # JSON-safe: C0 controls (incl. TAB/CR/LF) are dropped, backslash before quote.
 _json_escape() {

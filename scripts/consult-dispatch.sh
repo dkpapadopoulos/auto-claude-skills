@@ -20,7 +20,7 @@
 # one that changes what runs, or skips the scan, would itself be a bypass.
 #
 # Receipts are agent-writable files: this stops a model that SKIPS the ask, not one that
-# forges a receipt. Design: openspec/changes/egress-consent-dispatcher/design.md
+# forges a receipt. Design: openspec/changes/archive/2026-09-17-egress-consent-dispatcher/design.md
 # The model's shell is zsh on macOS; this script is bash-only (unmatched globs are fatal in
 # zsh). Re-exec rather than misbehave when someone runs `zsh consult-dispatch.sh`.
 if [ -z "${BASH_VERSION:-}" ]; then

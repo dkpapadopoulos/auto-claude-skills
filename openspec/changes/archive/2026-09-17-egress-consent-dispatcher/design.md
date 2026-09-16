@@ -330,3 +330,33 @@ See `specs/cross-family-panel/spec.md`.
 ## Capabilities Affected
 
 - `cross-family-panel`
+
+## Implementation Notes (synced at ship time)
+
+- Built as designed at the architecture level (sender-owned enforcement, receipts from the
+  user's AskUserQuestion answer). Deviations, all driven by measurement or review:
+  - A third hook, `hooks/egress-consent-turn-hook.sh` (UserPromptSubmit), was added so an
+    approval lives only within its turn; it ignores prompts made entirely of
+    `<task-notification>` blocks (measured: that is how background-task notifications
+    arrive).
+  - "Latest answer wins" grew from a same-digest revoke into: ask-time withdrawal,
+    decline-revokes-all, append-only per-digest veto files holding the ms a decline was
+    ANSWERED, receipts carrying `ask_ms`, and veto re-checks after the dispatcher claims
+    and after the receipt hook publishes.
+  - "Do not send" must be the first (default) option; an approve-first question is denied
+    (found live: two dialogs that asked for a decline came back approved).
+  - `codex exec` runs with `--ignore-user-config --disable hooks/plugins/memories/apps`
+    (measured: 18 user hooks + MCP servers otherwise load from an empty directory).
+  - The dispatcher copies the frozen package once and verifies, scans and sends only that
+    copy; gitleaks runs from the isolated dir with its config/ignore/allow escapes removed.
+  - The hidden-character check covers C0 (except TAB/LF), DEL, C1 and bidi controls.
+  - `hooks/outbound-consent-hook.sh` was shipped 100644 in #253 and never ran; fixed, and
+    `tests/test-hook-file-modes.sh` now guards every script `hooks.json` references.
+  - A #253 test defect (consent pins asserted after `print_summary`) was fixed.
+- Evidence: five review rounds (code, silent-failure, adversarial, two fresh re-reviews)
+  plus a Codex adversarial review, every finding reproduced with a control run; each fix
+  mutation-checked; live end-to-end run (see LIVE-E2E.md) with a successful send and a
+  refused send after a decline; negative routing corpus delta empty; project-verification
+  clean at `0050b05`.
+- Still open: whether a free-text "Other" answer equal to the approve label returns a
+  preview annotation (inconclusive live).

@@ -7,7 +7,7 @@
 # turns every approval into a refusal, and a path that differs turns it into a silent
 # no-op. That is why nothing here may be re-derived at a call site.
 #
-# Design: openspec/changes/egress-consent-dispatcher/design.md
+# Design: openspec/changes/archive/2026-09-17-egress-consent-dispatcher/design.md
 # Bash 3.2 compatible. Defines functions and constants only; sourcing has no side effect.
 
 EGRESS_APPROVE_LABEL="Approve and send"
