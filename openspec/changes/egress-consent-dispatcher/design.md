@@ -28,6 +28,9 @@ panel / second-opinion (model turn)
         AND sha256(that preview) == snapshot.digest == snapshot.approve_preview_sha
         -> write receipt .skill-egress-receipt-<token>.<digest>.<tool_use_id> {digest, ts}
         a repeated Post finds only .used -> writes nothing
+        any OTHER answer (decline, free text) -> rename every unused receipt for this
+            token+digest to .revoked: the latest answer wins (found live 2026-09-16 — an
+            earlier unused approval stayed valid after the user declined the same package)
   4. bash scripts/consult-dispatch.sh send <digest> [--model M]
         local validation first: strict own token, jq, frozen package re-hashes to <digest>,
           gitleaks over the package (exit 3 = findings -> refuse; other non-zero = scanner

@@ -13,7 +13,8 @@ write one only when: exactly one question in the call carried an
 `[egress-consent:<digest>]` marker in its question text; the same `tool_use_id` was recorded
 as a clean ask at PreToolUse and has not been consumed; the answer for that question is
 exactly `Approve and send`; and the harness-returned preview annotation for that question
-exists and hashes to the digest. A marked question MUST be denied at PreToolUse when its
+exists and hashes to the digest. Any other answer to a clean consent ask MUST revoke every
+unused receipt for that digest in the conversation, so the latest answer wins. A marked question MUST be denied at PreToolUse when its
 input contains an `answers` or `annotations` key, when it comes from a subagent, when its `tool_use_id` was
 already recorded, when its first (default) option is the approve label, or when it
 violates the consent-question schema. Receipt files are
@@ -56,3 +57,9 @@ that consent enforcement is off.
 - WHEN `send D` runs with enforcement on
 - THEN nothing is sent, AND the message states consent could not be verified and names the
   missing component, rather than asking the user to approve again
+
+#### Scenario: a later decline revokes an earlier unused approval
+
+- GIVEN the user approved package D and the approval has not been used
+- WHEN the user is asked about D again and chooses `Do not send`
+- THEN the earlier approval is revoked, AND `send D` is refused as not approved

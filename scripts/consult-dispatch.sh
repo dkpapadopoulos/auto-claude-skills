@@ -144,7 +144,7 @@ _send() {
         case "${_now}" in ''|*[!0-9]*) _cannot "clock unavailable, so approval freshness cannot be checked" ;; esac
         for _r in "${HOME}/.claude/.skill-egress-receipt-${_tok}.${_d}."*; do
             [ -f "${_r}" ] || continue
-            case "${_r}" in *.consumed|*.tmp.*) continue ;; esac
+            case "${_r}" in *.consumed|*.revoked|*.tmp.*) continue ;; esac
             _ts="$(jq -r --arg d "${_d}" 'select(type == "object" and .digest == $d) | .ts | numbers | floor' "${_r}" 2>/dev/null)"
             case "${_ts}" in ''|*[!0-9]*) continue ;; esac
             [ $(( _now - _ts )) -le "${EGRESS_RECEIPT_TTL}" ] || continue

@@ -153,6 +153,13 @@ dispatch "${P_FULL}" "${SID}" send "${D}"
 assert_equals "declined -> 4" "4" "${RC}"
 
 reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_yes_first
+approve "${D}" "${PKG}" toolu_then_decline "Do not send"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "approve then decline the same package -> 4 (latest answer wins)" "4" "${RC}"
+assert_equals "approve then decline: codex not invoked" "0" "$(calls)"
+
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
 approve "${D}" "${PKG}" toolu_old
 r="${H}/.claude/.skill-egress-receipt-${TOK}.${D}.toolu_old"
 jq -c '.ts -= 1000' "${r}" > "${r}.x" && mv "${r}.x" "${r}"

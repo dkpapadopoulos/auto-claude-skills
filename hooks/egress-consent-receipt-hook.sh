@@ -107,7 +107,18 @@ _STATE="$(printf '%s' "${_INPUT}" | jq -r --slurpfile s "${_SNAP}" --arg L "${EG
 case "${_STATE}" in
     ok) ;;
     not-approved)
-        _announce "the user did not choose \"${EGRESS_APPROVE_LABEL}\" — not approved; nothing will be sent."
+        # The latest answer wins: an earlier, still-unused approval of the SAME package
+        # must not outlive the user's decline (found live 2026-09-16). Revoked receipts
+        # are renamed, not deleted, so the history stays auditable.
+        _REVOKED=0
+        for _R in "$(egress_receipt_path "${_TOKEN}" "${_DIGEST}" "")"*; do
+            [ -f "${_R}" ] || continue
+            case "${_R}" in *.consumed|*.revoked|*.tmp.*) continue ;; esac
+            mv "${_R}" "${_R}.revoked" 2>/dev/null && _REVOKED=$((_REVOKED + 1))
+        done
+        _MSG="the user did not choose \"${EGRESS_APPROVE_LABEL}\" — not approved; nothing will be sent."
+        [ "${_REVOKED}" -gt 0 ] && _MSG="${_MSG} ${_REVOKED} earlier unused approval(s) of this package were revoked."
+        _announce "${_MSG}"
         exit 0 ;;
     no-annotation)
         _announce "the answer carried no returned preview to verify — ${_NO_RECEIPT}."

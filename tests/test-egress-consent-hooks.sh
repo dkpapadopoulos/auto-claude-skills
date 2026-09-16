@@ -61,7 +61,7 @@ run_ask()  { printf '%s' "$1" | env ${2:+PATH="$2"} HOME="${H}" CLAUDE_PLUGIN_RO
 run_rcpt() { printf '%s' "$1" | env ${2:+PATH="$2"} HOME="${H}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "${RCPT_HOOK}" 2>/dev/null; }
 decision() { printf '%s' "$1" | jq -r '.hookSpecificOutput.permissionDecision // "none"' 2>/dev/null || echo "unparseable"; }
 ask_file()  { printf '%s/.claude/.skill-egress-ask-%s.%s' "${H}" "${TOK}" "$1"; }
-rcpt_count() { find "${H}/.claude" -maxdepth 1 -name ".skill-egress-receipt-${TOK}.${D}.*" ! -name '*.consumed' | wc -l | tr -d ' '; }
+rcpt_count() { find "${H}/.claude" -maxdepth 1 -name ".skill-egress-receipt-${TOK}.${D}.*" ! -name '*.consumed' ! -name '*.revoked' | wc -l | tr -d ' '; }
 reset_state() { rm -f "${H}"/.claude/.skill-egress-* 2>/dev/null; }
 
 # A PATH with every tool the hooks use EXCEPT jq (/usr/bin/jq exists on macOS, so a
@@ -164,6 +164,17 @@ run_ask "$(pre_payload toolu_no)" >/dev/null
 out="$(run_rcpt "$(post_payload toolu_no "Do not send")")"
 assert_equals "declined: no receipt" "0" "$(rcpt_count)"
 assert_contains "declined: says nothing will be sent" "not approved" "${out}"
+
+# Found live 2026-09-16: an earlier, unused approval stayed valid after the user declined
+# the same package. The latest answer must win.
+reset_state
+run_ask "$(pre_payload toolu_first)" >/dev/null; run_rcpt "$(post_payload toolu_first "${L}")" >/dev/null
+run_ask "$(pre_payload toolu_then_no)" >/dev/null
+out="$(run_rcpt "$(post_payload toolu_then_no "Do not send")")"
+assert_equals "a decline revokes an earlier unused approval of the same package" "0" "$(rcpt_count)"
+assert_contains "the revocation is announced" "revoked" "${out}"
+assert_equals "the revoked approval is kept for audit, not deleted" "1" \
+    "$(find "${H}/.claude" -maxdepth 1 -name ".skill-egress-receipt-${TOK}.${D}.toolu_first.revoked" | wc -l | tr -d ' ')"
 
 reset_state
 run_ask "$(pre_payload toolu_other)" >/dev/null
