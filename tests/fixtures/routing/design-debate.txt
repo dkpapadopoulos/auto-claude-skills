@@ -39,3 +39,34 @@ NO_MATCH: run a standalone panel on this question; return independent raw answer
 NO_MATCH: argue for the current design in the pr description
 NO_MATCH: the two services counter each other's backpressure signals
 NO_MATCH: we need to challenge the assumption in the spec
+
+# INFRASTRUCTURE-PROSE DECOYS (added after adversarial review found 11 false dispatches,
+# 8 of them to skills that ship repo content to an external vendor). The first cut of
+# these contract triggers was measured against an INVENTED negative corpus that had no
+# MLOps/agent-infrastructure prose in it at all -- the one domain where "model", "agent",
+# "response", "counter" and "exchange" are ordinary nouns. Every line below MATCHED a
+# shipped trigger and routed outbound. Do not relax the clauses that keep them silent.
+NO_MATCH: log the raw response from each model so we can diff them later
+NO_MATCH: cache the raw response for each agent to avoid a second round trip
+NO_MATCH: we need separate responses for each model in the serving layer
+NO_MATCH: the sync counter drifts between them whenever the agent reconnects
+NO_MATCH: make the agent challenge the certificate chain before connecting
+NO_MATCH: ask the model to counter-sign the payload
+NO_MATCH: the heartbeat exchange between the agents is dropping packets
+NO_MATCH: document the message exchange between our agent and the broker
+NO_MATCH: show each participant's response in an independent panel
+NO_MATCH: render the api response in a standalone panel component
+NO_MATCH: consolidate the separate assessments from qa and security into one report
+NO_MATCH: combine the separate takes on the migration into a single doc
+
+# PER-CLAUSE COVERAGE IS LOAD-BEARING (mutation-verified 2026-09-16).
+# Every trigger clause for this skill is depended on by at least one MATCH line above:
+# blanking any single clause in config/default-triggers.json produces >=1 failing
+# assertion here. Verified by emptying each clause in turn in a scratch copy --
+# design-debate 1-4, panel 2-3, synthesize 0 -- all 7 caught.
+#
+# CORRECTION to the commit message of 342221f, which claimed "fixtures alone would NOT
+# have caught" a silently-empty extracted regex. That is FALSE as written. It was true
+# only in the window before these MATCH lines existed. Keep it true: when you ADD a
+# trigger clause, add a MATCH line that fails without it -- otherwise a neutered clause
+# ships green.
