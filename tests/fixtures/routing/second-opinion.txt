@@ -117,3 +117,13 @@ NO_MATCH: claude's tool_use blocks come back with empty input through our proxy,
 # Possessive and "out of <vendor>" phrasings -- the lists were right, the grammar was not.
 MATCH: want gpt-5's take on server components for the dashboard. give it the requirements only
 MATCH: get a critique out of codex on the code you just wrote - include the whole thing
+
+# CODEX ADVERSARIAL REVIEW, reproduced against the real hook. Four of six were structural
+# and are fixed; these are the regression pins.
+#
+# A vendor token inside an IDENTIFIER or PATH is not a participant. The boundary after the
+# vendor alternation now excludes _ . and - , because a routing repo's prompts are full of
+# filenames and config keys that contain vendor names.
+NO_MATCH: put the fixture into gemini.json
+NO_MATCH: show gemini_thinking_budget in the settings form
+NO_MATCH: put the config into codex_settings.yaml

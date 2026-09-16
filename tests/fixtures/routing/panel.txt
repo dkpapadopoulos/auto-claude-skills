@@ -109,3 +109,9 @@ MATCH: same prompt to gpt-5 and to claude, clean contexts, raw answers labelled 
 NO_MATCH: the review panel on the right collapses whenever the sidebar animates in, and the two columns stop sitting side by side under 1200px
 NO_MATCH: the two cards should sit side by side on desktop and stack on mobile
 NO_MATCH: show the two diffs side by side in the review ui
+
+# VENDOR AS THE SUBJECT DISPLAYED, not a participant consulted. "standalone panel" now
+# requires a SOURCE marker (ask/from/to/by/across/between/poll) before the vendor, so a
+# billing UI that happens to name a vendor no longer routes outbound.
+NO_MATCH: build a standalone panel for gemini billing totals
+NO_MATCH: add a standalone panel for chatgpt usage metrics

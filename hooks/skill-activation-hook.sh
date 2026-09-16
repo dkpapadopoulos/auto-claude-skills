@@ -249,6 +249,10 @@ _score_skills() {
         # collapsible panel on the settings screen" SELECTED panel, which dispatches
         # repository content to another vendor. So these require an invocation marker.
         # The marker may be separated from the name by up to two determiners/adjectives
+        # "the" is DELIBERATELY ABSENT from the determiner list: a definite article names
+        # an EXISTING referent, so "use the panel on the settings page" is a UI instruction,
+        # not an invocation (measured -- it scored the full boost and routed to panel).
+        # Indefinite and demonstrative forms stay.
         # ("run a standalone panel" -- probe case sp-1, whose triggers deliberately no
         # longer fire because it names no model).
         #
@@ -267,7 +271,7 @@ _score_skills() {
         # i.e. a URL path. It enabled "fix the /panel route" and no real slash command.
         _nb_named="(^|[^a-z0-9-])${skill_name_lower}($|[^a-z0-9-])"
         _nb_follow='($|[^a-z0-9-] *($|(on|for|with|to|over|against|about|from|in|at|and|or|then|please|now|instead|again|here|first)($|[^a-z0-9-])))'
-        _nb_marked="((^|[^a-z0-9-])(run|use|invoke|call|skill|using) +((a|an|the|this|that|another|standalone|independent|new|quick|full) +){0,2})${skill_name_lower}${_nb_follow}"
+        _nb_marked="((^|[^a-z0-9-])(run|use|invoke|call|skill|using) +((a|an|another|standalone|independent|new|quick|full) +){0,2})${skill_name_lower}${_nb_follow}"
         if [[ "$P" =~ $_nb_named ]] && [[ "$P" =~ $_nb_marked ]]; then
           name_boost=100
         fi
