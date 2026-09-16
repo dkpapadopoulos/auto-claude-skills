@@ -102,5 +102,18 @@ The failure list was inspected to fix `pd-1`, so the set is spent. If a fresh ac
 number is needed, author a round 4 the same way: a subagent given the contracts only,
 barred from reading triggers, hook, and prior sets, with zero tool uses verified.
 
-The `models_interact` 0/5 recall gap recorded above is **unaffected and still open** —
-nothing in the subsequent changes touched `design-debate`'s triggers.
+### Correction (supersedes the line first written here)
+
+This note originally said the `models_interact` 0/5 gap was "unaffected and still open —
+nothing in the subsequent changes touched `design-debate`'s triggers". That became false
+in commit `342221f`, which gave `design-debate` three contract triggers encoding
+participant interaction.
+
+The gap's **cause** is now understood and fixed: the triggers listed topic words
+(tradeoff, alternative, architecture) and never the interaction the contract is defined
+by — the same defect as `panel`/`synthesize`, not a tuning shortfall.
+
+The gap's **measurement** is NOT re-closed. The driver for that fix was `db-2` of the
+intent-routing baseline, which failed independently; the round-3 failure list had already
+been inspected, so its vocabulary is contaminated and no new number may be quoted from it.
+Whether recall actually improved on unseen prompts is **untested** and needs a round 4.
