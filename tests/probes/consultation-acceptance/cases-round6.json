@@ -1,0 +1,245 @@
+{
+  "round": 6,
+  "cases": [
+    {
+      "id": "so-1",
+      "contract": "second_opinion",
+      "prompt": "ask gpt-5 cold: is it safe to run alembic migrations from the app entrypoint on boot when we're at 12 replicas? just the question, don't feed it anything i said above"
+    },
+    {
+      "id": "so-2",
+      "contract": "second_opinion",
+      "prompt": "put this in front of gemini fresh pls — postgres advisory lock vs a redis lease for a nightly job that must fire exactly once. blank context, i don't want your take colouring it"
+    },
+    {
+      "id": "so-3",
+      "contract": "second_opinion",
+      "prompt": "get codex to look at this with clean eyes: p99 on the ingest worker spikes every ~4h and gc logs look normal. only send it the symptoms"
+    },
+    {
+      "id": "so-4",
+      "contract": "second_opinion",
+      "prompt": "run the question past o3 with none of this thread attached. should an axum service keep a pool per tokio worker or one shared pool"
+    },
+    {
+      "id": "so-5",
+      "contract": "second_opinion",
+      "prompt": "want a second set of eyes from gpt-5 on sse vs websockets for a dashboard, ~200 viewers, one push a second. strip out everything you already told me, just the bare q"
+    },
+    {
+      "id": "so-6",
+      "contract": "second_opinion",
+      "prompt": "throw the raw question at gemini — is FOR UPDATE SKIP LOCKED good enough as a job queue at 5k/min or do we need an actual broker. no prior convo"
+    },
+    {
+      "id": "ac-1",
+      "contract": "answer_critique",
+      "prompt": "take what you just wrote and have gpt-5 tear it apart"
+    },
+    {
+      "id": "ac-2",
+      "contract": "answer_critique",
+      "prompt": "send codex the schema you proposed above and ask it where that falls over at scale"
+    },
+    {
+      "id": "ac-3",
+      "contract": "answer_critique",
+      "prompt": "can you pass your answer to gemini and ask whether the locking argument you made actually holds"
+    },
+    {
+      "id": "ac-4",
+      "contract": "answer_critique",
+      "prompt": "i want o3 to go through the rollout plan you gave me, including your reasoning for the ordering, and say what's wrong with it"
+    },
+    {
+      "id": "ac-5",
+      "contract": "answer_critique",
+      "prompt": "show gpt-5 your diagnosis + the stack trace and ask what you missed"
+    },
+    {
+      "id": "ac-6",
+      "contract": "answer_critique",
+      "prompt": "have gemini poke holes in the migration steps you listed. give it your full write-up so it can check the assumptions too"
+    },
+    {
+      "id": "sp-1",
+      "contract": "standalone_panel",
+      "prompt": "i want three separate takes on this, each written without seeing the others, and show me all three exactly as they came back: is it worth moving auth from sessions to jwt at 30k mau"
+    },
+    {
+      "id": "sp-2",
+      "contract": "standalone_panel",
+      "prompt": "same question out to a few different places, fresh start each time, then give me the answers side by side with labels. q: how should idempotency keys work on a payments endpoint"
+    },
+    {
+      "id": "sp-3",
+      "contract": "standalone_panel",
+      "prompt": "don't summarise or tidy anything up — i want each reply in full and tagged with who wrote it. question: why would a pod pass readiness and still drop 2% of requests"
+    },
+    {
+      "id": "sp-4",
+      "contract": "standalone_panel",
+      "prompt": "ask a couple of sources this in parallel, none of them seeing each other's work, and dump the outputs unedited. is sqlite ok for a desktop app with 3 writer threads"
+    },
+    {
+      "id": "sp-5",
+      "contract": "standalone_panel",
+      "prompt": "ask gpt-5 and gemini the exact same thing on their own and print both answers whole, don't stitch them together: how do we structure retries for a flaky third party webhook"
+    },
+    {
+      "id": "sp-6",
+      "contract": "standalone_panel",
+      "prompt": "fire the identical prompt at codex and at gpt-5, separate sessions, and give me each answer attributed and untrimmed. prompt: is a monorepo worth it for 3 services and 2 devs"
+    },
+    {
+      "id": "mi-1",
+      "contract": "models_interact",
+      "prompt": "set up a back and forth on this — one side makes the case for event sourcing on the order service, the other pushes back, and they actually respond to each other for a few rounds"
+    },
+    {
+      "id": "mi-2",
+      "contract": "models_interact",
+      "prompt": "i want them arguing, not just answering in parallel. one proposes the caching layer, the other rebuts it, then the first gets to reply"
+    },
+    {
+      "id": "mi-3",
+      "contract": "models_interact",
+      "prompt": "get two of them to hash out whether we drop kafka for sqs. they need to read each other's points and push back, not write in isolation"
+    },
+    {
+      "id": "mi-4",
+      "contract": "models_interact",
+      "prompt": "proper debate please: for and against rewriting the scheduler in go, with rebuttals, keep going til someone concedes or they deadlock"
+    },
+    {
+      "id": "mi-5",
+      "contract": "models_interact",
+      "prompt": "let gpt-5 and gemini argue it out between themselves — is the retry storm the client's fault or the gateway's. show me the whole exchange"
+    },
+    {
+      "id": "mi-6",
+      "contract": "models_interact",
+      "prompt": "have codex critique gpt-5's plan, then let gpt-5 answer back. two or three rounds, i'll read the transcript"
+    },
+    {
+      "id": "sy-1",
+      "contract": "synthesized_plan",
+      "prompt": "get a few plans for getting us off redis pubsub, each worked out on its own, then pull them into one plan for me — but flag anywhere they disagreed instead of smoothing it over"
+    },
+    {
+      "id": "sy-2",
+      "contract": "synthesized_plan",
+      "prompt": "three drafts of the rollout, written without seeing each other, then consolidate into a single plan. keep the conflicts visible, i want to know where it wasn't unanimous"
+    },
+    {
+      "id": "sy-3",
+      "contract": "synthesized_plan",
+      "prompt": "ask around separately for how to fix the flaky e2e suite then give me one combined plan with a section listing where the answers didn't line up"
+    },
+    {
+      "id": "sy-4",
+      "contract": "synthesized_plan",
+      "prompt": "two or three approaches to the index redesign, each done in isolation, then stitch them into one recommendation that calls out where they diverge"
+    },
+    {
+      "id": "sy-5",
+      "contract": "synthesized_plan",
+      "prompt": "gpt-5 and gemini each draft the migration plan on their own, then fold both into one doc. don't drop the points they disagreed on"
+    },
+    {
+      "id": "sy-6",
+      "contract": "synthesized_plan",
+      "prompt": "have codex and gemini plan the auth cutover separately, then build me a single plan out of both with the disagreements kept in a notes section"
+    },
+    {
+      "id": "vs-1",
+      "contract": "vendor_as_subject",
+      "prompt": "our openai bill went up 4x last month while the anthropic one stayed flat. help me work out which endpoint is doing it, i've got the usage export"
+    },
+    {
+      "id": "vs-2",
+      "contract": "vendor_as_subject",
+      "prompt": "we're porting the summariser off openai onto the anthropic sdk. what breaks in our streaming handler and the tool-call parsing"
+    },
+    {
+      "id": "vs-3",
+      "contract": "vendor_as_subject",
+      "prompt": "writing a retry wrapper round the gemini api for our sms gateway service — their 429s don't come with retry-after, what do people do about backoff there"
+    },
+    {
+      "id": "vs-4",
+      "contract": "vendor_as_subject",
+      "prompt": "need an eval harness that hits both openai and anthropic so finance can compare cost per resolved ticket. where do i store the per-call token counts"
+    },
+    {
+      "id": "vs-5",
+      "contract": "vendor_as_subject",
+      "prompt": "the codex cli times out in our ci container but works locally. where does it write its auth token and does it need a tty"
+    },
+    {
+      "id": "vs-6",
+      "contract": "vendor_as_subject",
+      "prompt": "legal wants a data retention clause before the openai contract renews in march. what do i need to pull out of the api docs to answer them properly"
+    },
+    {
+      "id": "am-1",
+      "contract": "asks_me",
+      "prompt": "what do you reckon, do we take the refactor now or after the release?"
+    },
+    {
+      "id": "am-2",
+      "contract": "asks_me",
+      "prompt": "argue the case against my plan. seriously, best shot you've got, i don't want agreement"
+    },
+    {
+      "id": "am-3",
+      "contract": "asks_me",
+      "prompt": "critique this grading function for me, be harsh. it's marking student submissions so wrong answers are expensive"
+    },
+    {
+      "id": "am-4",
+      "contract": "asks_me",
+      "prompt": "you've read the load-calc service — your call, is the bug in the parser or in the unit conversion? been going back and forth on it all morning"
+    },
+    {
+      "id": "am-5",
+      "contract": "asks_me",
+      "prompt": "make the strongest argument you can for keeping the payroll monolith, then tell me if you actually buy it. we've been debating it in standup for two weeks"
+    },
+    {
+      "id": "am-6",
+      "contract": "asks_me",
+      "prompt": "your opinion: fetchUserOrThrow or requireUser? one reads better in the ide, the other one matches the rest of the codebase"
+    },
+    {
+      "id": "pd-1",
+      "contract": "plain_dev",
+      "prompt": "the review panel on the right collapses whenever the sidebar animates in, and the two columns stop sitting side by side under 1200px. grid or flex problem? markup's below"
+    },
+    {
+      "id": "pd-2",
+      "contract": "plain_dev",
+      "prompt": "need to merge the two carrier rate tables before the nightly dispatch run. same schema, dupes on (lane_id, effective_date), each one should keep the latest row. pandas or just do it in sql?"
+    },
+    {
+      "id": "pd-3",
+      "contract": "plain_dev",
+      "prompt": "feature store has an independent backfill job per entity and they keep stomping each other's parquet partitions. want to hash out whether we serialize them or give each one a separate prefix"
+    },
+    {
+      "id": "pd-4",
+      "contract": "plain_dev",
+      "prompt": "methods section for the trial writeup — the script needs to dump each cohort's raw answers verbatim into the appendix csv, no rounding, no reordering. currently it's coercing to float somewhere"
+    },
+    {
+      "id": "pd-5",
+      "contract": "plain_dev",
+      "prompt": "the auditors pushed back on our revenue recognition job and i need to rebut it with numbers. can you consolidate the three ledger exports into one view keyed by contract_id first"
+    },
+    {
+      "id": "pd-6",
+      "contract": "plain_dev",
+      "prompt": "the agent in the tutorial level goes back and forth between two waypoints forever when the player stands exactly between them. unity navmesh, any idea"
+    }
+  ]
+}

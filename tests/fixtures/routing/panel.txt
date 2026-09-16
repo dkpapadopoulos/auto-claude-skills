@@ -99,3 +99,13 @@ MATCH: ask codex and claude for their take on this schema
 # for ten phrasings. Gated against the full 206-prompt accumulated negative corpus: zero
 # new false positives.
 MATCH: same prompt to gpt-5 and to claude, clean contexts, raw answers labelled by who said what
+
+# CSS LAYOUT PROSE (round-6 false dispatch, and the only one it found). The vendor-free
+# clause required TWO signals -- a plural source and a raw-delivery word -- and
+# "the two columns stop sitting side by side" satisfies BOTH in pure layout vocabulary.
+# Two signals are not enough when both are ordinary UI words. The clause now also requires
+# an ANSWER-noun near the delivery word, because the contract is about ANSWERS delivered
+# raw, not about layout. Fixed at no recall cost.
+NO_MATCH: the review panel on the right collapses whenever the sidebar animates in, and the two columns stop sitting side by side under 1200px
+NO_MATCH: the two cards should sit side by side on desktop and stack on mobile
+NO_MATCH: show the two diffs side by side in the review ui

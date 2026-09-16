@@ -1,0 +1,134 @@
+ROUND 6 PROVENANCE — held-out prompt authoring
+
+1. DID I READ ANY REPO FILE OR RUN ANY COMMAND?
+No. I made exactly two tool calls, both Write, both to the two output paths in the
+scratchpad. I did not Read, Grep, Glob, Bash, or use any MCP tool. I did not look at
+any fixture, config, hook, SKILL.md, or any previous round's prompt set. I have never
+seen rounds 1-5.
+
+2. WHAT AUTO-INJECTED CONTEXT WAS PRESENT (unavoidable, arrived before my turn)?
+Four blocks, all of which I read because they are in the prompt window:
+
+  (a) The full project CLAUDE.md. Very long, almost entirely about the push gate,
+      shell-parsing bypasses, session tokens, shadow corpora. Effectively no routing
+      trigger vocabulary in it. Low contamination value for this task.
+
+  (b) The user's auto-memory index (MEMORY.md), ~50 one-line entries. THREE of these
+      lines are directly contaminating and I want to name them precisely:
+        - "[Negation word contains the positive verb] — `merge` matched inside
+          `unmerged`, routing the purest panel prompt to the opposite skill; test every
+          verb's negation."
+          => discloses that "merge" is a live routing hazard AND that a skill named
+          "panel" exists AND that there is an opposing skill.
+        - "[patforna adoption slices] — Slice 1 shipped (PR #247: panel/synthesize/
+          §6/autofix)"
+          => discloses the skill names `panel` and `synthesize`.
+        - "[Held-out prompts are spent by looking] — inspecting which cases failed
+          burns the set"
+          => tells me this is an eval round; no vocabulary leak.
+
+  (c) The Skill tool listing, with descriptions. The two relevant ones I saw verbatim:
+        - panel: "Use to get independent perspectives on one prompt from multiple
+          models - default roster is the strongest available Claude model plus Codex.
+          Opt-in, phase-agnostic; pairs with synthesize for the merge."
+        - design-debate: "Multi-Agent Debate (MAD) for complex designs. Spawns
+          architect, critic, and pragmatist..."
+      Also agent-team-review ("multi-lens parallel review"), agent-team-execution
+      ("parallel specialist agents").
+
+  (d) The git status block in my environment preamble, which contains recent commit
+      subjects including:
+        "feat: cross-family second opinion (panel/synthesize, two-mode cross-model
+         pass, autofix lane)"
+        "fix: disable model invocation on synthesize; dedupe verdict-ordering sentence"
+      This is a leak nobody warned me about and I think it is the worst one in my
+      context: it names the feature under test ("cross-family second opinion"), both
+      skill names, and the phrase "two-mode", which maps onto the second_opinion /
+      answer_critique split I was asked to write for. I did not go looking for it; it
+      is printed above the task.
+
+3. WHAT I DELIBERATELY AVOIDED, AND WHAT I SUBSTITUTED
+I treated (b), (c) and (d) as a blocklist rather than a source. Specifically:
+  - "independent perspectives" — never used. In sp-*/sy-* I wrote "separate takes",
+    "on their own", "without seeing each other", "in isolation", "each done in
+    isolation".
+  - "independent" as a bare adjective — deliberately kept OUT of every sp/mi/sy prompt
+    even though the contract definitions use it, because it is half of the panel
+    description. It appears exactly once in the whole set, pd-3, in the ordinary
+    engineering sense ("an independent backfill job per entity").
+  - "multiple models" / "model" / "llm" — not used anywhere except the named-vendor
+    prompts, and there only as product names (gpt-5, gemini, codex, o3), never as the
+    category noun.
+  - "merge" — never used in any consultation prompt, including sy-*, where it was the
+    obvious word and where the injected memory line told me it is a known hazard.
+    Substituted "pull them into one", "fold both into one doc", "stitch", "consolidate",
+    "build me a single plan out of both". It appears once, pd-2, in the ordinary sense
+    of merging two data tables.
+  - "panel" — never used as a request. Appears once, pd-1, as a UI element.
+  - "synthesize"/"synthesis" — never used, in any prompt, any sense. This is the one I
+    felt pulling hardest on sy-3 and sy-4; I wrote "combined plan" and "one
+    recommendation" instead.
+  - "debate" — used twice. mi-4 ("proper debate please") is a genuine natural phrasing a
+    dev would type and I kept it; am-5 uses it in the ordinary human sense ("we've been
+    debating it in standup"). I did NOT use "multi-agent debate", "architect", "critic",
+    or "pragmatist".
+  - "agent" — used once, pd-6, as a game NPC. Not used in any consultation sense.
+  - "second opinion" as a fixed phrase — avoided after seeing the commit subject in (d).
+    so-5 says "second set of eyes", the others say "ask X cold" / "clean eyes" / "blank
+    context" / "no prior convo".
+
+4. WHICH PROMPTS DO I THINK THE INJECTED CONTEXT MAY STILL HAVE SHAPED?
+Being honest rather than reassuring:
+  - The sy-* set is the most suspect. The contract definition I was given already says
+    "retaining disagreement", and every one of my six sy prompts asks for disagreement
+    to be preserved in some form ("flag anywhere they disagreed", "keep the conflicts
+    visible", "where the answers didn't line up", "where they diverge", "don't drop the
+    points they disagreed on", "disagreements kept in a notes section"). That uniformity
+    comes from the contract text, not from the injected context, but it is still a way
+    in which these are more consistent than real traffic would be. A real user often
+    just says "combine them" and expects the assistant to keep the conflict. I flag this
+    as a likely inflation source independent of contamination.
+  - so-* all explicitly say "don't show it what i said" / "blank context" in some form.
+    Same criticism: that exclusion clause is lifted straight from the contract wording I
+    was given. Real second-opinion asks are often just "what does gemini think about X",
+    with the exclusion implied. I wrote none of that bare form, which makes the set
+    easier than reality. I am naming it rather than fixing it because I was asked for
+    prompts that satisfy the contracts.
+  - mi-1 and mi-4: "back and forth" and "for and against ... with rebuttals" are close
+    to the design-debate description's register. I judged them natural enough to keep,
+    but they are the two I would drop first if the set needs de-contaminating.
+  - sp-2's "side by side" and sp-3's "in full and tagged with who wrote it" may echo
+    "raw attributed answers" from the contract. Again contract-derived, not skill-derived.
+  - I did NOT write any prompt whose phrasing came from the commit subject in (d). I
+    consciously did not use "cross-family", "two-mode", "cross-model", or "roster".
+
+5. OTHER THINGS WORTH KNOWING FOR SCORING
+  - Vendor-free counts, as required: standalone_panel 4/6 vendor-free (sp-1..4),
+    models_interact 4/6 (mi-1..4), synthesized_plan 4/6 (sy-1..4). I checked each of
+    those twelve prompts for the banned tokens model/llm/codex/gemini/gpt/chatgpt/o3/
+    claude/opus/sonnet; none contains any. Note sp-3 contains "pod" and pd-6 contains
+    "unity" — neither is a vendor token, but "o3" as a substring is worth a scorer
+    checking: I believe it does not occur inside any other word in the vendor-free set.
+  - Two-vendor non-consultation boundary cases (constraint 5): vs-1 (openai + anthropic,
+    billing), vs-2 (openai + anthropic, migrating between them), vs-4 (openai +
+    anthropic, cost comparison harness). vs-3 and vs-6 name one vendor each.
+  - Domain spread across the 18 non-consultation prompts: UI (pd-1), logistics/telecoms
+    (pd-2, vs-3), ML infra (pd-3, vs-4), scientific writing + medicine (pd-4),
+    finance + legal (pd-5, vs-1, vs-6), game dev (pd-6), education (am-3), civil
+    engineering (am-4), HR (am-5).
+  - Ordinary-sense consultation-adjacent words placed on purpose: panel + side by side
+    (pd-1), merge + each one (pd-2), independent + separate + hash out (pd-3), raw
+    answers + verbatim (pd-4), rebut + consolidate (pd-5), agent + back and forth
+    (pd-6), take (am-1), argue (am-2), critique (am-3), back and forth (am-4),
+    debating (am-5), the other one (am-6).
+  - am-2, am-3 and am-5 are the "ask YOU to argue a side / critique" cases requested.
+    am-5 in particular asks me to argue a position I may not hold, which I expect is the
+    hardest asks_me case to keep out of the debate lane.
+
+6. CONFIDENCE
+I am confident about section 1 (no reads, no commands) — it is a complete account of my
+tool use. Section 3 is a claim about my own drafting process and I have verified the
+word-level claims by re-reading the finished JSON, not just by recalling my intent. The
+one thing I cannot certify is whether reading the panel description at all biased my
+sense of what a "natural" multi-source request sounds like, below the level of specific
+phrases. I think it did, somewhat, in the sy-* set. Treat those six as the weakest cells.
