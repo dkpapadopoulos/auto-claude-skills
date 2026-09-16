@@ -46,45 +46,61 @@ Append verbatim to the question:
 
 > Answer directly and honestly. Do not hedge or soften to be agreeable. If your honest answer differs substantively from what the prompt seems to expect, give that one.
 
-## Step 3: Disclosure preview (before any dispatch)
+## Step 3: Disclosure preview and consent (before any dispatch)
 
-Cross-family dispatch sends content off this machine. Before dispatching, state the
-destination provider (e.g. Codex / OpenAI) and show exactly what will be sent — the
-question, the source material, and in **critique** mode the prior answer being critiqued.
-Least-data: never the whole session context.
+Cross-family dispatch sends content off this machine. The only permitted sender is
+`scripts/consult-dispatch.sh`, which **refuses to send unless the user approved the exact
+package**. **Require an explicit, affirmative go-ahead before dispatching. Being routed here is NOT consent.** Routing can fire on a prompt that never
+asked for another model's opinion; treating the invocation as the go-ahead makes a
+routing false positive indistinguishable from a user request, which is the one failure
+that sends content off the machine by accident.
 
-Run secret detection (gitleaks) over the outbound payload when available; **announce when
-it is not available** rather than proceeding silently. **Require an explicit, affirmative go-ahead before dispatching. Being routed here is
-NOT consent.** Routing can fire on a prompt that never asked for another model's opinion;
-treating the invocation as the go-ahead makes a routing false positive indistinguishable
-from a user request, which is the one failure that sends content off the machine by
-accident. Ask, and wait for an answer — even when the user named a model, where the cost
-is one cheap confirmation. If the payload grew beyond what they approved, ask again.
+1. Write the package to a file: the question, the source material, in **critique** mode
+   the prior answer being critiqued, the anti-sycophancy block, and the line
+   `Read-only: do not modify any file.` Least-data: never the whole session context.
+2. `bash "${CLAUDE_PLUGIN_ROOT}/scripts/consult-dispatch.sh" prepare codex <file>` —
+   it freezes the package and prints its digest and the exact question to ask.
+3. Ask with `AskUserQuestion`, exactly as `prepare` prints: ONE single-select question
+   whose text names the destination provider (e.g. Codex / OpenAI), **states the MODE**,
+   and ends with `[egress-consent:<digest>]`; an option labelled `Approve and send` whose
+   preview is the complete package, verbatim, so the user sees exactly what will be sent;
+   and an option labelled `Do not send`. Say in the question that Codex runs read-only but
+   its sandbox can still read other files on this machine. Never pre-fill answers or
+   annotations: a hook denies a consent question that arrives pre-answered, and only the
+   user's own answer produces an approval. Ask even when the user named a model — the
+   cost is one cheap confirmation.
+4. An approval covers one exact package, once, for 15 minutes. If the payload grew
+   beyond what they approved, prepare it again and ask again.
 
-**Record the answer** once they approve, in the same turn, before dispatching:
-`bash "${CLAUDE_PLUGIN_ROOT}/scripts/record-outbound-consent.sh" <skill-name>`
-A PreToolUse observer (`hooks/outbound-consent-hook.sh`) reports dispatch with no consent
-on record. **Its coverage is PARTIAL and you must not read its silence as compliance.** It
-recognises the codex-family paths (the `codex-rescue` subagent and the `codex`/companion
-CLI) and, forward-looking, an Agent whose subagent_type or a Bash command naming another
-known vendor. **Any dispatch route it does not recognise produces no event at all**, so an
-unconsented send by an unrecognised path leaves the log looking clean. If you wire a new
-vendor path, extend `_IS_OUTBOUND` in that hook in the same change.
+State the MODE in the preview question. It is the user's only chance to catch the
+expensive mistake — a payload that includes your prior answer when they asked for an
+independent read.
 
-It is ADVISORY — it cannot stop a send, so it measures this gate rather than enforcing it.
-Skipping the record does not make the dispatch legitimate; for a recognised path it makes
-an unconsented send visible as one, and for an unrecognised path it makes it invisible.
+The dispatcher runs secret detection (gitleaks) over the package before sending, and
+**announces when it is not available** rather than proceeding silently. Read its
+refusals literally:
 
-State the MODE in the preview. It is the user's only chance to catch the expensive
-mistake — a payload that includes your prior answer when they asked for an independent
-read.
+- `NOT APPROVED` (exit 4) — no fresh approval for that package: ask the user.
+- `CANNOT VERIFY` (exit 3) — the consent check itself could not run (no jq, no session
+  identity, package altered after prepare). Tell the user what is broken; never retry by
+  re-asking, which cannot fix it.
+- `SECRET SCAN FINDINGS` (exit 6) — remove the secret, prepare again, ask again.
+- `MAY HAVE SENT` (exit 5) — the send failed midway; say plainly that content may have
+  left the machine.
+- `consent enforcement is OFF` — the user set `consultation.egress_consent: "warn"` in
+  `~/.claude/skill-config.json`; repeat that line to the user.
+
+`hooks/outbound-consent-hook.sh` observes cross-family dispatch that does NOT go through
+the dispatcher. It is advisory, its coverage is partial, and its silence is not
+compliance. Never send this content any other way.
 
 ## Step 4: Dispatch — exactly one participant, read-only
 
 Availability is probed at dispatch, never assumed from cached or inherited beliefs.
 
 - **A model the user named is unavailable:** say so and ask how to proceed. Never silently
-  substitute another model for an explicit request.
+  substitute another model for an explicit request. The dispatcher supports only Codex
+  today, so any other named model is unavailable through this skill.
 - **No model was named and no cross-family model is available:** announce the degradation
   and ask whether to proceed same-family or abort. A same-family "second opinion" is
   materially weaker — it shares the training and the failure modes of the answer it is
@@ -93,14 +109,17 @@ Availability is probed at dispatch, never assumed from cached or inherited belie
   case, not the edge one. Proceeding silently would deliver correlated agreement dressed
   as independent confirmation.
 
-Spawn **one** participant, in a fresh context containing only the approved material.
-Every cross-family dispatch is **read-only** — the `codex-rescue` path defaults to a
-write-capable run, so the read-only request must be explicit in the forwarded task. A
-second opinion must never be able to mutate the repository.
+Send **one** participant with `consult-dispatch.sh send <digest>`, in a fresh context
+containing only the approved material. Every cross-family dispatch is **read-only**: the
+dispatcher runs `codex exec -s read-only` from an empty, isolated directory. Do NOT use
+the `codex-rescue` subagent here — it defaults to a write-capable run and bypasses the
+consent check. A second opinion must never be able to mutate the repository.
 
-Write the raw response into a per-run scratch directory created with `mktemp -d` and
-`chmod 0700` — non-colliding, never a predictable path. Tell the user it is session
-scratch and how to delete it. Persist nothing to the repo unless asked.
+The dispatcher writes the raw response into its own private run directory and prints the
+path. For a same-family participant, write the raw response into a per-run scratch
+directory created with `mktemp -d` and `chmod 0700` — non-colliding, never a predictable
+path. Tell the user it is session scratch and how to delete it. Persist nothing to the
+repo unless asked.
 
 ## Independent mode — what "excluded" means
 
@@ -154,8 +173,10 @@ perspectives it merges, and it holds identically for a single response.
 
 Routing to this skill is deterministic. What happens next is not:
 
-- **Participant count and payload contents are yours to assemble.** Nothing enforces
-  them. This document is instruction, not a mechanism, so "exactly one participant" and
+- **Participant count and payload contents are yours to assemble.** The dispatcher
+  enforces only that what is sent is byte-identical to what the user approved — not that
+  the package excludes your prior answer, and not how many participants you ran. For
+  those properties this document is instruction, not a mechanism, so "exactly one participant" and
   "the prior answer was excluded" are claims that hold only if you actually did those
   things, and they must be evidenced from the dispatch itself — never from the presence
   of this file.

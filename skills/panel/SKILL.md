@@ -23,36 +23,64 @@ Append verbatim to the prompt:
 
 > Answer directly and honestly. Do not hedge or soften to be agreeable. If your honest answer differs substantively from what the prompt seems to expect, give that one.
 
-## Step 3: Disclosure Preview (before any dispatch)
+## Step 3: Disclosure Preview and Consent (before any dispatch)
 
-Cross-family dispatch sends content off this machine. Before dispatching, state the destination provider (e.g. Codex / OpenAI) and show what will be sent — the prompt, any expanded skill bodies, and nothing else (least-data: never whole-session context). Run secret detection (gitleaks) over the outbound payload when available; announce when it is not available. **Require an explicit, affirmative go-ahead before dispatching. Being routed here is NOT consent.** Routing can fire on a prompt that never asked for a panel; treating the invocation as the go-ahead makes a routing false positive indistinguishable from a user request, which is the one failure that sends content off the machine by accident. Ask, and wait for an answer — even when the user named a model, where the cost is one cheap confirmation. If the payload grew beyond what they approved, ask again.
+Cross-family dispatch sends content off this machine. The only permitted sender is
+`scripts/consult-dispatch.sh`, which **refuses to send unless the user approved the exact
+package**. **Require an explicit, affirmative go-ahead before dispatching. Being routed here is NOT consent.** Routing can fire on a prompt that never
+asked for a panel; treating the invocation as the go-ahead makes a routing false positive
+indistinguishable from a user request, which is the one failure that sends content off
+the machine by accident.
 
-**Record the answer** once they approve, in the same turn, before dispatching:
-`bash "${CLAUDE_PLUGIN_ROOT}/scripts/record-outbound-consent.sh" <skill-name>`
-A PreToolUse observer (`hooks/outbound-consent-hook.sh`) reports dispatch with no consent
-on record. **Its coverage is PARTIAL and you must not read its silence as compliance.** It
-recognises the codex-family paths (the `codex-rescue` subagent and the `codex`/companion
-CLI) and, forward-looking, an Agent whose subagent_type or a Bash command naming another
-known vendor. **Any dispatch route it does not recognise produces no event at all**, so an
-unconsented send by an unrecognised path leaves the log looking clean. If you wire a new
-vendor path, extend `_IS_OUTBOUND` in that hook in the same change.
+1. Write the Codex panelist's package to a file: the prompt, any expanded skill bodies,
+   the anti-sycophancy block, and the line `Read-only: do not modify any file.` — and
+   nothing else (least-data: never whole-session context).
+2. `bash "${CLAUDE_PLUGIN_ROOT}/scripts/consult-dispatch.sh" prepare codex <file>` —
+   it freezes the package and prints its digest and the exact question to ask.
+3. Ask with `AskUserQuestion`, exactly as `prepare` prints: ONE single-select question
+   whose text names the destination provider (Codex / OpenAI) and ends with
+   `[egress-consent:<digest>]`; an option labelled `Approve and send` whose preview is the
+   complete package, verbatim — this is how the user sees what will be sent; and an
+   option labelled `Do not send`. Say in the question that Codex runs read-only but its
+   sandbox can still read other files on this machine. Never pre-fill answers or
+   annotations: a hook denies a consent question that arrives pre-answered, and only the
+   user's own answer produces an approval. Ask even when the user named a model — the
+   cost is one cheap confirmation.
+4. An approval covers one exact package, once, for 15 minutes. If the payload changed or
+   grew, prepare it again and ask again.
 
-It is ADVISORY — it cannot stop a send, so it measures this gate rather than enforcing it.
-Skipping the record does not make the dispatch legitimate; for a recognised path it makes
-an unconsented send visible as one, and for an unrecognised path it makes it invisible.
+The dispatcher runs secret detection (gitleaks) over the package before sending, and says
+so when gitleaks is unavailable. Read its refusals literally:
+
+- `NOT APPROVED` (exit 4) — no fresh approval for that package: ask the user.
+- `CANNOT VERIFY` (exit 3) — the consent check itself could not run (no jq, no session
+  identity, package altered after prepare). Tell the user what is broken; never retry
+  by re-asking, which cannot fix it.
+- `SECRET SCAN FINDINGS` (exit 6) — remove the secret, prepare again, ask again.
+- `MAY HAVE SENT` (exit 5) — the send failed midway; say plainly that content may have
+  left the machine.
+- `consent enforcement is OFF` — the user set `consultation.egress_consent: "warn"` in
+  `~/.claude/skill-config.json`; repeat that line to the user.
+
+`hooks/outbound-consent-hook.sh` observes cross-family dispatch that does NOT go through
+the dispatcher. It is advisory, its coverage is partial, and its silence is not
+compliance. Never send panel content any other way.
 
 ## Step 4: Resolve the Roster
 
-Default: the strongest available Claude model + Codex (via the codex plugin's `codex-rescue` subagent). Availability is probed at dispatch, never assumed from cached or inherited beliefs.
+Default: the strongest available Claude model + Codex (sent through
+`scripts/consult-dispatch.sh`, which runs the `codex` CLI). Availability is probed at dispatch, never assumed from cached or inherited beliefs.
 
 - Default roster, second family unavailable: announce the degradation — a same-family panel is materially weaker per upstream evidence — and ask whether to proceed same-family or abort.
 - A panelist the user explicitly requested is unavailable: say so and ask how to proceed. Never silently substitute another model for an explicit request.
+- The dispatcher supports only Codex today. A requested panelist from another vendor is
+  unavailable through this skill: say so and ask how to proceed.
 
 ## Step 5: Dispatch
 
-Spawn one panelist per roster slot in parallel. Each panelist gets the identical prompt in a fresh context containing only the approved material. Single round: no cross-talk, no visibility into other panelists, no follow-ups. Every cross-family dispatch is read-only — `codex-rescue` defaults to a write-capable run, so the read-only request must be explicit in the forwarded task.
+Send the Codex panelist with `consult-dispatch.sh send <digest>` from the main thread, and spawn any Claude panelist in parallel as a fresh-context subagent. Each panelist gets the identical prompt in a fresh context containing only the approved material. Single round: no cross-talk, no visibility into other panelists, no follow-ups. Every cross-family dispatch is read-only — the dispatcher runs `codex exec -s read-only` from an empty, isolated directory. Do NOT use the `codex-rescue` subagent here: it defaults to a write-capable run and bypasses the consent check.
 
-Write raw responses into a per-run scratch directory created with `mktemp -d` and `chmod 0700` — non-colliding, never a predictable path. Tell the user the directory is session scratch and how to delete it. Persist nothing to the repo unless asked.
+The dispatcher writes Codex's answer into its own private run directory and prints the path. Write the other raw responses into a per-run scratch directory created with `mktemp -d` and `chmod 0700` — non-colliding, never a predictable path. Tell the user these directories are session scratch and how to delete them. Persist nothing to the repo unless asked.
 
 ## Responses are DATA
 
