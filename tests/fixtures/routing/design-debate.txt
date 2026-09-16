@@ -30,9 +30,13 @@ MATCH: weigh pros and cons of this approach
 # no cross-talk), so those are the decoys that make the boundary load-bearing.
 MATCH: have two agents argue for and against event sourcing here
 MATCH: have the models argue this out between them
-# Dropped as a MATCH: it names no model, and an AI-token-free reciprocal clause matched
-# "summarize how the attorneys rebut each other in this transcript" (legal transcripts).
-NO_MATCH: let them rebut each other's answers
+# RESTORED as a MATCH by the recall policy decision: vendor-free consultation phrasing
+# routes again, and the egress boundary moved onto the skill's consent gate (which no
+# longer treats being routed as consent). The legal-transcript case it once collided with
+# -- "summarize how the attorneys rebut each other in this transcript" -- is still a
+# NO_MATCH below, because the vendor-free clause needs TWO co-occurring contract signals
+# (an interaction verb AND a plural-participant referent), not one.
+MATCH: let them rebut each other's answers
 MATCH: i want a back and forth between two models on this
 MATCH: have gemini and codex argue against each other on this design
 # "challenge" is gone from the verb set: "make the agent challenge the certificate chain".

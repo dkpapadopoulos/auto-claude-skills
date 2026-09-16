@@ -179,3 +179,26 @@ if command -v jq >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
 fi
 
 print_summary
+
+# ---------------------------------------------------------------------------
+# Consent gate: being ROUTED is not consent (added when the recall policy moved
+# the egress boundary from the triggers onto the confirmation step).
+# ---------------------------------------------------------------------------
+test_consent_is_not_inferred_from_invocation() {
+    echo "-- test: outbound consent is explicit, never inferred from routing --"
+    local f
+    for f in skills/second-opinion/SKILL.md skills/panel/SKILL.md; do
+        assert_contains "${f}: states that routing is not consent" \
+            "Being routed here is NOT consent" "$(cat "${f}")"
+        assert_contains "${f}: demands an affirmative go-ahead" \
+            "explicit, affirmative go-ahead" "$(cat "${f}")"
+        # The superseded wording treated the invocation itself as the go-ahead. If it
+        # ever returns, a routing false positive becomes an outbound dispatch.
+        assert_not_contains "${f}: no 'invocation itself' consent shortcut" \
+            "go-ahead from the invocation itself" "$(cat "${f}")"
+        assert_not_contains "${f}: no panel-specific invocation shortcut" \
+            "go-ahead from the panel invocation itself" "$(cat "${f}")"
+    done
+}
+
+test_consent_is_not_inferred_from_invocation

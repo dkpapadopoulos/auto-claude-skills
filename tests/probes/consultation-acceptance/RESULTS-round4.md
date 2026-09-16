@@ -53,3 +53,37 @@ Whether the by-design recall loss is acceptable. Concretely: does a user who wri
 "have the two of them respond to each other's points" EXPECT routing, and is the answer
 "name a model, or name the skill"? That is a question about the product, and no amount
 of regex work answers it.
+
+---
+
+## Policy decision (2026-09-16): relax, with the consent gate carrying egress
+
+The user ruled on the product question above: **vendor-free consultation phrasing should
+route again**, moving the egress boundary from the triggers onto the skill's confirmation
+step. Implemented in that order, deliberately:
+
+1. **Consent gate first.** An audit found both outbound skills proceeding on "the user's
+   go-ahead **from the invocation itself**" — i.e. being routed WAS consent. That is safe
+   only while routing implies intent, which is exactly the assumption this decision
+   removes. Relaxing first would have turned every routing false positive into an
+   authorised dispatch. Both skills now require an explicit affirmative go-ahead and say
+   that being routed is not consent (`tests/test-second-opinion-content.sh` fails if the
+   old wording returns).
+2. **Then the triggers.** Each vendor-free clause requires TWO co-occurring contract
+   signals, never one — one signal is always some profession's ordinary vocabulary, which
+   is the failure this branch hit seven times.
+
+### The post-relaxation numbers are DEVELOPMENT DATA, not a measurement
+
+`RESULTS-round4-after-relaxation.txt` shows 25/25 recall, 0/14 false dispatch. **This set
+was already spent, and these clauses were built against these prompts.** 25/25 is what
+fitting produces. It demonstrates the clauses do what they were written to do, and
+nothing more. Only a round 5 — contracts only, zero tool uses, frozen by hash — can say
+whether vendor-free routing generalises.
+
+### Residual risk, stated plainly
+
+Egress protection now rests on a SKILL.md instruction asking a model to stop and confirm.
+That is weaker than a hook-enforced gate. The enforceable version would be a PreToolUse
+guard on the dispatch itself, refusing an outbound call with no recorded confirmation for
+the current payload. Not built here; it is the natural next hardening step.

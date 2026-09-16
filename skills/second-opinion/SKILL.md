@@ -54,9 +54,12 @@ question, the source material, and in **critique** mode the prior answer being c
 Least-data: never the whole session context.
 
 Run secret detection (gitleaks) over the outbound payload when available; **announce when
-it is not available** rather than proceeding silently. Proceed only on the user's
-go-ahead from the invocation itself, or an explicit confirmation if the payload grew
-beyond what they asked about.
+it is not available** rather than proceeding silently. **Require an explicit, affirmative go-ahead before dispatching. Being routed here is
+NOT consent.** Routing can fire on a prompt that never asked for another model's opinion;
+treating the invocation as the go-ahead makes a routing false positive indistinguishable
+from a user request, which is the one failure that sends content off the machine by
+accident. Ask, and wait for an answer — even when the user named a model, where the cost
+is one cheap confirmation. If the payload grew beyond what they approved, ask again.
 
 State the MODE in the preview. It is the user's only chance to catch the expensive
 mistake — a payload that includes your prior answer when they asked for an independent
