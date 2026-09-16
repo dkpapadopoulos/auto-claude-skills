@@ -8,6 +8,7 @@
 # unused approval of this conversation is revoked here (renamed .revoked, kept for audit).
 # Cost of a false withdrawal: one re-ask.
 #
+# Background-task notifications (also delivered as UserPromptSubmit) are ignored.
 # Runs on every prompt, so the common case (no approvals at all) exits before any fork.
 # Fails open and announces only when approvals exist and cannot be withdrawn.
 # Design: openspec/changes/egress-consent-dispatcher/design.md
@@ -43,7 +44,15 @@ if ! command -v jq >/dev/null 2>&1; then
     _announce "jq unavailable to this hook — unused egress approvals of this conversation (if any) were NOT withdrawn at the turn boundary."
     exit 0
 fi
-_TP="$(printf '%s' "${_INPUT}" | jq -r 'if type == "object" then (.transcript_path // "") | tostring else "" end' 2>/dev/null)"
+# Measured live 2026-09-17: a background-task notification arrives as UserPromptSubmit
+# whose prompt is the "<task-notification>" block. It is not the user speaking, and treating
+# it as a turn boundary revoked a genuine approval mid-flow.
+_META="$(printf '%s' "${_INPUT}" | jq -r 'if type == "object" then
+    [ ((.transcript_path // "") | tostring),
+      (if ((.prompt // "") | tostring | ltrimstr(" ") | ltrimstr("\n") | startswith("<task-notification>")) then "notification" else "prompt" end)
+    ] | join("\n") else "" end' 2>/dev/null)"
+_TP="$(printf '%s\n' "${_META}" | sed -n 1p)"
+[ "$(printf '%s\n' "${_META}" | sed -n 2p)" = "notification" ] && exit 0
 _TOKEN="$(session_token_from_transcript "${_TP}")"
 if ! egress_valid_token "${_TOKEN}"; then
     _announce "no session identity in the prompt payload — unused egress approvals of this conversation (if any) were NOT withdrawn."

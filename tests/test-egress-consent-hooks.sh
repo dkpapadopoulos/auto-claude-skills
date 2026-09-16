@@ -272,6 +272,27 @@ for cp in '\u007f' '\u0085' '\u202e' '\u2066'; do
     o="$(run_ask "$(pre_payload toolu_cc ".tool_input.questions[0].options[1].preview += \"${cp}\"")")"
     assert_contains "preview with ${cp} is denied as hidden characters" "hidden-characters-in-preview" "${o}"
 done
+echo "-- review round 4 --"
+# Codex P3: a hashing failure at PostToolUse is reported as that, not as a mismatch.
+reset_state
+run_ask "$(pre_payload toolu_p3)" >/dev/null
+NOHASH="${T}/nohash"; mkdir -p "${NOHASH}"
+for tool in bash sh cat mv rm date basename dirname sed tr cut mkdir chmod stat find head tail wc env mktemp cmp grep printf ln; do
+    src="$(command -v "${tool}" 2>/dev/null)"; [ -n "${src}" ] && [ -x "${src}" ] && ln -sf "${src}" "${NOHASH}/${tool}"
+done
+ln -sf "$(command -v jq)" "${NOHASH}/jq"
+out="$(run_rcpt "$(post_payload toolu_p3 "${L}")" "${NOHASH}")"
+assert_contains "P3: hash failure is named" "could not hash" "${out}"
+assert_not_contains "P3: no false mismatch claim" "does not match" "${out}"
+assert_equals "P3: no receipt" "0" "$(rcpt_count)"
+
+# Veto records are append-only files: two declines never overwrite each other.
+reset_state
+run_ask "$(pre_payload toolu_v1)" >/dev/null; run_rcpt "$(post_payload toolu_v1 "Do not send")" >/dev/null
+run_ask "$(pre_payload toolu_v2)" >/dev/null; run_rcpt "$(post_payload toolu_v2 "Do not send")" >/dev/null
+assert_equals "each decline leaves its own veto record" "2" \
+    "$(find "${H}/.claude" -maxdepth 1 -name ".skill-egress-veto-${TOK}.${D}.*" | wc -l | tr -d ' ')"
+
 echo "-- wiring and retirement --"
 HJ="${PROJECT_ROOT}/hooks/hooks.json"
 assert_equals "PreToolUse(AskUserQuestion) runs the ask hook" "1" \

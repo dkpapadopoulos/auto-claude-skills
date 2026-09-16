@@ -474,6 +474,49 @@ OUT="$(cd "${T}" && env PATH="${P_FULL}" HOME="${H}" CLAUDE_PLUGIN_ROOT="${PROJE
 assert_equals "F6: GIT_DIR in the environment does not cause a false refusal -> 0" "0" "${RC}"
 assert_not_contains "F6: codex does not inherit GIT_DIR" "GIT_DIR=" "$(cat "${REC}/1/env" 2>/dev/null)"
 
+echo "-- review round 4 (Codex + live) --"
+# LIVE 2026-09-17: a background-task notification is delivered as UserPromptSubmit with a
+# "<task-notification>" prompt. It is not the user speaking and must not end the approval.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_notif
+hook "${PROJECT_ROOT}/hooks/egress-consent-turn-hook.sh" "$(jq -nc --arg tp "${TP}" \
+    '{hook_event_name:"UserPromptSubmit", transcript_path:$tp, prompt:"<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>"}')"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "a task notification does not withdraw the approval -> 0" "0" "${RC}"
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_notif2
+hook "${PROJECT_ROOT}/hooks/egress-consent-turn-hook.sh" "$(jq -nc --arg tp "${TP}" \
+    '{hook_event_name:"UserPromptSubmit", transcript_path:$tp, prompt:"no wait, <task-notification> is not what I meant"}')"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "control: a real prompt that merely mentions the tag still withdraws -> 4" "4" "${RC}"
+
+# Codex P1: a decline recorded while a send is between reading the veto and claiming must
+# still stop the send; and a receipt published after a decline must not survive it.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+hook "${ASK_HOOK}" "$(mkpre toolu_p1_yes)"; hook "${ASK_HOOK}" "$(mkpre toolu_p1_no)"
+hook "${RCPT_HOOK}" "$(mkpost toolu_p1_no "Do not send")"
+# Simulate the late publication: a receipt for the approved ask written AFTER the decline,
+# as if its PostToolUse had been paused before publishing.
+hook "${RCPT_HOOK}" "$(mkpost toolu_p1_yes "Approve and send")"
+assert_equals "P1: a receipt published after a decline of an older ask is revoked on publication" "0" "$(unconsumed)"
+# Post-claim re-check. The only command between the dispatcher's first veto read and its
+# claim is the jq that reads each receipt, so a jq wrapper plants a decline exactly there.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_p1c
+REALJQ="$(command -v jq)"
+mkdir -p "${T}/latejq"
+cat > "${T}/latejq/jq" <<EOF
+#!/bin/bash
+case "\$*" in
+    *ask_ms*) printf '%s' "\$(( \$(date +%s) * 1000 + 999 ))" > "${H}/.claude/.skill-egress-veto-${TOK}.${D}.late" ;;
+esac
+exec "${REALJQ}" "\$@"
+EOF
+chmod +x "${T}/latejq/jq"
+dispatch "${T}/latejq:${STUBS}:${TOOLS}" "${SID}" send "${D}"
+assert_equals "P1: a decline landing after the veto was first read still stops the send -> 4" "4" "${RC}"
+assert_equals "P1: codex not invoked" "0" "$(calls)"
+
 echo "-- usage --"
 dispatch "${P_FULL}" "${SID}" send "not-a-digest"
 assert_equals "invalid digest -> 2" "2" "${RC}"

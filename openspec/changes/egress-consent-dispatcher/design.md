@@ -32,13 +32,20 @@ panel / second-opinion (model turn)
                {digest, tool_use_id, ts, ask_ms}
         a repeated Post (snapshot already .used) -> ignored entirely: no receipt, no revoke
         any OTHER answer (decline, free text) -> record a VETO for the digest
-            (.skill-egress-veto-<token>.<digest> = ms the decline was ANSWERED) and rename every
+            (append-only .skill-egress-veto-<token>.<digest>.<n> = ms the decline was ANSWERED;
+            one file per decline, never read-compare-write) and rename every
             unused receipt of the conversation to .revoked (latest answer wins; found live)
         an unverifiable answer (no snapshot, odd tool_response, bad preview) -> revoke the
             package's unused receipts; messages state what was actually withdrawn
 
+        after publishing, re-check the veto: a decline answered while this hook ran
+            revokes the receipt it just wrote
+
 hooks/egress-consent-turn-hook.sh (UserPromptSubmit)
   revoke every unused receipt of the conversation: an approval lives only in its turn
+  EXCEPT when the prompt is a "<task-notification>" block — measured live 2026-09-17:
+  background-task notifications are delivered as UserPromptSubmit, and treating one as a
+  turn boundary revoked a genuine approval between the answer and the send
   4. bash scripts/consult-dispatch.sh send <digest> [--model M]
         private dirs FIRST (absolute TMPDIR, refused inside a git repository), then the
           frozen package is copied ONCE; digest, scan and send all use that copy
@@ -47,7 +54,8 @@ hooks/egress-consent-turn-hook.sh (UserPromptSubmit)
           --ignore-gitleaks-allow, empty ignore path (exit 3 = findings -> refuse; other
           non-zero -> CANNOT VERIFY; binary absent -> announce and continue)
         then consume ONE fresh (<= 900s) receipt whose ask_ms is NEWER than the digest's
-          veto (i.e. asked after the last decline was answered), by atomic mv -> .consumed
+          veto (i.e. asked after the last decline was answered), by atomic mv -> .consumed,
+          then re-read the veto and refuse if a decline landed meanwhile
         a send whose outcome is uncertain reports "may have sent" and never restores the receipt
         codex exec -s read-only -C <empty mktemp dir> --skip-git-repo-check --ephemeral
                    --ignore-user-config --disable hooks --disable plugins
@@ -244,6 +252,21 @@ Accepted residuals, not fixed:
 - The observer sees only Bash/Agent/Task, so Write/Edit of `.skill-egress-*` or of
   `skill-config.json` (the `warn` escape hatch — agent-writable config) is unobserved.
 - `consult-run.*` answer directories are announced but never garbage-collected.
+
+### Round 4 — Codex adversarial review and the second live run (2026-09-17)
+
+- Codex P1: the dispatcher read the veto once before claiming, and the receipt hook never
+  re-checked it after publishing, so a decline landing in either window lost; and the veto
+  update was an unlocked read-compare-write. Fixed: append-only veto files, a post-claim
+  re-check in `send`, a post-publish re-check in the receipt hook.
+- Codex P2: `hooks/outbound-consent-hook.sh` was committed **100644** in #253, and the
+  harness runs hook commands directly — so the advisory observer **never ran in any
+  install**. The tests invoked it via `/bin/bash`, which hid it. Fixed, and
+  `tests/test-hook-file-modes.sh` now asserts every script `hooks.json` references is
+  100755 in git and executable on disk.
+- Codex P3: a hashing failure in the receipt hook was reported as a preview mismatch.
+- Live: the turn hook revoked a genuine approval because a background-task notification
+  arrived between the answer and the send (see above).
 
 ## Dissenting views
 

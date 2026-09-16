@@ -25,6 +25,12 @@ unquoted-scalar loop first produced a false "flags rejected" result):
 The dispatcher now passes those flags; a live `send` through it confirmed 0 hooks / 0 MCP
 and a model round-trip (again stopped by the usage limit).
 
+## Second live run — 2026-09-17
+
+| # | What | Observed | Verdict |
+|---|---|---|---|
+| A | approve a 2-line package (decline listed first) | receipt written at 00:35:48, then **revoked before `send`** — no veto, so not a decline | **defect:** a background-task notification (the Codex review finishing) was delivered as `UserPromptSubmit`; the turn hook took it for the user speaking. Captured payload: `prompt` = the `<task-notification>` block, no other distinguishing field. Fixed: notifications are skipped. |
+
 ## Open
 
 - **No successful answer has been observed** — Codex's usage limit blocked every send.

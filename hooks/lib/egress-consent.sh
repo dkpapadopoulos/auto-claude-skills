@@ -66,10 +66,12 @@ egress_valid_token() {
 egress_ask_path()     { printf '%s/.claude/.skill-egress-ask-%s.%s' "${HOME}" "$1" "$2"; }
 egress_receipt_path() { printf '%s/.claude/.skill-egress-receipt-%s.%s.%s' "${HOME}" "$1" "$2" "$3"; }
 egress_pkg_path()     { printf '%s/.claude/.skill-egress-pkg-%s.%s' "${HOME}" "$1" "$2"; }
-# A decline record for one package: holds the time (ms) at which the latest decline was
-# ANSWERED. Any approval whose question was asked before that moment — i.e. was still open
-# when the user said no — can never be used, whatever order parallel answers arrive in.
-egress_veto_path()    { printf '%s/.claude/.skill-egress-veto-%s.%s' "${HOME}" "$1" "$2"; }
+# Decline records for one package: APPEND-ONLY files
+# .skill-egress-veto-<token>.<digest>.<suffix>, each holding the time (ms) a decline was
+# ANSWERED. Any approval whose question was asked before the latest of them — i.e. was
+# still open when the user said no — can never be used, whatever order parallel answers
+# arrive in. One file per decline, so concurrent declines never overwrite each other.
+egress_veto_prefix()  { printf '%s/.claude/.skill-egress-veto-%s.%s.' "${HOME}" "$1" "$2"; }
 
 # egress_has_hidden_chars — stdin. rc 0: contains characters that can hide or reorder text
 # in a rendered preview — C0 controls other than TAB/LF (ESC sequences conceal, CR
@@ -128,25 +130,23 @@ egress_revoke_unused() {
     printf '%s %s' "${_ok}" "${_bad}"
 }
 
-# egress_record_veto <token> <digest> <answered_ms> — keep the LATEST decline time.
+# egress_record_veto <token> <digest> <answered_ms> — add one decline record.
 egress_record_veto() {
-    local _v _old=0
-    _v="$(egress_veto_path "$1" "$2")"
     case "${3:-}" in ''|*[!0-9]*) return 1 ;; esac
-    if [ -f "${_v}" ]; then
-        _old="$(cat "${_v}" 2>/dev/null)"
-        case "${_old}" in ''|*[!0-9]*) _old=0 ;; esac
-    fi
-    [ "$3" -gt "${_old}" ] || return 0
-    printf '%s\n' "$3" | egress_write_atomic "${_v}"
+    printf '%s\n' "$3" | egress_write_atomic "$(egress_veto_prefix "$1" "$2")${3}.$$"
 }
 
 # egress_veto_ts <token> <digest> — prints the latest decline time (ms), or 0.
 egress_veto_ts() {
-    local _t
-    _t="$(cat "$(egress_veto_path "$1" "$2")" 2>/dev/null)"
-    case "${_t}" in ''|*[!0-9]*) _t=0 ;; esac
-    printf '%s' "${_t}"
+    local _f _t _max=0
+    for _f in "$(egress_veto_prefix "$1" "$2")"*; do
+        [ -f "${_f}" ] || continue
+        case "${_f}" in *.tmp.*) continue ;; esac
+        _t="$(cat "${_f}" 2>/dev/null)"
+        case "${_t}" in ''|*[!0-9]*) continue ;; esac
+        [ "${_t}" -gt "${_max}" ] && _max="${_t}"
+    done
+    printf '%s' "${_max}"
 }
 
 # egress_write_atomic <dest> — stdin -> <dest>, owner-only, via tmp + mv so a reader never

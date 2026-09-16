@@ -172,6 +172,9 @@ esac
 _SEEN="$(printf '%s' "${_INPUT}" \
     | jq -r --slurpfile s "${_SNAP}" '.tool_response.annotations[$s[0].question].preview' 2>/dev/null \
     | egress_digest_stdin)"
+if ! egress_valid_digest "${_SEEN}"; then
+    _finish "could not hash the approved preview (no shasum or sha256sum) — no approval receipt was written." package
+fi
 if [ "${_SEEN}" != "${_DIGEST}" ]; then
     _finish "the approved preview does not match the prepared package (digest ${_DIGEST}) — no approval receipt was written." package
 fi
@@ -184,5 +187,14 @@ if ! jq -nc --arg d "${_DIGEST}" --arg id "${_ID}" --argjson ts "${_NOW}" --argj
         '{digest: $d, tool_use_id: $id, ts: $ts, ask_ms: $ask}' 2>/dev/null \
     | egress_write_atomic "$(egress_receipt_path "${_TOKEN}" "${_DIGEST}" "${_ID}")"; then
     _announce "could not write the approval receipt — this approval cannot be used; ask again."
+    exit 0
+fi
+# Re-check AFTER publishing: a decline of this package answered after this question was
+# asked (a parallel ask) wins even if it was recorded while this hook ran.
+if [ "${_ASK_MS}" -le "$(egress_veto_ts "${_TOKEN}" "${_DIGEST}")" ]; then
+    _R="$(egress_receipt_path "${_TOKEN}" "${_DIGEST}" "${_ID}")"
+    mv "${_R}" "${_R}.revoked" 2>/dev/null \
+        && _announce "this approval was superseded by a \"${EGRESS_DECLINE_LABEL}\" given for the same package while the question was open; nothing will be sent from it." \
+        || _announce "WARNING: this approval was superseded by a decline but could NOT be withdrawn."
 fi
 exit 0

@@ -228,6 +228,11 @@ EOF
                 break
             fi
         done
+        # Re-check AFTER claiming: a decline answered while this loop ran must still win.
+        if [ -n "${_claimed}" ] && [ "${_ask}" -le "$(egress_veto_ts "${_tok}" "${_d}")" ]; then
+            mv "${_claimed}.consumed" "${_claimed}.revoked" 2>/dev/null
+            _not_approved "the user declined this package after the approval was given"
+        fi
         [ -n "${_claimed}" ] || _not_approved "no fresh, unused approval for digest ${_d}. Approvals come only from the user's answer to the consent question, expire after 15 minutes, and authorise one send. Ask the user again with the consent question from 'prepare'"
     fi
 
