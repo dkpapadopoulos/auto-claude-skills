@@ -163,6 +163,10 @@ nobody reads the gate as stronger than it is.
 - `-C <empty dir>` removes the default workspace context (repo `AGENTS.md`, git
   discovery). It is **not** a filesystem boundary: Codex's read-only sandbox permits reads
   anywhere. The preview says so.
+- The observer classifies command TEXT, so a command that merely mentions `codex exec`
+  (a commit message, a heredoc) is recorded as a bypass — the #155 class. Harmless for an
+  advisory observer, but any future deny-flip adjudication must discount such records;
+  segment-aware parsing (as the push gate does) is the fix if that corpus is ever used.
 - Parallel sends: receipts are keyed `<digest>.<tool_use_id>`, so two approvals of
   identical packages are two receipts and authorise two sends; one approval authorises
   exactly one (the send that wins the atomic `mv`). Consumption happens after local
