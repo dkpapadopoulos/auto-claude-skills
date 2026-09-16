@@ -15,6 +15,20 @@
 # The first three NO_MATCH lines are verbatim-borrowed from panel.txt's and
 # design-debate's MATCH sets, pinning the three-way boundary from the other side.
 
+# WHY THESE CLAUSES KEEP A TRAILING ($|[^a-z]) AND PANEL'S MULTI CLAUSE DOES NOT.
+# The scorer grades a match 30 only when BOTH edges sit on a word boundary; a trailing
+# group consumes the delimiter, so the right edge lands mid-word and the clause scores
+# 10. That cost panel its own multi-model prompt (28 vs 47) and panel's clause therefore
+# ends ON the participant.
+#
+# These clauses keep the group deliberately, and the trade is the other way round: it is
+# what rejects `ask codexfoo to do it` and `consult geminid about the schema`. Dropping
+# it would let a partial word route to an OUTBOUND cross-vendor dispatch, which is the
+# severe direction; scoring 10 only affects ranking. Measured: second-opinion still takes
+# domain slot 1/2 on every contested prompt tried, including against incident-analysis at
+# 50. If a future competitor does displace it, fix the CONTEST (priority, or a more
+# specific clause) -- do not drop the boundary group.
+
 MATCH: get a second opinion from another model on this migration plan
 MATCH: ask codex to weigh in on this approach
 MATCH: consult codex about the schema change

@@ -165,4 +165,17 @@ assert_contains "expanded skill bodies count as outbound" "COUNT as outbound"  "
 assert_not_contains "does not overstate which steps are controls" \
     "Steps 1–4 below are the same outbound-data controls" "${body:-<empty>}"
 
+
+# --- partial-word safety: what the trailing boundary group buys -------------------
+# Dropping it would raise these clauses from 10 to 30, which is tempting after seeing
+# panel's fix — and would let a partial word route to an outbound cross-vendor dispatch.
+if command -v jq >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+    out="$(_route "ask codexfoo to do it")"
+    assert_not_contains "a partial vendor word does NOT reach the dispatch skill" \
+        "second-opinion" "${out:-<empty>}"
+    out="$(_route "consult geminid about the schema")"
+    assert_not_contains "nor does a longer word containing a vendor name" \
+        "second-opinion" "${out:-<empty>}"
+fi
+
 print_summary
