@@ -1,0 +1,8 @@
+second-opinion	ask codex to weigh in on this approach
+second-opinion	consult codex about the schema change
+second-opinion	get a second opinion from another model on this migration plan
+panel	get independent answers from several models and show them to me unmerged
+panel	give me a model panel on these two options
+design-debate	let's debate the tradeoffs between a monolith and microservices architecture
+panel	run a panel of models on this design
+panel	run a standalone panel on this question; return independent raw answers
