@@ -14,7 +14,7 @@ panel / second-opinion (model turn)
         exactly one option labelled "Approve and send"; its preview = the package text
         a "Do not send" option (any preview on it never qualifies)
      PreToolUse  hooks/egress-consent-ask-hook.sh
-        marker present AND tool_input has an `answers` key      -> DENY (pre-answered)
+        marker present AND tool_input has `answers` or `annotations` -> DENY (pre-answered)
         marker present AND agent_id non-null                    -> DENY (subagent cannot ask)
         marker present AND schema violated                      -> DENY (names the rule)
         marker present AND a record for this tool_use_id exists -> DENY (reused id)
@@ -59,8 +59,18 @@ produces a **refusal**.
 *given*. Nothing observable to a hook shows how much of it the UI rendered — a UI that
 truncates or collapses a long preview still returns the full value, and the hash still
 passes. The guarantee is therefore **"the user approved the supplied preview, which is
-byte-identical to what is sent"**, not "the user read every byte". The question text tells
+byte-identical to what is sent, modulo trailing newlines"**, not "the user read every byte". The question text tells
 the user the preview is the complete package; very large packages are a residual risk.
+
+### Pre-filled `annotations` and the `Other` answer
+
+`annotations[q].preview` is what the receipt hook hashes, and the tool schema lets the model
+supply `annotations` just as it can supply `answers`, so the ask hook denies a marked call
+carrying **either** key. The free-text `Other` answer is unmeasured: if a user types
+`Approve and send` there, `answers[q]` equals the label, and whether the harness then returns
+a preview annotation is not known. Measured before merge in the live end-to-end run; until
+then the design relies on the annotation requirement, and the discriminator is recorded as
+an open verification item rather than assumed.
 
 ### Token symmetry
 

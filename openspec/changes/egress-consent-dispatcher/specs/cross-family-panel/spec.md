@@ -14,7 +14,7 @@ write one only when: exactly one question in the call carried an
 as a clean ask at PreToolUse and has not been consumed; the answer for that question is
 exactly `Approve and send`; and the harness-returned preview annotation for that question
 exists and hashes to the digest. A marked question MUST be denied at PreToolUse when its
-input contains an `answers` key, when it comes from a subagent, when its `tool_use_id` was
+input contains an `answers` or `annotations` key, when it comes from a subagent, when its `tool_use_id` was
 already recorded, or when it violates the consent-question schema. Receipt files are
 agent-writable, so these rules defend against a skipped ask, not a deliberate forgery.
 Session identity MUST be resolved without the shared singleton on both sides. When the
@@ -34,7 +34,7 @@ that consent enforcement is off.
 #### Scenario: a pre-answered consent question is denied
 
 - GIVEN an `AskUserQuestion` call whose question carries `[egress-consent:D]`
-- WHEN its `tool_input` contains an `answers` key
+- WHEN its `tool_input` contains an `answers` or `annotations` key
 - THEN the PreToolUse hook denies it, AND no receipt for D is ever written
 
 #### Scenario: a repeated PostToolUse cannot resurrect a spent approval

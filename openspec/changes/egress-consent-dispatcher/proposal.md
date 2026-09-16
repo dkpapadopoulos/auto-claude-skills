@@ -37,8 +37,9 @@ deny flip is supposed to be earned from.
   for any question carrying an `[egress-consent:<digest>]` marker, and denies a marked
   question that arrives pre-answered. A PostToolUse hook writes the receipt only when
   that same `tool_use_id` was a clean ask, the selected label is the fixed approve
-  label, and the selected option's preview hashes to the marker digest — so the
-  receipt binds to the bytes the user saw.
+  label, and the harness-returned preview hashes to the marker digest — so the
+  receipt binds to the preview the user approved, which is the sent package (modulo
+  trailing newlines). It does not prove the user read every byte of a long preview.
 - **Observer fixed and made measuring.** Payload-first token resolution; local
   companion verbs (`status`/`result`/`cancel`/`setup`/`--help`) excluded; each
   recognised cross-family dispatch that does not go through the dispatcher appends a
