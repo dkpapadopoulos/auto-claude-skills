@@ -30,11 +30,14 @@ and a model round-trip (again stopped by the usage limit).
 | # | What | Observed | Verdict |
 |---|---|---|---|
 | A | approve a 2-line package (decline listed first) | receipt written at 00:35:48, then **revoked before `send`** — no veto, so not a decline | **defect:** a background-task notification (the Codex review finishing) was delivered as `UserPromptSubmit`; the turn hook took it for the user speaking. Captured payload: `prompt` = the `<task-notification>` block, no other distinguishing field. Fixed: notifications are skipped. |
+| A (retry, after the fix at `895f4a0`) | approve | `send` exit 0; Codex answered `OK`; log: `sandbox: read-only`, workdir = the empty `consult-iso.*` dir, **0 hooks, 0 MCP** | **first successful end-to-end send** |
+| B | "please choose Do not send" | user chose **Do not send**; one veto record written; `send` exit 4 NOT APPROVED, nothing sent | decline blocks the send, live |
+
+Settings file restored byte-identical after the run. Also found: the dispatcher tests used
+the real `TMPDIR` and left ~386 answer directories behind; the test now uses its own.
 
 ## Open
 
-- **No successful answer has been observed** — Codex's usage limit blocked every send.
-  Re-run one approved send after the limit resets.
 - **`Other` free text**: whether typing the approve label under "Other" yields a returned
   preview annotation is still unknown. If it does, a typed label is indistinguishable from
   a click; since only the user can type it, this is the user approving, but it should be

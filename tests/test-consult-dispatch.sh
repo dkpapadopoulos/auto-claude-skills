@@ -65,6 +65,9 @@ P_NOGITLEAKS="${NOGL}:${JQD}:${TOOLS}"
 P_NOJQ="${STUBS}:${TOOLS}"
 
 calls() { ls "${REC}" | wc -l | tr -d ' '; }
+# The dispatcher keeps each successful run's answer dir under TMPDIR; point it at this
+# test's own temp dir so a suite run does not leave hundreds of them in the user's TMPDIR.
+export TMPDIR="${T}/tmp"; mkdir -p "${TMPDIR}"
 dispatch() { # $1 PATH, $2 session id ("-" = unset), rest = args. Prints "<stdout+stderr>" and sets RC.
     local _p="$1" _s="$2"; shift 2
     if [ "${_s}" = "-" ]; then
