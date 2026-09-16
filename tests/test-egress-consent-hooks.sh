@@ -157,7 +157,7 @@ assert_equals "ask snapshot kept as .used" "true" "$([ -f "$(ask_file toolu_ok).
 mv "${r}" "${r}.consumed"
 out="$(run_rcpt "$(post_payload toolu_ok "${L}")")"
 assert_equals "repeated Post after consumption: no new receipt" "0" "$(rcpt_count)"
-assert_contains "repeated Post is announced" "no clean ask" "${out}"
+assert_equals "repeated Post of an already-processed answer is silent (no new intent)" "" "${out}"
 
 reset_state
 run_ask "$(pre_payload toolu_no)" >/dev/null
@@ -256,6 +256,22 @@ reset_state
 out="$(run_ask "$(pre_payload toolu_ctl '.tool_input.questions[0].multiSelect=true | .tool_use_id="bad\u0001id"')")"
 assert_equals "control characters never break the hook's JSON" "ok" "$(printf '%s' "${out}" | jq -e . >/dev/null 2>&1 && echo ok || echo broken)"
 
+echo "-- review round 3 --"
+# F1: a duplicate PostToolUse (e.g. the plugin loaded twice) must not revoke the approval
+# the first delivery just issued.
+reset_state
+run_ask "$(pre_payload toolu_dup)" >/dev/null
+run_rcpt "$(post_payload toolu_dup "${L}")" >/dev/null
+out="$(run_rcpt "$(post_payload toolu_dup "${L}")")"
+assert_equals "F1: a duplicate Post keeps the approval it issued" "1" "$(rcpt_count)"
+assert_not_contains "F1: a duplicate Post does not claim to revoke anything" "revoked" "${out}"
+
+# Hidden characters in the preview: DEL, C1, bidi.
+for cp in '\u007f' '\u0085' '\u202e' '\u2066'; do
+    reset_state
+    o="$(run_ask "$(pre_payload toolu_cc ".tool_input.questions[0].options[1].preview += \"${cp}\"")")"
+    assert_contains "preview with ${cp} is denied as hidden characters" "hidden-characters-in-preview" "${o}"
+done
 echo "-- wiring and retirement --"
 HJ="${PROJECT_ROOT}/hooks/hooks.json"
 assert_equals "PreToolUse(AskUserQuestion) runs the ask hook" "1" \

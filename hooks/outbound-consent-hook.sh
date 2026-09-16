@@ -36,7 +36,7 @@ _INPUT="$(cat)"
 # like codex_settings.yaml) fall through to the precise classification below and exit
 # silently. A false NEGATIVE is the unsafe direction and is the documented ceiling.
 case "${_INPUT}" in
-    *codex*|*Codex*|*CODEX*|*gemini*|*Gemini*|*GEMINI*|*openai*|*OpenAI*|*OPENAI*|*skill-egress-receipt-*|*skill-egress-ask-*|*skill-egress-veto-*) ;;
+    *codex*|*Codex*|*CODEX*|*gemini*|*Gemini*|*GEMINI*|*openai*|*OpenAI*|*OPENAI*|*skill-egress-*) ;;
     *) exit 0 ;;
 esac
 
@@ -95,10 +95,11 @@ case "${_TOOL}" in
                     ;;
             esac
         fi
-        # Approval records only. Reading the frozen package (.skill-egress-pkg-*) is what
-        # the skills tell the model to do when building the preview, so it is not flagged.
-        case "${_CMD}" in
-            *skill-egress-receipt-*|*skill-egress-ask-*|*skill-egress-veto-*) _TOUCH=true ;;
+        # Any egress state EXCEPT a pure read of the frozen package: globs such as
+        # `.skill-egress-*` reach the approval records too and must be seen.
+        _CMD_NOPKG="${_CMD//skill-egress-pkg-/}"
+        case "${_CMD_NOPKG}" in
+            *skill-egress-*) _TOUCH=true ;;
         esac
         ;;
 esac

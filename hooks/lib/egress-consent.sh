@@ -66,22 +66,48 @@ egress_valid_token() {
 egress_ask_path()     { printf '%s/.claude/.skill-egress-ask-%s.%s' "${HOME}" "$1" "$2"; }
 egress_receipt_path() { printf '%s/.claude/.skill-egress-receipt-%s.%s.%s' "${HOME}" "$1" "$2" "$3"; }
 egress_pkg_path()     { printf '%s/.claude/.skill-egress-pkg-%s.%s' "${HOME}" "$1" "$2"; }
-# A decline record for one package: holds the ask time of the latest declined consent
-# question, so an approval whose ask is not newer can never be used — whatever order the
-# harness delivers parallel answers in.
+# A decline record for one package: holds the time (ms) at which the latest decline was
+# ANSWERED. Any approval whose question was asked before that moment — i.e. was still open
+# when the user said no — can never be used, whatever order parallel answers arrive in.
 egress_veto_path()    { printf '%s/.claude/.skill-egress-veto-%s.%s' "${HOME}" "$1" "$2"; }
 
-# egress_has_hidden_chars — stdin; rc 0 when it contains a C0 control character other
-# than TAB and LF (ESC sequences can conceal text in a rendered preview; CR can overwrite
-# a line). NUL is included.
+# egress_has_hidden_chars — stdin. rc 0: contains characters that can hide or reorder text
+# in a rendered preview — C0 controls other than TAB/LF (ESC sequences conceal, CR
+# overwrites), DEL, C1 controls (U+0080-U+009F) and bidi overrides/isolates
+# (U+202A-U+202E, U+2066-U+2069). rc 1: none. rc 2: the check could not run (callers must
+# say so, never report characters that are not there). NUL is NOT covered (grep cannot
+# match it); callers check NUL separately. Patterns are built with printf so no raw
+# control byte lives in this source file.
 egress_has_hidden_chars() {
-    local _in
-    _in="$(mktemp "${TMPDIR:-/tmp}/egress-cc.XXXXXX" 2>/dev/null)" || return 0
-    cat > "${_in}"
-    if LC_ALL=C tr -d '\000-\010\013-\037' < "${_in}" | cmp -s - "${_in}"; then
-        rm -f "${_in}"; return 1
+    local _c0 _c1 _b1 _b2 _rc
+    _c0="$(printf '[\001-\010\013-\037\177]')"
+    _c1="$(printf '\302[\200-\237]')"
+    _b1="$(printf '\342\200[\252-\256]')"
+    _b2="$(printf '\342\201[\246-\251]')"
+    LC_ALL=C grep -q -e "${_c0}" -e "${_c1}" -e "${_b1}" -e "${_b2}" 2>/dev/null
+    _rc=$?
+    case "${_rc}" in
+        0) return 0 ;;
+        1) return 1 ;;
+        *) return 2 ;;
+    esac
+}
+
+# egress_now_ms — wall clock in milliseconds (perl Time::HiRes; falls back to seconds*1000,
+# which only loses the sub-second ordering of a decline and a re-ask by the same user).
+egress_now_ms() {
+    local _ms=""
+    if command -v perl >/dev/null 2>&1; then
+        _ms="$(perl -MTime::HiRes=time -e 'printf("%d", time() * 1000)' 2>/dev/null)"
     fi
-    rm -f "${_in}"; return 0
+    case "${_ms}" in
+        [1-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+        *)
+            _ms="$(date +%s 2>/dev/null)"
+            case "${_ms}" in ''|*[!0-9]*) return 1 ;; esac
+            _ms="${_ms}000" ;;
+    esac
+    printf '%s' "${_ms}"
 }
 
 # egress_revoke_unused <token> [digest] — rename every unused receipt of this conversation
@@ -102,7 +128,7 @@ egress_revoke_unused() {
     printf '%s %s' "${_ok}" "${_bad}"
 }
 
-# egress_record_veto <token> <digest> <ask_ts> — keep the LATEST declined ask time.
+# egress_record_veto <token> <digest> <answered_ms> — keep the LATEST decline time.
 egress_record_veto() {
     local _v _old=0
     _v="$(egress_veto_path "$1" "$2")"
@@ -115,7 +141,7 @@ egress_record_veto() {
     printf '%s\n' "$3" | egress_write_atomic "${_v}"
 }
 
-# egress_veto_ts <token> <digest> — prints the latest declined ask time, or 0.
+# egress_veto_ts <token> <digest> — prints the latest decline time (ms), or 0.
 egress_veto_ts() {
     local _t
     _t="$(cat "$(egress_veto_path "$1" "$2")" 2>/dev/null)"

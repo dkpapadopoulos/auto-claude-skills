@@ -9,8 +9,9 @@
 #   - the harness-returned annotation for that question carries a preview (never fall
 #     back to the option preview in tool_input — that is model-authored text);
 #   - that preview hashes (egress_digest_stdin) to the snapshot's digest.
-# The receipt carries the ask time, so the dispatcher can discard it if a decline of the
-# same package was asked at the same time or later (parallel asks answered in any order).
+# The receipt carries the ask time (ms), so the dispatcher can discard it if a decline of
+# the same package was ANSWERED after this question was asked (parallel asks, any order).
+# A repeat delivery of an already-processed answer is ignored entirely.
 #
 # Any OTHER outcome withdraws approvals: a decline (any non-approve answer) records a
 # veto for the package and revokes every unused approval of the conversation; an
@@ -110,8 +111,13 @@ if ! egress_valid_id "${_ID}"; then
 fi
 
 _ASK="$(egress_ask_path "${_TOKEN}" "${_ID}")"
+if [ -e "${_ASK}.used" ]; then
+    # A repeat delivery of an answer already processed (e.g. the plugin loaded twice).
+    # It carries no new user intent: never re-issue, and never revoke what it issued.
+    exit 0
+fi
 if [ ! -f "${_ASK}" ]; then
-    # Not a recorded clean ask (unmarked, denied, or already processed). A marked answer
+    # Not a recorded clean ask (unmarked, or denied at PreToolUse). A marked answer
     # still withdraws: whatever the user said here, it was not a verifiable approval.
     if egress_valid_digest "${_MARKED}"; then
         _finish "no clean ask recorded for this consent answer — no approval receipt was written." package
@@ -125,12 +131,12 @@ fi
 _SNAP="${_ASK}.used"
 
 _DIGEST="$(jq -r '.digest // empty' "${_SNAP}" 2>/dev/null)"
-_ASK_TS="$(jq -r '.ts // empty | numbers | floor' "${_SNAP}" 2>/dev/null)"
+_ASK_MS="$(jq -r '.ask_ms // empty | numbers | floor' "${_SNAP}" 2>/dev/null)"
 if ! egress_valid_digest "${_DIGEST}"; then
     _DIGEST=""
     _finish "consent snapshot unreadable — no approval receipt was written." package
 fi
-case "${_ASK_TS}" in ''|*[!0-9]*)
+case "${_ASK_MS}" in ''|*[!0-9]*)
     _finish "consent snapshot has no ask time — no approval receipt was written." package ;;
 esac
 
@@ -148,7 +154,10 @@ _STATE="$(printf '%s' "${_INPUT}" | jq -r --slurpfile s "${_SNAP}" --arg L "${EG
 case "${_STATE}" in
     ok) ;;
     not-approved)
-        if ! egress_record_veto "${_TOKEN}" "${_DIGEST}" "${_ASK_TS}"; then
+        # The decline voids every approval of this package whose question was asked
+        # before NOW — i.e. was still open when the user said no.
+        _DECLINED_MS="$(egress_now_ms)" || _DECLINED_MS=""
+        if ! egress_record_veto "${_TOKEN}" "${_DIGEST}" "${_DECLINED_MS}"; then
             _finish "the user did not choose \"${EGRESS_APPROVE_LABEL}\" — not approved; nothing will be sent from this answer. WARNING: the decline could not be recorded durably." all
         fi
         _finish "the user did not choose \"${EGRESS_APPROVE_LABEL}\" — not approved; nothing will be sent from this answer." all ;;
@@ -171,8 +180,8 @@ _NOW="$(date +%s 2>/dev/null)"
 case "${_NOW}" in ''|*[!0-9]*)
     _finish "clock unavailable — no approval receipt was written." package ;;
 esac
-if ! jq -nc --arg d "${_DIGEST}" --arg id "${_ID}" --argjson ts "${_NOW}" --argjson ask "${_ASK_TS}" \
-        '{digest: $d, tool_use_id: $id, ts: $ts, ask_ts: $ask}' 2>/dev/null \
+if ! jq -nc --arg d "${_DIGEST}" --arg id "${_ID}" --argjson ts "${_NOW}" --argjson ask "${_ASK_MS}" \
+        '{digest: $d, tool_use_id: $id, ts: $ts, ask_ms: $ask}' 2>/dev/null \
     | egress_write_atomic "$(egress_receipt_path "${_TOKEN}" "${_DIGEST}" "${_ID}")"; then
     _announce "could not write the approval receipt — this approval cannot be used; ask again."
 fi

@@ -37,7 +37,7 @@ REC="${T}/codex-calls"; mkdir -p "${REC}"
 cat > "${STUBS}/codex" <<EOF
 #!/bin/bash
 n=\$(ls "${REC}" | wc -l | tr -d ' '); n=\$((n + 1)); d="${REC}/\${n}"; mkdir -p "\$d"
-printf '%s\n' "\$@" > "\$d/argv"; cat > "\$d/stdin"; pwd > "\$d/cwd"
+printf '%s\n' "\$@" > "\$d/argv"; cat > "\$d/stdin"; pwd > "\$d/cwd"; env > "\$d/env"
 out=""; prev=""
 for a in "\$@"; do [ "\$prev" = "-o" ] && out="\$a"; prev="\$a"; done
 [ -f "${T}/codex.rc" ] && exit "\$(cat "${T}/codex.rc")"
@@ -444,6 +444,35 @@ approve "${D}" "${PKG}" toolu_turn_ctl
 hook "${PROJECT_ROOT}/hooks/egress-consent-turn-hook.sh" "$(jq -nc --arg tp "${H}/.claude/projects/p/OTHER.jsonl" '{hook_event_name:"UserPromptSubmit", transcript_path:$tp, prompt:"hi"}')"
 dispatch "${P_FULL}" "${SID}" send "${D}"
 assert_equals "control: another conversation's prompt does not withdraw this approval" "0" "${RC}"
+
+echo "-- review round 3 --"
+# F2: a parallel decline wins even when a second boundary falls between the two asks.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+hook "${ASK_HOOK}" "$(mkpre toolu_f2_no)"
+sleep 1.1
+hook "${ASK_HOOK}" "$(mkpre toolu_f2_yes)"
+hook "${RCPT_HOOK}" "$(mkpost toolu_f2_no "Do not send")"
+hook "${RCPT_HOOK}" "$(mkpost toolu_f2_yes "Approve and send")"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "F2: a parallel decline wins across a second boundary -> 4" "4" "${RC}"
+# F3: decline, then re-ask and approve within the same second — a genuine new approval.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+hook "${ASK_HOOK}" "$(mkpre toolu_f3_no)"; hook "${RCPT_HOOK}" "$(mkpost toolu_f3_no "Do not send")"
+hook "${ASK_HOOK}" "$(mkpre toolu_f3_yes)"; hook "${RCPT_HOOK}" "$(mkpost toolu_f3_yes "Approve and send")"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "F3: a re-ask answered after the decline is a valid approval -> 0" "0" "${RC}"
+# F4: an unusable TMPDIR is reported as that, not as hidden characters.
+OUT="$(cd "${T}" && env PATH="${P_FULL}" HOME="${H}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" CLAUDE_CODE_SESSION_ID="${SID}" \
+    TMPDIR="${T}/nope-tmp" /bin/bash "${DISPATCH}" prepare codex "${PKGF}" 2>&1 < /dev/null)"; RC=$?
+assert_equals "F4: prepare with an unusable TMPDIR still works (no temp file needed)" "0" "${RC}"
+assert_not_contains "F4: no false hidden-character claim" "control characters" "${OUT}"
+# F6: an exported GIT_DIR does not make a clean TMPDIR look like a repository.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_f6
+OUT="$(cd "${T}" && env PATH="${P_FULL}" HOME="${H}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" CLAUDE_CODE_SESSION_ID="${SID}" \
+    GIT_DIR="${T}/repo/.git" /bin/bash "${DISPATCH}" send "${D}" 2>&1 < /dev/null)"; RC=$?
+assert_equals "F6: GIT_DIR in the environment does not cause a false refusal -> 0" "0" "${RC}"
+assert_not_contains "F6: codex does not inherit GIT_DIR" "GIT_DIR=" "$(cat "${REC}/1/env" 2>/dev/null)"
 
 echo "-- usage --"
 dispatch "${P_FULL}" "${SID}" send "not-a-digest"

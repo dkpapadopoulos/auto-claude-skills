@@ -36,17 +36,17 @@ if ! { . "${_PLUGIN_ROOT}/hooks/lib/egress-consent.sh" 2>/dev/null \
         && command -v egress_revoke_unused >/dev/null 2>&1 \
         && . "${_PLUGIN_ROOT}/hooks/lib/session-token.sh" 2>/dev/null \
         && command -v session_token_from_transcript >/dev/null 2>&1; }; then
-    _announce "consent libraries not loadable — unused egress approvals from the previous turn were NOT withdrawn and remain usable for up to 15 minutes."
+    _announce "consent libraries not loadable — unused egress approvals of this conversation (if any) were NOT withdrawn and remain usable for up to 15 minutes."
     exit 0
 fi
 if ! command -v jq >/dev/null 2>&1; then
-    # The dispatcher cannot read receipts without jq either, so nothing is sendable.
+    _announce "jq unavailable to this hook — unused egress approvals of this conversation (if any) were NOT withdrawn at the turn boundary."
     exit 0
 fi
 _TP="$(printf '%s' "${_INPUT}" | jq -r 'if type == "object" then (.transcript_path // "") | tostring else "" end' 2>/dev/null)"
 _TOKEN="$(session_token_from_transcript "${_TP}")"
 if ! egress_valid_token "${_TOKEN}"; then
-    _announce "no session identity in the prompt payload — unused egress approvals from the previous turn were NOT withdrawn."
+    _announce "no session identity in the prompt payload — unused egress approvals of this conversation (if any) were NOT withdrawn."
     exit 0
 fi
 _RV="$(egress_revoke_unused "${_TOKEN}")"

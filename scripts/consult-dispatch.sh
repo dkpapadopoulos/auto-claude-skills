@@ -73,13 +73,19 @@ _prepare() {
         _err "package file missing, unreadable, empty or blank: ${_file}"
         exit 2
     fi
-    # NUL, and every C0 control other than TAB/LF: an ESC sequence can conceal text in a
-    # rendered preview and a CR can overwrite a line, so the user would approve bytes they
-    # could not see.
-    if egress_has_hidden_chars < "${_file}"; then
-        _err "package contains control characters (other than tab and newline) that could hide text from the user's preview."
+    # NUL, and anything that can hide or reorder text in a rendered preview: the user
+    # would otherwise approve bytes they could not see.
+    if ! LC_ALL=C tr -d '\000' < "${_file}" | cmp -s - "${_file}"; then
+        _err "package contains NUL bytes; only text packages can be shown to the user and sent."
         exit 2
     fi
+    egress_has_hidden_chars < "${_file}"
+    case $? in
+        0) _err "package contains characters that could hide or reorder text in the user's preview (control characters other than tab/newline, DEL, C1 controls, or bidi overrides)."
+           exit 2 ;;
+        1) ;;
+        *) _cannot "could not check the package for hidden characters (grep unavailable)" ;;
+    esac
     # A package the preview cannot carry byte-for-byte could never be approved; say so now
     # rather than looping on "paste it verbatim". Skipped when iconv is unavailable.
     if command -v iconv >/dev/null 2>&1 && ! iconv -f UTF-8 -t UTF-8 < "${_file}" > /dev/null 2>&1; then
@@ -157,7 +163,9 @@ _send() {
         || _cannot "could not create private scratch directories under ${_tmpd}"
     # Codex would load AGENTS.md and git context from an enclosing repository — content the
     # user never saw in the preview.
-    if command -v git >/dev/null 2>&1 && git -C "${_ISO}" rev-parse --git-dir > /dev/null 2>&1; then
+    if command -v git >/dev/null 2>&1 \
+        && env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_CEILING_DIRECTORIES -u GIT_DISCOVERY_ACROSS_FILESYSTEM \
+            git -C "${_ISO}" rev-parse --git-dir > /dev/null 2>&1; then
         _cannot "the isolated directory ${_ISO} is inside a git repository (TMPDIR=${_tmpd}); Codex would load that repository's context" "Point TMPDIR outside any repository."
     fi
 
@@ -204,12 +212,12 @@ _send() {
             [ -f "${_r}" ] || continue
             case "${_r}" in *.consumed|*.revoked|*.tmp.*) continue ;; esac
             read -r _ts _ask <<EOF
-$(jq -r --arg d "${_d}" 'select(type == "object" and .digest == $d) | "\(.ts | numbers | floor) \(.ask_ts | numbers | floor)"' "${_r}" 2>/dev/null)
+$(jq -r --arg d "${_d}" 'select(type == "object" and .digest == $d) | "\(.ts | numbers | floor) \(.ask_ms | numbers | floor)"' "${_r}" 2>/dev/null)
 EOF
             case "${_ts}" in ''|*[!0-9]*) continue ;; esac
             case "${_ask:-}" in ''|*[!0-9]*) continue ;; esac
-            # A decline of this package asked at the same time or later wins, whatever
-            # order the harness delivered the answers in.
+            # A decline answered after this question was asked wins, whatever order the
+            # harness delivered the answers in.
             [ "${_ask}" -gt "${_veto}" ] || continue
             [ $(( _now - _ts )) -le "${EGRESS_RECEIPT_TTL}" ] || continue
             [ $(( _ts - _now )) -le 60 ] || continue
@@ -228,7 +236,8 @@ EOF
     # hooks and started MCP servers. These flags removed both while still reaching the
     # model. A global ~/.codex/AGENTS.md is NOT known to be excluded (residual risk).
     _KEEP_OUT=true
-    ( cd "${_ISO}" && codex exec -s read-only -C "${_ISO}" --skip-git-repo-check --ephemeral \
+    ( cd "${_ISO}" && env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY \
+        codex exec -s read-only -C "${_ISO}" --skip-git-repo-check --ephemeral \
         --ignore-user-config --disable hooks --disable plugins --disable memories --disable apps \
         -o "${_OUT}/answer.md" ${_model:+-m "${_model}"} - ) < "${_copy}" > "${_OUT}/codex.log" 2>&1
     _rc=$?

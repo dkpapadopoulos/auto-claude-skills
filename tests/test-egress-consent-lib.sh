@@ -71,4 +71,27 @@ assert_equals "refused empty write leaves no file" "false" "$([ -e "${T}/.claude
 HOME="${HOME_SAVE}"
 rm -rf "${T}"
 
+
+echo "-- hidden characters: C0 (not TAB/LF), DEL, C1, bidi overrides; cannot-check is distinct --"
+hc() { printf "$1" > "${T2}/in"; egress_has_hidden_chars < "${T2}/in"; echo $?; }
+T2="$(mktemp -d "${TMPDIR:-/tmp}/egress-hc.XXXXXX")"
+assert_equals "plain text: none" "1" "$(hc 'a b\tc\nd\n')"
+assert_equals "ESC: found" "0" "$(hc 'a\033[8mb')"
+assert_equals "CR: found" "0" "$(hc 'a\rb')"
+assert_equals "DEL: found" "0" "$(hc 'a\177b')"
+assert_equals "C1 (U+0085): found" "0" "$(hc 'a\302\205b')"
+assert_equals "bidi override (U+202E): found" "0" "$(hc 'a\342\200\256b')"
+assert_equals "bidi isolate (U+2066): found" "0" "$(hc 'a\342\201\246b')"
+assert_equals "ordinary UTF-8 (e acute, em dash): none" "1" "$(hc 'caf\303\251 \342\200\224 x')"
+assert_equals "a check that cannot run returns 2, not 'found'" "2" \
+    "$(printf 'a' | env TMPDIR=/nonexistent PATH=/nonexistent /bin/bash -c ". '${LIB}'; egress_has_hidden_chars; echo \$?" 2>/dev/null | tail -1)"
+rm -rf "${T2}"
+is_ms() {
+    case "$1" in
+        [1-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) echo yes ;;
+        *) echo "no:$1" ;;
+    esac
+}
+assert_equals "egress_now_ms is a 13-digit millisecond clock" "yes" "$(is_ms "$(egress_now_ms)")"
+
 print_summary

@@ -21,7 +21,7 @@ panel / second-opinion (model turn)
         FIRST, for any marked call: revoke every unused receipt for <token>+<digest>
             (asking again supersedes; a cancelled or failed ask leaves nothing stale)
         marker present, clean -> write ask SNAPSHOT
-            .skill-egress-ask-<token>.<tool_use_id> = {digest, question, ts}
+            .skill-egress-ask-<token>.<tool_use_id> = {digest, question, ask_ms}
      PostToolUse hooks/egress-consent-receipt-hook.sh
         ask snapshot exists for this tool_use_id -> consume it FIRST (mv -> .used)
         answers[snapshot.question] == "Approve and send"
@@ -29,10 +29,10 @@ panel / second-opinion (model turn)
             to the model-supplied option preview)
         AND sha256(that preview) == snapshot.digest == snapshot.approve_preview_sha
         -> write receipt .skill-egress-receipt-<token>.<digest>.<tool_use_id>
-               {digest, tool_use_id, ts, ask_ts}
-        a repeated Post finds only .used -> writes nothing
+               {digest, tool_use_id, ts, ask_ms}
+        a repeated Post (snapshot already .used) -> ignored entirely: no receipt, no revoke
         any OTHER answer (decline, free text) -> record a VETO for the digest
-            (.skill-egress-veto-<token>.<digest> = latest declined ask ts) and rename every
+            (.skill-egress-veto-<token>.<digest> = ms the decline was ANSWERED) and rename every
             unused receipt of the conversation to .revoked (latest answer wins; found live)
         an unverifiable answer (no snapshot, odd tool_response, bad preview) -> revoke the
             package's unused receipts; messages state what was actually withdrawn
@@ -46,8 +46,8 @@ hooks/egress-consent-turn-hook.sh (UserPromptSubmit)
           gitleaks over the copy, from the isolated dir, env -u GITLEAKS_CONFIG[_TOML],
           --ignore-gitleaks-allow, empty ignore path (exit 3 = findings -> refuse; other
           non-zero -> CANNOT VERIFY; binary absent -> announce and continue)
-        then consume ONE fresh (<= 900s) receipt whose ask_ts is NEWER than the digest's
-          veto, by atomic mv -> .consumed; only a successful mv authorises the send
+        then consume ONE fresh (<= 900s) receipt whose ask_ms is NEWER than the digest's
+          veto (i.e. asked after the last decline was answered), by atomic mv -> .consumed
         a send whose outcome is uncertain reports "may have sent" and never restores the receipt
         codex exec -s read-only -C <empty mktemp dir> --skip-git-repo-check --ephemeral
                    --ignore-user-config --disable hooks --disable plugins
@@ -223,7 +223,12 @@ hook JSON broken by control characters in model-written fields; false "the send 
 refused" claims; a hash failure reported as tampering; a scratch-dir failure reported as
 MAY HAVE SENT and costing the approval; a relative TMPDIR; a TMPDIR inside a repository;
 `--model` values starting with `-`; the observer flagging normal reads of the package.
-Every fix has a regression cell and was mutation-checked.
+Every fix has a regression cell and was mutation-checked. A fourth, fresh reviewer then
+attacked the fix commit itself and found defects in it — a duplicate PostToolUse revoking
+the approval it had just issued, veto ordering that depended on a whole-second boundary, a
+false "hidden characters" refusal when the check could not run, an observer narrowing that
+silenced glob commands, and an exported GIT_DIR causing a false refusal — all fixed, with
+DEL, C1 controls and bidi overrides added to the hidden-character check.
 
 Accepted residuals, not fixed:
 - A "no" given as a plain (unmarked) question or chat reply inside the SAME turn does not
@@ -232,6 +237,10 @@ Accepted residuals, not fixed:
   genuine approval would be refused (false block, safe direction).
 - Another plugin's PreToolUse `updatedInput` could inject answers after this hook checked
   the call; not testable here.
+- A parallel ask that is CANCELLED (no PostToolUse) does not withdraw an approval given to
+  its sibling asked at the same time; only the next user prompt does.
+- Without perl (Time::HiRes) the clock falls back to whole seconds: a decline and a re-ask
+  answered within the same second could order wrongly (false block, safe direction).
 - The observer sees only Bash/Agent/Task, so Write/Edit of `.skill-egress-*` or of
   `skill-config.json` (the `warn` escape hatch — agent-writable config) is unobserved.
 - `consult-run.*` answer directories are announced but never garbage-collected.

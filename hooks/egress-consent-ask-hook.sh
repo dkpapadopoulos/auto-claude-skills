@@ -86,7 +86,9 @@ def approve($m): [(($m.options | arrays)[]? | objects | select(.label == $L))];
    elif ((($m[0].options | arrays)[0] | objects | .label) // "") == $L then "approve-option-first"
    elif ((($m[0].options | arrays)[0] | objects | .label) // "") != $N then "decline-option-first"
    elif (approve($m[0])[0].preview | strs) == "" then "approve-preview-missing"
-   elif (approve($m[0])[0].preview | strs | explode | any(. < 32 and . != 9 and . != 10))
+   elif (approve($m[0])[0].preview | strs | explode
+         | any((. < 32 and . != 9 and . != 10) or . == 127 or (. >= 128 and . <= 159)
+               or (. >= 8234 and . <= 8238) or (. >= 8294 and . <= 8297)))
      then "hidden-characters-in-preview"
    else "ok" end) as $verdict
 | [ $verdict,
@@ -159,14 +161,14 @@ if [ -e "${_ASK}" ] || [ -e "${_ASK}.used" ]; then
     exit 0
 fi
 
-_NOW="$(date +%s 2>/dev/null)"
+_NOW="$(egress_now_ms)" || _NOW=""
 case "${_NOW}" in ''|*[!0-9]*)
     _announce "clock unavailable — this consent question was NOT recorded (so it cannot approve anything); ${_WITHDRAWN}."
     exit 0 ;;
 esac
 if ! printf '%s' "${_INPUT}" \
-    | jq -c --arg d "${_DIGEST}" --argjson ts "${_NOW}" \
-        '{digest: $d, ts: $ts,
+    | jq -c --arg d "${_DIGEST}" --argjson ms "${_NOW}" \
+        '{digest: $d, ask_ms: $ms,
           question: ([.tool_input.questions[] | objects | select((.question | strings) | contains("[egress-consent:"))][0].question)}' \
         2>/dev/null \
     | egress_write_atomic "${_ASK}"; then
