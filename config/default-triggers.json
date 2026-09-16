@@ -410,7 +410,7 @@
       "role": "domain",
       "phase": "DESIGN",
       "triggers": [
-        "(trade.?off|debate|compare.*(option|approach|design)|weigh.*(option|approach)|pro.?con|alternative|architecture)"
+        "(trade.?off|debate|compare.*(option|approach|design)|weigh +(the|up|these|our|both|two|a|few|different|several|all)[^.!?]{0,20}(option|approach|alternative|tradeoff)|weigh +(option|approach|alternative|tradeoff)|pro.?con|alternative|architecture)"
       ],
       "keywords": [],
       "trigger_mode": "regex",
@@ -421,19 +421,38 @@
       "invoke": "Skill(auto-claude-skills:design-debate)"
     },
     {
+      "name": "second-opinion",
+      "role": "domain",
+      "phase": "PLAN",
+      "triggers": [
+        "(^|[^a-z])(ask|consult|poll|query|run this (by|past)|check with|send this to|hand this to) +(the +)?(codex|gemini|gpt-?[0-9]|o3|chatgpt)($|[^a-z])",
+        "(another|a second|a different|an independent|an outside|an external|one other|a separate|the other) +(model|llm)($|[^a-z]).{0,40}(opinion|view|take|read|thoughts|perspective|critique|assessment|eyes|sanity.?check|double.?check|second look|weigh in|think)|(opinion|view|take|read|thoughts|perspective|critique|assessment|eyes|sanity.?check|double.?check|second look|weigh in|think).{0,40}(another|a second|a different|an independent|an outside|an external|one other|a separate|the other) +(model|llm)($|[^a-z])",
+        "(second|2nd) opinion[^.!?]{0,40}((codex|gemini|gpt-?[0-9]|o3|chatgpt)|(another|a second|a different|an independent|an outside|an external|one other|a separate|the other) +(model|llm))",
+        "(^|[^a-z])(codex|gemini|gpt-?[0-9]|o3|chatgpt)[^.!?]{0,30}((opinion|view|take|read|thoughts|perspective|critique|assessment|eyes|sanity.?check|double.?check|second look|weigh in|think))|((opinion|view|take|read|thoughts|perspective|critique|assessment|eyes|sanity.?check|double.?check|second look|weigh in|think))[^.!?]{0,30}(^|[^a-z])(codex|gemini|gpt-?[0-9]|o3|chatgpt)($|[^a-z])",
+        "(ask|get|have|tell) +(another|a second|a different|an independent|an outside|an external|one other|a separate|the other) +(model|llm)($|[^a-z])|(^|[^a-z])(have|ask) +(codex|gemini|gpt-?[0-9]|o3|chatgpt) +(to +)?((opinion|view|take|read|thoughts|perspective|critique|assessment|eyes|sanity.?check|double.?check|second look|weigh in|think)|critique)"
+      ],
+      "keywords": [],
+      "trigger_mode": "regex",
+      "priority": 17,
+      "precedes": [],
+      "requires": [],
+      "description": "Use when the user wants ONE other model's view — an independent opinion (your prior answer withheld) or a critique of an answer already given (your prior answer deliberately included). One participant. Opt-in; phase-agnostic.",
+      "invoke": "Skill(auto-claude-skills:second-opinion)"
+    },
+    {
       "name": "panel",
       "role": "domain",
       "phase": "PLAN",
       "triggers": [
         "(panel of models|model panel|cross.?model (review|opinion|perspective|pass|panel))",
-        "(second opinion from (another|a (second|different)) model|(^|[^a-z])(ask|consult) codex)"
+        "(^|[^a-z])(codex|gemini|gpt-?[0-9]|o3|chatgpt)[^.!?]{0,30}(and|,)[^.!?]{0,24}(codex|gemini|gpt-?[0-9]|o3|chatgpt)($|[^a-z])"
       ],
       "keywords": [],
       "trigger_mode": "regex",
-      "priority": 16,
+      "priority": 18,
       "precedes": [],
       "requires": [],
-      "description": "Independent cross-family perspectives on one prompt — fresh contexts, single round, no cross-talk, verbatim attributed delivery. Opt-in; phase-agnostic by contract.",
+      "description": "Independent cross-family perspectives on one prompt from SEVERAL models — fresh contexts, single round, no cross-talk, verbatim attributed delivery. For ONE other model's opinion or critique use second-opinion instead. Opt-in; phase-agnostic.",
       "invoke": "Skill(auto-claude-skills:panel)"
     },
     {
@@ -1327,7 +1346,7 @@
           "when": "installed"
         },
         {
-          "text": "PERSIST DISCOVERY: After product-discovery completes and the user approves the brief, save it to `docs/plans/YYYY-MM-DD-<slug>-discovery.md`. Then run, in ONE Bash call (shell state does not persist between tool calls): bash \"${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}/scripts/persist-state.sh\" set-discovery-path \"$SLUG\" \"$DISCOVERY_PATH\" to set discovery_path in session state \u2014 the script resolves the session token internally (issue #157).",
+          "text": "PERSIST DISCOVERY: After product-discovery completes and the user approves the brief, save it to `docs/plans/YYYY-MM-DD-<slug>-discovery.md`. Then run, in ONE Bash call (shell state does not persist between tool calls): bash \"${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}/scripts/persist-state.sh\" set-discovery-path \"$SLUG\" \"$DISCOVERY_PATH\" to set discovery_path in session state — the script resolves the session token internally (issue #157).",
           "when": "always"
         }
       ]
@@ -1369,7 +1388,7 @@
           "when": "always"
         },
         {
-          "text": "PERSIST DESIGN: After brainstorming (or design-debate) completes, save the design artifact to `docs/plans/YYYY-MM-DD-<slug>-design.md` with sections: Problem, Capabilities Affected, Out-of-Scope, Approach, Acceptance Scenarios, Decision. Then run, in ONE Bash call (shell state does not persist between tool calls): bash \"${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}/scripts/persist-state.sh\" upsert-change \"$SLUG\" \"\" \"\" \"\" \"$DESIGN_PATH\" to set design_path in session state \u2014 the script resolves the session token internally (issue #157).",
+          "text": "PERSIST DESIGN: After brainstorming (or design-debate) completes, save the design artifact to `docs/plans/YYYY-MM-DD-<slug>-design.md` with sections: Problem, Capabilities Affected, Out-of-Scope, Approach, Acceptance Scenarios, Decision. Then run, in ONE Bash call (shell state does not persist between tool calls): bash \"${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}/scripts/persist-state.sh\" upsert-change \"$SLUG\" \"\" \"\" \"\" \"$DESIGN_PATH\" to set design_path in session state — the script resolves the session token internally (issue #157).",
           "when": "always"
         },
         {

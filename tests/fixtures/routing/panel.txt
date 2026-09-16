@@ -6,16 +6,22 @@
 # First NO_MATCH line is verbatim-borrowed from the design-debate MATCH fixture.
 # Remaining NO_MATCH lines pin the explicit-model-intent boundary (design decision 5):
 # routine engineering language must not route here.
+#
+# Panel is the SEVERAL-models method. Its single-model clause moved to `second-opinion`,
+# which carries the same outbound-data controls -- that ORDER matters: moving the clause
+# first, before those controls existed, was a security regression. Panel gained a
+# two-named-participants clause so an explicit multi-model ask is still claimed here.
 
 MATCH: run a panel of models on this design
-MATCH: get a second opinion from another model on this migration plan
-MATCH: ask codex to weigh in on this approach
+MATCH: ask codex, gemini and gpt-5 each for their take on this design
 MATCH: i want a cross-model review of the caching tradeoff
 MATCH: give me a model panel on these two options
-MATCH: consult codex about the schema change
 
 NO_MATCH: let's debate the tradeoffs between a monolith and microservices architecture
 NO_MATCH: cross-check the config against the fallback registry
 NO_MATCH: add an independent perspectives section to the report
 NO_MATCH: get a second opinion from the reviewer before merging
 NO_MATCH: add a task codex entry to the backlog
+NO_MATCH: get a second opinion from another model on this migration plan
+NO_MATCH: ask codex to weigh in on this approach
+NO_MATCH: consult codex about the schema change

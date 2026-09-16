@@ -1,6 +1,6 @@
 ---
 name: panel
-description: Use to get independent perspectives on one prompt from multiple models — default roster is the strongest available Claude model plus Codex. Opt-in, phase-agnostic; pairs with synthesize for the merge.
+description: Use to get independent perspectives on one prompt from SEVERAL models — default roster is the strongest available Claude model plus Codex. For ONE other model's opinion or critique use second-opinion instead. Opt-in, phase-agnostic; pairs with synthesize for the merge.
 ---
 
 # Panel

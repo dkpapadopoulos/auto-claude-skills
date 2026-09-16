@@ -1,0 +1,52 @@
+# Regex fixtures for skill: second-opinion
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+#
+# Contract C1: ONE other model's view. Two modes — independent opinion (prior answer
+# withheld) and critique (prior answer deliberately included).
+#
+# EVERY NO_MATCH below was MEASURED selecting this skill in a first attempt that was
+# reverted, and each one is a real cost, not a style point: this skill performs a
+# cross-family dispatch, so a false match proposes shipping repository content to another
+# vendor. See openspec/changes/composition-contract-fixes/C1-RETRY.md.
+#
+# The first three NO_MATCH lines are verbatim-borrowed from panel.txt's and
+# design-debate's MATCH sets, pinning the three-way boundary from the other side.
+
+MATCH: get a second opinion from another model on this migration plan
+MATCH: ask codex to weigh in on this approach
+MATCH: consult codex about the schema change
+MATCH: here is my answer - have codex critique it
+MATCH: what does codex think of the proposed fix
+MATCH: run this by codex
+MATCH: send this to gemini for a second look
+MATCH: double-check my conclusion with a second model
+MATCH: i want an independent read from one other model before i commit
+MATCH: have another model critique the answer you just gave
+
+NO_MATCH: run a panel of models on this design
+NO_MATCH: give me a model panel on these two options
+NO_MATCH: let's debate the tradeoffs between a monolith and microservices architecture
+# NOT asserted here: "ask codex, gemini and gpt-5 each for their take" DOES match
+# this trigger. ERE has no lookahead, so the pattern cannot reject a participant
+# LIST. Panel wins that prompt on score (priority 18 vs 17 at equal match count),
+# which is a routing outcome a regex fixture cannot express -- it is asserted
+# against the real hook in tests/test-second-opinion-content.sh instead.
+NO_MATCH: please critique my approach to caching
+NO_MATCH: sanity check the deployment plan
+NO_MATCH: poke holes in my plan for the migration
+NO_MATCH: tear apart the design doc i wrote
+NO_MATCH: grade my answer to the interview question
+NO_MATCH: red team the rollout plan with the infra team
+NO_MATCH: let's use a different model for the pricing table
+NO_MATCH: we should train another model on the new dataset
+NO_MATCH: there is no other model of concurrency that fits
+NO_MATCH: swap in an independent model for the risk score
+NO_MATCH: get a second opinion on our threat model
+NO_MATCH: add a task codex entry to the backlog
+NO_MATCH: we need to get codex installed on this machine
+NO_MATCH: get a second opinion from the reviewer before merging
+NO_MATCH: please review my opinion on the caching strategy
+NO_MATCH: add an independent perspectives section to the report

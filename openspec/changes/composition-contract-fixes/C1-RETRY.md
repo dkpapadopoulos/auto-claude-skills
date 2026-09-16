@@ -1,5 +1,11 @@
 # C1 retry: what the first attempt got wrong
 
+> **STATUS: APPLIED.** The retry landed. Every counterexample below is now a line in
+> `tests/fixtures/routing/second-opinion.txt`, `panel.txt` or `design-debate.txt`, and
+> the dispatch controls are asserted by `tests/test-second-opinion-content.sh` —
+> stripping them alone fails 10 cells. This file is kept as the record of WHY the
+> shape is what it is, and the rule at the top generalises past this change.
+
 C1 was implemented, reviewed, and **reverted**. Nothing of it is on the branch. This
 file exists so the retry starts from the measured failures rather than rediscovering
 them — every prompt below was measured against the real hook, and every one of them

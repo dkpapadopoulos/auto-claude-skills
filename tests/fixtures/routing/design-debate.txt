@@ -10,3 +10,8 @@ MATCH: compare the two approaches and give me the pro-con breakdown for each
 MATCH: what are the alternatives to using a message queue for this use case
 
 NO_MATCH: was the npm package compromised in the latest attack
+# The `weigh` clause had NO fixture coverage in either direction, so a narrowing that
+# sent real deliberation prompts nowhere was invisible to the suite. Both sides pinned now.
+MATCH: weigh these two options and tell me which is better
+MATCH: help me weigh up the different approaches
+NO_MATCH: ask codex to weigh in on this approach
