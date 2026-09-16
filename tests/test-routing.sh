@@ -2493,6 +2493,25 @@ SWREG
     context="$(extract_context "${output}")"
     assert_contains "multi-word name still selects without a marker"         "mock:widget-inspector)" "${context}"
 
+    # A marker separated from the name by determiners/adjectives still counts. This is
+    # probe case sp-1's shape ("run a standalone panel on this question"): its TRIGGERS
+    # deliberately no longer fire, because every outbound trigger now demands an
+    # AI-participant token, so the name boost is the only route left for it.
+    output="$(run_hook "run a standalone widget on this question")"
+    context="$(extract_context "${output}")"
+    assert_contains "marker + determiner/adjective still selects" "mock:widget)" "${context}"
+
+    # ...but the name may not HEAD a compound noun. Both measured against the real hook:
+    # "use panel data to estimate wage effects" (econometrics) and "fix the /panel route
+    # in the dashboard" selected panel, which dispatches repo content to another vendor.
+    output="$(run_hook "use widget data to estimate wage effects")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "marker + compound noun does NOT select" "mock:widget)" "${context}"
+
+    output="$(run_hook "fix the /widget route in the dashboard")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "slash marker + compound noun does NOT select" "mock:widget)" "${context}"
+
     teardown_test_env
 }
 

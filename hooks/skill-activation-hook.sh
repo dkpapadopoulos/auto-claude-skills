@@ -242,16 +242,25 @@ _score_skills() {
         # "do not use design-debate" matches too -- so nothing downstream may read it
         # as authorisation.)
         name_boost=100
-      elif [[ "$P" =~ (^|[^a-z0-9-])(/|run |use |invoke |call |the )?${skill_name_lower}($|[^a-z0-9-]) && \
-              "$P" =~ (/|(^|[^a-z0-9-])(run|use|invoke|call|skill|using) )${skill_name_lower}($|[^a-z0-9-]) ]]; then
+      else
         # Single-word names are ordinary English -- panel, synthesize, brainstorming --
         # and the bare word is not evidence of intent. Measured: "the control panel
         # component is misaligned on mobile" scored panel=116, and on held-out data "the
         # collapsible panel on the settings screen" SELECTED panel, which dispatches
         # repository content to another vendor. So these require an invocation marker.
-        # A skill whose only route is its name (synthesize has no triggers) stays
-        # reachable by naming it deliberately: "run synthesize on the panel output".
-        name_boost=100
+        # The marker may be separated from the name by up to two determiners/adjectives
+        # ("run a standalone panel" -- probe case sp-1, whose triggers deliberately no
+        # longer fire because it names no model), and the name may NOT head a compound
+        # noun: "use panel data to estimate wage effects" (econometrics) and "fix the
+        # /panel route in the dashboard" were both measured routing to panel.
+        # _nb_compound is a KNOWN-INCOMPLETE enumeration -- adversarial review produced
+        # statistical terminology and URL paths, so treat it as a floor, not a proof.
+        _nb_named="(^|[^a-z0-9-])${skill_name_lower}($|[^a-z0-9-])"
+        _nb_marked="(/|(^|[^a-z0-9-])(run|use|invoke|call|skill|using) +((a|an|the|this|that|another|standalone|independent|new|quick|full) +){0,2})${skill_name_lower}($|[^a-z0-9-])"
+        _nb_compound="(^|[^a-z0-9-])${skill_name_lower} +(data|route|component|widget|screen|view|page|bar|menu|layout|section|element|container|api|endpoint|prop|props|css|html)($|[^a-z0-9-])"
+        if [[ "$P" =~ $_nb_named ]] && [[ "$P" =~ $_nb_marked ]] && ! [[ "$P" =~ $_nb_compound ]]; then
+          name_boost=100
+        fi
       fi
     fi
 

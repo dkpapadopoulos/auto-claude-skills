@@ -65,3 +65,20 @@ NO_MATCH: combine the separate takes on the migration into a single doc
 # only in the window before these MATCH lines existed. Keep it true: when you ADD a
 # trigger clause, add a MATCH line that fails without it -- otherwise a neutered clause
 # ships green.
+
+# CROSS-DOMAIN DECOYS (second adversarial pass, Codex). The first narrowing still routed
+# these outbound: delivery words like "verbatim" and "side by side" are ordinary
+# formatting vocabulary in legal, finance, scientific, HR and education writing, and
+# "agents" is robotics/simulation vocabulary. Every panel and design-debate trigger now
+# requires an AI-participant token (model/llm/named vendor); these lines fail if that
+# requirement is ever relaxed back to delivery words or bare reciprocals.
+NO_MATCH: quote the witness answers verbatim in the deposition summary
+NO_MATCH: show the analysts opinions side by side for the investment committee
+NO_MATCH: plot the dose response side by side with the control
+NO_MATCH: include the candidates answers verbatim in the hiring report
+NO_MATCH: preserve the sip response verbatim in the packet trace
+NO_MATCH: add a standalone panel for the questionnaire answers
+NO_MATCH: create a standalone panel showing candidate responses
+NO_MATCH: write a classroom exercise where pupils argue both sides of the motion
+NO_MATCH: summarize how the attorneys rebut each other in this transcript
+NO_MATCH: animate a back and forth between two agents in the evacuation simulation
