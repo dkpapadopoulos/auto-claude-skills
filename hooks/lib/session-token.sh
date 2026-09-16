@@ -82,31 +82,41 @@ resolve_session_token_from_transcript() {
 # agents are UNTESTED here, and worktree isolation is exactly the case the
 # verdict caveat above is about.)
 resolve_own_session_token() {
+    resolve_own_session_token_strict && return 0
+    cat "${HOME}/.claude/.skill-session-token" 2>/dev/null
+}
+
+# resolve_own_session_token_strict
+# resolve_own_session_token WITHOUT the singleton fallback: prints this
+# conversation's token and returns 0, or prints nothing and returns 1. For
+# callers where borrowing another conversation's identity is worse than having
+# none — the egress consent dispatcher reads approval receipts under this token,
+# and a singleton-derived token can name a CONCURRENT session's approval.
+# Checking resolve_own_session_token's output for non-emptiness cannot tell the
+# two apart; this function is the only way to ask.
+resolve_own_session_token_strict() {
     local _id="${CLAUDE_CODE_SESSION_ID:-}" _t="" _tok=""
     # zsh treats an unmatched glob as a FATAL error and unwinds the enclosing
-    # function, so the singleton fallback on the last line would never run and
-    # callers would get an empty token instead of the documented degradation.
-    # This matters because model-turn callers source this from zsh. Guarded so
-    # bash (where the loop's `[ -f ] || continue` already handles a miss) is
-    # byte-identical, and scoped with local_options so we restore on return.
+    # function, so the caller's fallback would never run and it would get an
+    # empty token instead of the documented degradation. This matters because
+    # model-turn callers source this from zsh. Guarded so bash (where the
+    # loop's `[ -f ] || continue` already handles a miss) is byte-identical,
+    # and scoped with local_options so we restore on return.
     if [ -n "${ZSH_VERSION:-}" ]; then
         setopt local_options no_nomatch 2>/dev/null
     fi
     case "${_id}" in
-        ""|*[!A-Za-z0-9_-]*) ;;
-        *)
-            for _t in "${HOME}"/.claude/projects/*/"${_id}.jsonl"; do
-                [ -f "${_t}" ] || continue
-                # An empty derive falls through to the singleton like every
-                # other leg here — returning success with no output would
-                # surface to callers as "no session token" instead.
-                _tok="$(session_token_from_transcript "${_t}")"
-                [ -n "${_tok}" ] && { printf '%s' "${_tok}"; return 0; }
-                break
-            done
-            ;;
+        ""|*[!A-Za-z0-9_-]*) return 1 ;;
     esac
-    cat "${HOME}/.claude/.skill-session-token" 2>/dev/null
+    for _t in "${HOME}"/.claude/projects/*/"${_id}.jsonl"; do
+        [ -f "${_t}" ] || continue
+        # An empty derive is a miss like every other leg here — returning
+        # success with no output would surface to callers as a token.
+        _tok="$(session_token_from_transcript "${_t}")"
+        [ -n "${_tok}" ] && { printf '%s' "${_tok}"; return 0; }
+        break
+    done
+    return 1
 }
 
 # resolve_session_token <stdin-json>
