@@ -113,3 +113,7 @@ MATCH: have claude opus critique the answer you just gave
 # The vendor-as-subject boundary holds for claude exactly as for the others: the model is
 # the OBJECT OF WORK here, not the recipient of a question.
 NO_MATCH: claude's tool_use blocks come back with empty input through our proxy, help me trace it
+
+# Possessive and "out of <vendor>" phrasings -- the lists were right, the grammar was not.
+MATCH: want gpt-5's take on server components for the dashboard. give it the requirements only
+MATCH: get a critique out of codex on the code you just wrote - include the whole thing

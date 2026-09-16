@@ -92,3 +92,10 @@ NO_MATCH: animate a back and forth between two agents in the evacuation simulati
 MATCH: put this to codex and gemini separately and show me what each one says
 MATCH: paste this question to codex and gemini and show both answers
 MATCH: ask codex and claude for their take on this schema
+
+# TWO VENDORS + a panel cue, without needing a leading verb (round-5 structural misses).
+# The shared primitive is "two named vendors in one breath" -- already the strongest
+# signal this repo has -- combined with a per-skill cue, rather than ten bespoke patterns
+# for ten phrasings. Gated against the full 206-prompt accumulated negative corpus: zero
+# new false positives.
+MATCH: same prompt to gpt-5 and to claude, clean contexts, raw answers labelled by who said what

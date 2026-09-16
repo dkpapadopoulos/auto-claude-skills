@@ -55,3 +55,43 @@ Vendor-free consultation phrasing routes roughly two times in five. The remainin
 are paraphrases whose only signals are ordinary English. Whether that is good enough is
 the same product question as before, now with a real number attached instead of a
 fitted one.
+
+---
+
+## Structural clause work (2026-09-16, after the first round-5 measurement)
+
+10 of the 17 misses NAMED a vendor, i.e. were fixable with no loosening on ordinary
+English. That work is done. `RESULTS-round5-after-structural.txt`:
+
+| | before | after |
+|---|---|---|
+| recall | 13/30 | **21/30** |
+| precision | 18/18 | **18/18** |
+| new false positives across the 206-prompt accumulated negative corpus | — | **0** |
+
+### What made this different from the four widenings that went wrong
+
+The gate was built BEFORE the change. All 206 accumulated negatives — MLOps, legal,
+finance, HR, scientific, econometric, UI, robotics prose, plus every non-consultation
+prompt from rounds 4 and 5 — were scanned through the REAL hook first, establishing that
+exactly 8 fire and that all 8 are correct cross-skill routings (a decoy borrowed into
+panel's fixture is legitimately second-opinion's true positive). After the change: still
+exactly 8, none new. Every earlier failure in this branch came from having no such control.
+
+One shared primitive was used instead of ten bespoke patterns: **two named vendors in one
+breath, plus a per-skill cue** (panel: same-prompt/raw/labelled; design-debate: an
+interaction verb; synthesize: independence AND a combining verb). The cue is what
+separates the three contracts; the two-vendor signal is what makes it safe.
+
+### The 21/30 is DEVELOPMENT DATA
+
+Round 5's failure list was tuned against, so this set is now doubly spent. The numbers
+worth trusting are the ones NOT tuned toward: precision held at 18/18, and the 206-corpus
+scan showed zero regression. A round 6 is required for a real recall figure.
+
+### What this changes about the product question
+
+Vendor-NAMED phrasing — "ask codex and gemini", "gpt-5's take on this" — is now well
+covered, and it cost nothing in precision because naming a vendor was always the safe
+signal. The open question narrows to vendor-FREE paraphrase, where the trade-off against
+ordinary professional language is real.
