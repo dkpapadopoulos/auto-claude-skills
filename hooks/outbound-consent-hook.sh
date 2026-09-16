@@ -14,14 +14,21 @@
 
 trap 'exit 0' ERR
 
+# Backslash BEFORE quote, or the quote pass doubles the escapes it just added. Every
+# caller currently passes a hardcoded ASCII literal, so this changes no output today --
+# it caps the blast radius if a future caller interpolates a path or token containing
+# " or \, which would otherwise emit invalid JSON that the harness silently drops.
+_json_escape() {
+    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\n\r'
+}
 _announce() {
-    printf '{"systemMessage":"outbound-consent: %s"}\n' "$1"
+    printf '{"systemMessage":"outbound-consent: %s"}\n' "$(_json_escape "$1")"
 }
 
 _INPUT="$(cat)"
 
 # Cheap pre-filter, jq-free: almost no tool call mentions codex at all.
-case "${_INPUT}" in *codex*|*Codex*|*CODEX*) ;; *) exit 0 ;; esac
+case "${_INPUT}" in *codex*|*Codex*|*CODEX*|*gemini*|*Gemini*|*GEMINI*|*openai*|*OpenAI*|*OPENAI*) ;; *) exit 0 ;; esac
 
 if ! command -v jq >/dev/null 2>&1; then
     _announce "jq unavailable — could NOT check whether consent was recorded for this outbound dispatch."
@@ -38,12 +45,13 @@ _IS_OUTBOUND=false
 case "${_TOOL}" in
     Agent|Task)
         _SUB="$(printf '%s' "${_INPUT}" | jq -r '(.tool_input | objects | .subagent_type) // ""' 2>/dev/null)"
-        case "${_SUB}" in *codex*) _IS_OUTBOUND=true ;; esac
+        case "${_SUB}" in *codex*|*gemini*|*openai*) _IS_OUTBOUND=true ;; esac
         ;;
     Bash)
         _CMD="$(printf '%s' "${_INPUT}" | jq -r '(.tool_input | objects | .command) // ""' 2>/dev/null)"
         case "${_CMD}" in
             *codex-companion*|*"codex exec"*|*"codex resume"*) _IS_OUTBOUND=true ;;
+            *"gemini "*|*"openai "*|*"llm -m"*) _IS_OUTBOUND=true ;;
         esac
         ;;
 esac

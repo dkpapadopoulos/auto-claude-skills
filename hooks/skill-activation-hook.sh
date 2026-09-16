@@ -274,6 +274,10 @@ _score_skills() {
         _nb_named="(^|[^a-z0-9-])${skill_name_lower}($|[^a-z0-9-])"
         _nb_follow='($|[^a-z0-9-] *($|(on|for|with|to|over|against|about|from|in|at|and|or|then|please|now|instead|again|here|first)($|[^a-z0-9-])))'
         _nb_marked="((^|[^a-z0-9-])(run|use|invoke|call|skill|using) +((a|an|another|standalone|independent|new|quick|full) +){0,2})${skill_name_lower}${_nb_follow}"
+        # _nb_named is LOGICALLY REDUNDANT -- _nb_marked ends with the same skill name, so
+        # a marked match implies a named one. It is kept as a cheap short-circuit: the vast
+        # majority of prompts contain no skill name at all, and this is the cheaper of the
+        # two patterns to fail. Drop it only if profiling says it costs more than it saves.
         if [[ "$P" =~ $_nb_named ]] && [[ "$P" =~ $_nb_marked ]]; then
           name_boost=100
         fi

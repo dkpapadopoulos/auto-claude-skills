@@ -61,6 +61,35 @@ print(' '.join(e.get('matcher','') for e in d['hooks']['PreToolUse']
 assert_has "wired for Agent/Task" "Task|Agent" "$W"
 assert_has "wired for Bash" "Bash" "$W"
 
+
+# --- coverage-claim accuracy + non-codex detection (PR #253 blocking review) ---
+test_coverage_claim_is_not_overstated() {
+    echo "-- test: SKILL.md does not overstate the observer's coverage --"
+    local f
+    for f in skills/panel/SKILL.md skills/second-opinion/SKILL.md; do
+        # "any cross-family dispatch" was FALSE: the hook saw only codex shapes, so a
+        # Gemini-only dispatch produced zero events and the log read as compliant --
+        # the silent-pass class CLAUDE.md forbids ("an unchecked dispatch must never
+        # read as a checked one").
+        assert_no "${f}: no 'any cross-family dispatch' claim" "reports any cross-family" "$(cat "$ROOT/$f")"
+        assert_has "${f}: states coverage is partial" "coverage is PARTIAL" "$(cat "$ROOT/$f")"
+        assert_has "${f}: warns silence is not compliance" "must not read its silence as compliance" "$(cat "$ROOT/$f")"
+    done
+}
+test_detects_non_codex_vendors() {
+    echo "-- test: observer sees non-codex dispatch shapes --"
+    local H; H="$(mktemp -d)"; mkdir -p "$H/.claude"; echo "tok-v" > "$H/.claude/.skill-session-token"
+    _r(){ printf '%s' "$1" | HOME="$H" CLAUDE_PLUGIN_ROOT="$ROOT" /bin/bash "$ROOT/hooks/outbound-consent-hook.sh" 2>/dev/null; }
+    assert_has "gemini subagent with no consent is reported" "NO recorded consent" "$(_r '{"tool_name":"Agent","tool_input":{"subagent_type":"gemini-bridge","prompt":"x"}}')"
+    assert_has "gemini CLI with no consent is reported" "NO recorded consent" "$(_r '{"tool_name":"Bash","tool_input":{"command":"gemini -p \"review this\""}}')"
+    # LOCAL same-family subagents must NOT be flagged -- an advisory that fires on local
+    # dispatch is noise, and noise is how a real signal gets ignored.
+    assert_empty "local general-purpose subagent is silent" "$(_r '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","prompt":"discuss the gemini migration"}}')"
+    rm -rf "$H"
+}
+test_coverage_claim_is_not_overstated
+test_detects_non_codex_vendors
+
 echo "=============================="
 echo "Tests passed: ${PASS}"
 echo "Tests failed: ${FAIL}"

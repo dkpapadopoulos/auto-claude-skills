@@ -63,10 +63,17 @@ is one cheap confirmation. If the payload grew beyond what they approved, ask ag
 
 **Record the answer** once they approve, in the same turn, before dispatching:
 `bash "${CLAUDE_PLUGIN_ROOT}/scripts/record-outbound-consent.sh" <skill-name>`
-A PreToolUse observer (`hooks/outbound-consent-hook.sh`) reports any cross-family
-dispatch with no consent on record. It is ADVISORY — it cannot stop a send, so it
-measures this gate rather than enforcing it. Skipping the record does not make the
-dispatch legitimate; it makes it an unconsented send that shows up as one.
+A PreToolUse observer (`hooks/outbound-consent-hook.sh`) reports dispatch with no consent
+on record. **Its coverage is PARTIAL and you must not read its silence as compliance.** It
+recognises the codex-family paths (the `codex-rescue` subagent and the `codex`/companion
+CLI) and, forward-looking, an Agent whose subagent_type or a Bash command naming another
+known vendor. **Any dispatch route it does not recognise produces no event at all**, so an
+unconsented send by an unrecognised path leaves the log looking clean. If you wire a new
+vendor path, extend `_IS_OUTBOUND` in that hook in the same change.
+
+It is ADVISORY — it cannot stop a send, so it measures this gate rather than enforcing it.
+Skipping the record does not make the dispatch legitimate; for a recognised path it makes
+an unconsented send visible as one, and for an unrecognised path it makes it invisible.
 
 State the MODE in the preview. It is the user's only chance to catch the expensive
 mistake — a payload that includes your prior answer when they asked for an independent
