@@ -105,4 +105,24 @@ PY
         "second-opinion" "${out:-}"
 fi
 
+
+# --- C2: the three consultation methods are distinguishable AS DESCRIBED -----------
+# C2 requires distinct intent contracts AND distinct model-visible descriptions. The
+# frontmatter is the model-visible surface. Each must state the property that separates
+# it from the other two -- cardinality for panel, interaction for design-debate, the
+# one-participant/two-mode contract for this skill -- or a model choosing between them
+# is choosing on vibes.
+_fm() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$1" 2>/dev/null || true; }
+_dd_fm="$(_fm "${PROJECT_ROOT}/skills/design-debate/SKILL.md")"
+_pn_fm="$(_fm "${PROJECT_ROOT}/skills/panel/SKILL.md")"
+_so_fm="$(_fm "${SKILL}")"
+
+assert_contains "design-debate says participants interact"   "RESPOND TO EACH OTHER" "${_dd_fm}"
+assert_contains "design-debate disclaims independence"       "not claimed"           "${_dd_fm}"
+assert_contains "design-debate points at second-opinion"     "second-opinion"        "${_dd_fm}"
+assert_contains "panel says SEVERAL models"                  "SEVERAL"               "${_pn_fm}"
+assert_contains "second-opinion says ONE"                    "ONE other model"       "${_so_fm}"
+assert_contains "second-opinion points at panel"             "panel"                 "${_so_fm}"
+assert_contains "second-opinion points at design-debate"     "design-debate"         "${_so_fm}"
+
 print_summary

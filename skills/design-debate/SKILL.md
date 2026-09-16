@@ -1,6 +1,6 @@
 ---
 name: design-debate
-description: Multi-Agent Debate (MAD) for complex designs. Spawns architect, critic, and pragmatist for collaborative design exploration with structured convergence.
+description: Multi-Agent Debate (MAD) for complex designs — architect, critic and pragmatist who RESPOND TO EACH OTHER, so independence is deliberately not claimed. Use when you want positions challenged and converged. For independent answers with no cross-talk use panel; for ONE other model's opinion use second-opinion.
 ---
 
 # Design Debate (MAD Pattern)
