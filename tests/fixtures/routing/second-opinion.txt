@@ -30,10 +30,17 @@ NO_MATCH: run a panel of models on this design
 NO_MATCH: give me a model panel on these two options
 NO_MATCH: let's debate the tradeoffs between a monolith and microservices architecture
 # NOT asserted here: "ask codex, gemini and gpt-5 each for their take" DOES match
-# this trigger. ERE has no lookahead, so the pattern cannot reject a participant
-# LIST. Panel wins that prompt on score (priority 18 vs 17 at equal match count),
-# which is a routing outcome a regex fixture cannot express -- it is asserted
-# against the real hook in tests/test-second-opinion-content.sh instead.
+# this trigger. ERE has no lookahead, so the pattern cannot reject a participant LIST.
+# Panel outranks it (49 vs 47) and takes slot 1 -- a routing outcome no regex fixture
+# can express, asserted against the real hook in tests/test-second-opinion-content.sh.
+#
+# An earlier version of this comment justified the omission with "priority 18 vs 17 at
+# equal match count". That was measurably FALSE: match count was 2 vs 1, and panel's
+# clause scored 10 rather than 30 because it consumed the delimiters on both sides, so
+# panel actually LOST 77 to 28 and was one competing skill away from eviction. The
+# repair was match QUALITY (ending panel's clause on the participant so its right edge
+# is a word boundary), not the priority number. A comment asserting a scoring outcome
+# is a claim; measure it before writing it.
 NO_MATCH: please critique my approach to caching
 NO_MATCH: sanity check the deployment plan
 NO_MATCH: poke holes in my plan for the migration

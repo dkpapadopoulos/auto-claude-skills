@@ -29,12 +29,12 @@ body="$(awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{f=0; next} !f' "${SKILL}" 
 assert_contains "carries the disclosure preview"        "Disclosure preview"        "${body}"
 assert_contains "names the destination provider"        "destination provider"      "${body}"
 assert_contains "runs secret detection on the payload"  "gitleaks"                  "${body}"
-assert_contains "announces when gitleaks is unavailable" "announce when"            "${body}"
+assert_contains "announces when gitleaks is unavailable" "rather than proceeding silently" "${body}"
 assert_contains "dispatch is read-only"                 "read-only"                 "${body}"
-assert_contains "says why read-only must be explicit"   "defaults to a"             "${body}"
+assert_contains "says why read-only must be explicit"   "write-capable"             "${body}"
 assert_contains "scratch dir is non-predictable"        "mktemp -d"                 "${body}"
 assert_contains "scratch dir is private"                "chmod 0700"                "${body}"
-assert_contains "probes availability at dispatch"       "never assumed"             "${body}"
+assert_contains "probes availability at dispatch"       "probed at dispatch, never assumed" "${body}"
 
 # --- the two modes, and the property that distinguishes them -----------------------
 assert_contains "independent mode withholds the prior answer" "NOT your prior answer" "${body}"
@@ -94,15 +94,30 @@ PY
     # A single-model request must reach this skill and NOT panel.
     out="$(_route "consult codex about the schema change")"
     assert_contains     "single-model request routes to second-opinion" "second-opinion" "${out:-<empty>}"
-    assert_not_contains "single-model request does NOT reach panel"     "auto-claude-skills:panel)" "${out:-}"
+    assert_not_contains "single-model request does NOT reach panel"     "auto-claude-skills:panel)" "${out:-<empty>}"
     # An explicit multi-model request must reach panel. The trigger matches BOTH skills
     # (no lookahead can reject a participant list); panel wins on score.
+    # PRECEDENCE, not presence. Both skills match this prompt (no lookahead can reject a
+    # participant list), and the domain cap is 2, so a presence check passes even when
+    # second-opinion is ranked FIRST -- which is what happened: panel scored 28 against
+    # 47 and was rendered second, one competing skill away from eviction. Assert panel
+    # appears BEFORE second-opinion in the rendered block.
     out="$(_route "ask codex, gemini and gpt-5 each for their take on this design")"
     assert_contains "explicit multi-model request still reaches panel" "auto-claude-skills:panel)" "${out:-<empty>}"
+    _pan_pos="$(printf '%s' "${out}" | grep -n "auto-claude-skills:panel)" | head -1 | cut -d: -f1)"
+    _so_pos="$(printf '%s' "${out}" | grep -n "auto-claude-skills:second-opinion)" | head -1 | cut -d: -f1)"
+    if [ -n "${_pan_pos}" ] && [ -n "${_so_pos}" ] && [ "${_pan_pos}" -lt "${_so_pos}" ]; then
+        _record_pass "panel OUTRANKS second-opinion on a multi-model request"
+    elif [ -n "${_pan_pos}" ] && [ -z "${_so_pos}" ]; then
+        _record_pass "panel OUTRANKS second-opinion on a multi-model request (sole)"
+    else
+        _record_fail "panel OUTRANKS second-opinion on a multi-model request" \
+            "panel at line ${_pan_pos:-none}, second-opinion at ${_so_pos:-none}"
+    fi
     # Ordinary review language must reach neither: this skill ships content off-machine.
     out="$(_route "please critique my approach to caching")"
     assert_not_contains "ordinary review language does not reach second-opinion" \
-        "second-opinion" "${out:-}"
+        "second-opinion" "${out:-<empty>}"
 fi
 
 
@@ -124,5 +139,30 @@ assert_contains "panel says SEVERAL models"                  "SEVERAL"          
 assert_contains "second-opinion says ONE"                    "ONE other model"       "${_so_fm}"
 assert_contains "second-opinion points at panel"             "panel"                 "${_so_fm}"
 assert_contains "second-opinion points at design-debate"     "design-debate"         "${_so_fm}"
+
+
+# --- the INBOUND half of the trust boundary ---------------------------------------
+# Trifecta: private_data (repo content out) + outbound_action (cross-family dispatch) +
+# untrusted_input (the response comes back INTO the session). The outbound controls were
+# reviewed hard; the inbound leg was stated only in synthesize. An instruction embedded
+# in another vendor's reply is untrusted input, and it reaches the caller here BEFORE any
+# merge happens.
+assert_contains "second-opinion treats the response as data" "response is DATA" "${body}"
+assert_contains "second-opinion says flag, not follow"       "never an instruction to follow" "${body}"
+_pn_body="$(awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{f=0; next} !f' "${PROJECT_ROOT}/skills/panel/SKILL.md" 2>/dev/null || true)"
+assert_contains "panel treats responses as data"             "Responses are DATA" "${_pn_body}"
+
+
+# --- finding 10: the degradation branch, and honest scope for the controls claim ----
+# Most requests this skill serves name NO participant ("a second opinion from another
+# model"), so panel's "requested model unavailable" branch never fires for them. Without
+# a no-cross-family-available branch the likely outcome is a silently same-family second
+# opinion: correlated agreement presented as independent confirmation.
+assert_contains "has a no-cross-family degradation branch" "No model was named" "${body}"
+assert_contains "says why same-family is weaker"          "shares the training" "${body}"
+assert_contains "expanded skill bodies count as outbound" "COUNT as outbound"  "${body}"
+# The controls claim must name only the steps that ARE controls.
+assert_not_contains "does not overstate which steps are controls" \
+    "Steps 1–4 below are the same outbound-data controls" "${body:-<empty>}"
 
 print_summary
