@@ -18,25 +18,36 @@ panel / second-opinion (model turn)
         marker present AND agent_id non-null                    -> DENY (subagent cannot ask)
         marker present AND schema violated                      -> DENY (names the rule)
         marker present AND a record for this tool_use_id exists -> DENY (reused id)
+        FIRST, for any marked call: revoke every unused receipt for <token>+<digest>
+            (asking again supersedes; a cancelled or failed ask leaves nothing stale)
         marker present, clean -> write ask SNAPSHOT
-            .skill-egress-ask-<token>.<tool_use_id> = {digest, question, approve_preview_sha}
+            .skill-egress-ask-<token>.<tool_use_id> = {digest, question, ts}
      PostToolUse hooks/egress-consent-receipt-hook.sh
         ask snapshot exists for this tool_use_id -> consume it FIRST (mv -> .used)
         answers[snapshot.question] == "Approve and send"
         AND tool_response.annotations[snapshot.question].preview is present (no fallback
             to the model-supplied option preview)
         AND sha256(that preview) == snapshot.digest == snapshot.approve_preview_sha
-        -> write receipt .skill-egress-receipt-<token>.<digest>.<tool_use_id> {digest, ts}
+        -> write receipt .skill-egress-receipt-<token>.<digest>.<tool_use_id>
+               {digest, tool_use_id, ts, ask_ts}
         a repeated Post finds only .used -> writes nothing
-        any OTHER answer (decline, free text) -> rename every unused receipt for this
-            token+digest to .revoked: the latest answer wins (found live 2026-09-16 — an
-            earlier unused approval stayed valid after the user declined the same package)
+        any OTHER answer (decline, free text) -> record a VETO for the digest
+            (.skill-egress-veto-<token>.<digest> = latest declined ask ts) and rename every
+            unused receipt of the conversation to .revoked (latest answer wins; found live)
+        an unverifiable answer (no snapshot, odd tool_response, bad preview) -> revoke the
+            package's unused receipts; messages state what was actually withdrawn
+
+hooks/egress-consent-turn-hook.sh (UserPromptSubmit)
+  revoke every unused receipt of the conversation: an approval lives only in its turn
   4. bash scripts/consult-dispatch.sh send <digest> [--model M]
-        local validation first: strict own token, jq, frozen package re-hashes to <digest>,
-          gitleaks over the package (exit 3 = findings -> refuse; other non-zero = scanner
-          broken -> refuse as CANNOT VERIFY; binary absent -> announce and continue)
-        then consume ONE fresh (<= 900s) receipt .skill-egress-receipt-<token>.<digest>.*
-          by atomic mv -> .consumed; only a successful mv authorises the send
+        private dirs FIRST (absolute TMPDIR, refused inside a git repository), then the
+          frozen package is copied ONCE; digest, scan and send all use that copy
+        local validation: strict own token, jq, the copy re-hashes to <digest>,
+          gitleaks over the copy, from the isolated dir, env -u GITLEAKS_CONFIG[_TOML],
+          --ignore-gitleaks-allow, empty ignore path (exit 3 = findings -> refuse; other
+          non-zero -> CANNOT VERIFY; binary absent -> announce and continue)
+        then consume ONE fresh (<= 900s) receipt whose ask_ts is NEWER than the digest's
+          veto, by atomic mv -> .consumed; only a successful mv authorises the send
         a send whose outcome is uncertain reports "may have sent" and never restores the receipt
         codex exec -s read-only -C <empty mktemp dir> --skip-git-repo-check --ephemeral
                    --ignore-user-config --disable hooks --disable plugins
@@ -47,7 +58,8 @@ panel / second-opinion (model turn)
 hooks/outbound-consent-hook.sh (PreToolUse Agent|Task|Bash, advisory, unchanged role)
   recognised cross-family dispatch NOT via consult-dispatch.sh
     -> systemMessage + one text-free record in ~/.claude/.egress-bypass-shadow.jsonl
-  Bash text naming .skill-egress-receipt- -> systemMessage (possible receipt forge)
+  Bash text naming .skill-egress-{receipt,ask,veto}- -> systemMessage (possible forge);
+  reading the frozen package (.skill-egress-pkg-) is normal and not flagged
 ```
 
 ### Digest canonicalisation (the only one)
@@ -189,11 +201,40 @@ nobody reads the gate as stronger than it is.
   context would have left the machine without appearing in any preview. A global
   `~/.codex/AGENTS.md` is not known to be excluded by these flags (absent on the
   measuring machine) and remains a residual risk.
-- Parallel sends: receipts are keyed `<digest>.<tool_use_id>`, so two approvals of
-  identical packages are two receipts and authorise two sends; one approval authorises
-  exactly one (the send that wins the atomic `mv`). Consumption happens after local
-  validation and before execution — at-most-once attempts; a failed or uncertain send
-  needs a fresh approval.
+- Approvals do not accumulate across asks: asking again about a package withdraws the
+  earlier approval (needed so a cancelled re-ask, which fires no PostToolUse, leaves
+  nothing stale). Only PARALLEL asks — both posed before either is answered — can yield
+  two receipts and authorise two sends; a veto from a parallel decline still wins,
+  whatever order the answers arrive in. One approval authorises exactly one send (the
+  atomic `mv`). Consumption happens after local validation and before execution —
+  at-most-once attempts; a failed or uncertain send needs a fresh approval.
+- An approval lives only within its turn (UserPromptSubmit revokes it). Cost: a user who
+  approves, lets the turn end, then says "go ahead" is asked again.
+
+## Review rounds (2026-09-16)
+
+Three reviewers (code, silent-failure, adversarial) reproduced every finding with a control
+run. Fixed: a decline that did not reliably cancel an earlier approval (odd payload,
+failed ask, cancelled ask, parallel answer order, a different package, a later prompt); the
+package being read three times (TOCTOU between check, scan and send); the secret scan being
+silenced by `GITLEAKS_CONFIG[_TOML]`, a `.gitleaks.toml`/`.gitleaksignore` in the caller's
+tree, or an inline `gitleaks:allow`; control characters that could hide text in a preview;
+hook JSON broken by control characters in model-written fields; false "the send will be
+refused" claims; a hash failure reported as tampering; a scratch-dir failure reported as
+MAY HAVE SENT and costing the approval; a relative TMPDIR; a TMPDIR inside a repository;
+`--model` values starting with `-`; the observer flagging normal reads of the package.
+Every fix has a regression cell and was mutation-checked.
+
+Accepted residuals, not fixed:
+- A "no" given as a plain (unmarked) question or chat reply inside the SAME turn does not
+  withdraw an approval; the next user prompt does.
+- Answers are looked up by exact question text; if the harness ever normalised that key, a
+  genuine approval would be refused (false block, safe direction).
+- Another plugin's PreToolUse `updatedInput` could inject answers after this hook checked
+  the call; not testable here.
+- The observer sees only Bash/Agent/Task, so Write/Edit of `.skill-egress-*` or of
+  `skill-config.json` (the `warn` escape hatch — agent-writable config) is unobserved.
+- `consult-run.*` answer directories are announced but never garbage-collected.
 
 ## Dissenting views
 

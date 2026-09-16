@@ -66,6 +66,62 @@ egress_valid_token() {
 egress_ask_path()     { printf '%s/.claude/.skill-egress-ask-%s.%s' "${HOME}" "$1" "$2"; }
 egress_receipt_path() { printf '%s/.claude/.skill-egress-receipt-%s.%s.%s' "${HOME}" "$1" "$2" "$3"; }
 egress_pkg_path()     { printf '%s/.claude/.skill-egress-pkg-%s.%s' "${HOME}" "$1" "$2"; }
+# A decline record for one package: holds the ask time of the latest declined consent
+# question, so an approval whose ask is not newer can never be used — whatever order the
+# harness delivers parallel answers in.
+egress_veto_path()    { printf '%s/.claude/.skill-egress-veto-%s.%s' "${HOME}" "$1" "$2"; }
+
+# egress_has_hidden_chars — stdin; rc 0 when it contains a C0 control character other
+# than TAB and LF (ESC sequences can conceal text in a rendered preview; CR can overwrite
+# a line). NUL is included.
+egress_has_hidden_chars() {
+    local _in
+    _in="$(mktemp "${TMPDIR:-/tmp}/egress-cc.XXXXXX" 2>/dev/null)" || return 0
+    cat > "${_in}"
+    if LC_ALL=C tr -d '\000-\010\013-\037' < "${_in}" | cmp -s - "${_in}"; then
+        rm -f "${_in}"; return 1
+    fi
+    rm -f "${_in}"; return 0
+}
+
+# egress_revoke_unused <token> [digest] — rename every unused receipt of this conversation
+# (for one digest, or all digests when omitted) to .revoked. Prints "<revoked> <failed>".
+# Renamed, never deleted, so the history stays auditable.
+egress_revoke_unused() {
+    local _r _ok=0 _bad=0 _pat
+    if [ -n "${2:-}" ]; then
+        _pat="$(egress_receipt_path "$1" "$2" "")"
+    else
+        _pat="${HOME}/.claude/.skill-egress-receipt-${1}."
+    fi
+    for _r in "${_pat}"*; do
+        [ -f "${_r}" ] || continue
+        case "${_r}" in *.consumed|*.revoked|*.tmp.*) continue ;; esac
+        if mv "${_r}" "${_r}.revoked" 2>/dev/null; then _ok=$((_ok + 1)); else _bad=$((_bad + 1)); fi
+    done
+    printf '%s %s' "${_ok}" "${_bad}"
+}
+
+# egress_record_veto <token> <digest> <ask_ts> — keep the LATEST declined ask time.
+egress_record_veto() {
+    local _v _old=0
+    _v="$(egress_veto_path "$1" "$2")"
+    case "${3:-}" in ''|*[!0-9]*) return 1 ;; esac
+    if [ -f "${_v}" ]; then
+        _old="$(cat "${_v}" 2>/dev/null)"
+        case "${_old}" in ''|*[!0-9]*) _old=0 ;; esac
+    fi
+    [ "$3" -gt "${_old}" ] || return 0
+    printf '%s\n' "$3" | egress_write_atomic "${_v}"
+}
+
+# egress_veto_ts <token> <digest> — prints the latest declined ask time, or 0.
+egress_veto_ts() {
+    local _t
+    _t="$(cat "$(egress_veto_path "$1" "$2")" 2>/dev/null)"
+    case "${_t}" in ''|*[!0-9]*) _t=0 ;; esac
+    printf '%s' "${_t}"
+}
 
 # egress_write_atomic <dest> — stdin -> <dest>, owner-only, via tmp + mv so a reader never
 # sees a partial file. EMPTY input is a failure: callers pipe a jq document in, and a jq

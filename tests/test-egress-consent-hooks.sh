@@ -126,7 +126,7 @@ assert_equals "unmarked question: silent" "" "${out}"
 assert_equals "unmarked question: no snapshot" "false" "$([ -f "$(ask_file toolu_u)" ] && echo true || echo false)"
 out="$(run_ask "$(pre_payload toolu_nt 'del(.transcript_path)')")"
 assert_equals "no transcript_path: not denied" "none" "$(decision "${out}")"
-assert_contains "no transcript_path: announced" "will be refused" "${out}"
+assert_contains "no transcript_path: announced as not recorded" "NOT recorded" "${out}"
 assert_equals "no transcript_path: no snapshot under the singleton either" "0" \
     "$(find "${H}/.claude" -name '.skill-egress-ask-*' | wc -l | tr -d ' ')"
 out="$(run_ask "$(pre_payload toolu_nj)" "${NOJQ}")"
@@ -172,7 +172,7 @@ run_ask "$(pre_payload toolu_first)" >/dev/null; run_rcpt "$(post_payload toolu_
 run_ask "$(pre_payload toolu_then_no)" >/dev/null
 out="$(run_rcpt "$(post_payload toolu_then_no "Do not send")")"
 assert_equals "a decline revokes an earlier unused approval of the same package" "0" "$(rcpt_count)"
-assert_contains "the revocation is announced" "revoked" "${out}"
+assert_contains "the decline is announced" "not approved" "${out}"
 assert_equals "the revoked approval is kept for audit, not deleted" "1" \
     "$(find "${H}/.claude" -maxdepth 1 -name ".skill-egress-receipt-${TOK}.${D}.toolu_first.revoked" | wc -l | tr -d ' ')"
 
@@ -225,14 +225,47 @@ for p in "$(pre_payload toolu_x1)" "$(post_payload toolu_x1 "${L}")"; do
     assert_not_contains "no permissionDecision allow is ever emitted" '"allow"' "${o}"
 done
 
+echo "-- review round 1: revocation, honesty, output safety --"
+approve_now() { run_ask "$(pre_payload "$1")" >/dev/null; run_rcpt "$(post_payload "$1" "${L}")" >/dev/null; }
+reset_state; approve_now toolu_r1
+out="$(run_ask "$(pre_payload toolu_r2)")"
+assert_equals "asking again about a package withdraws the earlier unused approval" "0" "$(rcpt_count)"
+reset_state; approve_now toolu_r3
+run_ask "$(pre_payload toolu_r4 '.tool_input.answers={}')" >/dev/null
+assert_equals "even a DENIED re-ask about the package withdraws the earlier approval" "0" "$(rcpt_count)"
+reset_state; approve_now toolu_r5
+run_ask "$(pre_payload toolu_r6)" >/dev/null
+out="$(run_rcpt "$(post_payload toolu_r6 "Do not send" '.tool_response="User declined"')")"
+assert_equals "a decline with a non-object tool_response leaves no approval" "0" "$(rcpt_count)"
+reset_state; approve_now toolu_r7
+rm -f "${H}"/.claude/.skill-egress-ask-*
+out="$(run_rcpt "$(post_payload toolu_r8 "Do not send")")"
+assert_equals "an answer with no recorded ask still withdraws approvals of the marked package" "0" "$(rcpt_count)"
+assert_not_contains "no false claim that a send will be refused" "so the send will be refused" "${out}"
+reset_state
+out="$(printf '%s' "$(pre_payload toolu_nolib)" | env HOME="${H}" CLAUDE_PLUGIN_ROOT="${T}/nowhere" /bin/bash "${ASK_HOOK}" 2>/dev/null)"
+assert_contains "libraries missing: says earlier approvals were NOT withdrawn" "NOT withdrawn" "${out}"
+assert_not_contains "libraries missing: no false refusal claim" "so the send will be refused" "${out}"
+
+reset_state
+out="$(run_ask "$(pre_payload toolu_first_other '.tool_input.questions[0].options[0].label="Maybe later"')")"
+assert_equals "the first option must be exactly the decline label" "deny" "$(decision "${out}")"
+assert_contains "reason names the rule" "decline-option-first" "${out}"
+
+reset_state
+out="$(run_ask "$(pre_payload toolu_ctl '.tool_input.questions[0].multiSelect=true | .tool_use_id="bad\u0001id"')")"
+assert_equals "control characters never break the hook's JSON" "ok" "$(printf '%s' "${out}" | jq -e . >/dev/null 2>&1 && echo ok || echo broken)"
+
 echo "-- wiring and retirement --"
 HJ="${PROJECT_ROOT}/hooks/hooks.json"
 assert_equals "PreToolUse(AskUserQuestion) runs the ask hook" "1" \
     "$(jq '[.hooks.PreToolUse[] | select(.matcher == "AskUserQuestion") | .hooks[] | select(.command == "${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-ask-hook.sh")] | length' "${HJ}")"
 assert_equals "PostToolUse(AskUserQuestion) runs the receipt hook" "1" \
     "$(jq '[.hooks.PostToolUse[] | select(.matcher == "AskUserQuestion") | .hooks[] | select(.command == "${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-receipt-hook.sh")] | length' "${HJ}")"
-assert_equals "both new hooks are executable" "yes" \
-    "$([ -x "${ASK_HOOK}" ] && [ -x "${RCPT_HOOK}" ] && echo yes || echo no)"
+assert_equals "UserPromptSubmit runs the turn hook" "1" \
+    "$(jq '[.hooks.UserPromptSubmit[] | .hooks[] | select(.command == "${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-turn-hook.sh")] | length' "${HJ}")"
+assert_equals "all three new hooks are executable" "yes" \
+    "$([ -x "${ASK_HOOK}" ] && [ -x "${RCPT_HOOK}" ] && [ -x "${PROJECT_ROOT}/hooks/egress-consent-turn-hook.sh" ] && echo yes || echo no)"
 assert_equals "the model-run consent recorder is retired" "false" \
     "$([ -e "${PROJECT_ROOT}/scripts/record-outbound-consent.sh" ] && echo true || echo false)"
 assert_equals "nothing shipped still references the retired recorder" "" \

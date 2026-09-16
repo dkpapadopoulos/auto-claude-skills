@@ -21,8 +21,10 @@
 #
 # No `trap 'exit 0' ERR` on purpose: every failure path below is explicit.
 
+# JSON-safe: C0 controls are dropped (a tab in a model-written subagent_type used to make
+# the whole message unparseable, so the harness dropped the warning), backslash first.
 _json_escape() {
-    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\n\r'
+    printf '%s' "$1" | LC_ALL=C tr -d '\000-\037' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
 _announce() {
     printf '{"systemMessage":"outbound-consent: %s"}\n' "$(_json_escape "$1")"
@@ -34,7 +36,7 @@ _INPUT="$(cat)"
 # like codex_settings.yaml) fall through to the precise classification below and exit
 # silently. A false NEGATIVE is the unsafe direction and is the documented ceiling.
 case "${_INPUT}" in
-    *codex*|*Codex*|*CODEX*|*gemini*|*Gemini*|*GEMINI*|*openai*|*OpenAI*|*OPENAI*|*skill-egress-*) ;;
+    *codex*|*Codex*|*CODEX*|*gemini*|*Gemini*|*GEMINI*|*openai*|*OpenAI*|*OPENAI*|*skill-egress-receipt-*|*skill-egress-ask-*|*skill-egress-veto-*) ;;
     *) exit 0 ;;
 esac
 
@@ -93,8 +95,10 @@ case "${_TOOL}" in
                     ;;
             esac
         fi
+        # Approval records only. Reading the frozen package (.skill-egress-pkg-*) is what
+        # the skills tell the model to do when building the preview, so it is not flagged.
         case "${_CMD}" in
-            *skill-egress-*) _TOUCH=true ;;
+            *skill-egress-receipt-*|*skill-egress-ask-*|*skill-egress-veto-*) _TOUCH=true ;;
         esac
         ;;
 esac
@@ -110,9 +114,12 @@ if [ -z "${_PLUGIN_ROOT}" ]; then
     _PLUGIN_ROOT="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)" || _PLUGIN_ROOT=""
 fi
 # shellcheck source=/dev/null
+_ID_NOTE=""
 if . "${_PLUGIN_ROOT}/hooks/lib/session-token.sh" 2>/dev/null \
     && command -v session_token_from_transcript >/dev/null 2>&1; then
     _TOKEN="$(session_token_from_transcript "${_TP}")"
+else
+    _ID_NOTE=" (session identity unavailable: token library not loadable under ${_PLUGIN_ROOT:-<no plugin root>}, so the record carries no session)"
 fi
 
 _NOW="$(date +%s 2>/dev/null)"
@@ -132,11 +139,17 @@ if [ -n "${_REC}" ] && ( umask 077 && printf '%s\n' "${_REC}" >> "${_LOG}" ) 2>/
             && mv -f "${_LOG}.tmp.$$" "${_LOG}" 2>/dev/null || rm -f "${_LOG}.tmp.$$" 2>/dev/null
     fi
 fi
-_NOTE=""
-[ "${_RECORDED}" = "true" ] || _NOTE=" (this observation was not recorded: ${_LOG} is not writable)"
+_NOTE="${_ID_NOTE}"
+if [ "${_RECORDED}" != "true" ]; then
+    if [ -z "${_REC}" ]; then
+        _NOTE="${_NOTE} (this observation was not recorded: the record could not be built)"
+    else
+        _NOTE="${_NOTE} (this observation was not recorded: ${_LOG} is not writable)"
+    fi
+fi
 
 if [ "${_SHAPE}" = "bash:consent-state" ]; then
-    _announce "a command names egress consent state files (~/.claude/.skill-egress-*) directly. Only the AskUserQuestion hooks and scripts/consult-dispatch.sh may write them; a hand-written receipt forges the user's approval.${_NOTE}"
+    _announce "a command names egress approval records (~/.claude/.skill-egress-{receipt,ask,veto}-*) directly. Only the AskUserQuestion hooks and scripts/consult-dispatch.sh may write them; a hand-written receipt forges the user's approval.${_NOTE}"
 else
     _announce "cross-family dispatch outside scripts/consult-dispatch.sh (${_SHAPE}) — this send is NOT consent-gated, only observed. panel and second-opinion must send through the dispatcher.${_NOTE}"
 fi

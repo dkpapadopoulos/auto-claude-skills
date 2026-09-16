@@ -4,7 +4,9 @@
 
 `panel` and `second-opinion` MUST send cross-family content only through
 `scripts/consult-dispatch.sh`. Digests MUST be sha256 over the package bytes with trailing
-newlines removed, and no other normalisation. The dispatcher MUST refuse to send unless a
+newlines removed, and no other normalisation. The dispatcher MUST verify, scan and send a single private copy of the frozen package, MUST
+run the secret scan so that no environment, working-directory or inline allowance can
+silence it, and MUST refuse to send unless a
 consent receipt for the frozen package's digest exists, is no older than 900 seconds, and is
 claimed by an atomic move before sending; one receipt MUST authorise at most one send, and a
 send whose outcome is uncertain MUST NOT restore it. The dispatcher MUST accept only
@@ -14,7 +16,10 @@ write one only when: exactly one question in the call carried an
 as a clean ask at PreToolUse and has not been consumed; the answer for that question is
 exactly `Approve and send`; and the harness-returned preview annotation for that question
 exists and hashes to the digest. Any other answer to a clean consent ask MUST revoke every
-unused receipt for that digest in the conversation, so the latest answer wins. A marked question MUST be denied at PreToolUse when its
+unused receipt of the conversation and MUST record a veto that outranks any receipt for that
+digest whose ask is not newer, so the latest answer wins whatever order answers arrive in.
+Asking about a package MUST withdraw its earlier unused receipts, and a new user prompt MUST
+withdraw every unused receipt of the conversation. A marked question MUST be denied at PreToolUse when its
 input contains an `answers` or `annotations` key, when it comes from a subagent, when its `tool_use_id` was
 already recorded, when its first (default) option is the approve label, or when it
 violates the consent-question schema. Receipt files are

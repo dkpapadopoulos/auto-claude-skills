@@ -42,6 +42,15 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-turn-hook.sh",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PreToolUse": [

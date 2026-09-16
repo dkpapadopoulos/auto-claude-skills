@@ -47,7 +47,9 @@ the machine by accident.
    annotations: a hook denies a consent question that arrives pre-answered, and only the
    user's own answer produces an approval. Ask even when the user named a model — the
    cost is one cheap confirmation.
-4. An approval covers one exact package, once, for 15 minutes. If the payload changed or
+4. An approval covers one exact package, once, **within the current turn** (a new user
+   prompt withdraws it) and for at most 15 minutes. Asking again about the same package
+   withdraws the earlier approval, and any "Do not send" withdraws every unused approval. If the payload changed or
    grew, prepare it again and ask again.
 
 The dispatcher runs secret detection (gitleaks) over the package before sending, and says

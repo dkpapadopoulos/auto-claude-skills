@@ -28,7 +28,7 @@ printf 'session-FOREIGN' > "${H}/.claude/.skill-session-token"
 # --- PATH construction --------------------------------------------------------------
 TOOLS="${T}/tools"; mkdir -p "${TOOLS}"
 for tool in bash sh cat mv rm cp date basename dirname shasum sha256sum perl sed tr cut \
-            mkdir chmod stat find head tail wc env mktemp cmp grep printf ln ls rmdir sleep; do
+            mkdir chmod stat find head tail wc env mktemp cmp grep printf ln ls rmdir sleep iconv readlink; do
     src="$(command -v "${tool}" 2>/dev/null)"; [ -n "${src}" ] && [ -x "${src}" ] && ln -sf "${src}" "${TOOLS}/${tool}"
 done
 JQD="${T}/jqd"; mkdir -p "${JQD}"; ln -sf "$(command -v jq)" "${JQD}/jq"
@@ -46,7 +46,16 @@ exit 0
 EOF
 cat > "${STUBS}/gitleaks" <<EOF
 #!/bin/bash
-cat > /dev/null
+# Mirrors real gitleaks 8.30: GITLEAKS_CONFIG / GITLEAKS_CONFIG_TOML or a .gitleaks.toml
+# in the working directory replace the rules — modelled here as "finds nothing".
+in="\$(cat)"
+pwd > "${T}/gitleaks.cwd"
+ignore_allow=no; ipath=.
+while [ \$# -gt 0 ]; do case "\$1" in --ignore-gitleaks-allow) ignore_allow=yes ;; -i|--gitleaks-ignore-path) ipath="\$2"; shift ;; esac; shift; done
+case "\$in" in *gitleaks:allow*) [ "\$ignore_allow" = yes ] || exit 0 ;; esac
+[ -f "\$ipath/.gitleaksignore" ] && exit 0
+[ -f "${T}/gitleaks.sleep" ] && sleep "\$(cat "${T}/gitleaks.sleep")"
+if [ -n "\${GITLEAKS_CONFIG:-}" ] || [ -n "\${GITLEAKS_CONFIG_TOML:-}" ] || [ -f .gitleaks.toml ]; then exit 0; fi
 exit "\$(cat "${T}/gitleaks.rc" 2>/dev/null || echo 0)"
 EOF
 chmod +x "${STUBS}/codex" "${STUBS}/gitleaks"
@@ -83,7 +92,7 @@ approve() {
          | .tool_response={questions:.tool_input.questions, answers:{($q):$l}, annotations:$a}')"
     hook "${RCPT_HOOK}" "${_post}"
 }
-reset() { rm -f "${H}"/.claude/.skill-egress-* "${T}/codex.rc" "${T}/gitleaks.rc" "${H}/.claude/skill-config.json"; rm -rf "${REC:?}"/*; }
+reset() { rm -f "${H}"/.claude/.skill-egress-* "${T}/codex.rc" "${T}/gitleaks.rc" "${T}/gitleaks.sleep" "${T}/gitleaks.cwd" "${T}/.gitleaks.toml" "${H}/.claude/skill-config.json"; rm -rf "${REC:?}"/*; }
 
 PKGF="${T}/package.md"
 printf 'Question: is this plan sound?\nRead-only: do not modify files.\n\n' > "${PKGF}"
@@ -256,11 +265,185 @@ dispatch "${P_FULL}" "${SID}" send "${D}"
 assert_equals "after an uncertain send the approval is gone -> 4" "4" "${RC}"
 
 reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+# Sequential asks: each ask supersedes the previous one, so only the latest approval counts.
 approve "${D}" "${PKG}" toolu_p1; approve "${D}" "${PKG}" toolu_p2
 dispatch "${P_FULL}" "${SID}" send "${D}"; rc1="${RC}"
 dispatch "${P_FULL}" "${SID}" send "${D}"; rc2="${RC}"
+assert_equals "two sequential approvals of one package authorise ONE send (the latest supersedes)" "0 4" "${rc1} ${rc2}"
+# Parallel asks (both asked before either is answered) approved twice authorise two sends.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+qq="Send to Codex? [egress-consent:${D}]"
+for id in toolu_pp1 toolu_pp2; do
+    hook "${ASK_HOOK}" "$(jq -nc --arg id "$id" --arg tp "${TP}" --arg q "${qq}" --arg p "${PKG}" \
+        '{transcript_path:$tp, tool_use_id:$id, agent_id:null, tool_input:{questions:[{question:$q, header:"E", multiSelect:false,
+          options:[{label:"Do not send", description:"k"},{label:"Approve and send", description:"s", preview:$p}]}]}}')"
+done
+for id in toolu_pp1 toolu_pp2; do
+    hook "${RCPT_HOOK}" "$(jq -nc --arg id "$id" --arg tp "${TP}" --arg q "${qq}" --arg p "${PKG}" \
+        '{transcript_path:$tp, tool_use_id:$id, agent_id:null,
+          tool_response:{questions:[{question:$q}], answers:{($q):"Approve and send"}, annotations:{($q):{preview:$p}}}}')"
+done
+dispatch "${P_FULL}" "${SID}" send "${D}"; rc1="${RC}"
+dispatch "${P_FULL}" "${SID}" send "${D}"; rc2="${RC}"
 dispatch "${P_FULL}" "${SID}" send "${D}"; rc3="${RC}"
-assert_equals "two approvals authorise exactly two sends" "0 0 4" "${rc1} ${rc2} ${rc3}"
+assert_equals "two parallel approvals authorise exactly two sends" "0 0 4" "${rc1} ${rc2} ${rc3}"
+
+echo "-- review round 1 (silent-failure + code review) --"
+unconsumed() { ls "${H}"/.claude/.skill-egress-receipt-"${TOK}".* 2>/dev/null | grep -Evc 'consumed|revoked'; }
+
+# H2: the package must not change between verification and sending.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_race
+echo 2 > "${T}/gitleaks.sleep"
+( sleep 1; printf 'SECRET=hunter2\n' > "${H}/.claude/.skill-egress-pkg-${TOK}.${D}" ) &
+dispatch "${P_FULL}" "${SID}" send "${D}"; wait
+if [ "${RC}" = "0" ]; then
+    assert_equals "H2: a package rewritten mid-send is not what gets sent" "$(cat "${PKGF}")" "$(cat "${REC}/1/stdin" 2>/dev/null)"
+else
+    assert_equals "H2: a package rewritten mid-send is refused or sent unmodified" "0" "$(calls)"
+fi
+assert_not_contains "H2: the secret written mid-send never reaches codex" "hunter2" "$(cat "${REC}"/*/stdin 2>/dev/null)"
+
+# H3: the secret scan cannot be switched off from the environment or the caller's cwd.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_glenv
+echo 3 > "${T}/gitleaks.rc"
+OUT="$(cd "${T}" && env PATH="${P_FULL}" HOME="${H}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" CLAUDE_CODE_SESSION_ID="${SID}" \
+    GITLEAKS_CONFIG="${T}/weak.toml" GITLEAKS_CONFIG_TOML='x' /bin/bash "${DISPATCH}" send "${D}" 2>&1 < /dev/null)"; RC=$?
+assert_equals "H3: GITLEAKS_CONFIG in the environment does not disable the scan" "6" "${RC}"
+printf 'x' > "${T}/.gitleaks.toml"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "H3: a .gitleaks.toml in the caller's cwd does not disable the scan" "6" "${RC}"
+case "$(cat "${T}/gitleaks.cwd" 2>/dev/null)" in */consult-iso.*) glcwd=isolated ;; "") glcwd=not-run ;; *) glcwd="$(cat "${T}/gitleaks.cwd")" ;; esac
+assert_equals "H3: gitleaks runs from the isolated directory" "isolated" "${glcwd}"
+assert_equals "H3: findings still leave the approval unused" "1" "$(unconsumed)"
+
+# M4: no hasher is reported as that, not as tampering.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_nohash
+NOHASH="${T}/nohash"; mkdir -p "${NOHASH}"
+for f in "${TOOLS}"/*; do case "$(basename "$f")" in shasum|sha256sum|perl) ;; *) ln -sf "$(readlink "$f")" "${NOHASH}/$(basename "$f")" ;; esac; done
+dispatch "${STUBS}:${JQD}:${NOHASH}" "${SID}" send "${D}"
+assert_equals "M4: no hasher -> 3" "3" "${RC}"
+assert_contains "M4: says the package could not be hashed" "could not hash" "${OUT}"
+assert_not_contains "M4: does not blame a modified package" "modified after prepare" "${OUT}"
+
+# L7: scratch-dir failure happens BEFORE the approval is used.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_tmpd
+OUT="$(cd "${T}" && env PATH="${P_FULL}" HOME="${H}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" CLAUDE_CODE_SESSION_ID="${SID}" \
+    TMPDIR="${T}/does-not-exist" /bin/bash "${DISPATCH}" send "${D}" 2>&1 < /dev/null)"; RC=$?
+assert_equals "L7: no scratch dir -> 3 (nothing was sent)" "3" "${RC}"
+assert_equals "L7: the approval is not used" "1" "$(unconsumed)"
+
+# Code review minors.
+dispatch "${P_FULL}" "${SID}" send "${D}" --model -sdanger-full-access
+assert_equals "a model name starting with '-' -> 2" "2" "${RC}"
+printf '\n\n\n' > "${T}/blank.md"; dispatch "${P_FULL}" "${SID}" prepare codex "${T}/blank.md"
+assert_equals "a newline-only package -> 2" "2" "${RC}"
+printf 'caf\351\n' > "${T}/latin1.md"; dispatch "${P_FULL}" "${SID}" prepare codex "${T}/latin1.md"
+assert_equals "a package that is not UTF-8 -> 2" "2" "${RC}"
+
+# H1 (dispatcher view): a decline whose payload is not the expected shape still revokes.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_h1a
+q="Send to Codex? [egress-consent:${D}]"
+pre="$(jq -nc --arg id toolu_h1b --arg tp "${TP}" --arg q "${q}" --arg p "${PKG}" \
+    '{transcript_path:$tp, tool_use_id:$id, agent_id:null, tool_input:{questions:[{question:$q, header:"E", multiSelect:false,
+      options:[{label:"Do not send", description:"k"},{label:"Approve and send", description:"s", preview:$p}]}]}}')"
+hook "${ASK_HOOK}" "${pre}"
+hook "${RCPT_HOOK}" "$(printf '%s' "${pre}" | jq -c '.tool_response="User declined"')"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "H1: re-asking about a package and getting an odd answer leaves no usable approval -> 4" "4" "${RC}"
+
+# H1: re-asking alone (e.g. the user then cancels, so no PostToolUse ever fires) revokes.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_h1c
+hook "${ASK_HOOK}" "$(printf '%s' "${pre}" | jq -c '.tool_use_id="toolu_h1d"')"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "H1: asking again about a package supersedes the earlier approval -> 4" "4" "${RC}"
+
+echo "-- review round 2 (adversarial) --"
+# A3: an allow comment in the package, or a .gitleaksignore in the caller's cwd.
+reset; printf 'token here # gitleaks:allow\n' > "${T}/allow.md"
+dispatch "${P_FULL}" "${SID}" prepare codex "${T}/allow.md"
+DA="$(printf '%s' "${OUT}" | sed -n 's/^digest: \([0-9a-f]\{64\}\)$/\1/p' | head -1)"
+approve "${DA}" "$(cat "${T}/allow.md")" toolu_a3a
+echo 3 > "${T}/gitleaks.rc"
+dispatch "${P_FULL}" "${SID}" send "${DA}"
+assert_equals "A3: a gitleaks:allow comment in the package does not silence the scan" "6" "${RC}"
+# Independent of the allow comment: a clean package, and an ignore file in the caller's cwd.
+# Two defences overlap here (gitleaks runs from the isolated dir AND gets an explicit empty
+# ignore path), so this cell only goes red when BOTH are removed.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_a3b
+echo 3 > "${T}/gitleaks.rc"
+: > "${T}/.gitleaksignore"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "A3: a .gitleaksignore in the caller's cwd does not silence the scan" "6" "${RC}"
+rm -f "${T}/.gitleaksignore"
+
+# Control characters that could hide text in a preview are refused.
+printf 'visible\033[8mhidden\033[0m\n' > "${T}/esc.md"; dispatch "${P_FULL}" "${SID}" prepare codex "${T}/esc.md"
+assert_equals "an ESC control sequence in the package -> 2" "2" "${RC}"
+printf 'a\r\n' > "${T}/cr.md"; dispatch "${P_FULL}" "${SID}" prepare codex "${T}/cr.md"
+assert_equals "a carriage return in the package -> 2" "2" "${RC}"
+printf 'a\tb\n' > "${T}/tab.md"; dispatch "${P_FULL}" "${SID}" prepare codex "${T}/tab.md"
+assert_equals "control: a tab is fine" "0" "${RC}"
+
+# Relative TMPDIR and a TMPDIR inside a git repository refuse before claiming.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_reltmp
+mkdir -p "${T}/reltmp"
+OUT="$(cd "${T}" && env PATH="${P_FULL}" HOME="${H}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" CLAUDE_CODE_SESSION_ID="${SID}" \
+    TMPDIR="reltmp" /bin/bash "${DISPATCH}" send "${D}" 2>&1 < /dev/null)"; RC=$?
+assert_equals "a relative TMPDIR still sends from an absolute isolated dir" "0" "${RC}"
+case "$(cat "${REC}/1/cwd" 2>/dev/null)" in /*) abs=yes ;; *) abs=no ;; esac
+assert_equals "codex was pointed at an absolute directory" "yes" "${abs}"
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_gittmp
+mkdir -p "${T}/repo/tmp"; git -C "${T}/repo" init -q 2>/dev/null
+ln -sf "$(command -v git)" "${TOOLS}/git"
+OUT="$(cd "${T}" && env PATH="${P_FULL}" HOME="${H}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" CLAUDE_CODE_SESSION_ID="${SID}" \
+    TMPDIR="${T}/repo/tmp" /bin/bash "${DISPATCH}" send "${D}" 2>&1 < /dev/null)"; RC=$?
+assert_equals "a TMPDIR inside a git repository -> 3 (codex would load its AGENTS.md)" "3" "${RC}"
+assert_equals "git TMPDIR: the approval is not used" "1" "$(unconsumed)"
+
+# A1: parallel asks for one package, the decline's answer processed FIRST.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+q="Send to Codex? [egress-consent:${D}]"
+mkpre() { jq -nc --arg id "$1" --arg tp "${TP}" --arg q "${q}" --arg p "${PKG}" \
+    '{transcript_path:$tp, tool_use_id:$id, agent_id:null, tool_input:{questions:[{question:$q, header:"E", multiSelect:false,
+      options:[{label:"Do not send", description:"k"},{label:"Approve and send", description:"s", preview:$p}]}]}}'; }
+mkpost() { local a='{}'; [ "$2" = "Approve and send" ] && a="$(jq -nc --arg q "${q}" --arg p "${PKG}" '{($q):{preview:$p}}')"
+    mkpre "$1" | jq -c --arg q "${q}" --arg l "$2" --argjson a "${a}" '.tool_response={questions:.tool_input.questions, answers:{($q):$l}, annotations:$a}'; }
+hook "${ASK_HOOK}" "$(mkpre toolu_par_yes)"; hook "${ASK_HOOK}" "$(mkpre toolu_par_no)"
+hook "${RCPT_HOOK}" "$(mkpost toolu_par_no "Do not send")"
+hook "${RCPT_HOOK}" "$(mkpost toolu_par_yes "Approve and send")"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "A1: a decline answered before a parallel approval still wins -> 4" "4" "${RC}"
+assert_equals "A1: codex not invoked" "0" "$(calls)"
+
+# A2: declining a REVISED package withdraws the older package's approval too.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_a2old
+printf 'revised package\n' > "${T}/rev.md"; dispatch "${P_FULL}" "${SID}" prepare codex "${T}/rev.md"
+D3="$(printf '%s' "${OUT}" | sed -n 's/^digest: \([0-9a-f]\{64\}\)$/\1/p' | head -1)"
+approve "${D3}" "revised package" toolu_a2new "Do not send"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "A2: declining any consent question withdraws other unused approvals -> 4" "4" "${RC}"
+
+# A2: a new user prompt ends the turn the approval was given in.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_turn
+hook "${PROJECT_ROOT}/hooks/egress-consent-turn-hook.sh" "$(jq -nc --arg tp "${TP}" '{hook_event_name:"UserPromptSubmit", transcript_path:$tp, prompt:"actually no"}')"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "A2: an approval does not survive into the next user turn -> 4" "4" "${RC}"
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_turn_ctl
+hook "${PROJECT_ROOT}/hooks/egress-consent-turn-hook.sh" "$(jq -nc --arg tp "${H}/.claude/projects/p/OTHER.jsonl" '{hook_event_name:"UserPromptSubmit", transcript_path:$tp, prompt:"hi"}')"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "control: another conversation's prompt does not withdraw this approval" "0" "${RC}"
 
 echo "-- usage --"
 dispatch "${P_FULL}" "${SID}" send "not-a-digest"

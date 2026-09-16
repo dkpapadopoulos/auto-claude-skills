@@ -3,27 +3,31 @@
 # approval of a consent question into ONE egress receipt for scripts/consult-dispatch.sh.
 #
 # A receipt is written only when ALL hold:
-#   - hooks/egress-consent-ask-hook.sh recorded this tool_use_id as a clean ask
-#     (no caller-supplied answers/annotations, main thread, strict schema, preview ==
-#     the prepared package). The snapshot is consumed FIRST, so a repeated PostToolUse
-#     cannot issue a second receipt after the first was spent.
+#   - hooks/egress-consent-ask-hook.sh recorded this tool_use_id as a clean ask. The
+#     snapshot is consumed FIRST, so a repeated PostToolUse cannot issue a second receipt.
 #   - the harness-returned answer for the snapshot's question is exactly the approve label;
 #   - the harness-returned annotation for that question carries a preview (never fall
 #     back to the option preview in tool_input — that is model-authored text);
 #   - that preview hashes (egress_digest_stdin) to the snapshot's digest.
+# The receipt carries the ask time, so the dispatcher can discard it if a decline of the
+# same package was asked at the same time or later (parallel asks answered in any order).
+#
+# Any OTHER outcome withdraws approvals: a decline (any non-approve answer) records a
+# veto for the package and revokes every unused approval of the conversation; an
+# unverifiable answer revokes the approvals of that package. The latest answer wins.
 #
 # Receipt files live in ~/.claude and are agent-writable: this defends against a model
 # that SKIPS the ask, not one that forges a file (see the design's threat model).
-# Writes nothing on any doubt, and announces it — no receipt means the send is refused.
 # No `trap 'exit 0' ERR` on purpose: every failure path below is explicit.
 # Design: openspec/changes/egress-consent-dispatcher/design.md
 
 _json_escape() {
-    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\n\r'
+    printf '%s' "$1" | LC_ALL=C tr -d '\000-\037' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
 _announce() {
     printf '{"systemMessage":"egress-consent: %s"}\n' "$(_json_escape "$1")"
 }
+_NOT_WITHDRAWN="an earlier unused approval of this package, if any, was NOT withdrawn"
 
 _INPUT="$(cat)"
 case "${_INPUT}" in
@@ -38,60 +42,97 @@ fi
 _LIBS_OK=false
 # shellcheck source=/dev/null
 if . "${_PLUGIN_ROOT}/hooks/lib/egress-consent.sh" 2>/dev/null \
-    && command -v egress_digest_stdin >/dev/null 2>&1 \
+    && command -v egress_revoke_unused >/dev/null 2>&1 \
     && . "${_PLUGIN_ROOT}/hooks/lib/session-token.sh" 2>/dev/null \
     && command -v session_token_from_transcript >/dev/null 2>&1; then
     _LIBS_OK=true
 fi
-_NO_RECEIPT="no approval receipt was written, so the send will be refused"
 if [ "${_LIBS_OK}" != "true" ]; then
-    _announce "consent libraries not loadable under ${_PLUGIN_ROOT:-<no plugin root>} — ${_NO_RECEIPT}."
+    _announce "consent libraries not loadable under ${_PLUGIN_ROOT:-<no plugin root>} — no approval receipt was written, and ${_NOT_WITHDRAWN}."
     exit 0
 fi
 if ! command -v jq >/dev/null 2>&1; then
-    _announce "jq unavailable — ${_NO_RECEIPT}."
+    _announce "jq unavailable — no approval receipt was written, and ${_NOT_WITHDRAWN}. The dispatcher also needs jq, so it will refuse to send."
     exit 0
 fi
 
-_META="$(printf '%s' "${_INPUT}" | jq -r \
-    'if type == "object" then [((.tool_use_id // "") | tostring), ((.transcript_path // "") | tostring)] | join("\u001f") else empty end' \
-    2>/dev/null)"
+# tool_use_id, transcript_path, and the digest named by the (first) marker in the
+# payload — the latter lets us withdraw approvals even when no snapshot exists.
+# shellcheck disable=SC2016
+_META="$(printf '%s' "${_INPUT}" | jq -r '
+    def strs: if type == "string" then . else "" end;
+    if type != "object" then empty else
+    [ ((.tool_use_id // "") | tostring),
+      ((.transcript_path // "") | tostring),
+      ([ (.tool_input | objects | .questions | arrays | .[] | objects | .question | strs),
+         (.tool_response | objects | .questions | arrays | .[] | objects | .question | strs) ]
+       | map(capture("\\[egress-consent:(?<d>[0-9a-f]{64})\\]")? | .d) | first // "")
+    ] | join("\u001f") end' 2>/dev/null)"
 if [ -z "${_META}" ]; then
-    _announce "hook payload unparseable — ${_NO_RECEIPT}."
+    _announce "hook payload unparseable — no approval receipt was written, and ${_NOT_WITHDRAWN}."
     exit 0
 fi
-IFS=$'\x1f' read -r _ID _TP <<EOF
+IFS=$'\x1f' read -r _ID _TP _MARKED <<EOF
 ${_META}
 EOF
 
 _TOKEN="$(session_token_from_transcript "${_TP}")"
-if ! egress_valid_token "${_TOKEN}" || ! egress_valid_id "${_ID}"; then
-    _announce "no usable session identity or tool_use_id in the hook payload — ${_NO_RECEIPT}."
+if ! egress_valid_token "${_TOKEN}"; then
+    _announce "no session identity in the hook payload — no approval receipt was written, and ${_NOT_WITHDRAWN}."
     exit 0
+fi
+
+# _finish <message> <scope> — withdraw approvals, then announce what actually happened.
+#   scope "package": this package's unused approvals; "all": every unused approval here.
+_finish() {
+    local _msg="$1" _scope="$2" _d="${_DIGEST:-${_MARKED}}" _rv _ok _bad
+    if [ "${_scope}" = "all" ]; then
+        _rv="$(egress_revoke_unused "${_TOKEN}")"
+    elif egress_valid_digest "${_d}"; then
+        _rv="$(egress_revoke_unused "${_TOKEN}" "${_d}")"
+    else
+        _announce "${_msg} ${_NOT_WITHDRAWN} (no package digest could be identified)."
+        exit 0
+    fi
+    _ok="${_rv%% *}"; _bad="${_rv##* }"
+    if [ "${_bad}" != "0" ]; then
+        _msg="${_msg} WARNING: ${_bad} earlier approval(s) could NOT be withdrawn and may still be usable."
+    elif [ "${_ok}" != "0" ]; then
+        _msg="${_msg} ${_ok} earlier unused approval(s) were revoked."
+    fi
+    _announce "${_msg}"
+    exit 0
+}
+
+_DIGEST=""
+if ! egress_valid_id "${_ID}"; then
+    _finish "no usable tool_use_id in the hook payload — no approval receipt was written." package
 fi
 
 _ASK="$(egress_ask_path "${_TOKEN}" "${_ID}")"
 if [ ! -f "${_ASK}" ]; then
-    # Either the question carried no consent marker the ask hook accepted, or this
-    # answer was already processed once. Both mean: nothing to issue.
-    case "${_INPUT}" in
-        *"[egress-consent:"*)
-            _announce "no clean ask recorded for this consent answer — ${_NO_RECEIPT}." ;;
-    esac
+    # Not a recorded clean ask (unmarked, denied, or already processed). A marked answer
+    # still withdraws: whatever the user said here, it was not a verifiable approval.
+    if egress_valid_digest "${_MARKED}"; then
+        _finish "no clean ask recorded for this consent answer — no approval receipt was written." package
+    fi
     exit 0
 fi
 # Consume the snapshot BEFORE judging the answer: one ask can yield at most one receipt.
 if ! mv "${_ASK}" "${_ASK}.used" 2>/dev/null; then
-    _announce "could not consume the consent snapshot — ${_NO_RECEIPT}."
-    exit 0
+    _finish "could not consume the consent snapshot — no approval receipt was written." package
 fi
 _SNAP="${_ASK}.used"
 
 _DIGEST="$(jq -r '.digest // empty' "${_SNAP}" 2>/dev/null)"
+_ASK_TS="$(jq -r '.ts // empty | numbers | floor' "${_SNAP}" 2>/dev/null)"
 if ! egress_valid_digest "${_DIGEST}"; then
-    _announce "consent snapshot unreadable — ${_NO_RECEIPT}."
-    exit 0
+    _DIGEST=""
+    _finish "consent snapshot unreadable — no approval receipt was written." package
 fi
+case "${_ASK_TS}" in ''|*[!0-9]*)
+    _finish "consent snapshot has no ask time — no approval receipt was written." package ;;
+esac
 
 # shellcheck disable=SC2016
 _STATE="$(printf '%s' "${_INPUT}" | jq -r --slurpfile s "${_SNAP}" --arg L "${EGRESS_APPROVE_LABEL}" '
@@ -107,46 +148,32 @@ _STATE="$(printf '%s' "${_INPUT}" | jq -r --slurpfile s "${_SNAP}" --arg L "${EG
 case "${_STATE}" in
     ok) ;;
     not-approved)
-        # The latest answer wins: an earlier, still-unused approval of the SAME package
-        # must not outlive the user's decline (found live 2026-09-16). Revoked receipts
-        # are renamed, not deleted, so the history stays auditable.
-        _REVOKED=0
-        for _R in "$(egress_receipt_path "${_TOKEN}" "${_DIGEST}" "")"*; do
-            [ -f "${_R}" ] || continue
-            case "${_R}" in *.consumed|*.revoked|*.tmp.*) continue ;; esac
-            mv "${_R}" "${_R}.revoked" 2>/dev/null && _REVOKED=$((_REVOKED + 1))
-        done
-        _MSG="the user did not choose \"${EGRESS_APPROVE_LABEL}\" — not approved; nothing will be sent."
-        [ "${_REVOKED}" -gt 0 ] && _MSG="${_MSG} ${_REVOKED} earlier unused approval(s) of this package were revoked."
-        _announce "${_MSG}"
-        exit 0 ;;
+        if ! egress_record_veto "${_TOKEN}" "${_DIGEST}" "${_ASK_TS}"; then
+            _finish "the user did not choose \"${EGRESS_APPROVE_LABEL}\" — not approved; nothing will be sent from this answer. WARNING: the decline could not be recorded durably." all
+        fi
+        _finish "the user did not choose \"${EGRESS_APPROVE_LABEL}\" — not approved; nothing will be sent from this answer." all ;;
     no-annotation)
-        _announce "the answer carried no returned preview to verify — ${_NO_RECEIPT}."
-        exit 0 ;;
+        _finish "the answer carried no returned preview to verify — no approval receipt was written." package ;;
     no-response)
-        _announce "tool_response is not the expected object — ${_NO_RECEIPT}."
-        exit 0 ;;
+        _finish "tool_response is not the expected object — no approval receipt was written." package ;;
     *)
-        _announce "could not evaluate the consent answer (${_STATE:-jq error}) — ${_NO_RECEIPT}."
-        exit 0 ;;
+        _finish "could not evaluate the consent answer (${_STATE:-jq error}) — no approval receipt was written." package ;;
 esac
 
 _SEEN="$(printf '%s' "${_INPUT}" \
     | jq -r --slurpfile s "${_SNAP}" '.tool_response.annotations[$s[0].question].preview' 2>/dev/null \
     | egress_digest_stdin)"
 if [ "${_SEEN}" != "${_DIGEST}" ]; then
-    _announce "the approved preview does not match the prepared package (digest ${_DIGEST}) — ${_NO_RECEIPT}."
-    exit 0
+    _finish "the approved preview does not match the prepared package (digest ${_DIGEST}) — no approval receipt was written." package
 fi
 
 _NOW="$(date +%s 2>/dev/null)"
 case "${_NOW}" in ''|*[!0-9]*)
-    _announce "clock unavailable — ${_NO_RECEIPT}."
-    exit 0 ;;
+    _finish "clock unavailable — no approval receipt was written." package ;;
 esac
-if ! jq -nc --arg d "${_DIGEST}" --arg id "${_ID}" --argjson ts "${_NOW}" \
-        '{digest: $d, tool_use_id: $id, ts: $ts}' 2>/dev/null \
+if ! jq -nc --arg d "${_DIGEST}" --arg id "${_ID}" --argjson ts "${_NOW}" --argjson ask "${_ASK_TS}" \
+        '{digest: $d, tool_use_id: $id, ts: $ts, ask_ts: $ask}' 2>/dev/null \
     | egress_write_atomic "$(egress_receipt_path "${_TOKEN}" "${_DIGEST}" "${_ID}")"; then
-    _announce "could not write the approval receipt — the send will be refused."
+    _announce "could not write the approval receipt — this approval cannot be used; ask again."
 fi
 exit 0

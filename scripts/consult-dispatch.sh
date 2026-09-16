@@ -21,6 +21,11 @@
 #
 # Receipts are agent-writable files: this stops a model that SKIPS the ask, not one that
 # forges a receipt. Design: openspec/changes/egress-consent-dispatcher/design.md
+# The model's shell is zsh on macOS; this script is bash-only (unmatched globs are fatal in
+# zsh). Re-exec rather than misbehave when someone runs `zsh consult-dispatch.sh`.
+if [ -z "${BASH_VERSION:-}" ]; then
+    exec /bin/bash "$0" "$@"
+fi
 set -u
 
 _err() { printf 'consult-dispatch: %s\n' "$*" >&2; }
@@ -59,24 +64,40 @@ _NO_IDENTITY="no session identity for this conversation (CLAUDE_CODE_SESSION_ID 
 
 _prepare() {
     [ $# -eq 2 ] || _usage
-    local _prov="$1" _file="$2" _tok _d _pkg
+    local _prov="$1" _file="$2" _tok _d _pkg _tmp
     if [ "${_prov}" != "codex" ]; then
         _err "unsupported provider '${_prov}' (supported: codex) — nothing was prepared. Ask the user how to proceed."
         exit 2
     fi
-    if [ ! -f "${_file}" ] || [ ! -r "${_file}" ] || [ ! -s "${_file}" ]; then
-        _err "package file missing, unreadable or empty: ${_file}"
+    if [ ! -f "${_file}" ] || [ ! -r "${_file}" ] || [ -z "$(cat "${_file}" 2>/dev/null)" ]; then
+        _err "package file missing, unreadable, empty or blank: ${_file}"
         exit 2
     fi
-    if ! LC_ALL=C tr -d '\000' < "${_file}" | cmp -s - "${_file}"; then
-        _err "package contains NUL bytes; only text packages can be shown to the user and sent."
+    # NUL, and every C0 control other than TAB/LF: an ESC sequence can conceal text in a
+    # rendered preview and a CR can overwrite a line, so the user would approve bytes they
+    # could not see.
+    if egress_has_hidden_chars < "${_file}"; then
+        _err "package contains control characters (other than tab and newline) that could hide text from the user's preview."
+        exit 2
+    fi
+    # A package the preview cannot carry byte-for-byte could never be approved; say so now
+    # rather than looping on "paste it verbatim". Skipped when iconv is unavailable.
+    if command -v iconv >/dev/null 2>&1 && ! iconv -f UTF-8 -t UTF-8 < "${_file}" > /dev/null 2>&1; then
+        _err "package is not valid UTF-8, so it cannot be shown to the user verbatim."
         exit 2
     fi
     _tok="$(_own_token)" || _cannot "${_NO_IDENTITY}"
-    _d="$(egress_digest_stdin < "${_file}")"
-    egress_valid_digest "${_d}" || _cannot "could not hash the package (no shasum or sha256sum)"
+    # Freeze FIRST, then hash the frozen copy: the digest must describe the bytes that
+    # will be sent, not a file the caller may still be writing.
+    _tmp="${HOME}/.claude/.skill-egress-pkg-${_tok}.preparing.$$"
+    egress_write_atomic "${_tmp}" < "${_file}" || _cannot "could not freeze the package under ${HOME}/.claude"
+    _d="$(egress_digest_stdin < "${_tmp}")"
+    if ! egress_valid_digest "${_d}"; then
+        rm -f "${_tmp}"
+        _cannot "could not hash the package (no shasum or sha256sum)"
+    fi
     _pkg="$(egress_pkg_path "${_tok}" "${_d}")"
-    egress_write_atomic "${_pkg}" < "${_file}" || _cannot "could not freeze the package at ${_pkg}"
+    mv -f "${_tmp}" "${_pkg}" 2>/dev/null || { rm -f "${_tmp}"; _cannot "could not freeze the package at ${_pkg}"; }
     cat <<EOF
 digest: ${_d}
 frozen package: ${_pkg}
@@ -89,15 +110,26 @@ Now ask the user with AskUserQuestion — exactly ONE question, single-select:
 The marker goes in the question text only. Never pre-fill answers or annotations.
 The preview must be the whole package; say in the question that Codex runs read-only
 but its sandbox can still read other files on this machine.
+Asking again about this package withdraws any earlier, unused approval of it.
 
 After the user chooses "${EGRESS_APPROVE_LABEL}":
   bash "${_ROOT}/scripts/consult-dispatch.sh" send ${_d}
 EOF
 }
 
+_ISO=""
+_OUT=""
+_KEEP_OUT=false
+_cleanup() {
+    [ -n "${_ISO}" ] && rm -rf "${_ISO}" 2>/dev/null
+    [ "${_KEEP_OUT}" = "true" ] || { [ -n "${_OUT}" ] && rm -rf "${_OUT}" 2>/dev/null; }
+    return 0
+}
+trap _cleanup EXIT
+
 _send() {
     [ $# -ge 1 ] || _usage
-    local _d="$1" _model="" _tok _pkg _grc _mode _v _now _r _ts _claimed="" _tmpd _iso _out _rc
+    local _d="$1" _model="" _tok _pkg _copy _pd _grc _mode _v _now _r _ts _ask _veto _claimed="" _tmpd _rc
     shift
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -107,19 +139,44 @@ _send() {
     done
     egress_valid_digest "${_d}" || _usage
     case "${_model}" in
-        *[!A-Za-z0-9._-]*) _err "invalid model name: ${_model}"; exit 2 ;;
+        -*|*[!A-Za-z0-9._-]*) _err "invalid model name: ${_model}"; exit 2 ;;
     esac
 
     command -v jq >/dev/null 2>&1 || _cannot "jq is unavailable, so approval receipts cannot be read" "Install jq, or run codex yourself outside the plugin."
     _tok="$(_own_token)" || _cannot "${_NO_IDENTITY}"
     _pkg="$(egress_pkg_path "${_tok}" "${_d}")"
     [ -f "${_pkg}" ] || _not_approved "no prepared package for digest ${_d} in this conversation (run prepare first)"
-    [ "$(egress_digest_stdin < "${_pkg}")" = "${_d}" ] \
-        || _cannot "the frozen package no longer matches its digest (it was modified after prepare)" "Prepare the package again; the user must approve the new one."
     command -v codex >/dev/null 2>&1 || { _err "codex CLI not found — nothing was sent. Ask the user how to proceed."; exit 2; }
 
+    # Private working space BEFORE anything is claimed, so a failure here costs no approval.
+    _tmpd="$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)" \
+        || _cannot "the temporary directory ${TMPDIR:-/tmp} is not usable"
+    _ISO="$(mktemp -d "${_tmpd}/consult-iso.XXXXXX" 2>/dev/null)" || _ISO=""
+    _OUT="$(mktemp -d "${_tmpd}/consult-run.XXXXXX" 2>/dev/null)" || _OUT=""
+    { [ -n "${_ISO}" ] && [ -n "${_OUT}" ] && chmod 0700 "${_ISO}" "${_OUT}"; } \
+        || _cannot "could not create private scratch directories under ${_tmpd}"
+    # Codex would load AGENTS.md and git context from an enclosing repository — content the
+    # user never saw in the preview.
+    if command -v git >/dev/null 2>&1 && git -C "${_ISO}" rev-parse --git-dir > /dev/null 2>&1; then
+        _cannot "the isolated directory ${_ISO} is inside a git repository (TMPDIR=${_tmpd}); Codex would load that repository's context" "Point TMPDIR outside any repository."
+    fi
+
+    # Read the frozen package exactly ONCE. Everything after this point — digest check,
+    # secret scan, send — uses the private copy, so nothing can change in between.
+    _copy="${_OUT}/package"
+    egress_write_atomic "${_copy}" < "${_pkg}" || _cannot "could not copy the frozen package"
+    _pd="$(egress_digest_stdin < "${_copy}")"
+    egress_valid_digest "${_pd}" || _cannot "could not hash the package (no shasum or sha256sum)"
+    [ "${_pd}" = "${_d}" ] \
+        || _cannot "the frozen package no longer matches its digest (it was modified after prepare)" "Prepare the package again; the user must approve the new one."
+
     if command -v gitleaks >/dev/null 2>&1; then
-        gitleaks stdin --no-banner --redact --exit-code 3 < "${_pkg}" > /dev/null 2>&1
+        # From the empty isolated directory, without config overrides, ignoring inline
+        # `gitleaks:allow` comments and any .gitleaksignore: each of those would otherwise
+        # let the package itself, the caller's tree, or the environment silence the scan.
+        ( cd "${_ISO}" && env -u GITLEAKS_CONFIG -u GITLEAKS_CONFIG_TOML \
+            gitleaks stdin --no-banner --redact --exit-code 3 --ignore-gitleaks-allow \
+                --gitleaks-ignore-path "${_ISO}" < "${_copy}" > /dev/null 2>&1 )
         _grc=$?
         case "${_grc}" in
             0) ;;
@@ -140,13 +197,20 @@ _send() {
     if [ "${_mode}" = "warn" ]; then
         _err "consent enforcement is OFF (egress_consent=warn in ~/.claude/skill-config.json) — sending WITHOUT checking for the user's approval."
     else
+        _veto="$(egress_veto_ts "${_tok}" "${_d}")"
         _now="$(date +%s 2>/dev/null)"
         case "${_now}" in ''|*[!0-9]*) _cannot "clock unavailable, so approval freshness cannot be checked" ;; esac
-        for _r in "${HOME}/.claude/.skill-egress-receipt-${_tok}.${_d}."*; do
+        for _r in "$(egress_receipt_path "${_tok}" "${_d}" "")"*; do
             [ -f "${_r}" ] || continue
             case "${_r}" in *.consumed|*.revoked|*.tmp.*) continue ;; esac
-            _ts="$(jq -r --arg d "${_d}" 'select(type == "object" and .digest == $d) | .ts | numbers | floor' "${_r}" 2>/dev/null)"
+            read -r _ts _ask <<EOF
+$(jq -r --arg d "${_d}" 'select(type == "object" and .digest == $d) | "\(.ts | numbers | floor) \(.ask_ts | numbers | floor)"' "${_r}" 2>/dev/null)
+EOF
             case "${_ts}" in ''|*[!0-9]*) continue ;; esac
+            case "${_ask:-}" in ''|*[!0-9]*) continue ;; esac
+            # A decline of this package asked at the same time or later wins, whatever
+            # order the harness delivered the answers in.
+            [ "${_ask}" -gt "${_veto}" ] || continue
             [ $(( _now - _ts )) -le "${EGRESS_RECEIPT_TTL}" ] || continue
             [ $(( _ts - _now )) -le 60 ] || continue
             # Only a successful rename authorises a send: two concurrent sends cannot
@@ -159,26 +223,22 @@ _send() {
         [ -n "${_claimed}" ] || _not_approved "no fresh, unused approval for digest ${_d}. Approvals come only from the user's answer to the consent question, expire after 15 minutes, and authorise one send. Ask the user again with the consent question from 'prepare'"
     fi
 
-    _tmpd="${TMPDIR:-/tmp}"; _tmpd="${_tmpd%/}"
-    _iso="$(mktemp -d "${_tmpd}/consult-iso.XXXXXX")" && _out="$(mktemp -d "${_tmpd}/consult-run.XXXXXX")" \
-        || { _err "MAY HAVE SENT: no — but the approval was already used and a scratch directory could not be created. Ask the user again."; exit 5; }
-    chmod 0700 "${_iso}" "${_out}"
     # Everything Codex loads on its own is egress the preview never showed. Measured live
     # 2026-09-16: from an empty directory a plain `codex exec` still ran 18 user/plugin
     # hooks and started MCP servers. These flags removed both while still reaching the
     # model. A global ~/.codex/AGENTS.md is NOT known to be excluded (residual risk).
-    ( cd "${_iso}" && codex exec -s read-only -C "${_iso}" --skip-git-repo-check --ephemeral \
+    _KEEP_OUT=true
+    ( cd "${_ISO}" && codex exec -s read-only -C "${_ISO}" --skip-git-repo-check --ephemeral \
         --ignore-user-config --disable hooks --disable plugins --disable memories --disable apps \
-        -o "${_out}/answer.md" ${_model:+-m "${_model}"} - ) < "${_pkg}" > "${_out}/codex.log" 2>&1
+        -o "${_OUT}/answer.md" ${_model:+-m "${_model}"} - ) < "${_copy}" > "${_OUT}/codex.log" 2>&1
     _rc=$?
-    rmdir "${_iso}" 2>/dev/null
-    if [ "${_rc}" -eq 0 ] && [ -s "${_out}/answer.md" ]; then
+    if [ "${_rc}" -eq 0 ] && [ -s "${_OUT}/answer.md" ]; then
         printf 'sent to codex (read-only, isolated working directory)\n'
-        printf 'answer: %s\n' "${_out}/answer.md"
-        printf 'run directory (session scratch; delete with: rm -rf %s)\n' "${_out}"
+        printf 'answer: %s\n' "${_OUT}/answer.md"
+        printf 'run directory (session scratch; delete with: rm -rf %s)\n' "${_OUT}"
         exit 0
     fi
-    _err "MAY HAVE SENT: codex exited ${_rc} without a complete answer; the package may already have left this machine. Log: ${_out}/codex.log. The approval was used; a retry needs the user's approval again."
+    _err "MAY HAVE SENT: codex exited ${_rc} without a complete answer; the package may already have left this machine. Log: ${_OUT}/codex.log. The approval was used; a retry needs the user's approval again."
     exit 5
 }
 
