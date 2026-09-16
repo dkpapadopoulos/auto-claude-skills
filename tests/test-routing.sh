@@ -2430,6 +2430,73 @@ INFIXREG
 }
 
 # ---------------------------------------------------------------------------
+# 29.3. A single-word skill name needs an invocation marker to earn +100
+# ---------------------------------------------------------------------------
+# The full-name boost is defensible for a MULTI-word name because the user must type the
+# literal hyphenated token, which is deliberate. Three skills have single-word names that
+# are ordinary English -- panel, synthesize, brainstorming -- and for those the boost
+# fires on ordinary prose. Measured: "the control panel component is misaligned on
+# mobile" scored panel=116, and on held-out data "the collapsible panel on the settings
+# screen doesn't remember its open state" SELECTED panel, which dispatches repository
+# content to another vendor.
+#
+# So a single-word name earns +100 only with an invocation marker (/name, or run/use/
+# invoke/call/skill name). Multi-word names are unchanged.
+# ---------------------------------------------------------------------------
+test_single_word_name_needs_invocation_marker() {
+    echo "-- test: single-word name needs an invocation marker --"
+    setup_test_env
+
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    mkdir -p "$(dirname "${cache_file}")"
+    cat > "${cache_file}" <<'SWREG'
+{
+  "version": "test",
+  "skills": [
+    {
+      "name": "widget",
+      "role": "domain",
+      "triggers": ["(never-match-this-nonsense-string)"],
+      "priority": 10,
+      "invoke": "Skill(mock:widget)",
+      "available": true,
+      "enabled": true
+    },
+    {
+      "name": "widget-inspector",
+      "role": "domain",
+      "triggers": ["(never-match-this-nonsense-string)"],
+      "priority": 10,
+      "invoke": "Skill(mock:widget-inspector)",
+      "available": true,
+      "enabled": true
+    }
+  ],
+  "methodology_hints": [],
+  "phase_compositions": {}
+}
+SWREG
+
+    local output context
+    # Ordinary use of the word: must NOT select.
+    output="$(run_hook "the widget on the settings screen does not remember its state")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "single-word name in ordinary prose does not select"         "mock:widget)" "${context}"
+
+    # Deliberate invocation: MUST still select, or the boost is simply gone.
+    output="$(run_hook "run widget on this branch")"
+    context="$(extract_context "${output}")"
+    assert_contains "single-word name WITH a marker still selects" "mock:widget)" "${context}"
+
+    # Control: a multi-word name is unchanged -- the hyphenated token is itself deliberate.
+    output="$(run_hook "the widget-inspector output looks wrong")"
+    context="$(extract_context "${output}")"
+    assert_contains "multi-word name still selects without a marker"         "mock:widget-inspector)" "${context}"
+
+    teardown_test_env
+}
+
+# ---------------------------------------------------------------------------
 # 29.5. Trigger word-boundary excludes dot (file extension separator)
 # ---------------------------------------------------------------------------
 test_trigger_boundary_excludes_dot() {
@@ -2669,6 +2736,7 @@ test_eval_phase_uses_process
 test_name_boost_boundary_aware
 test_name_segment_is_not_a_signal
 test_infix_match_is_not_a_match
+test_single_word_name_needs_invocation_marker
 test_trigger_boundary_excludes_dot
 test_domain_instruction_no_process
 test_incident_analysis_hint_fires

@@ -236,7 +236,23 @@ _score_skills() {
     # read as authorisation by anything downstream.
     name_boost=0
     if [[ "$P" =~ (^|[^a-z0-9-])${skill_name_lower}($|[^a-z0-9-]) ]]; then
-      name_boost=100
+      if [[ "$skill_name_lower" == *-* ]]; then
+        # Multi-word: the user had to type the literal hyphenated token, which is
+        # deliberate. (It is a strong signal of REFERENCE, not proof of a request --
+        # "do not use design-debate" matches too -- so nothing downstream may read it
+        # as authorisation.)
+        name_boost=100
+      elif [[ "$P" =~ (^|[^a-z0-9-])(/|run |use |invoke |call |the )?${skill_name_lower}($|[^a-z0-9-]) && \
+              "$P" =~ (/|(^|[^a-z0-9-])(run|use|invoke|call|skill|using) )${skill_name_lower}($|[^a-z0-9-]) ]]; then
+        # Single-word names are ordinary English -- panel, synthesize, brainstorming --
+        # and the bare word is not evidence of intent. Measured: "the control panel
+        # component is misaligned on mobile" scored panel=116, and on held-out data "the
+        # collapsible panel on the settings screen" SELECTED panel, which dispatches
+        # repository content to another vendor. So these require an invocation marker.
+        # A skill whose only route is its name (synthesize has no triggers) stays
+        # reachable by naming it deliberately: "run synthesize on the panel output".
+        name_boost=100
+      fi
     fi
 
     # Score triggers (iterate using string splitting — no per-trigger jq fork)

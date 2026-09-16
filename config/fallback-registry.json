@@ -496,7 +496,9 @@
       "phase": "PLAN",
       "triggers": [
         "(panel of models|model panel|cross.?model (review|opinion|perspective|pass|panel))",
-        "(^|[^a-z])(ask|consult|poll|get|run) [^.!?;:]{0,20}(codex|gemini|gpt-?[0-9]|o3|chatgpt)[^.!?;:]{0,30}(^|[^a-z])(and|,) *[^.!?;:]{0,20}(codex|gemini|gpt-?[0-9]|o3|chatgpt)"
+        "(^|[^a-z])(ask|consult|poll|get|run) [^.!?;:]{0,20}(codex|gemini|gpt-?[0-9]|o3|chatgpt)[^.!?;:]{0,30}(^|[^a-z])(and|,) *[^.!?;:]{0,20}(codex|gemini|gpt-?[0-9]|o3|chatgpt)",
+        "(^|[^a-z])(standalone|independent) +panel($|[^a-z])[^.!?;:]{0,60}(answer|response|question|model|opinion|participant)|(answer|response|question|model|opinion|participant)[^.!?;:]{0,60}(^|[^a-z])(standalone|independent) +panel($|[^a-z])",
+        "(^|[^a-z])(independent|raw|unmerged|attributed|separate) +(raw +|independent +)?(answer|response|opinion|take)s?($|[^a-z])[^.!?;:]{0,60}(^|[^a-z])(several|multiple|each|all|both|[0-9]+) +(model|llm|participant|agent)s?($|[^a-z])|(^|[^a-z])(several|multiple|each|all|both|[0-9]+) +(model|llm|participant|agent)s?($|[^a-z])[^.!?;:]{0,60}(^|[^a-z])(independent|raw|unmerged|attributed|separate|side.by.side) +(raw +|independent +)?(answer|response|opinion|take)s?($|[^a-z])"
       ],
       "keywords": [],
       "trigger_mode": "regex",
@@ -512,7 +514,9 @@
       "name": "synthesize",
       "role": "domain",
       "phase": "PLAN",
-      "triggers": [],
+      "triggers": [
+        "(^|[^a-z])(independent|separate) +(plan|answer|response|opinion|assessment|critique|take)s?($|[^a-z])[^.!?;:]{0,50}(^|[^a-z])(synthesi(s|[sz]e)|merge|combine|consolidate|reconcile)($|[^a-z])|(^|[^a-z])(synthesi(s|[sz]e)|merge|combine|consolidate|reconcile) +[^.!?;:]{0,50}(^|[^a-z])(independent|separate) +(plan|answer|response|opinion|assessment|critique|take)s?($|[^a-z])"
+      ],
       "keywords": [],
       "trigger_mode": "regex",
       "priority": 10,

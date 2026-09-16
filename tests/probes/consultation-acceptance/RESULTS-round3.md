@@ -83,3 +83,24 @@ asks-the-assistant prompts".
 NOT licensed: any recall claim. 5/15 is the measurement, and the causes are known
 (`design-debate`'s vocabulary, and single-model phrasings like "i'd like o3's take"
 that no clause covers).
+
+## Boundary: this number is bound to commit `deeedfb`
+
+Routing changed after this measurement was recorded. `panel` and `synthesize` gained
+contract-expressing triggers, and the single-word name boost now requires an invocation
+marker. Those changes were made for reasons this set did not supply:
+
+- the **name-boost restriction** cites an earlier, independent measurement
+  (`the control panel component is misaligned on mobile` scoring `panel=116`), not the
+  round-3 failure list. Round 3 confirmed the cost of a known defect; it did not find it.
+- the **contract triggers** were derived from `tests/probes/intent-routing/cases.json` and
+  its frozen baseline, a different corpus, after that baseline caught the name-boost
+  restriction knocking out two genuine invocations.
+
+**Re-running this set now produces development data, not an independent measurement.**
+The failure list was inspected to fix `pd-1`, so the set is spent. If a fresh acceptance
+number is needed, author a round 4 the same way: a subagent given the contracts only,
+barred from reading triggers, hook, and prior sets, with zero tool uses verified.
+
+The `models_interact` 0/5 recall gap recorded above is **unaffected and still open** —
+nothing in the subsequent changes touched `design-debate`'s triggers.

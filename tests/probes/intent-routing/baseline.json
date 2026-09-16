@@ -84,19 +84,14 @@
       "violations": []
     },
     "controlled-all-skills/so-1": {
-      "satisfied": false,
+      "satisfied": true,
       "vacuous": false,
-      "violations": [
-        "expected absent: panel",
-        "expected absent: design-debate"
-      ]
+      "violations": []
     },
     "controlled-all-skills/so-2": {
-      "satisfied": false,
+      "satisfied": true,
       "vacuous": false,
-      "violations": [
-        "expected absent: design-debate"
-      ]
+      "violations": []
     },
     "controlled-all-skills/so-3": {
       "satisfied": true,
@@ -119,11 +114,9 @@
       "violations": []
     },
     "controlled-all-skills/sp-2": {
-      "satisfied": false,
+      "satisfied": true,
       "vacuous": false,
-      "violations": [
-        "expected present: panel"
-      ]
+      "violations": []
     },
     "controlled-all-skills/db-1": {
       "satisfied": true,
@@ -143,11 +136,9 @@
       "violations": []
     },
     "controlled-all-skills/sy-2": {
-      "satisfied": false,
+      "satisfied": true,
       "vacuous": false,
-      "violations": [
-        "expected present: synthesize"
-      ]
+      "violations": []
     },
     "controlled-all-skills/nc-1": {
       "satisfied": true,

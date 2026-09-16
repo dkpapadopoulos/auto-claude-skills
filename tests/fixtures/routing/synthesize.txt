@@ -1,0 +1,31 @@
+# Regex fixtures for skill: synthesize
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# First NO_MATCH line is verbatim-borrowed from the panel MATCH fixture, and it is the
+# trap this file exists for: "unmerged" is the standalone_panel contract's word for DO
+# NOT merge, and an unanchored `merge` matched inside it -- routing the contract-opposite
+# word to the contract-opposite skill. The combining verbs are word-anchored; this line
+# fails if that anchoring is ever relaxed.
+#
+# synthesize had NO triggers until the contract-routing fix: its only route to
+# selection was the bare English verb "synthesize", so it fired on "synthesize these
+# notes" (a plain writing task) and missed "gather independent plans ... then merge
+# them" (the synthesized_plan contract, stated without the word). The triggers below
+# require the CONTRACT -- independent inputs, then a combining verb -- not the word.
+# The NO_MATCH lines pin that boundary: an ordinary merge/combine/consolidate of
+# things that are not independent model outputs must not route here.
+
+MATCH: use independent plans and synthesize the final implementation plan
+MATCH: gather independent plans from multiple models then merge them into one plan i can execute
+MATCH: combine the independent answers into a single recommendation
+MATCH: reconcile the separate assessments into one plan
+
+NO_MATCH: get independent answers from several models and show them to me unmerged
+NO_MATCH: run a panel of models on this design
+NO_MATCH: can you synthesize these notes into a summary
+NO_MATCH: synthesize a changelog from the commit history
+NO_MATCH: merge the feature branch into main
+NO_MATCH: combine the separate outputs of the two scripts
+NO_MATCH: consolidate the duplicate css rules
