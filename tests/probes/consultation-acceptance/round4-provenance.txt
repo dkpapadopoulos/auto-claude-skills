@@ -1,0 +1,62 @@
+PROVENANCE — round 4 held-out prompt set
+========================================
+
+DELIBERATE INSPECTION: none.
+
+I read no file, ran no command, and used no tool of any kind before writing
+these two files. The 40 prompts were composed entirely from the eight contract
+definitions you pasted in your task message. I did not look at
+config/default-triggers.json, hooks/skill-activation-hook.sh,
+tests/fixtures/routing/*, skills/panel/, skills/synthesize/, or any existing
+prompt set or eval file.
+
+PASSIVE CONTEXT I COULD NOT DECLINE (disclose and judge for yourself)
+--------------------------------------------------------------------
+Three things were auto-injected into my context by the harness before I
+received your task. I did not seek them out, but they were present while I
+wrote, so you should weigh them:
+
+1. The project CLAUDE.md (auto-loaded every session). It is almost entirely
+   about the push gate, hook libraries, shell portability and test discipline.
+   To my knowledge it contains nothing about panel/synthesize routing triggers
+   or prompt wording.
+
+2. The available-skills listing, which includes the one-line DESCRIPTION of
+   `auto-claude-skills:panel`: "Use to get independent perspectives on one
+   prompt from multiple models — default roster is the strongest available
+   Claude model plus Codex. Opt-in, phase-agnostic; pairs with synthesize for
+   the merge." This is a skill description, not a trigger regex, but it does
+   use the words "independent", "multiple models" and "merge". If your routing
+   scorer matches on description text, treat this as mild exposure.
+
+3. The auto-memory index (MEMORY.md), one line of which is materially
+   relevant and I am flagging it rather than burying it:
+
+     "[Negation word contains the positive verb] — `merge` matched inside
+      `unmerged`, routing the purest panel prompt to the opposite skill; test
+      every verb's negation."
+
+   That is a finding from an earlier round about the live implementation. I did
+   not open the underlying memory file and I do not know which prompt it refers
+   to. I cannot honestly certify it had zero influence: pd-2 ("merge the
+   release branch into main...") is a decoy using "merge" in its ordinary git
+   sense, and that is exactly the neighbourhood that line points at. I believe
+   I would have written a git-merge decoy regardless — it is the most obvious
+   ordinary-sense use of the word, and you explicitly asked for decoys using
+   "merge" — but you asked for accuracy, so: pd-2 is the one case where prior
+   knowledge of a known failure mode may have shaped the choice.
+
+   Two other MEMORY.md lines touch the same work at a higher level ("patforna
+   adoption slices" mentioning panel/synthesize shipping in PR #247, and
+   "Held-out prompts are spent by looking — inspecting which cases failed burns
+   the set"). Neither told me anything about trigger wording.
+
+WHAT THIS MEANS FOR THE MEASUREMENT
+-----------------------------------
+No trigger regex, hook source, fixture, or prior prompt set was seen. The
+phrasings are mine, invented against the contract text. The set is clean in the
+sense you cared about, with the single caveat about pd-2 and the general caveat
+that item 2's description text was visible.
+
+If you want a version with zero exposure to item 3, drop or replace pd-2 — the
+other 39 cases have no such caveat attached.

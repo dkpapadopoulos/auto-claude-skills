@@ -1,0 +1,68 @@
+ROUND 5 PROVENANCE — honest statement
+
+DIRECT INSPECTION: none.
+I read zero repository files. I ran zero commands (no Bash, no Grep, no Read, no Glob,
+no MCP calls). The only tool calls in this task were the two Write calls that produced
+round5-cases.json and this file. I did not look at triggers, hooks, fixtures, config,
+tests, or any existing prompt set, and I have no knowledge of what any prior round
+contained.
+
+AUTO-INJECTED CONTEXT I COULD NOT DECLINE — and it is NOT negligible:
+
+1. CLAUDE.md (project instructions), injected in full. It is very long and almost
+   entirely about push gates, hook internals, shell parsing and shadow corpora. It
+   contains no routing-trigger regexes and no example prompts, so I judge its influence
+   on this set to be low. It did give me the repo's general vocabulary.
+
+2. The user's auto-memory INDEX (MEMORY.md), injected in full. This is the most
+   significant contamination and I want it flagged loudly. Three lines are directly
+   about the thing being measured:
+     - "[patforna adoption slices] — Slice 1 shipped (PR #247: panel/synthesize/§6/autofix)"
+     - "[Held-out prompts are spent by looking] — inspecting which cases failed burns
+        the set; and check the metric matches the contract."
+     - "[Negation word contains the positive verb] — `merge` matched inside `unmerged`,
+        routing the purest panel prompt to the opposite skill; test every verb's negation."
+   That last line is a leak of a specific known routing FAILURE (the token "merge"
+   appearing inside "unmerged" and the panel-vs-synthesize boundary). I only saw the
+   one-line index hooks, not the memory bodies, but the hooks alone told me that
+   panel/synthesize and the verb "merge" are a live sore spot.
+
+3. The Skill tool listing, injected in full. It includes the descriptions of the very
+   skills this evaluation is presumably routing to, in their own words:
+     - "panel: Use to get independent perspectives on one prompt from multiple models —
+        default roster is the strongest available Claude model plus Codex."
+     - "design-debate: Multi-Agent Debate (MAD) ... Spawns architect, critic, and
+        pragmatist ..."
+     - "codex:rescue", "codex:setup" (so "codex" as a vendor name was in front of me).
+   I did not read any SKILL.md file, but these one-liners are effectively a paraphrase
+   of two of the contracts.
+
+SPECIFIC PROMPTS I THINK MAY HAVE BEEN SHAPED BY THE ABOVE — treat as suspect:
+
+ - sy-1, sy-3, sy-4 and sp-1 use "merge" / "reconcile" / "no merging". I was aware from
+   the memory index that "merge" is a known routing hazard at exactly this boundary. I
+   did not deliberately target it, but I cannot claim I would have reached for that verb
+   as often without having seen that line. This is the single item I would most want you
+   to discount.
+ - sp-1/sp-2/sp-3/sp-4 and sy-1/sy-3/sy-4 lean on the word "independent". The panel
+   skill's own description in the tool listing is "independent perspectives on one
+   prompt from multiple models". My vendor-free phrasing may therefore be closer to the
+   skill's self-description than a naive user's would be — i.e. these may be easier
+   than real traffic.
+ - mi-3 ("a critic and a defender") is plausibly an echo of design-debate's "architect,
+   critic, and pragmatist".
+ - The choice of "codex" as the second vendor in sp-5, mi-5, sy-5 (and its use in so-2,
+   ac-1, ac-6) is influenced by codex being a visibly installed plugin in my session,
+   not by me modelling what a typical user would name.
+ - Nothing shaped vs-*, am-*, pd-*: those domains (UI, ML infra, legal, finance, HR,
+   telecoms, civil engineering, medicine, education, game dev, scientific writing) were
+   picked from the task instruction's own list, which is the intended source.
+
+WHAT I DELIBERATELY DID NOT DO: I did not try to guess trigger words, did not construct
+prompts around any regex, and did not check whether a prompt "would route" anywhere.
+
+SUMMARY: not clean. Implementation-blind (no files read), but session-contaminated by
+the auto-injected memory index and skill listing, with the "merge"/"independent" word
+choices being the concrete places where that contamination could plausibly bias the
+result — most likely in the direction of making the panel/synthesize cells EASIER than
+they should be.

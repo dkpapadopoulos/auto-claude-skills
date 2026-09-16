@@ -1,0 +1,269 @@
+{
+  "protocol": "consultation-acceptance-holdout-v1",
+  "authoring_rule": "Authored by a subagent from the six contract definitions and four control-category descriptions ONLY. It was explicitly barred from reading config/default-triggers.json, config/fallback-registry.json, hooks/, and the thirteen development prompts in tests/probes/intent-routing/cases.json, and it recorded zero tool uses, so it read no repository file at all. The session lead had ALREADY read the trigger regexes and the scorer while diagnosing the defects, and therefore could not author these: a prompt fitted to a regex makes the router agree with itself.",
+  "frozen": "Committed BEFORE any discriminator or scorer change was written, so the separation between acceptance data and implementation is a matter of git history rather than assertion. Do not add or reword cases to make a fix pass.",
+  "categories": {
+    "second_opinion": "one other model, prior answer EXCLUDED",
+    "answer_critique": "one other model, prior answer INCLUDED",
+    "standalone_panel": "several models, same prompt, raw attributed answers, NOT merged",
+    "debate": "participants deliberately interact; independence not claimed",
+    "synthesized_plan": "independent plans gathered THEN merged, disagreement retained",
+    "none": "no other model wanted; ordinary question about the code",
+    "mixed": "consultation AND development work in one prompt; the chain must survive",
+    "continuation": "resume work already in progress after a detour",
+    "cancellation": "abandon work in progress",
+    "development": "ordinary development work; several deliberately use design/architecture/plan vocabulary in an ORDINARY sense, because those words are the likeliest false-match source"
+  },
+  "cases": [
+    {
+      "id": "so-h1",
+      "contract": "second_opinion",
+      "prompt": "before i commit to this, can you ask gpt-5 the same question cold? don't paste what i said, i want its own take on whether a redis lock is the right call here"
+    },
+    {
+      "id": "so-h2",
+      "contract": "second_opinion",
+      "prompt": "run this past gemini fresh — no context from our chat — just the raw question: is it safe to run alembic migrations from the app container at startup in a 4-replica deploy?"
+    },
+    {
+      "id": "so-h3",
+      "contract": "second_opinion",
+      "prompt": "ask one other llm, blind, what it thinks the root cause of the connection pool exhaustion is. i don't want it anchored on my theory"
+    },
+    {
+      "id": "so-h4",
+      "contract": "second_opinion",
+      "prompt": "i'd like an independent read from o3 on this. give it only the problem statement, nothing about what we concluded"
+    },
+    {
+      "id": "so-h5",
+      "contract": "second_opinion",
+      "prompt": "hand the question to codex without any of our discussion attached and see what it says on its own. curious whether it lands somewhere different"
+    },
+    {
+      "id": "ac-h1",
+      "contract": "answer_critique",
+      "prompt": "take the answer you just gave me and show it to gpt-5, ask it to poke holes in it"
+    },
+    {
+      "id": "ac-h2",
+      "contract": "answer_critique",
+      "prompt": "can another model look over the explanation above and tell me where it's wrong or handwavy? give it the full text"
+    },
+    {
+      "id": "ac-h3",
+      "contract": "answer_critique",
+      "prompt": "send that migration plan you wrote to gemini and ask it to tear it apart. what did we miss"
+    },
+    {
+      "id": "ac-h4",
+      "contract": "answer_critique",
+      "prompt": "i want codex to red-team the solution you proposed. paste it in and ask for every flaw it can find"
+    },
+    {
+      "id": "ac-h5",
+      "contract": "answer_critique",
+      "prompt": "have o3 grade the answer we landed on above — is the reasoning about the lock ordering actually sound or did it gloss over something"
+    },
+    {
+      "id": "sp-h1",
+      "contract": "standalone_panel",
+      "prompt": "ask gpt-5, gemini and codex the same question separately and just give me all three answers as-is, labelled. don't merge them"
+    },
+    {
+      "id": "sp-h2",
+      "contract": "standalone_panel",
+      "prompt": "i want to see how several models each answer this on their own. fresh context per model, show me each raw response with the name attached, no summary"
+    },
+    {
+      "id": "sp-h3",
+      "contract": "standalone_panel",
+      "prompt": "poll a few different llms on whether we should move to event sourcing here. print each one's reply verbatim, i'll do the comparing myself"
+    },
+    {
+      "id": "sp-h4",
+      "contract": "standalone_panel",
+      "prompt": "same prompt to three models, isolated, and dump the outputs side by side. absolutely do not summarise or reconcile them"
+    },
+    {
+      "id": "sp-h5",
+      "contract": "standalone_panel",
+      "prompt": "get each of the other models to answer this independently and show me their answers individually, attributed. i want the raw text not your reading of it"
+    },
+    {
+      "id": "db-h1",
+      "contract": "debate",
+      "prompt": "set gpt-5 and gemini arguing about this — one for the monolith, one for splitting out the billing service, let them rebut each other for a few rounds"
+    },
+    {
+      "id": "db-h2",
+      "contract": "debate",
+      "prompt": "i want a back and forth between two models on this schema. have them respond to each other's points rather than just stating positions"
+    },
+    {
+      "id": "db-h3",
+      "contract": "debate",
+      "prompt": "can you get codex and another llm to hash this out between themselves? let each one read the other's argument and push back"
+    },
+    {
+      "id": "db-h4",
+      "contract": "debate",
+      "prompt": "run an argument between the models about whether optimistic locking is enough here. they should actually engage with each other's objections, not talk past each other"
+    },
+    {
+      "id": "db-h5",
+      "contract": "debate",
+      "prompt": "pit two models against each other on the caching strategy, a few exchanges, and show me where they end up after they've each responded to the other"
+    },
+    {
+      "id": "sy-h1",
+      "contract": "synthesized_plan",
+      "prompt": "collect a rollout plan from gpt-5, gemini and codex separately then fold them into one plan for me — and keep the bits where they disagree, don't paper over it"
+    },
+    {
+      "id": "sy-h2",
+      "contract": "synthesized_plan",
+      "prompt": "gather independent proposals from a few models for the auth rewrite and then give me a single merged writeup that flags every point of contention"
+    },
+    {
+      "id": "sy-h3",
+      "contract": "synthesized_plan",
+      "prompt": "have several llms each draft how they'd migrate us off the legacy queue, then combine into one document. i specifically want the conflicts called out rather than averaged away"
+    },
+    {
+      "id": "sy-h4",
+      "contract": "synthesized_plan",
+      "prompt": "ask each model on its own how to phase this index rebuild, then reconcile everything into one recommendation, preserving the genuine disagreements as open questions"
+    },
+    {
+      "id": "sy-h5",
+      "contract": "synthesized_plan",
+      "prompt": "three separate takes on the sharding strategy, then roll them up into one consolidated plan. where they contradict each other say so explicitly"
+    },
+    {
+      "id": "nc-h1",
+      "contract": "none",
+      "prompt": "what does the retry wrapper in client.py actually do when the backoff exceeds the deadline?"
+    },
+    {
+      "id": "nc-h2",
+      "contract": "none",
+      "prompt": "where is the session token read from, and who writes it"
+    },
+    {
+      "id": "nc-h3",
+      "contract": "none",
+      "prompt": "explain how the config merging works in this project — which file wins when both define the same key"
+    },
+    {
+      "id": "nc-h4",
+      "contract": "none",
+      "prompt": "is that regex in the parser anchored? i can't tell from reading it"
+    },
+    {
+      "id": "nc-h5",
+      "contract": "none",
+      "prompt": "quick question, does anything else in the codebase call formatDuration or is it only used by the CLI output"
+    },
+    {
+      "id": "mx-h1",
+      "contract": "mixed",
+      "prompt": "get a couple of other models' views on whether we should use a queue or cron for the digest job, then once we've picked one, go implement it"
+    },
+    {
+      "id": "mx-h2",
+      "contract": "mixed",
+      "prompt": "ask gpt-5 and gemini how they'd structure the retry logic, take whatever comes out best, and then write the code plus tests for it"
+    },
+    {
+      "id": "mx-h3",
+      "contract": "mixed",
+      "prompt": "i want outside input from another llm on the index strategy first, and after we decide, actually apply the migration and update the models"
+    },
+    {
+      "id": "mx-h4",
+      "contract": "mixed",
+      "prompt": "run this by codex to see if there's a cleaner factoring, then refactor the module accordingly and make sure the suite still passes"
+    },
+    {
+      "id": "mx-h5",
+      "contract": "mixed",
+      "prompt": "poll the other models on the error taxonomy, settle on one, then go rewrite the exception classes across the package to match"
+    },
+    {
+      "id": "ct-h1",
+      "contract": "continuation",
+      "prompt": "ok keep going"
+    },
+    {
+      "id": "ct-h2",
+      "contract": "continuation",
+      "prompt": "sorry, phone call. pick up where you left off"
+    },
+    {
+      "id": "ct-h3",
+      "contract": "continuation",
+      "prompt": "back — carry on with the rest of the tasks"
+    },
+    {
+      "id": "ct-h4",
+      "contract": "continuation",
+      "prompt": "yep continue"
+    },
+    {
+      "id": "ct-h5",
+      "contract": "continuation",
+      "prompt": "right where were we, resume"
+    },
+    {
+      "id": "cx-h1",
+      "contract": "cancellation",
+      "prompt": "stop, drop this"
+    },
+    {
+      "id": "cx-h2",
+      "contract": "cancellation",
+      "prompt": "actually never mind, forget the whole thing"
+    },
+    {
+      "id": "cx-h3",
+      "contract": "cancellation",
+      "prompt": "abandon that, not worth it"
+    },
+    {
+      "id": "cx-h4",
+      "contract": "cancellation",
+      "prompt": "cancel — revert what you've done and let's leave it"
+    },
+    {
+      "id": "cx-h5",
+      "contract": "cancellation",
+      "prompt": "scrap it, we're not doing this anymore"
+    },
+    {
+      "id": "dv-h1",
+      "contract": "development",
+      "prompt": "the pagination cursor breaks when a row is deleted mid-scroll. fix it and add a regression test"
+    },
+    {
+      "id": "dv-h2",
+      "contract": "development",
+      "prompt": "walk me through the trade-offs of storing the audit log in postgres vs s3 for our volume, then pick one and sketch the schema"
+    },
+    {
+      "id": "dv-h3",
+      "contract": "development",
+      "prompt": "the current architecture has the worker reaching straight into the web app's db. i want to redesign that boundary — what are my options and which would you go with"
+    },
+    {
+      "id": "dv-h4",
+      "contract": "development",
+      "prompt": "write me a plan for splitting this 900 line handler into something maintainable, then start on the first chunk"
+    },
+    {
+      "id": "dv-h5",
+      "contract": "development",
+      "prompt": "this approach to config loading feels off, too many layers. refactor it to something simpler and bump the version before we tag the release"
+    }
+  ]
+}

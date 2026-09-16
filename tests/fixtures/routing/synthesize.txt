@@ -1,52 +1,39 @@
-# Regex fixtures for skill: design-debate
+# Regex fixtures for skill: synthesize
 # Format: one directive per non-empty, non-comment line.
 #   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
 #   NO_MATCH: <prompt>  — regex must NOT match
 # Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
-# NO_MATCH line is verbatim-borrowed from supply-chain-investigation MATCH fixture.
+# First NO_MATCH line is verbatim-borrowed from the panel MATCH fixture, and it is the
+# trap this file exists for: "unmerged" is the standalone_panel contract's word for DO
+# NOT merge, and an unanchored `merge` matched inside it -- routing the contract-opposite
+# word to the contract-opposite skill. The combining verbs are word-anchored; this line
+# fails if that anchoring is ever relaxed.
+#
+# synthesize had NO triggers until the contract-routing fix: its only route to
+# selection was the bare English verb "synthesize", so it fired on "synthesize these
+# notes" (a plain writing task) and missed "gather independent plans ... then merge
+# them" (the synthesized_plan contract, stated without the word). The triggers below
+# require the CONTRACT -- independent inputs, then a combining verb -- not the word.
+# The NO_MATCH lines pin that boundary: an ordinary merge/combine/consolidate of
+# things that are not independent model outputs must not route here.
 
-MATCH: let's debate the tradeoffs between a monolith and microservices architecture
-MATCH: compare the two approaches and give me the pro-con breakdown for each
-MATCH: what are the alternatives to using a message queue for this use case
-
-NO_MATCH: was the npm package compromised in the latest attack
-# The `weigh` clause had NO fixture coverage in either direction, so a narrowing that
-# sent real deliberation prompts nowhere was invisible to the suite. Both sides pinned now.
-MATCH: weigh these two options and tell me which is better
-MATCH: help me weigh up the different approaches
-NO_MATCH: ask codex to weigh in on this approach
-# The determiner list was incomplete AND irregular: a bare `a` branch admitted any
-# a-word by prefix, so "weigh another approach" matched accidentally rather than by
-# design, while "weigh my options" missed. Each determiner is now a whole word.
-MATCH: weigh my options
-MATCH: weigh those options
-MATCH: weigh possible approaches
-MATCH: weigh pros and cons of this approach
-
-# Contract triggers (participants deliberately INTERACT). The topic-word triggers above
-# never encoded the contract itself: db-2 of the intent-routing probe -- "have two agents
-# argue for and against event sourcing here" -- failed in BOTH arms. The NO_MATCH lines
-# borrow panel's contract cases verbatim: panel is the contract-opposite (independence,
-# no cross-talk), so those are the decoys that make the boundary load-bearing.
-MATCH: have two agents argue for and against event sourcing here
-MATCH: have the models argue this out between them
-# RESTORED as a MATCH by the recall policy decision: vendor-free consultation phrasing
-# routes again, and the egress boundary moved onto the skill's consent gate (which no
-# longer treats being routed as consent). The legal-transcript case it once collided with
-# -- "summarize how the attorneys rebut each other in this transcript" -- is still a
-# NO_MATCH below, because the vendor-free clause needs TWO co-occurring contract signals
-# (an interaction verb AND a plural-participant referent), not one.
-MATCH: let them rebut each other's answers
-MATCH: i want a back and forth between two models on this
-MATCH: have gemini and codex argue against each other on this design
-# "challenge" is gone from the verb set: "make the agent challenge the certificate chain".
-NO_MATCH: have gemini and codex challenge each other until they converge
+MATCH: use independent plans and synthesize the final implementation plan
+MATCH: gather independent plans from multiple models then merge them into one plan i can execute
+MATCH: combine the independent answers into a single recommendation
+MATCH: reconcile the independent assessments into one plan
 
 NO_MATCH: get independent answers from several models and show them to me unmerged
-NO_MATCH: run a standalone panel on this question; return independent raw answers
-NO_MATCH: argue for the current design in the pr description
-NO_MATCH: the two services counter each other's backpressure signals
-NO_MATCH: we need to challenge the assumption in the spec
+NO_MATCH: run a panel of models on this design
+# ACCEPTED, NOT A BUG: "merge the two independent plans into one backlog" DOES match.
+# It is a genuine merge of independent plans, just human ones. synthesize invokes no
+# model, so a spurious hint here costs nothing outbound; narrowing further would drop
+# sy-1, which also names no model. Revisit only if synthesize ever gains an outbound path.
+NO_MATCH: can you synthesize these notes into a summary
+NO_MATCH: synthesize a changelog from the commit history
+NO_MATCH: merge the feature branch into main
+NO_MATCH: combine the separate outputs of the two scripts
+NO_MATCH: reconcile the separate assessments into one plan
+NO_MATCH: consolidate the duplicate css rules
 
 # INFRASTRUCTURE-PROSE DECOYS (added after adversarial review found 11 false dispatches,
 # 8 of them to skills that ship repo content to an external vendor). The first cut of
@@ -96,6 +83,7 @@ NO_MATCH: write a classroom exercise where pupils argue both sides of the motion
 NO_MATCH: summarize how the attorneys rebut each other in this transcript
 NO_MATCH: animate a back and forth between two agents in the evacuation simulation
 
-# TWO VENDORS + an interaction cue. Same shared primitive as panel's, different cue.
-MATCH: let codex and gemini hash this out between them - feed each one the other's response
-MATCH: have gpt-5 respond to whatever claude says about the locking strategy, then let claude answer back
+# TWO VENDORS + independence + a combining verb. All three cues required, because any two
+# of them describe ordinary engineering work.
+MATCH: have codex and gemini each write their own test strategy without seeing the other's, then synthesize
+MATCH: independent backfill plans out of gpt-5 and claude opus, then fold them together into one

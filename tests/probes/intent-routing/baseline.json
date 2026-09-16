@@ -1,0 +1,152 @@
+{
+  "provenance": {
+    "audit_commit": "8c027b9",
+    "recorded_on": "main at f0ccf9c",
+    "date": "2026-09-14"
+  },
+  "meaning": "A frozen OBSERVATION of how routing behaves today, not an acceptance target. The gate asserts no case regresses; improving a case is the point of the fix and is reported, not failed.",
+  "cases": {
+    "shipped-fallback/so-1": {
+      "satisfied": true,
+      "vacuous": true,
+      "violations": []
+    },
+    "shipped-fallback/so-2": {
+      "satisfied": true,
+      "vacuous": true,
+      "violations": []
+    },
+    "shipped-fallback/so-3": {
+      "satisfied": true,
+      "vacuous": true,
+      "violations": []
+    },
+    "shipped-fallback/ac-1": {
+      "satisfied": true,
+      "vacuous": true,
+      "violations": []
+    },
+    "shipped-fallback/ac-2": {
+      "satisfied": true,
+      "vacuous": true,
+      "violations": []
+    },
+    "shipped-fallback/sp-1": {
+      "satisfied": false,
+      "vacuous": false,
+      "violations": [
+        "expected present: panel"
+      ]
+    },
+    "shipped-fallback/sp-2": {
+      "satisfied": false,
+      "vacuous": false,
+      "violations": [
+        "expected present: panel"
+      ]
+    },
+    "shipped-fallback/db-1": {
+      "satisfied": false,
+      "vacuous": false,
+      "violations": [
+        "expected present: design-debate"
+      ]
+    },
+    "shipped-fallback/db-2": {
+      "satisfied": false,
+      "vacuous": false,
+      "violations": [
+        "expected present: design-debate"
+      ]
+    },
+    "shipped-fallback/sy-1": {
+      "satisfied": false,
+      "vacuous": false,
+      "violations": [
+        "expected present: synthesize"
+      ]
+    },
+    "shipped-fallback/sy-2": {
+      "satisfied": false,
+      "vacuous": false,
+      "violations": [
+        "expected present: synthesize"
+      ]
+    },
+    "shipped-fallback/nc-1": {
+      "satisfied": true,
+      "vacuous": true,
+      "violations": []
+    },
+    "shipped-fallback/nc-2": {
+      "satisfied": true,
+      "vacuous": true,
+      "violations": []
+    },
+    "controlled-all-skills/so-1": {
+      "satisfied": true,
+      "vacuous": false,
+      "violations": []
+    },
+    "controlled-all-skills/so-2": {
+      "satisfied": true,
+      "vacuous": false,
+      "violations": []
+    },
+    "controlled-all-skills/so-3": {
+      "satisfied": true,
+      "vacuous": true,
+      "violations": []
+    },
+    "controlled-all-skills/ac-1": {
+      "satisfied": true,
+      "vacuous": true,
+      "violations": []
+    },
+    "controlled-all-skills/ac-2": {
+      "satisfied": true,
+      "vacuous": true,
+      "violations": []
+    },
+    "controlled-all-skills/sp-1": {
+      "satisfied": true,
+      "vacuous": false,
+      "violations": []
+    },
+    "controlled-all-skills/sp-2": {
+      "satisfied": true,
+      "vacuous": false,
+      "violations": []
+    },
+    "controlled-all-skills/db-1": {
+      "satisfied": true,
+      "vacuous": false,
+      "violations": []
+    },
+    "controlled-all-skills/db-2": {
+      "satisfied": true,
+      "vacuous": false,
+      "violations": []
+    },
+    "controlled-all-skills/sy-1": {
+      "satisfied": true,
+      "vacuous": false,
+      "violations": []
+    },
+    "controlled-all-skills/sy-2": {
+      "satisfied": true,
+      "vacuous": false,
+      "violations": []
+    },
+    "controlled-all-skills/nc-1": {
+      "satisfied": true,
+      "vacuous": true,
+      "violations": []
+    },
+    "controlled-all-skills/nc-2": {
+      "satisfied": true,
+      "vacuous": false,
+      "violations": []
+    }
+  }
+}

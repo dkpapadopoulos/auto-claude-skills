@@ -144,7 +144,7 @@
       ],
       "keywords": [],
       "trigger_mode": "regex",
-      "priority": 25,
+      "priority": 32,
       "precedes": [
         "verification-before-completion"
       ],
@@ -455,15 +455,47 @@
       "role": "domain",
       "phase": "DESIGN",
       "triggers": [
-        "(trade.?off|debate|compare.*(option|approach|design)|weigh.*(option|approach)|pro.?con|alternative|architecture)"
+        "(trade.?off|debate|compare.*(option|approach|design)|weigh +(the|up|these|those|this|our|your|my|their|its|both|two|three|four|five|six|a|an|another|each|which|what|whether|few|several|all|possible|competing|relative|different|any|[0-9]+) +[^.!?;:]{0,40}(option|approach|alternative|tradeoff)|weigh +(option|approach|alternative|tradeoff)|pros? and cons?|pro.?con|alternative|architecture)",
+        "(^|[^a-z])(model|llm|codex|gemini|gpt-?[0-9]|o3|chatgpt)s?(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])[^.!?;:]{0,40}(^|[^a-z])(argue|debate|rebut)[a-z]*[^.!?;:]{0,25}(^|[^a-z])(each other|one another|both sides|for and against|against each other|until they (converge|agree))($|[^a-z])|(^|[^a-z])(argue|debate|rebut)[a-z]*[^.!?;:]{0,25}(^|[^a-z])(each other|one another|both sides|for and against|against each other|until they (converge|agree))($|[^a-z])[^.!?;:]{0,40}(^|[^a-z])(model|llm|codex|gemini|gpt-?[0-9]|o3|chatgpt)s?(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])",
+        "(^|[^a-z])(have|let|get|make|ask) +(the +)?((two|three|four|both|several|multiple|[0-9]+) +)?(participant|model|llm|agent)s? +[^.!?;:]{0,20}(argue|debate|rebut)($|[^a-z])",
+        "(^|[^a-z])back and forth +[^.!?;:]{0,20}(between|among) +[^.!?;:]{0,20}((two|three|four|both|several|multiple|[0-9]+) +)?(model|llm|codex|gemini|gpt-?[0-9]|o3|chatgpt)s?(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])",
+        "(^|[^a-z])(argue|debate|rebut|attacks?|defends?|respond to (each other|one another)|talk(ing)? to each other|back and forth|fight|concede|push(es)? back)[^.!?;:]{0,60}(them|these|those|(two|three|four|a few|several) of (them|these|those)|the other one|one +[^.!?;:]{0,30}the other|a (few|couple)|several|multiple|different (sources|places)|each one|all of them|both of them)|(^|[^a-z])(them|these|those|(two|three|four|a few|several) of (them|these|those)|the other one|one +[^.!?;:]{0,30}the other|a (few|couple)|several|multiple|different (sources|places)|each one|all of them|both of them)[^.!?;:]{0,60}(argue|debate|rebut|attacks?|defends?|respond to (each other|one another)|talk(ing)? to each other|back and forth|fight|concede|push(es)? back)",
+        "(^|[^a-z])(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])[^.!?;:]{0,40}(and|,|&) *(to +|the +)?[^.!?;:]{0,20}(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])[^.!?;:]{0,70}(argue|debate|rebut|hash (this|it) out|respond to|answer(s|ing)? back|go(es)? at it|back and forth|attack|defend)|(^|[^a-z])(argue|debate|rebut|hash (this|it) out|respond to|answer(s|ing)? back|go(es)? at it|back and forth|attack|defend)[^.!?;:]{0,70}(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])[^.!?;:]{0,40}(and|,|&) *(to +|the +)?[^.!?;:]{0,20}(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])"
       ],
       "keywords": [],
       "trigger_mode": "regex",
       "priority": 18,
       "precedes": [],
       "requires": [],
-      "description": "Multi-Agent Debate for complex designs. Spawns architect, critic, and pragmatist for collaborative design exploration.",
+      "description": "Multi-Agent Debate for complex designs — architect, critic and pragmatist who RESPOND TO EACH OTHER, so independence is deliberately not claimed. For independent answers with no cross-talk use panel; for ONE other model's opinion use second-opinion.",
       "invoke": "Skill(auto-claude-skills:design-debate)",
+      "available": false,
+      "enabled": true
+    },
+    {
+      "name": "second-opinion",
+      "role": "domain",
+      "phase": "PLAN",
+      "triggers": [
+        "(^|[^a-z])(ask|consult) +(the +)?(codex|gemini|gpt-?[0-9]|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])",
+        "(^|[^a-z])(run (this|it) +(by|past)|check with) +(the +)?(codex|gemini|gpt-?[0-9]|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])|(^|[^a-z])(send|hand) +(this|it) +to +(the +)?(codex|gemini|gpt-?[0-9]|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])[^.!?;:]{0,30}(^|[^a-z])(second opinion|opinion|perspective|critique|assessment|second look|weigh in|sanity.?check|double.?check|poke holes|red.?team|tear apart|think|independent read|set of eyes)($|[^a-z])",
+        "(another|a second|a different|an independent|an outside|an external|one other|a separate|the other) +(model|llm)($|[^a-z])[^.!?;:]{0,40}(^|[^a-z])(second opinion|opinion|perspective|critique|assessment|second look|weigh in|sanity.?check|double.?check|poke holes|red.?team|tear apart|think|independent read|set of eyes)($|[^a-z])|(^|[^a-z])(second opinion|opinion|perspective|critique|assessment|second look|weigh in|sanity.?check|double.?check|poke holes|red.?team|tear apart|think|independent read|set of eyes)($|[^a-z])[^.!?;:]{0,40}(another|a second|a different|an independent|an outside|an external|one other|a separate|the other) +(model|llm)($|[^a-z])",
+        "(second|2nd) opinion[^.!?;:]{0,40}((codex|gemini|gpt-?[0-9]|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])|(another|a second|a different|an independent|an outside|an external|one other|a separate|the other) +(model|llm))",
+        "(^|[^a-z])(have|ask|get|tell) +((codex|gemini|gpt-?[0-9]|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])|(another|a second|a different|an independent|an outside|an external|one other|a separate|the other) +(model|llm))[^.!?;:]{0,20}(critique|review|check|look at|weigh in|think|grade)",
+        "(^|[^a-z])(paste|send|take|give|hand|put) +[^.!?;:]{0,45}(in)?to +(the +)?(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])",
+        "(^|[^a-z])(show|ask|tell|have|get) +(the +)?(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])[^.!?;:]{0,60}((tear|rip|pick) +(it|this|that|them|these|those|my|your|the [a-z]+) +apart|(tear|rip|pick) apart|poke holes|red.?team|sanity.?check|double.?check|(second opinion|second pair of eyes|second set of eyes|set of eyes|pair of eyes|opinion|perspective|critique|assessment|second look|weigh in|independent read|think)|critique|review|check|look at|grade|where it breaks|what.s wrong|attack)",
+        "(^|[^a-z])(i +want +|i.d +like +)(the +)?(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-]) *to +(review|critique|check|look|grade|weigh|read|tear|attack)",
+        "(^|[^a-z])(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])[^.!?;:]{0,40}((tear|rip|pick) +(it|this|that|them|these|those|my|your|the [a-z]+) +apart|(tear|rip|pick) apart|poke holes|red.?team|sanity.?check|double.?check|(second opinion|second pair of eyes|second set of eyes|set of eyes|pair of eyes|opinion|perspective|critique|assessment|second look|weigh in|independent read|think))($|[^a-z])|((second opinion|second pair of eyes|second set of eyes|set of eyes|pair of eyes|opinion|perspective|critique|assessment|second look|weigh in|independent read|think))[^.!?;:]{0,30}(from|by) +(the +)?(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])",
+        "(^|[^a-z])(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-]).{0,3}s +(take|view|read|opinion|thoughts?|assessment|verdict)($|[^a-z])",
+        "(^|[^a-z])(critique|review|opinion|take|second opinion|sanity.?check|read) +(out of|from) +(the +)?(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])"
+      ],
+      "keywords": [],
+      "trigger_mode": "regex",
+      "priority": 17,
+      "precedes": [],
+      "requires": [],
+      "description": "Use when the user wants ONE other model's view — an independent opinion (your prior answer withheld) or a critique of an answer already given (your prior answer deliberately included). One participant. Opt-in; phase-agnostic.",
+      "invoke": "Skill(auto-claude-skills:second-opinion)",
       "available": false,
       "enabled": true
     },
@@ -473,14 +505,19 @@
       "phase": "PLAN",
       "triggers": [
         "(panel of models|model panel|cross.?model (review|opinion|perspective|pass|panel))",
-        "(second opinion from (another|a (second|different)) model|(^|[^a-z])(ask|consult) codex)"
+        "(^|[^a-z])(ask|consult|poll|get|run|put|paste|send|take|give|hand|show) [^.!?;:]{0,20}(codex|gemini|gpt-?[0-9]|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])[^.!?;:]{0,30}(and|,) *[^.!?;:]{0,20}(codex|gemini|gpt-?[0-9]|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])[^.!?;:]{0,60}(take|takes|answer|answers|response|responses|opinion|opinions|view|views|say|says|said|each|both|separately|independently|raw|unmerged|verbatim|side.?by.?side|perspective|critique|review|weigh)",
+        "(^|[^a-z])standalone panel($|[^a-z])[^.!?;:]{0,60}(ask|from|by|across|between|poll|put to|each of) +[^.!?;:]{0,20}(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])",
+        "(^|[^a-z])(answer|response|take|opinion)s?($|[^a-z])[^.!?;:]{0,60}(unmerged|side.?by.?side|verbatim)($|[^a-z])[^.!?;:]{0,60}(^|[^a-z])(model|llm|codex|gemini|gpt-?[0-9]|o3|chatgpt)s?(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])|(^|[^a-z])(model|llm|codex|gemini|gpt-?[0-9]|o3|chatgpt)s?(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])[^.!?;:]{0,80}(^|[^a-z])(answer|response|take|opinion)s?($|[^a-z])[^.!?;:]{0,60}(unmerged|side.?by.?side|verbatim)($|[^a-z])",
+        "(^|[^a-z])(answer|response|take|opinion)s?($|[^a-z])[^.!?;:]{0,60}(^|[^a-z])(model|llm|codex|gemini|gpt-?[0-9]|o3|chatgpt)s?(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])[^.!?;:]{0,60}(unmerged|side.?by.?side|verbatim)($|[^a-z])",
+        "(^|[^a-z])(ask|get|put|give|want|show|collect|gather|run|pose|send)[^.!?;:]{0,40}(them|these|those|(two|three|four|a few|several) of (them|these|those)|the other one|one +[^.!?;:]{0,30}the other|a (few|couple)|several|multiple|different (sources|places)|each one|all of them|both of them)[^.!?;:]{0,70}((separately|independently|in (its|their) own|fresh context|without (seeing|sharing)|don.t let them see|no cross.?talk)|(raw|unmerged|verbatim|attributed|side.?by.?side|as.is|labeled|labelled|don.t (blend|merge|summarize)|no (blending|merging|summarizing|synthesis))[^.!?;:]{0,25}(answer|response|take|opinion|reply|result|version|draft)s?|(answer|response|take|opinion|reply|result|version|draft)s?[^.!?;:]{0,25}(raw|unmerged|verbatim|attributed|side.?by.?side|as.is|labeled|labelled|don.t (blend|merge|summarize)|no (blending|merging|summarizing|synthesis)))|(^|[^a-z])(them|these|those|(two|three|four|a few|several) of (them|these|those)|the other one|one +[^.!?;:]{0,30}the other|a (few|couple)|several|multiple|different (sources|places)|each one|all of them|both of them)[^.!?;:]{0,50}((raw|unmerged|verbatim|attributed|side.?by.?side|as.is|labeled|labelled|don.t (blend|merge|summarize)|no (blending|merging|summarizing|synthesis))[^.!?;:]{0,25}(answer|response|take|opinion|reply|result|version|draft)s?|(answer|response|take|opinion|reply|result|version|draft)s?[^.!?;:]{0,25}(raw|unmerged|verbatim|attributed|side.?by.?side|as.is|labeled|labelled|don.t (blend|merge|summarize)|no (blending|merging|summarizing|synthesis)))|(^|[^a-z])(ask|get|put|give|want|show|collect|gather|run|pose|send)[^.!?;:]{0,30}((raw|unmerged|verbatim|attributed|side.?by.?side|as.is|labeled|labelled|don.t (blend|merge|summarize)|no (blending|merging|summarizing|synthesis))[^.!?;:]{0,25}(answer|response|take|opinion|reply|result|version|draft)s?|(answer|response|take|opinion|reply|result|version|draft)s?[^.!?;:]{0,25}(raw|unmerged|verbatim|attributed|side.?by.?side|as.is|labeled|labelled|don.t (blend|merge|summarize)|no (blending|merging|summarizing|synthesis)))[^.!?;:]{0,60}(them|these|those|(two|three|four|a few|several) of (them|these|those)|the other one|one +[^.!?;:]{0,30}the other|a (few|couple)|several|multiple|different (sources|places)|each one|all of them|both of them)|(^|[^a-z])(ask|get|put|give|want|show|collect|gather|run|pose|send)[^.!?;:]{0,30}(independent(ly)?|separate) +(answer|response|take|opinion|reply|result|version|draft)s?[^.!?;:]{0,60}((raw|unmerged|verbatim|attributed|side.?by.?side|as.is|labeled|labelled|don.t (blend|merge|summarize)|no (blending|merging|summarizing|synthesis))|(separately|independently|in (its|their) own|fresh context|without (seeing|sharing)|don.t let them see|no cross.?talk)|(them|these|those|(two|three|four|a few|several) of (them|these|those)|the other one|one +[^.!?;:]{0,30}the other|a (few|couple)|several|multiple|different (sources|places)|each one|all of them|both of them))",
+        "(^|[^a-z])(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])[^.!?;:]{0,40}(and|,|&) *(to +|the +)?[^.!?;:]{0,20}(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])[^.!?;:]{0,70}(same (prompt|question)|each one|each of them|both|raw|unmerged|labell?ed|separately|side.?by.?side|what each|their own)|(^|[^a-z])(same (prompt|question)|each one|each of them|both|raw|unmerged|labell?ed|separately|side.?by.?side|what each|their own)[^.!?;:]{0,70}(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])[^.!?;:]{0,40}(and|,|&) *(to +|the +)?[^.!?;:]{0,20}(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])"
       ],
       "keywords": [],
       "trigger_mode": "regex",
-      "priority": 16,
+      "priority": 19,
       "precedes": [],
       "requires": [],
-      "description": "Independent cross-family perspectives on one prompt — fresh contexts, single round, no cross-talk, verbatim attributed delivery. Opt-in; phase-agnostic by contract.",
+      "description": "Independent cross-family perspectives on one prompt from SEVERAL models — fresh contexts, single round, no cross-talk, verbatim attributed delivery. For ONE other model's opinion or critique use second-opinion instead. Opt-in; phase-agnostic.",
       "invoke": "Skill(auto-claude-skills:panel)",
       "available": false,
       "enabled": true
@@ -489,7 +526,11 @@
       "name": "synthesize",
       "role": "domain",
       "phase": "PLAN",
-      "triggers": [],
+      "triggers": [
+        "(^|[^a-z])independent +(plan|answer|response|opinion|assessment|critique|take)s?($|[^a-z])[^.!?;:]{0,50}(^|[^a-z])(synthesi(s|[sz]e)|merge|combine|consolidate|reconcile)($|[^a-z])|(^|[^a-z])(synthesi(s|[sz]e)|merge|combine|consolidate|reconcile) +[^.!?;:]{0,50}(^|[^a-z])independent +(plan|answer|response|opinion|assessment|critique|take)s?($|[^a-z])",
+        "(^|[^a-z])(independent(ly)?|separate) +([a-z]+ +){0,2}(plan|take|answer|approach|opinion|one)s?[^.!?;:]{0,70}(fold (them )?into one|merge (them )?into|combine (them )?into|single combined|consolidated|stitch (the )?[a-z]* ?into one|into one (plan|doc|answer))|(^|[^a-z])(fold (them )?into one|merge (them )?into|combine (them )?into|single combined|consolidated|stitch (the )?[a-z]* ?into one|into one (plan|doc|answer))[^.!?;:]{0,70}(independent(ly)?|separate) +([a-z]+ +){0,2}(plan|take|answer|approach|opinion|one)s?",
+        "(^|[^a-z])(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])[^.!?;:]{0,40}(and|,|&) *(to +|the +)?[^.!?;:]{0,20}(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])[^.!?;:]{0,90}(independent|without seeing|their own|each write)[^.!?;:]{0,90}(synthesi(s|[sz]e)|merge|fold|combine|consolidate|reconcile)|(^|[^a-z])(independent|without seeing|their own|each write)[^.!?;:]{0,60}(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])[^.!?;:]{0,40}(and|,|&) *(to +|the +)?[^.!?;:]{0,20}(codex|gemini|gpt-?[0-9a-z]*|o3|chatgpt|claude|opus|sonnet)(\\.[0-9][0-9.]*)?($|[^a-z0-9_.-])[^.!?;:]{0,60}(synthesi(s|[sz]e)|merge|fold|combine|consolidate|reconcile)"
+      ],
       "keywords": [],
       "trigger_mode": "regex",
       "priority": 10,
@@ -799,7 +840,8 @@
       "role": "domain",
       "phase": "DESIGN",
       "triggers": [
-        "(autonomous.?loop|ralph.?loop|overnight|unattended|background.?agent|browser.?agent|email.?agent|inbox.?agent|yolo|skip.?permission|dangerously|permissionless|auto.?reply|auto.?respond|send.on.behalf)"
+        "(autonomous.?loop|ralph.?loop|overnight|unattended|background.?agent|browser.?agent|email.?agent|inbox.?agent|yolo|skip.?permission|dangerously|permissionless|auto.?reply|auto.?respond|send.on.behalf)",
+        "((disable|turn.?off|bypass|remove|skip|ignore|suppress|weaken).{0,24}(safety|safeguard|guard.?rail|security.check|safety.check|approval|human.review|confirmation))"
       ],
       "keywords": [
         "autonomous loop",

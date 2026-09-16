@@ -1,0 +1,157 @@
+{
+  "protocol": "consultation-acceptance-holdout-v3",
+  "authoring_rule": "Authored by a subagent from category descriptions ONLY, round 3. Barred from reading any repository file; recorded zero tool uses. Rounds 1 and 2 are both spent — round 1 by inspecting which of its cases failed, round 2 by being measured. This set adds the two categories reviewers found defects in that NO prompt set could test: vendor_as_subject (ordinary work on code integrating a vendor, e.g. 'our openai client throws 429s') and asks_me (the direction inversion, 'what do you THINK of…' wanting the assistant's answer, not another model's).",
+  "frozen": "Committed before being measured. Spend once, then stop.",
+  "cases": [
+    {
+      "id": "om-1",
+      "contract": "one_model_view",
+      "prompt": "ask gpt-5 what it makes of our retry backoff strategy in the ingest worker, i just want its read on it, don't change anything"
+    },
+    {
+      "id": "om-2",
+      "contract": "one_model_view",
+      "prompt": "can you get gemini to critique the migration sequencing i sketched out? curious whether it spots something i missed"
+    },
+    {
+      "id": "om-3",
+      "contract": "one_model_view",
+      "prompt": "run this past codex and tell me what it says about the caching layer design. no edits pls"
+    },
+    {
+      "id": "om-4",
+      "contract": "one_model_view",
+      "prompt": "i'd like o3's take on whether splitting the monolith by bounded context is the right call here"
+    },
+    {
+      "id": "om-5",
+      "contract": "one_model_view",
+      "prompt": "have gpt-5 look over the schema i pasted below and report back its assessment, single reviewer is fine"
+    },
+    {
+      "id": "sm-1",
+      "contract": "several_models",
+      "prompt": "ask gpt-5, gemini and codex the same question about our queue fanout design and show me each answer on its own, don't merge them"
+    },
+    {
+      "id": "sm-2",
+      "contract": "several_models",
+      "prompt": "fire this off to three different models at once and give me all three replies side by side"
+    },
+    {
+      "id": "sm-3",
+      "contract": "several_models",
+      "prompt": "i want independent answers from a few models on how to structure the auth tokens — keep them separate, one block per model"
+    },
+    {
+      "id": "sm-4",
+      "contract": "several_models",
+      "prompt": "poll gpt-5 and gemini in parallel with this prompt and paste both outputs verbatim"
+    },
+    {
+      "id": "sm-5",
+      "contract": "several_models",
+      "prompt": "broadcast the attached spec question to whatever external models you have access to, i'll read the responses individually"
+    },
+    {
+      "id": "mi-1",
+      "contract": "models_interact",
+      "prompt": "have gpt-5 and gemini argue this out — one proposes, the other pushes back, couple of rounds, then show me the transcript"
+    },
+    {
+      "id": "mi-2",
+      "contract": "models_interact",
+      "prompt": "let codex rebut gpt-5's answer and then let gpt-5 respond to the rebuttal"
+    },
+    {
+      "id": "mi-3",
+      "contract": "models_interact",
+      "prompt": "set up a back and forth between two models on whether event sourcing is overkill here, i want them reacting to each others points not just answering me"
+    },
+    {
+      "id": "mi-4",
+      "contract": "models_interact",
+      "prompt": "get o3 to challenge whatever gemini concludes, keep going until they converge or deadlock"
+    },
+    {
+      "id": "mi-5",
+      "contract": "models_interact",
+      "prompt": "i want a proper cross examination — one model writes the proposal, another interrogates it, then they swap roles"
+    },
+    {
+      "id": "vs-1",
+      "contract": "vendor_as_subject",
+      "prompt": "our openai client keeps throwing 429s under load, add exponential backoff with jitter and cap retries at 5"
+    },
+    {
+      "id": "vs-2",
+      "contract": "vendor_as_subject",
+      "prompt": "bump the gemini sdk dependency to the latest minor and fix whatever breaks in the streaming wrapper"
+    },
+    {
+      "id": "vs-3",
+      "contract": "vendor_as_subject",
+      "prompt": "there's a bug in gpt5_adapter.py where the token count is off by the system message, trace it and patch"
+    },
+    {
+      "id": "vs-4",
+      "contract": "vendor_as_subject",
+      "prompt": "write unit tests for the codex api wrapper, mock the http layer, cover timeouts and malformed json responses"
+    },
+    {
+      "id": "vs-5",
+      "contract": "vendor_as_subject",
+      "prompt": "refactor the o3 call site so the model name comes from config instead of being hardcoded in four places"
+    },
+    {
+      "id": "am-1",
+      "contract": "asks_me",
+      "prompt": "what do you think of how i've structured the openai fallback chain? does it look sane to you"
+    },
+    {
+      "id": "am-2",
+      "contract": "asks_me",
+      "prompt": "give me your honest assessment of this pr, be blunt"
+    },
+    {
+      "id": "am-3",
+      "contract": "asks_me",
+      "prompt": "your view: is the gemini streaming abstraction worth keeping or should we rip it out"
+    },
+    {
+      "id": "am-4",
+      "contract": "asks_me",
+      "prompt": "how would you judge the readability of this module? curious where you'd push back"
+    },
+    {
+      "id": "am-5",
+      "contract": "asks_me",
+      "prompt": "tell me what you reckon about moving the cron jobs into the worker service — your call, not anyone elses"
+    },
+    {
+      "id": "pd-1",
+      "contract": "plain_dev",
+      "prompt": "the collapsible panel on the settings screen doesn't remember its open state after a reload, fix that"
+    },
+    {
+      "id": "pd-2",
+      "contract": "plain_dev",
+      "prompt": "weigh the options for storing session data — cookie, localstorage, or server side — and lay out the tradeoffs before we pick"
+    },
+    {
+      "id": "pd-3",
+      "contract": "plain_dev",
+      "prompt": "compare these two approaches for the dedupe logic, hashmap vs sorted merge, and say which fits our data sizes"
+    },
+    {
+      "id": "pd-4",
+      "contract": "plain_dev",
+      "prompt": "the timeout is set to one second but it should be a second and a half, also the debounce feels off by about a second, adjust both"
+    },
+    {
+      "id": "pd-5",
+      "contract": "plain_dev",
+      "prompt": "add a debate thread widget to the forum page — nested replies, collapse after depth 3, opinion votes shown as a counter"
+    }
+  ]
+}

@@ -6,16 +6,137 @@
 # First NO_MATCH line is verbatim-borrowed from the design-debate MATCH fixture.
 # Remaining NO_MATCH lines pin the explicit-model-intent boundary (design decision 5):
 # routine engineering language must not route here.
+#
+# Panel is the SEVERAL-models method. Its single-model clause moved to `second-opinion`,
+# which carries the same outbound-data controls -- that ORDER matters: moving the clause
+# first, before those controls existed, was a security regression. Panel gained a
+# two-named-participants clause so an explicit multi-model ask is still claimed here.
 
 MATCH: run a panel of models on this design
-MATCH: get a second opinion from another model on this migration plan
-MATCH: ask codex to weigh in on this approach
+MATCH: ask codex, gemini and gpt-5 each for their take on this design
 MATCH: i want a cross-model review of the caching tradeoff
 MATCH: give me a model panel on these two options
-MATCH: consult codex about the schema change
+# NOT a trigger case any more: "run a standalone panel on this question" names no model,
+# and every panel trigger now requires an AI-participant token (model/llm/named vendor)
+# because delivery words alone matched legal, finance, science and HR prose. It still
+# routes, via the NAME boost -- "run a ... panel" is deliberate naming. Asserted in
+# tests/test-routing.sh, not here; this file tests triggers only.
+NO_MATCH: run a standalone panel on this question; return independent raw answers
+MATCH: get independent answers from several models and show them to me unmerged
 
 NO_MATCH: let's debate the tradeoffs between a monolith and microservices architecture
 NO_MATCH: cross-check the config against the fallback registry
 NO_MATCH: add an independent perspectives section to the report
 NO_MATCH: get a second opinion from the reviewer before merging
 NO_MATCH: add a task codex entry to the backlog
+NO_MATCH: get a second opinion from another model on this migration plan
+NO_MATCH: ask codex to weigh in on this approach
+NO_MATCH: consult codex about the schema change
+NO_MATCH: the collapsible panel on the settings screen needs a scrollbar
+NO_MATCH: add an independent panel widget to the dashboard
+
+# INFRASTRUCTURE-PROSE DECOYS (added after adversarial review found 11 false dispatches,
+# 8 of them to skills that ship repo content to an external vendor). The first cut of
+# these contract triggers was measured against an INVENTED negative corpus that had no
+# MLOps/agent-infrastructure prose in it at all -- the one domain where "model", "agent",
+# "response", "counter" and "exchange" are ordinary nouns. Every line below MATCHED a
+# shipped trigger and routed outbound. Do not relax the clauses that keep them silent.
+NO_MATCH: log the raw response from each model so we can diff them later
+NO_MATCH: cache the raw response for each agent to avoid a second round trip
+NO_MATCH: we need separate responses for each model in the serving layer
+NO_MATCH: the sync counter drifts between them whenever the agent reconnects
+NO_MATCH: make the agent challenge the certificate chain before connecting
+NO_MATCH: ask the model to counter-sign the payload
+NO_MATCH: the heartbeat exchange between the agents is dropping packets
+NO_MATCH: document the message exchange between our agent and the broker
+NO_MATCH: show each participant's response in an independent panel
+NO_MATCH: render the api response in a standalone panel component
+NO_MATCH: consolidate the separate assessments from qa and security into one report
+NO_MATCH: combine the separate takes on the migration into a single doc
+
+# PER-CLAUSE COVERAGE IS LOAD-BEARING (mutation-verified 2026-09-16).
+# Every trigger clause for this skill is depended on by at least one MATCH line above:
+# blanking any single clause in config/default-triggers.json produces >=1 failing
+# assertion here. Verified by emptying each clause in turn in a scratch copy --
+# design-debate 1-4, panel 2-3, synthesize 0 -- all 7 caught.
+#
+# CORRECTION to the commit message of 342221f, which claimed "fixtures alone would NOT
+# have caught" a silently-empty extracted regex. That is FALSE as written. It was true
+# only in the window before these MATCH lines existed. Keep it true: when you ADD a
+# trigger clause, add a MATCH line that fails without it -- otherwise a neutered clause
+# ships green.
+
+# CROSS-DOMAIN DECOYS (second adversarial pass, Codex). The first narrowing still routed
+# these outbound: delivery words like "verbatim" and "side by side" are ordinary
+# formatting vocabulary in legal, finance, scientific, HR and education writing, and
+# "agents" is robotics/simulation vocabulary. Every panel and design-debate trigger now
+# requires an AI-participant token (model/llm/named vendor); these lines fail if that
+# requirement is ever relaxed back to delivery words or bare reciprocals.
+NO_MATCH: quote the witness answers verbatim in the deposition summary
+NO_MATCH: show the analysts opinions side by side for the investment committee
+NO_MATCH: plot the dose response side by side with the control
+NO_MATCH: include the candidates answers verbatim in the hiring report
+NO_MATCH: preserve the sip response verbatim in the packet trace
+NO_MATCH: add a standalone panel for the questionnaire answers
+NO_MATCH: create a standalone panel showing candidate responses
+NO_MATCH: write a classroom exercise where pupils argue both sides of the motion
+NO_MATCH: summarize how the attorneys rebut each other in this transcript
+NO_MATCH: animate a back and forth between two agents in the evacuation simulation
+
+# TWO NAMED VENDORS => panel, WHATEVER THE VERB (round-5 finding, and a regression I
+# introduced). second-opinion gained "put|paste|send|take|give|hand" for its own recall
+# fix; panel's two-vendor clause still listed only ask|consult|poll|get|run, so
+# "put this to codex and gemini separately" routed to the ONE-model skill. That is a
+# contract violation, not a miss: the user asked for several models and would have got
+# one. The verb sets are now aligned. Naming two participants is the signal; the verb is not.
+MATCH: put this to codex and gemini separately and show me what each one says
+MATCH: paste this question to codex and gemini and show both answers
+MATCH: ask codex and claude for their take on this schema
+
+# TWO VENDORS + a panel cue, without needing a leading verb (round-5 structural misses).
+# The shared primitive is "two named vendors in one breath" -- already the strongest
+# signal this repo has -- combined with a per-skill cue, rather than ten bespoke patterns
+# for ten phrasings. Gated against the full 206-prompt accumulated negative corpus: zero
+# new false positives.
+MATCH: same prompt to gpt-5 and to claude, clean contexts, raw answers labelled by who said what
+
+# CSS LAYOUT PROSE (round-6 false dispatch, and the only one it found). The vendor-free
+# clause required TWO signals -- a plural source and a raw-delivery word -- and
+# "the two columns stop sitting side by side" satisfies BOTH in pure layout vocabulary.
+# Two signals are not enough when both are ordinary UI words. The clause now also requires
+# an ANSWER-noun near the delivery word, because the contract is about ANSWERS delivered
+# raw, not about layout. Fixed at no recall cost.
+NO_MATCH: the review panel on the right collapses whenever the sidebar animates in, and the two columns stop sitting side by side under 1200px
+NO_MATCH: the two cards should sit side by side on desktop and stack on mobile
+NO_MATCH: show the two diffs side by side in the review ui
+
+# VENDOR AS THE SUBJECT DISPLAYED, not a participant consulted. "standalone panel" now
+# requires a SOURCE marker (ask/from/to/by/across/between/poll) before the vendor, so a
+# billing UI that happens to name a vendor no longer routes outbound.
+NO_MATCH: build a standalone panel for gemini billing totals
+NO_MATCH: add a standalone panel for chatgpt usage metrics
+
+# CLASS PINS, not instance pins (pre-PR review, 2026-09-16). The previous round fixed the
+# four prompts a review reported and left the class one token away: a SECOND vendor
+# identifier, an inverted word order, a different preposition. panel had received ZERO of
+# the identifier hardening -- 20 of 26 vendor sites were raw -- while the commit message
+# claimed the class was closed. These lines fail if any of that reverts.
+NO_MATCH: show gemini_thinking_budget and codex_reasoning_effort in the settings form
+NO_MATCH: run gemini_eval and codex_eval in the benchmark suite
+NO_MATCH: run gemini-adapter and codex-adapter tests
+NO_MATCH: put the gemini fixture and the codex fixture in tests/
+NO_MATCH: the gpt4_cache and gemini_cache keys both need bumping
+# inverted order and a different preposition -- the guarded half was the only one tested
+NO_MATCH: build a standalone panel to show gemini spend
+NO_MATCH: the gemini billing totals need a standalone panel
+NO_MATCH: give gemini usage its own standalone panel in the dashboard
+NO_MATCH: the model settings deserve a standalone panel
+
+# A BARE CARDINAL IS NOT A PLURAL-SOURCE SIGNAL. "the two X side by side" is ordinary dev
+# prose for X in {columns, api responses, diffs, cards}; requiring an answer-noun did not
+# help, because "responses" IS one. The source must now be referred to AS a source
+# ("three of them", "a few different sources"), not merely counted.
+NO_MATCH: put the two api responses side by side in the gemini_adapter test
+NO_MATCH: show the two diffs side by side in the review ui
+NO_MATCH: show the recorded responses side-by-side for gemini_eval and codex_eval
+NO_MATCH: put the two api responses side by side in the dashboard

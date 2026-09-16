@@ -1,0 +1,942 @@
+{
+  "protocol": "consultation-acceptance-holdout-v1",
+  "authoring_rule": "Authored by a subagent from the six contract definitions and four control-category descriptions ONLY. It was explicitly barred from reading config/default-triggers.json, config/fallback-registry.json, hooks/, and the thirteen development prompts in tests/probes/intent-routing/cases.json, and it recorded zero tool uses, so it read no repository file at all. The session lead had ALREADY read the trigger regexes and the scorer while diagnosing the defects, and therefore could not author these: a prompt fitted to a regex makes the router agree with itself.",
+  "note": "OBSERVATION ONLY. No pass/fail: the contracts these prompts will be judged against are not implemented yet, and a criterion written now would encode today's defects as the target.",
+  "records": [
+    {
+      "case": "so-h1",
+      "contract": "second_opinion",
+      "elapsed_seconds": 0.139,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "verification-before-completion"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans"
+      ]
+    },
+    {
+      "case": "so-h2",
+      "contract": "second_opinion",
+      "elapsed_seconds": 0.147,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "deploy-gate",
+        "verification-before-completion"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans"
+      ]
+    },
+    {
+      "case": "so-h3",
+      "contract": "second_opinion",
+      "elapsed_seconds": 0.077,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "capture-knowledge",
+        "incident-analysis",
+        "requesting-code-review",
+        "test-driven-development"
+      ],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "so-h4",
+      "contract": "second_opinion",
+      "elapsed_seconds": 0.093,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "product-discovery"
+      ],
+      "chain_rendered": "DISCOVER -> DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "product-discovery",
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 8,
+      "completed_persisted": []
+    },
+    {
+      "case": "so-h5",
+      "contract": "second_opinion",
+      "elapsed_seconds": 0.056,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "ac-h1",
+      "contract": "answer_critique",
+      "elapsed_seconds": 0.055,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "ac-h2",
+      "contract": "answer_critique",
+      "elapsed_seconds": 0.079,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "capture-knowledge",
+        "requesting-code-review",
+        "systematic-debugging",
+        "test-driven-development"
+      ],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "ac-h3",
+      "contract": "answer_critique",
+      "elapsed_seconds": 0.055,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "ac-h4",
+      "contract": "answer_critique",
+      "elapsed_seconds": 0.054,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "ac-h5",
+      "contract": "answer_critique",
+      "elapsed_seconds": 0.056,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "sp-h1",
+      "contract": "standalone_panel",
+      "elapsed_seconds": 0.135,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "verification-before-completion"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans"
+      ]
+    },
+    {
+      "case": "sp-h2",
+      "contract": "standalone_panel",
+      "elapsed_seconds": 0.056,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "sp-h3",
+      "contract": "standalone_panel",
+      "elapsed_seconds": 0.056,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "sp-h4",
+      "contract": "standalone_panel",
+      "elapsed_seconds": 0.084,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "brainstorming",
+        "prototype-lab",
+        "runtime-validation"
+      ],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "sp-h5",
+      "contract": "standalone_panel",
+      "elapsed_seconds": 0.055,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "db-h1",
+      "contract": "debate",
+      "elapsed_seconds": 0.056,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "db-h2",
+      "contract": "debate",
+      "elapsed_seconds": 0.054,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "db-h3",
+      "contract": "debate",
+      "elapsed_seconds": 0.133,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "verification-before-completion"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans"
+      ]
+    },
+    {
+      "case": "db-h4",
+      "contract": "debate",
+      "elapsed_seconds": 0.057,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "db-h5",
+      "contract": "debate",
+      "elapsed_seconds": 0.095,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "brainstorming"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": []
+    },
+    {
+      "case": "sy-h1",
+      "contract": "synthesized_plan",
+      "elapsed_seconds": 0.062,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "sy-h2",
+      "contract": "synthesized_plan",
+      "elapsed_seconds": 0.142,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "verification-before-completion"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans"
+      ]
+    },
+    {
+      "case": "sy-h3",
+      "contract": "synthesized_plan",
+      "elapsed_seconds": 0.073,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "batch-scripting",
+        "test-driven-development"
+      ],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "sy-h4",
+      "contract": "synthesized_plan",
+      "elapsed_seconds": 0.057,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "sy-h5",
+      "contract": "synthesized_plan",
+      "elapsed_seconds": 0.094,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "brainstorming"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": []
+    },
+    {
+      "case": "nc-h1",
+      "contract": "none",
+      "elapsed_seconds": 0.055,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "nc-h2",
+      "contract": "none",
+      "elapsed_seconds": 0.056,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "nc-h3",
+      "contract": "none",
+      "elapsed_seconds": 0.075,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "agent-safety-review",
+        "implementation-drift-check",
+        "project-verification",
+        "runtime-validation",
+        "security-scanner"
+      ],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "nc-h4",
+      "contract": "none",
+      "elapsed_seconds": 0.056,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "nc-h5",
+      "contract": "none",
+      "elapsed_seconds": 0.055,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "mx-h1",
+      "contract": "mixed",
+      "elapsed_seconds": 0.094,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "brainstorming"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": []
+    },
+    {
+      "case": "mx-h2",
+      "contract": "mixed",
+      "elapsed_seconds": 0.056,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "mx-h3",
+      "contract": "mixed",
+      "elapsed_seconds": 0.094,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "brainstorming"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": []
+    },
+    {
+      "case": "mx-h4",
+      "contract": "mixed",
+      "elapsed_seconds": 0.092,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "brainstorming"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": []
+    },
+    {
+      "case": "mx-h5",
+      "contract": "mixed",
+      "elapsed_seconds": 0.08,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "capture-knowledge",
+        "requesting-code-review",
+        "systematic-debugging",
+        "test-driven-development"
+      ],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "ct-h1",
+      "contract": "continuation",
+      "preamble_chain_length": 7,
+      "preamble_completed": [],
+      "elapsed_seconds": 0.133,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "executing-plans"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": [
+        "brainstorming",
+        "writing-plans"
+      ]
+    },
+    {
+      "case": "ct-h2",
+      "contract": "continuation",
+      "preamble_chain_length": 7,
+      "preamble_completed": [],
+      "elapsed_seconds": 0.128,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "executing-plans"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": [
+        "brainstorming",
+        "writing-plans"
+      ]
+    },
+    {
+      "case": "ct-h3",
+      "contract": "continuation",
+      "preamble_chain_length": 7,
+      "preamble_completed": [],
+      "elapsed_seconds": 0.118,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "executing-plans"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": [
+        "brainstorming",
+        "writing-plans"
+      ]
+    },
+    {
+      "case": "ct-h4",
+      "contract": "continuation",
+      "preamble_chain_length": 7,
+      "preamble_completed": [],
+      "elapsed_seconds": 0.127,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "executing-plans"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": [
+        "brainstorming",
+        "writing-plans"
+      ]
+    },
+    {
+      "case": "ct-h5",
+      "contract": "continuation",
+      "preamble_chain_length": 7,
+      "preamble_completed": [],
+      "elapsed_seconds": 0.124,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "executing-plans"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": [
+        "brainstorming",
+        "writing-plans"
+      ]
+    },
+    {
+      "case": "cx-h1",
+      "contract": "cancellation",
+      "preamble_chain_length": 7,
+      "preamble_completed": [],
+      "elapsed_seconds": 0.128,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "brainstorming"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": [
+        "brainstorming"
+      ]
+    },
+    {
+      "case": "cx-h2",
+      "contract": "cancellation",
+      "preamble_chain_length": 7,
+      "preamble_completed": [],
+      "elapsed_seconds": 0.07,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": []
+    },
+    {
+      "case": "cx-h3",
+      "contract": "cancellation",
+      "preamble_chain_length": 7,
+      "preamble_completed": [],
+      "elapsed_seconds": 0.128,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "brainstorming"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": [
+        "brainstorming"
+      ]
+    },
+    {
+      "case": "cx-h4",
+      "contract": "cancellation",
+      "preamble_chain_length": 7,
+      "preamble_completed": [],
+      "elapsed_seconds": 0.075,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": []
+    },
+    {
+      "case": "cx-h5",
+      "contract": "cancellation",
+      "preamble_chain_length": 7,
+      "preamble_completed": [],
+      "elapsed_seconds": 0.072,
+      "activated": false,
+      "parsed": true,
+      "selected": [],
+      "chain_rendered": null,
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": []
+    },
+    {
+      "case": "dv-h1",
+      "contract": "development",
+      "elapsed_seconds": 0.081,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "capture-knowledge",
+        "requesting-code-review",
+        "systematic-debugging",
+        "test-driven-development"
+      ],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "dv-h2",
+      "contract": "development",
+      "elapsed_seconds": 0.079,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "brainstorming",
+        "design-debate",
+        "runtime-validation"
+      ],
+      "chain_rendered": null,
+      "chain_persisted": null,
+      "chain_persisted_length": 0,
+      "completed_persisted": null
+    },
+    {
+      "case": "dv-h3",
+      "contract": "development",
+      "elapsed_seconds": 0.102,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "brainstorming",
+        "design-debate"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": []
+    },
+    {
+      "case": "dv-h4",
+      "contract": "development",
+      "elapsed_seconds": 0.095,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "brainstorming"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": []
+    },
+    {
+      "case": "dv-h5",
+      "contract": "development",
+      "elapsed_seconds": 0.107,
+      "activated": true,
+      "parsed": true,
+      "selected": [
+        "brainstorming",
+        "deploy-gate",
+        "verification-before-completion"
+      ],
+      "chain_rendered": "DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP",
+      "chain_persisted": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "requesting-code-review",
+        "verification-before-completion",
+        "openspec-ship",
+        "finishing-a-development-branch"
+      ],
+      "chain_persisted_length": 7,
+      "completed_persisted": []
+    }
+  ]
+}

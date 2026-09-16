@@ -1,0 +1,182 @@
+# Regex fixtures for skill: second-opinion
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+#
+# Contract C1: ONE other model's view. Two modes — independent opinion (prior answer
+# withheld) and critique (prior answer deliberately included).
+#
+# EVERY NO_MATCH below was MEASURED selecting this skill in a first attempt that was
+# reverted, and each one is a real cost, not a style point: this skill performs a
+# cross-family dispatch, so a false match proposes shipping repository content to another
+# vendor. See openspec/changes/composition-contract-fixes/C1-RETRY.md.
+#
+# The first three NO_MATCH lines are verbatim-borrowed from panel.txt's and
+# design-debate's MATCH sets, pinning the three-way boundary from the other side.
+
+# WHY THESE CLAUSES KEEP A TRAILING ($|[^a-z]) AND PANEL'S MULTI CLAUSE DOES NOT.
+# The scorer grades a match 30 only when BOTH edges sit on a word boundary; a trailing
+# group consumes the delimiter, so the right edge lands mid-word and the clause scores
+# 10. That cost panel its own multi-model prompt (28 vs 47) and panel's clause therefore
+# ends ON the participant.
+#
+# These clauses keep the group deliberately, and the trade is the other way round: it is
+# what rejects `ask codexfoo to do it` and `consult geminid about the schema`. Dropping
+# it would let a partial word route to an OUTBOUND cross-vendor dispatch, which is the
+# severe direction; scoring 10 only affects ranking. Measured: second-opinion still takes
+# domain slot 1/2 on every contested prompt tried, including against incident-analysis at
+# 50. If a future competitor does displace it, fix the CONTEST (priority, or a more
+# specific clause) -- do not drop the boundary group.
+
+MATCH: get a second opinion from another model on this migration plan
+MATCH: ask codex to weigh in on this approach
+MATCH: consult codex about the schema change
+MATCH: here is my answer - have codex critique it
+MATCH: what does codex think of the proposed fix
+MATCH: run this by codex
+MATCH: send this to gemini for a second look
+MATCH: double-check my conclusion with a second model
+MATCH: i want an independent read from one other model before i commit
+MATCH: have another model critique the answer you just gave
+
+NO_MATCH: run a panel of models on this design
+NO_MATCH: give me a model panel on these two options
+NO_MATCH: let's debate the tradeoffs between a monolith and microservices architecture
+# NOT asserted here: "ask codex, gemini and gpt-5 each for their take" DOES match
+# this trigger. ERE has no lookahead, so the pattern cannot reject a participant LIST.
+# Panel outranks it (49 vs 47) and takes slot 1 -- a routing outcome no regex fixture
+# can express, asserted against the real hook in tests/test-second-opinion-content.sh.
+#
+# An earlier version of this comment justified the omission with "priority 18 vs 17 at
+# equal match count". That was measurably FALSE: match count was 2 vs 1, and panel's
+# clause scored 10 rather than 30 because it consumed the delimiters on both sides, so
+# panel actually LOST 77 to 28 and was one competing skill away from eviction. The
+# repair was match QUALITY (ending panel's clause on the participant so its right edge
+# is a word boundary), not the priority number. A comment asserting a scoring outcome
+# is a claim; measure it before writing it.
+NO_MATCH: please critique my approach to caching
+NO_MATCH: sanity check the deployment plan
+NO_MATCH: poke holes in my plan for the migration
+NO_MATCH: tear apart the design doc i wrote
+NO_MATCH: grade my answer to the interview question
+NO_MATCH: red team the rollout plan with the infra team
+NO_MATCH: let's use a different model for the pricing table
+NO_MATCH: we should train another model on the new dataset
+NO_MATCH: there is no other model of concurrency that fits
+NO_MATCH: swap in an independent model for the risk score
+NO_MATCH: get a second opinion on our threat model
+NO_MATCH: add a task codex entry to the backlog
+NO_MATCH: we need to get codex installed on this machine
+NO_MATCH: get a second opinion from the reviewer before merging
+NO_MATCH: please review my opinion on the caching strategy
+NO_MATCH: add an independent perspectives section to the report
+# Gap expressions stop at ; and : as well as . ! ? -- otherwise they bridge separate
+# statements into an apparent consultation. NOTE: the class is [^.!?;:] and must NOT
+# gain a \n escape: a bash ERE bracket expression does not interpret it, so [^.!?;:\n]
+# excludes the LETTER n and no gap can span a word like "conclusion".
+NO_MATCH: we swapped in a different model; unrelated: send the critique to the team
+MATCH: double-check my conclusion with a second model
+
+# ROUND-4 PHRASING GAPS (measured 2026-09-16, held-out set, then SPENT by inspection).
+# All five name a vendor and still failed to route -- the lists were right but the
+# grammar was not: English separates particle verbs ("tear IT apart" vs the listed
+# "tear apart"), and "second PAIR of eyes" is as common as "set of eyes". Fixing these
+# required NO weakening of the AI-participant requirement, which is why it was safe.
+MATCH: take my original question to o3 clean, no priming, no mention of your answer
+MATCH: second pair of eyes from gpt-5 on the retry design pls
+MATCH: paste what you just wrote into o3 and have it tear it apart
+MATCH: show gemini your proposed migration plan and ask where it breaks
+MATCH: i want gpt-5 to review your answer above, specifically the bit about idempotency keys
+
+# VENDOR-AS-SUBJECT boundary. These name a vendor too, and must stay silent: the vendor
+# is the OBJECT OF WORK, not the recipient of a question. A veto clause was designed for
+# this and then DROPPED as unnecessary -- clause structure alone keeps them silent, and
+# ERE has no negative lookahead, so the veto was unimplementable as a trigger anyway.
+NO_MATCH: our openai bill tripled last month, can you dig through the usage logs and figure out why
+NO_MATCH: we're migrating off the gemini api to a self hosted llama, write the adapter layer
+NO_MATCH: add retry + backoff around our chatgpt integration, it 429s constantly during the morning
+NO_MATCH: stand up an eval harness that scores our prompt templates against the gpt-4o endpoint
+NO_MATCH: what do you actually think of this design, be honest
+NO_MATCH: critique my pr description, it's too long and i think the argument is weak
+NO_MATCH: argue the other side for me. i think we should keep the monolith, tell me why i'm wrong
+
+# CLAUDE IS A PARTICIPANT, and the token list did not say so (round-5 finding).
+# panel's own shipped description names the default roster as "the strongest available
+# Claude model plus Codex", yet zero trigger clauses mentioned claude -- so every
+# canonical phrasing naming it missed. This is a repo-internal inconsistency between a
+# skill's documented roster and the tokens that route to it, not a prompt-fitted addition.
+MATCH: ask claude opus to weigh in on this approach
+MATCH: run this by claude opus
+MATCH: have claude opus critique the answer you just gave
+
+# The vendor-as-subject boundary holds for claude exactly as for the others: the model is
+# the OBJECT OF WORK here, not the recipient of a question.
+NO_MATCH: claude's tool_use blocks come back with empty input through our proxy, help me trace it
+
+# Possessive and "out of <vendor>" phrasings -- the lists were right, the grammar was not.
+MATCH: want gpt-5's take on server components for the dashboard. give it the requirements only
+MATCH: get a critique out of codex on the code you just wrote - include the whole thing
+
+# CODEX ADVERSARIAL REVIEW, reproduced against the real hook. Four of six were structural
+# and are fixed; these are the regression pins.
+#
+# A vendor token inside an IDENTIFIER or PATH is not a participant. The boundary after the
+# vendor alternation now excludes _ . and - , because a routing repo's prompts are full of
+# filenames and config keys that contain vendor names.
+NO_MATCH: put the fixture into gemini.json
+NO_MATCH: show gemini_thinking_budget in the settings form
+NO_MATCH: put the config into codex_settings.yaml
+
+# VERSIONED MODEL NAMES: a DOT-digit suffix survives the identifier boundary; a HYPHEN
+# suffix does not. This was narrowed twice and the second narrowing is the load-bearing one.
+#   round 1: forbid "-" and "." outright -> rejected the most explicit consultation request
+#            there is (a user naming the exact model). Too strict.
+#   round 2: permit "[.-]<digit>[0-9.a-z-]*" -> the tail admitted letters and hyphens, so
+#            gemini-2-adapter.json parsed as vendor+version and ROUTED. A new egress route,
+#            created by the fix for round 1 (minimal pair: gemini-adapter.json silent,
+#            gemini-2-adapter.json routed).
+#   round 3, shipped: DOT-DIGIT ONLY. gpt-5.4 survives.
+# ACCEPTED LOSS, pinned below so it cannot be "fixed" back into an egress route:
+# gemini-2.5-pro and claude-opus-5 do NOT route. They are lexically indistinguishable from
+# gemini-2-adapter and codex-cli-5, which MUST stay silent. Egress safety wins the tie;
+# those users can write "gemini" or "claude" and be routed.
+MATCH: ask gpt-5.4 to review this patch
+NO_MATCH: ask gemini-2.5-pro what it thinks of this migration
+NO_MATCH: paste this into gemini-2.5-pro
+NO_MATCH: get a critique from claude-opus-5
+NO_MATCH: put the config into codex_settings.yaml
+NO_MATCH: take gemini_key and codex_key out of the env file
+
+# VERSION SUFFIX MUST NOT RECONSTRUCT AN IDENTIFIER (delta review, BLOCKING). The first
+# version-suffix group was ([.-][0-9][0-9.a-z-]*)? -- its tail admitted letters and further
+# hyphens, so <vendor>-<digit>-<word> parsed as "vendor + version" and cleared the boundary.
+# That was a NEW egress route created by the fix for the previous one, proven by a minimal
+# pair: gemini-adapter.json silent, gemini-2-adapter.json routed. The suffix is now
+# DOT-DIGIT ONLY. gpt-5.4 survives; gemini-2.5-pro does not, because it is lexically
+# identical to gemini-2-adapter and egress safety wins that tie.
+NO_MATCH: put the config into gemini-2-adapter.json
+NO_MATCH: paste the payload into gpt-4-client.ts
+NO_MATCH: send the request into claude-3-wrapper.js
+NO_MATCH: hand the fixture to codex-1-runner.py
+NO_MATCH: ask gemini-2-adapter.json for the schema
+NO_MATCH: i want gemini-2-adapter.py to review the flow
+NO_MATCH: get a critique out of codex-1-runner.sh
+
+# ACCEPTED FALSE-POSITIVE SCOPE of clause 0, `(ask|consult) + <vendor>`, stated here so the
+# NO_MATCH set is not the only record of it.
+#
+# The clause carries NO consultation-purpose qualifier, so "ask codex to implement the
+# changes" DOES select second-opinion (measured). That is deliberate: requiring a purpose
+# word would drop the most natural consultation phrasing there is -- "ask codex about the
+# schema", "consult gemini on this" -- and naming a vendor is itself the strong signal this
+# branch relies on everywhere else.
+#
+# What bounds it: (a) selection is DISPLAY, not dispatch -- the skill appears in context
+# alongside execution skills and the model chooses; (b) the consent gate requires an
+# explicit affirmative go-ahead before anything leaves the machine, and states that being
+# routed is NOT consent; (c) _prompt_is_consultation_only correctly keeps the composition
+# chain for these, so there is no push-gate impact.
+# The cost is a spurious suggestion on an execution request. Do not "fix" it by adding a
+# purpose qualifier without measuring the recall loss on the phrasings above.
+MATCH: ask codex to implement the changes

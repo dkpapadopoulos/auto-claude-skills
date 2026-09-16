@@ -1,0 +1,57 @@
+{"round": 5, "cases": [
+{"id": "so-1", "contract": "second_opinion", "prompt": "ask gemini what's actually causing the intermittent 504s on the nginx to uvicorn hop. don't show it anything i said, just the raw question"},
+{"id": "so-2", "contract": "second_opinion", "prompt": "run this past codex cold - is a partial unique index the right way to enforce one active subscription per user in postgres? no hints from our conversation"},
+{"id": "so-3", "contract": "second_opinion", "prompt": "want gpt-5's take on server components for the dashboard. give it the requirements only, leave my recommendation out of it"},
+{"id": "so-4", "contract": "second_opinion", "prompt": "o3 on this stack trace please, blind. don't prime it with my theory about the connection pool"},
+{"id": "so-5", "contract": "second_opinion", "prompt": "put it to chatgpt fresh: shard a 40tb timeseries table by tenant id or by region"},
+{"id": "so-6", "contract": "second_opinion", "prompt": "get claude opus on the retry/backoff design separately - same question i asked you, but none of what i've said so far goes with it"},
+
+{"id": "ac-1", "contract": "answer_critique", "prompt": "take what you just wrote about the event loop blocking and have codex tear it apart"},
+{"id": "ac-2", "contract": "answer_critique", "prompt": "send your migration plan over to gemini and ask where it's wrong"},
+{"id": "ac-3", "contract": "answer_critique", "prompt": "i don't fully buy that answer. paste it into gpt-5 and ask it to poke holes"},
+{"id": "ac-4", "contract": "answer_critique", "prompt": "have o3 review your last response on the caching layer, specifically whether the invalidation story actually holds"},
+{"id": "ac-5", "contract": "answer_critique", "prompt": "show chatgpt your diagnosis above and ask if it agrees, and where it doesn't, why"},
+{"id": "ac-6", "contract": "answer_critique", "prompt": "get a critique out of codex on the code you just wrote - include the whole thing so it has the context"},
+
+{"id": "sp-1", "contract": "standalone_panel", "prompt": "i want this same question answered independently a few times over, fresh start each time, and every answer shown separately. no merging at the end"},
+{"id": "sp-2", "contract": "standalone_panel", "prompt": "give me three takes on whether event sourcing is worth it for the billing ledger. attributed, unedited, i'll do the comparing myself"},
+{"id": "sp-3", "contract": "standalone_panel", "prompt": "poll a handful of independent opinions on this api shape and dump them raw, side by side"},
+{"id": "sp-4", "contract": "standalone_panel", "prompt": "ask this exact thing in parallel a few times with nothing shared between them, then lay the answers out next to each other verbatim"},
+{"id": "sp-5", "contract": "standalone_panel", "prompt": "put this to codex and gemini separately and show me what each one says, unsummarized"},
+{"id": "sp-6", "contract": "standalone_panel", "prompt": "same prompt to gpt-5 and to claude, clean contexts, raw answers labelled by who said what, don't reconcile anything"},
+
+{"id": "mi-1", "contract": "models_interact", "prompt": "have two of them argue this out - one defends keeping kafka, the other pushes sqs - let them rebut each other a couple of rounds and show me the back and forth"},
+{"id": "mi-2", "contract": "models_interact", "prompt": "set up a debate on whether the auth rewrite is worth doing. i want them responding to each other's points, not two independent essays"},
+{"id": "mi-3", "contract": "models_interact", "prompt": "get a critic and a defender going on this schema and let them go back and forth until one concedes or they deadlock"},
+{"id": "mi-4", "contract": "models_interact", "prompt": "i want an actual argument here, each side reading the other's rebuttal and answering it. topic is monorepo vs polyrepo for our 12 services"},
+{"id": "mi-5", "contract": "models_interact", "prompt": "let codex and gemini hash this out between them - feed each one the other's response and keep it going a few rounds"},
+{"id": "mi-6", "contract": "models_interact", "prompt": "have gpt-5 respond to whatever claude says about the locking strategy, then let claude answer that back"},
+
+{"id": "sy-1", "contract": "synthesized_plan", "prompt": "get a few independent plans for the stripe to adyen migration, then merge them into one plan for me, with the bits they disagree on flagged rather than dropped"},
+{"id": "sy-2", "contract": "synthesized_plan", "prompt": "several separate attempts at a rollout plan for the new indexer, then combine into a single one at the end. don't smooth over where they conflict"},
+{"id": "sy-3", "contract": "synthesized_plan", "prompt": "answer this independently a few ways then consolidate into one recommendation, noting where the answers diverged"},
+{"id": "sy-4", "contract": "synthesized_plan", "prompt": "plan the k8s upgrade, but do it as multiple independent drafts first and then reconcile them into one. keep the disagreements visible"},
+{"id": "sy-5", "contract": "synthesized_plan", "prompt": "have codex and gemini each write their own test strategy without seeing the other's, then synthesize both into one plan and tell me where they split"},
+{"id": "sy-6", "contract": "synthesized_plan", "prompt": "independent backfill plans out of gpt-5 and claude opus, then fold them together into one, disagreements preserved"},
+
+{"id": "vs-1", "contract": "vendor_as_subject", "prompt": "our anthropic bill tripled last month, dig into which endpoints are eating the tokens"},
+{"id": "vs-2", "contract": "vendor_as_subject", "prompt": "we're moving off openai onto bedrock - what breaks in our streaming handler"},
+{"id": "vs-3", "contract": "vendor_as_subject", "prompt": "the gemini sdk keeps 429ing on batch embeds. is there a retry knob or do we need our own queue in front of it"},
+{"id": "vs-4", "contract": "vendor_as_subject", "prompt": "write a thin wrapper over the openai responses api so we can swap providers later without touching call sites"},
+{"id": "vs-5", "contract": "vendor_as_subject", "prompt": "hr's resume screener runs on openai and legal wants it on an on-prem model. scope the work"},
+{"id": "vs-6", "contract": "vendor_as_subject", "prompt": "claude's tool_use blocks come back with empty input through our proxy, help me trace where the json gets mangled"},
+
+{"id": "am-1", "contract": "asks_me", "prompt": "honest opinion - is my entity component setup overengineered for a game this small?"},
+{"id": "am-2", "contract": "asks_me", "prompt": "argue the case against my own load path assumption here. properly, i want the other side made well"},
+{"id": "am-3", "contract": "asks_me", "prompt": "critique my draft abstract, be harsh. it's for a methods paper"},
+{"id": "am-4", "contract": "asks_me", "prompt": "you decide - should the triage rule key off the raw lab value or the delta. your opinion, no hedging"},
+{"id": "am-5", "contract": "asks_me", "prompt": "play devil's advocate on the adaptive quiz design i just described"},
+{"id": "am-6", "contract": "asks_me", "prompt": "rebut this for me: 'integration tests are waste if the unit tests are good'. go at it"},
+
+{"id": "pd-1", "contract": "plain_dev", "prompt": "build a panel for the right side of the editor, collapsible, remembers its width in localstorage"},
+{"id": "pd-2", "contract": "plain_dev", "prompt": "the feature store and the training job each compute the label window separately and they disagree by a day. find where they diverge"},
+{"id": "pd-3", "contract": "plain_dev", "prompt": "parse these contract pdfs and pull the termination clauses out verbatim into a csv, one row per agreement"},
+{"id": "pd-4", "contract": "plain_dev", "prompt": "consolidate the three ledger exports into one table, dedupe on trade id, and flag rows where a couple of sources give different settlement dates"},
+{"id": "pd-5", "contract": "plain_dev", "prompt": "the snmp agent on each switch reports a different uptime after a reboot. write something that polls both and reconciles them"},
+{"id": "pd-6", "contract": "plain_dev", "prompt": "import the survey points from both instruments, keep each one separate in the db, and give me a report of where they conflict by more than 2cm"}
+]}

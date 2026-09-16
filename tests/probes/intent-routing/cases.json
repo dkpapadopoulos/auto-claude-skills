@@ -1,0 +1,35 @@
+{
+  "protocol": "intent-separation-v1",
+  "authoring_rule": "Prompts were written from the five invocation contracts in integration-design.md, before reading any trigger regex in config/default-triggers.json. Fitting a prompt to a regex would make the router agree with itself.",
+  "contracts": {
+    "second_opinion": "One named independent model, clean underlying question, previous answer excluded.",
+    "answer_critique": "One named independent model, previous answer deliberately included for critique.",
+    "standalone_panel": "Identical prompt to several participants, fresh contexts, raw attributed answers, no synthesis.",
+    "debate": "Participants deliberately interact; independence is not claimed.",
+    "synthesized_plan": "Authorized planning owner obtains independent plans, then invokes the designated synthesis path, retaining disagreement.",
+    "none": "No multi-model consultation is requested at all."
+  },
+  "criteria": {
+    "second_opinion": {"expect_absent": ["panel", "design-debate"], "rationale": "panel is many models; debate is interaction. Neither satisfies a one-model consultation."},
+    "answer_critique": {"expect_absent": ["panel", "design-debate"], "rationale": "same participant contract as second_opinion; only the prompt content differs."},
+    "standalone_panel": {"expect_present": ["panel"], "expect_absent": ["synthesize"], "rationale": "standalone panel stops after raw answers; auto-selecting synthesize would violate its contract."},
+    "debate": {"expect_present": ["design-debate"], "rationale": "interaction is the requested mechanism."},
+    "synthesized_plan": {"expect_present": ["synthesize"], "rationale": "an authorized merge is explicitly requested."},
+    "none": {"expect_absent": ["panel", "design-debate", "synthesize"], "rationale": "no consultation was asked for."}
+  },
+  "cases": [
+    {"id": "so-1", "contract": "second_opinion", "prompt": "ask codex to weigh in on this approach", "note": "the previously demonstrated co-selection case; retained verbatim"},
+    {"id": "so-2", "contract": "second_opinion", "prompt": "get a second opinion from one other model on this schema design"},
+    {"id": "so-3", "contract": "second_opinion", "prompt": "I want a single independent model to sanity-check this migration plan"},
+    {"id": "ac-1", "contract": "answer_critique", "prompt": "here is my answer - have codex critique it"},
+    {"id": "ac-2", "contract": "answer_critique", "prompt": "ask another model to poke holes in the conclusion I just reached"},
+    {"id": "sp-1", "contract": "standalone_panel", "prompt": "run a standalone panel on this question; return independent raw answers"},
+    {"id": "sp-2", "contract": "standalone_panel", "prompt": "get independent answers from several models and show them to me unmerged"},
+    {"id": "db-1", "contract": "debate", "prompt": "debate the architectural tradeoffs"},
+    {"id": "db-2", "contract": "debate", "prompt": "have two agents argue for and against event sourcing here"},
+    {"id": "sy-1", "contract": "synthesized_plan", "prompt": "use independent plans and synthesize the final implementation plan"},
+    {"id": "sy-2", "contract": "synthesized_plan", "prompt": "gather independent plans from multiple models then merge them into one plan I can execute"},
+    {"id": "nc-1", "contract": "none", "prompt": "explain how the retry logic in this module works"},
+    {"id": "nc-2", "contract": "none", "prompt": "fix the failing test in tests/test_reservations.py"}
+  ]
+}

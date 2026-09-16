@@ -1,0 +1,368 @@
+{
+  "protocol": "intent-separation-v1",
+  "cases": 13,
+  "runs": 26,
+  "all_hook_exit_zero": true,
+  "tallies": {
+    "controlled-all-skills": {
+      "runs": 13,
+      "informative": 9,
+      "vacuously_satisfied": 4,
+      "satisfied_informative": 4,
+      "violated": 5,
+      "violated_via_no_activation": 1,
+      "no_activation": 5,
+      "phase_chain_injected": 4
+    },
+    "shipped-fallback": {
+      "runs": 13,
+      "informative": 6,
+      "vacuously_satisfied": 7,
+      "satisfied_informative": 0,
+      "violated": 6,
+      "violated_via_no_activation": 6,
+      "no_activation": 13,
+      "phase_chain_injected": 0
+    }
+  },
+  "matrix": [
+    {
+      "arm": "shipped-fallback",
+      "case": "so-1",
+      "contract": "second_opinion",
+      "selected": [],
+      "no_activation": true,
+      "satisfied": true,
+      "vacuous": true,
+      "violations": [],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "shipped-fallback",
+      "case": "so-2",
+      "contract": "second_opinion",
+      "selected": [],
+      "no_activation": true,
+      "satisfied": true,
+      "vacuous": true,
+      "violations": [],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "shipped-fallback",
+      "case": "so-3",
+      "contract": "second_opinion",
+      "selected": [],
+      "no_activation": true,
+      "satisfied": true,
+      "vacuous": true,
+      "violations": [],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "shipped-fallback",
+      "case": "ac-1",
+      "contract": "answer_critique",
+      "selected": [],
+      "no_activation": true,
+      "satisfied": true,
+      "vacuous": true,
+      "violations": [],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "shipped-fallback",
+      "case": "ac-2",
+      "contract": "answer_critique",
+      "selected": [],
+      "no_activation": true,
+      "satisfied": true,
+      "vacuous": true,
+      "violations": [],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "shipped-fallback",
+      "case": "sp-1",
+      "contract": "standalone_panel",
+      "selected": [],
+      "no_activation": true,
+      "satisfied": false,
+      "vacuous": false,
+      "violations": [
+        "expected present: panel"
+      ],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "shipped-fallback",
+      "case": "sp-2",
+      "contract": "standalone_panel",
+      "selected": [],
+      "no_activation": true,
+      "satisfied": false,
+      "vacuous": false,
+      "violations": [
+        "expected present: panel"
+      ],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "shipped-fallback",
+      "case": "db-1",
+      "contract": "debate",
+      "selected": [],
+      "no_activation": true,
+      "satisfied": false,
+      "vacuous": false,
+      "violations": [
+        "expected present: design-debate"
+      ],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "shipped-fallback",
+      "case": "db-2",
+      "contract": "debate",
+      "selected": [],
+      "no_activation": true,
+      "satisfied": false,
+      "vacuous": false,
+      "violations": [
+        "expected present: design-debate"
+      ],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "shipped-fallback",
+      "case": "sy-1",
+      "contract": "synthesized_plan",
+      "selected": [],
+      "no_activation": true,
+      "satisfied": false,
+      "vacuous": false,
+      "violations": [
+        "expected present: synthesize"
+      ],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "shipped-fallback",
+      "case": "sy-2",
+      "contract": "synthesized_plan",
+      "selected": [],
+      "no_activation": true,
+      "satisfied": false,
+      "vacuous": false,
+      "violations": [
+        "expected present: synthesize"
+      ],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "shipped-fallback",
+      "case": "nc-1",
+      "contract": "none",
+      "selected": [],
+      "no_activation": true,
+      "satisfied": true,
+      "vacuous": true,
+      "violations": [],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "shipped-fallback",
+      "case": "nc-2",
+      "contract": "none",
+      "selected": [],
+      "no_activation": true,
+      "satisfied": true,
+      "vacuous": true,
+      "violations": [],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "controlled-all-skills",
+      "case": "so-1",
+      "contract": "second_opinion",
+      "selected": [
+        "brainstorming",
+        "design-debate",
+        "panel"
+      ],
+      "no_activation": false,
+      "satisfied": false,
+      "vacuous": false,
+      "violations": [
+        "expected absent: panel",
+        "expected absent: design-debate"
+      ],
+      "phase_chain_injected": true
+    },
+    {
+      "arm": "controlled-all-skills",
+      "case": "so-2",
+      "contract": "second_opinion",
+      "selected": [
+        "brainstorming",
+        "design-debate",
+        "frontend-design"
+      ],
+      "no_activation": false,
+      "satisfied": false,
+      "vacuous": false,
+      "violations": [
+        "expected absent: design-debate"
+      ],
+      "phase_chain_injected": true
+    },
+    {
+      "arm": "controlled-all-skills",
+      "case": "so-3",
+      "contract": "second_opinion",
+      "selected": [],
+      "no_activation": true,
+      "satisfied": true,
+      "vacuous": true,
+      "violations": [],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "controlled-all-skills",
+      "case": "ac-1",
+      "contract": "answer_critique",
+      "selected": [],
+      "no_activation": true,
+      "satisfied": true,
+      "vacuous": true,
+      "violations": [],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "controlled-all-skills",
+      "case": "ac-2",
+      "contract": "answer_critique",
+      "selected": [],
+      "no_activation": true,
+      "satisfied": true,
+      "vacuous": true,
+      "violations": [],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "controlled-all-skills",
+      "case": "sp-1",
+      "contract": "standalone_panel",
+      "selected": [
+        "panel",
+        "writing-plans"
+      ],
+      "no_activation": false,
+      "satisfied": true,
+      "vacuous": false,
+      "violations": [],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "controlled-all-skills",
+      "case": "sp-2",
+      "contract": "standalone_panel",
+      "selected": [],
+      "no_activation": true,
+      "satisfied": false,
+      "vacuous": false,
+      "violations": [
+        "expected present: panel"
+      ],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "controlled-all-skills",
+      "case": "db-1",
+      "contract": "debate",
+      "selected": [
+        "brainstorming",
+        "design-debate"
+      ],
+      "no_activation": false,
+      "satisfied": true,
+      "vacuous": false,
+      "violations": [],
+      "phase_chain_injected": true
+    },
+    {
+      "arm": "controlled-all-skills",
+      "case": "db-2",
+      "contract": "debate",
+      "selected": [
+        "dispatching-parallel-agents",
+        "test-driven-development"
+      ],
+      "no_activation": false,
+      "satisfied": false,
+      "vacuous": false,
+      "violations": [
+        "expected present: design-debate"
+      ],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "controlled-all-skills",
+      "case": "sy-1",
+      "contract": "synthesized_plan",
+      "selected": [
+        "implementation-drift-check",
+        "synthesize",
+        "writing-plans"
+      ],
+      "no_activation": false,
+      "satisfied": true,
+      "vacuous": false,
+      "violations": [],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "controlled-all-skills",
+      "case": "sy-2",
+      "contract": "synthesized_plan",
+      "selected": [
+        "verification-before-completion"
+      ],
+      "no_activation": false,
+      "satisfied": false,
+      "vacuous": false,
+      "violations": [
+        "expected present: synthesize"
+      ],
+      "phase_chain_injected": true
+    },
+    {
+      "arm": "controlled-all-skills",
+      "case": "nc-1",
+      "contract": "none",
+      "selected": [],
+      "no_activation": true,
+      "satisfied": true,
+      "vacuous": true,
+      "violations": [],
+      "phase_chain_injected": false
+    },
+    {
+      "arm": "controlled-all-skills",
+      "case": "nc-2",
+      "contract": "none",
+      "selected": [
+        "capture-knowledge",
+        "requesting-code-review",
+        "systematic-debugging",
+        "test-driven-development"
+      ],
+      "no_activation": false,
+      "satisfied": true,
+      "vacuous": false,
+      "violations": [],
+      "phase_chain_injected": false
+    }
+  ],
+  "scope": "Deterministic routing observation only. It does not establish what a model would have done after the injection, nor that a violated criterion produced a worse outcome."
+}

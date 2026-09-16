@@ -1,0 +1,73 @@
+{
+  "protocol": "native-contract-conformance-v1",
+  "what_this_is": "Conformance, not comparison. Each case asks one yes/no question about what the DEPLOYED system does when asked, with a retained trace. No arms, no scoring, no judges.",
+  "dispatch_policy": "Skill and Read are allowlisted so an invocation is OBSERVABLE. Agent, Task and Bash are NOT, so a consultation skill cannot actually dispatch to another model. Installation is not authorization: the invocation is the observable, the outbound call is not performed.",
+  "cases": [
+    {
+      "id": "A1-second-opinion",
+      "contract": "second opinion = ONE named independent model, clean underlying question",
+      "prompt": "Get a second opinion from one other model on this approach: we cache the rendered page per tenant and invalidate on write.",
+      "expect_absent": [
+        "panel",
+        "design-debate"
+      ],
+      "why": "panel is many models; debate is interaction. Neither satisfies a one-model consultation."
+    },
+    {
+      "id": "A2-standalone-panel",
+      "contract": "standalone panel = identical prompt to several participants, raw attributed answers, STOP without synthesis",
+      "prompt": "Run a standalone panel on this question and show me the raw independent answers, unmerged: should we cache the rendered page per tenant?",
+      "expect_present": [
+        "panel"
+      ],
+      "expect_absent": [
+        "synthesize"
+      ],
+      "why": "auto-synthesising a standalone panel would violate its contract."
+    },
+    {
+      "id": "B1-authorized-synthesis",
+      "contract": "an authorized composed-plan path obtains independent plans then invokes the designated synthesis",
+      "prompt": "Gather independent plans from multiple models, then synthesize them into the one implementation plan I should follow.",
+      "expect_present": [
+        "synthesize"
+      ],
+      "why": "ACS synthesize carries disable-model-invocation; this case establishes whether any authorized path reaches it natively."
+    },
+    {
+      "id": "A3-control-no-consultation",
+      "contract": "no consultation was requested",
+      "prompt": "Explain in two sentences what a write-through cache is.",
+      "expect_absent": [
+        "panel",
+        "design-debate",
+        "synthesize"
+      ],
+      "why": "negative control: a plain question must not dispatch a consultation."
+    },
+    {
+      "id": "B2-authorized-synthesis-concrete",
+      "contract": "an authorized composed-plan path obtains independent plans then invokes the designated synthesis",
+      "prompt": "I am adding per-tenant rate limiting to an existing Python HTTP service that currently has none. Gather independent plans from multiple models, then synthesize them into the one implementation plan I should follow. You are authorized to run that composed flow now.",
+      "expect_present": [
+        "synthesize"
+      ],
+      "why": "B1 failed for a defect in its own prompt: it named no task, so the model asked a clarifying question instead of running the flow. This supplies a concrete task and an explicit authorization, so a failure to reach synthesize is about the path."
+    },
+    {
+      "id": "B3-synthesis-with-dispatch",
+      "contract": "an authorized composed-plan path obtains independent plans then invokes the designated synthesis",
+      "prompt": "I am adding per-tenant rate limiting to an existing Python HTTP service that currently has none. Gather independent plans, then synthesize them into the one implementation plan I should follow. You are authorized to run that composed flow now. Stay within the Claude family; do not dispatch to another provider.",
+      "tools": "Skill,Read,Agent",
+      "dispatch_policy": "Agent PERMITTED so panel can actually produce independent plans, which is the precondition for observing whether the composed path reaches synthesize. Same-provider dispatch only; the prompt forbids another provider, so no cross-provider outbound action is authorized here.",
+      "expect_present": [
+        "synthesize"
+      ],
+      "why": "B1 and B2 could not answer this: with no dispatch tool, panel produced no results, so the absence of synthesize was uninformative rather than a finding about the path."
+    }
+  ],
+  "known_limitations": {
+    "post_dispatch_contracts_unobservable": "Agent/Task/Bash are withheld, so an invoked panel cannot actually dispatch. Any contract that only becomes observable AFTER panel returns results -- such as whether a standalone panel refrains from synthesising -- is therefore uninformative here: the forbidden action had no precondition. Observing those requires permitting real multi-model dispatch, which is an outbound action to another provider and a separate authorization.",
+    "real_environment": "HOME is the operator's real home, so SessionStart discovery reads the real registry. That matches the protocol's requirement for real discovery and means the run is not isolated from the operator's installed plugins."
+  }
+}

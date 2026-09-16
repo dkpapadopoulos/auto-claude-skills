@@ -64,6 +64,79 @@ _comp_active() {
   jq -e '(.chain // [] | length) > (.completed // [] | length)' "$_f" >/dev/null 2>&1
 }
 
+# --- consultation-versus-development discrimination (contracts C2/C3) ----
+#
+# A consultation request asks ANOTHER MODEL for its view. It is phase-agnostic: it can
+# happen during DESIGN, during REVIEW, or with no development work in flight at all.
+# Measured before this guard existed: "ask codex to weigh in on this approach" started
+# a full seven-step DESIGN->SHIP workflow, because `approach` matches brainstorming's
+# trigger and brainstorming is a role=process skill, which is what
+# _walk_composition_chain anchors on. The chain appeared because a development process
+# skill co-selected -- NOT because any consultation skill declares a phase.
+#
+# The rule is deliberately NOT "suppress the chain on consultation prompts". design.md
+# rejects that: it would strand a development session that pauses to consult. The rule
+# is: do not START an unrelated workflow, and do not DISTURB one in progress.
+#
+# Both patterns are KNOWN-INCOMPLETE enumerations. Their failure directions are NOT the
+# same, and an earlier version of this comment claimed they were:
+#
+#   _CONSULT_PARTICIPANT is a PRECONDITION -- a miss returns 1, the walker runs, and the
+#   result is today's behaviour. Fails safe.
+#   _DEV_WORK is a VETO -- a miss falls through to `return 0`, i.e. to SUPPRESSION.
+#   Fails UNSAFE. Every verb missing from it turns a mixed request into a
+#   consultation-only one.
+#
+# So the two lists carry different risk and deserve different bias: keep the participant
+# list narrow, and keep the dev-work list GENEROUS.
+#
+# `agent`/`agents` is deliberately NOT accepted bare: it is this repo's own orchestration
+# vocabulary, and "the other agent is stuck; take over and continue the plan" is a
+# development prompt, not a consultation. It must be qualified by a model-ish word.
+# Right boundary EXCLUDES _ . and - , matching the trigger regexes in
+# config/default-triggers.json. With a bare [^a-z] this matched inside identifiers:
+# measured, "make the client o3-compatible" and "bump the gpt-4-turbo timeout"
+# read as consultation and SUPPRESSED the composition chain display, while a plain
+# dev prompt rendered it. Display-only (state is still written, so the push gate is
+# unaffected) but wrong, and the mismatch with the trigger boundary was the cause.
+_CONSULT_PARTICIPANT='(^|[^a-z])(codex|gpt-?[0-9]|gemini|o3|chatgpt)($|[^a-z0-9_.-])|(another|other|second|different|independent|several|multiple|two|three|each) +([a-z]+ +)?(model|models|llm|llms)($|[^a-z])|(model|llm) +agents?($|[^a-z])|second opinion|(panel of models|model panel|standalone panel)'
+
+# Development work the requester wants DONE, as opposed to an opinion they want heard.
+# Its presence makes a request MIXED, and a mixed request keeps its chain.
+#
+# POSITIONAL, not vocabulary-presence, and that distinction is the whole design. A
+# version of this matched a dev stem ANYWHERE in the prompt. Measured, it vetoed 7 of 7
+# genuine consultations -- "what does codex think of the proposed FIX", "an opinion on
+# the IMPLEMENTation tradeoffs", "a second opinion on the TEST strategy" -- because a
+# consultation about engineering always names its subject. On the 50 held-out prompts it
+# put spurious chains back to 7 of 7, exactly the no-guard number: the feature was inert
+# while appearing to be implemented.
+#
+# Work is REQUESTED in three shapes, and mentioning a dev noun is none of them:
+#   1. after a sequencing cue   -- "ask codex, THEN implement it"
+#   2. as an opening imperative -- "build the thing, and ask codex what it thinks"
+#   3. addressed at a participant -- "codex, optimize this algorithm"
+# Shape 3 exists because those prompts delegate work rather than seek an opinion, and
+# without it they classified as consultation-only.
+#
+# The failure direction is now affordable in a way it was not before: suppression is
+# DISPLAY-only, so a missed veto hides a chain rather than disarming the push gate.
+# That is what allows this rule to be precise instead of paranoid.
+_DEV_VERB='(implement|build|writ|refactor|fix|migrat|renam|scaffold|deploy|rewrit|appl|add|updat|creat|chang|remov|delet|commit|push|ship|merg|execut|split|bump|revert|patch|optimi|harden|roll.?back)'
+# The gap after a sequencing cue is `[^.!?]{0,60}`, not a couple of words: a cue is
+# routinely followed by a whole clause -- "then ONCE WE'VE PICKED ONE, go implement it",
+# "and after we decide, ACTUALLY apply the migration". A two-word window missed both,
+# and punctuation broke the word-run besides. Stopping at sentence punctuation keeps the
+# verb in the same clause as its cue, so a later unrelated sentence cannot veto.
+_DEV_WORK="(then|and then|after (that|we|you|which)|once we|once you|afterwards|finally)[^.!?]{0,60}${_DEV_VERB}|^ *${_DEV_VERB}|(codex|gemini|gpt-?[0-9]|o3|chatgpt|model|llm)[ ,:]+ *(please +)?${_DEV_VERB}"
+
+# True when the prompt asks for another model's input and asks for NO work to follow.
+_prompt_is_consultation_only() {
+  [[ "$P" =~ $_CONSULT_PARTICIPANT ]] || return 1
+  [[ "$P" =~ $_DEV_WORK ]] && return 1
+  return 0
+}
+
 # =================================================================
 # EARLY EXITS
 # =================================================================
@@ -151,30 +224,70 @@ _score_skills() {
   while IFS="$FS" read -r skill_name skill_name_lower skill_role skill_priority skill_invoke skill_phase triggers_joined keywords_joined _required_when; do
     [[ -z "$skill_name" ]] && continue
 
-    # Name boost: full name match (100) or hyphen-segment match (20).
-    # Full: "frontend-design" as whole word in prompt -> 100
-    # Segment: "frontend" as whole word (segment of "frontend-design") -> 20
+    # Name boost: the FULL hyphenated name as a whole word -> 100. Nothing else.
+    #
+    # A hyphen-SEGMENT boost (+20 for any segment >=6 chars) used to live here. It was
+    # removed after measurement: across a 63-prompt corpus it produced six selections
+    # with no trigger match, and every one was wrong. The segments that fired were
+    # `design`, `agents`, `implementation`, `project`, and `before` -- a preposition
+    # sitting in `verification-before-completion` as connective grammar. The >=6 guard
+    # existed to exclude common words like "test"/"code"/"plan", but `design`, `review`
+    # and `deploy` are all exactly 6, so it never held at its own threshold.
+    #
+    # A hyphen is a naming convention, not evidence that each component is a command.
+    # Ordinary language is the trigger regexes' job. This boost survives because a
+    # multi-word name requires the literal hyphenated token, which a user types
+    # deliberately -- note that is a strong signal of REFERENCE, not proof of a request
+    # ("do not use design-debate" still matches), so it is a ranking aid and must not be
+    # read as authorisation by anything downstream.
     name_boost=0
     if [[ "$P" =~ (^|[^a-z0-9-])${skill_name_lower}($|[^a-z0-9-]) ]]; then
-      name_boost=100
-    elif [[ "$skill_name_lower" == *-* ]]; then
-      _seg_remaining="$skill_name_lower"
-      while [[ -n "$_seg_remaining" ]]; do
-        if [[ "$_seg_remaining" == *-* ]]; then
-          _seg="${_seg_remaining%%-*}"
-          _seg_remaining="${_seg_remaining#*-}"
-        else
-          _seg="$_seg_remaining"
-          _seg_remaining=""
+      if [[ "$skill_name_lower" == *-* ]]; then
+        # Multi-word: the user had to type the literal hyphenated token, which is
+        # deliberate. (It is a strong signal of REFERENCE, not proof of a request --
+        # "do not use design-debate" matches too -- so nothing downstream may read it
+        # as authorisation.)
+        name_boost=100
+      else
+        # Single-word names are ordinary English -- panel, synthesize, brainstorming --
+        # and the bare word is not evidence of intent. Measured: "the control panel
+        # component is misaligned on mobile" scored panel=116, and on held-out data "the
+        # collapsible panel on the settings screen" SELECTED panel, which dispatches
+        # repository content to another vendor. So these require an invocation marker.
+        # The marker may be separated from the name by up to two determiners/adjectives
+        # the|this|that are DELIBERATELY ABSENT from the determiner list. All three are
+        # DEFINITE references to an existing thing, so "use the panel on the settings page"
+        # and "run this panel on the design doc" are instructions about a panel that already
+        # exists, not invocations of the skill (measured: both scored the full boost and
+        # routed to panel, which dispatches content to an external vendor). Only indefinite
+        # and qualifier forms invoke: "run a standalone panel", "use another panel".
+        # ("run a standalone panel" -- probe case sp-1, whose triggers deliberately no
+        # longer fire because it names no model).
+        #
+        # The name must also be the HEAD of its phrase, not a modifier: "use panel data"
+        # (econometrics) and "fix the /panel route" both scored the full boost and routed
+        # repo content to another vendor. This is enforced with a CLOSED-CLASS follow
+        # set -- after the name the phrase must end or continue with a function word.
+        # The earlier version blocklisted nouns (data|route|component|...), which is an
+        # OPEN set and let through "use panel regression", "run the panel tests", "run
+        # panel migrations" and "use synthesize_audio" (measured: 4 of 5 escaped).
+        # Function words are a closed class, so this direction is bounded.
+        #
+        # The "/" marker is GONE, and it was never doing the job it looked like it did:
+        # the hook exits at the top of the file on a leading slash (slash commands are
+        # handled by the Skill tool), so "/" could only ever match a MID-prompt slash --
+        # i.e. a URL path. It enabled "fix the /panel route" and no real slash command.
+        _nb_named="(^|[^a-z0-9-])${skill_name_lower}($|[^a-z0-9-])"
+        _nb_follow='($|[^a-z0-9-] *($|(on|for|with|to|over|against|about|from|in|at|and|or|then|please|now|instead|again|here|first)($|[^a-z0-9-])))'
+        _nb_marked="((^|[^a-z0-9-])(run|use|invoke|call|skill|using) +((a|an|another|standalone|independent|new|quick|full) +){0,2})${skill_name_lower}${_nb_follow}"
+        # _nb_named is LOGICALLY REDUNDANT -- _nb_marked ends with the same skill name, so
+        # a marked match implies a named one. It is kept as a cheap short-circuit: the vast
+        # majority of prompts contain no skill name at all, and this is the cheaper of the
+        # two patterns to fail. Drop it only if profiling says it costs more than it saves.
+        if [[ "$P" =~ $_nb_named ]] && [[ "$P" =~ $_nb_marked ]]; then
+          name_boost=100
         fi
-        # Skip segments shorter than 6 chars to avoid false positives on
-        # common words like "test", "code", "plan" that are also trigger words
-        [[ "${#_seg}" -lt 6 ]] && continue
-        if [[ "$P" =~ (^|[^a-z0-9])${_seg}($|[^a-z0-9]) ]]; then
-          name_boost=20
-          break
-        fi
-      done
+      fi
     fi
 
     # Score triggers (iterate using string splitting — no per-trigger jq fork)
@@ -199,7 +312,20 @@ _score_skills() {
           # "debug"), even when a word-boundary match exists later (e.g.
           # standalone "error").  Re-try on progressively shorter suffixes
           # until a boundary hit is found or the string is exhausted.
-          _best=10
+          # Match quality is POSITIONAL, and the left edge is what decides whether a
+          # partial-word hit is meaningful at all:
+          #   both edges at a boundary -> whole word            -> 30
+          #   left edge at a boundary  -> stemming ("debug" in
+          #                               "debugging")          -> 10
+          #   left edge mid-word       -> an accident ("hang" in
+          #                               "changes")            -> NOT a match
+          # The third case used to score 10 like the second. Measured consequence:
+          # systematic-debugging scored 60 (10 + priority 50) on "please review the
+          # code changes in this pull request" and beat requesting-code-review's 55
+          # (30 + priority 25) -- a clean word match losing to an infix accident.
+          # Re-weighting cannot fix this: priority spans 10..200 in the real registry,
+          # so any additive weight able to dominate it would swamp priority outright.
+          _best=0
           _scan="$P"
           _offset=0
           while true; do
@@ -209,13 +335,37 @@ _score_skills() {
             _pre="${_scan%%"$matched"*}"
             _abs=$((_offset + ${#_pre}))
             _aft=$((_abs + ${#matched}))
-            _wb=1
-            [[ "$_abs" -gt 0 ]] && [[ "${P:$((_abs-1)):1}" =~ [a-z0-9_.-] ]] && _wb=0
-            [[ "$_aft" -lt "${#P}" ]] && [[ "${P:${_aft}:1}" =~ [a-z0-9_.-] ]] && _wb=0
+            # A HYPHEN IS A WORD SEPARATOR HERE, unlike in the name matcher above.
+            # `team-review` is two words, so a trigger matching `team.review` inside
+            # "agent-team-review" is a real match; `hang` inside "changes" is not.
+            # Counting `-` as a word character made every hyphenated compound an
+            # infix: measured, "run agent-team-review on this branch" dropped BOTH of
+            # that skill's trigger regexes (each matches preceded by `-`), taking it
+            # from 140 to 120 and out of the required-role pass entirely -- a user
+            # typing a skill's exact name stopped getting it. The name matcher keeps
+            # `-` as a word character on purpose, so that `debug` does not match
+            # inside `debug-advanced`; these two rules are deliberately different.
+            _left_ok=1
+            [[ "$_abs" -gt 0 ]] && [[ "${P:$((_abs-1)):1}" =~ [a-z0-9_.] ]] && _left_ok=0
+            _right_ok=1
+            [[ "$_aft" -lt "${#P}" ]] && [[ "${P:${_aft}:1}" =~ [a-z0-9_.] ]] && _right_ok=0
 
-            if [[ "$_wb" -eq 1 ]]; then
+            if [[ "$_left_ok" -eq 1 ]] && [[ "$_right_ok" -eq 1 ]]; then
               _best=30
               break
+            fi
+            # A hit touching a word boundary on EITHER side is morphology, not an
+            # accident, and stays a match at partial quality:
+            #   left edge  -> `debug` in "debugging"   (suffixed)
+            #   right edge -> `check` in "recheck"     (prefixed)
+            # Only a hit interior to a word on BOTH sides is rejected -- `hang` inside
+            # "changes". Requiring the LEFT edge specifically was wrong and measured so:
+            # "recheck the diff for the auth module" and "redeploy the service to
+            # staging" dropped to ZERO routing, losing verification-before-completion,
+            # a push-gate milestone, from a genuine redeploy turn. Keep scanning either
+            # way: a whole-word hit later in the prompt still outranks this.
+            if [[ "$_left_ok" -eq 1 ]] || [[ "$_right_ok" -eq 1 ]]; then
+              _best=10
             fi
 
             # Advance one char past match start and retry regex
@@ -225,10 +375,13 @@ _score_skills() {
             [[ -z "$_scan" ]] && break
             [[ "$_scan" =~ $trigger ]] || break
           done
+          # _best == 0 means every hit was mid-word: the regex matched, but nothing
+          # it matched was a word. Adding 0 keeps the skill below the
+          # trigger_score > 0 selection gate, which is the intended outcome.
           trigger_score=$((trigger_score + _best))
           # Collect explain data for this trigger hit
-          if [[ -n "${SKILL_EXPLAIN:-}" ]]; then
-            _btype="substring"
+          if [[ -n "${SKILL_EXPLAIN:-}" ]] && [[ "$_best" -gt 0 ]]; then
+            _btype="word-prefix"
             [[ "$_best" -eq 30 ]] && _btype="boundary"
             _explain_parts="${_explain_parts} ${_btype}=${_best}"
           fi
@@ -1448,7 +1601,37 @@ esac
 
 # --- Build skill display lines and walk composition chain ---
 _build_skill_lines
+# The walker ALWAYS runs. The spec requires only that a consultation not cause a chain
+# to be RENDERED; skipping the walk suppressed the chain STATE instead, and that is a
+# push-gate BYPASS rather than a display change:
+#
+#   openspec-guard.sh gates its whole chain block on the state file existing, and the
+#   state write lives inside the walker. With no file, Check 1 (deny:chain-review) and
+#   Check 2 (deny:chain-verify) never run. Measured: `git push origin feat` after
+#   "commit and push this, but ask codex first" went DENY -> allow, and reverted to DENY
+#   when this one predicate was forced to return 1. Four other phrasings flipped the
+#   same way, as did two ordinary agent-team prompts -- which are the HIGHEST-autonomy
+#   development workflow in the registry, not adversarial input.
+#
+# So: walk, write state, gate exactly as before, and clear only what is DISPLAYED. The
+# cost is that a consultation turn still records development progress it did not make.
+# That is a fabrication worth fixing on its own, but it is the status quo, it is not
+# gate evidence (gating milestones are excluded from the walker's prefix), and it errs
+# toward the gate FIRING rather than toward it being skipped.
+#
+# These globals are also the walker's outputs and must stay defined regardless: the hook
+# runs under `set -u` and the renderer reads them unconditionally. Leaving them unset
+# once made the hook die and emit NOTHING, and every test still passed, because "no
+# chain was started" is satisfied just as well by a crash as by a deliberate skip.
+COMPOSITION_CHAIN=""
+COMPOSITION_DIRECTIVE=""
 _walk_composition_chain
+if _prompt_is_consultation_only; then
+  COMPOSITION_CHAIN=""
+  COMPOSITION_DIRECTIVE=""
+  [[ -n "${SKILL_EXPLAIN:-}" ]] && \
+    printf '[skill-hook]   [consultation] chain DISPLAY suppressed; state NOT suppressed\n' >&2
+fi
 
 # =================================================================
 # RED FLAGS: Phase-aware enforcement checklists
