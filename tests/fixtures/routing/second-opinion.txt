@@ -78,3 +78,25 @@ NO_MATCH: add an independent perspectives section to the report
 NO_MATCH: we swapped in a different model; unrelated: send the critique to the team
 MATCH: double-check my conclusion with a second model
 
+# ROUND-4 PHRASING GAPS (measured 2026-09-16, held-out set, then SPENT by inspection).
+# All five name a vendor and still failed to route -- the lists were right but the
+# grammar was not: English separates particle verbs ("tear IT apart" vs the listed
+# "tear apart"), and "second PAIR of eyes" is as common as "set of eyes". Fixing these
+# required NO weakening of the AI-participant requirement, which is why it was safe.
+MATCH: take my original question to o3 clean, no priming, no mention of your answer
+MATCH: second pair of eyes from gpt-5 on the retry design pls
+MATCH: paste what you just wrote into o3 and have it tear it apart
+MATCH: show gemini your proposed migration plan and ask where it breaks
+MATCH: i want gpt-5 to review your answer above, specifically the bit about idempotency keys
+
+# VENDOR-AS-SUBJECT boundary. These name a vendor too, and must stay silent: the vendor
+# is the OBJECT OF WORK, not the recipient of a question. A veto clause was designed for
+# this and then DROPPED as unnecessary -- clause structure alone keeps them silent, and
+# ERE has no negative lookahead, so the veto was unimplementable as a trigger anyway.
+NO_MATCH: our openai bill tripled last month, can you dig through the usage logs and figure out why
+NO_MATCH: we're migrating off the gemini api to a self hosted llama, write the adapter layer
+NO_MATCH: add retry + backoff around our chatgpt integration, it 429s constantly during the morning
+NO_MATCH: stand up an eval harness that scores our prompt templates against the gpt-4o endpoint
+NO_MATCH: what do you actually think of this design, be honest
+NO_MATCH: critique my pr description, it's too long and i think the argument is weak
+NO_MATCH: argue the other side for me. i think we should keep the monolith, tell me why i'm wrong
