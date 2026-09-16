@@ -123,6 +123,12 @@ assert_contains "codex exec subcommand" "exec" "${argv}"
 assert_contains "read-only sandbox requested" "$(printf -- '-s\nread-only')" "${argv}"
 assert_contains "git repo check skipped (isolated dir)" "--skip-git-repo-check" "${argv}"
 assert_contains "ephemeral session" "--ephemeral" "${argv}"
+# Measured live 2026-09-16: without these, `codex exec` from an empty dir still ran 18
+# user/plugin hooks and started MCP servers — context the preview never showed.
+assert_contains "user config ignored (no plugins/MCP from config.toml)" "--ignore-user-config" "${argv}"
+for feat in hooks plugins memories apps; do
+    assert_contains "feature '${feat}' disabled" "$(printf -- '--disable\n%s' "${feat}")" "${argv}"
+done
 cdir="$(printf '%s\n' "${argv}" | awk 'p{print; exit} $0=="-C"{p=1}')"
 assert_not_contains "-C is not the project or HOME" "${PROJECT_ROOT}" "${cdir}"
 assert_equals "codex ran from the same isolated dir it was pointed at" "${cdir}" "$(cat "${REC}/1/cwd" 2>/dev/null)"

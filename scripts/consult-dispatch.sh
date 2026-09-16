@@ -163,7 +163,12 @@ _send() {
     _iso="$(mktemp -d "${_tmpd}/consult-iso.XXXXXX")" && _out="$(mktemp -d "${_tmpd}/consult-run.XXXXXX")" \
         || { _err "MAY HAVE SENT: no — but the approval was already used and a scratch directory could not be created. Ask the user again."; exit 5; }
     chmod 0700 "${_iso}" "${_out}"
+    # Everything Codex loads on its own is egress the preview never showed. Measured live
+    # 2026-09-16: from an empty directory a plain `codex exec` still ran 18 user/plugin
+    # hooks and started MCP servers. These flags removed both while still reaching the
+    # model. A global ~/.codex/AGENTS.md is NOT known to be excluded (residual risk).
     ( cd "${_iso}" && codex exec -s read-only -C "${_iso}" --skip-git-repo-check --ephemeral \
+        --ignore-user-config --disable hooks --disable plugins --disable memories --disable apps \
         -o "${_out}/answer.md" ${_model:+-m "${_model}"} - ) < "${_pkg}" > "${_out}/codex.log" 2>&1
     _rc=$?
     rmdir "${_iso}" 2>/dev/null

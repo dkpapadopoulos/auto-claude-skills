@@ -36,6 +36,8 @@ panel / second-opinion (model turn)
           by atomic mv -> .consumed; only a successful mv authorises the send
         a send whose outcome is uncertain reports "may have sent" and never restores the receipt
         codex exec -s read-only -C <empty mktemp dir> --skip-git-repo-check --ephemeral
+                   --ignore-user-config --disable hooks --disable plugins
+                   --disable memories --disable apps
                    -o <0700 run dir>/answer.md  - < frozen package
         prints the run dir
 
@@ -167,6 +169,14 @@ nobody reads the gate as stronger than it is.
   (a commit message, a heredoc) is recorded as a bypass — the #155 class. Harmless for an
   advisory observer, but any future deny-flip adjudication must discount such records;
   segment-aware parsing (as the push gate does) is the fix if that corpus is ever used.
+- **Codex loads context of its own.** Measured live 2026-09-16 (A/B, twice, flags passed
+  as an array — a zsh unquoted-scalar run first produced a false "flags rejected"
+  result): a plain `codex exec` from an empty directory ran **18** user/plugin hooks and
+  started MCP servers; with `--ignore-user-config` and `--disable
+  hooks/plugins/memories/apps` it ran **0** of either and still reached the model. That
+  context would have left the machine without appearing in any preview. A global
+  `~/.codex/AGENTS.md` is not known to be excluded by these flags (absent on the
+  measuring machine) and remains a residual risk.
 - Parallel sends: receipts are keyed `<digest>.<tool_use_id>`, so two approvals of
   identical packages are two receipts and authorise two sends; one approval authorises
   exactly one (the send that wins the atomic `mv`). Consumption happens after local
