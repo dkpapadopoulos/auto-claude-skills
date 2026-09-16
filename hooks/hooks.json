@@ -135,6 +135,15 @@
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/outbound-consent-hook.sh"
           }
         ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-ask-hook.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -183,6 +192,15 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/serena-followthrough.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-receipt-hook.sh"
           }
         ]
       }

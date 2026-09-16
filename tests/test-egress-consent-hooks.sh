@@ -213,4 +213,17 @@ for p in "$(pre_payload toolu_x1)" "$(post_payload toolu_x1 "${L}")"; do
     assert_not_contains "no permissionDecision allow is ever emitted" '"allow"' "${o}"
 done
 
+echo "-- wiring and retirement --"
+HJ="${PROJECT_ROOT}/hooks/hooks.json"
+assert_equals "PreToolUse(AskUserQuestion) runs the ask hook" "1" \
+    "$(jq '[.hooks.PreToolUse[] | select(.matcher == "AskUserQuestion") | .hooks[] | select(.command == "${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-ask-hook.sh")] | length' "${HJ}")"
+assert_equals "PostToolUse(AskUserQuestion) runs the receipt hook" "1" \
+    "$(jq '[.hooks.PostToolUse[] | select(.matcher == "AskUserQuestion") | .hooks[] | select(.command == "${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-receipt-hook.sh")] | length' "${HJ}")"
+assert_equals "both new hooks are executable" "yes" \
+    "$([ -x "${ASK_HOOK}" ] && [ -x "${RCPT_HOOK}" ] && echo yes || echo no)"
+assert_equals "the model-run consent recorder is retired" "false" \
+    "$([ -e "${PROJECT_ROOT}/scripts/record-outbound-consent.sh" ] && echo true || echo false)"
+assert_equals "nothing shipped still references the retired recorder" "" \
+    "$(grep -rl 'record-outbound-consent' "${PROJECT_ROOT}/hooks" "${PROJECT_ROOT}/skills" "${PROJECT_ROOT}/scripts" "${PROJECT_ROOT}/config" 2>/dev/null)"
+
 print_summary
