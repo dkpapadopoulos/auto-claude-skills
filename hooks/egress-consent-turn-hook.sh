@@ -2,6 +2,8 @@
 # egress-consent-turn-hook.sh — UserPromptSubmit: an egress approval lives only within the
 # turn in which the user gave it.
 #
+# Exception: a prompt made up entirely of <task-notification> blocks (measured live: that
+# is how background-task notifications arrive) is not the user and ends nothing.
 # The consent flow is prepare -> ask -> answer -> send inside ONE assistant turn (an
 # AskUserQuestion answer is a tool result, not a new prompt). A new user prompt means that
 # turn ended without sending — and the prompt may well be "no, don't send it". So every
@@ -47,12 +49,25 @@ fi
 # Measured live 2026-09-17: a background-task notification arrives as UserPromptSubmit
 # whose prompt is the "<task-notification>" block. It is not the user speaking, and treating
 # it as a turn boundary revoked a genuine approval mid-flow.
+# A prompt counts as a notification only if it consists ENTIRELY of notification blocks:
+# a user who pastes one and then writes "no" is the user speaking.
+# The trailing "end" field is a sentinel: a newline inside transcript_path cuts the read
+# short, and acting on the truncated path would silently resolve the wrong conversation.
 _META="$(printf '%s' "${_INPUT}" | jq -r 'if type == "object" then
     [ ((.transcript_path // "") | tostring),
-      (if ((.prompt // "") | tostring | ltrimstr(" ") | ltrimstr("\n") | startswith("<task-notification>")) then "notification" else "prompt" end)
-    ] | join("\n") else "" end' 2>/dev/null)"
-_TP="$(printf '%s\n' "${_META}" | sed -n 1p)"
-[ "$(printf '%s\n' "${_META}" | sed -n 2p)" = "notification" ] && exit 0
+      (if ((.prompt // "") | tostring
+           | test("^\\s*(<task-notification>[\\s\\S]*?</task-notification>\\s*)+$"))
+       then "notification" else "prompt" end),
+      "end"
+    ] | join("\u001f") else "" end' 2>/dev/null)"
+IFS=$'\x1f' read -r _TP _KIND _END <<EOF
+${_META}
+EOF
+if [ "${_END:-}" != "end" ]; then
+    _announce "prompt payload unparseable — unused egress approvals of this conversation (if any) were NOT withdrawn."
+    exit 0
+fi
+[ "${_KIND}" = "notification" ] && exit 0
 _TOKEN="$(session_token_from_transcript "${_TP}")"
 if ! egress_valid_token "${_TOKEN}"; then
     _announce "no session identity in the prompt payload — unused egress approvals of this conversation (if any) were NOT withdrawn."

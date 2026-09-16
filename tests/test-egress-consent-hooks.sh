@@ -293,6 +293,23 @@ run_ask "$(pre_payload toolu_v2)" >/dev/null; run_rcpt "$(post_payload toolu_v2 
 assert_equals "each decline leaves its own veto record" "2" \
     "$(find "${H}/.claude" -maxdepth 1 -name ".skill-egress-veto-${TOK}.${D}.*" | wc -l | tr -d ' ')"
 
+echo "-- review round 5 --"
+# Without perl the clock is whole seconds; the post-publish message must not claim a
+# decline happened "while the question was open" when it cannot know that.
+NOPERL="${T}/noperl"; mkdir -p "${NOPERL}"
+for tool in bash sh cat mv rm date basename dirname shasum sed tr cut mkdir chmod stat find head tail wc env mktemp cmp grep printf ln; do
+    src="$(command -v "${tool}" 2>/dev/null)"; [ -n "${src}" ] && [ -x "${src}" ] && ln -sf "${src}" "${NOPERL}/${tool}"
+done
+ln -sf "$(command -v jq)" "${NOPERL}/jq"
+[ -e "${NOPERL}/shasum" ] && rm -f "${NOPERL}/shasum" && ln -sf "$(command -v sha256sum 2>/dev/null || echo /nonexistent)" "${NOPERL}/sha256sum"
+reset_state
+for i in 1 2 3; do
+    run_ask "$(pre_payload toolu_np_no$i)" "${NOPERL}" >/dev/null; run_rcpt "$(post_payload toolu_np_no$i "Do not send")" "${NOPERL}" >/dev/null
+    run_ask "$(pre_payload toolu_np_yes$i)" "${NOPERL}" >/dev/null
+    o="$(run_rcpt "$(post_payload toolu_np_yes$i "${L}")" "${NOPERL}")"
+    assert_not_contains "R5: no false 'while the question was open' claim (run $i)" "while the question was open" "${o}"
+done
+
 echo "-- wiring and retirement --"
 HJ="${PROJECT_ROOT}/hooks/hooks.json"
 assert_equals "PreToolUse(AskUserQuestion) runs the ask hook" "1" \

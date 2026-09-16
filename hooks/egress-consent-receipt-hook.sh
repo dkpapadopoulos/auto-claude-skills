@@ -67,15 +67,21 @@ _META="$(printf '%s' "${_INPUT}" | jq -r '
       ((.transcript_path // "") | tostring),
       ([ (.tool_input | objects | .questions | arrays | .[] | objects | .question | strs),
          (.tool_response | objects | .questions | arrays | .[] | objects | .question | strs) ]
-       | map(capture("\\[egress-consent:(?<d>[0-9a-f]{64})\\]")? | .d) | first // "")
+       | map(capture("\\[egress-consent:(?<d>[0-9a-f]{64})\\]")? | .d) | first // ""),
+      "end"
     ] | join("\u001f") end' 2>/dev/null)"
 if [ -z "${_META}" ]; then
     _announce "hook payload unparseable — no approval receipt was written, and ${_NOT_WITHDRAWN}."
     exit 0
 fi
-IFS=$'\x1f' read -r _ID _TP _MARKED <<EOF
+IFS=$'\x1f' read -r _ID _TP _MARKED _END <<EOF
 ${_META}
 EOF
+if [ "${_END:-}" != "end" ]; then
+    # A newline inside a field cut the read short; never act on a truncated identity.
+    _announce "hook payload has an unusable field — no approval receipt was written, and ${_NOT_WITHDRAWN}."
+    exit 0
+fi
 
 _TOKEN="$(session_token_from_transcript "${_TP}")"
 if ! egress_valid_token "${_TOKEN}"; then
@@ -194,7 +200,7 @@ fi
 if [ "${_ASK_MS}" -le "$(egress_veto_ts "${_TOKEN}" "${_DIGEST}")" ]; then
     _R="$(egress_receipt_path "${_TOKEN}" "${_DIGEST}" "${_ID}")"
     mv "${_R}" "${_R}.revoked" 2>/dev/null \
-        && _announce "this approval was superseded by a \"${EGRESS_DECLINE_LABEL}\" given for the same package while the question was open; nothing will be sent from it." \
+        && _announce "a \"${EGRESS_DECLINE_LABEL}\" for this package was recorded at or after the time this question was asked, so this approval was withdrawn; nothing will be sent from it. Ask again if the user now wants to send." \
         || _announce "WARNING: this approval was superseded by a decline but could NOT be withdrawn."
 fi
 exit 0

@@ -520,6 +520,34 @@ dispatch "${T}/latejq:${STUBS}:${TOOLS}" "${SID}" send "${D}"
 assert_equals "P1: a decline landing after the veto was first read still stops the send -> 4" "4" "${RC}"
 assert_equals "P1: codex not invoked" "0" "$(calls)"
 
+echo "-- review round 5 --"
+TURN="${PROJECT_ROOT}/hooks/egress-consent-turn-hook.sh"
+turn() { hook "${TURN}" "$(jq -nc --arg tp "$1" --arg p "$2" '{hook_event_name:"UserPromptSubmit", transcript_path:$tp, prompt:$p}')"; }
+NOTIF='<task-notification>
+<task-id>b1</task-id>
+<status>completed</status>
+</task-notification>'
+# A real prompt that STARTS with a pasted notification block, then says no, is the user.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_r5a
+turn "${TP}" "${NOTIF}
+No - do NOT send that to codex."
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "R5: a notification block followed by the user's own text withdraws -> 4" "4" "${RC}"
+# Pure notifications, including leading whitespace and two blocks, do not.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_r5b
+turn "${TP}" "$(printf '\t\n  %s\n%s\n' "${NOTIF}" "${NOTIF}")"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "R5: whitespace-prefixed, repeated notification blocks do not withdraw -> 0" "0" "${RC}"
+# A newline inside transcript_path is announced, never a silent wrong-token no-op.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_r5c
+OUT="$(jq -nc --arg tp "${H}/.claude/projects/p/x
+${SID}.jsonl" '{hook_event_name:"UserPromptSubmit", transcript_path:$tp, prompt:"no, do not send"}' \
+    | env HOME="${H}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "${TURN}" 2>/dev/null)"
+assert_contains "R5: a transcript_path with a newline is announced" "NOT withdrawn" "${OUT}"
+
 echo "-- usage --"
 dispatch "${P_FULL}" "${SID}" send "not-a-digest"
 assert_equals "invalid digest -> 2" "2" "${RC}"

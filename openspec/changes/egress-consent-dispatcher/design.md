@@ -268,6 +268,16 @@ Accepted residuals, not fixed:
 - Live: the turn hook revoked a genuine approval because a background-task notification
   arrived between the answer and the send (see above).
 
+### Round 5 — fresh review of the round-4 fixes (2026-09-17)
+
+Nothing blocking; four low findings, all fixed with mutation-checked cells: a real prompt
+that STARTS with a pasted `<task-notification>` block was taken for a notification (now:
+the prompt must consist entirely of notification blocks, leading whitespace allowed); a
+newline in `transcript_path` turned an announced failure into a silent wrong-token no-op
+(now: a sentinel field, in the turn and receipt hooks); `test-hook-file-modes.sh` skipped a
+quoted command (now every command is accounted for, with an extractor self-check); and the
+perl-less clock produced a false "while the question was open" reason (now neutral).
+
 ## Dissenting views
 
 - **Codex (2026-09-16):** a nonce alone does not stop approving payload A and sending B;
