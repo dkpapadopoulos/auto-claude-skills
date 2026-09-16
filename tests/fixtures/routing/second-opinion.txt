@@ -100,3 +100,16 @@ NO_MATCH: stand up an eval harness that scores our prompt templates against the 
 NO_MATCH: what do you actually think of this design, be honest
 NO_MATCH: critique my pr description, it's too long and i think the argument is weak
 NO_MATCH: argue the other side for me. i think we should keep the monolith, tell me why i'm wrong
+
+# CLAUDE IS A PARTICIPANT, and the token list did not say so (round-5 finding).
+# panel's own shipped description names the default roster as "the strongest available
+# Claude model plus Codex", yet zero trigger clauses mentioned claude -- so every
+# canonical phrasing naming it missed. This is a repo-internal inconsistency between a
+# skill's documented roster and the tokens that route to it, not a prompt-fitted addition.
+MATCH: ask claude opus to weigh in on this approach
+MATCH: run this by claude opus
+MATCH: have claude opus critique the answer you just gave
+
+# The vendor-as-subject boundary holds for claude exactly as for the others: the model is
+# the OBJECT OF WORK here, not the recipient of a question.
+NO_MATCH: claude's tool_use blocks come back with empty input through our proxy, help me trace it

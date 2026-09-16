@@ -91,3 +91,4 @@ NO_MATCH: animate a back and forth between two agents in the evacuation simulati
 # one. The verb sets are now aligned. Naming two participants is the signal; the verb is not.
 MATCH: put this to codex and gemini separately and show me what each one says
 MATCH: paste this question to codex and gemini and show both answers
+MATCH: ask codex and claude for their take on this schema
