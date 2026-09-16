@@ -65,6 +65,9 @@ assert_equals "atomic write stores the bytes" "hello" "$(cat "${dest}" 2>/dev/nu
 assert_equals "atomic write is owner-only" "600" "$(stat -f '%Lp' "${dest}" 2>/dev/null || stat -c '%a' "${dest}")"
 assert_equals "atomic write leaves no temp file" "0" \
     "$(find "${T}/.claude" -name 'out.tmp.*' | wc -l | tr -d ' ')"
+printf '' | egress_write_atomic "${T}/.claude/empty"; rc=$?
+assert_equals "atomic write refuses empty input" "1" "${rc}"
+assert_equals "refused empty write leaves no file" "false" "$([ -e "${T}/.claude/empty" ] && echo true || echo false)"
 HOME="${HOME_SAVE}"
 rm -rf "${T}"
 

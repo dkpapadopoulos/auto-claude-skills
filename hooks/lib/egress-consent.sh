@@ -68,10 +68,13 @@ egress_receipt_path() { printf '%s/.claude/.skill-egress-receipt-%s.%s.%s' "${HO
 egress_pkg_path()     { printf '%s/.claude/.skill-egress-pkg-%s.%s' "${HOME}" "$1" "$2"; }
 
 # egress_write_atomic <dest> — stdin -> <dest>, owner-only, via tmp + mv so a reader never
-# sees a partial file. rc non-zero on any failure (the temp file is removed).
+# sees a partial file. EMPTY input is a failure: callers pipe a jq document in, and a jq
+# error must not leave a receipt-shaped empty file behind. rc non-zero on any failure (the
+# temp file is removed).
 egress_write_atomic() {
     local _dest="$1" _tmp="${1}.tmp.$$" _rc=0
     ( umask 077 && cat > "${_tmp}" ) || _rc=1
+    [ "${_rc}" -eq 0 ] && [ ! -s "${_tmp}" ] && _rc=1
     if [ "${_rc}" -eq 0 ]; then
         mv -f "${_tmp}" "${_dest}" 2>/dev/null || _rc=1
     fi
