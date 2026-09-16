@@ -115,3 +115,19 @@ NO_MATCH: show the two diffs side by side in the review ui
 # billing UI that happens to name a vendor no longer routes outbound.
 NO_MATCH: build a standalone panel for gemini billing totals
 NO_MATCH: add a standalone panel for chatgpt usage metrics
+
+# CLASS PINS, not instance pins (pre-PR review, 2026-09-16). The previous round fixed the
+# four prompts a review reported and left the class one token away: a SECOND vendor
+# identifier, an inverted word order, a different preposition. panel had received ZERO of
+# the identifier hardening -- 20 of 26 vendor sites were raw -- while the commit message
+# claimed the class was closed. These lines fail if any of that reverts.
+NO_MATCH: show gemini_thinking_budget and codex_reasoning_effort in the settings form
+NO_MATCH: run gemini_eval and codex_eval in the benchmark suite
+NO_MATCH: run gemini-adapter and codex-adapter tests
+NO_MATCH: put the gemini fixture and the codex fixture in tests/
+NO_MATCH: the gpt4_cache and gemini_cache keys both need bumping
+# inverted order and a different preposition -- the guarded half was the only one tested
+NO_MATCH: build a standalone panel to show gemini spend
+NO_MATCH: the gemini billing totals need a standalone panel
+NO_MATCH: give gemini usage its own standalone panel in the dashboard
+NO_MATCH: the model settings deserve a standalone panel

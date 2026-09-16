@@ -9,6 +9,15 @@ description: Multi-Agent Debate (MAD) for complex designs — architect, critic 
 
 Escalation skill for the DESIGN phase. When brainstorming detects competing architectures, cross-cutting concerns, or high-stakes decisions, this skill orchestrates a Multi-Agent Debate with three perspectives to avoid echo-chamber thinking.
 
+**Participants are SAME-FAMILY and LOCAL.** The architect / critic / pragmatist are
+`general-purpose` subagents on this machine. Nothing here leaves the machine and there is
+no disclosure preview, because there is nothing to disclose. If a prompt names another
+vendor ("have codex and gemini argue this out"), say plainly that this skill debates with
+local Claude subagents and offer `panel` or `second-opinion` for an actual cross-vendor
+pass — do not silently substitute. Anyone wiring real dispatch in here must add the
+consent gate first: `hooks/outbound-consent-hook.sh` only recognises codex-rescue and the
+codex CLI, so a new dispatch path would be invisible to it.
+
 **This skill is opt-in.** It only activates when brainstorming explicitly escalates after user approval.
 
 ## When to Escalate

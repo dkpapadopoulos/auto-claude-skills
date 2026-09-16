@@ -127,3 +127,15 @@ MATCH: get a critique out of codex on the code you just wrote - include the whol
 NO_MATCH: put the fixture into gemini.json
 NO_MATCH: show gemini_thinking_budget in the settings form
 NO_MATCH: put the config into codex_settings.yaml
+
+# VERSIONED MODEL NAMES must survive the identifier boundary. Forbidding "-" and "." would
+# reject the MOST explicit consultation request there is -- the user who names the exact
+# model -- so a version suffix is permitted instead: "-<digit>..." and ".<digit>...".
+# Hyphen-plus-LETTER (gemini-pro, claude-opus-5) is deliberately NOT accepted: it is
+# lexically identical to gemini-adapter / codex-cli, which must stay silent, and egress
+# safety wins the tie. Those users can write "gemini" or "claude".
+MATCH: ask gemini-2.5-pro what it thinks of this migration
+MATCH: ask gpt-5.4 to review this patch
+MATCH: paste this into gemini-2.5-pro
+NO_MATCH: put the config into codex_settings.yaml
+NO_MATCH: take gemini_key and codex_key out of the env file

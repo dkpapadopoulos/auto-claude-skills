@@ -249,10 +249,12 @@ _score_skills() {
         # collapsible panel on the settings screen" SELECTED panel, which dispatches
         # repository content to another vendor. So these require an invocation marker.
         # The marker may be separated from the name by up to two determiners/adjectives
-        # "the" is DELIBERATELY ABSENT from the determiner list: a definite article names
-        # an EXISTING referent, so "use the panel on the settings page" is a UI instruction,
-        # not an invocation (measured -- it scored the full boost and routed to panel).
-        # Indefinite and demonstrative forms stay.
+        # the|this|that are DELIBERATELY ABSENT from the determiner list. All three are
+        # DEFINITE references to an existing thing, so "use the panel on the settings page"
+        # and "run this panel on the design doc" are instructions about a panel that already
+        # exists, not invocations of the skill (measured: both scored the full boost and
+        # routed to panel, which dispatches content to an external vendor). Only indefinite
+        # and qualifier forms invoke: "run a standalone panel", "use another panel".
         # ("run a standalone panel" -- probe case sp-1, whose triggers deliberately no
         # longer fire because it names no model).
         #
