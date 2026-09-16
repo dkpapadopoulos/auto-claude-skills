@@ -174,5 +174,30 @@ fi
 rm -rf "$H"
 
 echo ""
+
+# --- consult-participant boundary must match the trigger boundary (PR #253 rec 2) ---
+test_consult_boundary_excludes_identifiers() {
+    echo "-- test: vendor names inside identifiers do not suppress the chain --"
+    local cp
+    cp="$(grep '_CONSULT_PARTICIPANT=' "${ROOT}/hooks/skill-activation-hook.sh" \
+          | sed "s/^_CONSULT_PARTICIPANT='//; s/'$//")"
+    # A bare [^a-z] right boundary matched inside identifiers, so "make the client
+    # o3-compatible" read as consultation and SUPPRESSED the composition chain display
+    # while a plain dev prompt rendered it. Display-only, but wrong; the boundary now
+    # matches the trigger regexes' ($|[^a-z0-9_.-]).
+    local p
+    for p in "make the client o3-compatible" "bump the gpt-4-turbo timeout in the config" \
+             "put the config into gemini-adapter.json"; do
+        if [[ "${p}" =~ ${cp} ]]; then _fail "identifier not treated as consultation: ${p}"
+        else _pass "identifier not treated as consultation: ${p}"; fi
+    done
+    # ...and genuine consultation still matches, or the veto has simply been disabled.
+    for p in "ask codex for a second opinion on this" "get another model to critique this"; do
+        if [[ "${p}" =~ ${cp} ]]; then _pass "genuine consultation still matches: ${p}"
+        else _fail "genuine consultation still matches: ${p}"; fi
+    done
+}
+test_consult_boundary_excludes_identifiers
+
 echo "test-consultation-routing: ${PASS} passed, ${FAIL} failed"
 [ "$FAIL" -eq 0 ]

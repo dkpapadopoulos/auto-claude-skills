@@ -162,3 +162,21 @@ NO_MATCH: hand the fixture to codex-1-runner.py
 NO_MATCH: ask gemini-2-adapter.json for the schema
 NO_MATCH: i want gemini-2-adapter.py to review the flow
 NO_MATCH: get a critique out of codex-1-runner.sh
+
+# ACCEPTED FALSE-POSITIVE SCOPE of clause 0, `(ask|consult) + <vendor>`, stated here so the
+# NO_MATCH set is not the only record of it.
+#
+# The clause carries NO consultation-purpose qualifier, so "ask codex to implement the
+# changes" DOES select second-opinion (measured). That is deliberate: requiring a purpose
+# word would drop the most natural consultation phrasing there is -- "ask codex about the
+# schema", "consult gemini on this" -- and naming a vendor is itself the strong signal this
+# branch relies on everywhere else.
+#
+# What bounds it: (a) selection is DISPLAY, not dispatch -- the skill appears in context
+# alongside execution skills and the model chooses; (b) the consent gate requires an
+# explicit affirmative go-ahead before anything leaves the machine, and states that being
+# routed is NOT consent; (c) _prompt_is_consultation_only correctly keeps the composition
+# chain for these, so there is no push-gate impact.
+# The cost is a spurious suggestion on an execution request. Do not "fix" it by adding a
+# purpose qualifier without measuring the recall loss on the phrasings above.
+MATCH: ask codex to implement the changes

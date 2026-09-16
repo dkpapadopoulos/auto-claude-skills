@@ -93,7 +93,13 @@ _comp_active() {
 # `agent`/`agents` is deliberately NOT accepted bare: it is this repo's own orchestration
 # vocabulary, and "the other agent is stuck; take over and continue the plan" is a
 # development prompt, not a consultation. It must be qualified by a model-ish word.
-_CONSULT_PARTICIPANT='(^|[^a-z])(codex|gpt-?[0-9]|gemini|o3|chatgpt)($|[^a-z])|(another|other|second|different|independent|several|multiple|two|three|each) +([a-z]+ +)?(model|models|llm|llms)($|[^a-z])|(model|llm) +agents?($|[^a-z])|second opinion|(panel of models|model panel|standalone panel)'
+# Right boundary EXCLUDES _ . and - , matching the trigger regexes in
+# config/default-triggers.json. With a bare [^a-z] this matched inside identifiers:
+# measured, "make the client o3-compatible" and "bump the gpt-4-turbo timeout"
+# read as consultation and SUPPRESSED the composition chain display, while a plain
+# dev prompt rendered it. Display-only (state is still written, so the push gate is
+# unaffected) but wrong, and the mismatch with the trigger boundary was the cause.
+_CONSULT_PARTICIPANT='(^|[^a-z])(codex|gpt-?[0-9]|gemini|o3|chatgpt)($|[^a-z0-9_.-])|(another|other|second|different|independent|several|multiple|two|three|each) +([a-z]+ +)?(model|models|llm|llms)($|[^a-z])|(model|llm) +agents?($|[^a-z])|second opinion|(panel of models|model panel|standalone panel)'
 
 # Development work the requester wants DONE, as opposed to an opinion they want heard.
 # Its presence makes a request MIXED, and a mixed request keeps its chain.

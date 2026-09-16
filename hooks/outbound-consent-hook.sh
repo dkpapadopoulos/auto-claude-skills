@@ -28,6 +28,13 @@ _announce() {
 _INPUT="$(cat)"
 
 # Cheap pre-filter, jq-free: almost no tool call mentions codex at all.
+# Deliberately LOOSE. This is a cheap substring pre-filter whose only job is to let the
+# overwhelming majority of tool calls exit before the jq fork. False positives here are
+# SAFE and expected -- OPENAI_API_KEY in an env line, a path like codex_settings.yaml --
+# they simply fall through to the precise _IS_OUTBOUND test below and exit 0 silently.
+# The direction that would be unsafe is a false NEGATIVE: a dispatch shape whose text
+# contains none of these words is never examined at all. That is the documented
+# ceiling, and it is why the SKILL.md files say coverage is PARTIAL rather than total.
 case "${_INPUT}" in *codex*|*Codex*|*CODEX*|*gemini*|*Gemini*|*GEMINI*|*openai*|*OpenAI*|*OPENAI*) ;; *) exit 0 ;; esac
 
 if ! command -v jq >/dev/null 2>&1; then
