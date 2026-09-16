@@ -250,15 +250,25 @@ _score_skills() {
         # repository content to another vendor. So these require an invocation marker.
         # The marker may be separated from the name by up to two determiners/adjectives
         # ("run a standalone panel" -- probe case sp-1, whose triggers deliberately no
-        # longer fire because it names no model), and the name may NOT head a compound
-        # noun: "use panel data to estimate wage effects" (econometrics) and "fix the
-        # /panel route in the dashboard" were both measured routing to panel.
-        # _nb_compound is a KNOWN-INCOMPLETE enumeration -- adversarial review produced
-        # statistical terminology and URL paths, so treat it as a floor, not a proof.
+        # longer fire because it names no model).
+        #
+        # The name must also be the HEAD of its phrase, not a modifier: "use panel data"
+        # (econometrics) and "fix the /panel route" both scored the full boost and routed
+        # repo content to another vendor. This is enforced with a CLOSED-CLASS follow
+        # set -- after the name the phrase must end or continue with a function word.
+        # The earlier version blocklisted nouns (data|route|component|...), which is an
+        # OPEN set and let through "use panel regression", "run the panel tests", "run
+        # panel migrations" and "use synthesize_audio" (measured: 4 of 5 escaped).
+        # Function words are a closed class, so this direction is bounded.
+        #
+        # The "/" marker is GONE, and it was never doing the job it looked like it did:
+        # the hook exits at the top of the file on a leading slash (slash commands are
+        # handled by the Skill tool), so "/" could only ever match a MID-prompt slash --
+        # i.e. a URL path. It enabled "fix the /panel route" and no real slash command.
         _nb_named="(^|[^a-z0-9-])${skill_name_lower}($|[^a-z0-9-])"
-        _nb_marked="(/|(^|[^a-z0-9-])(run|use|invoke|call|skill|using) +((a|an|the|this|that|another|standalone|independent|new|quick|full) +){0,2})${skill_name_lower}($|[^a-z0-9-])"
-        _nb_compound="(^|[^a-z0-9-])${skill_name_lower} +(data|route|component|widget|screen|view|page|bar|menu|layout|section|element|container|api|endpoint|prop|props|css|html)($|[^a-z0-9-])"
-        if [[ "$P" =~ $_nb_named ]] && [[ "$P" =~ $_nb_marked ]] && ! [[ "$P" =~ $_nb_compound ]]; then
+        _nb_follow='($|[^a-z0-9-] *($|(on|for|with|to|over|against|about|from|in|at|and|or|then|please|now|instead|again|here|first)($|[^a-z0-9-])))'
+        _nb_marked="((^|[^a-z0-9-])(run|use|invoke|call|skill|using) +((a|an|the|this|that|another|standalone|independent|new|quick|full) +){0,2})${skill_name_lower}${_nb_follow}"
+        if [[ "$P" =~ $_nb_named ]] && [[ "$P" =~ $_nb_marked ]]; then
           name_boost=100
         fi
       fi

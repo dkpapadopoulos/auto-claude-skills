@@ -2504,13 +2504,29 @@ SWREG
     # ...but the name may not HEAD a compound noun. Both measured against the real hook:
     # "use panel data to estimate wage effects" (econometrics) and "fix the /panel route
     # in the dashboard" selected panel, which dispatches repo content to another vendor.
-    output="$(run_hook "use widget data to estimate wage effects")"
-    context="$(extract_context "${output}")"
-    assert_not_contains "marker + compound noun does NOT select" "mock:widget)" "${context}"
+    # ...but the name must be the HEAD of its phrase, not a modifier. A CLOSED-CLASS
+    # follow set enforces this. The earlier blocklist of nouns was an OPEN set and let
+    # 4 of these 5 through (measured); all five must stay silent.
+    for _bad in "use widget data to estimate wage effects" \
+                "use widget regression for the wage study" \
+                "run the widget tests before deploying" \
+                "run widget migrations on staging" \
+                "call the widget endpoint with a retry"; do
+      output="$(run_hook "${_bad}")"
+      context="$(extract_context "${output}")"
+      assert_not_contains "name as modifier does NOT select: ${_bad}" "mock:widget)" "${context}"
+    done
 
+    # A slash command counts only at the START of the prompt; mid-prompt it is a URL path.
     output="$(run_hook "fix the /widget route in the dashboard")"
     context="$(extract_context "${output}")"
-    assert_not_contains "slash marker + compound noun does NOT select" "mock:widget)" "${context}"
+    assert_not_contains "mid-prompt slash is a URL path, not a command" "mock:widget)" "${context}"
+
+    # A LEADING slash exits the hook entirely (slash commands are the Skill tool's job),
+    # which is why the "/" marker was removed: it could only ever match a mid-prompt
+    # slash, i.e. a URL path. Assert the documented early exit, not a name boost.
+    output="$(run_hook "/widget on this design")"
+    assert_equals "leading slash command is not routed at all" "" "${output}"
 
     teardown_test_env
 }
