@@ -128,14 +128,37 @@ NO_MATCH: put the fixture into gemini.json
 NO_MATCH: show gemini_thinking_budget in the settings form
 NO_MATCH: put the config into codex_settings.yaml
 
-# VERSIONED MODEL NAMES must survive the identifier boundary. Forbidding "-" and "." would
-# reject the MOST explicit consultation request there is -- the user who names the exact
-# model -- so a version suffix is permitted instead: "-<digit>..." and ".<digit>...".
-# Hyphen-plus-LETTER (gemini-pro, claude-opus-5) is deliberately NOT accepted: it is
-# lexically identical to gemini-adapter / codex-cli, which must stay silent, and egress
-# safety wins the tie. Those users can write "gemini" or "claude".
-MATCH: ask gemini-2.5-pro what it thinks of this migration
+# VERSIONED MODEL NAMES: a DOT-digit suffix survives the identifier boundary; a HYPHEN
+# suffix does not. This was narrowed twice and the second narrowing is the load-bearing one.
+#   round 1: forbid "-" and "." outright -> rejected the most explicit consultation request
+#            there is (a user naming the exact model). Too strict.
+#   round 2: permit "[.-]<digit>[0-9.a-z-]*" -> the tail admitted letters and hyphens, so
+#            gemini-2-adapter.json parsed as vendor+version and ROUTED. A new egress route,
+#            created by the fix for round 1 (minimal pair: gemini-adapter.json silent,
+#            gemini-2-adapter.json routed).
+#   round 3, shipped: DOT-DIGIT ONLY. gpt-5.4 survives.
+# ACCEPTED LOSS, pinned below so it cannot be "fixed" back into an egress route:
+# gemini-2.5-pro and claude-opus-5 do NOT route. They are lexically indistinguishable from
+# gemini-2-adapter and codex-cli-5, which MUST stay silent. Egress safety wins the tie;
+# those users can write "gemini" or "claude" and be routed.
 MATCH: ask gpt-5.4 to review this patch
-MATCH: paste this into gemini-2.5-pro
+NO_MATCH: ask gemini-2.5-pro what it thinks of this migration
+NO_MATCH: paste this into gemini-2.5-pro
+NO_MATCH: get a critique from claude-opus-5
 NO_MATCH: put the config into codex_settings.yaml
 NO_MATCH: take gemini_key and codex_key out of the env file
+
+# VERSION SUFFIX MUST NOT RECONSTRUCT AN IDENTIFIER (delta review, BLOCKING). The first
+# version-suffix group was ([.-][0-9][0-9.a-z-]*)? -- its tail admitted letters and further
+# hyphens, so <vendor>-<digit>-<word> parsed as "vendor + version" and cleared the boundary.
+# That was a NEW egress route created by the fix for the previous one, proven by a minimal
+# pair: gemini-adapter.json silent, gemini-2-adapter.json routed. The suffix is now
+# DOT-DIGIT ONLY. gpt-5.4 survives; gemini-2.5-pro does not, because it is lexically
+# identical to gemini-2-adapter and egress safety wins that tie.
+NO_MATCH: put the config into gemini-2-adapter.json
+NO_MATCH: paste the payload into gpt-4-client.ts
+NO_MATCH: send the request into claude-3-wrapper.js
+NO_MATCH: hand the fixture to codex-1-runner.py
+NO_MATCH: ask gemini-2-adapter.json for the schema
+NO_MATCH: i want gemini-2-adapter.py to review the flow
+NO_MATCH: get a critique out of codex-1-runner.sh

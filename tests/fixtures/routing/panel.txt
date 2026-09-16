@@ -131,3 +131,12 @@ NO_MATCH: build a standalone panel to show gemini spend
 NO_MATCH: the gemini billing totals need a standalone panel
 NO_MATCH: give gemini usage its own standalone panel in the dashboard
 NO_MATCH: the model settings deserve a standalone panel
+
+# A BARE CARDINAL IS NOT A PLURAL-SOURCE SIGNAL. "the two X side by side" is ordinary dev
+# prose for X in {columns, api responses, diffs, cards}; requiring an answer-noun did not
+# help, because "responses" IS one. The source must now be referred to AS a source
+# ("three of them", "a few different sources"), not merely counted.
+NO_MATCH: put the two api responses side by side in the gemini_adapter test
+NO_MATCH: show the two diffs side by side in the review ui
+NO_MATCH: show the recorded responses side-by-side for gemini_eval and codex_eval
+NO_MATCH: put the two api responses side by side in the dashboard
