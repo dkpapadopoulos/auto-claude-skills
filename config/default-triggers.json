@@ -410,7 +410,10 @@
       "role": "domain",
       "phase": "DESIGN",
       "triggers": [
-        "(trade.?off|debate|compare.*(option|approach|design)|weigh +(the|up|these|those|this|our|your|my|their|its|both|two|three|four|five|six|a|an|another|each|which|what|whether|few|several|all|possible|competing|relative|different|any|[0-9]+) +[^.!?;:]{0,40}(option|approach|alternative|tradeoff)|weigh +(option|approach|alternative|tradeoff)|pros? and cons?|pro.?con|alternative|architecture)"
+        "(trade.?off|debate|compare.*(option|approach|design)|weigh +(the|up|these|those|this|our|your|my|their|its|both|two|three|four|five|six|a|an|another|each|which|what|whether|few|several|all|possible|competing|relative|different|any|[0-9]+) +[^.!?;:]{0,40}(option|approach|alternative|tradeoff)|weigh +(option|approach|alternative|tradeoff)|pros? and cons?|pro.?con|alternative|architecture)",
+        "(^|[^a-z])(argue|debate|rebut|counter|challenge|push +back|cross.?examine|spar|interrogate)[a-z]*[^.!?;:]{0,30}(^|[^a-z])(each other|one another|both sides|for and against|against each other|back and forth|until they (converge|agree)|between them(selves)?)($|[^a-z])[^.!?;:]{0,30}(model|llm|agent|participant|answer|response|opinion|take|codex|gemini|gpt-?[0-9]|o3|chatgpt)|(model|llm|agent|participant|answer|response|opinion|take|codex|gemini|gpt-?[0-9]|o3|chatgpt)[^.!?;:]{0,40}(^|[^a-z])(argue|debate|rebut|counter|challenge|push +back|cross.?examine|spar|interrogate)[a-z]*[^.!?;:]{0,30}(^|[^a-z])(each other|one another|both sides|for and against|against each other|back and forth|until they (converge|agree)|between them(selves)?)($|[^a-z])",
+        "(^|[^a-z])(have|let|get|make|ask) +(the +)?((two|three|four|both|several|multiple|[0-9]+) +)?(participant|model|llm|agent)s? +[^.!?;:]{0,20}(argue|debate|rebut|counter|challenge|push +back|cross.?examine|spar|interrogate)($|[^a-z])",
+        "(^|[^a-z])(back and forth|debate|argument|exchange) +[^.!?;:]{0,20}(between|among) +[^.!?;:]{0,20}((two|three|four|both|several|multiple|[0-9]+) +)?(participant|model|llm|agent)s?($|[^a-z])"
       ],
       "keywords": [],
       "trigger_mode": "regex",

@@ -23,3 +23,19 @@ MATCH: weigh those options
 MATCH: weigh possible approaches
 MATCH: weigh pros and cons of this approach
 
+# Contract triggers (participants deliberately INTERACT). The topic-word triggers above
+# never encoded the contract itself: db-2 of the intent-routing probe -- "have two agents
+# argue for and against event sourcing here" -- failed in BOTH arms. The NO_MATCH lines
+# borrow panel's contract cases verbatim: panel is the contract-opposite (independence,
+# no cross-talk), so those are the decoys that make the boundary load-bearing.
+MATCH: have two agents argue for and against event sourcing here
+MATCH: have the models argue this out between them
+MATCH: let them rebut each other's answers
+MATCH: i want a back and forth between two models on this
+MATCH: have gemini and codex challenge each other until they converge
+
+NO_MATCH: get independent answers from several models and show them to me unmerged
+NO_MATCH: run a standalone panel on this question; return independent raw answers
+NO_MATCH: argue for the current design in the pr description
+NO_MATCH: the two services counter each other's backpressure signals
+NO_MATCH: we need to challenge the assumption in the spec

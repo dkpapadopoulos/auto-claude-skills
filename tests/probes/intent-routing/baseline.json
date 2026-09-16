@@ -124,11 +124,9 @@
       "violations": []
     },
     "controlled-all-skills/db-2": {
-      "satisfied": false,
+      "satisfied": true,
       "vacuous": false,
-      "violations": [
-        "expected present: design-debate"
-      ]
+      "violations": []
     },
     "controlled-all-skills/sy-1": {
       "satisfied": true,
