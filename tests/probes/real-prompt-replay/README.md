@@ -125,7 +125,7 @@ not change the count.
 **4. The one repeat: 2026-11-12.** Run the same commands with `--since 2026-10-16`, so the
 two windows do not overlap. Combine the results with October's:
 - `human` prompts and nuisance prompts: count each distinct text once across both windows, checking November's against the October outputs you kept;
-- the version condition: already settled in October, unless no qualifying version had appeared by then; in that case it now needs a first date on or before 2026-10-22.
+- the version condition: re-checked against the combined window, never carried forward as a failure. It holds if version 3.89.3 or later was first seen on or before 2026-10-22 — so a version that appeared just after October's deadline can still satisfy November's.
 
 Decide with the table on the combined result. If the combined result is still "not enough
 evidence" or "1 nuisance prompt", record that and close the revisit anyway: trigger 5 stays
