@@ -572,6 +572,30 @@ no, do not send
 </task-notification>"
 dispatch "${P_FULL}" "${SID}" send "${D}"
 assert_equals "R7b: a same-line nested opening tag withdraws -> 4" "4" "${RC}"
+# Indentation and non-LF line breaks before a nested opening tag are still line starts.
+for sep in 'tab' 'cr' 'u2028'; do
+    case "${sep}" in
+        tab) body="$(printf '<task-notification>\n\t<task-notification>\nno, do not send\n</task-notification>')" ;;
+        cr) body="$(printf '<task-notification>\nno, do not send\r<task-notification>\n</task-notification>')" ;;
+        u2028) body="$(printf '<task-notification>\nno, do not send\342\200\250<task-notification>\n</task-notification>')" ;;
+    esac
+    reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+    approve "${D}" "${PKG}" "toolu_r7c_${sep}"
+    turn "${TP}" "${body}"
+    dispatch "${P_FULL}" "${SID}" send "${D}"
+    assert_equals "R7c: a nested block after ${sep} withdraws -> 4" "4" "${RC}"
+done
+# If the classifier itself fails (regex engine limit on a huge prompt), approvals are
+# WITHDRAWN — the safe direction — and the message says so.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_r9
+python3 -c "print('<task-notification>' + 'x' * 7000000 + '\nno, do not send')" > "${T}/huge.txt"
+OUT="$(jq -nc --arg tp "${TP}" --rawfile p "${T}/huge.txt" '{hook_event_name:"UserPromptSubmit", transcript_path:$tp, prompt:$p}' \
+    | env HOME="${H}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "${PROJECT_ROOT}/hooks/egress-consent-turn-hook.sh" 2>/dev/null)"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "R9: a prompt the classifier cannot evaluate withdraws -> 4" "4" "${RC}"
+assert_not_contains "R9: not misreported as unparseable" "unparseable" "${OUT}"
+rm -f "${T}/huge.txt"
 # A genuine notification that QUOTES the tag mid-line (a command description, an agent
 # result about this very feature) is still a notification.
 reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"

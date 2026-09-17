@@ -396,3 +396,18 @@ Both reviewers independently found the same two problems, both reproduced:
   least one same-second sample across up to 20 runs.
 Also from Codex: R7 now asserts its approval existed before the prompt.
 
+### Independent review of `3739dc7` — and where the regex stops (2026-09-17)
+
+The reviewer found no high-severity defect. Fixed: non-LF line breaks (CR, VT, FF, NEL,
+U+2028/2029) before a nested opening tag now count as a line start (unsafe direction
+before); a regex-engine failure on multi-MB prompts now WITHDRAWS approvals and says so,
+instead of being misreported as "unparseable" and keeping them; indentation is pinned by
+a cell. Documented as known costs, both in the safe direction (one re-ask): a genuine
+notification whose text starts a line with an opening tag, or quotes the closing tag.
+
+**Stopping point.** Every revision of this classifier traded one edge for another, because
+the UserPromptSubmit payload carries no field distinguishing a harness notification from a
+user who pastes one (checked against the live capture). The current rule errs toward
+withdrawing; the remaining unsafe gap is plain text typed inside one well-formed block. A
+structural fix needs a provenance field from the harness, not a better regex.
+

@@ -57,6 +57,13 @@ fi
 #   is not a notification shape. An opening tag QUOTED mid-line (a command description,
 #   an agent result about this feature) is allowed: rejecting it withdrew approvals on
 #   genuine notifications.
+# - "Start of a line" means after any vertical-space character (LF, CR, VT, FF, NEL,
+#   U+2028, U+2029), optionally indented with spaces/tabs.
+# - If the regex engine cannot evaluate the prompt (retry limit on multi-MB input), the
+#   prompt is treated as the user speaking: withdrawing is the safe direction.
+# - Known costs (safe direction, one re-ask): a genuine notification whose text starts a
+#   line with an opening tag (an XML example in an agent result), or quotes the CLOSING tag
+#   anywhere, is treated as the user.
 # - Plain text typed INSIDE one well-formed block is indistinguishable from a
 #   notification's free-text fields (agent results are arbitrary): accepted residual.
 # Fixture: tests/fixtures/egress-consent/task-notification-bash.txt, captured live
@@ -66,9 +73,10 @@ fi
 # short, and acting on the truncated path would silently resolve the wrong conversation.
 _META="$(printf '%s' "${_INPUT}" | jq -r 'if type == "object" then
     [ ((.transcript_path // "") | tostring),
-      (if ((.prompt // "") | tostring
-           | test("^\\s*(<task-notification>(?![ \\t]*<task-notification>)(?:(?!</task-notification>|\\n[ \\t]*<task-notification>)[\\s\\S])*</task-notification>\\s*)+$"))
-       then "notification" else "prompt" end),
+      ((.prompt // "") | tostring
+           | try (if test("^\\s*(<task-notification>(?![ \\t]*<task-notification>)(?:(?!</task-notification>|[\\n\\r\\v\\f\\x{85}\\x{2028}\\x{2029}][ \\t]*<task-notification>)[\\s\\S])*</task-notification>\\s*)+$")
+                  then "notification" else "prompt" end)
+             catch "unclassifiable"),
       "end"
     ] | join("\u001f") else "" end' 2>/dev/null)"
 IFS=$'\x1f' read -r _TP _KIND _END <<EOF
@@ -79,14 +87,19 @@ if [ "${_END:-}" != "end" ]; then
     exit 0
 fi
 [ "${_KIND}" = "notification" ] && exit 0
+_CLASSIFY_NOTE=""
+[ "${_KIND}" = "unclassifiable" ] && _CLASSIFY_NOTE=" (the prompt could not be classified — e.g. a regex engine limit on a very large prompt — so it was treated as the user speaking)"
 _TOKEN="$(session_token_from_transcript "${_TP}")"
 if ! egress_valid_token "${_TOKEN}"; then
     _announce "no session identity in the prompt payload — unused egress approvals of this conversation (if any) were NOT withdrawn."
     exit 0
 fi
 _RV="$(egress_revoke_unused "${_TOKEN}")"
+_OK="${_RV%% *}"
 _BAD="${_RV##* }"
 if [ "${_BAD}" != "0" ]; then
-    _announce "${_BAD} unused egress approval(s) from the previous turn could NOT be withdrawn and may still be usable."
+    _announce "${_BAD} unused egress approval(s) from the previous turn could NOT be withdrawn and may still be usable.${_CLASSIFY_NOTE}"
+elif [ -n "${_CLASSIFY_NOTE}" ] && [ "${_OK}" != "0" ]; then
+    _announce "${_OK} unused egress approval(s) were withdrawn${_CLASSIFY_NOTE}."
 fi
 exit 0
