@@ -18,6 +18,10 @@
 #       hook routes as before and the turn hook still withdraws
 #   N9  an "unclassifiable" prompt is routed by the hook itself
 #   N10 a notification without transcript_path is still not routed
+#   N11 several JSON values: the kind describes the joined prompt text, which is unchanged
+#   N12 a value that raises an error is skipped, as jq's CLI did
+#   N13 a failing LAST value still routes nothing
+#   N14 an unknown kind counts as "prompt", and a lib cannot replace the fallback
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -199,6 +203,67 @@ OUT10="$("${REAL_JQ}" -n --rawfile p "${NOTE}" '{prompt:$p}' \
   | env HOME="${LAST_HOME}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" SKILL_PROJECT_ROOT="${TEST_TMPDIR}" \
         /bin/bash "${HOOK}" 2>&1)"
 assert_equals "N10: a notification without transcript_path routes nothing (output length)" "0" "${#OUT10}"
+
+# N11-N13: several JSON values on stdin. The hook reads the prompt as everything after the
+# first US of the per-value output lines (one line per value, as jq printed them before
+# this change), and the kind must describe exactly that text. jq's CLI skips a value that
+# raises an error and takes its exit status from the LAST value.
+run_raw() { # run_raw <stdin-file> [env...] : stdout+stderr with a fresh HOME
+    new_home
+    cp "${FULL}" "${LAST_HOME}/.claude/.skill-registry-cache.json"
+    local f="$1"; shift
+    env HOME="${LAST_HOME}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" SKILL_PROJECT_ROOT="${TEST_TMPDIR}" \
+        "$@" /bin/bash "${HOOK}" < "${f}" 2>&1
+}
+NOTE_OBJ="$("${REAL_JQ}" -nc --rawfile p "${NOTE}" '{prompt:$p}')"
+MV1="${TEST_TMPDIR}/mv1.json"
+{ printf '%s\n' '{"prompt":"brainstorm a new onboarding flow","transcript_path":"/x/a1.jsonl"}'; printf '%s\n' "${NOTE_OBJ}"; } > "${MV1}"
+OUT11="$(run_raw "${MV1}" SKILL_EXPLAIN=1)"
+assert_contains "N11: a prompt followed by a notification value is routed (kind of the joined text)" \
+    "SKILL ACTIVATION" "${OUT11}"
+US_X="$(printf '\n\037x')"
+MV2="${TEST_TMPDIR}/mv2.json"
+printf '%s\n%s\n' '{"prompt":"brainstorm a new onboarding flow","transcript_path":"/x/a2.jsonl"}' '{"prompt":"x"}' > "${MV2}"
+OUT11B="$(run_raw "${MV2}" SKILL_EXPLAIN=1)"
+assert_contains "N11: a second value adds exactly its transcript, US and prompt to the prompt text" \
+    "brainstorm a new onboarding flow${US_X}" "${OUT11B}"
+MV3="${TEST_TMPDIR}/mv3.json"
+{ printf '%s\n' 'false'; printf '%s\n' "${NOTE_OBJ}"; } > "${MV3}"
+OUT12="$(run_raw "${MV3}")"
+assert_equals "N12: a value that errors is skipped; a notification after it routes nothing (output length)" \
+    "0" "${#OUT12}"
+MV4="${TEST_TMPDIR}/mv4.json"
+printf '%s\n%s\n' 'false' '{"prompt":"brainstorm a new onboarding flow","transcript_path":"/x/a4.jsonl"}' > "${MV4}"
+OUT12B="$(run_raw "${MV4}")"
+assert_contains "N12: a value that errors is skipped; a prompt after it is routed" "SKILL ACTIVATION" "${OUT12B}"
+MV5="${TEST_TMPDIR}/mv5.json"
+printf '%s\n%s\n' '{"prompt":"brainstorm a new onboarding flow","transcript_path":"/x/a5.jsonl"}' 'false' > "${MV5}"
+OUT13="$(run_raw "${MV5}")"
+assert_equals "N13: when the LAST value errors, nothing is routed (as before)" "0" "${#OUT13}"
+
+# N14: a lib whose kind is not one of the three values (here one containing US, which would
+# shift the field split) is treated as "prompt"; and a broken lib that also assigns the
+# fallback variable cannot replace the fallback, which is set after sourcing.
+BSL="$(printf '%s' '\')"
+printf "TASK_NOTIFICATION_JQ_DEF='def notification_kind: \"pro%su001fmpt\";'\n" "${BSL}" > "${TEST_TMPDIR}/uskind.sh"
+USROOT="${TEST_TMPDIR}/uskind-root"
+mkroot "${USROOT}" "${TEST_TMPDIR}/uskind.sh"
+new_home; OUT14="$(run_hook "${PLAIN}" CLAUDE_PLUGIN_ROOT="${USROOT}")"
+assert_contains "N14: an unknown kind (containing US) still routes the prompt" "SKILL ACTIVATION" "${OUT14}"
+assert_equals "N14: an unknown kind still withdraws in the turn hook" "revoked" "$(turn_run "${USROOT}" "${PLAIN}")"
+printf "TASK_NOTIFICATION_JQ_DEF='def notification_kind: \"prompt\", \"prompt\";'\n" > "${TEST_TMPDIR}/twokinds.sh"
+TWOROOT="${TEST_TMPDIR}/twokinds-root"
+mkroot "${TWOROOT}" "${TEST_TMPDIR}/twokinds.sh"
+new_home; OUT14C="$(run_hook "${PLAIN}" CLAUDE_PLUGIN_ROOT="${TWOROOT}" SKILL_EXPLAIN=1 | grep -A2 'Prompt:')"
+new_home; OUT14R="$(run_hook "${PLAIN}" SKILL_EXPLAIN=1 | grep -A2 'Prompt:')"
+assert_not_empty "N14 setup: the trace reports the prompt" "${OUT14R}"
+assert_equals "N14: a lib yielding two kinds sees the same prompt text as the real lib" "${OUT14R}" "${OUT14C}"
+{ printf "TASK_NOTIFICATION_JQ_DEF='def notification_kind: ;'\n"; printf "_TN_FALLBACK_DEF='def notification_kind: ;'\n"; } > "${TEST_TMPDIR}/override.sh"
+OVROOT="${TEST_TMPDIR}/override-root"
+mkroot "${OVROOT}" "${TEST_TMPDIR}/override.sh"
+new_home; OUT14B="$(run_hook "${PLAIN}" CLAUDE_PLUGIN_ROOT="${OVROOT}")"
+assert_contains "N14: a lib cannot replace the fallback definition (activation routes)" "SKILL ACTIVATION" "${OUT14B}"
+assert_equals "N14: a lib cannot replace the fallback definition (turn withdraws)" "revoked" "$(turn_run "${OVROOT}" "${PLAIN}")"
 
 teardown_test_env
 print_summary

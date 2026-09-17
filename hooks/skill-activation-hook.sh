@@ -27,25 +27,34 @@ fi
 # egress-consent-turn-hook.sh (hooks/lib/task-notification.sh); without it every prompt
 # is routed, as before. A prompt the classifier cannot evaluate is routed too, and so is
 # every prompt when the lib's definition does not compile (the call is retried with the
-# fallback below, so a broken lib can never make this hook drop the user's prompt).
-_TN_FALLBACK_DEF='def notification_kind: "prompt";'
+# fallback below, so a lib whose jq does not compile cannot make this hook drop the
+# user's prompt). The first kind the lib yields is used, and anything other than
+# "notification" or "unclassifiable" counts as "prompt" (a kind containing US or several
+# kinds would otherwise corrupt the field split).
 TASK_NOTIFICATION_JQ_DEF=""
 if [[ -f "${PLUGIN_ROOT}/hooks/lib/task-notification.sh" ]]; then
   # shellcheck source=lib/task-notification.sh
   . "${PLUGIN_ROOT}/hooks/lib/task-notification.sh" 2>/dev/null || TASK_NOTIFICATION_JQ_DEF=""
 fi
+_TN_FALLBACK_DEF='def notification_kind: "prompt";'
 [[ -n "${TASK_NOTIFICATION_JQ_DEF}" ]] || TASK_NOTIFICATION_JQ_DEF="${_TN_FALLBACK_DEF}"
 
 # Capture stdin once; extract the first payload's kind, then transcript_path and prompt,
 # in the SAME single jq fork the prompt already cost (\x1f-joined; the prompt goes last
 # because it may contain anything, and a kind cannot contain \x1f; a transcript_path
-# containing one splits wrongly, as it always has). `-n [inputs]` keeps the output for
-# several JSON values on stdin exactly what the one-line-per-value form produced.
+# containing one splits wrongly, as it always has). Several JSON values on stdin keep
+# their previous meaning: one line per value, a value that raises an error is skipped,
+# the call fails only if the LAST value fails (jq's own exit status), and the kind is
+# computed on exactly the text the hook then uses as the prompt.
 _HOOK_INPUT="$(cat 2>/dev/null)" || _HOOK_INPUT=""
 _fields_extract() {
   printf '%s' "${_HOOK_INPUT}" | jq -nr "$1"' [inputs] as $all
-    | ((($all[0] // {}) | (.prompt // "") | tostring | notification_kind) + "\u001f"
-       + ($all | map([.transcript_path // "", .prompt // ""] | join("\u001f")) | join("\n")))' 2>/dev/null
+    | [$all[] | try ([.transcript_path // "", .prompt // ""] | join("\u001f")) catch null] as $lines
+    | if ($lines | length) > 0 and $lines[-1] == null then error("last value failed") else . end
+    | ([$lines[] | select(. != null)] | join("\n")) as $joined
+    | ($joined | split("\u001f") | .[1:] | join("\u001f")
+       | ([first(notification_kind)][0] | if . == "notification" or . == "unclassifiable" then . else "prompt" end)) as $kind
+    | $kind + "\u001f" + $joined' 2>/dev/null
 }
 _FIELDS="$(_fields_extract "${TASK_NOTIFICATION_JQ_DEF}")" || _FIELDS=""
 if [[ -z "${_FIELDS}" && -n "${_HOOK_INPUT}" && "${TASK_NOTIFICATION_JQ_DEF}" != "${_TN_FALLBACK_DEF}" ]]; then

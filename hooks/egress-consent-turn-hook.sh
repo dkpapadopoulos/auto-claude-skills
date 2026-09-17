@@ -51,11 +51,12 @@ fi
 # boundary revoked a genuine approval mid-flow. The classifier and its documented edge
 # cases live in hooks/lib/task-notification.sh, shared with the activation hook.
 # Without that lib, or when its definition does not compile, every prompt counts as the
-# user: withdrawing is the safe direction.
-_TN_FALLBACK_DEF='def notification_kind: "prompt";'
+# user: withdrawing is the safe direction. Any other kind, or output that breaks the
+# sentinel below, also ends up withdrawing.
 TASK_NOTIFICATION_JQ_DEF=""
 # shellcheck source=/dev/null
 . "${_PLUGIN_ROOT}/hooks/lib/task-notification.sh" 2>/dev/null || TASK_NOTIFICATION_JQ_DEF=""
+_TN_FALLBACK_DEF='def notification_kind: "prompt";'
 [ -n "${TASK_NOTIFICATION_JQ_DEF}" ] || TASK_NOTIFICATION_JQ_DEF="${_TN_FALLBACK_DEF}"
 # The trailing "end" field is a sentinel: a newline inside transcript_path cuts the read
 # short, and acting on the truncated path would silently resolve the wrong conversation.
