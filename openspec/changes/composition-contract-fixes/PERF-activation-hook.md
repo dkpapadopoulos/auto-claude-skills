@@ -131,14 +131,17 @@ unchanged.
   and after, with paths and timestamps masked. They are byte-identical across:
   - 633 prompts (fixtures, the negative corpus, all consultation rounds) on two registries;
   - 81 prompts on each of nine edge-case registries;
-  - fourteen targeted registries built from the review findings below.
+  - fourteen targeted registries built from the review findings below;
+  - a reviewer's own 42 registries x 5 prompts (210 runs), at the second-round commit.
 
   My own comparison found one difference, a concatenated two-document cache.
-  Two rounds of independent review (Codex and a Claude reviewer) then found four more,
+  Three rounds of independent review (Codex and a Claude reviewer) then found five more,
   each reproduced with a pair of runs:
-  - **Document isolation.** A non-object document before the real registry hid it.
-    jq's CLI reports a runtime error and continues with the next document, so each
-    old call isolated documents. Fixed with a `try` per document.
+  - **Document isolation.** A cache holding two documents lost the second whenever the
+    first raised an error: a non-object first document, or a malformed entry inside
+    it (for example a numeric skill name). jq's CLI reports a runtime error and
+    continues with the next document, so each old call isolated documents. Fixed with
+    a `try` per document, per section.
   - **RS in a value.** An escaped RS inside a string shifted the sections. The single
     call now reports `REGISTRY-HAS-RS`, and the hook runs the same filters as separate
     calls.
@@ -147,7 +150,14 @@ unchanged.
   - **NUL in a phase key** (second round). Bash drops NUL from the captured output, so
     `IMPLEMENT<NUL>` read as `IMPLEMENT`. NUL-bearing keys are skipped too. The check
     uses `explode`, because jq 1.6's `contains` stops at NUL and would match every key.
+  - **NUL before an RS** (third round, from jq 1.6's source; not reproducible on the jq
+    1.7/1.8 installed here). jq 1.6's `contains` would miss an RS that follows a NUL,
+    so the RS detector uses `index`, which is length-aware since jq 1.5. `explode`
+    measured about 10 ms per check on a real registry and `index` about 0.1 ms; `test`
+    is avoided because jq builds without the regex library raise on it.
 
-  Each section filter is now defined once and shared by both paths. Fifteen deliberate
-  breakages (including one re-introducing each defect above) are each caught by
-  `tests/test-activation-registry-extract.sh`.
+  Each section filter is now defined once and shared by both paths. Of 23 deliberate
+  breakages (including at least one re-introducing each defect above, section by
+  section), 22 are caught by `tests/test-activation-registry-extract.sh`. The survivor
+  swaps `index` back to `contains`, which only jq 1.6 can tell apart; its cell is kept
+  for machines that run jq 1.6.

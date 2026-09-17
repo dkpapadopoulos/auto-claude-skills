@@ -204,6 +204,9 @@ for _lead in '[]' '"bad"' 'null' '42'; do
         "zz-doc2-hint" "${OUT6}"
     assert_contains "C6: after a leading ${_lead} document, compositions still render" \
         "zz-doc2-comp" "${OUT6}"
+    OUT6R="$(run_hook "${CAT}" "review the PR diff for bugs")"
+    assert_contains "C6: after a leading ${_lead} document, required_when still renders" \
+        "INVOKE WHEN:" "${OUT6R}"
 done
 
 # ---------------------------------------------------------------------------
@@ -232,6 +235,45 @@ OUT7B="$(run_hook "${RSKEY}" "review the PR diff for bugs")"
 assert_contains "C7: an RS-bearing phase key placed first does not cost REVIEW" \
     "zz-after-rs-key" "${OUT7B}"
 assert_not_contains "C7: the RS-bearing phase is not rendered" "zzrskey" "${OUT7B}"
+
+# RS in the skills section (an invoke string) and in the hints section (a methodology
+# hint) must trigger the fallback too, not only RS in compositions.
+BSL="$(printf '%s' '\')"
+RSSKILL="${TEST_TMPDIR}/rs-skill.json"
+"${REAL_JQ}" '([30] | implode) as $rs
+  | .skills |= map(if .name == "zz-marker-skill"
+                   then .invoke = ("Skill(test:zz-rs" + $rs + "marker)") else . end)' \
+    "${FULL}" > "${RSSKILL}"
+OUT7C="$(run_hook "${RSSKILL}" "debug the flaky login test zzmarker")"
+assert_contains "C7: an invoke containing RS is rendered whole" \
+    "zz-rs${BSL}u001emarker)" "${OUT7C}"
+assert_contains "C7: RS in the skills section does not cost the process skill" \
+    "Skill(superpowers:systematic-debugging)" "${OUT7C}"
+OUT7CR="$(run_hook "${RSSKILL}" "review the PR diff for bugs")"
+assert_contains "C7: on the RS fallback path, required_when still renders" \
+    "INVOKE WHEN:" "${OUT7CR}"
+assert_contains "C7: on the RS fallback path, compositions still render" \
+    "PARALLEL:" "${OUT7CR}"
+
+RSHINT="${TEST_TMPDIR}/rs-hint.json"
+"${REAL_JQ}" '([30] | implode) as $rs
+  | .methodology_hints = ((.methodology_hints // []) + [{hint: ("zz-hint" + $rs + "tail"), triggers: ["zzmarker"]}])' \
+    "${FULL}" > "${RSHINT}"
+OUT7D="$(run_hook "${RSHINT}" "debug the flaky login test zzmarker")"
+assert_contains "C7: a methodology hint containing RS is rendered whole" \
+    "zz-hint${BSL}u001etail" "${OUT7D}"
+assert_contains "C7: RS in the hints section does not cost the skills" \
+    "Skill(test:zz-marker-skill)" "${OUT7D}"
+
+# A NUL before the RS: jq 1.6's `contains` stops at NUL and would miss the RS. This
+# cell can only fail on such a jq; on jq >= 1.7 it passes with either detector.
+RSNUL="${TEST_TMPDIR}/rs-nul.json"
+"${REAL_JQ}" '([30] | implode) as $rs | ([0] | implode) as $nul
+  | .phase_compositions.REVIEW.hints = ((.phase_compositions.REVIEW.hints // [])
+        + [{text: ("zznul" + $nul + $rs + "zzafter")}, {text: "zz-later-hint"}])' \
+    "${FULL}" > "${RSNUL}"
+OUT7E="$(run_hook "${RSNUL}" "review the PR diff for bugs")"
+assert_contains "C7: a hint after NUL+RS text still renders" "zz-later-hint" "${OUT7E}"
 
 # ---------------------------------------------------------------------------
 # C8: a phase key containing a newline, a US or a NUL cannot forge another phase's
@@ -274,6 +316,20 @@ TRACE10="$("${REAL_JQ}" -nc --arg p "debug the flaky login test zzmarker" --arg 
   | env HOME="${H10}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" SKILL_PROJECT_ROOT="${TEST_TMPDIR}" \
         SKILL_EXPLAIN=1 /bin/bash "${HOOK}" 2>&1 >/dev/null)"
 assert_contains "C10: the trace scores the marker skill" "zz-marker-skill: trigger=(zzmarker)" "${TRACE10}"
+assert_contains "C10: the trace reports the selection result" "Result: " "${TRACE10}"
+assert_contains "C10: the trace lists the hint and composition phase" "phase=DEBUG" "${TRACE10}"
+
+# The composition state the hook writes for a chain-starting prompt still names the chain.
+H10B="$(mktemp -d "${TEST_TMPDIR}/run.XXXXXX")"
+mkdir -p "${H10B}/.claude"
+cp "${FULL}" "${H10B}/.claude/.skill-registry-cache.json"
+"${REAL_JQ}" -nc --arg p "review the PR diff for bugs" --arg t "${H10B}/.claude/a.jsonl" \
+    '{prompt:$p,transcript_path:$t}' \
+  | env HOME="${H10B}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" SKILL_PROJECT_ROOT="${TEST_TMPDIR}" \
+        /bin/bash "${HOOK}" >/dev/null 2>&1
+STATE10="$(cat "${H10B}"/.claude/.skill-composition-state-* 2>/dev/null)"
+assert_contains "C10: composition state is written with the chain" \
+    "requesting-code-review" "${STATE10}"
 
 teardown_test_env
 print_summary

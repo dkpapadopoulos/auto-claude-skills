@@ -267,6 +267,10 @@ _REG_F_COMP_ONE="${_REG_F_AVAIL}"' .phase_compositions[$ph] // empty | '"${_REG_
 #             `contains("<NUL>")` true for every key.
 # If any extracted text contains RS, the sections would shift, so the call prints
 # REGISTRY-HAS-RS instead and the hook runs the filters separately, as it did before.
+# The detector uses `index`, which is length-aware since jq 1.5: jq 1.6's `contains`
+# stops at NUL, so a NUL before the RS would hide it, and `explode` measured ~10ms
+# per check on a real registry (index: ~0.1ms). `test` is avoided because jq builds
+# without the regex library raise on it, which would read as an invalid registry.
 _REG_PROGRAM='
   [inputs] as $all |
   [$all[] | try ('"${_REG_F_SKILLS}"') catch empty | . + "\n"] as $s |
@@ -279,7 +283,7 @@ _REG_PROGRAM='
       (try ($e.value // empty | '"${_REG_F_COMP_BODY}"') catch empty) |
       $pfx + (split("\n") | join("\n" + $pfx)) + "\n"
     ) catch empty] as $c |
-  if any(($s + $h + $r + $c)[]; contains("\u001e")) then "REGISTRY-HAS-RS"
+  if any(($s + $h + $r + $c)[]; index("\u001e") != null) then "REGISTRY-HAS-RS"
   else "\u001e", $s[], "\u001e", $h[], "\u001e", $r[], "\u001e", $c[]
   end
 '
