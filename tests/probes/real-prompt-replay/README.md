@@ -61,7 +61,7 @@ wrappers (notifications, resumed-session summaries, injected skill text).
 - Transcripts on disk cover only about four weeks. On 2026-09-17 the earliest was 2026-08-20.
 - `replay.sh` measures trigger matches, not selection. It lowercases like the hook (`tr`) and matches like the hook (bash `=~`). It also drops a match that sits inside a word, as the hook does. It does not apply the hook's early exits or scoring, and it does not model the hook selecting a skill by its name alone.
 - `routed.py` reflects whichever plugin version was installed at the time. The hook output does not say which trigger fired. Replaying the routed prompts attributes them to triggers only for the triggers in this checkout.
-- Install evidence comes only from a skill the harness loaded from a version (a meta entry with no prompt source) and from the session-start hook's own output, never from a path in a prompt or in other hook output. Sessions started before an update keep showing the old version, so use the date a version was **first** seen.
+- Install evidence comes only from a skill the harness loaded from a version (a meta entry with no prompt source and no origin, the version taken from its first line) and from the session-start hook's own output, never from a path in a prompt or in other hook output. Sessions started before an update keep showing the old version, so use the date a version was **first** seen.
 
 ## Result, 2026-09-17: `panel`
 

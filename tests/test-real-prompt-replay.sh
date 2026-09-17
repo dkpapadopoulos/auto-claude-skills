@@ -59,6 +59,8 @@ BOTH="ask codex and gemini the same question and show me both raw answers"
     u "2026-09-17T10:01:00Z" "${BOTH}" 'promptSource:"sdk",entrypoint:"sdk-py"'
     u "2026-09-17T10:01:30Z" "${BOTH}" "${HUMAN}"
     u "2026-09-17T10:01:40Z" "pipeline: run the nightly checks" 'promptSource:"sdk",entrypoint:"sdk-cli"'
+    u "2026-09-17T10:01:45Z" "a script that only says so in promptSource" 'promptSource:"sdk",entrypoint:"cli"'
+    u "2026-09-17T10:01:50Z" "a script that only says so in the entrypoint" 'entrypoint:"sdk-py"'
     jq -nc '{type:"user",timestamp:"2026-09-17T10:02:00Z",origin:{kind:"human"},message:{role:"user",content:[{type:"tool_result",tool_use_id:"t1",content:"x"},{type:"text",text:"tool output: give me both of them raw answers"}]}}'
     jq -nc '{type:"user",timestamp:"2026-09-17T10:03:00Z",origin:{kind:"human"},message:{role:"user",content:[{type:"text",text:null},{type:"text",text:"fix the login bug in the auth service"}]}}'
     jq -nc '{type:"user",timestamp:"2026-09-17T10:03:10Z",message:null}'
@@ -101,12 +103,16 @@ mkdir -p "${OUT}"
 # E1: extraction keeps prompts once each, labelled by provenance.
 EX_LOG="$(python3 "${EXTRACT}" --projects "${PROJ}" --out "${OUT}/prompts.jsonl" 2>&1)"
 assert_equals "E1: extraction succeeds" "0" "$?"
-has_line "E1: 18 distinct prompts" "prompts 18" "${EX_LOG}"
+has_line "E1: 20 distinct prompts" "prompts 20" "${EX_LOG}"
 has_line "E1: 12 labelled human (typed, queued, from any project)" "source human: 12" "${EX_LOG}"
 has_line "E1: the peer messages are labelled peer" "source peer: 2" "${EX_LOG}"
-has_line "E1: the pipeline prompt is labelled sdk" "source sdk: 1" "${EX_LOG}"
+has_line "E1: the pipeline prompts are labelled sdk" "source sdk: 3" "${EX_LOG}"
+assert_equals "E1: promptSource alone marks a script" "sdk" \
+    "$(source_of_prompt "${OUT}/prompts.jsonl" "a script that only says so in promptSource")"
+assert_equals "E1: an sdk entrypoint alone marks a script" "sdk" \
+    "$(source_of_prompt "${OUT}/prompts.jsonl" "a script that only says so in the entrypoint")"
 has_line "E1: the prompts without provenance are unlabelled, not human" "source unlabelled: 3" "${EX_LOG}"
-assert_equals "E1: the file matches the count" "18" "$(wc -l < "${OUT}/prompts.jsonl" | tr -d ' ')"
+assert_equals "E1: the file matches the count" "20" "$(wc -l < "${OUT}/prompts.jsonl" | tr -d ' ')"
 assert_equals "E1: a prompt seen from sdk then a person keeps the human label" "human" \
     "$(source_of_prompt "${OUT}/prompts.jsonl" "ask codex and gemini")"
 assert_equals "E1: the queued prompt is read, labelled human" "human" \
@@ -135,14 +141,14 @@ done
 for _i in $(seq 1 2000); do printf 'stale\n'; done > "${OUT}/reuse.jsonl"
 chmod 644 "${OUT}/reuse.jsonl"
 python3 "${EXTRACT}" --projects "${PROJ}" --out "${OUT}/reuse.jsonl" >/dev/null 2>&1
-assert_equals "E3: a reused output holds only this run's records" "18" "$(wc -l < "${OUT}/reuse.jsonl" | tr -d ' ')"
+assert_equals "E3: a reused output holds only this run's records" "20" "$(wc -l < "${OUT}/reuse.jsonl" | tr -d ' ')"
 assert_equals "E3: ... and no stale line" "0" "$(grep -c '^stale$' "${OUT}/reuse.jsonl")"
 assert_equals "E3: ... and is mode 0600" "0o600" "$(mode_of "${OUT}/reuse.jsonl")"
 assert_equals "E3: a new output is mode 0600" "0o600" "$(mode_of "${OUT}/prompts.jsonl")"
 
 # E2: --since filters by the prompt's date and rejects a bad date without writing.
 EX2="$(python3 "${EXTRACT}" --projects "${PROJ}" --since 2026-09-01 --out "${OUT}/since.jsonl" 2>&1)"
-has_line "E2: --since drops the older prompt and keeps the boundary day" "prompts 17" "${EX2}"
+has_line "E2: --since drops the older prompt and keeps the boundary day" "prompts 19" "${EX2}"
 python3 "${EXTRACT}" --projects "${PROJ}" --since 2026-13-45 --out "${OUT}/bad-since.jsonl" >/dev/null 2>&1
 assert_equals "E2: a malformed --since exits 2" "2" "$?"
 no_file "E2: ... and writes nothing" "${OUT}/bad-since.jsonl"
@@ -389,7 +395,7 @@ no_file "G: routed.py leaves no bytecode cache in the repository" "${PROBE}/__py
 # R1: replay matches like the hook.
 RP_LOG="$(bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${OUT}/replay" < /dev/null 2>&1)"
 assert_equals "R1: replay succeeds" "0" "$?"
-has_line "R1: every record is read once (NUL and US do not split records)" "prompts 18" "${RP_LOG}"
+has_line "R1: every record is read once (NUL and US do not split records)" "prompts 20" "${RP_LOG}"
 has_line "R1: sources are counted" "source human: 12" "${RP_LOG}"
 has_line "R1: ... including the labelled non-human ones" "source peer: 2" "${RP_LOG}"
 has_line "R1: trigger 0 keeps scanning past an in-word hit, and discards prompts with only in-word hits ('.' counts as a word character)" \
@@ -467,6 +473,9 @@ ACT="SKILL ACTIVATION (1 skills | IMPLEMENT)"
     uu q18 "" "2026-09-21T08:08:00Z" "Base directory for this skill: /x/cache/acsm/auto-claude-skills/9.9.4/skills/panel" 'isMeta:true,promptSource:"typed"'
     uu q19 "" "2026-09-21T08:09:00Z" "Base directory for this skill: /x/cache/acsm/auto-claude-skills/9.9.3/skills/panel" 'entrypoint:"cli"'
     uu q20 "" "2026-09-21T08:10:00Z" "see this: Base directory for this skill: /x/cache/acsm/auto-claude-skills/9.9.2/skills/panel" "isMeta:true"
+    uu q21 "" "2026-09-21T08:11:00Z" "Base directory for this skill: /x/cache/acsm/auto-claude-skills/9.9.1/skills/panel" 'isMeta:true,origin:{kind:"human"}'
+    uu q22 "" "2026-09-22T08:12:00Z" $'Base directory for this skill: /x/cache/acsm/auto-claude-skills/3.89.5/skills/panel\nsee also /x/cache/acsm/auto-claude-skills/9.9.0/skills/other' "isMeta:true"
+    uu q23 "" "2026-09-22T08:13:00Z" $'Base directory for this skill: /x/plugins/local/panel\nsee also /x/cache/acsm/auto-claude-skills/9.8.9/skills/other' "isMeta:true"
     jq -nc '{type:"assistant",uuid:"q17",timestamp:"2026-09-21T08:07:00Z",isMeta:true,message:{role:"assistant",content:"Base directory for this skill: /x/cache/acsm/auto-claude-skills/9.9.5/skills/panel"}}'
     uu u10 a7 "2026-09-18T09:12:00Z" "prompt ten" "${HUMAN}"
     uu u11 u10 "2026-09-18T09:12:30Z" "prompt eleven" "${HUMAN}"
@@ -489,8 +498,9 @@ has_line "L1: two notifications, the queued one included" "source not-a-prompt:t
 has_line "L1: each plugin version's first and last date" "plugin auto-claude-skills 3.87.1: 2026-09-18 .. 2026-09-18" "${LV_LOG}"
 has_line "L1: ... across out-of-order entries" "plugin auto-claude-skills 3.89.3: 2026-09-19 .. 2026-09-20" "${LV_LOG}"
 has_line "L1: the SessionStart hook output is install evidence" "plugin auto-claude-skills 3.89.4: 2026-09-21 .. 2026-09-21" "${LV_LOG}"
+has_line "L1: only the first line of a skill load names the version" "plugin auto-claude-skills 3.89.5: 2026-09-22 .. 2026-09-22" "${LV_LOG}"
 assert_equals "L1: a version path quoted in a prompt or other context is not evidence of an install" "0" \
-    "$(printf '%s\n' "${LV_LOG}" | grep -c -e '9\.9\.9' -e '9\.9\.8' -e '9\.9\.7' -e '9\.9\.6' -e '9\.9\.5' -e '9\.9\.4' -e '9\.9\.3' -e '9\.9\.2')"
+    "$(printf '%s\n' "${LV_LOG}" | grep -c -e '9\.9\.9' -e '9\.9\.8' -e '9\.9\.7' -e '9\.9\.6' -e '9\.9\.5' -e '9\.9\.4' -e '9\.9\.3' -e '9\.9\.2' -e '9\.9\.1' -e '9\.9\.0' -e '9\.8\.9')"
 assert_equals "L1: the multi-hop prompt is listed" "1" "$(grep -c '"prompt thirteen"' "${OUT}/routed.jsonl")"
 assert_equals "L1: the prompt a routing answered is listed (parentUuid, not file order)" "1" \
     "$(grep -c '"prompt ten"' "${OUT}/routed.jsonl")"

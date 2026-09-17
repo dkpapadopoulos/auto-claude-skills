@@ -176,12 +176,6 @@ def prompt_of(entry):
     return None
 
 
-def prompt_text(entry):
-    """The prompt text of an entry, whatever its source (None when it carries none)."""
-    got = prompt_of(entry)
-    return got[0] if got else None
-
-
 def valid_since(value):
     if value:
         try:
