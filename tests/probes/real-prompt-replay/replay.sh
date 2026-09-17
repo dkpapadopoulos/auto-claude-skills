@@ -35,9 +35,20 @@ _repo_holding() {
         -u GIT_DISCOVERY_ACROSS_FILESYSTEM LC_ALL=C git -C "$1" rev-parse --absolute-git-dir 2>&1)"
     _rc=$?
     if [ "${_rc}" -eq 0 ]; then printf '%s' "${_out}"; return 0; fi
-    # Only the full-search form means "no repository". A broken .git file or a filesystem
-    # boundary also say "not a git repository", but they stop the search early.
-    case "${_out}" in *"not a git repository (or any of the parent directories)"*) return 1 ;; esac
+    # Git stops at a mount point unless told otherwise, and says so. That answers nothing
+    # about the parents above it (on Linux /tmp is often its own filesystem), so retry.
+    case "${_out}" in
+        "fatal: not a git repository (or any parent up to mount point"*)
+            _out="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_CEILING_DIRECTORIES \
+                GIT_DISCOVERY_ACROSS_FILESYSTEM=1 LC_ALL=C git -C "$1" rev-parse --absolute-git-dir 2>&1)"
+            _rc=$?
+            if [ "${_rc}" -eq 0 ]; then printf '%s' "${_out}"; return 0; fi
+            ;;
+    esac
+    # Only the full-search form means "no repository", and only at the START of the
+    # message: a broken .git file or a filesystem boundary also say "not a git repository"
+    # while stopping the search early, and the same words can appear inside a printed path.
+    case "${_out}" in "fatal: not a git repository (or any of the parent directories)"*) return 1 ;; esac
     local _nl=$'\n'
     printf 'git could not tell: %s' "${_out##*${_nl}}"
     return 2

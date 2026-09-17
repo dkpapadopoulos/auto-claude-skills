@@ -26,6 +26,7 @@ import glob
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 
@@ -34,10 +35,20 @@ SKIP_PREFIX = (
     "<command-", "<local-command", "[Request interrupted", "<system-reminder>",
     "<bash-", "<user-prompt-submit-hook>",
 )
-RANK = {"human": 0, "unlabelled": 1, "sdk": 2}
+# Which label wins when the same text is seen from several sources: the most human one.
+# Any other origin.kind (peer, task-notification, ...) sits between, via RANK_OTHER.
+RANK = {"human": 0, "unlabelled": 1, "sdk": 3}
+RANK_OTHER = 2
 
 
-NOT_A_REPO = "not a git repository (or any of the parent directories)"
+# Git prints this when it searched every parent and found no repository. It must be the
+# START of the message: the same words inside a path ("fatal: not a git repository:
+# /x/not a git repository (or any of the parent directories)") report a DIFFERENT failure.
+NOT_A_REPO = "fatal: not a git repository (or any of the parent directories)"
+# Git stops at a mount point unless told otherwise, and says so. That is not an answer about
+# the parents above the mount (on Linux /tmp is often its own filesystem), so it is retried
+# across filesystems; only the full-search answer counts.
+AT_BOUNDARY = "fatal: not a git repository (or any parent up to mount point"
 GIT_ENV_DROP = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_CEILING_DIRECTORIES",
                 "GIT_DISCOVERY_ACROSS_FILESYSTEM")
 
@@ -59,16 +70,30 @@ def repo_holding(path):
         probe = parent
     env = {k: v for k, v in os.environ.items() if k not in GIT_ENV_DROP}
     env["LC_ALL"] = "C"
-    try:
-        res = subprocess.run(["git", "-C", probe, "rev-parse", "--absolute-git-dir"],
-                             capture_output=True, text=True, timeout=10, env=env)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return None, f"git is unavailable ({exc.__class__.__name__})"
+    res = _git_rev_parse(probe, env)
+    if isinstance(res, str):
+        return None, res
     if res.returncode == 0:
         return res.stdout.strip() or probe, None
-    if NOT_A_REPO in res.stderr:
+    if res.stderr.startswith(AT_BOUNDARY):
+        env["GIT_DISCOVERY_ACROSS_FILESYSTEM"] = "1"
+        res = _git_rev_parse(probe, env)
+        if isinstance(res, str):
+            return None, res
+        if res.returncode == 0:
+            return res.stdout.strip() or probe, None
+    if res.stderr.startswith(NOT_A_REPO):
         return None, None
     return None, "git could not tell: " + (res.stderr.strip().splitlines() or ["no output"])[-1]
+
+
+def _git_rev_parse(probe, env):
+    """The completed `git rev-parse --absolute-git-dir` run, or a reason string."""
+    try:
+        return subprocess.run(["git", "-C", probe, "rev-parse", "--absolute-git-dir"],
+                              capture_output=True, text=True, timeout=10, env=env)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"git is unavailable ({exc.__class__.__name__})"
 
 
 def refuse_repo_path(path):
@@ -86,14 +111,19 @@ def refuse_repo_path(path):
 
 def open_private(path):
     """Open `path` for writing as mode 0600 (an existing file is reset to 0600 and
-    truncated), refusing a symlink or a hard link as the file.
+    truncated), refusing a symlink, a hard link, or anything but a regular file.
 
     Parent directories can still be swapped between the check and the open: the guard
     protects against mistakes, not against a concurrent attacker on your own machine."""
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
-    if os.fstat(fd).st_nlink > 1:
+    # O_NONBLOCK so a FIFO cannot hang the open; it is a no-op for a regular file.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+    info = os.fstat(fd)
+    if info.st_nlink > 1:
         os.close(fd)
         raise OSError(f"refusing to write through a hard link: {path}")
+    if not stat.S_ISREG(info.st_mode):
+        os.close(fd)
+        raise OSError(f"refusing to write to something other than a regular file: {path}")
     os.fchmod(fd, 0o600)
     os.ftruncate(fd, 0)
     return os.fdopen(fd, "w", encoding="utf-8")
@@ -198,7 +228,7 @@ def main():
             prev = found.get(text)
             if prev is None:
                 order.append(text)
-            elif RANK.get(prev["source"], 3) <= RANK.get(source, 3):
+            elif RANK.get(prev["source"], RANK_OTHER) <= RANK.get(source, RANK_OTHER):
                 continue
             found[text] = {"project": project, "ts": ts, "source": source, "prompt": text}
 

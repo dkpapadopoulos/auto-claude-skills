@@ -92,7 +92,10 @@ def install_version(entry, version_re):
             content = "\n".join(c for c in content if isinstance(c, str))
         found = version_re.search(content) if isinstance(content, str) else None
         return found.group(1) if found else None
-    if entry.get("type") != "user":
+    # A skill load is a meta entry the harness writes: no prompt source, no origin. A person
+    # typing the same words carries provenance, so it cannot forge install evidence.
+    if entry.get("type") != "user" or not entry.get("isMeta") \
+            or entry.get("promptSource") or entry.get("origin"):
         return None
     msg = entry.get("message")
     text = text_of(msg.get("content") if isinstance(msg, dict) else msg)

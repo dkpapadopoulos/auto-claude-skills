@@ -12,8 +12,8 @@ It is a **probe, not a suite test**. Its scripts are tested by
 The outputs contain your own prompt text. **Every script refuses to write inside any git
 repository** (exit 2): a work tree or a `.git` directory, reached directly or through a
 symlink, `..`, a case-changed path or a hard link. A script also refuses when git is missing
-or cannot confirm that no parent directory is a repository. Output files are written with
-mode 0600, including when an existing file is replaced. Point the outputs at a temporary
+or cannot confirm that no parent directory is a repository, and it writes only to a regular
+file. Output files are written with mode 0600, including when an existing file is replaced. Point the outputs at a temporary
 directory, and never commit or publish the results. Report counts and classifications, not
 prompts.
 
@@ -49,6 +49,9 @@ its wording:
 | `peer`, `task-notification`, … | Any other `origin.kind`. |
 | `unlabelled` | No provenance fields, for example teammate relays. These are not assumed human. |
 
+When the same text arrives from several sources, the most human label wins: `human`, then
+`unlabelled`, then a labelled non-human kind, then `sdk`.
+
 Only `human` counts as "a person typed this".
 
 **Excluded:** tool results, subagent transcripts, meta and sidechain entries, and known
@@ -58,7 +61,7 @@ wrappers (notifications, resumed-session summaries, injected skill text).
 - Transcripts on disk cover only about four weeks. On 2026-09-17 the earliest was 2026-08-20.
 - `replay.sh` measures trigger matches, not selection. It lowercases like the hook (`tr`) and matches like the hook (bash `=~`). It also drops a match that sits inside a word, as the hook does. It does not apply the hook's early exits or scoring, and it does not model the hook selecting a skill by its name alone.
 - `routed.py` reflects whichever plugin version was installed at the time. The hook output does not say which trigger fired. Replaying the routed prompts attributes them to triggers only for the triggers in this checkout.
-- Install evidence comes only from skills loaded from a version and from the session-start hook's own output, never from quoted paths. Sessions started before an update keep showing the old version, so use the date a version was **first** seen.
+- Install evidence comes only from a skill the harness loaded from a version (a meta entry with no prompt source) and from the session-start hook's own output, never from a path in a prompt or in other hook output. Sessions started before an update keep showing the old version, so use the date a version was **first** seen.
 
 ## Result, 2026-09-17: `panel`
 
@@ -121,8 +124,7 @@ not change the count.
 
 **4. The one repeat: 2026-11-12.** Run the same commands with `--since 2026-10-16`, so the
 two windows do not overlap. Combine the results with October's:
-- `human` prompts: add the two counts;
-- nuisance prompts: count each distinct text once, checking November's against the October outputs you kept;
+- `human` prompts and nuisance prompts: count each distinct text once across both windows, checking November's against the October outputs you kept;
 - the version condition: already settled in October, unless no qualifying version had appeared by then; in that case it now needs a first date on or before 2026-10-22.
 
 Decide with the table on the combined result. If the combined result is still "not enough
