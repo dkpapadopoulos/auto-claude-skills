@@ -556,12 +556,39 @@ assert_equals "R6: user text before a stray closing tag withdraws -> 4" "4" "${R
 # A nested opening tag inside a block is not a notification shape.
 reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
 approve "${D}" "${PKG}" toolu_r7a
+assert_equals "R7 setup: the approval exists before the prompt" "1" "$(unconsumed)"
 turn "${TP}" "<task-notification>
 <task-notification>
 no, do not send
 </task-notification>"
 dispatch "${P_FULL}" "${SID}" send "${D}"
 assert_equals "R7: a nested opening tag inside a block withdraws -> 4" "4" "${RC}"
+# A nested block opened on the SAME line as the outer one is not a notification either.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_r7b
+assert_equals "R7b setup: the approval exists before the prompt" "1" "$(unconsumed)"
+turn "${TP}" "<task-notification><task-notification>
+no, do not send
+</task-notification>"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "R7b: a same-line nested opening tag withdraws -> 4" "4" "${RC}"
+# A genuine notification that QUOTES the tag mid-line (a command description, an agent
+# result about this very feature) is still a notification.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_r8a
+QUOTED="$(printf '%s\n' "${NOTIF}" | sed 's|<summary>.*</summary>|<summary>Background command "Check <task-notification> parsing" completed (exit code 0)</summary>|')"
+turn "${TP}" "${QUOTED}"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "R8: a notification quoting the opening tag mid-line keeps the approval -> 0" "0" "${RC}"
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_r8b
+turn "${TP}" "<task-notification>
+<task-id>a1</task-id>
+<status>completed</status>
+<result>The fix now rejects a nested <task-notification> opening tag at the start of a line.</result>
+</task-notification>"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "R8: an agent result mentioning the opening tag mid-line keeps the approval -> 0" "0" "${RC}"
 # A newline inside transcript_path is announced, never a silent wrong-token no-op.
 reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
 approve "${D}" "${PKG}" toolu_r5c

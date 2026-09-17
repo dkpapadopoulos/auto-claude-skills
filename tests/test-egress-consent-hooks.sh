@@ -303,24 +303,34 @@ done
 ln -sf "$(command -v jq)" "${NOPERL}/jq"
 [ -e "${NOPERL}/shasum" ] && rm -f "${NOPERL}/shasum" && ln -sf "$(command -v sha256sum 2>/dev/null || echo /nonexistent)" "${NOPERL}/sha256sum"
 # Each run is independent (state reset inside the loop). Without perl the clock has
-# whole-second resolution, so a decline and a re-ask answered in the same second MUST
-# withdraw ("at or after") — asserted unconditionally, so a boundary mutation cannot turn
-# the positive cells off. A run that straddles a second boundary is retried.
-for i in 1 2 3; do
-    tries=0
-    while :; do
-        reset_state
-        s0="$(date +%s)"
-        run_ask "$(pre_payload toolu_np_no$i)" "${NOPERL}" >/dev/null; run_rcpt "$(post_payload toolu_np_no$i "Do not send")" "${NOPERL}" >/dev/null
-        run_ask "$(pre_payload toolu_np_yes$i)" "${NOPERL}" >/dev/null
-        o="$(run_rcpt "$(post_payload toolu_np_yes$i "${L}")" "${NOPERL}")"
-        [ "$(date +%s)" = "${s0}" ] && break
-        tries=$((tries + 1)); [ "${tries}" -ge 5 ] && break
-    done
-    assert_equals "R5: same-second decline then approval is withdrawn without perl (run $i)" "0" "$(rcpt_count)"
-    assert_contains "R5: the withdrawal is announced (run $i)" "was withdrawn" "${o}"
+# whole-second resolution. The run reads the RECORDED times — the decline's veto and the
+# approval's ask — and asserts the branch they call for, so every run asserts something and
+# no load-dependent straddle can fail correct code: ask <= veto (same second) MUST be
+# withdrawn and announced; ask > veto MUST keep the approval. At least one same-second
+# sample is required overall, so the pinned boundary cannot silently go unexercised.
+same_second=0
+for i in $(seq 1 20); do
+    reset_state
+    run_ask "$(pre_payload toolu_np_no$i)" "${NOPERL}" >/dev/null; run_rcpt "$(post_payload toolu_np_no$i "Do not send")" "${NOPERL}" >/dev/null
+    run_ask "$(pre_payload toolu_np_yes$i)" "${NOPERL}" >/dev/null
+    o="$(run_rcpt "$(post_payload toolu_np_yes$i "${L}")" "${NOPERL}")"
+    veto="$(cat "${H}"/.claude/.skill-egress-veto-"${TOK}"."${D}".* 2>/dev/null | sort -n | tail -1)"
+    ask="$(jq -r '.ask_ms' "$(ask_file toolu_np_yes$i).used" 2>/dev/null)"
     assert_not_contains "R5: no false 'while the question was open' claim (run $i)" "while the question was open" "${o}"
+    if [ -n "${veto}" ] && [ -n "${ask}" ] && [ "${ask}" -le "${veto}" ]; then
+        same_second=$((same_second + 1))
+        assert_equals "R5: same-second decline then approval is withdrawn without perl (run $i)" "0" "$(rcpt_count)"
+        assert_contains "R5: the withdrawal is announced (run $i)" "was withdrawn" "${o}"
+    else
+        assert_equals "R5: an approval asked after the decline is kept (run $i, veto=${veto:-none} ask=${ask:-none})" "1" "$(rcpt_count)"
+    fi
+    [ "${same_second}" -ge 3 ] && break
 done
+if [ "${same_second}" -ge 1 ]; then
+    _record_pass "R5: at least one same-second sample exercised the boundary (${same_second})"
+else
+    _record_fail "R5: at least one same-second sample exercised the boundary" "none in 20 runs (a very slow runner?)"
+fi
 
 echo "-- wiring and retirement --"
 HJ="${PROJECT_ROOT}/hooks/hooks.json"

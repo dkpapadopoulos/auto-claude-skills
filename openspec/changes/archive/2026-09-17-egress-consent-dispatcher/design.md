@@ -383,3 +383,16 @@ also pins the same-second "at or after" boundary — a `-le`→`-lt` mutation no
 cells), and a nested opening tag inside a block now counts as the user. Plain text typed
 inside one well-formed block remains an accepted residual.
 
+### Independent review of `cf4c09f` (Claude subagent + Codex, 2026-09-17)
+
+Both reviewers independently found the same two problems, both reproduced:
+- `cf4c09f` rejected EVERY nested opening tag, so a genuine notification that quotes
+  `<task-notification>` mid-line (a command description, an agent result about this very
+  feature) was read as the user and withdrew the approval (safe direction, but plausible).
+  Now only a nested block — an opening tag right after the outer one or at the start of a
+  line — is rejected; quoted mid-line tags are allowed (cells R7, R7b, R8).
+- The R5 loop could fail correct code under load (every retry straddling a second). It now
+  reads the recorded veto and ask times and asserts the branch they call for, requiring at
+  least one same-second sample across up to 20 runs.
+Also from Codex: R7 now asserts its approval existed before the prompt.
+
