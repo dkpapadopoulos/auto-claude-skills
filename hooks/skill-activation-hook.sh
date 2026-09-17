@@ -20,11 +20,26 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-# Capture stdin once; extract transcript_path + prompt in the SAME single jq
-# fork the prompt already cost (\x1f-joined, transcript first — the prompt may
-# contain anything, a path cannot contain \x1f).
+# Background-task notifications arrive as UserPromptSubmit prompts made up entirely of
+# <task-notification> blocks. They are not the user, and their summaries are ordinary
+# words ("Capture a second, path-normalised baseline" routed to second-opinion, observed
+# 2026-09-17), so they are not routed. The classifier is shared with
+# egress-consent-turn-hook.sh (hooks/lib/task-notification.sh); without it every prompt
+# is routed, as before. A prompt the classifier cannot evaluate is routed too.
+TASK_NOTIFICATION_JQ_DEF=""
+if [[ -f "${PLUGIN_ROOT}/hooks/lib/task-notification.sh" ]]; then
+  # shellcheck source=lib/task-notification.sh
+  . "${PLUGIN_ROOT}/hooks/lib/task-notification.sh" 2>/dev/null || TASK_NOTIFICATION_JQ_DEF=""
+fi
+[[ -n "${TASK_NOTIFICATION_JQ_DEF}" ]] || TASK_NOTIFICATION_JQ_DEF='def notification_kind: "prompt";'
+
+# Capture stdin once; extract the prompt's kind, transcript_path and prompt in the SAME
+# single jq fork the prompt already cost (\x1f-joined; the prompt goes last because it
+# may contain anything, while a kind or a path cannot contain \x1f).
 _HOOK_INPUT="$(cat 2>/dev/null)" || _HOOK_INPUT=""
-_FIELDS="$(printf '%s' "${_HOOK_INPUT}" | jq -r '[.transcript_path // "", .prompt // ""] | join("\u001f")' 2>/dev/null)" || _FIELDS=""
+_FIELDS="$(printf '%s' "${_HOOK_INPUT}" | jq -r "${TASK_NOTIFICATION_JQ_DEF}"' [((.prompt // "") | tostring | notification_kind), .transcript_path // "", .prompt // ""] | join("\u001f")' 2>/dev/null)" || _FIELDS=""
+_PROMPT_KIND="${_FIELDS%%$'\x1f'*}"
+_FIELDS="${_FIELDS#*$'\x1f'}"
 _TRANSCRIPT="${_FIELDS%%$'\x1f'*}"
 PROMPT="${_FIELDS#*$'\x1f'}"
 
@@ -141,6 +156,12 @@ _prompt_is_consultation_only() {
 # EARLY EXITS
 # =================================================================
 [[ -z "$PROMPT" ]] && exit 0
+# A background-task notification is not the user: no routing, no state (see above).
+if [[ "${_PROMPT_KIND}" == "notification" ]]; then
+  [[ -n "${SKILL_DEBUG:-}" ]] && \
+    printf '[skill-hook] prompt is a background-task notification; no routing emitted.\n' >&2
+  exit 0
+fi
 # Skip slash commands — these are handled by the Skill tool directly
 [[ "$PROMPT" =~ ^[[:space:]]*/ ]] && exit 0
 (( ${#PROMPT} < 5 )) && ! _comp_active && exit 0

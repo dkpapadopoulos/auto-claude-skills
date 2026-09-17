@@ -46,39 +46,21 @@ if ! command -v jq >/dev/null 2>&1; then
     _announce "jq unavailable to this hook — unused egress approvals of this conversation (if any) were NOT withdrawn at the turn boundary."
     exit 0
 fi
-# Measured live 2026-09-17: a background-task notification arrives as UserPromptSubmit
-# whose prompt is the "<task-notification>" block. It is not the user speaking, and treating
-# it as a turn boundary revoked a genuine approval mid-flow.
-# A prompt counts as a notification only if it consists ENTIRELY of notification blocks:
-# a user who pastes one and then writes "no" is the user speaking.
-# - A block body may not contain a closing tag (a lazy `.*?` backtracks across one, so
-#   text BETWEEN two blocks matched).
-# - A nested block — an opening tag right after the outer one, or at the start of a line —
-#   is not a notification shape. An opening tag QUOTED mid-line (a command description,
-#   an agent result about this feature) is allowed: rejecting it withdrew approvals on
-#   genuine notifications.
-# - "Start of a line" means after any vertical-space character (LF, CR, VT, FF, NEL,
-#   U+2028, U+2029), optionally indented with spaces/tabs. VT is written \x{0B}: in jq's
-#   regex syntax `\v` is a literal letter v (measured), which silently broke both
-#   directions in an earlier revision.
-# - If the regex engine cannot evaluate the prompt (retry limit on multi-MB input), the
-#   prompt is treated as the user speaking: withdrawing is the safe direction.
-# - Known costs (safe direction, one re-ask): a genuine notification whose text starts a
-#   line with an opening tag (an XML example in an agent result), or quotes the CLOSING tag
-#   anywhere, is treated as the user.
-# - Plain text typed INSIDE one well-formed block is indistinguishable from a
-#   notification's free-text fields (agent results are arbitrary): accepted residual.
-# Fixture: tests/fixtures/egress-consent/task-notification-bash.txt, captured live
-# 2026-09-17 — nothing follows the closing tag. Agent-completion notifications were not
-# captured; if one ever carries trailing text it is treated as the user (one re-ask).
+# A prompt made up ENTIRELY of <task-notification> blocks is a background-task
+# notification (measured live 2026-09-17), not the user speaking; treating it as a turn
+# boundary revoked a genuine approval mid-flow. The classifier and its documented edge
+# cases live in hooks/lib/task-notification.sh, shared with the activation hook.
+# Without that lib every prompt counts as the user: withdrawing is the safe direction.
+TASK_NOTIFICATION_JQ_DEF=""
+# shellcheck source=/dev/null
+. "${_PLUGIN_ROOT}/hooks/lib/task-notification.sh" 2>/dev/null || TASK_NOTIFICATION_JQ_DEF=""
+[ -n "${TASK_NOTIFICATION_JQ_DEF}" ] || TASK_NOTIFICATION_JQ_DEF='def notification_kind: "prompt";'
 # The trailing "end" field is a sentinel: a newline inside transcript_path cuts the read
 # short, and acting on the truncated path would silently resolve the wrong conversation.
-_META="$(printf '%s' "${_INPUT}" | jq -r 'if type == "object" then
+_META="$(printf '%s' "${_INPUT}" | jq -r "${TASK_NOTIFICATION_JQ_DEF}"' if type == "object" then
     [ ((.transcript_path // "") | tostring),
       ((.prompt // "") | tostring
-           | try (if test("^\\s*(<task-notification>(?![ \\t]*<task-notification>)(?:(?!</task-notification>|[\\n\\r\\x{0B}\\f\\x{85}\\x{2028}\\x{2029}][ \\t]*<task-notification>)[\\s\\S])*</task-notification>\\s*)+$")
-                  then "notification" else "prompt" end)
-             catch "unclassifiable"),
+           | notification_kind),
       "end"
     ] | join("\u001f") else "" end' 2>/dev/null)"
 IFS=$'\x1f' read -r _TP _KIND _END <<EOF
