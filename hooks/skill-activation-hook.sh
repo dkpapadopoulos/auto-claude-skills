@@ -20,11 +20,48 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-# Capture stdin once; extract transcript_path + prompt in the SAME single jq
-# fork the prompt already cost (\x1f-joined, transcript first — the prompt may
-# contain anything, a path cannot contain \x1f).
+# Background-task notifications arrive as UserPromptSubmit prompts made up entirely of
+# <task-notification> blocks. They are not the user, and their summaries are ordinary
+# words ("Capture a second, path-normalised baseline" routed to second-opinion, observed
+# 2026-09-17), so they are not routed. The classifier is shared with
+# egress-consent-turn-hook.sh (hooks/lib/task-notification.sh); without it every prompt
+# is routed, as before. A prompt the classifier cannot evaluate is routed too, and so is
+# every prompt when the lib's definition does not compile (the call is retried with the
+# fallback below, so a lib whose jq does not compile cannot make this hook drop the
+# user's prompt). The first kind the lib yields is used, and anything other than
+# "notification" or "unclassifiable" counts as "prompt" (a kind containing US or several
+# kinds would otherwise corrupt the field split).
+TASK_NOTIFICATION_JQ_DEF=""
+if [[ -f "${PLUGIN_ROOT}/hooks/lib/task-notification.sh" ]]; then
+  # shellcheck source=lib/task-notification.sh
+  . "${PLUGIN_ROOT}/hooks/lib/task-notification.sh" 2>/dev/null || TASK_NOTIFICATION_JQ_DEF=""
+fi
+_TN_FALLBACK_DEF='def notification_kind: "prompt";'
+[[ -n "${TASK_NOTIFICATION_JQ_DEF}" ]] || TASK_NOTIFICATION_JQ_DEF="${_TN_FALLBACK_DEF}"
+
+# Capture stdin once; extract the first payload's kind, then transcript_path and prompt,
+# in the SAME single jq fork the prompt already cost (\x1f-joined; the prompt goes last
+# because it may contain anything, and a kind cannot contain \x1f; a transcript_path
+# containing one splits wrongly, as it always has). Several JSON values on stdin keep
+# their previous meaning: one line per value, a value that raises an error is skipped,
+# the call fails only if the LAST value fails (jq's own exit status), and the kind is
+# computed on exactly the text the hook then uses as the prompt.
 _HOOK_INPUT="$(cat 2>/dev/null)" || _HOOK_INPUT=""
-_FIELDS="$(printf '%s' "${_HOOK_INPUT}" | jq -r '[.transcript_path // "", .prompt // ""] | join("\u001f")' 2>/dev/null)" || _FIELDS=""
+_fields_extract() {
+  printf '%s' "${_HOOK_INPUT}" | jq -nr "$1"' [inputs] as $all
+    | [$all[] | try ([.transcript_path // "", .prompt // ""] | join("\u001f")) catch null] as $lines
+    | if ($lines | length) > 0 and $lines[-1] == null then error("last value failed") else . end
+    | ([$lines[] | select(. != null)] | join("\n")) as $joined
+    | ($joined | split("\u001f") | .[1:] | join("\u001f")
+       | ([first(notification_kind)][0] | if . == "notification" or . == "unclassifiable" then . else "prompt" end)) as $kind
+    | $kind + "\u001f" + $joined' 2>/dev/null
+}
+_FIELDS="$(_fields_extract "${TASK_NOTIFICATION_JQ_DEF}")" || _FIELDS=""
+if [[ -z "${_FIELDS}" && -n "${_HOOK_INPUT}" && "${TASK_NOTIFICATION_JQ_DEF}" != "${_TN_FALLBACK_DEF}" ]]; then
+  _FIELDS="$(_fields_extract "${_TN_FALLBACK_DEF}")" || _FIELDS=""
+fi
+_PROMPT_KIND="${_FIELDS%%$'\x1f'*}"
+_FIELDS="${_FIELDS#*$'\x1f'}"
 _TRANSCRIPT="${_FIELDS%%$'\x1f'*}"
 PROMPT="${_FIELDS#*$'\x1f'}"
 
@@ -141,6 +178,13 @@ _prompt_is_consultation_only() {
 # EARLY EXITS
 # =================================================================
 [[ -z "$PROMPT" ]] && exit 0
+# A background-task notification is not the user: no routing and no composition state
+# (the session-token singleton above is re-stamped, as for every prompt).
+if [[ "${_PROMPT_KIND}" == "notification" ]]; then
+  [[ -n "${SKILL_DEBUG:-}" ]] && \
+    printf '[skill-hook] prompt is a background-task notification; no routing emitted.\n' >&2
+  exit 0
+fi
 # Skip slash commands — these are handled by the Skill tool directly
 [[ "$PROMPT" =~ ^[[:space:]]*/ ]] && exit 0
 (( ${#PROMPT} < 5 )) && ! _comp_active && exit 0
