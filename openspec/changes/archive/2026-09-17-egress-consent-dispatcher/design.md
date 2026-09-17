@@ -411,3 +411,14 @@ user who pastes one (checked against the live capture). The current rule errs to
 withdrawing; the remaining unsafe gap is plain text typed inside one well-formed block. A
 structural fix needs a provenance field from the harness, not a better regex.
 
+### Independent review of `d23c3fa` (Claude subagent + Codex, 2026-09-17)
+
+Both reviewers independently found that in jq's regex syntax `\v` is the literal letter
+`v`, not vertical tab (measured: `\v` matches "v", `\x{0B}` matches VT; `\f`, `\r` and the
+`\x{…}` code points behave as intended). So VT was never handled (unsafe direction), and
+the letter v became a "line start" (a quoted `-v<task-notification>` withdrew approvals).
+Fixed with `\x{0B}`; cells R7c (vt, ff, nel, u2029, crlf added) and R10 pin both
+directions. R9 checked the dispatcher's output instead of the hook's, could not detect a
+missing classification note, and silently degraded without python3: it now keeps the
+hook's output, asserts the note, and asserts the oversized payload was built.
+

@@ -58,7 +58,9 @@ fi
 #   an agent result about this feature) is allowed: rejecting it withdrew approvals on
 #   genuine notifications.
 # - "Start of a line" means after any vertical-space character (LF, CR, VT, FF, NEL,
-#   U+2028, U+2029), optionally indented with spaces/tabs.
+#   U+2028, U+2029), optionally indented with spaces/tabs. VT is written \x{0B}: in jq's
+#   regex syntax `\v` is a literal letter v (measured), which silently broke both
+#   directions in an earlier revision.
 # - If the regex engine cannot evaluate the prompt (retry limit on multi-MB input), the
 #   prompt is treated as the user speaking: withdrawing is the safe direction.
 # - Known costs (safe direction, one re-ask): a genuine notification whose text starts a
@@ -74,7 +76,7 @@ fi
 _META="$(printf '%s' "${_INPUT}" | jq -r 'if type == "object" then
     [ ((.transcript_path // "") | tostring),
       ((.prompt // "") | tostring
-           | try (if test("^\\s*(<task-notification>(?![ \\t]*<task-notification>)(?:(?!</task-notification>|[\\n\\r\\v\\f\\x{85}\\x{2028}\\x{2029}][ \\t]*<task-notification>)[\\s\\S])*</task-notification>\\s*)+$")
+           | try (if test("^\\s*(<task-notification>(?![ \\t]*<task-notification>)(?:(?!</task-notification>|[\\n\\r\\x{0B}\\f\\x{85}\\x{2028}\\x{2029}][ \\t]*<task-notification>)[\\s\\S])*</task-notification>\\s*)+$")
                   then "notification" else "prompt" end)
              catch "unclassifiable"),
       "end"
