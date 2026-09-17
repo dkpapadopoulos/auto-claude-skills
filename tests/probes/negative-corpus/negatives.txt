@@ -220,3 +220,5 @@ write the postmortem for yesterdays incident
 write the readme for this module
 you decide - should the triage rule key off the raw lab value or the delta. your opinion, no hedging
 you've seen the whole codebase now — where would you push back on how we've structured the billing module
+education app: the debate timer doesnt reset between the opening and rebuttal rounds, find the bug
+hr tool: interview panel page should show each one of the reviewers' raw answers verbatim before the hiring manager sees scores
