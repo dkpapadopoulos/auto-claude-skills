@@ -360,3 +360,19 @@ See `specs/cross-family-panel/spec.md`.
   clean at `0050b05`.
 - Still open: whether a free-text "Other" answer equal to the approve label returns a
   preview annotation (inconclusive live).
+
+### Post-PR review of the last two commits (2026-09-17)
+
+A fresh reviewer of `623baaf..153152b` reported FINDINGS-OPEN; all four addressed:
+- The notification regex's lazy `[\s\S]*?` backtracked across a closing tag, so user text
+  BETWEEN two notification blocks (or before a stray closing tag) was taken for a
+  notification — reproduced, fixed with a tempered token, two cells added.
+- Concern that real notifications carry trailing text: checked against the live capture —
+  a background-Bash notification is exactly the block. The captured payload is now the
+  test fixture (`tests/fixtures/egress-consent/task-notification-bash.txt`). Agent
+  notifications were not captured; trailing text there would be treated as the user
+  (one re-ask), recorded as a residual.
+- The round-5 message cells only asserted a phrase's absence (a silenced notice passed):
+  a positive "was withdrawn" cell added, mutation-checked.
+- The canonical spec now states the notification exception.
+

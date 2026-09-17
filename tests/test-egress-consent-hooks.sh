@@ -308,6 +308,9 @@ for i in 1 2 3; do
     run_ask "$(pre_payload toolu_np_yes$i)" "${NOPERL}" >/dev/null
     o="$(run_rcpt "$(post_payload toolu_np_yes$i "${L}")" "${NOPERL}")"
     assert_not_contains "R5: no false 'while the question was open' claim (run $i)" "while the question was open" "${o}"
+    if [ "$(rcpt_count)" = "0" ]; then
+        assert_contains "R5: a withdrawn approval is announced (run $i)" "was withdrawn" "${o}"
+    fi
 done
 
 echo "-- wiring and retirement --"

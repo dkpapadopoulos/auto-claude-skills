@@ -523,10 +523,8 @@ assert_equals "P1: codex not invoked" "0" "$(calls)"
 echo "-- review round 5 --"
 TURN="${PROJECT_ROOT}/hooks/egress-consent-turn-hook.sh"
 turn() { hook "${TURN}" "$(jq -nc --arg tp "$1" --arg p "$2" '{hook_event_name:"UserPromptSubmit", transcript_path:$tp, prompt:$p}')"; }
-NOTIF='<task-notification>
-<task-id>b1</task-id>
-<status>completed</status>
-</task-notification>'
+# The REAL payload of a background-Bash notification, captured live 2026-09-17 (path redacted).
+NOTIF="$(cat "${PROJECT_ROOT}/tests/fixtures/egress-consent/task-notification-bash.txt")"
 # A real prompt that STARTS with a pasted notification block, then says no, is the user.
 reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
 approve "${D}" "${PKG}" toolu_r5a
@@ -540,6 +538,21 @@ approve "${D}" "${PKG}" toolu_r5b
 turn "${TP}" "$(printf '\t\n  %s\n%s\n' "${NOTIF}" "${NOTIF}")"
 dispatch "${P_FULL}" "${SID}" send "${D}"
 assert_equals "R5: whitespace-prefixed, repeated notification blocks do not withdraw -> 0" "0" "${RC}"
+# User text BETWEEN two blocks, or before a stray closing tag, is the user.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_r6a
+turn "${TP}" "${NOTIF}
+No - do NOT send that to codex.
+${NOTIF}"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "R6: user text between two notification blocks withdraws -> 4" "4" "${RC}"
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_r6b
+turn "${TP}" "${NOTIF}
+No - do NOT send.
+</task-notification>"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "R6: user text before a stray closing tag withdraws -> 4" "4" "${RC}"
 # A newline inside transcript_path is announced, never a silent wrong-token no-op.
 reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
 approve "${D}" "${PKG}" toolu_r5c

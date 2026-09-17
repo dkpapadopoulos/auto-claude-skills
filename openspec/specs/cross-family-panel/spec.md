@@ -60,7 +60,8 @@ exists and hashes to the digest. Any other answer to a clean consent ask MUST re
 unused receipt of the conversation and MUST record a veto that outranks any receipt for that
 digest whose ask is not newer, so the latest answer wins whatever order answers arrive in.
 Asking about a package MUST withdraw its earlier unused receipts, and a new user prompt MUST
-withdraw every unused receipt of the conversation. A marked question MUST be denied at PreToolUse when its
+withdraw every unused receipt of the conversation, except a prompt consisting entirely of
+background-task notification blocks, which is not the user speaking. A marked question MUST be denied at PreToolUse when its
 input contains an `answers` or `annotations` key, when it comes from a subagent, when its `tool_use_id` was
 already recorded, when its first (default) option is the approve label, or when it
 violates the consent-question schema. Receipt files are

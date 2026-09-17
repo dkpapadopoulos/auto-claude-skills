@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bbk8qtxmh</task-id>
+<tool-use-id>toolu_01DCqa29xCjyoxq1QyGNtZFX</tool-use-id>
+<output-file>/private/tmp/REDACTED/tasks/bbk8qtxmh.output</output-file>
+<status>completed</status>
+<summary>Background command "Trigger a background notification for payload capture" completed (exit code 0)</summary>
+</task-notification>
