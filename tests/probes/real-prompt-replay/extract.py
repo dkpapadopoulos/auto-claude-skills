@@ -14,8 +14,9 @@ provenance fields, never from its wording:
   unlabelled   no provenance fields (relays from other sessions). Not assumed human.
 Excluded outright: tool results, subagent transcripts (only <projects>/<p>/<session>.jsonl
 is read), meta and sidechain entries, and text with a known wrapper prefix (notifications,
-resumed-session summaries, injected skill bodies, command wrappers). Exact duplicates keep
-their first occurrence; a prompt seen from several sources keeps the most human label.
+resumed-session summaries, injected skill bodies, command wrappers). Repeated text is written
+once, in the order first seen, carrying the date and project of the occurrence whose label
+won: the most human label wins, and between equals the first occurrence.
 
 Usage:
   extract.py --out FILE [--projects DIR] [--since YYYY-MM-DD]

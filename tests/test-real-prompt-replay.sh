@@ -73,7 +73,9 @@ BOTH="ask codex and gemini the same question and show me both raw answers"
     jq -nc '{type:"attachment",timestamp:"2026-09-17T10:08:00Z",attachment:{type:"queued_command",commandMode:"prompt",prompt:"the supermodel panelist spoke",origin:{kind:"human"}}}'
     jq -nc '{type:"attachment",timestamp:"2026-09-17T10:08:30Z",attachment:{type:"queued_command",commandMode:"task-notification",prompt:"queued note: give me both of them raw answers"}}'
     jq -nc '{type:"user",timestamp:"2026-09-17T10:09:00Z",origin:{kind:"human"},message:{role:"user",content:("note" + ([0] | implode) + " put the model panels to work")}}'
-    u "2026-09-17T10:09:10Z" "same words from two places" 'entrypoint:"cli"'
+    u "2026-09-03T10:09:15Z" "a prompt typed on two days" "${HUMAN}"
+    u "2026-09-17T10:09:16Z" "a prompt typed on two days" "${HUMAN}"
+    u "2026-09-02T10:09:10Z" "same words from two places" 'entrypoint:"cli"'
     u "2026-09-17T10:09:20Z" "same words from two places" "${HUMAN}"
     jq -nc '{type:"attachment",timestamp:"2026-09-17T10:09:25Z",attachment:{type:"queued_command",commandMode:"prompt",prompt:"queued without origin"}}'
     jq -nc '{type:"attachment",timestamp:"2026-09-17T10:09:26Z",attachment:{type:"queued_command",commandMode:"prompt",isMeta:true,prompt:"queued meta: give me both of them raw answers",origin:{kind:"human"}}}'
@@ -99,12 +101,12 @@ mkdir -p "${OUT}"
 # E1: extraction keeps prompts once each, labelled by provenance.
 EX_LOG="$(python3 "${EXTRACT}" --projects "${PROJ}" --out "${OUT}/prompts.jsonl" 2>&1)"
 assert_equals "E1: extraction succeeds" "0" "$?"
-has_line "E1: 17 distinct prompts" "prompts 17" "${EX_LOG}"
-has_line "E1: 11 labelled human (typed, queued, from any project)" "source human: 11" "${EX_LOG}"
+has_line "E1: 18 distinct prompts" "prompts 18" "${EX_LOG}"
+has_line "E1: 12 labelled human (typed, queued, from any project)" "source human: 12" "${EX_LOG}"
 has_line "E1: the peer messages are labelled peer" "source peer: 2" "${EX_LOG}"
 has_line "E1: the pipeline prompt is labelled sdk" "source sdk: 1" "${EX_LOG}"
 has_line "E1: the prompts without provenance are unlabelled, not human" "source unlabelled: 3" "${EX_LOG}"
-assert_equals "E1: the file matches the count" "17" "$(wc -l < "${OUT}/prompts.jsonl" | tr -d ' ')"
+assert_equals "E1: the file matches the count" "18" "$(wc -l < "${OUT}/prompts.jsonl" | tr -d ' ')"
 assert_equals "E1: a prompt seen from sdk then a person keeps the human label" "human" \
     "$(source_of_prompt "${OUT}/prompts.jsonl" "ask codex and gemini")"
 assert_equals "E1: the queued prompt is read, labelled human" "human" \
@@ -115,6 +117,10 @@ assert_equals "E1: a prompt seen from a teammate then from a script keeps the te
     "$(source_of_prompt "${OUT}/prompts.jsonl" "text from a teammate")"
 assert_equals "E1: a prompt seen unlabelled then from a person is labelled human" "human" \
     "$(source_of_prompt "${OUT}/prompts.jsonl" "same words")"
+assert_equals "E1: ... dated when the person typed it, not when the earlier copy arrived" "2026-09-17" \
+    "$(jq -r 'select(.prompt == "same words from two places") | .ts' "${OUT}/prompts.jsonl")"
+assert_equals "E1: a prompt repeated from the same source keeps its first date" "2026-09-03" \
+    "$(jq -r 'select(.prompt == "a prompt typed on two days") | .ts' "${OUT}/prompts.jsonl")"
 assert_equals "E1: a prompt seen from sdk then without provenance is labelled unlabelled" "unlabelled" \
     "$(source_of_prompt "${OUT}/prompts.jsonl" "text from a script")"
 assert_equals "E1: a queued prompt without origin is read, unlabelled" "unlabelled" \
@@ -129,14 +135,14 @@ done
 for _i in $(seq 1 2000); do printf 'stale\n'; done > "${OUT}/reuse.jsonl"
 chmod 644 "${OUT}/reuse.jsonl"
 python3 "${EXTRACT}" --projects "${PROJ}" --out "${OUT}/reuse.jsonl" >/dev/null 2>&1
-assert_equals "E3: a reused output holds only this run's records" "17" "$(wc -l < "${OUT}/reuse.jsonl" | tr -d ' ')"
+assert_equals "E3: a reused output holds only this run's records" "18" "$(wc -l < "${OUT}/reuse.jsonl" | tr -d ' ')"
 assert_equals "E3: ... and no stale line" "0" "$(grep -c '^stale$' "${OUT}/reuse.jsonl")"
 assert_equals "E3: ... and is mode 0600" "0o600" "$(mode_of "${OUT}/reuse.jsonl")"
 assert_equals "E3: a new output is mode 0600" "0o600" "$(mode_of "${OUT}/prompts.jsonl")"
 
 # E2: --since filters by the prompt's date and rejects a bad date without writing.
 EX2="$(python3 "${EXTRACT}" --projects "${PROJ}" --since 2026-09-01 --out "${OUT}/since.jsonl" 2>&1)"
-has_line "E2: --since drops the older prompt and keeps the boundary day" "prompts 16" "${EX2}"
+has_line "E2: --since drops the older prompt and keeps the boundary day" "prompts 17" "${EX2}"
 python3 "${EXTRACT}" --projects "${PROJ}" --since 2026-13-45 --out "${OUT}/bad-since.jsonl" >/dev/null 2>&1
 assert_equals "E2: a malformed --since exits 2" "2" "$?"
 no_file "E2: ... and writes nothing" "${OUT}/bad-since.jsonl"
@@ -214,11 +220,15 @@ fifo_case "G: extract refuses a FIFO as the output file, without blocking" \
 fifo_case "G: routed refuses a FIFO as the output file, without blocking" \
     python3 "${ROUTED}" --skill panel --projects "${PROJ}" --out "${TEST_TMPDIR}/fifo.jsonl"
 mkfifo "${TEST_TMPDIR}/fifo-read.jsonl"
+chmod 666 "${TEST_TMPDIR}/fifo-read.jsonl"
+FIFO_MODE="$(mode_of "${TEST_TMPDIR}/fifo-read.jsonl")"
 cat "${TEST_TMPDIR}/fifo-read.jsonl" > "${TEST_TMPDIR}/fifo-drain" &
 FIFO_READER=$!
 fifo_case "G: extract refuses a FIFO even when it opens (someone is reading it)" \
     python3 "${EXTRACT}" --projects "${PROJ}" --out "${TEST_TMPDIR}/fifo-read.jsonl"
 assert_equals "G: ... and wrote nothing into it" "0" "$(wc -c < "${TEST_TMPDIR}/fifo-drain" | tr -d ' ')"
+assert_equals "G: ... and did not change it at all (the check runs before any write)" \
+    "${FIFO_MODE}" "$(mode_of "${TEST_TMPDIR}/fifo-read.jsonl")"
 kill "${FIFO_READER}" 2>/dev/null
 wait "${FIFO_READER}" 2>/dev/null
 # Without git, nothing can be checked, so every script refuses, even outside any repository.
@@ -295,6 +305,37 @@ no_file "G: ... and writes nothing" "${OUT}/boundary2.jsonl"
 _err="$(PATH="${BOUNDARY}:${PATH}" bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${OUT}/boundary2" < /dev/null 2>&1 >/dev/null)"
 assert_contains "G: replay refuses the same" "inside a git repository" "${_err}"
 no_file "G: ... and creates nothing" "${OUT}/boundary2"
+# A retry that fails for some other reason answers nothing either.
+printf '%s\n' '#!/bin/sh' \
+    'if [ -n "${GIT_DISCOVERY_ACROSS_FILESYSTEM}" ]; then' \
+    '  echo "fatal: detected dubious ownership in repository" >&2; exit 128' \
+    'fi' \
+    'echo "fatal: not a git repository (or any parent up to mount point /tmp)" >&2' \
+    'exit 128' > "${BOUNDARY}/git"
+_err="$(PATH="${BOUNDARY}:${PATH}" python3 "${EXTRACT}" --projects "${PROJ}" --out "${OUT}/boundary3.jsonl" 2>&1 >/dev/null)"
+assert_contains "G: a retry that fails differently is not an answer" "git could not tell" "${_err}"
+no_file "G: ... and writes nothing" "${OUT}/boundary3.jsonl"
+_err="$(PATH="${BOUNDARY}:${PATH}" bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${OUT}/boundary3" < /dev/null 2>&1 >/dev/null)"
+assert_contains "G: replay refuses the same" "git could not tell" "${_err}"
+no_file "G: ... and creates nothing" "${OUT}/boundary3"
+# The retry must drop the caller's git discovery settings, exactly as the first call does.
+printf '%s\n' '#!/bin/sh' \
+    'if [ -z "${GIT_DISCOVERY_ACROSS_FILESYSTEM}" ]; then' \
+    '  echo "fatal: not a git repository (or any parent up to mount point /tmp)" >&2; exit 128' \
+    'fi' \
+    'if [ -n "${GIT_CEILING_DIRECTORIES}${GIT_DIR}${GIT_WORK_TREE}" ]; then' \
+    '  echo "fatal: not a git repository (or any of the parent directories): .git" >&2; exit 128' \
+    'fi' \
+    'echo "/x/.git"; exit 0' > "${BOUNDARY}/git"
+_err="$(GIT_CEILING_DIRECTORIES=/ GIT_DIR=/nowhere PATH="${BOUNDARY}:${PATH}" \
+    python3 "${EXTRACT}" --projects "${PROJ}" --out "${OUT}/boundary4.jsonl" 2>&1 >/dev/null)"
+assert_contains "G: the retry ignores git discovery settings from the environment too" \
+    "inside a git repository" "${_err}"
+no_file "G: ... and writes nothing" "${OUT}/boundary4.jsonl"
+_err="$(GIT_CEILING_DIRECTORIES=/ GIT_DIR=/nowhere PATH="${BOUNDARY}:${PATH}" \
+    bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${OUT}/boundary4" < /dev/null 2>&1 >/dev/null)"
+assert_contains "G: replay does the same" "inside a git repository" "${_err}"
+no_file "G: ... and creates nothing" "${OUT}/boundary4"
 if [ -d "${UPPER}" ]; then
     guard_case "a case-changed path on a case-insensitive volume" "${UPPER}/leak.jsonl" "${PROBE}/leak.jsonl"
 fi
@@ -348,8 +389,8 @@ no_file "G: routed.py leaves no bytecode cache in the repository" "${PROBE}/__py
 # R1: replay matches like the hook.
 RP_LOG="$(bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${OUT}/replay" < /dev/null 2>&1)"
 assert_equals "R1: replay succeeds" "0" "$?"
-has_line "R1: every record is read once (NUL and US do not split records)" "prompts 17" "${RP_LOG}"
-has_line "R1: sources are counted" "source human: 11" "${RP_LOG}"
+has_line "R1: every record is read once (NUL and US do not split records)" "prompts 18" "${RP_LOG}"
+has_line "R1: sources are counted" "source human: 12" "${RP_LOG}"
 has_line "R1: ... including the labelled non-human ones" "source peer: 2" "${RP_LOG}"
 has_line "R1: trigger 0 keeps scanning past an in-word hit, and discards prompts with only in-word hits ('.' counts as a word character)" \
     "trigger 0: 3 (human 3, in-word discarded 2)" "${RP_LOG}"
@@ -423,6 +464,9 @@ ACT="SKILL ACTIVATION (1 skills | IMPLEMENT)"
     ctx s2 "" "2026-09-21T08:00:00Z" PostToolUse "see /x/cache/acsm/auto-claude-skills/9.9.8/skills/panel"
     uu q15 "" "2026-09-21T08:05:00Z" "Base directory for this skill: /x/cache/acsm/auto-claude-skills/9.9.7/skills/panel" "${HUMAN}"
     uu q16 "" "2026-09-21T08:06:00Z" "note: /x/cache/acsm/auto-claude-skills/9.9.6/skills/panel" "isMeta:true"
+    uu q18 "" "2026-09-21T08:08:00Z" "Base directory for this skill: /x/cache/acsm/auto-claude-skills/9.9.4/skills/panel" 'isMeta:true,promptSource:"typed"'
+    uu q19 "" "2026-09-21T08:09:00Z" "Base directory for this skill: /x/cache/acsm/auto-claude-skills/9.9.3/skills/panel" 'entrypoint:"cli"'
+    uu q20 "" "2026-09-21T08:10:00Z" "see this: Base directory for this skill: /x/cache/acsm/auto-claude-skills/9.9.2/skills/panel" "isMeta:true"
     jq -nc '{type:"assistant",uuid:"q17",timestamp:"2026-09-21T08:07:00Z",isMeta:true,message:{role:"assistant",content:"Base directory for this skill: /x/cache/acsm/auto-claude-skills/9.9.5/skills/panel"}}'
     uu u10 a7 "2026-09-18T09:12:00Z" "prompt ten" "${HUMAN}"
     uu u11 u10 "2026-09-18T09:12:30Z" "prompt eleven" "${HUMAN}"
@@ -446,7 +490,7 @@ has_line "L1: each plugin version's first and last date" "plugin auto-claude-ski
 has_line "L1: ... across out-of-order entries" "plugin auto-claude-skills 3.89.3: 2026-09-19 .. 2026-09-20" "${LV_LOG}"
 has_line "L1: the SessionStart hook output is install evidence" "plugin auto-claude-skills 3.89.4: 2026-09-21 .. 2026-09-21" "${LV_LOG}"
 assert_equals "L1: a version path quoted in a prompt or other context is not evidence of an install" "0" \
-    "$(printf '%s\n' "${LV_LOG}" | grep -c -e '9\.9\.9' -e '9\.9\.8' -e '9\.9\.7' -e '9\.9\.6' -e '9\.9\.5')"
+    "$(printf '%s\n' "${LV_LOG}" | grep -c -e '9\.9\.9' -e '9\.9\.8' -e '9\.9\.7' -e '9\.9\.6' -e '9\.9\.5' -e '9\.9\.4' -e '9\.9\.3' -e '9\.9\.2')"
 assert_equals "L1: the multi-hop prompt is listed" "1" "$(grep -c '"prompt thirteen"' "${OUT}/routed.jsonl")"
 assert_equals "L1: the prompt a routing answered is listed (parentUuid, not file order)" "1" \
     "$(grep -c '"prompt ten"' "${OUT}/routed.jsonl")"
