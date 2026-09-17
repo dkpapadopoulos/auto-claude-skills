@@ -36,6 +36,10 @@ has_line() {
 no_file() {
     if [ -e "$2" ] || [ -L "$2" ]; then _record_fail "$1" "exists: $2"; else _record_pass "$1"; fi
 }
+# mode_of <path>: the permission bits, as python prints them (0o600).
+mode_of() {
+    python3 -c 'import os, sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$1"
+}
 # source_of_prompt <jsonl> <prompt prefix>: the .source of the first record starting with it.
 source_of_prompt() {
     jq -r --arg p "$2" 'select(.prompt | startswith($p)) | .source' "$1" | head -1
@@ -73,6 +77,8 @@ BOTH="ask codex and gemini the same question and show me both raw answers"
     u "2026-09-17T10:09:20Z" "same words from two places" "${HUMAN}"
     jq -nc '{type:"attachment",timestamp:"2026-09-17T10:09:25Z",attachment:{type:"queued_command",commandMode:"prompt",prompt:"queued without origin"}}'
     jq -nc '{type:"attachment",timestamp:"2026-09-17T10:09:26Z",attachment:{type:"queued_command",commandMode:"prompt",isMeta:true,prompt:"queued meta: give me both of them raw answers",origin:{kind:"human"}}}'
+    u "2026-09-17T10:09:27Z" "text from a script and a relay" 'promptSource:"sdk",entrypoint:"sdk-py"'
+    u "2026-09-17T10:09:28Z" "text from a script and a relay" 'entrypoint:"cli"'
     u "2026-09-17T10:09:30Z" "a supermodel panelist and a model panel" "${HUMAN}"
     u "2026-09-17T10:09:40Z" "x.model panelist and supermodel panel.x" "${HUMAN}"
     printf '%s\n' 'this line is not json'
@@ -90,12 +96,12 @@ mkdir -p "${OUT}"
 # E1: extraction keeps prompts once each, labelled by provenance.
 EX_LOG="$(python3 "${EXTRACT}" --projects "${PROJ}" --out "${OUT}/prompts.jsonl" 2>&1)"
 assert_equals "E1: extraction succeeds" "0" "$?"
-has_line "E1: 15 distinct prompts" "prompts 15" "${EX_LOG}"
+has_line "E1: 16 distinct prompts" "prompts 16" "${EX_LOG}"
 has_line "E1: 11 labelled human (typed, queued, from any project)" "source human: 11" "${EX_LOG}"
 has_line "E1: the peer message is labelled peer" "source peer: 1" "${EX_LOG}"
 has_line "E1: the pipeline prompt is labelled sdk" "source sdk: 1" "${EX_LOG}"
-has_line "E1: the prompts without provenance are unlabelled, not human" "source unlabelled: 2" "${EX_LOG}"
-assert_equals "E1: the file matches the count" "15" "$(wc -l < "${OUT}/prompts.jsonl" | tr -d ' ')"
+has_line "E1: the prompts without provenance are unlabelled, not human" "source unlabelled: 3" "${EX_LOG}"
+assert_equals "E1: the file matches the count" "16" "$(wc -l < "${OUT}/prompts.jsonl" | tr -d ' ')"
 assert_equals "E1: a prompt seen from sdk then a person keeps the human label" "human" \
     "$(source_of_prompt "${OUT}/prompts.jsonl" "ask codex and gemini")"
 assert_equals "E1: the queued prompt is read, labelled human" "human" \
@@ -104,6 +110,8 @@ assert_equals "E1: an unlabelled cli prompt is not assumed human" "unlabelled" \
     "$(source_of_prompt "${OUT}/prompts.jsonl" "relay")"
 assert_equals "E1: a prompt seen unlabelled then from a person is labelled human" "human" \
     "$(source_of_prompt "${OUT}/prompts.jsonl" "same words")"
+assert_equals "E1: a prompt seen from sdk then without provenance is labelled unlabelled" "unlabelled" \
+    "$(source_of_prompt "${OUT}/prompts.jsonl" "text from a script")"
 assert_equals "E1: a queued prompt without origin is read, unlabelled" "unlabelled" \
     "$(source_of_prompt "${OUT}/prompts.jsonl" "queued without origin")"
 assert_equals "E1: surrounding whitespace is stripped" "1" \
@@ -112,9 +120,18 @@ for _gone in "subagent brief" "tool output" "task-notification" "queued note" "q
     assert_equals "E1: not kept: ${_gone}" "0" "$(grep -cF "${_gone}" "${OUT}/prompts.jsonl")"
 done
 
+# E3: an existing output file is replaced: truncated and made private.
+for _i in $(seq 1 2000); do printf 'stale\n'; done > "${OUT}/reuse.jsonl"
+chmod 644 "${OUT}/reuse.jsonl"
+python3 "${EXTRACT}" --projects "${PROJ}" --out "${OUT}/reuse.jsonl" >/dev/null 2>&1
+assert_equals "E3: a reused output holds only this run's records" "16" "$(wc -l < "${OUT}/reuse.jsonl" | tr -d ' ')"
+assert_equals "E3: ... and no stale line" "0" "$(grep -c '^stale$' "${OUT}/reuse.jsonl")"
+assert_equals "E3: ... and is mode 0600" "0o600" "$(mode_of "${OUT}/reuse.jsonl")"
+assert_equals "E3: a new output is mode 0600" "0o600" "$(mode_of "${OUT}/prompts.jsonl")"
+
 # E2: --since filters by the prompt's date and rejects a bad date without writing.
 EX2="$(python3 "${EXTRACT}" --projects "${PROJ}" --since 2026-09-01 --out "${OUT}/since.jsonl" 2>&1)"
-has_line "E2: --since drops the older prompt and keeps the boundary day" "prompts 14" "${EX2}"
+has_line "E2: --since drops the older prompt and keeps the boundary day" "prompts 15" "${EX2}"
 python3 "${EXTRACT}" --projects "${PROJ}" --since 2026-13-45 --out "${OUT}/bad-since.jsonl" >/dev/null 2>&1
 assert_equals "E2: a malformed --since exits 2" "2" "$?"
 no_file "E2: ... and writes nothing" "${OUT}/bad-since.jsonl"
@@ -149,7 +166,13 @@ guard_case "a dangling symlink into this repository" "${TEST_TMPDIR}/dangle.json
 ln -s "${OTHER}/dangle.jsonl" "${TEST_TMPDIR}/dangle-other.jsonl"
 guard_case "a dangling symlink into another git work tree" "${TEST_TMPDIR}/dangle-other.jsonl" "${OTHER}/dangle.jsonl"
 guard_case "a repository's .git directory" "${OTHER}/.git/leak.jsonl" "${OTHER}/.git/leak.jsonl"
-GIT_CEILING_DIRECTORIES="$(dirname "${PROBE}")" GIT_DIR="${TEST_TMPDIR}/nowhere" \
+guard_case "'..' after a symlink into this repository" "${TEST_TMPDIR}/probe-link/../leak.jsonl" \
+    "${PROJECT_ROOT}/tests/probes/leak.jsonl"
+mkdir -p "${OTHER}/stale"
+printf '%s\n' "gitdir: ${TEST_TMPDIR}/gone/.git" > "${OTHER}/stale/.git"
+guard_case "a directory whose broken .git file hides the enclosing repository" \
+    "${OTHER}/stale/leak.jsonl" "${OTHER}/stale/leak.jsonl"
+GIT_CEILING_DIRECTORIES="$(dirname "${PROBE}")" \
     guard_case "a path in this repository with git discovery disabled by the environment" \
     "${PROBE}/leak.jsonl" "${PROBE}/leak.jsonl"
 : > "${OTHER}/tracked.txt"
@@ -219,7 +242,7 @@ bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${TEST_TMPDIR}/newdir/../probe-li
 assert_equals "G: replay refuses a '..' path" "2" "$?"
 no_file "G: ... and creates nothing in the repository" "${PROBE}/leak"
 no_file "G: ... or on the way" "${TEST_TMPDIR}/newdir"
-GIT_CEILING_DIRECTORIES="$(dirname "${PROBE}")" GIT_DIR="${TEST_TMPDIR}/nowhere" \
+GIT_CEILING_DIRECTORIES="$(dirname "${PROBE}")" \
     bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${PROBE}/leak" < /dev/null >/dev/null 2>&1
 assert_equals "G: replay ignores git discovery settings from the environment" "2" "$?"
 no_file "G: ... and creates nothing" "${PROBE}/leak"
@@ -228,6 +251,9 @@ assert_contains "G: replay names the repository for a .git directory" "${REPO_MS
 bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${OTHER}/.git/replay" < /dev/null >/dev/null 2>&1
 assert_equals "G: replay refuses a repository's .git directory" "2" "$?"
 no_file "G: ... and creates nothing" "${OTHER}/.git/replay"
+bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${OTHER}/stale/replay" < /dev/null >/dev/null 2>&1
+assert_equals "G: replay refuses a directory whose broken .git file hides the repository" "2" "$?"
+no_file "G: ... and creates nothing" "${OTHER}/stale/replay"
 if [ -d "${UPPER}" ]; then
     bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${UPPER}/leak" < /dev/null >/dev/null 2>&1
     assert_equals "G: replay refuses a case-changed path" "2" "$?"
@@ -239,7 +265,7 @@ no_file "G: routed.py leaves no bytecode cache in the repository" "${PROBE}/__py
 # R1: replay matches like the hook.
 RP_LOG="$(bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${OUT}/replay" < /dev/null 2>&1)"
 assert_equals "R1: replay succeeds" "0" "$?"
-has_line "R1: every record is read once (NUL and US do not split records)" "prompts 15" "${RP_LOG}"
+has_line "R1: every record is read once (NUL and US do not split records)" "prompts 16" "${RP_LOG}"
 has_line "R1: sources are counted" "source human: 11" "${RP_LOG}"
 has_line "R1: trigger 0 keeps scanning past an in-word hit, and discards prompts with only in-word hits ('.' counts as a word character)" \
     "trigger 0: 3 (human 3, in-word discarded 2)" "${RP_LOG}"
@@ -250,6 +276,13 @@ has_line "R1: a prompt counts for every trigger it hits, not only the first" \
     "trigger 6: 1 (human 1, in-word discarded 0)" "${RP_LOG}"
 has_line "R1: matched prompts, with the human share" "matched prompts: 7 (human 5)" "${RP_LOG}"
 M="${OUT}/replay/matches.tsv"
+assert_equals "R1: matches.tsv is mode 0600" "0o600" "$(mode_of "${M}")"
+chmod 644 "${M}"
+printf 'stale\n' >> "${M}"
+bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${OUT}/replay" < /dev/null >/dev/null 2>&1
+assert_equals "R1: a second run into the same directory succeeds" "0" "$?"
+assert_equals "R1: ... replaces matches.tsv (no stale line)" "0" "$(grep -c '^stale$' "${M}")"
+assert_equals "R1: ... and makes it private again" "0o600" "$(mode_of "${M}")"
 assert_equals "R1: matches.tsv has one line per matched prompt" "7" "$(wc -l < "${M}" | tr -d ' ')"
 assert_equals "R1: every line has exactly 5 fields (tabs and newlines flattened)" "0" \
     "$(awk -F'\t' 'NF != 5' "${M}" | wc -l | tr -d ' ')"
@@ -302,20 +335,32 @@ ACT="SKILL ACTIVATION (1 skills | IMPLEMENT)"
     uu m1 "" "2026-09-18T09:11:30Z" "Base directory for this skill: /x/cache/acsm/auto-claude-skills/3.87.1/skills/panel" "isMeta:true"
     uu m2 "" "2026-09-20T09:00:00Z" "Base directory for this skill: /x/cache/acsm/auto-claude-skills/3.89.3/skills/panel" "isMeta:true"
     uu m3 "" "2026-09-19T09:00:00Z" "Base directory for this skill: /x/cache/acsm/auto-claude-skills/3.89.3/skills/panel" "isMeta:true"
+    ctx s1 "" "2026-09-21T08:00:00Z" SessionStart "Preset active: spec-driven (/x/cache/acsm/auto-claude-skills/3.89.4/config/presets/spec-driven.json)"
+    ctx s2 "" "2026-09-21T08:00:00Z" PostToolUse "see /x/cache/acsm/auto-claude-skills/9.9.8/skills/panel"
     uu u10 a7 "2026-09-18T09:12:00Z" "prompt ten" "${HUMAN}"
     uu u11 u10 "2026-09-18T09:12:30Z" "prompt eleven" "${HUMAN}"
     ctx a10 u10 "2026-09-18T09:12:31Z" UserPromptSubmit "${ACT}"$'\n'"${PANEL_LINE}"
+    uu u13 a10 "2026-09-18T09:12:40Z" "prompt thirteen" "${HUMAN}"
+    jq -nc '{type:"assistant",uuid:"x13",parentUuid:"u13",timestamp:"2026-09-18T09:12:41Z",message:{role:"assistant",content:"ok"}}'
+    jq -nc '{type:"attachment",uuid:"y13",parentUuid:"x13",timestamp:"2026-09-18T09:12:42Z",attachment:{type:"hook_additional_context",hookEvent:"PostToolUse",content:["x"]}}'
+    ctx a13 y13 "2026-09-18T09:12:43Z" UserPromptSubmit "${ACT}"$'\n'"${PANEL_LINE}"
+    printf '%s\n' '[1, 2]' '"just a string"' 'null'
+    uu q14 "" "2026-09-18T09:14:00Z" "look at /x/cache/acsm/auto-claude-skills/9.9.9/skills/panel" "${HUMAN}"
     uu u12 "" "2026-08-01T09:00:00Z" "old prompt" "${HUMAN}"
     ctx a12 u12 "2026-09-18T09:13:00Z" UserPromptSubmit "${ACT}"$'\n'"${PANEL_LINE}"
 } > "${LIVE}/p3/s3.jsonl"
 LV_LOG="$(python3 "${ROUTED}" --skill panel --projects "${LIVE}" --since 2026-09-01 --out "${OUT}/routed.jsonl" 2>&1)"
 assert_equals "L1: live scan succeeds" "0" "$?"
 has_line "L1: one routing per prompt, UserPromptSubmit only, this plugin's skill only, --since on the prompt date" \
-    "routings 4" "${LV_LOG}"
-has_line "L1: two human prompts" "source human: 2" "${LV_LOG}"
+    "routings 5" "${LV_LOG}"
+has_line "L1: three human prompts, one reached through several non-input entries" "source human: 3" "${LV_LOG}"
 has_line "L1: two notifications, the queued one included" "source not-a-prompt:task-notification: 2" "${LV_LOG}"
 has_line "L1: each plugin version's first and last date" "plugin auto-claude-skills 3.87.1: 2026-09-18 .. 2026-09-18" "${LV_LOG}"
 has_line "L1: ... across out-of-order entries" "plugin auto-claude-skills 3.89.3: 2026-09-19 .. 2026-09-20" "${LV_LOG}"
+has_line "L1: the SessionStart hook output is install evidence" "plugin auto-claude-skills 3.89.4: 2026-09-21 .. 2026-09-21" "${LV_LOG}"
+assert_equals "L1: a version path quoted in a prompt or other context is not evidence of an install" "0" \
+    "$(printf '%s\n' "${LV_LOG}" | grep -c -e '9\.9\.9' -e '9\.9\.8')"
+assert_equals "L1: the multi-hop prompt is listed" "1" "$(grep -c '"prompt thirteen"' "${OUT}/routed.jsonl")"
 assert_equals "L1: the prompt a routing answered is listed (parentUuid, not file order)" "1" \
     "$(grep -c '"prompt ten"' "${OUT}/routed.jsonl")"
 assert_equals "L1: the prompt after it is not" "0" "$(grep -c 'prompt eleven' "${OUT}/routed.jsonl")"
@@ -323,12 +368,12 @@ assert_equals "L1: the walk stops at a queued notification" "0" "$(grep -c 'earl
 assert_equals "L1: other skills and PostToolUse context are not listed" "0" "$(grep -c 'login bug' "${OUT}/routed.jsonl")"
 assert_equals "L1: name and plugin collisions, and context without a routing block, are not listed" "0" "$(grep -c 'unrelated prompt' "${OUT}/routed.jsonl")"
 LV_ALL="$(python3 "${ROUTED}" --skill panel --projects "${LIVE}" --out "${OUT}/routed-all.jsonl" 2>&1)"
-has_line "L1: without --since the old prompt is counted" "routings 5" "${LV_ALL}"
+has_line "L1: without --since the old prompt is counted" "routings 6" "${LV_ALL}"
 
 # L2: the routed output feeds replay.
 RR_LOG="$(bash "${REPLAY}" panel "${OUT}/routed.jsonl" "${OUT}/replay-routed" < /dev/null 2>&1)"
 assert_equals "L2: replay reads routed.py output" "0" "$?"
-has_line "L2: all routed records are replayed" "prompts 4" "${RR_LOG}"
+has_line "L2: all routed records are replayed" "prompts 5" "${RR_LOG}"
 has_line "L2: the notification source is kept" "source not-a-prompt:task-notification: 2" "${RR_LOG}"
 has_line "L2: the consultation prompt is attributed to trigger 5" "trigger 5: 1 (human 1, in-word discarded 0)" "${RR_LOG}"
 

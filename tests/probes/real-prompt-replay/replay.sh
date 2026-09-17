@@ -35,7 +35,9 @@ _repo_holding() {
         -u GIT_DISCOVERY_ACROSS_FILESYSTEM LC_ALL=C git -C "$1" rev-parse --absolute-git-dir 2>&1)"
     _rc=$?
     if [ "${_rc}" -eq 0 ]; then printf '%s' "${_out}"; return 0; fi
-    case "${_out}" in *"not a git repository"*) return 1 ;; esac
+    # Only the full-search form means "no repository". A broken .git file or a filesystem
+    # boundary also say "not a git repository", but they stop the search early.
+    case "${_out}" in *"not a git repository (or any of the parent directories)"*) return 1 ;; esac
     local _nl=$'\n'
     printf 'git could not tell: %s' "${_out##*${_nl}}"
     return 2

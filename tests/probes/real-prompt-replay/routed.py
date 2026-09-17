@@ -11,9 +11,10 @@ reflect whichever plugin version was installed at the time, not the current trig
 replay.sh measures those. The hook can also select a skill by its name alone, which a
 trigger replay does not model.
 
-Also prints, for each version of the plugin that appears in a transcript path
-(`/<plugin>/<version>/`), the first and last date it was seen: the evidence that a given
-version was actually running.
+Also prints, for each plugin version, the first and last date it is evidenced as installed:
+a skill loaded from it (the harness records "Base directory for this skill:
+.../<plugin>/<version>/...") or the SessionStart hook output naming its path. Paths quoted
+anywhere else do not count. A first date does not prove the version stayed installed.
 
 Writes a JSONL of the routed inputs (source, ts, project, prompt), one line per input, which
 replay.sh accepts. The output holds prompt text, so a path inside a git repository, or one
@@ -33,7 +34,7 @@ import os  # noqa: E402
 import re  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from extract import open_private, prompt_of, refuse_repo_path, source_of, valid_since  # noqa: E402
+from extract import open_private, prompt_of, refuse_repo_path, source_of, text_of, valid_since  # noqa: E402
 
 
 def input_kind(entry):
@@ -57,6 +58,9 @@ def routes_to(att, pattern):
     return isinstance(content, str) and "SKILL ACTIVATION" in content and bool(pattern.search(content))
 
 
+SKILL_LOAD = "Base directory for this skill: "
+
+
 def read_file(path, version_re, versions):
     """Parsed entries of one transcript; records plugin version dates on the way."""
     entries = []
@@ -69,12 +73,33 @@ def read_file(path, version_re, versions):
             if not isinstance(entry, dict):
                 continue
             entries.append(entry)
+            ver = install_version(entry, version_re)
             day = str(entry.get("timestamp", ""))[:10]
-            if day:
-                for ver in set(version_re.findall(line)):
-                    first, last = versions.get(ver, (day, day))
-                    versions[ver] = (min(first, day), max(last, day))
+            if ver and day:
+                first, last = versions.get(ver, (day, day))
+                versions[ver] = (min(first, day), max(last, day))
     return entries
+
+
+def install_version(entry, version_re):
+    """The plugin version an install-evidence entry names, else None: a skill-loading entry
+    (its first line), or the SessionStart hook's own output."""
+    att = entry.get("attachment")
+    if entry.get("type") == "attachment" and isinstance(att, dict) \
+            and att.get("type") == "hook_additional_context" and att.get("hookEvent") == "SessionStart":
+        content = att.get("content")
+        if isinstance(content, list):
+            content = "\n".join(c for c in content if isinstance(c, str))
+        found = version_re.search(content) if isinstance(content, str) else None
+        return found.group(1) if found else None
+    if entry.get("type") != "user":
+        return None
+    msg = entry.get("message")
+    text = text_of(msg.get("content") if isinstance(msg, dict) else msg)
+    if not isinstance(text, str) or not text.startswith(SKILL_LOAD):
+        return None
+    found = version_re.search(text.split("\n", 1)[0])
+    return found.group(1) if found else None
 
 
 def main():

@@ -11,8 +11,9 @@ It is a **probe, not a suite test**. Its scripts are tested by
 
 The outputs contain your own prompt text. **Every script refuses to write inside any git
 repository** (exit 2): a work tree or a `.git` directory, reached directly or through a
-symlink, a case-changed path or a hard link. A script also refuses when git is missing or
-cannot answer. Output files are created with mode 0600. Point the outputs at a temporary
+symlink, `..`, a case-changed path or a hard link. A script also refuses when git is missing
+or cannot confirm that no parent directory is a repository. Output files are written with
+mode 0600, including when an existing file is replaced. Point the outputs at a temporary
 directory, and never commit or publish the results. Report counts and classifications, not
 prompts.
 
@@ -36,7 +37,7 @@ The replay takes about 1.5 minutes for 2,000 prompts.
 |---|---|---|
 | `extract.py` | Writes the distinct prompts, each labelled by source. | Top-level session transcripts only. |
 | `replay.sh` | Tests prompts against one skill's CURRENT triggers, matching the way the hook does. | `config/default-triggers.json` from this checkout, plus a prompts file from either Python script. |
-| `routed.py` | Lists the prompts the INSTALLED hook actually routed to a skill, each labelled by source. It also prints the first and last date each plugin version appears in the transcripts. | The hook output recorded in the transcripts. |
+| `routed.py` | Lists the prompts the INSTALLED hook actually routed to a skill, each labelled by source. It also prints the first and last date each plugin version is evidenced as installed. | The hook output recorded in the transcripts. |
 
 **Sources.** Each prompt is labelled from the transcript's own provenance fields, never from
 its wording:
@@ -57,7 +58,7 @@ wrappers (notifications, resumed-session summaries, injected skill text).
 - Transcripts on disk cover only about four weeks. On 2026-09-17 the earliest was 2026-08-20.
 - `replay.sh` measures trigger matches, not selection. It lowercases like the hook (`tr`) and matches like the hook (bash `=~`). It also drops a match that sits inside a word, as the hook does. It does not apply the hook's early exits or scoring, and it does not model the hook selecting a skill by its name alone.
 - `routed.py` reflects whichever plugin version was installed at the time. The hook output does not say which trigger fired. Replaying the routed prompts attributes them to triggers only for the triggers in this checkout.
-- A version's date range comes from its install path appearing anywhere in a transcript, including quoted text, so old versions keep appearing after an update. Use the date a version was **first** seen.
+- Install evidence comes only from skills loaded from a version and from the session-start hook's own output, never from quoted paths. Sessions started before an update keep showing the old version, so use the date a version was **first** seen.
 
 ## Result, 2026-09-17: `panel`
 
@@ -65,17 +66,17 @@ The vendor-free clause (trigger 5) was narrowed and then left alone. Round 7's `
 ("show each one of the reviewers' raw answers verbatim") is a real false dispatch, and so
 are similar invented probes. The question was whether the same shape occurs in real use.
 
-**Replay on 1,996 distinct prompts from 46 projects** (588 `human`, 778 `sdk`,
+**Replay on 1,997 distinct prompts from 46 projects** (588 `human`, 779 `sdk`,
 630 `unlabelled`):
 
 | | Count |
 |---|---|
-| Prompts matching any current `panel` trigger | 30 |
+| Prompts matching any current `panel` trigger | 31 |
 | Of those, `human` | **0** |
-| Matches per trigger 0–6 | 22, 9, 0, 0, 1, 10, 8 (`human`: all 0) |
+| Matches per trigger 0–6 | 23, 10, 0, 0, 1, 11, 9 (`human`: all 0) |
 
-All 30 matches came from other sources:
-- 27 `sdk`: automated security reviews whose diffs quote this repository's own consultation fixtures. This is the known quoted-content limit, which needs a frame detector rather than a trigger change.
+All 31 matches came from other sources:
+- 28 `sdk`: automated security reviews whose diffs quote this repository's own consultation fixtures. This is the known quoted-content limit, which needs a frame detector rather than a trigger change.
 - 3 `unlabelled` relays.
 
 Narrowing trigger 5 with a possessive rule (tried, not shipped) changed the outcome of
@@ -95,10 +96,11 @@ question, not a send (PR #255).
 
 On 2026-10-15, run the four commands above with `--since 2026-09-17` on both Python
 scripts. Run them on the day: transcripts older than about four weeks are deleted, so a
-later run silently loses the start of the window.
+later run silently loses the start of the window. Keep that day's outputs in a private
+directory, outside every repository, until the revisit closes.
 
 **1. Check that there is enough evidence.** Both must hold:
-- `routed.py` first saw version 3.89.3 or later on or before 2026-09-24. That is the first release with the current `panel` triggers and PR #258, and the date leaves at least 21 days of the window running it.
+- `routed.py` first shows version 3.89.3 or later on or before 2026-09-24. That is the first release with the current `panel` triggers and PR #258, so the date leaves at least 21 days of the window on it. The first date proves it was installed then, not that it stayed installed.
 - The extract has at least 200 `human` prompts.
 
 **2. Count nuisance prompts.** A nuisance prompt is a distinct `human` prompt that:
@@ -108,24 +110,25 @@ later run silently loses the start of the window.
 The replay of the routed prompts shows which of them the hook actually dispatched. It does
 not change the count.
 
-**3. Decide.**
+**3. Decide.** The first matching row wins.
 
-| Nuisance prompts | Action |
+| Result | Action |
 |---|---|
-| 2 or more | Open a fix scoped to the clause that fired, never a whole-skill veto. |
-| 1 | Hold: record it and repeat once (step 4). |
-| 0, with enough evidence | Keep trigger 5 unchanged and close this revisit. |
+| 2 or more nuisance prompts | Open a fix scoped to the clause that fired, never a whole-skill veto. Real false dispatches justify a fix however thin the rest of the evidence is. |
+| Not enough evidence (step 1) | Repeat once (step 4). |
+| 1 nuisance prompt | Hold: record it and repeat once (step 4). |
+| 0 nuisance prompts | Keep trigger 5 unchanged and close this revisit. |
 
-Not enough evidence also means repeat once (step 4). Do not draw a conclusion from the
-thinner data.
+**4. The one repeat: 2026-11-12.** Run the same commands with `--since 2026-10-16`, so the
+two windows do not overlap. Combine the results with October's:
+- `human` prompts: add the two counts;
+- nuisance prompts: count each distinct text once, checking November's against the October outputs you kept;
+- the version condition: already settled in October, unless no qualifying version had appeared by then; in that case it now needs a first date on or before 2026-10-22.
 
-**4. The one repeat: 2026-11-12.** Run the same commands with `--since 2026-10-15`. Add its
-counts to October's: `human` prompts, nuisance prompts, and days on version 3.89.3 or later.
-Decide with the table on the sums.
-
-If the combined evidence is still too thin, or the combined nuisance count is 1, record
-that and close the revisit anyway. Trigger 5 stays unchanged, and `pd-5` stays an open
-corpus line. There is no second repeat.
+Decide with the table on the combined result. If the combined result is still "not enough
+evidence" or "1 nuisance prompt", record that and close the revisit anyway: trigger 5 stays
+unchanged, and `pd-5` stays an open corpus line. There is no second repeat. Delete the kept
+outputs when the revisit closes.
 
 **No sample-size target.** No `human` prompt hit trigger 5 in 588, so waiting for a set
 number of real trigger-5 dispatches could wait indefinitely.

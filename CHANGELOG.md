@@ -11,10 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Real-prompt replay probe** (`tests/probes/real-prompt-replay/`; `tests/test-real-prompt-replay.sh`). Measures how often a skill's triggers fire on prompts from real sessions. It has three scripts:
   - `extract.py` pulls the distinct prompts from local transcripts. It labels each one by the transcript's own provenance fields (`human`, `sdk`, `peer`, `unlabelled`, …), never by its wording.
   - `replay.sh` tests prompts against a skill's current triggers, matching the way the hook does: `tr` lowercasing, bash `=~`, and dropping matches inside a word.
-  - `routed.py` lists the prompts the installed hook actually routed, pairing each routing to its prompt through `parentUuid`, and reports the dates each plugin version was seen.
+  - `routed.py` lists the prompts the installed hook actually routed, pairing each routing to its prompt through `parentUuid`, and reports the dates each plugin version is evidenced as installed.
 
   All three refuse to write prompt text inside any git repository (including through symlinks, hard links, case-changed paths or `..`), and refuse when git cannot answer. First use, for `panel`:
-  - Of 1,996 real prompts (588 `human`), the current triggers matched 30, none of them `human`. 27 were automated security-review prompts quoting this repo's fixtures.
+  - Of 1,997 real prompts (588 `human`), the current triggers matched 31, none of them `human`. 28 were automated security-review prompts quoting this repo's fixtures.
   - A trigger-5 narrowing for round 7's `pd-5` changed none of them, so it was not shipped.
   - `pd-5` stays an open corpus line, with a pre-registered revisit on 2026-10-15: an evidence floor, a nuisance budget, and one repeat on 2026-11-12 before it closes.
 

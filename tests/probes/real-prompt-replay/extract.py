@@ -37,6 +37,7 @@ SKIP_PREFIX = (
 RANK = {"human": 0, "unlabelled": 1, "sdk": 2}
 
 
+NOT_A_REPO = "not a git repository (or any of the parent directories)"
 GIT_ENV_DROP = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_CEILING_DIRECTORIES",
                 "GIT_DISCOVERY_ACROSS_FILESYSTEM")
 
@@ -46,9 +47,11 @@ def repo_holding(path):
 
     repository is the git dir when git says the directory is inside a repository (a work
     tree or a .git directory); reason is set when git could not answer, which the caller
-    must treat as a refusal. (None, None) means git positively said "not a git repository".
+    must treat as a refusal. (None, None) only when git searched every parent directory and
+    found no repository: a broken .git file or a filesystem boundary also print "not a git
+    repository", but they stop the search early, so they are refusals too.
     """
-    probe = os.path.abspath(path)
+    probe = os.path.realpath(path)
     while not os.path.isdir(probe):
         parent = os.path.dirname(probe)
         if parent == probe:
@@ -63,7 +66,7 @@ def repo_holding(path):
         return None, f"git is unavailable ({exc.__class__.__name__})"
     if res.returncode == 0:
         return res.stdout.strip() or probe, None
-    if "not a git repository" in res.stderr:
+    if NOT_A_REPO in res.stderr:
         return None, None
     return None, "git could not tell: " + (res.stderr.strip().splitlines() or ["no output"])[-1]
 
@@ -82,7 +85,8 @@ def refuse_repo_path(path):
 
 
 def open_private(path):
-    """Open `path` for writing, mode 0600, refusing a symlink or a hard link as the file.
+    """Open `path` for writing as mode 0600 (an existing file is reset to 0600 and
+    truncated), refusing a symlink or a hard link as the file.
 
     Parent directories can still be swapped between the check and the open: the guard
     protects against mistakes, not against a concurrent attacker on your own machine."""
@@ -90,6 +94,7 @@ def open_private(path):
     if os.fstat(fd).st_nlink > 1:
         os.close(fd)
         raise OSError(f"refusing to write through a hard link: {path}")
+    os.fchmod(fd, 0o600)
     os.ftruncate(fd, 0)
     return os.fdopen(fd, "w", encoding="utf-8")
 
