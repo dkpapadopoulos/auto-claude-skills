@@ -5,7 +5,7 @@
 # transcript's provenance fields, not its wording), that the replay matches like the hook
 # (tr lowercasing, bash =~, the in-word discard), that record framing survives NUL/US/tab,
 # that live routings are paired through parentUuid, and that no script writes prompt text
-# into any git work tree.
+# into any git repository, or anywhere git cannot vouch for.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -69,6 +69,12 @@ BOTH="ask codex and gemini the same question and show me both raw answers"
     jq -nc '{type:"attachment",timestamp:"2026-09-17T10:08:00Z",attachment:{type:"queued_command",commandMode:"prompt",prompt:"the supermodel panelist spoke",origin:{kind:"human"}}}'
     jq -nc '{type:"attachment",timestamp:"2026-09-17T10:08:30Z",attachment:{type:"queued_command",commandMode:"task-notification",prompt:"queued note: give me both of them raw answers"}}'
     jq -nc '{type:"user",timestamp:"2026-09-17T10:09:00Z",origin:{kind:"human"},message:{role:"user",content:("note" + ([0] | implode) + " put the model panels to work")}}'
+    u "2026-09-17T10:09:10Z" "same words from two places" 'entrypoint:"cli"'
+    u "2026-09-17T10:09:20Z" "same words from two places" "${HUMAN}"
+    jq -nc '{type:"attachment",timestamp:"2026-09-17T10:09:25Z",attachment:{type:"queued_command",commandMode:"prompt",prompt:"queued without origin"}}'
+    jq -nc '{type:"attachment",timestamp:"2026-09-17T10:09:26Z",attachment:{type:"queued_command",commandMode:"prompt",isMeta:true,prompt:"queued meta: give me both of them raw answers",origin:{kind:"human"}}}'
+    u "2026-09-17T10:09:30Z" "a supermodel panelist and a model panel" "${HUMAN}"
+    u "2026-09-17T10:09:40Z" "x.model panelist and supermodel panel.x" "${HUMAN}"
     printf '%s\n' 'this line is not json'
 } > "${PROJ}/p1/s1.jsonl"
 u "2026-09-17T10:10:00Z" "subagent brief: give me both of them raw answers" "${HUMAN}" > "${PROJ}/p1/s1/subagents/agent-x.jsonl"
@@ -84,30 +90,38 @@ mkdir -p "${OUT}"
 # E1: extraction keeps prompts once each, labelled by provenance.
 EX_LOG="$(python3 "${EXTRACT}" --projects "${PROJ}" --out "${OUT}/prompts.jsonl" 2>&1)"
 assert_equals "E1: extraction succeeds" "0" "$?"
-has_line "E1: 11 distinct prompts" "prompts 11" "${EX_LOG}"
-has_line "E1: 8 labelled human (typed, queued, from any project)" "source human: 8" "${EX_LOG}"
+has_line "E1: 15 distinct prompts" "prompts 15" "${EX_LOG}"
+has_line "E1: 11 labelled human (typed, queued, from any project)" "source human: 11" "${EX_LOG}"
 has_line "E1: the peer message is labelled peer" "source peer: 1" "${EX_LOG}"
 has_line "E1: the pipeline prompt is labelled sdk" "source sdk: 1" "${EX_LOG}"
-has_line "E1: the prompt without provenance is unlabelled, not human" "source unlabelled: 1" "${EX_LOG}"
-assert_equals "E1: the file matches the count" "11" "$(wc -l < "${OUT}/prompts.jsonl" | tr -d ' ')"
+has_line "E1: the prompts without provenance are unlabelled, not human" "source unlabelled: 2" "${EX_LOG}"
+assert_equals "E1: the file matches the count" "15" "$(wc -l < "${OUT}/prompts.jsonl" | tr -d ' ')"
 assert_equals "E1: a prompt seen from sdk then a person keeps the human label" "human" \
     "$(source_of_prompt "${OUT}/prompts.jsonl" "ask codex and gemini")"
 assert_equals "E1: the queued prompt is read, labelled human" "human" \
     "$(source_of_prompt "${OUT}/prompts.jsonl" "the supermodel")"
 assert_equals "E1: an unlabelled cli prompt is not assumed human" "unlabelled" \
     "$(source_of_prompt "${OUT}/prompts.jsonl" "relay")"
+assert_equals "E1: a prompt seen unlabelled then from a person is labelled human" "human" \
+    "$(source_of_prompt "${OUT}/prompts.jsonl" "same words")"
+assert_equals "E1: a queued prompt without origin is read, unlabelled" "unlabelled" \
+    "$(source_of_prompt "${OUT}/prompts.jsonl" "queued without origin")"
 assert_equals "E1: surrounding whitespace is stripped" "1" \
     "$(jq -r 'select(.prompt == "ASK A FEW OF THEM SEPARATELY AND GIVE ME THE RAW ANSWERS") | .source' "${OUT}/prompts.jsonl" | wc -l | tr -d ' ')"
-for _gone in "subagent brief" "tool output" "task-notification" "queued note" "This session" "meta:" "side:"; do
+for _gone in "subagent brief" "tool output" "task-notification" "queued note" "queued meta" "This session" "meta:" "side:"; do
     assert_equals "E1: not kept: ${_gone}" "0" "$(grep -cF "${_gone}" "${OUT}/prompts.jsonl")"
 done
 
 # E2: --since filters by the prompt's date and rejects a bad date without writing.
 EX2="$(python3 "${EXTRACT}" --projects "${PROJ}" --since 2026-09-01 --out "${OUT}/since.jsonl" 2>&1)"
-has_line "E2: --since drops the older prompt and keeps the boundary day" "prompts 10" "${EX2}"
+has_line "E2: --since drops the older prompt and keeps the boundary day" "prompts 14" "${EX2}"
 python3 "${EXTRACT}" --projects "${PROJ}" --since 2026-13-45 --out "${OUT}/bad-since.jsonl" >/dev/null 2>&1
 assert_equals "E2: a malformed --since exits 2" "2" "$?"
 no_file "E2: ... and writes nothing" "${OUT}/bad-since.jsonl"
+for _bad in 20260901 2026-W36-1 2026-9-1; do
+    python3 "${EXTRACT}" --projects "${PROJ}" --since "${_bad}" --out "${OUT}/bad-since.jsonl" >/dev/null 2>&1
+    assert_equals "E2: a non-canonical --since (${_bad}) exits 2" "2" "$?"
+done
 
 # G: no script writes prompt text inside any git work tree.
 OTHER="${TEST_TMPDIR}/other-repo"
@@ -122,6 +136,11 @@ guard_case() { # <label> <out-file> <path that must not appear>
     no_file "G: nothing written for $1" "$3"
 }
 guard_case "a path in this repository" "${PROBE}/leak.jsonl" "${PROBE}/leak.jsonl"
+REPO_MSG="refusing to write prompt text inside a git repository"
+_err="$(python3 "${EXTRACT}" --projects "${PROJ}" --out "${OTHER}/.git/leak.jsonl" 2>&1 >/dev/null)"
+assert_contains "G: extract names the repository it found (not a cannot-check refusal)" "${REPO_MSG}" "${_err}"
+_err="$(python3 "${ROUTED}" --skill panel --projects "${PROJ}" --out "${PROBE}/leak.jsonl" 2>&1 >/dev/null)"
+assert_contains "G: routed names the repository it found" "${REPO_MSG}" "${_err}"
 guard_case "a not-yet-existing directory in this repository" "${PROBE}/nope/leak.jsonl" "${PROBE}/nope"
 guard_case "a symlinked parent into this repository" "${TEST_TMPDIR}/probe-link/leak.jsonl" "${PROBE}/leak.jsonl"
 guard_case "another git work tree" "${OTHER}/leak.jsonl" "${OTHER}/leak.jsonl"
@@ -129,33 +148,53 @@ ln -s "${PROBE}/dangle.jsonl" "${TEST_TMPDIR}/dangle.jsonl"
 guard_case "a dangling symlink into this repository" "${TEST_TMPDIR}/dangle.jsonl" "${PROBE}/dangle.jsonl"
 ln -s "${OTHER}/dangle.jsonl" "${TEST_TMPDIR}/dangle-other.jsonl"
 guard_case "a dangling symlink into another git work tree" "${TEST_TMPDIR}/dangle-other.jsonl" "${OTHER}/dangle.jsonl"
-# Without git on PATH, the scripts fall back to their own checkout, resolved and case-folded.
+guard_case "a repository's .git directory" "${OTHER}/.git/leak.jsonl" "${OTHER}/.git/leak.jsonl"
+GIT_CEILING_DIRECTORIES="$(dirname "${PROBE}")" GIT_DIR="${TEST_TMPDIR}/nowhere" \
+    guard_case "a path in this repository with git discovery disabled by the environment" \
+    "${PROBE}/leak.jsonl" "${PROBE}/leak.jsonl"
+: > "${OTHER}/tracked.txt"
+ln "${OTHER}/tracked.txt" "${TEST_TMPDIR}/hardlink.jsonl"
+guard_case "a hard link to a file in another repository" "${TEST_TMPDIR}/hardlink.jsonl" "${TEST_TMPDIR}/never"
+assert_equals "G: the hard-linked file is untouched" "0" "$(wc -c < "${OTHER}/tracked.txt" | tr -d ' ')"
+: > "${TEST_TMPDIR}/plain-target"
+ln -s "${TEST_TMPDIR}/plain-target" "${TEST_TMPDIR}/symlink-out.jsonl"
+guard_case "a symlink as the output file, even outside a repository" "${TEST_TMPDIR}/symlink-out.jsonl" "${TEST_TMPDIR}/never"
+assert_equals "G: the symlink target is untouched" "0" "$(wc -c < "${TEST_TMPDIR}/plain-target" | tr -d ' ')"
+# Without git, nothing can be checked, so every script refuses, even outside any repository.
 NOGIT="${TEST_TMPDIR}/nogit-bin"
 mkdir -p "${NOGIT}"
-for _tool in python3 jq tr dirname; do
+for _tool in jq tr dirname env; do
     ln -s "$(command -v "${_tool}")" "${NOGIT}/${_tool}"
 done
-nogit_case() { # <label> <out-file> <path that must not appear>
-    PATH="${NOGIT}:/bin" python3 "${EXTRACT}" --projects "${PROJ}" --out "$2" >/dev/null 2>&1
-    assert_equals "G: without git, extract refuses $1" "2" "$?"
-    PATH="${NOGIT}:/bin" python3 "${ROUTED}" --skill panel --projects "${PROJ}" --out "$2" >/dev/null 2>&1
-    assert_equals "G: without git, routed refuses $1" "2" "$?"
-    no_file "G: without git, nothing written for $1" "$3"
-}
-nogit_case "a symlinked parent into this repository" "${TEST_TMPDIR}/probe-link/leak.jsonl" "${PROBE}/leak.jsonl"
-PATH="${NOGIT}:/bin" bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${TEST_TMPDIR}/probe-link" < /dev/null >/dev/null 2>&1
-assert_equals "G: without git, replay refuses a symlink into this repository" "2" "$?"
-if [ -d "${UPPER}" ]; then
-    nogit_case "a case-changed path" "${UPPER}/leak.jsonl" "${PROBE}/leak.jsonl"
-    PATH="${NOGIT}:/bin" bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${UPPER}/leak" < /dev/null >/dev/null 2>&1
-    assert_equals "G: without git, replay refuses a case-changed path" "2" "$?"
-    no_file "G: ... and creates nothing" "${PROBE}/leak"
-fi
+PY="$(command -v python3)"
+for _script in "${EXTRACT}" "${ROUTED}"; do
+    _err="$(PATH="${NOGIT}" "${PY}" "${_script}" --skill panel --projects "${PROJ}" --out "${OUT}/nogit.jsonl" 2>&1 >/dev/null)"
+    [ "${_script}" = "${EXTRACT}" ] && _err="$(PATH="${NOGIT}" "${PY}" "${_script}" --projects "${PROJ}" --out "${OUT}/nogit.jsonl" 2>&1 >/dev/null)"
+    assert_contains "G: without git, ${_script##*/} refuses because it cannot check" "git is unavailable" "${_err}"
+    no_file "G: without git, ${_script##*/} writes nothing" "${OUT}/nogit.jsonl"
+done
+_err="$(PATH="${NOGIT}" /bin/bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${OUT}/nogit" < /dev/null 2>&1 >/dev/null)"
+assert_contains "G: without git, replay refuses because it cannot check" "git is unavailable" "${_err}"
+no_file "G: without git, replay creates nothing" "${OUT}/nogit"
+# A git that fails for any reason other than "not a git repository" is not an answer either.
+FAKEGIT="${TEST_TMPDIR}/fakegit-bin"
+mkdir -p "${FAKEGIT}"
+printf '%s\n' '#!/bin/sh' 'echo "fatal: detected dubious ownership in repository" >&2' 'exit 128' > "${FAKEGIT}/git"
+chmod +x "${FAKEGIT}/git"
+_err="$(PATH="${FAKEGIT}:${PATH}" python3 "${EXTRACT}" --projects "${PROJ}" --out "${OUT}/fakegit.jsonl" 2>&1 >/dev/null)"
+assert_contains "G: extract refuses when git cannot tell" "git could not tell" "${_err}"
+_err="$(PATH="${FAKEGIT}:${PATH}" python3 "${ROUTED}" --skill panel --projects "${PROJ}" --out "${OUT}/fakegit.jsonl" 2>&1 >/dev/null)"
+assert_contains "G: routed refuses when git cannot tell" "git could not tell" "${_err}"
+no_file "G: ... and neither writes" "${OUT}/fakegit.jsonl"
+_err="$(PATH="${FAKEGIT}:${PATH}" bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${OUT}/fakegit" < /dev/null 2>&1 >/dev/null)"
+assert_contains "G: replay refuses when git cannot tell" "git could not tell" "${_err}"
+no_file "G: ... and creates nothing" "${OUT}/fakegit"
 if [ -d "${UPPER}" ]; then
     guard_case "a case-changed path on a case-insensitive volume" "${UPPER}/leak.jsonl" "${PROBE}/leak.jsonl"
 fi
-bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${PROBE}/leak" < /dev/null >/dev/null 2>&1
+_err="$(bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${PROBE}/leak" < /dev/null 2>&1 >/dev/null)"
 assert_equals "G: replay refuses a directory in this repository" "2" "$?"
+assert_contains "G: ... naming the repository it found (not a cannot-check refusal)" "${REPO_MSG}" "${_err}"
 no_file "G: ... and creates nothing" "${PROBE}/leak"
 bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${PROBE}/nope/deeper" < /dev/null >/dev/null 2>&1
 assert_equals "G: replay refuses a not-yet-existing directory in this repository" "2" "$?"
@@ -171,6 +210,24 @@ mkdir -p "${OUT}/lnk"
 ln -s "${TEST_TMPDIR}/lnk-target" "${OUT}/lnk/matches.tsv"
 bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${OUT}/lnk" < /dev/null >/dev/null 2>&1
 assert_equals "G: replay refuses to write matches.tsv through a symlink" "2" "$?"
+mkdir -p "${OUT}/hl"
+ln "${OTHER}/tracked.txt" "${OUT}/hl/matches.tsv"
+bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${OUT}/hl" < /dev/null >/dev/null 2>&1
+assert_equals "G: replay refuses to write matches.tsv through a hard link" "2" "$?"
+assert_equals "G: ... and the linked file is untouched" "0" "$(wc -c < "${OTHER}/tracked.txt" | tr -d ' ')"
+bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${TEST_TMPDIR}/newdir/../probe-link/leak" < /dev/null >/dev/null 2>&1
+assert_equals "G: replay refuses a '..' path" "2" "$?"
+no_file "G: ... and creates nothing in the repository" "${PROBE}/leak"
+no_file "G: ... or on the way" "${TEST_TMPDIR}/newdir"
+GIT_CEILING_DIRECTORIES="$(dirname "${PROBE}")" GIT_DIR="${TEST_TMPDIR}/nowhere" \
+    bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${PROBE}/leak" < /dev/null >/dev/null 2>&1
+assert_equals "G: replay ignores git discovery settings from the environment" "2" "$?"
+no_file "G: ... and creates nothing" "${PROBE}/leak"
+_err="$(bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${OTHER}/.git/replay" < /dev/null 2>&1 >/dev/null)"
+assert_contains "G: replay names the repository for a .git directory" "${REPO_MSG}" "${_err}"
+bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${OTHER}/.git/replay" < /dev/null >/dev/null 2>&1
+assert_equals "G: replay refuses a repository's .git directory" "2" "$?"
+no_file "G: ... and creates nothing" "${OTHER}/.git/replay"
 if [ -d "${UPPER}" ]; then
     bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${UPPER}/leak" < /dev/null >/dev/null 2>&1
     assert_equals "G: replay refuses a case-changed path" "2" "$?"
@@ -182,25 +239,26 @@ no_file "G: routed.py leaves no bytecode cache in the repository" "${PROBE}/__py
 # R1: replay matches like the hook.
 RP_LOG="$(bash "${REPLAY}" panel "${OUT}/prompts.jsonl" "${OUT}/replay" < /dev/null 2>&1)"
 assert_equals "R1: replay succeeds" "0" "$?"
-has_line "R1: every record is read once (NUL and US do not split records)" "prompts 11" "${RP_LOG}"
-has_line "R1: sources are counted" "source human: 8" "${RP_LOG}"
-has_line "R1: trigger 0 counts boundary hits and discards the in-word one" \
-    "trigger 0: 2 (human 2, in-word discarded 1)" "${RP_LOG}"
+has_line "R1: every record is read once (NUL and US do not split records)" "prompts 15" "${RP_LOG}"
+has_line "R1: sources are counted" "source human: 11" "${RP_LOG}"
+has_line "R1: trigger 0 keeps scanning past an in-word hit, and discards prompts with only in-word hits ('.' counts as a word character)" \
+    "trigger 0: 3 (human 3, in-word discarded 2)" "${RP_LOG}"
 has_line "R1: trigger 1 counts the named-model prompt" "trigger 1: 1 (human 1, in-word discarded 0)" "${RP_LOG}"
 has_line "R1: trigger 5 counts the upper-case prompt after lowercasing, and the non-human ones" \
     "trigger 5: 3 (human 1, in-word discarded 0)" "${RP_LOG}"
 has_line "R1: a prompt counts for every trigger it hits, not only the first" \
     "trigger 6: 1 (human 1, in-word discarded 0)" "${RP_LOG}"
-has_line "R1: matched prompts, with the human share" "matched prompts: 6 (human 4)" "${RP_LOG}"
+has_line "R1: matched prompts, with the human share" "matched prompts: 7 (human 5)" "${RP_LOG}"
 M="${OUT}/replay/matches.tsv"
-assert_equals "R1: matches.tsv has one line per matched prompt" "6" "$(wc -l < "${M}" | tr -d ' ')"
+assert_equals "R1: matches.tsv has one line per matched prompt" "7" "$(wc -l < "${M}" | tr -d ' ')"
 assert_equals "R1: every line has exactly 5 fields (tabs and newlines flattened)" "0" \
     "$(awk -F'\t' 'NF != 5' "${M}" | wc -l | tr -d ' ')"
 assert_equals "R1: the multi-trigger prompt lists every index" "1" "$(grep -c $'^1,6\thuman\t' "${M}")"
 assert_equals "R1: the US-named project stays in its own column" "1" \
     "$(awk -F'\t' '$2 == "human" && $4 == "p us" && $5 == "see the model panel"' "${M}" | wc -l | tr -d ' ')"
 assert_equals "R1: the unrelated prompt is not listed" "0" "$(grep -c 'login bug' "${M}")"
-assert_equals "R1: the in-word-only prompt is not listed" "0" "$(grep -c 'supermodel' "${M}")"
+assert_equals "R1: the in-word-only prompts are not listed" "0" "$(grep -c -e 'panelist spoke' -e 'x.model' "${M}")"
+assert_equals "R1: a boundary hit after an in-word hit is listed" "1" "$(grep -c 'a supermodel panelist and a model panel' "${M}")"
 
 # R2: bad inputs are errors, not empty results.
 bash "${REPLAY}" no-such-skill "${OUT}/prompts.jsonl" "${OUT}/replay2" < /dev/null >/dev/null 2>&1
@@ -239,7 +297,11 @@ ACT="SKILL ACTIVATION (1 skills | IMPLEMENT)"
     ctx a6 u6 "2026-09-18T09:10:01Z" UserPromptSubmit "${ACT}"$'\n'"Process: systematic-debugging -> Skill(superpowers:systematic-debugging)"
     ctx a6b u6 "2026-09-18T09:10:02Z" PostToolUse "${ACT}"$'\n'"${PANEL_LINE}"
     uu u7 a6 "2026-09-18T09:11:00Z" "unrelated prompt" "${HUMAN}"
-    ctx a7 u7 "2026-09-18T09:11:01Z" UserPromptSubmit "${ACT}"$'\n'"Domain: sub-panel -> Skill(auto-claude-skills:sub-panel)"$'\n'"Domain: panel -> Skill(other-plugin:panel)"$'\n'"see Skill(auto-claude-skills:panel)"
+    ctx a7 u7 "2026-09-18T09:11:01Z" UserPromptSubmit "${ACT}"$'\n'"Domain: sub-panel -> Skill(auto-claude-skills:sub-panel)"$'\n'"Domain: sub-panel -> Skill(auto-claude-skills:panel)"$'\n'"Domain: panel -> Skill(other-plugin:panel)"$'\n'"see Skill(auto-claude-skills:panel)"
+    ctx a7b u7 "2026-09-18T09:11:02Z" UserPromptSubmit "${PANEL_LINE}"
+    uu m1 "" "2026-09-18T09:11:30Z" "Base directory for this skill: /x/cache/acsm/auto-claude-skills/3.87.1/skills/panel" "isMeta:true"
+    uu m2 "" "2026-09-20T09:00:00Z" "Base directory for this skill: /x/cache/acsm/auto-claude-skills/3.89.3/skills/panel" "isMeta:true"
+    uu m3 "" "2026-09-19T09:00:00Z" "Base directory for this skill: /x/cache/acsm/auto-claude-skills/3.89.3/skills/panel" "isMeta:true"
     uu u10 a7 "2026-09-18T09:12:00Z" "prompt ten" "${HUMAN}"
     uu u11 u10 "2026-09-18T09:12:30Z" "prompt eleven" "${HUMAN}"
     ctx a10 u10 "2026-09-18T09:12:31Z" UserPromptSubmit "${ACT}"$'\n'"${PANEL_LINE}"
@@ -252,12 +314,14 @@ has_line "L1: one routing per prompt, UserPromptSubmit only, this plugin's skill
     "routings 4" "${LV_LOG}"
 has_line "L1: two human prompts" "source human: 2" "${LV_LOG}"
 has_line "L1: two notifications, the queued one included" "source not-a-prompt:task-notification: 2" "${LV_LOG}"
+has_line "L1: each plugin version's first and last date" "plugin auto-claude-skills 3.87.1: 2026-09-18 .. 2026-09-18" "${LV_LOG}"
+has_line "L1: ... across out-of-order entries" "plugin auto-claude-skills 3.89.3: 2026-09-19 .. 2026-09-20" "${LV_LOG}"
 assert_equals "L1: the prompt a routing answered is listed (parentUuid, not file order)" "1" \
     "$(grep -c '"prompt ten"' "${OUT}/routed.jsonl")"
 assert_equals "L1: the prompt after it is not" "0" "$(grep -c 'prompt eleven' "${OUT}/routed.jsonl")"
 assert_equals "L1: the walk stops at a queued notification" "0" "$(grep -c 'earlier prompt' "${OUT}/routed.jsonl")"
 assert_equals "L1: other skills and PostToolUse context are not listed" "0" "$(grep -c 'login bug' "${OUT}/routed.jsonl")"
-assert_equals "L1: name and plugin collisions are not listed" "0" "$(grep -c 'unrelated prompt' "${OUT}/routed.jsonl")"
+assert_equals "L1: name and plugin collisions, and context without a routing block, are not listed" "0" "$(grep -c 'unrelated prompt' "${OUT}/routed.jsonl")"
 LV_ALL="$(python3 "${ROUTED}" --skill panel --projects "${LIVE}" --out "${OUT}/routed-all.jsonl" 2>&1)"
 has_line "L1: without --since the old prompt is counted" "routings 5" "${LV_ALL}"
 

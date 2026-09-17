@@ -13,8 +13,10 @@
 # Prints the prompt count per source, a hit count per trigger index (with the human share),
 # the discarded in-word hits, and the prompts that hit any trigger. Writes
 # <out-dir>/matches.tsv: indices, source, date, project, prompt (tabs and newlines replaced
-# by spaces). The output holds prompt text, so an output directory inside a git work tree
-# is refused (exit 2). Exit 2 also for an unknown skill or a malformed prompts file.
+# by spaces). The output holds prompt text, so an output directory inside a git repository,
+# or one git cannot vouch for, is refused (exit 2). Exit 2 also for an unknown skill or a
+# malformed prompts file. The hook can also select a skill by its name alone; this replay
+# does not model that.
 set -uf
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd -P)"
 SKILL="${1:-}"; PROMPTS="${2:-}"; OUTDIR="${3:-}"
@@ -23,23 +25,27 @@ if [ -z "${SKILL}" ] || [ ! -f "${PROMPTS}" ] || [ -z "${OUTDIR}" ]; then
     exit 2
 fi
 
-# _in_work_tree <existing dir>: prints the work tree containing it, if any. Falls back to
-# this checkout, compared case-insensitively, when git cannot answer.
-_in_work_tree() {
-    local _top _lc_dir _lc_root
-    _top="$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" && [ -n "${_top}" ] && {
-        printf '%s' "${_top}"; return 0; }
-    _lc_dir="$(printf '%s/' "$1" | tr '[:upper:]' '[:lower:]')"
-    _lc_root="$(printf '%s/' "${ROOT}" | tr '[:upper:]' '[:lower:]')"
-    case "${_lc_dir}" in "${_lc_root}"*) printf '%s' "${ROOT}"; return 0 ;; esac
-    return 1
+# _repo_holding <existing dir>: prints the repository containing it and returns 0; returns 1
+# when git positively says "not a git repository"; prints a reason and returns 2 when git
+# cannot answer. Only 1 lets the script write.
+_repo_holding() {
+    local _out _rc
+    command -v git >/dev/null 2>&1 || { printf 'git is unavailable'; return 2; }
+    _out="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_CEILING_DIRECTORIES \
+        -u GIT_DISCOVERY_ACROSS_FILESYSTEM LC_ALL=C git -C "$1" rev-parse --absolute-git-dir 2>&1)"
+    _rc=$?
+    if [ "${_rc}" -eq 0 ]; then printf '%s' "${_out}"; return 0; fi
+    case "${_out}" in *"not a git repository"*) return 1 ;; esac
+    local _nl=$'\n'
+    printf 'git could not tell: %s' "${_out##*${_nl}}"
+    return 2
 }
-_refuse() {
-    echo "refusing to write prompt text inside a git work tree ($1): ${OUTDIR}" >&2
-    exit 2
-}
-# Check the nearest existing ancestor before creating anything, then the created directory
-# itself (its last component may be a symlink into a repository).
+case "/${OUTDIR}/" in
+    */../*) echo "refusing an output path with a '..' component: ${OUTDIR}" >&2; exit 2 ;;
+esac
+# Check the nearest existing ancestor before creating anything. Every component below it is
+# created here as a plain directory, so it cannot lead into a repository (short of a
+# concurrent swap: this guards against mistakes, not against an attacker on your machine).
 _probe="${OUTDIR}"
 while [ ! -d "${_probe}" ]; do
     _next="$(dirname "${_probe}")"
@@ -47,7 +53,12 @@ while [ ! -d "${_probe}" ]; do
     _probe="${_next}"
 done
 _probe="$(cd "${_probe}" 2>/dev/null && pwd -P)" || { echo "cannot resolve ${OUTDIR}" >&2; exit 2; }
-_tree="$(_in_work_tree "${_probe}")" && _refuse "${_tree}"
+_why="$(_repo_holding "${_probe}")"
+case $? in
+    0) echo "refusing to write prompt text inside a git repository (${_why}): ${OUTDIR}" >&2; exit 2 ;;
+    1) ;;
+    *) echo "refusing to write: cannot check that ${OUTDIR} is outside a git repository: ${_why}" >&2; exit 2 ;;
+esac
 
 N_TRIG="$(jq -r --arg s "${SKILL}" '[.skills[] | select(.name == $s) | .triggers | length] | .[0] // empty' \
     "${ROOT}/config/default-triggers.json" 2>/dev/null)"
@@ -68,13 +79,18 @@ done < <(jq -r --arg s "${SKILL}" '.skills[] | select(.name == $s) | .triggers[]
 
 mkdir -p "${OUTDIR}" || exit 2
 _full="$(cd "${OUTDIR}" && pwd -P)" || exit 2
-_tree="$(_in_work_tree "${_full}")" && _refuse "${_tree}"
 MATCHES="${_full}/matches.tsv"
-if [ -L "${MATCHES}" ]; then
-    echo "refusing to write through a symlink: ${MATCHES}" >&2
+if [ -L "${MATCHES}" ] || { [ -e "${MATCHES}" ] && [ -n "$(find "${MATCHES}" -links +1 2>/dev/null)" ]; }; then
+    echo "refusing to write through a symlink or hard link: ${MATCHES}" >&2
     exit 2
 fi
-: > "${MATCHES}"
+# Replace, never write through: remove the old file, then create it exclusively (noclobber
+# makes bash open with O_EXCL) and keep it open for the whole run.
+rm -f "${MATCHES}" || exit 2
+set -C
+{ exec 3> "${MATCHES}"; } 2>/dev/null || { echo "cannot create ${MATCHES} exclusively" >&2; exit 2; }
+set +C
+chmod 600 "${MATCHES}"
 
 # _hook_hit <P> <trigger>: exit 0 when the hook's scan would score the trigger above 0.
 # Mirrors the positional scan in hooks/skill-activation-hook.sh::_score_skills.
@@ -146,7 +162,7 @@ while IFS= read -r -d '' _rec; do
         _matched=$((_matched + 1))
         [ "${_src}" = "human" ] && _matched_human=$((_matched_human + 1))
         _flat="$(printf '%s' "${_raw}" | tr '\t\n\r' '   ')"
-        printf '%s\t%s\t%s\t%s\t%s\n' "${_hits}" "${_src}" "${_ts}" "${_proj}" "${_flat}" >> "${MATCHES}"
+        printf '%s\t%s\t%s\t%s\t%s\n' "${_hits}" "${_src}" "${_ts}" "${_proj}" "${_flat}" >&3
     fi
 done < <(jq -j '
     def safe: tostring | explode | map(select(. != 0) | if . == 31 or . == 9 or . == 10 then 32 else . end) | implode;

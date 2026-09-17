@@ -2,16 +2,22 @@
 """List the prompts the INSTALLED activation hook actually routed to one skill.
 
 Claude Code records hook output in session transcripts as `hook_additional_context`
-attachments. This keeps the UserPromptSubmit ones whose routing block selects the skill (a
-`<name> -> Skill(<plugin>:<name>)` line), and follows the attachment's parentUuid chain to
-the prompt it answered. Each prompt is labelled by source exactly as extract.py labels it;
-a routing whose chain reaches no prompt is labelled "unpaired". Live routings reflect
-whichever plugin version was installed at the time, not the current triggers; replay.sh
-measures those.
+attachments. This keeps the UserPromptSubmit ones that carry a routing block
+("SKILL ACTIVATION ...") selecting the skill (a `<name> -> Skill(<plugin>:<name>)` line), and
+follows the attachment's parentUuid chain to the input it answered. A prompt is labelled by
+source exactly as extract.py labels it; any other input (a notification, a wrapper) is
+labelled "not-a-prompt:<source>"; a chain that reaches no input is "unpaired". Live routings
+reflect whichever plugin version was installed at the time, not the current triggers;
+replay.sh measures those. The hook can also select a skill by its name alone, which a
+trigger replay does not model.
 
-Writes a JSONL of the routed prompts (source, ts, project, prompt), one line per prompt,
-which replay.sh accepts as input. The output holds prompt text, so a path inside a git work
-tree is refused (exit 2). --since applies to the prompt's date.
+Also prints, for each version of the plugin that appears in a transcript path
+(`/<plugin>/<version>/`), the first and last date it was seen: the evidence that a given
+version was actually running.
+
+Writes a JSONL of the routed inputs (source, ts, project, prompt), one line per input, which
+replay.sh accepts. The output holds prompt text, so a path inside a git repository, or one
+git cannot vouch for, is refused (exit 2). --since applies to the input's date.
 
 Usage:
   routed.py --skill NAME --out FILE [--plugin NAME] [--projects DIR] [--since YYYY-MM-DD]
@@ -27,7 +33,7 @@ import os  # noqa: E402
 import re  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from extract import iter_entries, prompt_of, refuse_repo_path, source_of, valid_since  # noqa: E402
+from extract import open_private, prompt_of, refuse_repo_path, source_of, valid_since  # noqa: E402
 
 
 def input_kind(entry):
@@ -51,6 +57,26 @@ def routes_to(att, pattern):
     return isinstance(content, str) and "SKILL ACTIVATION" in content and bool(pattern.search(content))
 
 
+def read_file(path, version_re, versions):
+    """Parsed entries of one transcript; records plugin version dates on the way."""
+    entries = []
+    with open(path, encoding="utf-8", errors="replace") as src:
+        for line in src:
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(entry, dict):
+                continue
+            entries.append(entry)
+            day = str(entry.get("timestamp", ""))[:10]
+            if day:
+                for ver in set(version_re.findall(line)):
+                    first, last = versions.get(ver, (day, day))
+                    versions[ver] = (min(first, day), max(last, day))
+    return entries
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--skill", required=True)
@@ -61,16 +87,23 @@ def main():
     args = ap.parse_args()
     if refuse_repo_path(args.out):
         return 2
+    try:
+        fh = open_private(args.out)
+    except OSError as exc:
+        print(f"refusing to write: {exc}", file=sys.stderr)
+        return 2
 
     name = re.escape(args.skill)
     pattern = re.compile(r"(?m)(?:^|[\s:])" + name + r" -> Skill\(" + re.escape(args.plugin)
                          + ":" + name + r"\)")
+    version_re = re.compile("/" + re.escape(args.plugin) + r"/(\d+\.\d+\.\d+)/")
+    versions = {}
     counts = {}
     total = 0
-    with open(args.out, "w", encoding="utf-8") as fh:
+    with fh:
         for path in sorted(glob.glob(os.path.join(args.projects, "*", "*.jsonl"))):
             project = os.path.basename(os.path.dirname(path))
-            entries = list(iter_entries(path))
+            entries = read_file(path, version_re, versions)
             by_uuid = {e["uuid"]: e for e in entries if isinstance(e.get("uuid"), str)}
             seen = set()
             for entry in entries:
@@ -106,6 +139,8 @@ def main():
     print(f"routings {total}")
     for source in sorted(counts):
         print(f"source {source}: {counts[source]}")
+    for ver in sorted(versions, key=lambda v: tuple(int(x) for x in v.split("."))):
+        print(f"plugin {args.plugin} {ver}: {versions[ver][0]} .. {versions[ver][1]}")
     return 0
 
 

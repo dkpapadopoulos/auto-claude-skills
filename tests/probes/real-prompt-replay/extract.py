@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Extract the distinct prompts from local Claude Code transcripts, labelled by source.
 
-The output holds your own prompt text, so it must never land in a git work tree: an output
-path inside one is refused (exit 2). Write it to a temporary directory.
+The output holds your own prompt text, so it must never land in a git repository: an output
+path inside one, or one that git cannot vouch for, is refused (exit 2). Write it to a
+temporary directory.
 
 A prompt is a top-level user entry whose content is text, or a `queued_command` attachment
 (a prompt typed while a turn was running). Each is labelled from the transcript's own
@@ -10,7 +11,7 @@ provenance fields, never from its wording:
   human        origin.kind == "human" (typed, an accepted suggestion, or queued);
   sdk          promptSource == "sdk" or an sdk-* entrypoint (scripts and pipelines);
   <kind>       any other origin.kind (task-notification, peer, auto-continuation, ...);
-  unlabelled   no provenance fields (older clients, teammate relays). Not assumed human.
+  unlabelled   no provenance fields (relays from other sessions). Not assumed human.
 Excluded outright: tool results, subagent transcripts (only <projects>/<p>/<session>.jsonl
 is read), meta and sidechain entries, and text with a known wrapper prefix (notifications,
 resumed-session summaries, injected skill bodies, command wrappers). Exact duplicates keep
@@ -24,10 +25,10 @@ import datetime
 import glob
 import json
 import os
+import re
 import subprocess
 import sys
 
-REPO_ROOT = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
 SKIP_PREFIX = (
     "<task-notification>", "This session is being continued", "Base directory for this skill",
     "<command-", "<local-command", "[Request interrupted", "<system-reminder>",
@@ -36,36 +37,61 @@ SKIP_PREFIX = (
 RANK = {"human": 0, "unlabelled": 1, "sdk": 2}
 
 
-def git_worktree_of(path):
-    """Return the work tree containing `path` (or its nearest existing ancestor), else None."""
-    probe = os.path.realpath(path)
+GIT_ENV_DROP = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_CEILING_DIRECTORIES",
+                "GIT_DISCOVERY_ACROSS_FILESYSTEM")
+
+
+def repo_holding(path):
+    """(repository, reason) for `path` or its nearest existing ancestor.
+
+    repository is the git dir when git says the directory is inside a repository (a work
+    tree or a .git directory); reason is set when git could not answer, which the caller
+    must treat as a refusal. (None, None) means git positively said "not a git repository".
+    """
+    probe = os.path.abspath(path)
     while not os.path.isdir(probe):
         parent = os.path.dirname(probe)
         if parent == probe:
-            return None
+            return None, f"no existing ancestor of {path}"
         probe = parent
+    env = {k: v for k, v in os.environ.items() if k not in GIT_ENV_DROP}
+    env["LC_ALL"] = "C"
     try:
-        res = subprocess.run(["git", "-C", probe, "rev-parse", "--show-toplevel"],
-                             capture_output=True, text=True, timeout=10)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return res.stdout.strip() or None if res.returncode == 0 else None
+        res = subprocess.run(["git", "-C", probe, "rev-parse", "--absolute-git-dir"],
+                             capture_output=True, text=True, timeout=10, env=env)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f"git is unavailable ({exc.__class__.__name__})"
+    if res.returncode == 0:
+        return res.stdout.strip() or probe, None
+    if "not a git repository" in res.stderr:
+        return None, None
+    return None, "git could not tell: " + (res.stderr.strip().splitlines() or ["no output"])[-1]
 
 
 def refuse_repo_path(path):
-    """Print a refusal and return True when `path` would land inside a git work tree.
-
-    Falls back to this script's own checkout, compared case-insensitively, when git cannot
-    answer (not installed, or the probe failed)."""
-    tree = git_worktree_of(path)
-    if not tree:
-        real = os.path.realpath(path).casefold()
-        if real == REPO_ROOT.casefold() or real.startswith(REPO_ROOT.casefold() + os.sep):
-            tree = REPO_ROOT
-    if tree:
-        print(f"refusing to write prompt text inside a git work tree ({tree}): {path}", file=sys.stderr)
+    """Print a refusal and return True unless git confirms `path` is outside every repository."""
+    repo, reason = repo_holding(path)
+    if repo:
+        print(f"refusing to write prompt text inside a git repository ({repo}): {path}", file=sys.stderr)
+        return True
+    if reason:
+        print(f"refusing to write: cannot check that {path} is outside a git repository: {reason}",
+              file=sys.stderr)
         return True
     return False
+
+
+def open_private(path):
+    """Open `path` for writing, mode 0600, refusing a symlink or a hard link as the file.
+
+    Parent directories can still be swapped between the check and the open: the guard
+    protects against mistakes, not against a concurrent attacker on your own machine."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    if os.fstat(fd).st_nlink > 1:
+        os.close(fd)
+        raise OSError(f"refusing to write through a hard link: {path}")
+    os.ftruncate(fd, 0)
+    return os.fdopen(fd, "w", encoding="utf-8")
 
 
 def text_of(content):
@@ -107,7 +133,7 @@ def prompt_of(entry):
         text = clean(text_of(msg.get("content") if isinstance(msg, dict) else msg))
         return (text, source_of(entry.get("origin"), entry)) if text else None
     att = entry.get("attachment")
-    if entry.get("type") == "attachment" and isinstance(att, dict) \
+    if entry.get("type") == "attachment" and isinstance(att, dict) and not att.get("isMeta") \
             and att.get("type") == "queued_command" and att.get("commandMode", "prompt") == "prompt":
         text = clean(text_of(att.get("prompt")))
         return (text, source_of(att.get("origin") or entry.get("origin"), entry)) if text else None
@@ -123,8 +149,10 @@ def prompt_text(entry):
 def valid_since(value):
     if value:
         try:
-            datetime.date.fromisoformat(value)
+            ok = re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) and datetime.date.fromisoformat(value)
         except ValueError:
+            ok = False
+        if not ok:
             raise argparse.ArgumentTypeError(f"not a YYYY-MM-DD date: {value}")
     return value
 
@@ -170,7 +198,12 @@ def main():
             found[text] = {"project": project, "ts": ts, "source": source, "prompt": text}
 
     counts = {}
-    with open(args.out, "w", encoding="utf-8") as fh:
+    try:
+        fh = open_private(args.out)
+    except OSError as exc:
+        print(f"refusing to write: {exc}", file=sys.stderr)
+        return 2
+    with fh:
         for text in order:
             rec = found[text]
             counts[rec["source"]] = counts.get(rec["source"], 0) + 1
