@@ -265,8 +265,34 @@ assert_contains "C7: a methodology hint containing RS is rendered whole" \
 assert_contains "C7: RS in the hints section does not cost the skills" \
     "Skill(test:zz-marker-skill)" "${OUT7D}"
 
-# A NUL before the RS: jq 1.6's `contains` stops at NUL and would miss the RS. This
-# cell can only fail on such a jq; on jq >= 1.7 it passes with either detector.
+# RS only in a DISABLED skill's required_when: the required_when section selects every
+# skill that has one, the skills section only enabled ones, so only the RS check over
+# section 3 can see this. The DEBUG compositions must still render.
+RSRW="${TEST_TMPDIR}/rs-rw.json"
+"${REAL_JQ}" '([30] | implode) as $rs
+  | .skills |= map(if .name == "deploy-gate"
+                   then .enabled = false | .required_when = ("x" + $rs + "y") else . end)' \
+    "${FULL}" > "${RSRW}"
+OUT7F="$(run_hook "${RSRW}" "debug the flaky login test")"
+assert_contains "C7 setup: the prompt still routes to the DEBUG process skill" \
+    "Skill(superpowers:systematic-debugging)" "${OUT7F}"
+assert_contains "C7: RS only in a disabled skill's required_when keeps the DEBUG compositions" \
+    "[unified-context-stack]" "${OUT7F}"
+assert_contains "C7: RS only in a disabled skill's required_when keeps the DEBUG hints" \
+    "DEBUG ESCALATION" "${OUT7F}"
+
+# RS as the FIRST character of an emitted value: the check must test for presence, not
+# for a positive position.
+RSFIRST="${TEST_TMPDIR}/rs-first.json"
+"${REAL_JQ}" '([30] | implode) as $rs
+  | .methodology_hints = ((.methodology_hints // []) + [{skill: ($rs + "s"), hint: "zz-rs-first", triggers: ["review"]}])' \
+    "${FULL}" > "${RSFIRST}"
+OUT7G="$(run_hook "${RSFIRST}" "review the PR diff for bugs")"
+assert_contains "C7: RS leading a value keeps required_when rendering" "INVOKE WHEN:" "${OUT7G}"
+assert_contains "C7: RS leading a value keeps the REVIEW compositions" "SEQUENCE:" "${OUT7G}"
+
+# A NUL before the RS: the `contains` of jq 1.5 and 1.6 stops at NUL and would miss the
+# RS. This cell can only fail on such a jq; on jq >= 1.7 it passes with either detector.
 RSNUL="${TEST_TMPDIR}/rs-nul.json"
 "${REAL_JQ}" '([30] | implode) as $rs | ([0] | implode) as $nul
   | .phase_compositions.REVIEW.hints = ((.phase_compositions.REVIEW.hints // [])

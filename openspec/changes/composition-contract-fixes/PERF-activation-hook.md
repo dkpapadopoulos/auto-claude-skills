@@ -132,11 +132,14 @@ unchanged.
   - 633 prompts (fixtures, the negative corpus, all consultation rounds) on two registries;
   - 81 prompts on each of nine edge-case registries;
   - fourteen targeted registries built from the review findings below;
-  - a reviewer's own 42 registries x 5 prompts (210 runs), at the second-round commit.
+  - a reviewer's own 59 registries x 6 prompts (354 runs) at the final commit, including
+    real NUL bytes built with `implode` (a jq string literal drops `\u0000`, which made
+    the reviewer's earlier NUL cases contain no NUL at all).
 
   My own comparison found one difference, a concatenated two-document cache.
-  Three rounds of independent review (Codex and a Claude reviewer) then found five more,
-  each reproduced with a pair of runs:
+  Three rounds of independent review (Codex and a Claude reviewer) then found five more.
+  The first four were each reproduced with a pair of runs; the fifth was taken from the
+  jq source:
   - **Document isolation.** A cache holding two documents lost the second whenever the
     first raised an error: a non-object first document, or a malformed entry inside
     it (for example a numeric skill name). jq's CLI reports a runtime error and
@@ -151,13 +154,17 @@ unchanged.
     `IMPLEMENT<NUL>` read as `IMPLEMENT`. NUL-bearing keys are skipped too. The check
     uses `explode`, because jq 1.6's `contains` stops at NUL and would match every key.
   - **NUL before an RS** (third round, from jq 1.6's source; not reproducible on the jq
-    1.7/1.8 installed here). jq 1.6's `contains` would miss an RS that follows a NUL,
+    1.7/1.8 installed here). jq 1.5's and 1.6's `contains` would miss an RS that follows a NUL,
     so the RS detector uses `index`, which is length-aware since jq 1.5. `explode`
     measured about 10 ms per check on a real registry and `index` about 0.1 ms; `test`
     is avoided because jq builds without the regex library raise on it.
 
-  Each section filter is now defined once and shared by both paths. Of 23 deliberate
+  Each section filter is now defined once and shared by both paths. Of 25 deliberate
   breakages (including at least one re-introducing each defect above, section by
-  section), 22 are caught by `tests/test-activation-registry-extract.sh`. The survivor
-  swaps `index` back to `contains`, which only jq 1.6 can tell apart; its cell is kept
-  for machines that run jq 1.6.
+  section), 24 are caught by `tests/test-activation-registry-extract.sh`. The last two
+  added came from the reviewer's final round: an RS check that skips the required_when
+  section (only a disabled skill's required_when can carry RS unseen by the other
+  sections), and one that tests `index > 0` and so misses an RS at position 0. The survivor
+  swaps `index` back to `contains`, which only jq 1.5 and 1.6 can tell apart (both
+  implement string `contains` with `strstr`); its cell is kept for machines that run
+  them.
