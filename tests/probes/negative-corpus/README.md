@@ -36,7 +36,11 @@ The current baseline, `baseline-3367e49.txt`, has 10 firing lines:
     `debate` in its trigger matches, and that skill stays local.
   - `panel` on the HR "interview panel … each one of the reviewers' raw answers
     verbatim" prompt. The vendor-free clause matches, and that skill sends content to an
-    external vendor, which since PR #255 still requires the user's approval.
+    external vendor, which since PR #255 still requires the user's approval. Left open
+    on purpose on 2026-09-17: replaying 1,997 real prompts found none of this shape among
+    the 588 a person typed, and a narrowing fix traded holes both ways. See
+    `tests/probes/real-prompt-replay/README.md` for the measurement and the 2026-10-15
+    revisit.
 
   A fix for either removes its line; the other lines must stay unchanged.
 
