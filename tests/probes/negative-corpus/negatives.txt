@@ -1,0 +1,222 @@
+I know what he said is worth fixing
+PROJ123 needs attention
+a pattern emerged in the logs
+add a screenshot to the readme
+add a standalone panel for the questionnaire answers
+add a task codex entry to the backlog
+add a unit test for the parser
+add an independent panel widget to the dashboard
+add an independent perspectives section to the report
+add monitoring for the queue depth
+add retry + backoff around our chatgpt integration, it 429s constantly during the morning
+add retry + backoff around our chatgpt integration, it 429s constantly during the morning peak
+animate a back and forth between two agents in the evacuation simulation
+archive the feature change
+argue for the current design in the pr description
+argue the case against my own load path assumption here. properly, i want the other side made well
+argue the other side for me. i think we should keep the monolith, tell me why i'm wrong
+ask codex to weigh in on this approach
+ask gemini-2-adapter.json for the schema
+ask the model to counter-sign the payload
+build a panel for the right side of the editor, collapsible, remembers its width in localstorage
+build a standalone panel to show gemini spend
+cache the raw response for each agent to avoid a second round trip
+can you synthesize these notes into a summary
+capture this knowledge before we forget it
+check if our dependency was typosquatted
+claude's tool_use blocks come back with empty input through our proxy, help me trace it
+claude's tool_use blocks come back with empty input through our proxy, help me trace where the json gets mangled
+comb through the PR for improvement suggestions
+combine the separate outputs of the two scripts
+combine the separate takes on the migration into a single doc
+configure the connection string for the new database
+configure the skill registry
+consolidate the duplicate css rules
+consolidate the separate assessments from qa and security into one report
+consolidate the three ledger exports into one table, dedupe on trade id, and flag rows where a couple of sources give different settlement dates
+consult claude-3-wrapper.js about the retry
+consult codex about the schema change
+create a standalone panel showing candidate responses
+create the as-built record
+critique my draft abstract, be harsh. it's for a methods paper
+critique my pr description, it's too long and i think the argument is weak
+cross-check the config against the fallback registry
+debug the failing login test
+deploy the new version to staging
+deploy to production tonight
+design an SLO from scratch for the payment service
+determine improvements to the onboarding flow
+discontinuation of the legacy api
+document the message exchange between our agent and the broker
+examine for evidence of a race condition
+explain how this hook was built
+fix the asset upload bug
+fix the login bug
+fix the skill-activation-hook
+get a critique out of codex-1-runner.sh
+get a second opinion from another model on this migration plan
+get a second opinion from the reviewer before merging
+get a second opinion on our threat model
+get independent answers from several models and show them to me unmerged
+give gemini usage its own standalone panel in the dashboard
+give me a model panel on these two options
+give me your opinion on whether this retry logic is worth keeping or if i should just let it fail fast
+grade my answer to the interview question
+hand the fixture to codex-1-runner.py
+have gemini and codex challenge each other until they converge
+honest opinion - is my entity component setup overengineered for a game this small?
+how did the experiment perform last week
+how did you implement the parser
+how should we improve the retry logic
+hr's resume screener runs on openai and legal wants it on an on-prem model. scope the work
+i want gemini-2-adapter.py to review the flow
+import the survey points from both instruments, keep each one separate in the db, and give me a report of where they conflict by more than 2cm
+improve the sprint process
+improve the sprint velocity for the team
+include the candidates answers verbatim in the hiring report
+initialize the cache on startup
+investigate the production outage from last night
+is this bug worth fixing before the release
+is this worth improving or should we rewrite it
+let's debate the tradeoffs between a monolith and microservices architecture
+let's use a different model for the pricing table
+lets ship and merge this release
+log the raw response from each model so we can diff them later
+make the agent challenge the certificate chain before connecting
+make this error message less generic so users understand what went wrong
+mass rename the fixtures
+merge the approved branch to main
+merge the feature branch into main
+merge the release branch into main and resolve the conflicts in the lockfile
+not worth fixing, just document it
+npm install fails behind the proxy
+open a PR to bump the helm chart version
+our alerts are flapping and pager is noisy, help tune thresholds
+our anthropic bill tripled last month, dig into which endpoints are eating the tokens
+our hr onboarding service stores the interview panel's scores as a json blob, normalize it into a proper table and backfill
+our openai bill tripled last month, can you dig through the usage logs and figure out which endpoint is doing it
+our openai bill tripled last month, can you dig through the usage logs and figure out why
+paginate the results from duckdb
+parse these contract pdfs and pull the termination clauses out verbatim into a csv, one row per agreement
+paste the payload into gpt-4-client.ts
+perform the database migration
+pin the prerelease dependency
+pin the prerelease dependency for now
+play devil's advocate on the adaptive quiz design i just described
+please critique my approach to caching
+please review my opinion on the caching strategy
+plot the dose response side by side with the control
+pods are crashlooping investigate now
+poke holes in my plan for the migration
+post the launch announcement to slack
+preserve the sip response verbatim in the packet trace
+preview my changes
+preview the deployment in staging
+put the config into gemini-2-adapter.json
+put the config into gemini-adapter.json
+put the two api responses side by side in the gemini_adapter test
+quote the witness answers verbatim in the deposition summary
+rebut this for me: 'integration tests are waste if the unit tests are good'. go at it
+reconcile the separate assessments into one plan
+red team the rollout plan with the infra team
+refactor the database interaction layer
+refactor the screenspace allocator
+remove the discontinued feature flag
+rename the exchange rate field
+render the api response in a standalone panel component
+renewed the tls certificate on the gateway
+review the cohort retention numbers
+review the error handling in this PR
+review the experiment setup before we run it
+revise the particle system to use smaller step sizes
+revise the postgres schema for the new table
+revise this pr draft before merging
+run a panel of models on this design
+run a security scan on the docker image
+run a standalone panel on this question; return independent raw answers
+run the session-start hook
+run the tests locally and show me pass/fail before I push
+sanity check the deployment plan
+scan the diff for improvements to the error message
+scan the image for improvement in contrast
+send the request into claude-3-wrapper.js
+ship the release
+show each participant's response in an independent panel
+show the analysts opinions side by side for the investment committee
+show the recorded responses side-by-side for gemini_eval and codex_eval
+show the two diffs side by side in the review ui
+stand up an eval harness that scores our prompt templates against the gpt-4o endpoint
+stand up an eval harness that scores our prompt templates against the gpt-4o endpoint and stores the runs in bigquery
+starting the server takes 30 seconds
+summarize how the attorneys rebut each other in this transcript
+summarize the changes in this pr
+swap in an independent model for the risk score
+sweep the logs for improvement in error rates
+synthesize a changelog from the commit history
+tabulate the metrics for the quant engine
+team review before merge
+tear apart the design doc i wrote
+that typo isn't worth fixing right now
+the admin panel breaks on mobile, the side by side comparison view needs to stack under 640px
+the anthropic sdk streaming client keeps throwing on partial json, wrap it and add a buffer
+the api response was malicious looking json
+the building permit example in the docs is outdated
+the collapsible panel on the settings screen needs a scrollbar
+the dataset describes mineral improvements in soil samples
+the docs are incomplete
+the feature store and the training job each compute the label window separately and they disagree by a day. find where they diverge
+the flaky test is worth fixing
+the gemini billing totals need a standalone panel
+the gemini sdk keeps 429ing on batch embeds. is there a retry knob or do we need our own queue in front of it
+the heartbeat exchange between the agents is dropping packets
+the improvement proposal from marketing needs review
+the massive refactor we discussed
+the model settings deserve a standalone panel
+the offset update logic is wrong
+the parser we developed, write docs about it
+the queue picks up speed
+the relationship between hooks and registry is unclear
+the session has built the parser
+the snmp agent on each switch reports a different uptime after a reboot. write something that polls both and reconciles them
+the staging environment is flaky today
+the sync counter drifts between them whenever the agent reconnects
+the team has the skills to build it themselves
+the telecoms billing exchange feed returns the response verbatim in a soap envelope, parse it and map to our internal cdr schema
+the two services counter each other's backpressure signals
+there is no other model of concurrency that fits
+there is unfinished work in this branch
+these exception log messages sound too generic make them more specific
+this query is already too slow
+this test file is massive can we split it
+transform the dataframe and reformat the output
+unreleased changes in the changelog
+untagged resources in gcp
+update the changelog before we cut it
+update the onboarding docs
+update the readme
+update the type definition
+upgrade the lodash dependency to the latest version
+was the npm package compromised in the latest attack
+we need separate responses for each model in the serving layer
+we need to challenge the assumption in the spec
+we need to get codex installed on this machine
+we should train another model on the new dataset
+we swapped in a different model; unrelated: send the critique to the team
+we're migrating off the gemini api to a self hosted llama, write the adapter layer
+we're migrating off the gemini api to a self hosted llama, write the adapter layer so the call sites don't change
+we're moving off openai onto bedrock - what breaks in our streaming handler
+what did we learn from the incident
+what do you actually think of this design, be honest
+write a classroom exercise where pupils argue both sides of the motion
+write a migration to add a column to the users table
+write a test for the parser
+write a thin wrapper over the openai responses api so we can swap providers later without touching call sites
+write an improvement proposal for the API redesign
+write an independent samples t-test into the analysis notebook for the physics lab data, currently it's just plotting means with no error bars
+write code for the particle system and document it
+write me a python script to rename files
+write the changelog entry for the release
+write the postmortem for yesterdays incident
+write the readme for this module
+you decide - should the triage rule key off the raw lab value or the delta. your opinion, no hedging
+you've seen the whole codebase now — where would you push back on how we've structured the billing module

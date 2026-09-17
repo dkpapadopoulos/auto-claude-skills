@@ -178,7 +178,6 @@ if command -v jq >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
         "second-opinion" "${out:-<empty>}"
 fi
 
-print_summary
 
 # ---------------------------------------------------------------------------
 # Consent gate: being ROUTED is not consent (added when the recall policy moved
@@ -189,16 +188,43 @@ test_consent_is_not_inferred_from_invocation() {
     local f
     for f in skills/second-opinion/SKILL.md skills/panel/SKILL.md; do
         assert_contains "${f}: states that routing is not consent" \
-            "Being routed here is NOT consent" "$(cat "${f}")"
+            "Being routed here is NOT consent" "$(cat "${PROJECT_ROOT}/${f}")"
         assert_contains "${f}: demands an affirmative go-ahead" \
-            "explicit, affirmative go-ahead" "$(cat "${f}")"
+            "explicit, affirmative go-ahead" "$(cat "${PROJECT_ROOT}/${f}")"
         # The superseded wording treated the invocation itself as the go-ahead. If it
         # ever returns, a routing false positive becomes an outbound dispatch.
         assert_not_contains "${f}: no 'invocation itself' consent shortcut" \
-            "go-ahead from the invocation itself" "$(cat "${f}")"
+            "go-ahead from the invocation itself" "$(cat "${PROJECT_ROOT}/${f}")"
         assert_not_contains "${f}: no panel-specific invocation shortcut" \
-            "go-ahead from the panel invocation itself" "$(cat "${f}")"
+            "go-ahead from the panel invocation itself" "$(cat "${PROJECT_ROOT}/${f}")"
     done
 }
 
 test_consent_is_not_inferred_from_invocation
+
+
+test_sends_only_through_the_consent_dispatcher() {
+    echo "-- test: consultation sends go through consult-dispatch.sh --"
+    local f body
+    for f in skills/second-opinion/SKILL.md skills/panel/SKILL.md; do
+        body="$(cat "${PROJECT_ROOT}/${f}")"
+        assert_contains "${f}: prepares through the dispatcher" 'consult-dispatch.sh" prepare codex' "${body}"
+        assert_contains "${f}: sends through the dispatcher" 'consult-dispatch.sh send <digest>' "${body}"
+        assert_contains "${f}: asks with the consent marker" '[egress-consent:<digest>]' "${body}"
+        assert_contains "${f}: names the approve label" 'Approve and send' "${body}"
+        assert_contains "${f}: preview is the complete package" 'preview is the' "${body}"
+        assert_contains "${f}: forbids pre-filled answers" 'Never pre-fill answers' "${body}"
+        assert_contains "${f}: discloses the sandbox read limit" 'sandbox can still read other files' "${body}"
+        assert_contains "${f}: explains NOT APPROVED" 'NOT APPROVED' "${body}"
+        assert_contains "${f}: explains CANNOT VERIFY without re-asking" 're-asking, which cannot fix it' "${body}"
+        assert_contains "${f}: explains MAY HAVE SENT" 'MAY HAVE SENT' "${body}"
+        assert_contains "${f}: names the escape hatch" 'egress_consent' "${body}"
+        assert_contains "${f}: forbids the codex-rescue bypass" 'Do NOT use' "${body}"
+        assert_not_contains "${f}: no retired model-run recorder" 'record-outbound-consent' "${body}"
+    done
+    assert_contains "design-debate points new dispatch at the dispatcher" \
+        'scripts/consult-dispatch.sh' "$(cat "${PROJECT_ROOT}/skills/design-debate/SKILL.md")"
+}
+test_sends_only_through_the_consent_dispatcher
+
+print_summary

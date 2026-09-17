@@ -14,9 +14,10 @@ Escalation skill for the DESIGN phase. When brainstorming detects competing arch
 no disclosure preview, because there is nothing to disclose. If a prompt names another
 vendor ("have codex and gemini argue this out"), say plainly that this skill debates with
 local Claude subagents and offer `panel` or `second-opinion` for an actual cross-vendor
-pass — do not silently substitute. Anyone wiring real dispatch in here must add the
-consent gate first: `hooks/outbound-consent-hook.sh` only recognises codex-rescue and the
-codex CLI, so a new dispatch path would be invisible to it.
+pass — do not silently substitute. Anyone wiring real cross-vendor dispatch in here must
+send through `scripts/consult-dispatch.sh`, which refuses without the user's approval of
+the exact package; any other path is only observed (by `hooks/outbound-consent-hook.sh`,
+advisory, partial coverage), never consent-gated.
 
 **This skill is opt-in.** It only activates when brainstorming explicitly escalates after user approval.
 

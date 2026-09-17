@@ -154,4 +154,43 @@ else
 fi
 teardown_test_env
 
+# ---------------------------------------------------------------------------
+# C7 — egress consent state (egress-consent-dispatcher): flat files named
+# .skill-egress-{ask,receipt,pkg}-<token>.<...>. The token is followed by a '.',
+# so the current-token exclusion must match "<token>.*", not "<token>" exactly.
+# ---------------------------------------------------------------------------
+echo "--- C7: egress consent state GC ---"
+setup_test_env
+mkdir -p "${HOME}/.claude"
+DG="$(printf 'a%.0s' $(seq 1 64))"
+STALE_ASK="${HOME}/.claude/.skill-egress-ask-session-deadbeef-old.toolu_1.used"
+STALE_RCPT="${HOME}/.claude/.skill-egress-receipt-session-deadbeef-old.${DG}.toolu_1.consumed"
+STALE_PKG="${HOME}/.claude/.skill-egress-pkg-session-deadbeef-old.${DG}"
+for f in "${STALE_ASK}" "${STALE_RCPT}" "${STALE_PKG}"; do printf '{}' > "${f}"; backdate "${f}"; done
+SHADOW="${HOME}/.claude/.egress-bypass-shadow.jsonl"
+printf '{}' > "${SHADOW}"; backdate "${SHADOW}"
+run_hook
+TOK="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null)"
+if [ -f "${STALE_ASK}" ] || [ -f "${STALE_RCPT}" ] || [ -f "${STALE_PKG}" ]; then
+    _record_fail "C7a: stale dead-token egress state pruned" "still present"
+else
+    _record_pass "C7a: stale dead-token egress state pruned"
+fi
+if [ -f "${SHADOW}" ]; then
+    _record_pass "C7b: the bypass shadow corpus is never pruned by the state GC"
+else
+    _record_fail "C7b: the bypass shadow corpus is never pruned by the state GC" "deleted"
+fi
+CUR_RCPT="${HOME}/.claude/.skill-egress-receipt-${TOK}.${DG}.toolu_2"
+CUR_PKG="${HOME}/.claude/.skill-egress-pkg-${TOK}.${DG}"
+printf '{}' > "${CUR_RCPT}"; printf 'x' > "${CUR_PKG}"
+backdate "${CUR_RCPT}"; backdate "${CUR_PKG}"   # stale mtime, but it's the ACTIVE token
+run_hook
+if [ -f "${CUR_RCPT}" ] && [ -f "${CUR_PKG}" ]; then
+    _record_pass "C7c: current-session egress state preserved despite stale mtime"
+else
+    _record_fail "C7c: current-session egress state preserved despite stale mtime" "deleted"
+fi
+teardown_test_env
+
 print_summary
