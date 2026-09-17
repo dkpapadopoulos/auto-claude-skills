@@ -1,0 +1,37 @@
+Round 7 provenance
+
+Tool use: I did not read any repository file and ran no commands, greps or searches. My only tool calls were the two Write calls for this file and round7-cases.json.
+
+Auto-injected context I had (and could not decline):
+- The full project CLAUDE.md (push-gate, routing and hook details).
+- The auto-memory MEMORY.md index. Several entries are relevant: "Consultation routing follow-ups", "Invented negatives measure your imagination", "Negation word contains the positive verb", "Held-out prompts are spent by looking", "Precision/recall trade-off is the user's call", "Moving a trigger moves intent, not controls".
+- The skill listing with descriptions, including panel ("independent perspectives on one prompt from multiple models ... Codex", "pairs with synthesize for the merge"), design-debate (architect/critic/pragmatist), codex:* skills and claude-api.
+- The git-status block, whose commit subjects include "cross-family second opinion (panel/synthesize, two-mode cross-model pass, autofix lane)" and "disable model invocation on synthesize".
+- The team-lead task message: the contract definitions, the blocklist and the adjacent-word list.
+
+Probable shaping, prompt by prompt:
+- Vendor names in so-*, ac-*, sp-2, sp-6, mi-2, mi-6, sy-3 and sy-6 (codex, gemini, gpt, o3) come from the task's own list. Codex is also prominent in the skill listing and the codex:* plugin, and that probably made me use it more often.
+- vs-5 ("codex cli ... ci runner") was probably shaped by the codex:setup / codex-cli-runtime skill descriptions. vs-3 ("claude sdks") and vs-2 ("anthropic invoice") were probably shaped by the claude-api skill trigger text.
+- The words "fresh", "cold", "blind", "starting blank" and "new chats" paraphrase the contract text ("fresh contexts", "clean underlying question"). They come from the task's contract definitions, not from the system's own descriptions. Two exact contract words were used as written: "fresh" in so-3 and "raw answers" in pd-5 (a non-consultation prompt, as the task asked).
+- "critique" (mi-4, am-3) and "picked apart"/"tear it apart" follow the contract wording "for critique". The skill listing also uses "critic" in design-debate.
+- The mi-* phrasings ("go a few rounds", "fight it out", "sparring match", "push back on each other") were deliberate substitutes for "debate"/"argue", which I avoided in consultation prompts because design-debate appears in the skill listing.
+- sp-6 originally drafted "separately"; I changed it to "neither sees the other" because "separate" is on the adjacent list. sy-3 got the same substitution.
+- The pd-* prompts deliberately reuse panel, agent, debate, rebuttal, independent, separate, consolidate, merge, argue, verbatim, side by side, raw answers, each one, back and forth and hash out, as the task instructed. Only the task message shaped those.
+
+Blocklist check for the 30 consultation prompts (so, ac, sp, mi, sy):
+- I did not use: independent, merge, synthesize/synthesis, panel, consult/consultation, cross-family, cross-model, two-mode, roster, egress, dispatch, "second opinion", "multiple models", "perspectives", debate.
+- I did use: "reconcile" (sp-5, sy-6), "combine/combined" (sy-2, sy-5), "fold", "stitch" and "boil down". None of these is on the blocklist, but they are near-synonyms of "merge" and a routing system could reasonably key on them.
+- "your take" (am-1) is a non-consultation use of "take", as permitted.
+
+Vendor-free counts (none of model/llm/codex/gemini/gpt/chatgpt/o3/claude/opus/sonnet):
+- standalone_panel: sp-1, sp-3, sp-4, sp-5 = 4/6.
+- models_interact: mi-1, mi-3, mi-4, mi-5 = 4/6.
+- synthesized_plan: sy-1, sy-2, sy-4, sy-5 = 4/6.
+These vendor-free prompts use "ais", "bots" and "assistants". Those are generic words, but "ais" is arguably a vendor-class word that the rule does not list.
+
+Two-vendor non-consultation boundary: vs-1 (openai to gemini migration), vs-3 (openai + claude sdks), vs-4 (gpt-4o vs gemini flash cost comparison) and vs-6 (openai to bedrock) each name two products.
+
+Known shortfalls:
+- The plain_dev domain spread covers only 6 of the 12 requested domains (UI, ML infra, education, finance, HR, game dev). Legal and logistics appear only inside other categories (vs-6 legal) or not at all. Scientific writing, telecoms, civil engineering and medicine are not covered, because 6 prompts cannot span 12 domains.
+- asks_me includes two "argue/rebut a side" cases (am-2, am-6) and three critique cases (am-3, am-5, am-6).
+- The memory index warns that invented negatives reflect the author's imagination. These 18 non-consultation prompts are my invention and carry that bias.
