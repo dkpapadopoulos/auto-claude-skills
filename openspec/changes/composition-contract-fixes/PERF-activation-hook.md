@@ -90,3 +90,41 @@ to the prefilter above, which measurement then proved would have saved nothing a
 
 Recorded at this level of detail so the follow-up is a small specified task, not an
 investigation: batch calls 1-5 into one delimited jq invocation, leave 6-11 alone.
+
+---
+
+## Follow-up done (2026-09-17)
+
+Calls 1-5 now run as ONE `jq -nj` invocation at registry load. It emits four sections
+separated by RS (`\x1e`), and the phase compositions are emitted for every phase and
+filtered in bash, because the phase is known only after scoring. Calls 6-11 are
+unchanged.
+
+- **Forks.** Four fewer per prompt that reaches scoring (5 -> 1), confirmed with the
+  same jq PATH shim. The greeting early-exit path still runs one fork.
+- **Latency.** Fixed `HOME`, all skills available, 25 iterations x 3 rounds:
+
+  | prompt | before (ms) | after (ms) |
+  |---|---|---|
+  | "fix the failing test in the ingest worker" | 145-147 | 132-135 |
+  | "ask gemini cold whether this migration is safe" | 137 | 126-127 |
+  | "review the PR diff for bugs" | 175-177 | 165-173 (noisier) |
+
+  That is about 10 ms, close to the 11 ms estimated above.
+- **Splitting has to be linear.** Under bash 3.2 on a 50 KB output:
+
+  | split method | time per split |
+  |---|---|
+  | `${var#*pat}` / `${var%%pat*}` | 278-529 ms |
+  | `read -d` | 16 ms |
+  | word splitting with `IFS` set to RS alone | about 2 ms |
+
+  The first two would have cost more than the whole saving.
+- **Equivalence.** Full stdout, debug trace and written state files were compared before
+  and after, with paths and timestamps masked. They are byte-identical across:
+  - 633 prompts (fixtures, the negative corpus, all consultation rounds) on two registries;
+  - 81 prompts on each of nine edge-case registries.
+
+  One difference, a concatenated two-document cache, was found and closed with
+  `[inputs]`. Six deliberate breakages of the new code were each caught by the
+  comparison and by `tests/test-activation-registry-extract.sh`.

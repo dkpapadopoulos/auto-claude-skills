@@ -179,9 +179,100 @@ FALLBACK_REGISTRY="${PLUGIN_ROOT}/config/fallback-registry.json"
 REGISTRY=""
 _PROJECT_ROOT="${SKILL_PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 
-if [[ -f "$REGISTRY_CACHE" ]] && jq empty "$REGISTRY_CACHE" >/dev/null 2>&1; then
+# ONE jq call validates the registry AND extracts every section the hook reads
+# from it before composition: the skills list, the methodology hints, the
+# required_when pairs, and the phase compositions. That was five forks (a
+# `jq empty` validation plus four extractions), about 11ms of fixed overhead —
+# see openspec/changes/composition-contract-fixes/PERF-activation-hook.md.
+#
+# Output (-j, so every line carries its own newline): four sections, each
+# introduced by a lone RS (\x1e). Bash splits on RS alone (below), which is one
+# linear pass: bash 3.2 parameter-expansion splitting measured 278-529ms on a
+# 50KB output and `read -d` 16ms, against ~2ms for the split used here.
+#   1 SKILLS  name<US>name_lower<US>role<US>priority<US>invoke<US>phase<US>triggers<US>keywords<US>required_when
+#             (US \x1f between fields, SOH \x01 inside the trigger/keyword lists)
+#   2 HINTS   skill<US>hint<US>triggers<US>phases
+#   3 RW      name=required_when
+#   4 COMP    <PHASE><US><line> for EVERY phase: the phase is known only after
+#             scoring, so the composition block keeps the current phase's lines.
+# Each section is try-wrapped so a malformed entry truncates ONLY that section
+# and keeps what it already emitted — what the separate calls did, since each
+# failed alone and `$( )` kept its partial output. COMP is also try-wrapped per
+# phase, because the old call only ever evaluated one phase. A PARSE error
+# cannot be caught, so a non-zero exit still means "invalid registry" and picks
+# the fallback, as `jq empty` did. `-n` with `[inputs]` runs every section over
+# every JSON document in the file, in order: the separate calls each did that,
+# so a cache holding two concatenated documents still yields both, and an error
+# in the first document still ends that section before the second is read.
+# Registry text containing a raw RS would
+# shift the sections; the registry is built from our own config and plugin
+# manifests, where that character has no use.
+_REG_PROGRAM='
+  [inputs] as $all |
+  "\u001e",
+  (try ($all[] |
+    [.skills[] | select(.available == true and .enabled == true)] | .[] |
+    (.name + "\u001f" + (.name | ascii_downcase) + "\u001f" + .role + "\u001f" +
+     (.priority // 0 | tostring) + "\u001f" + (.invoke // "SKIP") + "\u001f" +
+     (.phase // "") + "\u001f" + ((.triggers // []) | join("\u0001")) + "\u001f" + ((.keywords // []) | join("\u0001")) + "\u001f" + (.required_when // ""))
+  ) catch empty | . + "\n"),
+  "\u001e",
+  (try ($all[] |
+    (.plugins // []) as $plugins |
+    .methodology_hints // [] | .[] |
+    # Gate plugin-scoped hints on plugin availability
+    (if .plugin then
+      (.plugin as $p | [$plugins[] | select(.name == $p and .available == true)] | length > 0)
+    else true end) as $available |
+    select($available) |
+    ((.skill // "") + "\u001f" + .hint + "\u001f" + ((.triggers // []) | join("\u0001")) + "\u001f" + ((.phases // []) | join("\u0001")))
+  ) catch empty | . + "\n"),
+  "\u001e",
+  (try ($all[] |
+    [.skills[] | select(.required_when != null and .required_when != "")] |
+    .[] | "\(.name)=\(.required_when)"
+  ) catch empty | . + "\n"),
+  "\u001e",
+  (try ($all[] |
+    [.plugins // [] | .[] | select(.available == true) | .name] as $avail |
+    (.phase_compositions | objects | to_entries[]) as $e |
+    ($e.key + "\u001f") as $pfx |
+    (try ($e.value // empty |
+      (.parallel // [] | .[] |
+        if .plugin then
+          select(.plugin as $p | $avail | any(. == $p)) |
+          "LINE:  PARALLEL: \(.use) -> \(.purpose) [\(.plugin)]"
+        elif .gate then
+          "GATED:\(.gate):\(.marker // ""):\(.artifacts // [] | join(",")):\("  PARALLEL: \(.use) \u2014 \(.purpose)")"
+        else
+          "LINE:  PARALLEL: \(.use) \u2014 \(.purpose)"
+        end),
+      (.sequence // [] | .[] |
+        if .plugin then
+          select(.plugin as $p | $avail | any(. == $p)) |
+          "LINE:  SEQUENCE: \(.use // .step) -> \(.purpose) [\(.plugin)]"
+        elif .gate then
+          "GATED:\(.gate):\(.marker // ""):\(.artifacts // [] | join(",")):\("  SEQUENCE: \(.step) -> \(.purpose)")"
+        else
+          "LINE:  SEQUENCE: \(.step) -> \(.purpose)"
+        end),
+      (.hints // [] | .[] |
+        if .plugin then
+          select(.plugin as $p | $avail | any(. == $p)) |
+          "HINT:\(.text)"
+        else
+          "HINT:\(.text)"
+        end)
+    ) catch empty) |
+    # Prefix EVERY physical line, so a value containing a newline keeps its
+    # continuation lines in this phase (the one-phase call emitted them too).
+    $pfx + (split("\n") | join("\n" + $pfx)) + "\n"
+  ) catch empty)
+'
+_REG_OUT=""
+if [[ -f "$REGISTRY_CACHE" ]] && _REG_OUT="$(jq -nj "$_REG_PROGRAM" "$REGISTRY_CACHE" 2>/dev/null)"; then
   REGISTRY="$(cat "$REGISTRY_CACHE")"
-elif [[ -f "$FALLBACK_REGISTRY" ]] && jq empty "$FALLBACK_REGISTRY" >/dev/null 2>&1; then
+elif [[ -f "$FALLBACK_REGISTRY" ]] && _REG_OUT="$(jq -nj "$_REG_PROGRAM" "$FALLBACK_REGISTRY" 2>/dev/null)"; then
   REGISTRY="$(cat "$FALLBACK_REGISTRY")"
 else
   # No registry available — emit minimal phase checkpoint and exit
@@ -193,6 +284,18 @@ and consider whether any installed skill applies."
     "$(printf '%s' "$OUT" | jq -Rs .)"
   exit 0
 fi
+
+# Split the one-call output (see _REG_PROGRAM). Element 0 is the empty text
+# before the first RS. With noglob on and IFS holding only RS, which is not IFS
+# whitespace, empty sections survive and nothing inside a section is split.
+_reg_ifs="$IFS"; IFS=$'\x1e'; set -f
+_reg_parts=( $_REG_OUT )
+set +f; IFS="$_reg_ifs"
+SKILL_DATA="${_reg_parts[1]:-}"
+HINTS_DATA="${_reg_parts[2]:-}"
+_RW_LOOKUP="${_reg_parts[3]:-}"
+_REG_COMP="${_reg_parts[4]:-}"
+unset _reg_parts _REG_OUT
 
 # =================================================================
 # LOAD USER SETTINGS
@@ -808,11 +911,7 @@ _build_skill_lines() {
     _SL_WORKFLOW=""
     _SL_STANDALONE=""
 
-    # Build required_when lookup (one jq call)
-    _RW_LOOKUP="$(printf '%s' "$REGISTRY" | jq -r '
-      [.skills[] | select(.required_when != null and .required_when != "")] |
-      .[] | "\(.name)=\(.required_when)"
-    ' 2>/dev/null)"
+    # _RW_LOOKUP (name=required_when) was extracted at registry load (_REG_PROGRAM section 3).
 
     while IFS='|' read -r score name role invoke phase; do
       [[ -z "$name" ]] && continue
@@ -1391,12 +1490,7 @@ fi
 # SOH (\x01) as intra-field trigger delimiter.
 DELIM=$'\x01'
 FS=$'\x1f'
-SKILL_DATA="$(printf '%s' "$REGISTRY" | jq -r '
-  [.skills[] | select(.available == true and .enabled == true)] | .[] |
-  (.name + "\u001f" + (.name | ascii_downcase) + "\u001f" + .role + "\u001f" +
-   (.priority // 0 | tostring) + "\u001f" + (.invoke // "SKIP") + "\u001f" +
-   (.phase // "") + "\u001f" + ((.triggers // []) | join("\u0001")) + "\u001f" + ((.keywords // []) | join("\u0001")) + "\u001f" + (.required_when // ""))
-' 2>/dev/null)"
+# SKILL_DATA was extracted at registry load (_REG_PROGRAM section 1).
 
 # --- Score, select, label, build, compose, format ---
 _score_skills
@@ -1432,18 +1526,8 @@ _determine_label_phase
 # =================================================================
 # METHODOLOGY HINTS
 # =================================================================
-# Single jq call extracts all hint data (replaces ~9 per-hint jq forks with 1)
 HINTS=""
-HINTS_DATA="$(printf '%s' "$REGISTRY" | jq -r '
-  (.plugins // []) as $plugins |
-  .methodology_hints // [] | .[] |
-  # Gate plugin-scoped hints on plugin availability
-  (if .plugin then
-    (.plugin as $p | [$plugins[] | select(.name == $p and .available == true)] | length > 0)
-  else true end) as $available |
-  select($available) |
-  ((.skill // "") + "\u001f" + .hint + "\u001f" + ((.triggers // []) | join("\u0001")) + "\u001f" + ((.phases // []) | join("\u0001")))
-' 2>/dev/null)"
+# HINTS_DATA was extracted at registry load (_REG_PROGRAM section 2).
 
 while IFS="$FS" read -r hint_skill hint_text hint_triggers_joined hint_phases_joined; do
   [[ -z "$hint_text" ]] && continue
@@ -1506,39 +1590,19 @@ COMPOSITION_HINTS=""
 # Determine the current phase from selected skills (use PRIMARY_PHASE)
 CURRENT_PHASE="$PRIMARY_PHASE"
 
-# Single jq call computes all composition output (replaces ~20-30 per-entry jq forks with 1)
 if [[ -n "$CURRENT_PHASE" ]]; then
-  _comp_output="$(printf '%s' "$REGISTRY" | jq -r --arg ph "$CURRENT_PHASE" '
-    [.plugins // [] | .[] | select(.available == true) | .name] as $avail |
-    .phase_compositions[$ph] // empty |
-    (
-      (.parallel // [] | .[] |
-        if .plugin then
-          select(.plugin as $p | $avail | any(. == $p)) |
-          "LINE:  PARALLEL: \(.use) -> \(.purpose) [\(.plugin)]"
-        elif .gate then
-          "GATED:\(.gate):\(.marker // ""):\(.artifacts // [] | join(",")):\("  PARALLEL: \(.use) \u2014 \(.purpose)")"
-        else
-          "LINE:  PARALLEL: \(.use) \u2014 \(.purpose)"
-        end),
-      (.sequence // [] | .[] |
-        if .plugin then
-          select(.plugin as $p | $avail | any(. == $p)) |
-          "LINE:  SEQUENCE: \(.use // .step) -> \(.purpose) [\(.plugin)]"
-        elif .gate then
-          "GATED:\(.gate):\(.marker // ""):\(.artifacts // [] | join(",")):\("  SEQUENCE: \(.step) -> \(.purpose)")"
-        else
-          "LINE:  SEQUENCE: \(.step) -> \(.purpose)"
-        end),
-      (.hints // [] | .[] |
-        if .plugin then
-          select(.plugin as $p | $avail | any(. == $p)) |
-          "HINT:\(.text)"
-        else
-          "HINT:\(.text)"
-        end)
-    )
-  ' 2>/dev/null)"
+  # This phase's lines from the load-time extraction (_REG_PROGRAM section 4,
+  # every line prefixed with its phase and a US).
+  _comp_output=""
+  _comp_pfx="${CURRENT_PHASE}${FS}"
+  while IFS= read -r _comp_l; do
+    case "$_comp_l" in
+      "$_comp_pfx"*) _comp_output="${_comp_output}${_comp_l#"$_comp_pfx"}
+" ;;
+    esac
+  done <<EOF
+${_REG_COMP}
+EOF
 
   _TDD_EMITTED=0
   while IFS= read -r _cline; do
