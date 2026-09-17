@@ -103,7 +103,8 @@ unchanged.
 - **Forks.** Five become one when a phase is selected, confirmed with the same jq PATH
   shim. The old hook ran the required_when call only once a skill scored and the
   composition call only once a phase was chosen, so otherwise the saving is two or three
-  forks. The greeting early-exit path still runs one fork.
+  forks. The greeting early-exit path still runs one fork. The rare RS fallback (below)
+  runs the single call and then the separate calls, so it saves nothing.
 - **Latency.** Fixed `HOME`, all skills available, 25 iterations x 3 rounds. The
   original and new hook bodies ran back to back, twice, and the two passes agreed within
   about 1 ms:
@@ -129,11 +130,12 @@ unchanged.
 - **Equivalence.** Full stdout, debug trace and written state files were compared before
   and after, with paths and timestamps masked. They are byte-identical across:
   - 633 prompts (fixtures, the negative corpus, all consultation rounds) on two registries;
-  - 81 prompts on each of nine edge-case registries.
+  - 81 prompts on each of nine edge-case registries;
+  - fourteen targeted registries built from the review findings below.
 
   My own comparison found one difference, a concatenated two-document cache.
-  Independent reviews (Codex and a Claude reviewer) then found three more, each
-  reproduced with a pair of runs:
+  Two rounds of independent review (Codex and a Claude reviewer) then found four more,
+  each reproduced with a pair of runs:
   - **Document isolation.** A non-object document before the real registry hid it.
     jq's CLI reports a runtime error and continues with the next document, so each
     old call isolated documents. Fixed with a `try` per document.
@@ -142,7 +144,10 @@ unchanged.
     calls.
   - **Newline or US in a phase key.** Such a key could forge another phase's line prefix.
     These keys are now skipped; the old exact-key lookup could never select them.
+  - **NUL in a phase key** (second round). Bash drops NUL from the captured output, so
+    `IMPLEMENT<NUL>` read as `IMPLEMENT`. NUL-bearing keys are skipped too. The check
+    uses `explode`, because jq 1.6's `contains` stops at NUL and would match every key.
 
-  Each section filter is now defined once and shared by both paths. Twelve deliberate
+  Each section filter is now defined once and shared by both paths. Fifteen deliberate
   breakages (including one re-introducing each defect above) are each caught by
   `tests/test-activation-registry-extract.sh`.

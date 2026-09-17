@@ -259,9 +259,12 @@ _REG_F_COMP_ONE="${_REG_F_AVAIL}"' .phase_compositions[$ph] // empty | '"${_REG_
 #   4 COMP    <PHASE><US><line> for EVERY phase, since the phase is known only after
 #             scoring. Each phase has its own `try` (the old call evaluated one phase,
 #             so a broken phase must not cost the others), EVERY physical line of a
-#             multi-line value carries the prefix, and a key containing a newline or a
-#             US is skipped (the old exact-key lookup could never select it, and it
-#             would forge another phase's prefix).
+#             multi-line value carries the prefix, and a key containing NUL, a newline
+#             or a US is skipped: the old exact-key lookup could never select it, and
+#             it would forge another phase's prefix (bash drops NUL from the captured
+#             output, so `IMPLEMENT<NUL>` would read as `IMPLEMENT`). The test uses
+#             `explode` because jq 1.6's `contains` stops at NUL, which would make
+#             `contains("<NUL>")` true for every key.
 # If any extracted text contains RS, the sections would shift, so the call prints
 # REGISTRY-HAS-RS instead and the hook runs the filters separately, as it did before.
 _REG_PROGRAM='
@@ -271,7 +274,7 @@ _REG_PROGRAM='
   [$all[] | try ('"${_REG_F_RW}"') catch empty | . + "\n"] as $r |
   [$all[] | try ('"${_REG_F_AVAIL}"'
       (.phase_compositions | objects | to_entries[]
-        | select(.key | (contains("\n") or contains("\u001f")) | not)) as $e |
+        | select(.key | explode | any(.[]; . == 0 or . == 10 or . == 31) | not)) as $e |
       ($e.key + "\u001f") as $pfx |
       (try ($e.value // empty | '"${_REG_F_COMP_BODY}"') catch empty) |
       $pfx + (split("\n") | join("\n" + $pfx)) + "\n"

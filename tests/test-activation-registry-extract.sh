@@ -10,11 +10,13 @@
 #   C3  an unparseable cache still falls back exactly as a missing one does
 #   C4  composition lines come from the CURRENT phase only (all phases are extracted)
 #   C5  a multi-line composition value keeps its continuation lines, in its own phase
-#   C6  each JSON document in the file is isolated, as jq's CLI isolated them per call
-#   C7  an RS inside registry text cannot shift the sections (falls back to separate calls)
-#   C8  a phase key containing a newline cannot forge another phase's lines
+#   C6  each JSON document is isolated, as jq's CLI isolated them per call: skills, hints
+#       and compositions all still come from a document after a malformed one
+#   C7  an RS in registry text, or in a phase key, cannot shift the sections
+#   C8  a phase key containing a newline, US or NUL cannot forge another phase's lines
 #   C9  methodology hints still render
-# C6-C8 are the three equivalence breaks independent review found in the first version.
+#   C10 the SKILL_EXPLAIN trace still scores the skills
+# C6-C8 pin the equivalence breaks independent review found in earlier versions.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -184,47 +186,73 @@ assert_not_contains "C5: another phase's continuation line does not leak" "zzcon
 # ---------------------------------------------------------------------------
 # C6: documents are isolated. The old calls each ran jq over the file, and jq's CLI
 # reports a runtime error and continues with the NEXT document, so a non-object
-# document before the real registry cost nothing.
+# document before the real registry cost nothing. Every section must still come from
+# the second document: skills, methodology hints and the current phase's compositions.
 # ---------------------------------------------------------------------------
+DOC2="${TEST_TMPDIR}/doc2.json"
+"${REAL_JQ}" -c '
+  .methodology_hints = ((.methodology_hints // []) + [{hint: "zz-doc2-hint", triggers: ["zzmarker"]}])
+  | .phase_compositions.DEBUG.hints = ((.phase_compositions.DEBUG.hints // []) + [{text: "zz-doc2-comp"}])
+' "${FULL}" > "${DOC2}"
 for _lead in '[]' '"bad"' 'null' '42'; do
     CAT="${TEST_TMPDIR}/concat.json"
-    { printf '%s\n' "${_lead}"; cat "${FULL}"; } > "${CAT}"
+    { printf '%s\n' "${_lead}"; cat "${DOC2}"; } > "${CAT}"
     OUT6="$(run_hook "${CAT}" "debug the flaky login test zzmarker")"
-    assert_contains "C6: a leading ${_lead} document does not hide the registry after it" \
+    assert_contains "C6: after a leading ${_lead} document, skills still route" \
         "Skill(test:zz-marker-skill)" "${OUT6}"
+    assert_contains "C6: after a leading ${_lead} document, methodology hints still render" \
+        "zz-doc2-hint" "${OUT6}"
+    assert_contains "C6: after a leading ${_lead} document, compositions still render" \
+        "zz-doc2-comp" "${OUT6}"
 done
 
 # ---------------------------------------------------------------------------
-# C7: an RS inside a registry string must not shift the sections. The text is
-# rendered whole (JSON-escaped in the hook's output), and an RS-bearing phase key
-# placed FIRST does not cost the phases after it.
+# C7: an RS must not shift the sections, whether it sits in rendered text or in a
+# phase key. The two are separate registries so neither can trigger the fallback on
+# the other's behalf.
 # ---------------------------------------------------------------------------
-RSREG="${TEST_TMPDIR}/rs.json"
+RSTEXT="${TEST_TMPDIR}/rs-text.json"
 "${REAL_JQ}" '
   ([30] | implode) as $rs
   | .phase_compositions.REVIEW.hints = ((.phase_compositions.REVIEW.hints // [])
         + [{text: ("zzbefore" + $rs + "zzafter")}])
-  | .phase_compositions = ({("RE" + $rs): {hints: [{text: "zzrskey"}]}} + .phase_compositions)
-' "${FULL}" > "${RSREG}"
-OUT7="$(run_hook "${RSREG}" "review the PR diff for bugs")"
+' "${FULL}" > "${RSTEXT}"
+OUT7="$(run_hook "${RSTEXT}" "review the PR diff for bugs")"
 RS_NEEDLE="zzbefore$(printf '%s' '\')u001ezzafter"
 assert_contains "C7: text containing RS is rendered whole" "${RS_NEEDLE}" "${OUT7}"
-assert_contains "C7: an RS-bearing phase key does not cost the REVIEW phase" \
-    "Phase: [REVIEW]" "${OUT7}"
-assert_contains "C7: REVIEW composition lines survive an RS-bearing key before them" \
-    "PARALLEL:" "${OUT7}"
-assert_not_contains "C7: the RS-bearing phase is not rendered" "zzrskey" "${OUT7}"
+assert_contains "C7: REVIEW composition lines survive RS in the text" "PARALLEL:" "${OUT7}"
+
+RSKEY="${TEST_TMPDIR}/rs-key.json"
+"${REAL_JQ}" '
+  ([30] | implode) as $rs
+  | .phase_compositions = ({("RE" + $rs): {hints: [{text: "zzrskey"}]}} + .phase_compositions)
+  | .phase_compositions.REVIEW.hints = ((.phase_compositions.REVIEW.hints // []) + [{text: "zz-after-rs-key"}])
+' "${FULL}" > "${RSKEY}"
+OUT7B="$(run_hook "${RSKEY}" "review the PR diff for bugs")"
+assert_contains "C7: an RS-bearing phase key placed first does not cost REVIEW" \
+    "zz-after-rs-key" "${OUT7B}"
+assert_not_contains "C7: the RS-bearing phase is not rendered" "zzrskey" "${OUT7B}"
 
 # ---------------------------------------------------------------------------
-# C8: a phase key containing a newline cannot forge another phase's lines. The old
-# exact-key lookup could never select it.
+# C8: a phase key containing a newline, a US or a NUL cannot forge another phase's
+# lines. The old exact-key lookup could never select such a key; bash drops NUL, so
+# REVIEW<NUL> would otherwise read as REVIEW. Each key is placed FIRST.
 # ---------------------------------------------------------------------------
-NLREG="${TEST_TMPDIR}/nlkey.json"
-"${REAL_JQ}" '.phase_compositions = ({"OTHER\nREVIEW": {hints: [{text: "zzleak"}]}} + .phase_compositions)' \
-    "${FULL}" > "${NLREG}"
-OUT8="$(run_hook "${NLREG}" "review the PR diff for bugs")"
+BADKEYS="${TEST_TMPDIR}/badkeys.json"
+"${REAL_JQ}" '
+  ([31] | implode) as $us | ([0] | implode) as $nul
+  | .phase_compositions = ({
+        "OTHER\nREVIEW": {hints: [{text: "zzleak-nl"}]},
+        ("REVIEW" + $us + "HINT:zzleak-us"): {hints: [{text: "zzleak-us2"}]},
+        ("REVIEW" + $nul): {hints: [{text: "zzleak-nul"}]}
+      } + .phase_compositions)
+' "${FULL}" > "${BADKEYS}"
+OUT8="$(run_hook "${BADKEYS}" "review the PR diff for bugs")"
 assert_contains "C8 setup: the prompt landed in the REVIEW phase" "Phase: [REVIEW]" "${OUT8}"
-assert_not_contains "C8: a newline-bearing phase key does not leak into REVIEW" "zzleak" "${OUT8}"
+assert_not_contains "C8: a newline-bearing phase key does not leak into REVIEW" "zzleak-nl" "${OUT8}"
+assert_not_contains "C8: a US-bearing phase key does not leak into REVIEW" "zzleak-us" "${OUT8}"
+assert_not_contains "C8: a NUL-bearing phase key does not leak into REVIEW" "zzleak-nul" "${OUT8}"
+assert_contains "C8: the real REVIEW compositions still render" "PARALLEL:" "${OUT8}"
 
 # ---------------------------------------------------------------------------
 # C9: methodology hints come from the same call (section 2) and still render.
@@ -234,6 +262,18 @@ HINTREG="${TEST_TMPDIR}/hint.json"
     "${FULL}" > "${HINTREG}"
 OUT9="$(run_hook "${HINTREG}" "debug the flaky login test zzmarker")"
 assert_contains "C9: a matching methodology hint is rendered" "zz-method-hint" "${OUT9}"
+
+# ---------------------------------------------------------------------------
+# C10: the SKILL_EXPLAIN trace still scores skills read from the single call.
+# ---------------------------------------------------------------------------
+H10="$(mktemp -d "${TEST_TMPDIR}/run.XXXXXX")"
+mkdir -p "${H10}/.claude"
+cp "${FULL}" "${H10}/.claude/.skill-registry-cache.json"
+TRACE10="$("${REAL_JQ}" -nc --arg p "debug the flaky login test zzmarker" --arg t "${H10}/.claude/a.jsonl" \
+    '{prompt:$p,transcript_path:$t}' \
+  | env HOME="${H10}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" SKILL_PROJECT_ROOT="${TEST_TMPDIR}" \
+        SKILL_EXPLAIN=1 /bin/bash "${HOOK}" 2>&1 >/dev/null)"
+assert_contains "C10: the trace scores the marker skill" "zz-marker-skill: trigger=(zzmarker)" "${TRACE10}"
 
 teardown_test_env
 print_summary
