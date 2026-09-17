@@ -113,6 +113,50 @@ assert_contains "minified: the colour literal is caught" "TL-1" "${_out}"
 assert_contains "minified: the later font-size on the same line is caught too" "TL-2" "${_out}"
 assert_not_contains "minified: the var() declaration between them is not flagged" "surface-raised" "${_out}"
 
+# --- Declarations, not lines --------------------------------------------------------
+# Three measured false results, all from the scanner being line-oriented while CSS is
+# not. Each reported CLEAN (or a permanent false positive) before the emitter was
+# rewritten to yield one declaration per record.
+_probe3="$(mktemp -d "${TMPDIR:-/tmp}/lintdecl.XXXXXX")"
+# A minified file is ONE line, so a per-line at-rule skip exempted the whole file.
+printf '.a{color:#ff0000}@media(min-width:900px){.b{color:#00ff00}}\n' > "${_probe3}/minmedia.css"
+_out="$(bash "${LINT}" "${_probe3}/minmedia.css" 2>&1)"; _rc=$?
+assert_equals "minified file containing an at-rule is still scanned" "1" "${_rc}"
+assert_equals "both literals are found, inside and outside the at-rule" "2" \
+    "$(printf '%s' "${_out}" | grep -c 'TL-1')"
+# The at-rule skip must key on a real at-rule, not on the text appearing in a string.
+printf '.a::after { content: "@import"; color: #ff0000; }\n' > "${_probe3}/strat.css"
+_rc=0; bash "${LINT}" "${_probe3}/strat.css" >/dev/null 2>&1 || _rc=$?
+assert_equals "an at-rule name inside a string does not exempt the rule" "1" "${_rc}"
+# A declaration split across lines used to be invisible from both halves.
+printf '.a {\n  color:\n    #ff0000;\n}\n' > "${_probe3}/multi.css"
+_out="$(bash "${LINT}" "${_probe3}/multi.css" 2>&1)"; _rc=$?
+assert_equals "a declaration split across lines is caught" "1" "${_rc}"
+assert_contains "it is reported at the line the declaration started on" "multi.css:2" "${_out}"
+# A data URI's internal ";" must not split the declaration (was a permanent false positive).
+printf '.a { background: url("data:image/svg+xml;charset=utf8,%%3Csvg%%3E") no-repeat; }\n' > "${_probe3}/data.css"
+_rc=0; bash "${LINT}" "${_probe3}/data.css" >/dev/null 2>&1 || _rc=$?
+assert_equals "a data URI in a covered property is not a violation" "0" "${_rc}"
+# Shorthands carry non-colour values legitimately, so they fire only on colour-shaped
+# ones. Both directions pinned: without the negative cell the lint is unusable in a real
+# project; without the positive one the shorthand is simply unchecked.
+printf '.a { background: url(/i.png) no-repeat center / cover; border: 1px solid var(--b); }\n' > "${_probe3}/sh.css"
+_rc=0; bash "${LINT}" "${_probe3}/sh.css" >/dev/null 2>&1 || _rc=$?
+assert_equals "shorthand with no colour in it is not a violation" "0" "${_rc}"
+printf '.a { background: #ff0000; border: 1px solid #00ff00; }\n' > "${_probe3}/shbad.css"
+_out="$(bash "${LINT}" "${_probe3}/shbad.css" 2>&1)"; _rc=$?
+assert_equals "shorthand carrying a colour literal still fires" "1" "${_rc}"
+assert_equals "both shorthand literals are reported" "2" "$(printf '%s' "${_out}" | grep -c 'TL-1')"
+# @font-face bodies are exempt: font-family there is the point, not a violation.
+printf '@font-face { font-family: "Custom"; src: url(/f.woff2); }\n.b { color: var(--x); }\n' > "${_probe3}/ff.css"
+_rc=0; bash "${LINT}" "${_probe3}/ff.css" >/dev/null 2>&1 || _rc=$?
+assert_equals "@font-face body is exempt" "0" "${_rc}"
+# ...but only its own block: a literal after it must still fire.
+printf '@font-face { font-family: "Custom"; }\n.b { color: #ff0000; }\n' > "${_probe3}/ff2.css"
+_rc=0; bash "${LINT}" "${_probe3}/ff2.css" >/dev/null 2>&1 || _rc=$?
+assert_equals "the @font-face exemption ends with its block" "1" "${_rc}"
+rm -rf "${_probe3}"
+
 # --- False negatives and false positives a reviewer measured ------------------------
 _probe2="$(mktemp -d "${TMPDIR:-/tmp}/lintfp.XXXXXX")"
 # A "/*" inside a CSS string used to open a comment and swallow the REST OF THE FILE.

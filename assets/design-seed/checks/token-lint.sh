@@ -7,21 +7,25 @@
 # from a finite set would pass that line. So the property enforced here is "this
 # declaration points at a role", never "this value is on the list".
 #
-# DECLARED SCOPE — this is a line-oriented shell scanner, not a CSS parser, and it does
-# not claim general enforcement:
+# DECLARED SCOPE — this reads declarations, not lines, but it is still a shell scanner
+# and not a CSS parser, and it does not claim general enforcement:
 #   Properties covered : color, background-color, border-color, outline-color, fill,
 #                        stroke, background, border, outline, font-size, font-family
 #   Files covered      : the files you name; with no arguments, *.css under the current
 #                        directory, excluding node_modules/, dist/, build/, .git/
 #   Never scanned      : tokens.css (it is where the literals are defined)
 #   Ignored constructs : /* comments */ (quote-aware: a "/*" inside a CSS string is
-#                        text, not a comment), at-rule lines (@media, @supports,
-#                        @import, @font-face), url(...) references, and the keywords
+#                        text, not a comment), at-rule PRELUDES (@media, @supports,
+#                        @import) and @font-face BODIES, url(...) references, the keywords
 #                        inherit/initial/unset/revert/currentColor/transparent/none/
 #                        auto and a bare 0 — all matched case-insensitively
+#   Shorthands         : background/border/outline fire only on a COLOUR-SHAPED value
+#                        (#hex, rgb()/hsl()/lab()/lch()/color(), or a common colour
+#                        name) — they legitimately carry `no-repeat`, `1px solid`,
+#                        `center / cover`, and accusing those makes the lint unusable
 #   Not covered        : inline style attributes, CSS-in-JS, <svg> presentation
-#                        attributes, shorthand sub-values inside calc(), anything in a
-#                        file you did not name
+#                        attributes, sub-values inside calc(), colour names outside the
+#                        common list, anything in a file you did not name
 #
 # NEVER REPORTS CLEAN WHEN IT COULD NOT LOOK. An unreadable file, a failed directory
 # walk, or any other incomplete scan exits 3 and says so — a checker whose failure mode
@@ -76,29 +80,69 @@ if [ ! -s "${_LIST}" ]; then
     exit 0
 fi
 
-# Strip /* */ comments across lines while keeping line numbers, then emit "N<TAB>text".
-_strip_comments() {
+# Emit one DECLARATION per output record as "N<TAB>text", N being the line the
+# declaration started on.
+#
+# Declaration-oriented, not line-oriented, and that distinction is the whole design:
+# CSS declarations do not respect line boundaries in either direction. A minified file
+# puts a hundred of them on one line (so a per-LINE at-rule skip exempted the entire
+# file the moment it contained one `@media`), and a hand-formatted file splits a single
+# declaration across three lines (so a per-LINE parser saw `color:` with no value and
+# `#ff0000;` with no property, and silently found nothing). Both reported CLEAN.
+_emit_decls() {
     awk '
-    { line = $0; out = ""; i = 1; n = length(line)
+    function flush(   t) {
+      t = buf; gsub(/^[ \t]+|[ \t]+$/, "", t)
+      # skipdepth: inside an @font-face block, where `font-family: "Custom"` is the
+      # point rather than a violation. At-rule PRELUDES (`@media (min-width: 900px)`)
+      # are skipped as chunks; declarations INSIDE @media are still scanned, which is
+      # what you want — a literal in a media query is still a literal.
+      if (t != "" && skipdepth == 0 && substr(t, 1, 1) != "@") printf "%d\t%s\n", start, t
+      buf = ""; start = 0
+    }
+    { line = $0; i = 1; n = length(line)
       while (i <= n) {
         c = substr(line, i, 1)
         if (incomment) {
           if (substr(line, i, 2) == "*/") { incomment = 0; i += 2 } else { i++ }
-        } else if (instring) {
-          # A "/*" inside a string is text. Without this the scanner treated
-          # `content: "/*"` as opening a comment and silently swallowed the rest of
-          # the FILE — an unbounded false negative that reports clean.
-          if (c == "\\") { out = out substr(line, i, 2); i += 2 }
-          else { out = out c; if (c == instring) instring = ""; i++ }
-        } else {
-          if (substr(line, i, 2) == "/*") { incomment = 1; i += 2 }
-          else { if (c == "\"" || c == "\x27") instring = c; out = out c; i++ }
+          continue
         }
+        if (instring) {
+          # A "/*" inside a string is text. Treating it as a comment silently swallowed
+          # the rest of the FILE — an unbounded false negative that reported clean.
+          if (c == "\\") { buf = buf substr(line, i, 2); i += 2; continue }
+          buf = buf c; if (c == instring) instring = ""; i++
+          continue
+        }
+        if (substr(line, i, 2) == "/*") { incomment = 1; i += 2; continue }
+        if (c == "\"" || c == "\x27") { instring = c; if (buf == "") start = NR; buf = buf c; i++; continue }
+        # url(...) is opaque: a data URI legitimately contains ";" and "{", and letting
+        # those split the declaration left an unclosed url( that later stripping could
+        # not match, so an inline SVG background became a permanent false positive.
+        if (tolower(substr(line, i, 4)) == "url(") {
+          if (buf == "") start = NR
+          buf = buf substr(line, i, 4); i += 4
+          while (i <= n) { c = substr(line, i, 1); buf = buf c; i++; if (c == ")") break }
+          continue
+        }
+        if (c == ";") { flush(); i++; continue }
+        if (c == "{") { prelude = buf
+                        if (prelude ~ /@font-face/ && skipdepth == 0) skipdepth = depth + 1
+                        depth++; flush(); i++; continue }
+        if (c == "}") { flush(); depth--
+                        if (skipdepth > 0 && depth < skipdepth) skipdepth = 0
+                        i++; continue }
+        if (buf == "" && c ~ /[ \t]/) { i++; continue }
+        if (buf == "") start = NR
+        buf = buf c; i++
       }
-      # A string does not span lines in CSS; leaving instring set would mask the rest
-      # of the file exactly like the bug above.
+      # A declaration may continue on the next line: keep the buffer, join with a space.
+      # A string, however, does not span lines in CSS — leaving instring set would mask
+      # the rest of the file exactly like the bug above.
       instring = ""
-      printf "%d\t%s\n", NR, out }' "$1"
+      if (buf != "") buf = buf " "
+    }
+    END { flush() }' "$1"
 }
 
 # One covered declaration. Prints a diagnostic and returns 1 when it is a violation.
@@ -115,10 +159,17 @@ _check_decl() {
     [ -n "${_val}" ] || return 0
 
     case "${_prop}" in
-        color|background-color|border-color|outline-color|fill|stroke|background|border|outline)
-            _class="TL-1"; _what="colour" ;;
+        color|background-color|border-color|outline-color|fill|stroke)
+            _class="TL-1"; _what="colour"; _shorthand=no ;;
+        background|border|outline)
+            # Shorthands legitimately carry non-colour values (`no-repeat`, `1px solid`,
+            # `center / cover`), so "not a token reference" is not enough to accuse them:
+            # they fire only on a value that LOOKS like a colour. Judging them like
+            # `color` made `background: url(...) no-repeat` a permanent false positive,
+            # which is how a project ends up disabling the lint.
+            _class="TL-1"; _what="colour"; _shorthand=yes ;;
         font-size|font-family)
-            _class="TL-2"; _what="typography" ;;
+            _class="TL-2"; _what="typography"; _shorthand=no ;;
         *) return 0 ;;
     esac
 
@@ -129,9 +180,20 @@ _check_decl() {
     _bare="$(printf '%s' "${_val}" | sed 's/url([^)]*)//g; s/^[[:space:]]*//; s/[[:space:]]*$//')"
     [ -n "${_bare}" ] || return 0
     # Keywords are case-insensitive in CSS — `currentcolor` is the spec's own spelling.
-    case "$(printf '%s' "${_bare}" | tr '[:upper:]' '[:lower:]')" in
+    _low="$(printf '%s' "${_bare}" | tr '[:upper:]' '[:lower:]')"
+    case "${_low}" in
         inherit|initial|unset|revert|currentcolor|transparent|none|auto|0) return 0 ;;
     esac
+    if [ "${_shorthand}" = "yes" ]; then
+        # Colour-shaped only: #hex, rgb()/hsl()/color()/lab(), or a named colour.
+        case "${_low}" in
+            *"#"*|*rgb*|*hsl*|*lab\(*|*lch\(*|*color\(*) ;;
+            *red*|*blue*|*green*|*black*|*white*|*gray*|*grey*|*orange*|*yellow*|*purple*\
+            |*pink*|*brown*|*navy*|*teal*|*olive*|*silver*|*gold*|*cyan*|*magenta*|*lime*\
+            |*maroon*|*aqua*|*fuchsia*|*indigo*|*violet*|*crimson*|*coral*|*salmon*) ;;
+            *) return 0 ;;
+        esac
+    fi
 
     printf '%s:%s: %s %s literal in `%s: %s` — reference a token, e.g. %s: var(--…)\n' \
         "${_file}" "${_n}" "${_class}" "${_what}" "${_prop}" "${_val}" "${_prop}"
@@ -152,32 +214,20 @@ while IFS= read -r -d '' _file; do
         _unscannable=$((_unscannable + 1))
         continue
     fi
-    if ! _strip_comments "${_file}" > "${_LINES}" 2>"${_WORK}/awkerr"; then
+    if ! _emit_decls "${_file}" > "${_LINES}" 2>"${_WORK}/awkerr"; then
         printf 'token-lint: failed to read %s — scan INCOMPLETE\n' "${_file}" >&2
         sed 's/^/token-lint:   /' "${_WORK}/awkerr" >&2
         _unscannable=$((_unscannable + 1))
         continue
     fi
 
+    # One record per declaration, already separated from selectors, at-rule preludes and
+    # @font-face bodies by the emitter. Nothing to re-split here — the splitting used to
+    # live in this loop, per line, which is exactly what made minified and multi-line CSS
+    # invisible. Selectors arrive as their own records; a pseudo-class like `a:hover`
+    # parses to the property `a`, which is not covered, so it is skipped.
     while IFS="$(printf '\t')" read -r _n _text; do
-        case "${_text}" in
-            *@media*|*@supports*|*@import*|*@font-face*) continue ;;
-        esac
-        # Several declarations may share a line — minified CSS puts whole rules on one.
-        # Braces are boundaries too, not just semicolons: `…;font-size:12px}.b{border:…`
-        # ends one declaration and starts a new rule, and treating `}` as ordinary text
-        # let a declaration after a rule boundary escape the scan entirely. Selectors
-        # then arrive as their own segments; a pseudo-class like `a:hover` parses to the
-        # property `a`, which is not covered, so it is skipped.
-        _rest="${_text//\{/;}"
-        _rest="${_rest//\}/;}"
-        while [ -n "${_rest}" ]; do
-            case "${_rest}" in
-                *";"*) _one="${_rest%%;*}"; _rest="${_rest#*;}" ;;
-                *)     _one="${_rest}";     _rest="" ;;
-            esac
-            _check_decl "${_file}" "${_n}" "${_one}" || _violations=$((_violations + 1))
-        done
+        _check_decl "${_file}" "${_n}" "${_text}" || _violations=$((_violations + 1))
     done < "${_LINES}"
 done < "${_LIST}"
 

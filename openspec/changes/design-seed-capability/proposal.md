@@ -83,6 +83,13 @@ dependency.
   checkable artifacts, plus the method for authoring and evolving them.
 - **Modified: `pdlc-safety`** — unchanged requirements; the DESIGN hint is
   additive and introduces no gate.
+- **Modified: `cross-family-panel`** — the receipt hook's preview verification.
+  The durable requirement said a receipt is written only when the harness-returned
+  annotation "exists and hashes to the digest"; that annotation is size-gated and
+  absent for every real package, so the requirement as written made consent
+  unobtainable. The delta keeps the binding and moves where it is checked, and
+  records which check ran. Without this delta the spec would read as an
+  indictment of the fix, and the next reviewer would revert it.
 
 > ⚠️ NEW CAPABILITY: this change introduces `design-foundations`. Existing
 > capabilities considered and rejected: `pdlc-safety` (owns phase gates and the
