@@ -10,6 +10,11 @@
 #   C3  an unparseable cache still falls back exactly as a missing one does
 #   C4  composition lines come from the CURRENT phase only (all phases are extracted)
 #   C5  a multi-line composition value keeps its continuation lines, in its own phase
+#   C6  each JSON document in the file is isolated, as jq's CLI isolated them per call
+#   C7  an RS inside registry text cannot shift the sections (falls back to separate calls)
+#   C8  a phase key containing a newline cannot forge another phase's lines
+#   C9  methodology hints still render
+# C6-C8 are the three equivalence breaks independent review found in the first version.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -175,6 +180,60 @@ assert_not_contains "C4: another phase's composition hint is not rendered" "zzfi
 assert_not_contains "C4: no other phase leaks in (SHIP)" "zzfirst-SHIP" "${OUT4}"
 assert_contains "C5: a continuation line stays with its phase" "zzcont-REVIEW" "${OUT4}"
 assert_not_contains "C5: another phase's continuation line does not leak" "zzcont-DEBUG" "${OUT4}"
+
+# ---------------------------------------------------------------------------
+# C6: documents are isolated. The old calls each ran jq over the file, and jq's CLI
+# reports a runtime error and continues with the NEXT document, so a non-object
+# document before the real registry cost nothing.
+# ---------------------------------------------------------------------------
+for _lead in '[]' '"bad"' 'null' '42'; do
+    CAT="${TEST_TMPDIR}/concat.json"
+    { printf '%s\n' "${_lead}"; cat "${FULL}"; } > "${CAT}"
+    OUT6="$(run_hook "${CAT}" "debug the flaky login test zzmarker")"
+    assert_contains "C6: a leading ${_lead} document does not hide the registry after it" \
+        "Skill(test:zz-marker-skill)" "${OUT6}"
+done
+
+# ---------------------------------------------------------------------------
+# C7: an RS inside a registry string must not shift the sections. The text is
+# rendered whole (JSON-escaped in the hook's output), and an RS-bearing phase key
+# placed FIRST does not cost the phases after it.
+# ---------------------------------------------------------------------------
+RSREG="${TEST_TMPDIR}/rs.json"
+"${REAL_JQ}" '
+  ([30] | implode) as $rs
+  | .phase_compositions.REVIEW.hints = ((.phase_compositions.REVIEW.hints // [])
+        + [{text: ("zzbefore" + $rs + "zzafter")}])
+  | .phase_compositions = ({("RE" + $rs): {hints: [{text: "zzrskey"}]}} + .phase_compositions)
+' "${FULL}" > "${RSREG}"
+OUT7="$(run_hook "${RSREG}" "review the PR diff for bugs")"
+RS_NEEDLE="zzbefore$(printf '%s' '\')u001ezzafter"
+assert_contains "C7: text containing RS is rendered whole" "${RS_NEEDLE}" "${OUT7}"
+assert_contains "C7: an RS-bearing phase key does not cost the REVIEW phase" \
+    "Phase: [REVIEW]" "${OUT7}"
+assert_contains "C7: REVIEW composition lines survive an RS-bearing key before them" \
+    "PARALLEL:" "${OUT7}"
+assert_not_contains "C7: the RS-bearing phase is not rendered" "zzrskey" "${OUT7}"
+
+# ---------------------------------------------------------------------------
+# C8: a phase key containing a newline cannot forge another phase's lines. The old
+# exact-key lookup could never select it.
+# ---------------------------------------------------------------------------
+NLREG="${TEST_TMPDIR}/nlkey.json"
+"${REAL_JQ}" '.phase_compositions = ({"OTHER\nREVIEW": {hints: [{text: "zzleak"}]}} + .phase_compositions)' \
+    "${FULL}" > "${NLREG}"
+OUT8="$(run_hook "${NLREG}" "review the PR diff for bugs")"
+assert_contains "C8 setup: the prompt landed in the REVIEW phase" "Phase: [REVIEW]" "${OUT8}"
+assert_not_contains "C8: a newline-bearing phase key does not leak into REVIEW" "zzleak" "${OUT8}"
+
+# ---------------------------------------------------------------------------
+# C9: methodology hints come from the same call (section 2) and still render.
+# ---------------------------------------------------------------------------
+HINTREG="${TEST_TMPDIR}/hint.json"
+"${REAL_JQ}" '.methodology_hints = ((.methodology_hints // []) + [{hint: "zz-method-hint", triggers: ["zzmarker"]}])' \
+    "${FULL}" > "${HINTREG}"
+OUT9="$(run_hook "${HINTREG}" "debug the flaky login test zzmarker")"
+assert_contains "C9: a matching methodology hint is rendered" "zz-method-hint" "${OUT9}"
 
 teardown_test_env
 print_summary

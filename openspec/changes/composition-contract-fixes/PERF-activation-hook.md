@@ -100,17 +100,23 @@ separated by RS (`\x1e`), and the phase compositions are emitted for every phase
 filtered in bash, because the phase is known only after scoring. Calls 6-11 are
 unchanged.
 
-- **Forks.** Four fewer per prompt that reaches scoring (5 -> 1), confirmed with the
-  same jq PATH shim. The greeting early-exit path still runs one fork.
-- **Latency.** Fixed `HOME`, all skills available, 25 iterations x 3 rounds:
+- **Forks.** Five become one when a phase is selected, confirmed with the same jq PATH
+  shim. The old hook ran the required_when call only once a skill scored and the
+  composition call only once a phase was chosen, so otherwise the saving is two or three
+  forks. The greeting early-exit path still runs one fork.
+- **Latency.** Fixed `HOME`, all skills available, 25 iterations x 3 rounds. The
+  original and new hook bodies ran back to back, twice, and the two passes agreed within
+  about 1 ms:
 
   | prompt | before (ms) | after (ms) |
   |---|---|---|
-  | "fix the failing test in the ingest worker" | 145-147 | 132-135 |
-  | "ask gemini cold whether this migration is safe" | 137 | 126-127 |
-  | "review the PR diff for bugs" | 175-177 | 165-173 (noisier) |
+  | "fix the failing test in the ingest worker" | 128.9-130.4 | 119.3-120.5 |
+  | "review the PR diff for bugs" | 157.6-158.3 | 147.2-148.5 |
+  | "ask gemini cold whether this migration is safe" | 122.6-125.4 | 113.1-114.3 |
 
-  That is about 10 ms, close to the 11 ms estimated above.
+  That is about 10 ms per prompt, close to the 11 ms estimated above. Absolute times
+  differ from the first table because machine load differs between sessions; compare
+  within a table only.
 - **Splitting has to be linear.** Under bash 3.2 on a 50 KB output:
 
   | split method | time per split |
@@ -125,6 +131,18 @@ unchanged.
   - 633 prompts (fixtures, the negative corpus, all consultation rounds) on two registries;
   - 81 prompts on each of nine edge-case registries.
 
-  One difference, a concatenated two-document cache, was found and closed with
-  `[inputs]`. Six deliberate breakages of the new code were each caught by the
-  comparison and by `tests/test-activation-registry-extract.sh`.
+  My own comparison found one difference, a concatenated two-document cache.
+  Independent reviews (Codex and a Claude reviewer) then found three more, each
+  reproduced with a pair of runs:
+  - **Document isolation.** A non-object document before the real registry hid it.
+    jq's CLI reports a runtime error and continues with the next document, so each
+    old call isolated documents. Fixed with a `try` per document.
+  - **RS in a value.** An escaped RS inside a string shifted the sections. The single
+    call now reports `REGISTRY-HAS-RS`, and the hook runs the same filters as separate
+    calls.
+  - **Newline or US in a phase key.** Such a key could forge another phase's line prefix.
+    These keys are now skipped; the old exact-key lookup could never select them.
+
+  Each section filter is now defined once and shared by both paths. Twelve deliberate
+  breakages (including one re-introducing each defect above) are each caught by
+  `tests/test-activation-registry-extract.sh`.
