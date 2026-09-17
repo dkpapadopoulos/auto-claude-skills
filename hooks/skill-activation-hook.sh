@@ -25,19 +25,32 @@ fi
 # words ("Capture a second, path-normalised baseline" routed to second-opinion, observed
 # 2026-09-17), so they are not routed. The classifier is shared with
 # egress-consent-turn-hook.sh (hooks/lib/task-notification.sh); without it every prompt
-# is routed, as before. A prompt the classifier cannot evaluate is routed too.
+# is routed, as before. A prompt the classifier cannot evaluate is routed too, and so is
+# every prompt when the lib's definition does not compile (the call is retried with the
+# fallback below, so a broken lib can never make this hook drop the user's prompt).
+_TN_FALLBACK_DEF='def notification_kind: "prompt";'
 TASK_NOTIFICATION_JQ_DEF=""
 if [[ -f "${PLUGIN_ROOT}/hooks/lib/task-notification.sh" ]]; then
   # shellcheck source=lib/task-notification.sh
   . "${PLUGIN_ROOT}/hooks/lib/task-notification.sh" 2>/dev/null || TASK_NOTIFICATION_JQ_DEF=""
 fi
-[[ -n "${TASK_NOTIFICATION_JQ_DEF}" ]] || TASK_NOTIFICATION_JQ_DEF='def notification_kind: "prompt";'
+[[ -n "${TASK_NOTIFICATION_JQ_DEF}" ]] || TASK_NOTIFICATION_JQ_DEF="${_TN_FALLBACK_DEF}"
 
-# Capture stdin once; extract the prompt's kind, transcript_path and prompt in the SAME
-# single jq fork the prompt already cost (\x1f-joined; the prompt goes last because it
-# may contain anything, while a kind or a path cannot contain \x1f).
+# Capture stdin once; extract the first payload's kind, then transcript_path and prompt,
+# in the SAME single jq fork the prompt already cost (\x1f-joined; the prompt goes last
+# because it may contain anything, and a kind cannot contain \x1f; a transcript_path
+# containing one splits wrongly, as it always has). `-n [inputs]` keeps the output for
+# several JSON values on stdin exactly what the one-line-per-value form produced.
 _HOOK_INPUT="$(cat 2>/dev/null)" || _HOOK_INPUT=""
-_FIELDS="$(printf '%s' "${_HOOK_INPUT}" | jq -r "${TASK_NOTIFICATION_JQ_DEF}"' [((.prompt // "") | tostring | notification_kind), .transcript_path // "", .prompt // ""] | join("\u001f")' 2>/dev/null)" || _FIELDS=""
+_fields_extract() {
+  printf '%s' "${_HOOK_INPUT}" | jq -nr "$1"' [inputs] as $all
+    | ((($all[0] // {}) | (.prompt // "") | tostring | notification_kind) + "\u001f"
+       + ($all | map([.transcript_path // "", .prompt // ""] | join("\u001f")) | join("\n")))' 2>/dev/null
+}
+_FIELDS="$(_fields_extract "${TASK_NOTIFICATION_JQ_DEF}")" || _FIELDS=""
+if [[ -z "${_FIELDS}" && -n "${_HOOK_INPUT}" && "${TASK_NOTIFICATION_JQ_DEF}" != "${_TN_FALLBACK_DEF}" ]]; then
+  _FIELDS="$(_fields_extract "${_TN_FALLBACK_DEF}")" || _FIELDS=""
+fi
 _PROMPT_KIND="${_FIELDS%%$'\x1f'*}"
 _FIELDS="${_FIELDS#*$'\x1f'}"
 _TRANSCRIPT="${_FIELDS%%$'\x1f'*}"
@@ -156,7 +169,8 @@ _prompt_is_consultation_only() {
 # EARLY EXITS
 # =================================================================
 [[ -z "$PROMPT" ]] && exit 0
-# A background-task notification is not the user: no routing, no state (see above).
+# A background-task notification is not the user: no routing and no composition state
+# (the session-token singleton above is re-stamped, as for every prompt).
 if [[ "${_PROMPT_KIND}" == "notification" ]]; then
   [[ -n "${SKILL_DEBUG:-}" ]] && \
     printf '[skill-hook] prompt is a background-task notification; no routing emitted.\n' >&2

@@ -14,8 +14,10 @@
 #   N5  two notification blocks route nothing
 #   N6  SKILL_DEBUG=1 explains the skip
 #   N7  a prompt the regex engine cannot evaluate is routed (treated as the user)
-#   N8  without the shared lib, the activation hook routes as before, and the turn hook
-#       still withdraws (both fail toward their pre-change behaviour)
+#   N8  without a usable shared lib (missing, or sourcing but not valid jq), the activation
+#       hook routes as before and the turn hook still withdraws
+#   N9  an "unclassifiable" prompt is routed by the hook itself
+#   N10 a notification without transcript_path is still not routed
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -121,22 +123,29 @@ else
     _record_fail "N7: shared classifier lib exists" "missing ${LIB}"
 fi
 
-# N8: without the lib. A plugin root that is this checkout minus the lib (symlinks keep
-# every other lib loadable).
+# N8: without a usable lib. mkroot <dir> [lib-content-file] builds a plugin root that is this
+# checkout with task-notification.sh removed or replaced (symlinks keep every other lib
+# loadable).
+mkroot() {
+    local d="$1" libsrc="${2:-}" _e
+    mkdir -p "${d}/hooks/lib"
+    for _e in "${PROJECT_ROOT}"/* "${PROJECT_ROOT}"/.claude-plugin; do
+        [ "${_e##*/}" = "hooks" ] && continue
+        ln -s "${_e}" "${d}/${_e##*/}"
+    done
+    for _e in "${PROJECT_ROOT}"/hooks/*; do
+        [ "${_e##*/}" = "lib" ] && continue
+        ln -s "${_e}" "${d}/hooks/${_e##*/}"
+    done
+    for _e in "${PROJECT_ROOT}"/hooks/lib/*; do
+        [ "${_e##*/}" = "task-notification.sh" ] && continue
+        ln -s "${_e}" "${d}/hooks/lib/${_e##*/}"
+    done
+    [ -n "${libsrc}" ] && cp "${libsrc}" "${d}/hooks/lib/task-notification.sh"
+    return 0
+}
 NOLIB="${TEST_TMPDIR}/nolib-root"
-mkdir -p "${NOLIB}/hooks/lib"
-for _e in "${PROJECT_ROOT}"/* "${PROJECT_ROOT}"/.claude-plugin; do
-    [ "${_e##*/}" = "hooks" ] && continue
-    ln -s "${_e}" "${NOLIB}/${_e##*/}"
-done
-for _e in "${PROJECT_ROOT}"/hooks/*; do
-    [ "${_e##*/}" = "lib" ] && continue
-    ln -s "${_e}" "${NOLIB}/hooks/${_e##*/}"
-done
-for _e in "${PROJECT_ROOT}"/hooks/lib/*; do
-    [ "${_e##*/}" = "task-notification.sh" ] && continue
-    ln -s "${_e}" "${NOLIB}/hooks/lib/${_e##*/}"
-done
+mkroot "${NOLIB}"
 new_home; OUT8="$(run_hook "${NOTE}" CLAUDE_PLUGIN_ROOT="${NOLIB}")"
 assert_contains "N8: without the lib, the activation hook routes as before" "SKILL ACTIVATION" "${OUT8}"
 
@@ -157,6 +166,39 @@ assert_equals "N8: without the lib, the turn hook withdraws (the safe direction)
     "revoked" "$(turn_run "${NOLIB}" "${NOTE}")"
 assert_equals "N8 control: with the lib, a user prompt still withdraws" \
     "revoked" "$(turn_run "${PROJECT_ROOT}" "${PLAIN}")"
+
+# A lib that SOURCES but whose jq does not compile (a syntax slip, a renamed function after a
+# partial update) must fall back exactly like a missing lib, not break the jq call: the turn
+# hook would otherwise report the payload unparseable and KEEP approvals over a user prompt,
+# and the activation hook would drop every prompt.
+_i=0
+for _def in 'def notification_kind: ;' 'def notification_kind: "prompt"' 'def task_kind: "prompt";' ' '; do
+    _i=$((_i + 1))
+    printf "TASK_NOTIFICATION_JQ_DEF='%s'\n" "${_def}" > "${TEST_TMPDIR}/badlib${_i}.sh"
+    BADROOT="${TEST_TMPDIR}/badroot${_i}"
+    mkroot "${BADROOT}" "${TEST_TMPDIR}/badlib${_i}.sh"
+    new_home; OUTB="$(run_hook "${PLAIN}" CLAUDE_PLUGIN_ROOT="${BADROOT}")"
+    assert_contains "N8: broken lib #${_i}, the activation hook still routes a user prompt" \
+        "SKILL ACTIVATION" "${OUTB}"
+    assert_equals "N8: broken lib #${_i}, the turn hook still withdraws over a user prompt" \
+        "revoked" "$(turn_run "${BADROOT}" "${PLAIN}")"
+done
+
+# N9: the hook routes a prompt the classifier calls "unclassifiable". A lib that says so for
+# every prompt stands in for a multi-MB prompt, which would make the hook slow to run here.
+printf '%s\n' "TASK_NOTIFICATION_JQ_DEF='def notification_kind: \"unclassifiable\";'" > "${TEST_TMPDIR}/unclass.sh"
+UNROOT="${TEST_TMPDIR}/unclass-root"
+mkroot "${UNROOT}" "${TEST_TMPDIR}/unclass.sh"
+new_home; OUT9="$(run_hook "${NOTE}" CLAUDE_PLUGIN_ROOT="${UNROOT}")"
+assert_contains "N9: an unclassifiable prompt is routed" "SKILL ACTIVATION" "${OUT9}"
+
+# N10: a notification without a transcript_path is still not routed.
+new_home
+cp "${FULL}" "${LAST_HOME}/.claude/.skill-registry-cache.json"
+OUT10="$("${REAL_JQ}" -n --rawfile p "${NOTE}" '{prompt:$p}' \
+  | env HOME="${LAST_HOME}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" SKILL_PROJECT_ROOT="${TEST_TMPDIR}" \
+        /bin/bash "${HOOK}" 2>&1)"
+assert_equals "N10: a notification without transcript_path routes nothing (output length)" "0" "${#OUT10}"
 
 teardown_test_env
 print_summary

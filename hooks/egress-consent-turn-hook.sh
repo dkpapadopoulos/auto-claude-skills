@@ -50,22 +50,34 @@ fi
 # notification (measured live 2026-09-17), not the user speaking; treating it as a turn
 # boundary revoked a genuine approval mid-flow. The classifier and its documented edge
 # cases live in hooks/lib/task-notification.sh, shared with the activation hook.
-# Without that lib every prompt counts as the user: withdrawing is the safe direction.
+# Without that lib, or when its definition does not compile, every prompt counts as the
+# user: withdrawing is the safe direction.
+_TN_FALLBACK_DEF='def notification_kind: "prompt";'
 TASK_NOTIFICATION_JQ_DEF=""
 # shellcheck source=/dev/null
 . "${_PLUGIN_ROOT}/hooks/lib/task-notification.sh" 2>/dev/null || TASK_NOTIFICATION_JQ_DEF=""
-[ -n "${TASK_NOTIFICATION_JQ_DEF}" ] || TASK_NOTIFICATION_JQ_DEF='def notification_kind: "prompt";'
+[ -n "${TASK_NOTIFICATION_JQ_DEF}" ] || TASK_NOTIFICATION_JQ_DEF="${_TN_FALLBACK_DEF}"
 # The trailing "end" field is a sentinel: a newline inside transcript_path cuts the read
 # short, and acting on the truncated path would silently resolve the wrong conversation.
-_META="$(printf '%s' "${_INPUT}" | jq -r "${TASK_NOTIFICATION_JQ_DEF}"' if type == "object" then
+_meta_extract() {
+    printf '%s' "${_INPUT}" | jq -r "$1"' if type == "object" then
     [ ((.transcript_path // "") | tostring),
       ((.prompt // "") | tostring
            | notification_kind),
       "end"
-    ] | join("\u001f") else "" end' 2>/dev/null)"
+    ] | join("\u001f") else "" end' 2>/dev/null
+}
+_META="$(_meta_extract "${TASK_NOTIFICATION_JQ_DEF}")"
 IFS=$'\x1f' read -r _TP _KIND _END <<EOF
 ${_META}
 EOF
+if [ "${_END:-}" != "end" ] && [ "${TASK_NOTIFICATION_JQ_DEF}" != "${_TN_FALLBACK_DEF}" ]; then
+    # The shared lib's definition may not compile: classify every prompt as the user.
+    _META="$(_meta_extract "${_TN_FALLBACK_DEF}")"
+    IFS=$'\x1f' read -r _TP _KIND _END <<EOF
+${_META}
+EOF
+fi
 if [ "${_END:-}" != "end" ]; then
     _announce "prompt payload unparseable — unused egress approvals of this conversation (if any) were NOT withdrawn."
     exit 0
