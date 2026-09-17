@@ -51,8 +51,10 @@ fi
 # it as a turn boundary revoked a genuine approval mid-flow.
 # A prompt counts as a notification only if it consists ENTIRELY of notification blocks:
 # a user who pastes one and then writes "no" is the user speaking. The block body may not
-# contain a closing tag (a lazy `.*?` backtracks across one, so text BETWEEN two blocks
-# matched). Fixture: tests/fixtures/egress-consent/task-notification-bash.txt, captured
+# contain an opening or closing tag (a lazy `.*?` backtracks across one, so text BETWEEN
+# two blocks matched; a nested opening tag is not a notification shape). Plain text typed
+# INSIDE a single well-formed block is indistinguishable from a notification's own
+# free-text fields (agent notifications carry arbitrary <result> text) — accepted residual. Fixture: tests/fixtures/egress-consent/task-notification-bash.txt, captured
 # live 2026-09-17 — nothing follows the closing tag. Agent-completion notifications were
 # not captured; if one ever carries trailing text it is treated as the user (one re-ask).
 # The trailing "end" field is a sentinel: a newline inside transcript_path cuts the read
@@ -60,7 +62,7 @@ fi
 _META="$(printf '%s' "${_INPUT}" | jq -r 'if type == "object" then
     [ ((.transcript_path // "") | tostring),
       (if ((.prompt // "") | tostring
-           | test("^\\s*(<task-notification>(?:(?!</task-notification>)[\\s\\S])*</task-notification>\\s*)+$"))
+           | test("^\\s*(<task-notification>(?:(?!</?task-notification>)[\\s\\S])*</task-notification>\\s*)+$"))
        then "notification" else "prompt" end),
       "end"
     ] | join("\u001f") else "" end' 2>/dev/null)"

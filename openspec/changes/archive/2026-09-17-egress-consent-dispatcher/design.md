@@ -376,3 +376,10 @@ A fresh reviewer of `623baaf..153152b` reported FINDINGS-OPEN; all four addresse
   a positive "was withdrawn" cell added, mutation-checked.
 - The canonical spec now states the notification exception.
 
+A final reviewer of `d4a2e00` confirmed the tempered regex is linear-time (the lazy
+version hit jq's backtracking retry limit at ~200KB) and found two more items, both fixed:
+the positive "was withdrawn" cell could skip every run (now unconditional per run, which
+also pins the same-second "at or after" boundary — a `-le`→`-lt` mutation now fails six
+cells), and a nested opening tag inside a block now counts as the user. Plain text typed
+inside one well-formed block remains an accepted residual.
+

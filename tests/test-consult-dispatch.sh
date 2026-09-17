@@ -553,6 +553,15 @@ No - do NOT send.
 </task-notification>"
 dispatch "${P_FULL}" "${SID}" send "${D}"
 assert_equals "R6: user text before a stray closing tag withdraws -> 4" "4" "${RC}"
+# A nested opening tag inside a block is not a notification shape.
+reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
+approve "${D}" "${PKG}" toolu_r7a
+turn "${TP}" "<task-notification>
+<task-notification>
+no, do not send
+</task-notification>"
+dispatch "${P_FULL}" "${SID}" send "${D}"
+assert_equals "R7: a nested opening tag inside a block withdraws -> 4" "4" "${RC}"
 # A newline inside transcript_path is announced, never a silent wrong-token no-op.
 reset; dispatch "${P_FULL}" "${SID}" prepare codex "${PKGF}"
 approve "${D}" "${PKG}" toolu_r5c

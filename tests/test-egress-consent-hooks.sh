@@ -302,15 +302,24 @@ for tool in bash sh cat mv rm date basename dirname shasum sed tr cut mkdir chmo
 done
 ln -sf "$(command -v jq)" "${NOPERL}/jq"
 [ -e "${NOPERL}/shasum" ] && rm -f "${NOPERL}/shasum" && ln -sf "$(command -v sha256sum 2>/dev/null || echo /nonexistent)" "${NOPERL}/sha256sum"
-reset_state
+# Each run is independent (state reset inside the loop). Without perl the clock has
+# whole-second resolution, so a decline and a re-ask answered in the same second MUST
+# withdraw ("at or after") — asserted unconditionally, so a boundary mutation cannot turn
+# the positive cells off. A run that straddles a second boundary is retried.
 for i in 1 2 3; do
-    run_ask "$(pre_payload toolu_np_no$i)" "${NOPERL}" >/dev/null; run_rcpt "$(post_payload toolu_np_no$i "Do not send")" "${NOPERL}" >/dev/null
-    run_ask "$(pre_payload toolu_np_yes$i)" "${NOPERL}" >/dev/null
-    o="$(run_rcpt "$(post_payload toolu_np_yes$i "${L}")" "${NOPERL}")"
+    tries=0
+    while :; do
+        reset_state
+        s0="$(date +%s)"
+        run_ask "$(pre_payload toolu_np_no$i)" "${NOPERL}" >/dev/null; run_rcpt "$(post_payload toolu_np_no$i "Do not send")" "${NOPERL}" >/dev/null
+        run_ask "$(pre_payload toolu_np_yes$i)" "${NOPERL}" >/dev/null
+        o="$(run_rcpt "$(post_payload toolu_np_yes$i "${L}")" "${NOPERL}")"
+        [ "$(date +%s)" = "${s0}" ] && break
+        tries=$((tries + 1)); [ "${tries}" -ge 5 ] && break
+    done
+    assert_equals "R5: same-second decline then approval is withdrawn without perl (run $i)" "0" "$(rcpt_count)"
+    assert_contains "R5: the withdrawal is announced (run $i)" "was withdrawn" "${o}"
     assert_not_contains "R5: no false 'while the question was open' claim (run $i)" "while the question was open" "${o}"
-    if [ "$(rcpt_count)" = "0" ]; then
-        assert_contains "R5: a withdrawn approval is announced (run $i)" "was withdrawn" "${o}"
-    fi
 done
 
 echo "-- wiring and retirement --"
