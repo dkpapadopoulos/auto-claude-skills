@@ -1,0 +1,9 @@
+/* A multi-line comment containing what looks like a violation.
+   color: #ff0000;
+   font-size: 11px;
+   None of it is code, so none of it may fire. */
+.a { color: var(--text-primary); }
+/* a comment that closes mid-line */ .b { color: #ff0000; }
+.c { background-color: var(--surface-raised); }
+/* An unterminated comment at end of file swallows the rest:
+.d { color: #00ff00; }

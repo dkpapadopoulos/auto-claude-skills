@@ -113,3 +113,42 @@ Raw evidence: `toolUseResult` entries in `~/.claude/projects/*/*.jsonl` (search 
 `"annotations"`), and the captured payload at
 `tests/fixtures/egress-consent/real-post-payload-2026-09-17.json` (answer
 `Approve and send`, approve option preview present, `tool_response.annotations == {}`).
+
+### Answered — the bisection, run 2026-09-18 (session `da30ec2d`)
+
+Both halves of the experiment above were run: padded previews on ordinary (unmarked)
+`AskUserQuestion` calls, payloads captured with a temporary `PostToolUse` hook, and the
+user asked per question whether an `END-MARKER` line at the bottom of the preview was
+visible. Padding was 50-char lines, so "chars" below is the selected option's real
+`preview` length.
+
+| preview chars | annotation | end marker visible to the user |
+|---|---|---|
+| 453 | RETURNED | yes |
+| 943 | RETURNED | yes |
+| 1433 | RETURNED | **no** |
+| 2413 | empty | no |
+| ~4000 (option carried no preview; display only) | n/a | no |
+
+**Annotation threshold: (1433, 2413].** Not a proportional truncation — the returned
+preview is the full string or nothing (453→453, 943→943, 1433→1433).
+
+**The display truncates EARLIER than the annotation does: between 943 and 1433.** That is
+the sharper finding, and it was worth asking: there is a band (~1.4 KB) where the hook CAN
+re-check a preview the user could not read in full, and above ~2.4 KB — i.e. every real
+4-8 KB package — the package is neither fully shown nor attested at PostToolUse.
+
+So the design fact stands as the handoff predicted: **no package size is both fully
+displayed and fully attested.** Small packages are both; the 943-1433 band is attested but
+not fully shown; real packages are neither. This is not patchable in the receipt hook, and
+the receipt hook no longer pretends otherwise — it falls back to the PreToolUse snapshot
+and says so. What the user approves is a question naming a digest plus as much of the
+package as the pane renders; what the guarantee rests on is the ask hook having hashed the
+full declared preview before the question was shown.
+
+Caveat on the display column: the user reported what was visible in the pane. If the pane
+scrolls, "not visible" means "not visible without scrolling", which is the same thing for
+an approval decision made at a glance.
+
+Raw payloads: the capture hook wrote them to session scratch (not committed); the
+committed sample remains `tests/fixtures/egress-consent/real-post-payload-2026-09-17.json`.

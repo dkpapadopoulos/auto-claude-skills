@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quiet-dense — reference</title>
+<!-- Dependency-free on purpose: no framework, no build, no npm, no remote asset.
+     Open this file directly. It is the thing to imitate: composition and the hard
+     states, not a catalogue of primitives. Every colour and size here is a var(). -->
+<link rel="stylesheet" href="tokens.css">
+<style>
+  body {
+    margin: 0;
+    padding: var(--space-5);
+    background: var(--surface-page);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--text-md);
+    line-height: var(--leading-normal);
+  }
+  header { display: flex; align-items: baseline; gap: var(--space-3); margin-bottom: var(--space-5); }
+  h1 { font-size: var(--text-xl); font-weight: var(--weight-semibold); margin: 0; }
+  .sub { color: var(--text-secondary); font-size: var(--text-sm); }
+  button {
+    font: inherit; font-size: var(--text-sm);
+    color: var(--text-primary); background: var(--surface-raised);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+    padding: var(--space-1) var(--space-3); cursor: pointer;
+  }
+  button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  section { margin-bottom: var(--space-6); }
+  h2 { font-size: var(--text-lg); font-weight: var(--weight-medium); margin: 0 0 var(--space-3); }
+  .card {
+    background: var(--surface-raised);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: var(--text-sm); }
+  caption {
+    text-align: left; padding: var(--space-3);
+    color: var(--text-secondary); font-size: var(--text-xs);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  th, td { height: var(--row-compact); padding: 0 var(--space-3); text-align: left; }
+  thead th {
+    color: var(--text-secondary); font-size: var(--text-xs);
+    font-weight: var(--weight-medium); border-bottom: 1px solid var(--border-subtle);
+  }
+  tbody tr + tr td { border-top: 1px solid var(--border-subtle); }
+  /* Dense numerics: monospace + tabular figures + right alignment, fixed precision. */
+  .num {
+    text-align: right; font-family: var(--font-mono); color: var(--text-numeric);
+    font-variant-numeric: tabular-nums;
+  }
+  .pos { color: var(--value-positive); }
+  .neg { color: var(--value-negative); }
+  /* Missing is NOT zero and NOT empty: its own role token and its own glyph. */
+  .missing { color: var(--value-missing); font-family: var(--font-mono); text-align: right; }
+  .pill {
+    display: inline-block; font-size: var(--text-xs); font-weight: var(--weight-medium);
+    padding: 0 var(--space-2); border-radius: var(--radius-sm); line-height: 1.8;
+  }
+  .ok     { color: var(--status-ok-fg);      background: var(--status-ok-bg); }
+  .warn   { color: var(--status-warn-fg);    background: var(--status-warn-bg); }
+  .block  { color: var(--status-block-fg);   background: var(--status-block-bg); }
+  .hold   { color: var(--status-hold-fg);    background: var(--status-hold-bg); }
+  .neutral{ color: var(--status-neutral-fg); background: var(--status-neutral-bg); }
+  /* Empty is a sentence, not a blank box. */
+  .empty {
+    padding: var(--space-5); text-align: center;
+    color: var(--text-secondary); font-size: var(--text-sm);
+    background: var(--surface-sunken);
+  }
+  footer { color: var(--text-secondary); font-size: var(--text-xs); }
+</style>
+</head>
+<body>
+<header>
+  <h1>quiet-dense</h1>
+  <span class="sub">reference page — preset v1</span>
+  <button id="theme">Toggle light / dark</button>
+</header>
+
+<section>
+  <h2>Dense numerics, with the three value states</h2>
+  <div class="card">
+    <table>
+      <caption>Positions — weights in %, amounts in CHF. Precision is fixed per column.</caption>
+      <thead>
+        <tr><th>Instrument</th><th class="num">Current %</th><th class="num">Proposed %</th>
+            <th class="num">Δ %</th><th class="num">Amount CHF</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Alpha Industrials</td><td class="num">12.40</td><td class="num">14.05</td>
+            <td class="num pos">+1.65</td><td class="num">18 420.00</td>
+            <td><span class="pill ok">Buy</span></td></tr>
+        <tr><td>Beta Materials</td><td class="num">8.15</td><td class="num">6.00</td>
+            <td class="num neg">−2.15</td><td class="num">−9 260.00</td>
+            <td><span class="pill ok">Sell</span></td></tr>
+        <tr><td>Gamma Utilities</td><td class="num">5.00</td><td class="num">5.00</td>
+            <td class="num">0.00</td><td class="num">0.00</td>
+            <td><span class="pill hold">Hold</span></td></tr>
+        <tr><td>Delta Health</td><td class="num">3.20</td><td class="missing" title="no price within tolerance at export time">—</td>
+            <td class="missing" title="cannot be computed without a price">—</td>
+            <td class="missing" title="cannot be computed without a price">—</td>
+            <td><span class="pill warn">Stale price</span></td></tr>
+        <tr><td>Epsilon Energy</td><td class="num">2.10</td><td class="num">2.10</td>
+            <td class="num">0.00</td><td class="num">0.00</td>
+            <td><span class="pill block">Blocked</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="sub">
+    Row 3 is a real zero. Row 4 is missing — a different glyph, a different token, and a
+    reason on hover. Row 5 is blocked, which is not the same outcome as held.
+  </p>
+</section>
+
+<section>
+  <h2>Empty — no rows at all</h2>
+  <div class="card">
+    <div class="empty">No proposal has been generated for this account yet.<br>Run a review to produce one.</div>
+  </div>
+</section>
+
+<section>
+  <h2>Every status the tokens define</h2>
+  <p>
+    <span class="pill ok">Completed</span>
+    <span class="pill warn">Needs review</span>
+    <span class="pill block">Blocked</span>
+    <span class="pill hold">Held</span>
+    <span class="pill neutral">Draft</span>
+  </p>
+  <p class="sub">Each carries a word. Colour alone is not a status.</p>
+</section>
+
+<footer>Toggle the theme: every colour above is a role token, so nothing here is restyled by hand.</footer>
+
+<script>
+  document.getElementById('theme').addEventListener('click', function () {
+    var r = document.documentElement;
+    r.setAttribute('data-theme', r.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  });
+</script>
+</body>
+</html>

@@ -1797,6 +1797,18 @@
       "trigger_mode": "regex",
       "hint": "JIRA CONVENTION: This work references a Jira ticket (e.g. PROJ-123). Name the working branch <type>/<JIRA-ID> using the ticket's exact uppercase ID — feature/PROJ-123 by default; bugfix/ or chore/ where the work isn't a feature.",
       "plugin": "atlassian"
+    },
+    {
+      "name": "design-seed",
+      "triggers": [
+        "(^|[^a-z])(styleguides?|style.guides?|design.systems?|design.tokens?|theming|ui|frontend|front.end|screens?|components?|layouts?|dashboards?|mockups?|wireframes?)($|[^a-z])"
+      ],
+      "trigger_mode": "regex",
+      "hint": "DESIGN SEED: for UI work, adopt the shipped styleguide seed rather than inventing tokens — see `assets/design-seed/ADOPT.md` (tokens.css defines ROLE tokens to reference, never literals; `checks/token-lint.sh` enforces references) and `docs/design-seed-method.md` for the method (ground -> explore >=2 variants on identical fixtures -> decide -> implement -> verify in a browser). If the project already has `design/`, read `design/styleguide.md` instead of the seed.",
+      "phases": [
+        "DESIGN",
+        "IMPLEMENT"
+      ]
     }
   ],
   "warnings": []
