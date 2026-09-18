@@ -194,22 +194,83 @@ Done as the paragraph above instructs. The pilot adds the predicted leg.
   Codex.
 
 **Two legs → elevated. `agent-safety-review` was run (2026-09-18).** Its
-structural finding: *the two legs are never co-located in one agent.* Arm
-subagents have no egress path at all — no network tools, no dispatcher, they
-emit files. The orchestrator has egress but sends only a frozen package the
-user previewed and approved, scanned by gitleaks. Cutting `outbound_action` at
-the arm level is a construction, not an instruction.
+structural finding was that *the two legs are never co-located in one agent* —
+and the first version of this paragraph overstated how that was achieved. Arm
+subagents were said to have "no egress path at all". They do not: arms are
+dispatched as `general-purpose`, whose tool access is `*`; the Agent tool
+exposes no tool-restriction parameter; and at the time of writing no deny rules
+existed in the subject worktree, in user settings, or in a local settings file.
+Arms are **instructed** not to transmit, and an instruction is prose about a
+prompt, not a bound on a capability. What backs the claim now is a real
+mechanism: a `PreToolUse` deny hook (`.claude/hooks/pilot-arm-deny.py`, wired
+in Dion's `.claude/settings.json`, regression
+`tests/design_seed_pilot/test_arm_capability_boundary.py`) that refuses
+`WebFetch`, `WebSearch` and the whole `mcp__` namespace by tool name, and
+refuses reads of an enumerated set of sensitive paths across every path-bearing
+tool. The orchestrator has egress but sends only a frozen package the user
+previewed and approved, scanned by gitleaks.
+
+**Where the cut is made, and why it moved.** The earlier claim that "cutting
+`outbound_action` at the arm level is a construction, not an instruction" named
+the right distinction and landed on the wrong side of it. The cut is now made
+on the **`private_data`** side instead. That is not a retreat; it is the only
+side that can be cut soundly. Enumerating every way a tool-unrestricted agent
+can send bytes is unbounded — a network fetch in a shell one-liner, a push to a
+remote, a socket opened from Python, a verb on some MCP server nobody listed —
+whereas enumerating the sensitive paths is finite, so a complete list is
+actually writable. The tool-name leg of the deny hook is complete by
+construction for the tools it names; **Bash-level network egress is NOT closed
+and is stated here as residual**, rather than covered by a list that would only
+look complete.
 
 **Residual risk and its control.** An arm could read `data/` by absolute path
 and inline real holdings into its HTML, which would then be frozen and sent — a
 plausible-looking row of real positions is exactly what survives a human
 preview of a 7 KB file. Instruction does not close this. A **pre-egress hash
-assertion** does: the data embedded in an artifact MUST hash-match the frozen
-fixture bytes, and any mismatch refuses egress with no human judgement
-involved. Per the skill's red-first rule it is authored **failing** — a
-deliberately contaminated artifact must be refused before either arm runs.
-gitleaks catches credentials, not portfolio positions, so this assertion is
-doing the real work on this path.
+assertion** narrows it: the data embedded in the designated `id="dion-report"`
+block MUST hash-match the frozen fixture bytes, and any mismatch refuses egress
+with no human judgement involved. Per the skill's red-first rule it is authored
+**failing** — a deliberately contaminated artifact must be refused before
+either arm runs.
+
+**What that assertion does not do, said plainly.** It certifies the designated
+data block, not the artifact. The threat this section opens with — real
+holdings rendered into the *visible body* of the HTML — is **not** caught by
+it: the body is not the data block, and an arm that inlined a row of real
+positions into a table would pass the check. So the hash assertion is not
+"doing the real work on this path". It closes the payload-substitution route
+only.
+
+What carries the rendering route is weaker and worth naming precisely, because
+the deny hook does **not** cover it: the hook's path list is
+`~/.config/gh/hosts.yml`, `~/.ssh`, `~/.claude.json` and
+`~/.claude/projects/*/memory/`, and Dion's `data/` store is not on it. What
+actually stands between an arm and real holdings is that **no private store
+exists in the arm worktrees** — a fact, not a control, which is why Task 8 now
+re-measures it (`find … -name '*.duckdb'`) immediately before dispatch rather
+than relying on a measurement taken hours earlier — plus the human preview.
+Validating the whole artifact is deferred work: it requires a `brief.md`
+change, and `brief.md` is frozen. gitleaks, separately, catches credentials and
+not portfolio positions.
+
+**The three legs, each with its real status.** Worth stating together, because
+the oversight has been lopsided:
+
+- `private_data` — **absent in fact today** (the pilot's only input is a
+  committed synthetic fixture), **present the moment a portfolio store
+  exists**, and — the part that matters — **never validated against the real
+  threat**. The classification was reasoned about, not exercised. That is how
+  the gap above survived nine tasks of otherwise careful work.
+- `untrusted_input` — **absent at the arms**, whose inputs are all committed.
+  But **present-but-low-risk at the orchestrator**: it reads judge responses,
+  which are third-party model output, and acts on them in Task 12.
+- `outbound_action` — **present**.
+
+And the inversion deserves naming rather than leaving for the next reader to
+find: the heaviest machinery in this design sits on the outbound consultation —
+freezing, hashing, gitleaks, a previewed package — while the arms, which hold
+far broader capability than the dispatcher ever does, are governed by an
+instruction plus the deny hook added here.
 
 ## Eval strategy
 

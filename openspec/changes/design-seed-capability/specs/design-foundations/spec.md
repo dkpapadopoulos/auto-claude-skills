@@ -129,18 +129,46 @@ evidence and MUST NOT be reported as evidence of improvement.
 - **THEN** it MUST have been produced through the store-then-retrieve path, and
   fields that the persistence path drops MUST be absent from it
 
-### Requirement: Pilot artifacts carry only fixture data across a trust boundary
+### Requirement: A pilot artifact's designated data block carries only fixture data
 
-Artifacts produced by a pilot arm SHALL be refused for outbound transmission
-unless the data embedded in them hash-matches the frozen fixture bytes. The
-check SHALL be mechanical and SHALL NOT depend on human inspection of the
-artifact. Pilot arms SHALL have no outbound transmission capability of their
-own.
+The title names the data block, not the artifact, because that is what the
+check covers. An artifact produced by a pilot arm SHALL be refused for outbound
+transmission unless the data embedded in its designated `id="dion-report"`
+block hash-matches the frozen fixture bytes. The check SHALL be mechanical and
+SHALL NOT depend on human inspection of the artifact. It SHALL NOT be described
+as validating the artifact as a whole: data rendered into the visible HTML body
+is outside its scope, and that residual is carried by the capability boundary
+below plus the human preview.
 
-#### Scenario: An artifact carrying non-fixture data is refused
+#### Scenario: An artifact whose designated data block carries non-fixture data is refused
 
-- **GIVEN** a generated artifact whose embedded data differs from the frozen
-  fixture bytes
+- **GIVEN** a generated artifact whose `id="dion-report"` block differs from the
+  frozen fixture bytes
 - **WHEN** it is submitted for outbound transmission
 - **THEN** the transmission MUST be refused, and the refusal MUST NOT require a
   human to notice the difference
+
+### Requirement: Pilot arms are denied the named outbound tools and the sensitive paths
+
+The previous wording — "Pilot arms SHALL have no outbound transmission
+capability of their own" — was not enforceable and was not true: arms are
+dispatched as `general-purpose` (tool access `*`) and the Agent tool exposes no
+tool-restriction parameter. What is enforceable is stated instead.
+
+Pilot arms SHALL be denied, by a `PreToolUse` deny rule, the named non-Bash
+outbound tools (`WebFetch`, `WebSearch`, and the whole `mcp__` tool namespace),
+matched on tool name so that the rule is complete by construction for the tools
+it names. Pilot arms SHALL additionally be denied reads of an enumerated set of
+sensitive paths — `~/.config/gh/hosts.yml`, `~/.ssh`, `~/.claude.json`, and
+`~/.claude/projects/*/memory/` — across every path-bearing tool, the set being
+finite and therefore soundly enumerable. The residual Bash-level network
+capability SHALL be stated in the design record rather than claimed absent.
+
+#### Scenario: A named outbound tool and a sensitive read are both refused
+
+- **GIVEN** a pilot arm subagent operating under the pilot's deny rule
+- **WHEN** it invokes `WebFetch`, any `mcp__` tool, or a read of an enumerated
+  sensitive path
+- **THEN** the call MUST be refused, the refusal MUST be observable as coming
+  from that rule rather than from an unrelated failure, and the arm's ordinary
+  file and shell tools MUST remain usable

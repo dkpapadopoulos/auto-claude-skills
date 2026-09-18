@@ -121,11 +121,45 @@ rediscovery from being banked as insight.
 
 - The fixture contains **no value-level `null` anywhere in the whole
   envelope** — a full recursive walk of the parsed JSON (all keys, all list
-  elements) finds zero `null` values. Every "missing" or "not applicable"
-  case in this fixture is represented by section-level absence (see
-  `comparators`/`integrity_evidence` above) or by an empty string (the
-  no-ticker `symbol` case), never by JSON `null`. An arm reporting "I found a
-  null and handled it" is not describing this fixture.
+  elements) finds zero `null` values. That half is verified and stands. The
+  enumeration that followed it was wrong and is corrected here: "missing" and
+  "not applicable" take **three** forms in this fixture, not two.
+  1. **Section-level absence** — `comparators` / `integrity_evidence` above.
+  2. **An empty string**, in **two** places rather than one: the no-ticker
+     `symbol` case (`proposal_summary.orders[0]` and `[3]`) *and*
+     `action_items[].instrument_id`, empty on **4 of the 9** action items —
+     the `fx_warning`, `fx_review_gate` and `eligibility_warning` entries,
+     which are portfolio-level and name no instrument.
+  3. **An empty collection**, a form the original sentence excluded entirely —
+     `drift_analysis.snapshot_drift` (`{}`),
+     `optimizer_summary.policy_violations` (`[]`), and at envelope level
+     `findings` (`[]`) and `statement_ids` (`[]`).
+
+  An arm reporting "I found a null and handled it" is still not describing this
+  fixture. An arm reporting any of the three forms above is describing
+  something real — and something disclosed here, so it banks nothing.
+
+- `drift_analysis.drift_max_pct` is a **percentage sitting beside
+  fraction-valued siblings in the same object.** Measured against the frozen
+  fixture: `drift_max_pct` is `24.567194849977945` while its neighbour
+  `proposal_drift["inst-aggs"]` is `-0.24567194849977944` — the same quantity,
+  exactly 100× apart, in adjacent keys of one object. It is computed that way
+  at `src/dion/proposal/engine.py:189`
+  (`max(abs(v) for v in proposal_drift.values()) * 100`). A screen that formats
+  the object with one rule is wrong by two orders of magnitude on one key; a
+  screen that gets it right did so by reading the code or by noticing the
+  ratio. Either route is available before building anything, so this is
+  supplied-in-advance and earns nothing as `screen-discovered`.
+
+- `drift_analysis.snapshot_drift` is `{}` **only because `if previous_weights:`
+  was false** (`src/dion/proposal/engine.py:183`) — there was no prior snapshot,
+  so the loop that fills it never ran. The envelope carries nothing that
+  distinguishes that from "compared, and nothing drifted". The screen therefore
+  cannot tell "we have no baseline" from "you have not drifted", and those
+  imply opposite things to a reader about to trade. This is the likeliest
+  single entry on either arm's contract delta — rubric **R7** is anchored on
+  exactly this state, so arm engagement is near-certain and it is bankable as a
+  disclosure today. It was traced before either arm existed.
 
 ## What a `screen-discovered` claim requires
 1. A named screen behaviour that the frozen envelope cannot support.
