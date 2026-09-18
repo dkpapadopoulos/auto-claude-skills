@@ -100,11 +100,37 @@ approve label (`approve-option-first`), and `prepare` prints the decline option 
 
 `annotations[q].preview` is what the receipt hook hashes, and the tool schema lets the model
 supply `annotations` just as it can supply `answers`, so the ask hook denies a marked call
-carrying **either** key. The free-text `Other` answer is unmeasured: if a user types
-`Approve and send` there, `answers[q]` equals the label, and whether the harness then returns
-a preview annotation is not known. Measured before merge in the live end-to-end run; until
-then the design relies on the annotation requirement, and the discriminator is recorded as
-an open verification item rather than assumed.
+carrying **either** key.
+
+**The `Other` answer was measured on 2026-09-18 (CLI, plugin 3.89.4): it does not exist as
+an answer path.** The tool's own description promises a user can always select "Other", but
+the dialog renders only the options the model supplied — a marked two-option question showed
+`1. Do not send`, `2. Approve and send`, and no third entry. Free text goes to a separate
+"Chat about this" box, which CANCELS the tool call and arrives as an ordinary user prompt
+("The user wants to clarify these questions"), never as `answers[q]`. So a typed
+`Approve and send` cannot mint a receipt — it is not an answer at all — and because it is a
+user prompt it withdraws unused approvals through the turn hook: the reflex fails safe.
+Measured in the same run: a CLICKED approve minted one receipt (the control), re-asking about
+that package marked it `.revoked`, and typing the label into chat produced no receipt while
+`send` refused with `NOT APPROVED` and sent nothing.
+
+This is a fact about the client, not a property of the design. If the dialog ever grows a
+real free-text entry, the typed-label case becomes reachable again, the annotation
+requirement is what would decide it, and it must be re-measured then.
+
+That run's approve option carried a 33-character package and the harness DID return its
+preview annotation. Do not generalise from it: measured across every local answer whose
+selected option had a preview (n=13), previews up to 431 chars came back and previews of
+4097+ chars did not — so for a real multi-kilobyte package the annotation is absent and the
+receipt hook's own preview re-check never fires. See "Handoff — the returned preview depends
+on SIZE" in `LIVE-E2E.md`.
+
+Adjacent, from the same run: the preview pane shows the HIGHLIGHTED option's preview, so with
+the decline option first the pane opens on "No preview available" and the package text
+appears only once the user moves to the approve option — selecting it by number never
+displays it. The receipt therefore attests that the approved OPTION carried the exact
+package, never that the user read it, which is what the threat model already claims and no
+more.
 
 ### Token symmetry
 
@@ -358,8 +384,10 @@ See `specs/cross-family-panel/spec.md`.
   mutation-checked; live end-to-end run (see LIVE-E2E.md) with a successful send and a
   refused send after a decline; negative routing corpus delta empty; project-verification
   clean at `0050b05`.
-- Still open: whether a free-text "Other" answer equal to the approve label returns a
-  preview annotation (inconclusive live).
+- Was open, now CLOSED (2026-09-18): whether a free-text "Other" answer equal to the approve
+  label returns a preview annotation. Measured on the CLI at plugin 3.89.4 — there is no
+  free-text answer path; typed text cancels the ask and arrives as a user prompt, which
+  withdraws approvals. See "Pre-filled `annotations` and the `Other` answer" above.
 
 ### Post-PR review of the last two commits (2026-09-17)
 

@@ -1,0 +1,109 @@
+/* design-seed tokens — SOURCE OF TRUTH.
+ *
+ * preset: quiet-dense   version: 1
+ *
+ * Two kinds of token live here and the distinction is the point:
+ *   SCALE tokens  (--space-3, --text-md)   answer "how much".
+ *   ROLE  tokens  (--text-numeric, --status-block-fg) answer "what is this for".
+ * Implementation references ROLES. A closed set of values stops a model
+ * inventing #3B82F6; roles stop it picking an allowed value that means the
+ * wrong thing.
+ *
+ * Every value below is a literal because this is the file that defines them.
+ * It is the one file token-lint.sh never scans.
+ */
+
+:root {
+  /* ---- scale: space (4px rhythm) ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* ---- scale: type ---- */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 15px;
+  --text-lg: 19px;
+  --text-xl: 24px;
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* ---- scale: radius ---- */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+
+  /* ---- scale: density (row heights; pick one per surface, do not mix) ---- */
+  --row-compact: 28px;
+  --row-comfortable: 40px;
+
+  /* ---- role: surface ---- */
+  --surface-page: #fbfaf8;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f2f0ec;
+
+  /* ---- role: text ---- */
+  --text-primary: #1b1a17;
+  --text-secondary: #5c574e;
+  --text-inverse: #fbfaf8;
+  --text-numeric: #1b1a17;
+
+  /* ---- role: line ---- */
+  --border-subtle: #e4e0d8;
+  --border-strong: #c8c2b6;
+  --focus-ring: #2f5d50;
+
+  /* ---- role: value (numbers carry meaning; missing is not zero) ---- */
+  --value-positive: #1f6f4a;
+  --value-negative: #a33224;
+  --value-missing: #8b857a;
+
+  /* ---- role: status ---- */
+  --status-ok-fg: #17503a;
+  --status-ok-bg: #e2efe7;
+  --status-warn-fg: #6b4a12;
+  --status-warn-bg: #f7eed8;
+  --status-block-fg: #7a2318;
+  --status-block-bg: #f7e2de;
+  --status-hold-fg: #3f4a5c;
+  --status-hold-bg: #e7eaef;
+  --status-neutral-fg: #4a463e;
+  --status-neutral-bg: #eeebe5;
+}
+
+:root[data-theme="dark"] {
+  --surface-page: #16151a;
+  --surface-raised: #1e1d23;
+  --surface-sunken: #121116;
+
+  --text-primary: #ece9e3;
+  --text-secondary: #a8a296;
+  --text-inverse: #16151a;
+  --text-numeric: #ece9e3;
+
+  --border-subtle: #2e2c33;
+  --border-strong: #46434c;
+  --focus-ring: #7fc0a9;
+
+  --value-positive: #6cc295;
+  --value-negative: #e88a7d;
+  --value-missing: #7d7871;
+
+  --status-ok-fg: #a6dcc0;
+  --status-ok-bg: #1b3329;
+  --status-warn-fg: #e3c184;
+  --status-warn-bg: #352b16;
+  --status-block-fg: #f0a496;
+  --status-block-bg: #3a201c;
+  --status-hold-fg: #b4c0d4;
+  --status-hold-bg: #23272f;
+  --status-neutral-fg: #bab5ab;
+  --status-neutral-bg: #26242a;
+}

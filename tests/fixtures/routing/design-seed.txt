@@ -1,0 +1,22 @@
+# Regex fixtures for methodology hint: design-seed
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this hint must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# NO_MATCH lines are verbatim-borrowed from incident-analysis MATCH fixtures.
+#
+# The plurals below are not decoration: the singular-only first cut was measured against
+# real phrasing and missed every one of them, which would have made the hint invisible on
+# most genuine UI work.
+
+MATCH: build a styleguide for the new admin area
+MATCH: build the react components for the settings page
+MATCH: design the screens for the review flow
+MATCH: update our design tokens for dark mode
+MATCH: polish the dashboards before the demo
+MATCH: add wireframes for the onboarding
+MATCH: the frontend needs a consistent layout
+MATCH: set up theming so light and dark both work
+
+NO_MATCH: why did the pod crashloop after the deploy
+NO_MATCH: p99 latency spike on the checkout service

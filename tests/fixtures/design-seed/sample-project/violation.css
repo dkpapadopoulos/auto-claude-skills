@@ -1,0 +1,7 @@
+/* Seeded violations. Line 4's literal is EXACTLY --text-primary's value: it must still
+   fail, because a literal does not follow a theme change. */
+.panel {
+  color: #1b1a17;
+  background-color: var(--surface-raised);
+  font-size: 15px;
+}

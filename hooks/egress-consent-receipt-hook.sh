@@ -153,12 +153,43 @@ _STATE="$(printf '%s' "${_INPUT}" | jq -r --slurpfile s "${_SNAP}" --arg L "${EG
     | if $q == "" then "no-question"
       elif $tr == null then "no-response"
       elif ((($tr.answers | objects | .[$q]) // null) != $L) then "not-approved"
+      # THREE states, not two. "The harness returned nothing for this question" is the
+      # size-gated normal case and falls back to the pre-verified snapshot. "The harness
+      # returned an annotation we cannot read" is NOT the same thing and must refuse:
+      # if a future harness sends a truncated or structured preview
+      # ({preview:{text,truncated:true}}), collapsing the two would silently downgrade
+      # to the weaker check instead of stopping.
+      elif ((($tr.annotations | objects | .[$q]) // null) == null)
+        then "no-returned-preview"
       elif (((($tr.annotations | objects | .[$q]) | objects | .preview | strings) // null) == null)
-        then "no-annotation"
+        then "unusable-returned-preview"
       else "ok" end' 2>/dev/null)"
+
+# Which side proved the user saw the package. "post" re-checks the preview the harness
+# returned with the answer; "pre" rests on the ask hook, which writes the snapshot ONLY
+# after the approve option's preview hashes to this digest (it denies otherwise).
+#
+# The returned annotation depends on the preview's SIZE, not on consent-vs-plain and not
+# on whether the user typed a note. Bisected 2026-09-18: 453, 943 and 1433 chars came
+# back in full (never truncated — the whole string or nothing), 2413 and up did not, so
+# the threshold is (1433, 2413]. A frozen consultation package is 4-8 KB, so for REAL
+# packages the annotation is absent and "pre" is the NORMAL path — "post" is essentially
+# unreachable in production and the receipt's own re-check is decorative there.
+# The dialog's own display cuts off EARLIER, between 943 and 1433 chars, so no package
+# size is both fully shown to the user and attested here: that is a property of the
+# design, not something this hook can fix. The guarantee is therefore PreToolUse-only: the ask hook
+# hashed the preview before writing the snapshot. That chain holds; it is just narrower
+# than it looks. Full evidence and the open bisection:
+# openspec/changes/archive/2026-09-17-egress-consent-dispatcher/LIVE-E2E.md (## Handoff).
+# The fallback is announced, never silent, and never covers a preview that came back and
+# disagreed.
+_VERIFIED="post"
 
 case "${_STATE}" in
     ok) ;;
+    no-returned-preview) _VERIFIED="pre" ;;
+    unusable-returned-preview)
+        _finish "the answer carried an annotation for this question but no readable preview string — refusing rather than downgrading to the weaker check, because an unreadable preview is not the same as an absent one. If the harness has started returning previews in a new shape, this hook needs updating." package ;;
     not-approved)
         # The decline voids every approval of this package whose question was asked
         # before NOW — i.e. was still open when the user said no.
@@ -167,22 +198,22 @@ case "${_STATE}" in
             _finish "the user did not choose \"${EGRESS_APPROVE_LABEL}\" — not approved; nothing will be sent from this answer. WARNING: the decline could not be recorded durably." all
         fi
         _finish "the user did not choose \"${EGRESS_APPROVE_LABEL}\" — not approved; nothing will be sent from this answer." all ;;
-    no-annotation)
-        _finish "the answer carried no returned preview to verify — no approval receipt was written." package ;;
     no-response)
         _finish "tool_response is not the expected object — no approval receipt was written." package ;;
     *)
         _finish "could not evaluate the consent answer (${_STATE:-jq error}) — no approval receipt was written." package ;;
 esac
 
-_SEEN="$(printf '%s' "${_INPUT}" \
-    | jq -r --slurpfile s "${_SNAP}" '.tool_response.annotations[$s[0].question].preview' 2>/dev/null \
-    | egress_digest_stdin)"
-if ! egress_valid_digest "${_SEEN}"; then
-    _finish "could not hash the approved preview (no shasum or sha256sum) — no approval receipt was written." package
-fi
-if [ "${_SEEN}" != "${_DIGEST}" ]; then
-    _finish "the approved preview does not match the prepared package (digest ${_DIGEST}) — no approval receipt was written." package
+if [ "${_VERIFIED}" = "post" ]; then
+    _SEEN="$(printf '%s' "${_INPUT}" \
+        | jq -r --slurpfile s "${_SNAP}" '.tool_response.annotations[$s[0].question].preview' 2>/dev/null \
+        | egress_digest_stdin)"
+    if ! egress_valid_digest "${_SEEN}"; then
+        _finish "could not hash the approved preview (no shasum or sha256sum) — no approval receipt was written." package
+    fi
+    if [ "${_SEEN}" != "${_DIGEST}" ]; then
+        _finish "the approved preview does not match the prepared package (digest ${_DIGEST}) — no approval receipt was written. This reads as tampering, but a harness that TRUNCATES long previews would produce it too; that misreading is what cost five genuine approvals before the size threshold was measured." package
+    fi
 fi
 
 _NOW="$(date +%s 2>/dev/null)"
@@ -190,17 +221,29 @@ case "${_NOW}" in ''|*[!0-9]*)
     _finish "clock unavailable — no approval receipt was written." package ;;
 esac
 if ! jq -nc --arg d "${_DIGEST}" --arg id "${_ID}" --argjson ts "${_NOW}" --argjson ask "${_ASK_MS}" \
-        '{digest: $d, tool_use_id: $id, ts: $ts, ask_ms: $ask}' 2>/dev/null \
+        --arg pv "${_VERIFIED}" \
+        '{digest: $d, tool_use_id: $id, ts: $ts, ask_ms: $ask, preview_verified: $pv}' 2>/dev/null \
     | egress_write_atomic "$(egress_receipt_path "${_TOKEN}" "${_DIGEST}" "${_ID}")"; then
     _announce "could not write the approval receipt — this approval cannot be used; ask again."
     exit 0
+fi
+# ONE object on stdout, always. Every other exit here announces once and leaves, but this
+# tail can have two things to say (approval recorded, then withdrawn by a parallel
+# decline) — and emitting them as two JSON objects means a harness that reads a single
+# object keeps the reassuring half and drops the safety half. Accumulate, emit at the end.
+_MSG=""
+if [ "${_VERIFIED}" = "pre" ]; then
+    _MSG="the answer returned no preview to re-check, so this approval rests on the preview verified before the question was shown (the ask hook refuses any preview that does not hash to the package). Approval recorded."
 fi
 # Re-check AFTER publishing: a decline of this package answered after this question was
 # asked (a parallel ask) wins even if it was recorded while this hook ran.
 if [ "${_ASK_MS}" -le "$(egress_veto_ts "${_TOKEN}" "${_DIGEST}")" ]; then
     _R="$(egress_receipt_path "${_TOKEN}" "${_DIGEST}" "${_ID}")"
-    mv "${_R}" "${_R}.revoked" 2>/dev/null \
-        && _announce "a \"${EGRESS_DECLINE_LABEL}\" for this package was recorded at or after the time this question was asked, so this approval was withdrawn; nothing will be sent from it. Ask again if the user now wants to send." \
-        || _announce "WARNING: this approval was superseded by a decline but could NOT be withdrawn."
+    if mv "${_R}" "${_R}.revoked" 2>/dev/null; then
+        _MSG="${_MSG:+${_MSG} }a \"${EGRESS_DECLINE_LABEL}\" for this package was recorded at or after the time this question was asked, so this approval was withdrawn; nothing will be sent from it. Ask again if the user now wants to send."
+    else
+        _MSG="${_MSG:+${_MSG} }WARNING: this approval was superseded by a decline but could NOT be withdrawn."
+    fi
 fi
+[ -n "${_MSG}" ] && _announce "${_MSG}"
 exit 0

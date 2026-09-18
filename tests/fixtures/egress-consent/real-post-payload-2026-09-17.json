@@ -1,0 +1,59 @@
+{
+  "session_id": "REDACTED",
+  "transcript_path": "REDACTED",
+  "cwd": "REDACTED",
+  "scratchpad_dir": "REDACTED",
+  "prompt_id": "REDACTED",
+  "permission_mode": "auto",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "AskUserQuestion",
+  "tool_input": {
+    "questions": [
+      {
+        "question": "Send the settled design summary + 5 critique questions to Codex / OpenAI? Codex runs read-only, but its sandbox can still read other files on this machine. [egress-consent:82595fe652821ccc1c7eb33f883b2772eb02736cac502334f1323b7be5c5993a]",
+        "header": "Codex review",
+        "options": [
+          {
+            "label": "Do not send",
+            "description": "Decline; nothing leaves the machine. I keep implementing without the Codex pass."
+          },
+          {
+            "label": "Approve and send",
+            "description": "Send exactly the package shown in the preview to Codex (read-only run). Answering also captures the consent payload so I can fix the dispatch bug.",
+            "preview": "<package text omitted from fixture>"
+          }
+        ],
+        "multiSelect": false
+      }
+    ],
+    "answers": {
+      "Send the settled design summary + 5 critique questions to Codex / OpenAI? Codex runs read-only, but its sandbox can still read other files on this machine. [egress-consent:82595fe652821ccc1c7eb33f883b2772eb02736cac502334f1323b7be5c5993a]": "Approve and send"
+    },
+    "annotations": {}
+  },
+  "tool_response": {
+    "questions": [
+      {
+        "question": "Send the settled design summary + 5 critique questions to Codex / OpenAI? Codex runs read-only, but its sandbox can still read other files on this machine. [egress-consent:82595fe652821ccc1c7eb33f883b2772eb02736cac502334f1323b7be5c5993a]",
+        "header": "Codex review",
+        "options": [
+          {
+            "label": "Do not send",
+            "description": "Decline; nothing leaves the machine. I keep implementing without the Codex pass."
+          },
+          {
+            "label": "Approve and send",
+            "description": "Send exactly the package shown in the preview to Codex (read-only run). Answering also captures the consent payload so I can fix the dispatch bug.",
+            "preview": "<package text omitted from fixture>"
+          }
+        ],
+        "multiSelect": false
+      }
+    ],
+    "answers": {
+      "Send the settled design summary + 5 critique questions to Codex / OpenAI? Codex runs read-only, but its sandbox can still read other files on this machine. [egress-consent:82595fe652821ccc1c7eb33f883b2772eb02736cac502334f1323b7be5c5993a]": "Approve and send"
+    },
+    "annotations": {}
+  },
+  "tool_use_id": "toolu_REDACTED"
+}
