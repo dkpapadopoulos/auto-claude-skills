@@ -66,8 +66,31 @@ _CHROME_BIN="$(node -e "
 # Playwright's own marker of a complete install (see registry/oopDownloadBrowserMain.js's
 # browserDirectoryToMarkerFilePath). Checking only the executable bit is not enough: a
 # killed-mid-extraction attempt can leave a partial binary that is still `-x`.
-_BROWSER_DIR="${_CHROME_BIN}"
-for _i in 1 2 3 4 5; do _BROWSER_DIR="$(dirname "${_BROWSER_DIR}")"; done
+#
+# The browser directory itself is always named "chromium-<revision>", but the
+# path FROM there to the executable is platform-specific (mac: 5 components
+# via chrome-mac/Chromium.app/Contents/MacOS/Chromium; linux: 2 components via
+# chrome-linux/chrome — confirmed against playwright-core's own registry
+# source). A hardcoded dirname walk depth is therefore correct on exactly one
+# platform and silently wrong on the others (on Linux it overshoots well past
+# the real browser directory and checks for a marker Playwright never writes
+# there, so the install would always look unfinished). Search upward for the
+# "chromium-*" directory name instead, which both platforms in fact share.
+_BROWSER_DIR="$(dirname "${_CHROME_BIN}")"
+_DEPTH=0
+while [ "${_DEPTH}" -lt 10 ]; do
+    case "$(basename "${_BROWSER_DIR}")" in
+        chromium-*) break ;;
+    esac
+    _PARENT="$(dirname "${_BROWSER_DIR}")"
+    [ "${_PARENT}" = "${_BROWSER_DIR}" ] && break
+    _BROWSER_DIR="${_PARENT}"
+    _DEPTH=$(( _DEPTH + 1 ))
+done
+case "$(basename "${_BROWSER_DIR}")" in
+    chromium-*) ;;
+    *) _die "could not locate a chromium-* browser directory above ${_CHROME_BIN}" ;;
+esac
 _INSTALL_MARKER="${_BROWSER_DIR}/INSTALLATION_COMPLETE"
 
 _chromium_ready() { [ -f "${_INSTALL_MARKER}" ] && [ -x "${_CHROME_BIN}" ]; }
@@ -96,8 +119,23 @@ if ! _chromium_ready; then
         # native `ditto` extracts the same zip correctly in well under a second, so
         # recover by finishing the extraction ourselves from the already-downloaded
         # archive instead of leaving the caller hung.
-        kill "${_INSTALL_PID}" 2>/dev/null
-        pkill -f "server/registry/oopDownloadBrowserMain.js" 2>/dev/null
+        #
+        # Kill only OUR OWN install's process tree — this machine's execution
+        # model is explicitly concurrent sessions, and a machine-wide `pkill -f`
+        # on the installer's script name would kill another session's install
+        # too (this is not hypothetical: two installs raced over the same
+        # ms-playwright lock earlier in this work). Walk descendants of the
+        # subshell we spawned, rather than pattern-matching every process on
+        # the box.
+        _kill_descendants() {
+            local _p="$1"
+            local _c
+            for _c in $(pgrep -P "${_p}" 2>/dev/null); do
+                _kill_descendants "${_c}"
+            done
+            kill "${_p}" 2>/dev/null
+        }
+        _kill_descendants "${_INSTALL_PID}"
 
         _RECOVERED=1
         if [ "$(uname)" = "Darwin" ] && command -v ditto >/dev/null 2>&1; then
