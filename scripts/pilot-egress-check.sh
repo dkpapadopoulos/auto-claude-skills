@@ -20,10 +20,38 @@ _ART="$1"; _FIX="$2"
 [ -r "${_FIX}" ] || _die "fixture unreadable: ${_FIX} — refused"
 command -v jq >/dev/null 2>&1 || _die "jq unavailable — refused rather than skipped"
 
-_N="$(grep -c 'id="dion-report"' "${_ART}" 2>/dev/null)" || _N=0
-[ "${_N}" = "1" ] || _die "expected exactly one data block, found ${_N} — refused"
+_RESULT="$(awk '
+  { doc = doc $0 "\n" }
+  END {
+    # Count opening tags and extract first block body
+    n = 0
+    pos = 1
+    body = ""
+    while (match(substr(doc, pos), /<script[^>]*id="dion-report"[^>]*>/)) {
+      n++
+      tag_start = pos + RSTART - 1
+      tag_end = tag_start + RLENGTH - 1
+      close_pos = index(substr(doc, tag_end + 1), "</script>")
+      if (close_pos == 0) {
+        print "ERROR: no closing tag"
+        exit 1
+      }
+      if (n == 1) {
+        body = substr(doc, tag_end + 1, close_pos - 1)
+      }
+      pos = tag_end + close_pos + 8
+    }
+    print n
+    print body
+  }
+' "${_ART}" 2>/dev/null)"
 
-_EMB="$(awk '/<script[^>]*id="dion-report"/{f=1;next} f&&/<\/script>/{exit} f' "${_ART}")"
+_N="$(printf '%s\n' "${_RESULT}" | head -1)"
+_EMB="$(printf '%s\n' "${_RESULT}" | tail -n +2)"
+
+[ -z "${_N}" ] && _die "awk extraction failed — refused"
+[ "${_N}" = "ERROR: no closing tag" ] && _die "opening tag has no closing tag — refused"
+[ "${_N}" = "1" ] || _die "expected exactly one data block, found ${_N} — refused"
 [ -n "${_EMB}" ] || _die "data block is empty — refused"
 
 _A="$(printf '%s' "${_EMB}" | jq -S -c . 2>/dev/null)" \
