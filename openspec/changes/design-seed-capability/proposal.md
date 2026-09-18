@@ -72,6 +72,16 @@ elements.
 one DESIGN-phase hint pointing at the seed and the method. **No new skill and no
 new trigger regex** — see Decisions in `design.md`.
 
+**Added — a pre-registered two-arm pilot protocol** (`design.md`, "Pilot
+pre-registration — 2026-09-18"). The capability's comparative claim previously
+had no eval; a single seeded run can show feasibility but cannot attribute an
+improvement to anything. The protocol runs a seeded and an unseeded arm under
+an identical brief, fixture, model, tool access and budget, scored by two
+blinded judges against a rubric committed beforehand, with pre-registered
+outcomes that include "inconclusive". It names the treatment as the whole
+first-use workflow rather than "the seed", so a losing arm is interpretable,
+and it caps the claim a completed pilot may licence.
+
 **NOT built in this change:** any new owned skill; any `DesignSync`-dependent
 skill; a design-review skill (`runtime-validation` owns UI evidence); a
 component generator (IMPLEMENT owns that); version pinning of any frontend

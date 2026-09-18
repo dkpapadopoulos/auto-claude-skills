@@ -87,3 +87,60 @@ through a composition hint rather than a trigger-matched skill.
 - **THEN** the design-seed hint MUST be present in the DESIGN composition, and
   the registry MUST contain no skill entry whose triggers were added by this
   change
+
+### Requirement: Comparative claims are evidenced by a controlled comparison
+
+The plugin SHALL NOT claim that the design seed improves implementation output
+unless that claim is supported by a comparison against a no-seed arm run under
+an identical brief, fixture, model, tool access and budget. The protocol and
+the scoring rubric SHALL be committed before either arm runs, and the rubric
+SHALL NOT score resemblance to the seed, token usage, or the presence of a
+design system. Process compliance SHALL be assessed separately from output
+quality. Where only one arm was run, the result MAY be reported as feasibility
+evidence and MUST NOT be reported as evidence of improvement.
+
+#### Scenario: A single-arm pilot does not license a comparative claim
+
+- **GIVEN** a completed pilot in which only the seeded arm was run
+- **WHEN** its result is written up
+- **THEN** the write-up MUST describe it as feasibility evidence, and MUST NOT
+  state or imply that the seed produced a better result than its absence would
+  have
+
+#### Scenario: The rubric cannot reward looking like the seed
+
+- **GIVEN** the committed scoring rubric
+- **WHEN** its dimensions are inspected
+- **THEN** none MUST score resemblance to the shipped seed, token usage, or the
+  presence of a design system, and every dimension MUST cite a source that
+  predates the seed or is independent of it
+
+#### Scenario: Disagreeing judges yield an inconclusive result, not a tiebreak
+
+- **GIVEN** two blinded judge responses that favour different arms
+- **WHEN** the verdict is resolved
+- **THEN** the recorded outcome MUST be judge-sensitive/inconclusive, and no
+  additional judge call MUST be made to break the tie
+
+#### Scenario: The fixture preserves the gaps the screen is meant to discover
+
+- **GIVEN** the frozen report fixture used by both arms
+- **WHEN** it is compared against the in-memory report structure
+- **THEN** it MUST have been produced through the store-then-retrieve path, and
+  fields that the persistence path drops MUST be absent from it
+
+### Requirement: Pilot artifacts carry only fixture data across a trust boundary
+
+Artifacts produced by a pilot arm SHALL be refused for outbound transmission
+unless the data embedded in them hash-matches the frozen fixture bytes. The
+check SHALL be mechanical and SHALL NOT depend on human inspection of the
+artifact. Pilot arms SHALL have no outbound transmission capability of their
+own.
+
+#### Scenario: An artifact carrying non-fixture data is refused
+
+- **GIVEN** a generated artifact whose embedded data differs from the frozen
+  fixture bytes
+- **WHEN** it is submitted for outbound transmission
+- **THEN** the transmission MUST be refused, and the refusal MUST NOT require a
+  human to notice the difference
