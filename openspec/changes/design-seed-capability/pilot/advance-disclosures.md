@@ -82,9 +82,40 @@ rediscovery from being banked as insight.
   "description"}` dicts; the `review_needed` case always uses the fixed
   literal `"Manual review required"` with no per-instance detail, and
   `fx_warning`/`fx_review_gate`/`eligibility_warning` descriptions are
-  whatever free-text string the upstream check produced. There is no
-  separate structured "reason" field anywhere in the persisted schema for
-  hold, review, or gate-breach outcomes.
+  whatever free-text string the upstream check produced. **Correction (fix
+  round 1): this is scoped to action items specifically, not to "the
+  persisted schema" as originally stated** — `eligibility_summary` (one of
+  the 8 persisted keys) does carry a structured reason, addressed below.
+- `eligibility_summary.details[].reason` is a genuinely structured
+  per-instrument reason, not a fixed literal. `EligibilityResult.reason`
+  (`src/dion/eligibility/engine.py:15`) is populated by `check_eligibility`
+  (`engine.py:17-73`), persisted verbatim via `[asdict(r) for r in
+  eligibility_results]` into `eligibility_summary["details"]`
+  (`report.py:147-152`). Under the `retail_safe` rule the two branches
+  differ sharply: `eligible` emits the flat literal `reason="UCITS-flagged
+  instrument"` (`engine.py:51`), while `restricted` emits a templated,
+  per-instrument reason — `reason=f"Non-UCITS instrument ({domicile}),
+  restricted under {rule}"` (`engine.py:58`), naming the actual domicile and
+  rule. **The frozen fixture exercises only the `eligible` branch** —
+  verified directly against the fixture: all 5 `eligibility_summary.details`
+  entries have `status: "eligible"` and the identical flat string
+  `"UCITS-flagged instrument"`. The richer restricted-branch template is
+  therefore visible only by reading `engine.py`, not by reading the fixture,
+  which makes it repo-discoverable and NOT screen-discovered under this
+  file's own test. An arm claiming "the screen can't explain why an
+  instrument is held back, and I'd add a structured reason" is restating a
+  field the schema already provides (joinable by `instrument_id`) and earns
+  no credit.
+- `orders[].reason` (`OrderSuggestion.reason`, `src/dion/optimizer/contract.py:119`)
+  is a separate free-text field, populated in `size_orders`
+  (`src/dion/proposal/engine.py:150-160`) as `f"Increase from {current:.4f}
+  to {proposed:.4f}"` / `f"Reduce from {current:.4f} to {proposed:.4f}"`.
+  Present in the fixture on every order, e.g. `inst-aggs`:
+  `"Increase from 0.1324 to 0.3780"` — verified directly. This is
+  weight-change rationale for an order that WAS placed, not a hold/review/
+  block reason, so it should not be confused with the eligibility case
+  above — but it is a reason field the fixture already carries, so it is
+  not bankable as a discovery either.
 
 ## Also true of the frozen fixture, and would otherwise look like a discovery
 
