@@ -43,7 +43,7 @@ if [ "${_nosrc}" = "0" ]; then _ok "every dimension cites a source"; else _bad "
 # No scored dimension may reward resemblance to the thing under test.
 _bans=0
 _dims="$(awk -F'|' '/^\| R[0-9]/ { print $3 }' "${P}/rubric.md" 2>/dev/null)"
-for w in token "design system" seed styleguide; do
+for w in token "design system" seed styleguide palette; do
     case "$(printf '%s' "${_dims}" | tr 'A-Z' 'a-z')" in
         *"${w}"*) _bad "rubric scores '${w}' — resemblance to the seed is not quality"; _bans=1 ;;
     esac

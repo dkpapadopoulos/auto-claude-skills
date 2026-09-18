@@ -16,7 +16,7 @@ Score each dimension 0-4: 0 absent, 1 poor, 2 adequate, 3 good, 4 excellent.
 | R4 | Visual hierarchy: the reader's eye reaches the most consequential figure first | Independent reviewer's stated criterion |
 | R5 | Readability of dense financial values: alignment, grouping, and scanability across rows | Independent reviewer's stated criterion |
 | R6 | Consistency of repeated elements and of state treatments across the screen | Independent reviewer's stated criterion |
-| R7 | Honest handling of missing information: a section the envelope omits entirely (e.g. comparators, integrity evidence) is communicated as absent, never papered over or rendered as if present | Independent reviewer's stated criterion |
+| R7 | Honest handling of an empty collection or section: when the envelope supplies one as explicitly empty rather than populated (e.g. `drift_analysis.snapshot_drift` is `{}` beside a `proposal_drift` with five populated entries; `optimizer_summary.policy_violations` is `[]`), that empty state is communicated to the reader as a deliberate zero, not silently dropped from the screen. Secondary, not required: an arm that also notices and states that the report omits a section entirely (e.g. `comparators`, `integrity_evidence` — fields on the underlying dataclass but absent from every key in this envelope) earns additional credit for that; an arm that does not is not penalised on this dimension for missing it. | Independent reviewer's stated criterion; empty-collection and absent-section instances verified directly against the frozen fixture |
 | R8 | Fidelity: every displayed value traces to the supplied data | This pilot |
 
 ## Not scored
