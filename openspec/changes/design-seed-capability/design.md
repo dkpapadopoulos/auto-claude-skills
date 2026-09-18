@@ -238,8 +238,33 @@ data block, not the artifact. The threat this section opens with — real
 holdings rendered into the *visible body* of the HTML — is **not** caught by
 it: the body is not the data block, and an arm that inlined a row of real
 positions into a table would pass the check. So the hash assertion is not
-"doing the real work on this path". It closes the payload-substitution route
-only.
+"doing the real work on this path".
+
+Nor does it close the payload-substitution route as such — it closes **one
+spelling** of it. The duplicate-block counter is a quote-style-aware literal
+match on `<script … type="application/json" …>`, so a smuggled second payload
+is counted only when written that way. Measured against the checker itself,
+each of the following carries a second block straight past it, while a browser
+treats every one as an inert data block whose text a script reads identically:
+
+| Second block, as written | Counter |
+|---|---|
+| `<script type="application/json" id="holdings">` | refused — the one spelling it catches |
+| `<script type=application/json id=holdings>` | **allowed** — unquoted attribute value |
+| `<SCRIPT TYPE="application/json" …>` | **allowed** — uppercase tag or attribute name |
+| `<script type = "application/json" …>` | **allowed** — whitespace around `=` |
+| `<script type="text/json" …>` | **allowed** — a different MIME spelling |
+
+(A newline between `<script` and its attributes *is* caught — incidentally,
+because the matcher's character class excludes it, not by design.)
+
+Those are named here as **residual and deliberately unfixed**. Extending the
+matcher to cover them is the same unbounded enumeration this design refuses two
+paragraphs above for `outbound_action`: a longer list of attribute spellings
+would read as complete without being a parser, which is worse than a stated
+limit. The honest claim is the narrow one — the counter catches a duplicate
+block spelled the way `brief.md` mandates, so it constrains an arm that follows
+the format and substitutes the payload, and not one that does not.
 
 What carries the rendering route is weaker and worth naming precisely, because
 the deny hook does **not** cover it: the hook's path list is
@@ -252,6 +277,22 @@ than relying on a measurement taken hours earlier — plus the human preview.
 Validating the whole artifact is deferred work: it requires a `brief.md`
 change, and `brief.md` is frozen. gitleaks, separately, catches credentials and
 not portfolio positions.
+
+**The human preview only carries anything if nothing has already been sent by
+the time a human looks.** That was not true until now: `scripts/pilot-capture.sh`
+rendered the artifact with the network live, so a remote `<link>`, `<img>`,
+`fetch()` or `WebSocket` in an arm's HTML reached its host — carrying whatever
+that arm chose to put in the URL — during capture, twice, once per
+colour-scheme pass, with nothing in any pilot output showing it. `brief.md`
+already instructs arms not to include remote references, which is the exact
+shape of control this wave exists to distrust. Capture is now a construction:
+every non-`file:`/`data:`/`blob:`/`about:` request is aborted by a per-context
+interceptor, and the browser additionally runs behind a dead proxy with
+loopback bypass disabled, which closes WebSockets — the one shape page-level
+routing does not see in the pinned Playwright. Measured against a local server,
+the same artifact went from 8 requests reaching it to 0, while still producing
+both PNGs. Regression: the egress cell in `tests/test-pilot-capture.sh`, which
+asserts against a real server rather than against the code.
 
 **The three legs, each with its real status.** Worth stating together, because
 the oversight has been lopsided:

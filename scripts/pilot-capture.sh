@@ -168,14 +168,59 @@ cat > "${_OUT}/.capture.cjs" <<'JS'
 const { chromium } = require(process.argv[2]);
 const url = process.argv[3];
 const outDir = process.argv[4];
+
+// --- Capture is a trust boundary, not an instruction. ---
+// The artifact under judgement is untrusted content. Rendering it with the
+// network live makes CAPTURE ITSELF the egress: a remote <link>, <img>,
+// <script>, fetch() or sendBeacon() reaches its host, carrying whatever the
+// artifact chose to put in the URL, BEFORE any human has previewed the file.
+// Measured against a local server before this block existed: a page with one
+// remote <link> and one remote <img> produced four requests — two per
+// colour-scheme pass — and nothing in any pilot output showed it.
+// `brief.md` instructs arms not to include remote references; that is prose
+// about a prompt, and the point of this wave is that instruction is not a
+// boundary. Every non-local request is aborted instead.
+//
+// Installed PER CONTEXT, not once per run: each colour-scheme pass builds its
+// own context and loads the document independently, which is exactly why the
+// beacon fired twice.
+const LOCAL = /^(file|data|blob|about):/;
+
 (async () => {
-  const browser = await chromium.launch();
+  // Second, ORTHOGONAL layer, at the network stack rather than the page.
+  // `ctx.route` is a page-level interceptor and in this pinned Playwright
+  // (1.47) it does not see WebSockets — `routeWebSocket` arrived in 1.48.
+  // Measured: with routing alone, a `new WebSocket("ws://…/8-ws")` in the
+  // artifact reached the server on both passes while all 20 HTTP-shaped
+  // requests were aborted; with this proxy added, zero reached it, twice.
+  // Routing to a dead port makes that a connection failure instead.
+  // `<-loopback>` is required, not decorative: Chromium bypasses the proxy
+  // for loopback by default, so without it a `127.0.0.1` target — which is
+  // what the regression test itself uses — would slip straight past.
+  const browser = await chromium.launch({
+    proxy: { server: 'http://127.0.0.1:1', bypass: '<-loopback>' },
+  });
+  let blocked = 0;
   for (const scheme of ['light', 'dark']) {
     const ctx = await browser.newContext({
       viewport: { width: 1440, height: 900 },
       deviceScaleFactor: 1,
       colorScheme: scheme,
       reducedMotion: 'reduce',
+      // A service worker can issue requests outside the page's own routing;
+      // blocking registration removes that path rather than trusting it.
+      serviceWorkers: 'block',
+    });
+    // RegExp, not a glob: `/.*/` matches every URL by construction, where a
+    // glob's semantics are one more thing to be wrong about.
+    await ctx.route(/.*/, (route) => {
+      const u = route.request().url();
+      if (LOCAL.test(u)) {
+        route.continue().catch(() => {});
+      } else {
+        blocked++;
+        route.abort().catch(() => {});
+      }
     });
     const page = await ctx.newPage();
     await page.goto(url, { waitUntil: 'load' });
@@ -184,6 +229,10 @@ const outDir = process.argv[4];
     await ctx.close();
   }
   await browser.close();
+  if (blocked > 0) {
+    // stderr, so the one-line stdout contract is unchanged.
+    console.error(`pilot-capture: blocked ${blocked} non-local request(s) during capture`);
+  }
 })().catch(e => { console.error(e); process.exit(1); });
 JS
 
