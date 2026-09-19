@@ -25,6 +25,18 @@
 # "it did not finish" must never be confused with "it failed" or with "I could
 # not look".
 #
+# Every read of the log goes through REDIRECTION, never a filename argument.
+# Measured, because the two tools fail in OPPOSITE directions:
+#   grep FILENAME : `-dash.log` is parsed as options and the read fails
+#                   (`invalid argument -d ...`; note grep may be ugrep here).
+#   awk  --       : BSD awk (macOS) has no end-of-options marker and dies with
+#                   `can't open file --`, though it reads `-dash.log` fine.
+# So neither `--` nor a bare filename works for both, and per-tool special
+# casing is a list that will be wrong later. Redirection is immune to a leading
+# `-` and needs no special casing at all.
+# Pinned by tests/test-suite-completion.sh; mutating the grep line back to a
+# filename argument turns that cell red.
+#
 # Usage:  assert-suite-complete.sh [--min-files N] <logfile>
 #         bash tests/run-tests.sh > run.log 2>&1; assert-suite-complete.sh run.log
 #
@@ -75,12 +87,12 @@ while [ "$#" -gt 0 ]; do
             shift
             if ! _is_count "${1:-}"; then
                 printf 'CANNOT CHECK: --min-files needs a plain count, got %s\n' "${1:-<nothing>}" >&2
-                exit 3
+                exit "${EX_CANNOT_CHECK}"
             fi
             MIN_FILES="${1}"; shift
             ;;
         --) shift; break ;;
-        -*) printf 'CANNOT CHECK: unknown option %s\n' "${1}" >&2; exit 3 ;;
+        -*) printf 'CANNOT CHECK: unknown option %s\n' "${1}" >&2; exit "${EX_CANNOT_CHECK}" ;;
         *)  break ;;
     esac
 done
@@ -94,14 +106,14 @@ LOG="${1:-}"
 [ -s "${LOG}" ]     || die_cannot_check "empty log: ${LOG}"
 
 # Whitespace-only is empty for our purposes, and `-s` does not catch it.
-if ! grep -q '[^[:space:]]' "${LOG}" 2>/dev/null; then
+if ! grep -q -e '[^[:space:]]' < "${LOG}" 2>/dev/null; then
     die_cannot_check "log contains only whitespace: ${LOG}"
 fi
 
 # --- how many sentinels, and is one of them last? -------------------------
 # grep -c exits 1 on zero matches; capture the count without letting that
 # status escape.
-N_SENTINEL="$(grep -c "^${SENTINEL_TOKEN} " "${LOG}" 2>/dev/null)" || N_SENTINEL=0
+N_SENTINEL="$(grep -c -e "^${SENTINEL_TOKEN} " < "${LOG}" 2>/dev/null)" || N_SENTINEL=0
 case "${N_SENTINEL}" in
     ''|*[!0-9]*) N_SENTINEL=0 ;;
 esac
@@ -119,7 +131,7 @@ if [ "${N_SENTINEL}" -gt 1 ]; then
     exit "${EX_NOT_A_PASS}"
 fi
 
-LAST_LINE="$(awk 'NF { last = $0 } END { print last }' "${LOG}")"
+LAST_LINE="$(awk 'NF { last = $0 } END { print last }' < "${LOG}")"
 case "${LAST_LINE}" in
     "${SENTINEL_TOKEN} "*) : ;;
     *)
@@ -152,6 +164,19 @@ done
 if [ "${FILES}" -ne $(( PASSED + FAILED )) ]; then
     printf 'INCOMPLETE: sentinel counts do not add up in %s (files=%s, passed=%s, failed=%s).\n' \
         "${LOG}" "${FILES}" "${PASSED}" "${FAILED}"
+    exit "${EX_NOT_A_PASS}"
+fi
+
+# CROSS-CHECK against the runner's own frame. The sentinel alone is a
+# convention a test file could print; the frame line immediately above it is
+# emitted by the runner AFTER every file has run, so a log reaped at a forged
+# sentinel has no matching frame yet. This narrows the forge window to a test
+# file that prints BOTH lines deliberately — it does not close it, and the
+# source-grep cell remains the primary control. `Tests run:` (per file) and
+# `Files run:` (runner) do not collide.
+if [ "${FILES}" -gt 0 ] && ! grep -q -e "^  Files run:    ${FILES}$" < "${LOG}" 2>/dev/null; then
+    printf 'INCOMPLETE: the sentinel claims files=%s but %s carries no matching\n' "${FILES}" "${LOG}"
+    printf '            "  Files run:    %s" frame from the runner — the run did not reach its summary.\n' "${FILES}"
     exit "${EX_NOT_A_PASS}"
 fi
 

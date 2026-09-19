@@ -39,12 +39,23 @@
 # The separation matters: "I could not look" must never present as success,
 # and "it did not finish" must never be confused with "it failed".
 #
-# METHOD. Every fixture log in this file is produced by the REAL runner
-# (copied verbatim, per tests/test-suite-stdin-guard.sh's precedent) driven
-# over synthetic test files — never hand-written. A hand-written fixture only
-# proves the checker agrees with this test's idea of the format, which is how
-# an output classifier ships while misclassifying 100% of production input
-# (see .claude/knowledge/classifier-fixtures-from-real-producer.md).
+# METHOD. Every fixture log that must LOOK LIKE runner output is produced by
+# the REAL runner (copied verbatim, per tests/test-suite-stdin-guard.sh's
+# precedent) driven over synthetic test files, then cut or field-edited. None
+# is typed out by hand. A hand-written fixture only proves the checker agrees
+# with this test's idea of the format, which is how an output classifier ships
+# while misclassifying 100% of production input (see
+# .claude/knowledge/classifier-fixtures-from-real-producer.md).
+#
+# The exceptions are the two fixtures whose whole point is that they are NOT
+# runner output — an empty log and an unstructured one — which no producer can
+# supply.
+#
+# This was almost untrue: the first cut of the count-validation cells typed out
+# bare sentinel lines. Review caught it, and the cost was concrete rather than
+# stylistic — a legitimate checker hardening (the frame cross-check below)
+# breaks a hand-typed sentinel that real runner output satisfies, so the
+# hand-written fixtures had begun constraining the checker's DESIGN.
 #
 # Bash 3.2 compatible (macOS default).
 
@@ -218,18 +229,33 @@ assert_equals "internally inconsistent counts exit 1" \
 # --- Critical this file missed: `case ''|*[!0-9]*` admitted them, `[ -ne ]`
 # --- then failed, and with no `set -e` execution fell through to status=pass
 # --- and exit 0 — a clean pass reported on input just proven unparseable.
-_sentinel_log() { printf 'ACS-RUN-TESTS-COMPLETE %s\n' "$1" > "${WORK}/synth.log"; printf '%s' "${WORK}/synth.log"; }
+# _sentinel_log <files> <passed> <failed> <status> -> path
+# Takes the REAL complete log and rewrites the runner's frame and its sentinel
+# TOGETHER, so the pair stays internally consistent the way the runner emits
+# it. Rewriting only the sentinel would leave a frame that disagrees with it,
+# which the cross-check below (correctly) rejects — and the cell would then be
+# measuring the fixture's inconsistency rather than the field under test.
+_sentinel_log() {
+    awk -v f="$1" -v p="$2" -v x="$3" -v st="$4" '
+        /^  Files run:    /        { printf "  Files run:    %s\n", f; next }
+        /^  Files passed: /        { printf "  Files passed: %s\n", p; next }
+        /^  Files failed: /        { printf "  Files failed: %s\n", x; next }
+        /^ACS-RUN-TESTS-COMPLETE / { printf "ACS-RUN-TESTS-COMPLETE files=%s passed=%s failed=%s status=%s\n", f, p, x, st; next }
+        { print }
+    ' "${LOG_PASS}" > "${WORK}/synth.log"
+    printf '%s' "${WORK}/synth.log"
+}
 assert_equals "a count past INT64_MAX is not a pass" \
-    "1" "$(run_checker "$(_sentinel_log 'files=9223372036854775808 passed=1 failed=0 status=pass')")"
+    "1" "$(run_checker "$(_sentinel_log 9223372036854775808 1 0 pass)")"
 assert_equals "a leading-zero (octal-trap) count is not a pass" \
-    "1" "$(run_checker "$(_sentinel_log 'files=08 passed=08 failed=0 status=pass')")"
+    "1" "$(run_checker "$(_sentinel_log 08 08 0 pass)")"
 
 # --- three checker branches that no cell reached: mutating any of them to
 # --- exit 0 left this file 25/25 green (review I1).
 assert_equals "status=pass contradicted by failed>0 is not a pass" \
-    "1" "$(run_checker "$(_sentinel_log 'files=5 passed=3 failed=2 status=pass')")"
+    "1" "$(run_checker "$(_sentinel_log 5 3 2 pass)")"
 assert_equals "an unrecognised status is not a pass" \
-    "1" "$(run_checker "$(_sentinel_log 'files=5 passed=5 failed=0 status=banana')")"
+    "1" "$(run_checker "$(_sentinel_log 5 5 0 banana)")"
 printf '   \n\t\n   \n' > "${WORK}/whitespace.log"
 assert_equals "a whitespace-only log is cannot-check, not incomplete" \
     "3" "$(run_checker "${WORK}/whitespace.log")"
@@ -238,11 +264,27 @@ assert_equals "a whitespace-only log is cannot-check, not incomplete" \
 # --- discovered everything. A partial checkout yields a smaller, well-formed,
 # --- entirely green run.
 assert_equals "a short run is a pass when no floor is demanded" \
-    "0" "$(run_checker "$(_sentinel_log 'files=1 passed=1 failed=0 status=pass')")"
+    "0" "$(run_checker "$(_sentinel_log 1 1 0 pass)")"
 assert_equals "...and is NOT a pass under --min-files" \
-    "1" "$(bash "${CHECKER}" --min-files 5 "$(_sentinel_log 'files=1 passed=1 failed=0 status=pass')" >/dev/null 2>&1; printf '%s' "$?")"
+    "1" "$(bash "${CHECKER}" --min-files 5 "$(_sentinel_log 1 1 0 pass)" >/dev/null 2>&1; printf '%s' "$?")"
 assert_equals "--min-files with a non-count argument is cannot-check" \
     "3" "$(bash "${CHECKER}" --min-files zzz "${LOG_PASS}" >/dev/null 2>&1; printf '%s' "$?")"
+
+# A log whose NAME begins with `-` must still be read, not parsed as options.
+# The obvious guard is wrong: `--` is not portable to BSD awk (macOS), where
+# `awk '...' -- file` dies with "can't open file --", so every read goes
+# through redirection instead. Pinned because that is easy to "tidy" back.
+cp "${LOG_PASS}" "${WORK}/-dash.log"
+# NOTE the `--`: passing `./-dash.log` proves nothing, because `./-dash.log`
+# is not a flag to any tool and the cell stays green with the fix reverted.
+# The bare name after `--` is what reaches the tools. (First cut used `./` and
+# was vacuous; caught by mutation, not by reading it.)
+#
+# The tool that actually breaks is GREP, not awk — measured: awk reads
+# `-dash.log` happily, while grep rejects it as `-d`. Mutate the grep line, not
+# the awk one, if you want to see this cell fail.
+assert_equals "a log whose name starts with a dash is read, not parsed as flags" \
+    "0" "$(cd "${WORK}" && bash "${CHECKER}" -- -dash.log >/dev/null 2>&1; printf '%s' "$?")"
 
 # ---------------------------------------------------------------------------
 # 3. END TO END: the checker catches exactly what the naive check misses
@@ -319,8 +361,13 @@ assert_equals "a forged sentinel in a FINISHED run is caught (two sentinels)" \
     "1" "$(run_checker "${WORK}/forged-complete.log")"
 FORGE_CUT="$(grep -n -F 'ACS-RUN-TESTS-COMPLETE' "${WORK}/forged-complete.log" | head -1 | cut -d: -f1)"
 head -n "${FORGE_CUT}" "${WORK}/forged-complete.log" > "${WORK}/forged-reaped.log"
-assert_equals "KNOWN LIMIT: reaped exactly at a forged sentinel reads as complete" \
-    "0" "$(run_checker "${WORK}/forged-reaped.log")"
+# The frame cross-check narrows this: at the instant of the forged sentinel the
+# runner has not yet printed its own "Files run:" frame, so the claim has
+# nothing to corroborate it. The window is NOT closed — a test file that prints
+# both lines deliberately still forges — so the source-grep cells above remain
+# the primary control and this stays a documented limit, not a solved problem.
+assert_equals "a forged sentinel reaped mid-run has no runner frame to back it" \
+    "1" "$(run_checker "${WORK}/forged-reaped.log")"
 
 # ---------------------------------------------------------------------------
 # 6. No-regression: the runner's own exit codes are unchanged
