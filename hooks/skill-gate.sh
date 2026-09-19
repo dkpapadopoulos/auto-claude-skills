@@ -105,5 +105,9 @@ if [ "$_MODE" = "warn" ]; then
     exit 0
 fi
 phase_gate_log "skill-seq" "deny" "$_SKILL" "$_MISSING"
-jq -n --arg msg "$_MSG" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+# permissionDecisionReason is the ONLY field Claude Code shows the MODEL on a
+# deny; systemMessage is shown to the user and never to Claude (#254). The
+# remediation above is useless in a channel the model cannot read, so both
+# carry the same text: the user sees it, and the agent can act on it.
+jq -n --arg msg "$_MSG" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$msg},"systemMessage":$msg}'
 exit 0

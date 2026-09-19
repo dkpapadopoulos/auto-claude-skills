@@ -188,7 +188,11 @@ Cite the evidence as memory/<file>.md:<line> instead of quoting it. The citation
 
 Additionally, part of this command could not be checked (${_UNCHECKED}) — fixing the block above does not mean the rest was scanned."
     fi
-    jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+    # Both audiences, one text: permissionDecisionReason is what the MODEL
+    # receives on a deny, systemMessage is what the USER sees (#254). The
+    # remediation here is the citation rule, which the agent is the one that
+    # has to apply.
+    jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$msg},"systemMessage":$msg}'
     exit 0
 fi
 
