@@ -737,7 +737,7 @@ _mk_issue_array() {  # <count> <eval|ledger> -> JSON array on stdout
         [ range(0; $n) as $i
           | if $kind == "eval"
             then {number: (100 + $i), title: "Behavioral eval regression: pack-\($i)",
-                  body: "b", author: {login: "app/github-actions"}}
+                  body: "b", author: {login: "app/github-actions", is_bot: true}}
             else {number: (100 + $i),
                   body: ("```json\n" + "{\"run\":\"2026-01-01\",\"presented\":[]}" + "\n```"),
                   author: {login: "testowner"}}
@@ -757,7 +757,6 @@ _truncation_case() {  # <label> <eval|ledger> <count> <loud|quiet>
     else
         _mk_issue_array "${count}" ledger > "${FAKE_GH_LEDGER}"
     fi
-    export FAKE_GH_EVALS FAKE_GH_LEDGER
     out="$(run_bundle)"; rc=$?
     if [ "${expect}" = "loud" ]; then
         if [ "${rc}" -ne 0 ]; then _record_pass "${label}: exits non-zero"
@@ -787,25 +786,40 @@ test_ledger_below_cap_is_quiet() {
     echo "-- test: a ledger query below its cap is not flagged (control) --"
     _truncation_case "ledger below the cap" ledger 199 quiet
 }
-
-# --- every test function named below must EXIST ----------------------------
-# Invocations here are bare calls, so a renamed or deleted function prints
-# `command not found`, the loop continues, and print_summary still reports
-# "All tests passed" with exit 0 — a test silently leaves the suite. Measured
-# while adding the four above: four undefined names, 123/123 green, exit 0.
-_assert_all_tests_defined() {
-    local missing="" fn
-    for fn in $(grep -oE '^test_[a-z0-9_]+$' "$0"); do
-        command -v "${fn}" >/dev/null 2>&1 || missing="${missing} ${fn}"
-    done
-    if [ -z "${missing}" ]; then
-        _record_pass "every test function invoked below is defined"
-    else
-        _record_fail "every test function invoked below is defined" "undefined:${missing}"
-    fi
+test_ledger_limit_is_overridable() {
+    # The ledger grows one issue per run and is never pruned, so a fixed cap is
+    # a forward-dated hard stop. The remedy has to be applicable in a TARGET
+    # repo, where mine-evidence.sh lives in the versioned plugin cache and
+    # editing it is undone by the next plugin update.
+    echo "-- test: the ledger cap can be raised from the environment --"
+    local out rc
+    setup_test_env; make_fake_gh
+    mkdir -p "${TEST_TMPDIR}/repo" "${TEST_TMPDIR}/memory"
+    (cd "${TEST_TMPDIR}/repo" && git init -q && git -c user.email="t@e.com" -c user.name="T" commit -q --allow-empty -m init)
+    FAKE_GH_EVALS="${TEST_TMPDIR}/evals.json"; echo '[]' > "${FAKE_GH_EVALS}"
+    FAKE_GH_LEDGER="${TEST_TMPDIR}/ledger.json"; _mk_issue_array 200 ledger > "${FAKE_GH_LEDGER}"
+    # Control: at the default cap this is a hard stop.
+    out="$( cd "${TEST_TMPDIR}/repo" && IMPROVEMENT_MINER_MEMORY_DIR="${TEST_TMPDIR}/memory" \
+        GH_LOG="${GH_LOG}" FAKE_GH_LEDGER="${FAKE_GH_LEDGER}" FAKE_GH_EVALS="${FAKE_GH_EVALS}" \
+        PATH="${TEST_TMPDIR}/stub:${PATH}" /bin/bash "${MINE}" bundle 2>&1 )"; rc=$?
+    if [ "${rc}" -ne 0 ]; then _record_pass "control: 200 ledger issues stop the default cap"
+    else _record_fail "control: 200 ledger issues stop the default cap" "rc=${rc}"; fi
+    # Raising it from the environment clears the stop.
+    out="$( cd "${TEST_TMPDIR}/repo" && IMPROVEMENT_MINER_MEMORY_DIR="${TEST_TMPDIR}/memory" \
+        IMPROVEMENT_MINER_LEDGER_LIMIT=500 \
+        GH_LOG="${GH_LOG}" FAKE_GH_LEDGER="${FAKE_GH_LEDGER}" FAKE_GH_EVALS="${FAKE_GH_EVALS}" \
+        PATH="${TEST_TMPDIR}/stub:${PATH}" /bin/bash "${MINE}" bundle 2>&1 )"; rc=$?
+    if [ "${rc}" -eq 0 ]; then _record_pass "raising IMPROVEMENT_MINER_LEDGER_LIMIT clears the stop"
+    else _record_fail "raising IMPROVEMENT_MINER_LEDGER_LIMIT clears the stop" "rc=${rc}; out=${out}"; fi
+    assert_contains "the deny message names the override the user can actually apply" \
+        "IMPROVEMENT_MINER_LEDGER_LIMIT" "$( cd "${TEST_TMPDIR}/repo" && IMPROVEMENT_MINER_MEMORY_DIR="${TEST_TMPDIR}/memory" \
+        GH_LOG="${GH_LOG}" FAKE_GH_LEDGER="${FAKE_GH_LEDGER}" FAKE_GH_EVALS="${FAKE_GH_EVALS}" \
+        PATH="${TEST_TMPDIR}/stub:${PATH}" /bin/bash "${MINE}" bundle 2>&1 )"
+    teardown_test_env
 }
 
-_assert_all_tests_defined
+# Both directions plus a floor; see tests/test-helpers.sh.
+assert_test_functions_wired "$0"
 test_fingerprint_stable_and_distinct
 test_missing_gh_fails_loud
 test_gh_runtime_failure_fails_loud
@@ -841,5 +855,6 @@ test_eval_intake_truncation_fails_loud
 test_eval_intake_below_cap_is_quiet
 test_ledger_truncation_fails_loud
 test_ledger_below_cap_is_quiet
+test_ledger_limit_is_overridable
 
 print_summary

@@ -240,11 +240,23 @@ LABEL_RUN="improvement-miner-run"
 # a one-line change a human should make knowingly. Reaching the cap exactly is
 # treated as truncation because the two cases cannot be told apart from here.
 assert_not_truncated() {
-    local _json="${1:-}" _limit="${2:-0}" _what="${3:-query}" _n
-    _n="$(printf '%s' "${_json}" | jq 'length' 2>/dev/null)" || _n=""
+    local _json="${1:-}" _limit="${2:-}" _what="${3:-query}" _n
+    # An absent or non-numeric limit must not default to the most AGGRESSIVE
+    # value: `${2:-0}` made `assert_not_truncated '[]' '' x` compare 0 >= 0 and
+    # exit 5, i.e. a future call with an unset variable would brick every run.
+    case "${_limit}" in ''|*[!0-9]*) return 0 ;; esac
+    # Count only an ARRAY. `jq length` also counts object keys and string
+    # characters, so a non-array body could false-alarm; `gh --json` cannot
+    # produce one here, but the guard should not depend on that.
+    _n="$(printf '%s' "${_json}" | jq 'if type == "array" then length else empty end' 2>/dev/null)" || _n=""
+    # An uncountable result is NOT silently accepted: the caller's own jq filter
+    # rejects the same bytes with exit 5 a few lines below (pinned by
+    # test_garbage_json_fails_loud). This guard answers one question —
+    # truncation — and defers unparseable input to the parser, rather than
+    # duplicating a second, weaker parse here.
     case "${_n}" in ''|*[!0-9]*) return 0 ;; esac
     if [ "${_n}" -ge "${_limit}" ]; then
-        echo "ERROR: gh issue list (${_what}) returned ${_n} items at its --limit ${_limit} — the result may be truncated, and improvement-miner will not mine a corpus it cannot confirm is complete. Raise the limit in mine-evidence.sh (or page the query) and re-run." >&2
+        echo "ERROR: gh issue list (${_what}) returned ${_n} items at its --limit ${_limit} — the result may be truncated, and improvement-miner will not mine a corpus it cannot confirm is complete. Raise it (for the ledger: IMPROVEMENT_MINER_LEDGER_LIMIT=<n>) or page the query, then re-run." >&2
         exit 5
     fi
 }
@@ -277,7 +289,15 @@ json_ledger_items() {
         echo "ERROR: gh repo view returned no owner login — cannot verify ledger authorship, refusing to degrade to an empty ledger" >&2
         exit 5
     fi
-    local LEDGER_LIMIT=200
+    # The ledger grows by exactly one issue per mine run and is never pruned,
+    # so this cap is a forward-dated hard stop: at run 200 both `bundle` and
+    # `dedup` would exit 5 permanently. The message used to say "raise the
+    # limit in mine-evidence.sh", but in a target repo that file lives in the
+    # versioned plugin cache — editing it is overwritten by the next plugin
+    # update and trips the drift canary. So the cap is overridable from the
+    # environment, which is a remedy the user can actually apply.
+    local LEDGER_LIMIT="${IMPROVEMENT_MINER_LEDGER_LIMIT:-200}"
+    case "${LEDGER_LIMIT}" in ''|*[!0-9]*) LEDGER_LIMIT=200 ;; esac
     raw="$(gh issue list --label "${LABEL_RUN}" --state all --limit "${LEDGER_LIMIT}" \
             --json number,body,author)"
     rc=$?
