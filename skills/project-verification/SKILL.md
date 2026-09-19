@@ -146,6 +146,12 @@ Before emitting a PASS verdict, confirm -- do not infer:
 
 - The gate command(s) actually ran this session via a Bash tool call -- not assumed from a prior run or read from config.
 - Each command's exit code was captured; PASS is keyed to exit 0, FAIL to non-zero.
+- **The exit code came from a run this process waited for.** If the gate was backgrounded, detached,
+  or read back from a log file instead of waited on, there is no exit code and you must not invent one
+  from the log's contents. A run that was reaped or is still going produces a log with a large pass
+  count and zero failure markers -- every signal a quick check inspects reads green. Key the claim on
+  the runner's own COMPLETION marker if it emits one, and otherwise re-run it synchronously; never on
+  the absence of `FAIL`/`ERROR` lines, which is equally true of a suite that never started.
 - The evidence file was written to `~/.claude/.skill-project-verified-${TOKEN}` and the in-session summary table is shown.
 - If no gate was discovered, the verdict is "no gate found" -- never a silent PASS.
 - A command that errored to run is in `could_not_verify` (verdict `could-not-verify`), not absent and not in `passed`. Absence MUST NOT read as pass.
