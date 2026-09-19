@@ -207,7 +207,23 @@ in Dion's `.claude/settings.json`, regression
 `tests/design_seed_pilot/test_arm_capability_boundary.py`) that refuses
 `WebFetch`, `WebSearch` and the whole `mcp__` namespace by tool name, and
 refuses reads of an enumerated set of sensitive paths across every path-bearing
-tool. The orchestrator has egress but sends only a frozen package the user
+tool.
+
+**The hook is scoped to arms, and that scoping is the load-bearing half.** It is
+wired at repo level with a `.*` matcher, so it is consulted for every tool call in
+every session working in Dion — including the user's own. It therefore identifies a
+pilot arm positively (the session's resolved `CLAUDE_PROJECT_DIR`, falling back to
+the working directory, naming a `pilot-arm-*` worktree) and **exits silently
+otherwise**: outside an arm it emits nothing and refuses nothing. Without that, a
+control built for two ephemeral subagents would have stripped `WebFetch`,
+`WebSearch`, the `mcp__` namespace and the memory corpus from every ordinary session
+in the repo. Scoping by path rather than by a marker file is deliberate: an arm can
+write to its own worktree and could delete a sentinel, and a boundary the constrained
+party can remove is not a boundary. Both directions are pinned in
+`tests/design_seed_pilot/test_arm_capability_boundary.py` — denials inside an arm,
+silence outside one.
+
+The orchestrator has egress but sends only a frozen package the user
 previewed and approved, scanned by gitleaks.
 
 **Where the cut is made, and why it moved.** The earlier claim that "cutting
