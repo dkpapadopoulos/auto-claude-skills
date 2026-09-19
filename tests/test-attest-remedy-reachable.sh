@@ -158,6 +158,35 @@ else
         "the hook produced no systemMessage — the cells below it are vacuous"
 fi
 
+# --- skill-gate with a plugin path containing a single quote ---------------
+# The three sites embed the path in literal single quotes, so a `'` in it closes
+# the quote and breaks the pasted command. The guard and the activation hook
+# escaped it; skill-gate did not — the one asymmetry of the three, found by the
+# CI review. Measured before the fix: `source '/tmp/od'd/plug/...'`, which bash
+# rejects with "unexpected EOF while looking for matching `''".
+SQ_ROOT="${WORK}/od'd/plug"
+mkdir -p "${SQ_ROOT}"
+cp -R "${PROJECT_ROOT}/hooks" "${SQ_ROOT}/hooks" 2>/dev/null
+cp -R "${PROJECT_ROOT}/config" "${SQ_ROOT}/config" 2>/dev/null
+SQ_HOME="${WORK}/sq-home"; mkdir -p "${SQ_HOME}/.claude"
+printf '%s' "session-sq" > "${SQ_HOME}/.claude/.skill-session-token"
+printf '{"chain":["brainstorming","writing-plans","subagent-driven-development","requesting-code-review"],"completed":[],"current_index":0}\n' \
+    > "${SQ_HOME}/.claude/.skill-composition-state-session-sq"
+printf '["brainstorming"]\n' > "${SQ_HOME}/.claude/.skill-invocation-evidence-session-sq"
+SQ_MSG="$(printf '{"tool_name":"Skill","tool_input":{"skill":"superpowers:subagent-driven-development"},"transcript_path":""}' \
+    | HOME="${SQ_HOME}" CLAUDE_PLUGIN_ROOT="${SQ_ROOT}" SKILL_PROJECT_ROOT="${SQ_ROOT}" \
+      /bin/bash "${SQ_ROOT}/hooks/skill-gate.sh" 2>/dev/null | jq -r '.systemMessage // ""')"
+SQ_SRC="$(printf '%s' "${SQ_MSG}" | grep -oE "source '[^;]*'" | head -1)"
+assert_not_empty "skill-gate emits a source command under a quoted path" "${SQ_SRC}"
+# The assertion that matters is PARSEABILITY, not the escape's spelling: an
+# unescaped quote is a syntax error, and `bash -n` says so without running it.
+if printf '%s\n' "${SQ_SRC}" | /bin/bash -n /dev/stdin 2>/dev/null; then
+    _record_pass "a plugin path containing a single quote still yields a parseable remedy"
+else
+    _record_fail "a plugin path containing a single quote still yields a parseable remedy" \
+        "emitted: ${SQ_SRC}"
+fi
+
 # ---------------------------------------------------------------------------
 # 3. Every message that names phase_attest must carry a source command.
 # ---------------------------------------------------------------------------
