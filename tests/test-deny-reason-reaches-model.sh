@@ -43,6 +43,17 @@ echo ""
 # is the defect, and an exemption would be indistinguishable from the bug.
 echo "--- lint: no deny may omit permissionDecisionReason ---"
 
+# KNOWN-INCOMPLETE ENUMERATION, deliberately labelled as one — the treatment
+# this repo prescribes for a matcher it cannot prove total (cf. the smuggling
+# list in git-command.sh). The population is LINE-oriented: a future emitter
+# that supplies the value from a variable (`--arg dec deny … "permissionDecision":$dec`)
+# or splits the jq filter so `deny` lands on the next line falls silently
+# outside it, and with the current five sites intact the floor below would not
+# notice. That is the repo's own line-oriented-parsers-report-clean shape, in a
+# lint rather than a scanner. No live instance; recorded so the next person
+# widens the matcher instead of trusting it.
+# Inverse hazard, loud rather than silent: a doc comment inside hooks/ carrying
+# the literal `"permissionDecision": "deny"` would RED this lint as a violation.
 DENY_LINES="$(grep -rn '"permissionDecision"' --include='*.sh' "${PROJECT_ROOT}/hooks/" 2>/dev/null \
               | grep -i 'deny' || true)"
 
@@ -88,8 +99,14 @@ fi
 _assert_deny_reaches_model() {  # $1=label  $2=hook stdout
     local label="$1" out="${2:-}"
     local dec reason sysmsg
-    if ! printf '%s' "${out}" | jq empty >/dev/null 2>&1; then
-        _record_fail "${label}: output is valid JSON" "got: ${out:-<empty>}"
+    # `jq empty` accepts a STREAM, so two concatenated objects pass it and the
+    # second one's empty fields then satisfy every assertion below (Codex).
+    # The hook contract is exactly ONE object, so count them.
+    local nobj
+    nobj="$(printf '%s' "${out}" | jq -s 'length' 2>/dev/null)" || nobj=""
+    if [ "${nobj}" != "1" ]; then
+        _record_fail "${label}: output is exactly one JSON object" \
+            "parsed ${nobj:-<unparseable>} objects; got: ${out:-<empty>}"
         return
     fi
     dec="$(printf '%s' "${out}" | jq -r '.hookSpecificOutput.permissionDecision // ""')"
@@ -124,28 +141,45 @@ printf '{"chain":["brainstorming","writing-plans","subagent-driven-development",
     > "${HOME}/.claude/.skill-composition-state-${SG_TOKEN}"
 printf '["brainstorming"]\n' > "${HOME}/.claude/.skill-invocation-evidence-${SG_TOKEN}"
 
-_sg() {  # $1 = hooks root to run from
+# _sg <hook script> — the plugin/project root is ALWAYS the real checkout.
+# The mutant differs by ONE FILE, nothing else. Pointing the roots at a copied
+# tree instead changes the gate's resolved MODE (a foreign root defaults to
+# `warn`, which emits systemMessage only and no permissionDecision at all), so
+# the mutant would "lose the field" for a reason that has nothing to do with
+# the mutation — an apples-to-oranges control that passes vacuously. Caught in
+# review; the first cut of this cell had exactly that bug.
+_sg() {
     printf '{"tool_name":"Skill","tool_input":{"skill":"superpowers:subagent-driven-development"},"transcript_path":""}' \
-        | CLAUDE_PLUGIN_ROOT="${1}" SKILL_PROJECT_ROOT="${1}" /bin/bash "${1}/hooks/skill-gate.sh" 2>/dev/null
+        | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" SKILL_PROJECT_ROOT="${PROJECT_ROOT}" \
+          /bin/bash "${1}" 2>/dev/null
 }
-SG_OUT="$(_sg "${PROJECT_ROOT}")"
+SG_OUT="$(_sg "${PROJECT_ROOT}/hooks/skill-gate.sh")"
 _assert_deny_reaches_model "skill-gate" "${SG_OUT}"
 assert_contains "skill-gate: the model is told which step is missing" \
     "writing-plans" "$(printf '%s' "${SG_OUT}" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""')"
 
 # Mutation: a copy with the field stripped must stop satisfying the cell.
 SG_MUT="$(mktemp -d /tmp/drm-sgmut-XXXXXX)"
-cp -R "${PROJECT_ROOT}/hooks" "${SG_MUT}/hooks"
-cp -R "${PROJECT_ROOT}/config" "${SG_MUT}/config" 2>/dev/null || true
 sed 's/,"permissionDecisionReason":\$msg//; s/,"permissionDecisionReason":"%s"//' \
-    "${PROJECT_ROOT}/hooks/skill-gate.sh" > "${SG_MUT}/hooks/skill-gate.sh"
-if cmp -s "${PROJECT_ROOT}/hooks/skill-gate.sh" "${SG_MUT}/hooks/skill-gate.sh"; then
+    "${PROJECT_ROOT}/hooks/skill-gate.sh" > "${SG_MUT}/skill-gate.sh"
+if cmp -s "${PROJECT_ROOT}/hooks/skill-gate.sh" "${SG_MUT}/skill-gate.sh"; then
     _record_fail "mutation actually changed skill-gate.sh" \
         "the strip was a no-op — the field is absent, so the cell above is vacuous"
 else
     _record_pass "mutation actually changed skill-gate.sh"
-    MUT_REASON="$(_sg "${SG_MUT}" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""' 2>/dev/null)"
-    assert_equals "mutation: stripping the field leaves the model with nothing" "" "${MUT_REASON}"
+    MUT_OUT="$(_sg "${SG_MUT}/skill-gate.sh")"
+    # Asserting only "reason is empty" is also satisfied by empty stdout or
+    # malformed JSON, i.e. by a mutant that simply broke (Codex). The mutant
+    # must still be a working hook that denies with its user-facing message
+    # intact — ONLY the model-facing field may be gone.
+    assert_equals "mutation: the mutant still emits exactly one JSON object" \
+        "1" "$(printf '%s' "${MUT_OUT}" | jq -s 'length' 2>/dev/null)"
+    assert_equals "mutation: the mutant still DENIES" \
+        "deny" "$(printf '%s' "${MUT_OUT}" | jq -r '.hookSpecificOutput.permissionDecision // ""' 2>/dev/null)"
+    assert_contains "mutation: the mutant still tells the USER why" \
+        "writing-plans" "$(printf '%s' "${MUT_OUT}" | jq -r '.systemMessage // ""' 2>/dev/null)"
+    MUT_REASON="$(printf '%s' "${MUT_OUT}" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""' 2>/dev/null)"
+    assert_equals "mutation: ...and ONLY the model is left with nothing" "" "${MUT_REASON}"
 fi
 rm -rf "${SG_MUT}"
 export HOME="${_OLDHOME}"
@@ -189,25 +223,42 @@ EM_DIR="$(mktemp -d /tmp/drm-em-XXXXXX)"
 sed -n '/^_json_escape()/,/^}/p'  "${GUARD}" >  "${EM_DIR}/fns.sh"
 sed -n '/^_emit_deny()/,/^}/p'    "${GUARD}" >> "${EM_DIR}/fns.sh"
 
-if grep -q '_emit_deny' "${EM_DIR}/fns.sh" && grep -q '_json_escape' "${EM_DIR}/fns.sh"; then
+# Both functions must be DEFINED in the extract, not merely mentioned: the
+# emitter's body names `_json_escape`, so a `grep -q '_json_escape'` passes even
+# when the definition failed to extract — and with jq present that omission is
+# never noticed (Codex).
+if grep -q '^_emit_deny()' "${EM_DIR}/fns.sh" && grep -q '^_json_escape()' "${EM_DIR}/fns.sh"; then
     _record_pass "extracted the real _emit_deny and _json_escape from the hook"
     # A message with the two characters that break hand-rolled JSON, in the
     # order that matters: a backslash escaped after a quote gets doubled.
     NASTY='PUSH GATE: run Skill("x") then retry \ or set ACSM_SKIP_PUSH_GATE=1'
+    # A TOOLS-ONLY PATH. The first cut appended /usr/bin:/bin "for safety" and
+    # macOS ships /usr/bin/jq, so this cell exercised the jq branch and the
+    # fallback had ZERO coverage while reporting green (Codex). _json_escape
+    # needs exactly sed and tr; printf is a shell builtin.
     NOJQ_BIN="${EM_DIR}/bin"; mkdir -p "${NOJQ_BIN}"
-    for _t in sed grep cat printf tr; do
+    for _t in sed tr; do
         _p="$(command -v "${_t}" 2>/dev/null)" && [ -n "${_p}" ] && ln -sf "${_p}" "${NOJQ_BIN}/${_t}"
     done
-    NOJQ_OUT="$(PATH="${NOJQ_BIN}:/usr/bin:/bin" /bin/bash -c \
+    # Prove the branch under test is the one that runs. Without this the cell
+    # silently reverts to measuring jq the moment the PATH changes again.
+    if PATH="${NOJQ_BIN}" /bin/bash -c 'command -v jq' >/dev/null 2>&1; then
+        _record_fail "the no-jq cell actually has no jq" \
+            "jq is resolvable on the tools-only PATH — this cell is exercising the jq branch, not the fallback"
+    else
+        _record_pass "the no-jq cell actually has no jq"
+    fi
+    NOJQ_OUT="$(PATH="${NOJQ_BIN}" /bin/bash -c \
         ". '${EM_DIR}/fns.sh'; _SUBJ_NOTE=''; _emit_deny \"\$1\"" _ "${NASTY}" 2>/dev/null)"
-    if printf '%s' "${NOJQ_OUT}" | jq empty >/dev/null 2>&1; then
-        _record_pass "no-jq emitter still produces parseable JSON"
+    # Parsed with the REAL jq, from outside the stripped PATH.
+    if [ "$(printf '%s' "${NOJQ_OUT}" | jq -s 'length' 2>/dev/null)" = "1" ]; then
+        _record_pass "no-jq emitter still produces exactly one parseable JSON object"
         NOJQ_REASON="$(printf '%s' "${NOJQ_OUT}" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""')"
         NOJQ_SYS="$(printf '%s' "${NOJQ_OUT}" | jq -r '.systemMessage // ""')"
         assert_equals "no-jq emitter: the model gets the same text as the user" "${NOJQ_SYS}" "${NOJQ_REASON}"
         assert_equals "no-jq emitter: the message survives escaping intact" "${NASTY}" "${NOJQ_REASON}"
     else
-        _record_fail "no-jq emitter still produces parseable JSON" "got: ${NOJQ_OUT:-<empty>}"
+        _record_fail "no-jq emitter still produces exactly one parseable JSON object" "got: ${NOJQ_OUT:-<empty>}"
     fi
 else
     _record_fail "extracted the real _emit_deny and _json_escape from the hook" \
