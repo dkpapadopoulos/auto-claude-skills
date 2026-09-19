@@ -173,6 +173,50 @@ assert_file_exists() {
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
+# assert_test_functions_wired <file>
+#
+# Most test files in this repo end in a bare list of function calls. That list
+# is unchecked in BOTH directions and each direction fails silently:
+#
+#   invoked but not defined -> bash prints `command not found`, the file keeps
+#       going, and print_summary still reports "All tests passed" with exit 0.
+#       Measured: four undefined names gave 123/123 green.
+#   defined but not invoked -> the test simply never runs and nothing says so.
+#       Live instance at the time of writing: test_no_stderr_without_explain
+#       (tests/test-routing.sh) is defined and invoked nowhere.
+#
+# The first direction is the one people think of; the second is the one that
+# quietly deletes coverage. Both are checked here.
+#
+# The FLOOR matters as much as the comparison: with no needles (an unresolvable
+# path, a CRLF checkout, an indented call list) both sets are empty, every
+# comparison trivially holds, and the guard reports a pass having checked
+# nothing — the repo's own "a gate anchor needs a floor equal to the needle
+# count" rule.
+assert_test_functions_wired() {
+    local _f="${1:-}" _defined _invoked _undefined _uncalled _n
+    if [ ! -r "${_f}" ]; then
+        _record_fail "test functions are wired (${_f})" "cannot read the file — the guard checked nothing"
+        return
+    fi
+    _defined="$(grep -oE '^test_[A-Za-z0-9_]+\(\)' "${_f}" | sed 's/()$//' | sort -u)"
+    _invoked="$(grep -oE '^test_[A-Za-z0-9_]+$'      "${_f}" | sort -u)"
+    _n="$(printf '%s\n' "${_defined}" | grep -c '[^[:space:]]')"
+    if [ "${_n}" -lt 5 ]; then
+        _record_fail "test functions are wired (${_f})" \
+            "found only ${_n} test definitions — the matcher is not seeing this file, so the checks below are vacuous"
+        return
+    fi
+    _undefined="$(comm -13 <(printf '%s\n' "${_defined}") <(printf '%s\n' "${_invoked}") | grep '[^[:space:]]' || true)"
+    _uncalled="$( comm -23 <(printf '%s\n' "${_defined}") <(printf '%s\n' "${_invoked}") | grep '[^[:space:]]' || true)"
+    if [ -z "${_undefined}" ] && [ -z "${_uncalled}" ]; then
+        _record_pass "every test function is both defined and invoked (${_n} in $(basename "${_f}"))"
+    else
+        _record_fail "every test function is both defined and invoked ($(basename "${_f}"))" \
+            "invoked-but-undefined: [${_undefined}]; defined-but-never-invoked: [${_uncalled}]"
+    fi
+}
+
 print_summary() {
     echo ""
     echo "=============================="
