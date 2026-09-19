@@ -395,6 +395,27 @@ fi
 # Resolve session token payload-first (issue #51): the singleton is shared
 # across concurrent sessions (last-writer-wins) and may name ANOTHER session.
 _PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+
+# _attest_remedy <step> — a COPY-PASTEABLE attestation command (#248).
+#
+# Messages used to name `phase_attest` either with no source line at all, or
+# with the pair `$(git rev-parse --show-toplevel)/hooks/lib/...` ||
+# `$CLAUDE_PLUGIN_ROOT/hooks/lib/...`. BOTH halves fail outside this repo: the
+# first resolves to the USER's repo root, which has no hooks/lib, and
+# CLAUDE_PLUGIN_ROOT is UNSET in the model's Bash turn (the hook process has it,
+# the model's shell does not). Measured in an external repo: `phase_attest` is
+# `not found`, so the escape hatch the IMPLEMENT deny-flip pre-registration
+# leans on was unreachable exactly where the leg fires.
+#
+# We are holding the answer — _PLUGIN_ROOT is already an absolute path to the
+# running plugin — so emit it instead of a recipe the reader has to re-derive in
+# a shell where the inputs are missing.
+# Regression: tests/test-attest-remedy-reachable.sh (executes the remedy in an
+# external repo under BOTH bash and zsh, rather than matching its text).
+_attest_remedy() {
+    printf 'source "%s/hooks/lib/phase-attest.sh"; phase_attest %s "<reason>"' \
+        "${_PLUGIN_ROOT}" "${1:-<step>}"
+}
 _SESSION_TOKEN=""
 # The source is guarded (`&& … || true`) because an UNguarded `. lib` here trips
 # `trap 'exit 0' ERR` ABOVE the deny checks below — the hook exits 0 and the push
@@ -1252,7 +1273,7 @@ EOF
                 if [ "${_impl_ok}" = "false" ] && \
                    { [ "${_impl_material}" = "true" ] || [ "${_pe_action}" = "gh-merge" ]; }; then
                     if [ "${_impl_material}" = "true" ] && [ "${_impl_recog_del}" != "true" ]; then
-                        _IMPL_TEXT="IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: phase_attest executing-plans \"<reason>\". (advisory; will become a deny after backtest)"
+                        _IMPL_TEXT="IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: $(_attest_remedy executing-plans) (advisory; will become a deny after backtest)"
                         _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }${_IMPL_TEXT}"
                         _IMPL_MSG="${_IMPL_MSG}${_IMPL_MSG:+; }${_IMPL_TEXT}"
                         command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "${_pe_action}" "executing-plans"
@@ -1420,7 +1441,7 @@ EOF
                     # entirely, including telemetry.
                     case "${_pe_mode}" in deny|warn|off) ;; *) _pe_mode="warn" ;; esac
                     if [ "${_pe_mode}" != "off" ]; then
-                    _PE_MSG="PHASE GATE (outbound): this chain-covered ${_GATE_ACTION} has no evidence for '${_pe_missing}'. Invoke Skill(superpowers:${_pe_missing}) or record an explicit skip (phase_attest ${_pe_missing} \"<reason>\") before shipping."
+                    _PE_MSG="PHASE GATE (outbound): this chain-covered ${_GATE_ACTION} has no evidence for '${_pe_missing}'. Invoke Skill(superpowers:${_pe_missing}) or record an explicit skip: $(_attest_remedy "${_pe_missing}") before shipping."
                     [ "${PUSH_GATE_CAPTURE_REPLAY:-}" != "1" ] && command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "outbound" "${_pe_mode}" "${_pe_action}" "${_pe_missing}"
                     if [ "${_pe_mode}" = "deny" ]; then
                         _emit_deny "${_PE_MSG}"

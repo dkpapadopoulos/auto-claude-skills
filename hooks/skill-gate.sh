@@ -98,7 +98,13 @@ if [ "$_MODE" = "off" ]; then
     exit 0
 fi
 
-_MSG="PHASE GATE — Step '${_MISSING}' has no invocation evidence, but Skill(${_RAW_SKILL}) comes after it in the composition chain. Do now (one of): (1) invoke the missing step: Skill(${_MISSING}); (2) record an explicit, review-surfaced skip: source \"\$(git rev-parse --show-toplevel)/hooks/lib/phase-attest.sh\" 2>/dev/null || source \"\$CLAUDE_PLUGIN_ROOT/hooks/lib/phase-attest.sh\"; phase_attest ${_MISSING} \"<reason>\"; (3) human bypass: run the action yourself with the ! prefix. Gating milestones (requesting-code-review, verification-before-completion) accept only real invocations."
+# The attestation remedy names the RESOLVED plugin root (#248). It previously
+# offered `$(git rev-parse --show-toplevel)/hooks/lib/...` || `$CLAUDE_PLUGIN_ROOT/...`
+# and both halves fail outside this repo: the first is the USER's repo root,
+# which has no hooks/lib, and CLAUDE_PLUGIN_ROOT is unset in the model's shell.
+# This hook already resolved PLUGIN_ROOT; telling an agent how to find this
+# hook's own libs, while holding that path, was the avoidable indirection.
+_MSG="PHASE GATE — Step '${_MISSING}' has no invocation evidence, but Skill(${_RAW_SKILL}) comes after it in the composition chain. Do now (one of): (1) invoke the missing step: Skill(${_MISSING}); (2) record an explicit, review-surfaced skip: source \"${PLUGIN_ROOT}/hooks/lib/phase-attest.sh\"; phase_attest ${_MISSING} \"<reason>\"; (3) human bypass: run the action yourself with the ! prefix. Gating milestones (requesting-code-review, verification-before-completion) accept only real invocations."
 if [ "$_MODE" = "warn" ]; then
     phase_gate_log "skill-seq" "warn" "$_SKILL" "$_MISSING"
     jq -n --arg msg "PHASE GATE (advisory): $_MSG" '{"systemMessage":$msg}'
