@@ -412,9 +412,27 @@ _PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 # a shell where the inputs are missing.
 # Regression: tests/test-attest-remedy-reachable.sh (executes the remedy in an
 # external repo under BOTH bash and zsh, rather than matching its text).
+# PAIRED: hooks/skill-gate.sh renders the same remedy inline by hand, and
+# hooks/skill-activation-hook.sh substitutes {{PLUGIN_ROOT}} into the config
+# preconditions. A format change here must reach all three; the lint in
+# tests/test-attest-remedy-reachable.sh covers the shape, not the content.
+# _shq <string> — POSIX single-quote for safe paste into a shell.
+# The remedy below is TEXT A HUMAN OR AGENT IS TOLD TO PASTE AND RUN, so the
+# path must be inert. Double quoting was not: measured, a plugin path of
+# `/a$(touch /tmp/PWN)b` created the file in both bash and zsh when the emitted
+# line was pasted, and a path containing `"` produced a syntax error. Single
+# quotes make every character literal; an embedded `'` is closed, escaped and
+# reopened, which is the only sequence single quotes cannot contain.
+# NOTE this property is NEW with #248: the text this replaced named
+# `$CLAUDE_PLUGIN_ROOT` as a variable, which was merely unset — broken, but
+# inert. Making the path literal is what created the surface.
+_shq() {
+    printf "'%s'" "$(printf '%s' "${1:-}" | sed "s/'/'\\\\''/g")"
+}
+
 _attest_remedy() {
-    printf 'source "%s/hooks/lib/phase-attest.sh"; phase_attest %s "<reason>"' \
-        "${_PLUGIN_ROOT}" "${1:-<step>}"
+    printf 'source %s; phase_attest %s "<reason>"' \
+        "$(_shq "${_PLUGIN_ROOT}/hooks/lib/phase-attest.sh")" "${1:-<step>}"
 }
 _SESSION_TOKEN=""
 # The source is guarded (`&& … || true`) because an UNguarded `. lib` here trips

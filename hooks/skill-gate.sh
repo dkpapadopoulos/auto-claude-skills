@@ -104,7 +104,11 @@ fi
 # which has no hooks/lib, and CLAUDE_PLUGIN_ROOT is unset in the model's shell.
 # This hook already resolved PLUGIN_ROOT; telling an agent how to find this
 # hook's own libs, while holding that path, was the avoidable indirection.
-_MSG="PHASE GATE — Step '${_MISSING}' has no invocation evidence, but Skill(${_RAW_SKILL}) comes after it in the composition chain. Do now (one of): (1) invoke the missing step: Skill(${_MISSING}); (2) record an explicit, review-surfaced skip: source \"${PLUGIN_ROOT}/hooks/lib/phase-attest.sh\"; phase_attest ${_MISSING} \"<reason>\"; (3) human bypass: run the action yourself with the ! prefix. Gating milestones (requesting-code-review, verification-before-completion) accept only real invocations."
+# SINGLE-quoted on purpose: this text is pasted into a shell, and a double
+# quoted path expands `$…` and EXECUTES backticks (measured, both shells).
+# PAIRED with openspec-guard.sh::_attest_remedy and the {{PLUGIN_ROOT}}
+# substitution in skill-activation-hook.sh — three renderings, one shape.
+_MSG="PHASE GATE — Step '${_MISSING}' has no invocation evidence, but Skill(${_RAW_SKILL}) comes after it in the composition chain. Do now (one of): (1) invoke the missing step: Skill(${_MISSING}); (2) record an explicit, review-surfaced skip: source '${PLUGIN_ROOT}/hooks/lib/phase-attest.sh'; phase_attest ${_MISSING} \"<reason>\"; (3) human bypass: run the action yourself with the ! prefix. Gating milestones (requesting-code-review, verification-before-completion) accept only real invocations."
 if [ "$_MODE" = "warn" ]; then
     phase_gate_log "skill-seq" "warn" "$_SKILL" "$_MISSING"
     jq -n --arg msg "PHASE GATE (advisory): $_MSG" '{"systemMessage":$msg}'
