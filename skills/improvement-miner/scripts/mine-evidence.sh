@@ -146,7 +146,10 @@ json_eval_reports() {
     local EVAL_TITLE_PREFIX="Behavioral eval regression"
     # NOTE: field list deliberately excludes comments — trust boundary.
     local raw rc
-    raw="$(gh issue list --state all --limit 50 \
+    # The cap is a variable so the truncation check below cannot drift from
+    # the query it guards (#209).
+    local EVAL_LIMIT=50
+    raw="$(gh issue list --state all --limit "${EVAL_LIMIT}" \
             --search "\"${EVAL_TITLE_PREFIX}\" in:title" \
             --json number,title,body,author)"
     rc=$?
@@ -154,6 +157,7 @@ json_eval_reports() {
         echo "ERROR: gh issue list (eval reports) failed with exit ${rc} — improvement-miner is fail-loud, refusing to degrade to an empty bundle (see gh stderr above)" >&2
         exit 5
     fi
+    assert_not_truncated "${raw}" "${EVAL_LIMIT}" "eval reports"
     # Guard against empty-but-SUCCESSFUL output (e.g., no matching issues).
     [ -z "${raw}" ] && raw='[]'
     local filtered
@@ -222,6 +226,29 @@ json_eval_reports() {
 }
 LABEL_RUN="improvement-miner-run"
 
+# assert_not_truncated <json-array> <limit> <what> (#209)
+#
+# `gh issue list --limit N` returns AT MOST N items and says nothing about
+# whether more existed. A capped result is byte-indistinguishable from a
+# complete one, so the miner would quietly mine a partial corpus — and for the
+# run ledger that is the kill-math source of truth, where a dropped run moves
+# the approved/presented counters that decide whether the skill decommissions
+# itself.
+#
+# Fail-loud rather than paging: this script's whole posture is that an
+# incomplete bundle must never look like a complete one, and raising the cap is
+# a one-line change a human should make knowingly. Reaching the cap exactly is
+# treated as truncation because the two cases cannot be told apart from here.
+assert_not_truncated() {
+    local _json="${1:-}" _limit="${2:-0}" _what="${3:-query}" _n
+    _n="$(printf '%s' "${_json}" | jq 'length' 2>/dev/null)" || _n=""
+    case "${_n}" in ''|*[!0-9]*) return 0 ;; esac
+    if [ "${_n}" -ge "${_limit}" ]; then
+        echo "ERROR: gh issue list (${_what}) returned ${_n} items at its --limit ${_limit} — the result may be truncated, and improvement-miner will not mine a corpus it cannot confirm is complete. Raise the limit in mine-evidence.sh (or page the query) and re-run." >&2
+        exit 5
+    fi
+}
+
 owner_login() {
     # fake-gh in tests ignores --jq and always emits the full JSON object,
     # so extract the login ourselves rather than relying on gh's --jq.
@@ -250,13 +277,15 @@ json_ledger_items() {
         echo "ERROR: gh repo view returned no owner login — cannot verify ledger authorship, refusing to degrade to an empty ledger" >&2
         exit 5
     fi
-    raw="$(gh issue list --label "${LABEL_RUN}" --state all --limit 200 \
+    local LEDGER_LIMIT=200
+    raw="$(gh issue list --label "${LABEL_RUN}" --state all --limit "${LEDGER_LIMIT}" \
             --json number,body,author)"
     rc=$?
     if [ "${rc}" -ne 0 ]; then
         echo "ERROR: gh issue list (ledger) failed with exit ${rc} — improvement-miner is fail-loud, refusing to degrade to an empty ledger (see gh stderr above)" >&2
         exit 5
     fi
+    assert_not_truncated "${raw}" "${LEDGER_LIMIT}" "run ledger"
     [ -z "${raw}" ] && raw='[]'
     local filtered
     filtered="$(printf '%s' "${raw}" | jq --arg o "${owner}" '
