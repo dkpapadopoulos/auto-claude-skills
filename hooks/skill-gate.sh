@@ -98,12 +98,34 @@ if [ "$_MODE" = "off" ]; then
     exit 0
 fi
 
-_MSG="PHASE GATE — Step '${_MISSING}' has no invocation evidence, but Skill(${_RAW_SKILL}) comes after it in the composition chain. Do now (one of): (1) invoke the missing step: Skill(${_MISSING}); (2) record an explicit, review-surfaced skip: source \"\$(git rev-parse --show-toplevel)/hooks/lib/phase-attest.sh\" 2>/dev/null || source \"\$CLAUDE_PLUGIN_ROOT/hooks/lib/phase-attest.sh\"; phase_attest ${_MISSING} \"<reason>\"; (3) human bypass: run the action yourself with the ! prefix. Gating milestones (requesting-code-review, verification-before-completion) accept only real invocations."
+# The attestation remedy names the RESOLVED plugin root (#248). It previously
+# offered `$(git rev-parse --show-toplevel)/hooks/lib/...` || `$CLAUDE_PLUGIN_ROOT/...`
+# and both halves fail outside this repo: the first is the USER's repo root,
+# which has no hooks/lib, and CLAUDE_PLUGIN_ROOT is unset in the model's shell.
+# This hook already resolved PLUGIN_ROOT; telling an agent how to find this
+# hook's own libs, while holding that path, was the avoidable indirection.
+# SINGLE-quoted on purpose: this text is pasted into a shell, and a double
+# quoted path expands `$…` and EXECUTES backticks (measured, both shells).
+# PAIRED with openspec-guard.sh::_attest_remedy and the {{PLUGIN_ROOT}}
+# substitution in skill-activation-hook.sh — three renderings, one shape.
+# The path goes into the message inside literal single quotes, so a `'` in it
+# would close the quote and break the pasted command (measured: an install path
+# of /tmp/od'd/plug emitted `source '/tmp/od'd/...'`, an unterminated string).
+# openspec-guard.sh escapes via _shq and skill-activation-hook.sh via the same
+# pattern; this was the one unescaped site of the three. Fork-free, because
+# inside double quotes `\'` is NOT an escape — it is a backslash and a quote —
+# so the replacement is built from single-character variables.
+_SQ="'" ; _BS='\' ; _PR_SQ="${PLUGIN_ROOT//${_SQ}/${_SQ}${_BS}${_SQ}${_SQ}}"
+_MSG="PHASE GATE — Step '${_MISSING}' has no invocation evidence, but Skill(${_RAW_SKILL}) comes after it in the composition chain. Do now (one of): (1) invoke the missing step: Skill(${_MISSING}); (2) record an explicit, review-surfaced skip: source '${_PR_SQ}/hooks/lib/phase-attest.sh'; phase_attest ${_MISSING} \"<reason>\"; (3) human bypass: run the action yourself with the ! prefix. Gating milestones (requesting-code-review, verification-before-completion) accept only real invocations."
 if [ "$_MODE" = "warn" ]; then
     phase_gate_log "skill-seq" "warn" "$_SKILL" "$_MISSING"
     jq -n --arg msg "PHASE GATE (advisory): $_MSG" '{"systemMessage":$msg}'
     exit 0
 fi
 phase_gate_log "skill-seq" "deny" "$_SKILL" "$_MISSING"
-jq -n --arg msg "$_MSG" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+# permissionDecisionReason is the ONLY field Claude Code shows the MODEL on a
+# deny; systemMessage is shown to the user and never to Claude (#254). The
+# remediation above is useless in a channel the model cannot read, so both
+# carry the same text: the user sees it, and the agent can act on it.
+jq -n --arg msg "$_MSG" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$msg},"systemMessage":$msg}'
 exit 0

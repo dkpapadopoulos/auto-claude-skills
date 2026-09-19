@@ -1233,6 +1233,30 @@ EOF
         # only when a composition is being rendered. Fail-open: no field => no line.
         if [[ "$_marker" == "CURRENT" ]]; then
           _cprecond="$(printf '%s' "$REGISTRY" | jq -r --arg n "$_cname" '.skills[] | select(.name == $n) | .precondition // empty' 2>/dev/null)"
+          # A precondition may name `phase_attest`, which lives in this plugin
+          # and is NOT on any path the model's shell knows: CLAUDE_PLUGIN_ROOT
+          # is unset in a Bash turn, and `git rev-parse --show-toplevel` is the
+          # USER's repo, which has no hooks/lib. Rendering the call verbatim
+          # therefore shipped an unrunnable remedy to every IMPLEMENT-phase
+          # prompt in every repo — more often than the push gate's own
+          # advisory, and it is the exact remedy the IMPLEMENT deny-flip
+          # pre-registration treats as available (#248).
+          #
+          # The path is single-quoted IN THE CONFIG TEXT, so this substitution
+          # inserts a literal; a path containing `'` is the one case single
+          # quotes cannot hold, so it is escaped here rather than left to
+          # produce a broken line.
+          if [[ -n "$_cprecond" && "$_cprecond" == *'{{PLUGIN_ROOT}}'* ]]; then
+            # POSIX single-quote escaping, fork-free (this is the ~50ms hot
+            # path). Inside double quotes `\'` is NOT an escape — it is a
+            # backslash followed by a quote — so the replacement is assembled
+            # from explicit single-character variables. Getting this wrong
+            # emitted `a\'\\'\'b`, a malformed line that breaks the whole
+            # pasted command, which is worse than the missing path it replaced.
+            _sq="'" ; _bs='\' ; _rep="${_sq}${_bs}${_sq}${_sq}"
+            _pr_esc="${PLUGIN_ROOT//${_sq}/${_rep}}"
+            _cprecond="${_cprecond//\{\{PLUGIN_ROOT\}\}/${_pr_esc}}"
+          fi
           if [[ -n "$_cprecond" ]]; then
             _chain_lines="${_chain_lines}
       ${_cprecond}"

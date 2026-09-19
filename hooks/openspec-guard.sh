@@ -168,11 +168,23 @@ _json_escape() {
 _emit_deny() {
     local _dm="${1:-}"
     [ -n "${_SUBJ_NOTE:-}" ] && _dm="${_dm} ${_SUBJ_NOTE}"
+    # TWO AUDIENCES, ONE TEXT (#254). Claude Code shows the MODEL
+    # `permissionDecisionReason` on a deny and shows the USER `systemMessage`;
+    # the model never sees systemMessage. Writing the remediation only there
+    # meant every push-gate deny reached the agent as a bare "denied", so it
+    # could not act on guidance this gate had already written — measured, an
+    # agent concluded pushes were simply disallowed and handed the work to a
+    # human three times. Both fields carry the same string; a future change
+    # that populates only one re-creates the defect.
+    # The fallback branch escapes ONCE and reuses it: escaping twice is a fork
+    # per field and an invitation to let the two copies drift.
     if command -v jq >/dev/null 2>&1; then
-        jq -n --arg msg "${_dm}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+        jq -n --arg msg "${_dm}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$msg},"systemMessage":$msg}'
     else
-        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"%s"}\n' \
-            "$(_json_escape "${_dm}")"
+        local _de
+        _de="$(_json_escape "${_dm}")"
+        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"},"systemMessage":"%s"}\n' \
+            "${_de}" "${_de}"
     fi
     return 0
 }
@@ -395,6 +407,45 @@ fi
 # Resolve session token payload-first (issue #51): the singleton is shared
 # across concurrent sessions (last-writer-wins) and may name ANOTHER session.
 _PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+
+# _attest_remedy <step> — a COPY-PASTEABLE attestation command (#248).
+#
+# Messages used to name `phase_attest` either with no source line at all, or
+# with the pair `$(git rev-parse --show-toplevel)/hooks/lib/...` ||
+# `$CLAUDE_PLUGIN_ROOT/hooks/lib/...`. BOTH halves fail outside this repo: the
+# first resolves to the USER's repo root, which has no hooks/lib, and
+# CLAUDE_PLUGIN_ROOT is UNSET in the model's Bash turn (the hook process has it,
+# the model's shell does not). Measured in an external repo: `phase_attest` is
+# `not found`, so the escape hatch the IMPLEMENT deny-flip pre-registration
+# leans on was unreachable exactly where the leg fires.
+#
+# We are holding the answer — _PLUGIN_ROOT is already an absolute path to the
+# running plugin — so emit it instead of a recipe the reader has to re-derive in
+# a shell where the inputs are missing.
+# Regression: tests/test-attest-remedy-reachable.sh (executes the remedy in an
+# external repo under BOTH bash and zsh, rather than matching its text).
+# PAIRED: hooks/skill-gate.sh renders the same remedy inline by hand, and
+# hooks/skill-activation-hook.sh substitutes {{PLUGIN_ROOT}} into the config
+# preconditions. A format change here must reach all three; the lint in
+# tests/test-attest-remedy-reachable.sh covers the shape, not the content.
+# _shq <string> — POSIX single-quote for safe paste into a shell.
+# The remedy below is TEXT A HUMAN OR AGENT IS TOLD TO PASTE AND RUN, so the
+# path must be inert. Double quoting was not: measured, a plugin path of
+# `/a$(touch /tmp/PWN)b` created the file in both bash and zsh when the emitted
+# line was pasted, and a path containing `"` produced a syntax error. Single
+# quotes make every character literal; an embedded `'` is closed, escaped and
+# reopened, which is the only sequence single quotes cannot contain.
+# NOTE this property is NEW with #248: the text this replaced named
+# `$CLAUDE_PLUGIN_ROOT` as a variable, which was merely unset — broken, but
+# inert. Making the path literal is what created the surface.
+_shq() {
+    printf "'%s'" "$(printf '%s' "${1:-}" | sed "s/'/'\\\\''/g")"
+}
+
+_attest_remedy() {
+    printf 'source %s; phase_attest %s "<reason>"' \
+        "$(_shq "${_PLUGIN_ROOT}/hooks/lib/phase-attest.sh")" "${1:-<step>}"
+}
 _SESSION_TOKEN=""
 # The source is guarded (`&& … || true`) because an UNguarded `. lib` here trips
 # `trap 'exit 0' ERR` ABOVE the deny checks below — the hook exits 0 and the push
@@ -1252,7 +1303,7 @@ EOF
                 if [ "${_impl_ok}" = "false" ] && \
                    { [ "${_impl_material}" = "true" ] || [ "${_pe_action}" = "gh-merge" ]; }; then
                     if [ "${_impl_material}" = "true" ] && [ "${_impl_recog_del}" != "true" ]; then
-                        _IMPL_TEXT="IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: phase_attest executing-plans \"<reason>\". (advisory; will become a deny after backtest)"
+                        _IMPL_TEXT="IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: $(_attest_remedy executing-plans) (advisory; will become a deny after backtest)"
                         _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }${_IMPL_TEXT}"
                         _IMPL_MSG="${_IMPL_MSG}${_IMPL_MSG:+; }${_IMPL_TEXT}"
                         command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "${_pe_action}" "executing-plans"
@@ -1420,7 +1471,7 @@ EOF
                     # entirely, including telemetry.
                     case "${_pe_mode}" in deny|warn|off) ;; *) _pe_mode="warn" ;; esac
                     if [ "${_pe_mode}" != "off" ]; then
-                    _PE_MSG="PHASE GATE (outbound): this chain-covered ${_GATE_ACTION} has no evidence for '${_pe_missing}'. Invoke Skill(superpowers:${_pe_missing}) or record an explicit skip (phase_attest ${_pe_missing} \"<reason>\") before shipping."
+                    _PE_MSG="PHASE GATE (outbound): this chain-covered ${_GATE_ACTION} has no evidence for '${_pe_missing}'. Invoke Skill(superpowers:${_pe_missing}) or record an explicit skip: $(_attest_remedy "${_pe_missing}") before shipping."
                     [ "${PUSH_GATE_CAPTURE_REPLAY:-}" != "1" ] && command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "outbound" "${_pe_mode}" "${_pe_action}" "${_pe_missing}"
                     if [ "${_pe_mode}" = "deny" ]; then
                         _emit_deny "${_PE_MSG}"
