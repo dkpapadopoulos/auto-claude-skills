@@ -168,11 +168,23 @@ _json_escape() {
 _emit_deny() {
     local _dm="${1:-}"
     [ -n "${_SUBJ_NOTE:-}" ] && _dm="${_dm} ${_SUBJ_NOTE}"
+    # TWO AUDIENCES, ONE TEXT (#254). Claude Code shows the MODEL
+    # `permissionDecisionReason` on a deny and shows the USER `systemMessage`;
+    # the model never sees systemMessage. Writing the remediation only there
+    # meant every push-gate deny reached the agent as a bare "denied", so it
+    # could not act on guidance this gate had already written — measured, an
+    # agent concluded pushes were simply disallowed and handed the work to a
+    # human three times. Both fields carry the same string; a future change
+    # that populates only one re-creates the defect.
+    # The fallback branch escapes ONCE and reuses it: escaping twice is a fork
+    # per field and an invitation to let the two copies drift.
     if command -v jq >/dev/null 2>&1; then
-        jq -n --arg msg "${_dm}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+        jq -n --arg msg "${_dm}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$msg},"systemMessage":$msg}'
     else
-        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"%s"}\n' \
-            "$(_json_escape "${_dm}")"
+        local _de
+        _de="$(_json_escape "${_dm}")"
+        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"},"systemMessage":"%s"}\n' \
+            "${_de}" "${_de}"
     fi
     return 0
 }
