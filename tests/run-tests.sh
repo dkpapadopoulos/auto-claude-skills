@@ -55,7 +55,7 @@ done
 
 if [ -z "${test_files}" ]; then
     echo "No test files found in ${SCRIPT_DIR}/test-*.sh"
-    emit_completion_sentinel pass
+    emit_completion_sentinel none
     exit 0
 fi
 

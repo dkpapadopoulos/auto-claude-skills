@@ -25,8 +25,13 @@
 # "it did not finish" must never be confused with "it failed" or with "I could
 # not look".
 #
-# Usage:  assert-suite-complete.sh <logfile>
+# Usage:  assert-suite-complete.sh [--min-files N] <logfile>
 #         bash tests/run-tests.sh > run.log 2>&1; assert-suite-complete.sh run.log
+#
+# --min-files N guards the OTHER way a suite can fail to run in full: the
+# sentinel proves the runner reached its end, not that its glob discovered
+# everything. A partial checkout, an unreadable tests/ dir, or a file renamed
+# off `test-*.sh` yields a smaller, entirely well-formed, entirely green run.
 #
 # Bash 3.2 compatible (macOS default). No jq, no external deps beyond coreutils.
 # Regression: tests/test-suite-completion.sh
@@ -44,6 +49,41 @@ die_cannot_check() {
     printf 'CANNOT CHECK: %s\n' "$1" >&2
     exit "${EX_CANNOT_CHECK}"
 }
+
+# _is_count — strict. The previous `case ''|*[!0-9]*` admitted values that
+# `[ -ne ]` and `$(( ))` then FAILED to evaluate: anything past INT64_MAX, and
+# leading-zero forms containing 8 or 9 (an octal error). With no `set -e` the
+# failing comparison printed to stderr and execution fell THROUGH to the
+# status=pass branch and exit 0 — the script reporting a clean pass on input it
+# had just proven it could not parse, which is the one thing its header forbids.
+# Measured: `files=9223372036854775808 passed=1` and `files=08 passed=08` both
+# exited 0 with "all passed". Bounding the length makes the later arithmetic
+# total, so no evaluation can fail and fall through.
+_is_count() {
+    case "${1:-}" in
+        ''|*[!0-9]*) return 1 ;;
+        0)           return 0 ;;
+        0*)          return 1 ;;   # leading zeros: octal trap, and the runner never emits them
+    esac
+    [ "${#1}" -le 9 ]
+}
+
+MIN_FILES=0
+while [ "$#" -gt 0 ]; do
+    case "${1}" in
+        --min-files)
+            shift
+            if ! _is_count "${1:-}"; then
+                printf 'CANNOT CHECK: --min-files needs a plain count, got %s\n' "${1:-<nothing>}" >&2
+                exit 3
+            fi
+            MIN_FILES="${1}"; shift
+            ;;
+        --) shift; break ;;
+        -*) printf 'CANNOT CHECK: unknown option %s\n' "${1}" >&2; exit 3 ;;
+        *)  break ;;
+    esac
+done
 
 LOG="${1:-}"
 
@@ -102,12 +142,11 @@ FAILED="$(_field failed)"
 STATUS="$(_field status)"
 
 for _v in "${FILES}" "${PASSED}" "${FAILED}"; do
-    case "${_v}" in
-        ''|*[!0-9]*)
-            printf 'INCOMPLETE: malformed completion sentinel in %s:\n  %s\n' "${LOG}" "${LAST_LINE}"
-            exit "${EX_NOT_A_PASS}"
-            ;;
-    esac
+    if ! _is_count "${_v}"; then
+        printf 'INCOMPLETE: malformed or unevaluatable count in the sentinel of %s:\n  %s\n' \
+            "${LOG}" "${LAST_LINE}"
+        exit "${EX_NOT_A_PASS}"
+    fi
 done
 
 if [ "${FILES}" -ne $(( PASSED + FAILED )) ]; then
@@ -119,6 +158,15 @@ fi
 if [ "${FILES}" -eq 0 ]; then
     printf 'NOT A PASS: the run completed over ZERO test files (%s).\n' "${LOG}"
     printf '            Nothing was verified — a vacuous run is not a green one.\n'
+    exit "${EX_NOT_A_PASS}"
+fi
+
+if [ "${MIN_FILES}" -gt 0 ] && [ "${FILES}" -lt "${MIN_FILES}" ]; then
+    printf 'NOT A PASS: the run completed over only %s test files, fewer than the %s required (%s).\n' \
+        "${FILES}" "${MIN_FILES}" "${LOG}"
+    printf '            The runner reached its end, so this is a DISCOVERY shortfall, not a\n'
+    printf '            truncation: a partial checkout or an unreadable tests/ dir produces a\n'
+    printf '            smaller run that is well-formed and entirely green.\n'
     exit "${EX_NOT_A_PASS}"
 fi
 
@@ -135,6 +183,14 @@ case "${STATUS}" in
         printf 'COMPLETE BUT FAILED: %s test files ran, %s failed (%s).\n' \
             "${FILES}" "${FAILED}" "${LOG}"
         exit "${EX_FAILED}"
+        ;;
+    none)
+        # The runner emits this when its glob found no test files at all. It is
+        # self-describing on purpose: a naive consumer grepping `status=pass`
+        # would otherwise get the exact misleading signal this script exists to
+        # kill.
+        printf 'NOT A PASS: the runner found no test files at all (%s).\n' "${LOG}"
+        exit "${EX_NOT_A_PASS}"
         ;;
     *)
         printf 'INCOMPLETE: unrecognised status in sentinel of %s:\n  %s\n' "${LOG}" "${LAST_LINE}"

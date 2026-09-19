@@ -124,12 +124,12 @@ bash "${EMPTY_DIR}/run-tests.sh" > "${LOG_EMPTY}" 2>&1; RC_EMPTY=$?
 TOTAL_LINES="$(wc -l < "${LOG_PASS}" | tr -d ' ')"
 
 # (a) mid-file: inside the third test file's own output.
-CUT_MID="$(grep -n -- '--- Running: test-pass-3.sh ---' "${LOG_PASS}" | head -1 | cut -d: -f1)"
+CUT_MID="$(grep -n -F -- '--- Running: test-pass-3.sh ---' "${LOG_PASS}" | head -1 | cut -d: -f1)"
 CUT_MID=$((CUT_MID + 3))
 head -n "${CUT_MID}" "${LOG_PASS}" > "${WORK}/trunc-midfile.log"
 
 # (b) between files: immediately before the fourth file starts.
-CUT_BETWEEN="$(grep -n -- '--- Running: test-pass-4.sh ---' "${LOG_PASS}" | head -1 | cut -d: -f1)"
+CUT_BETWEEN="$(grep -n -F -- '--- Running: test-pass-4.sh ---' "${LOG_PASS}" | head -1 | cut -d: -f1)"
 CUT_BETWEEN=$((CUT_BETWEEN - 1))
 head -n "${CUT_BETWEEN}" "${LOG_PASS}" > "${WORK}/trunc-between.log"
 
@@ -151,8 +151,13 @@ chmod 000 "${UNREADABLE}" 2>/dev/null
 SENTINEL_LINE="$(tail -n 1 "${LOG_PASS}")"
 cat "${LOG_PASS}" > "${WORK}/sentinel-twice.log"
 printf '%s\n' "${SENTINEL_LINE}" >> "${WORK}/sentinel-twice.log"
+# The trailing line must itself PARSE as a sentinel-shaped line. With
+# `trailing output after the sentinel` the cell passed even with the whole
+# last-line check deleted — the malformed-fields branch caught it instead, so
+# the assertion was satisfied by the fallback path and pinned nothing (the
+# repo's own M9 lesson). Caught in review.
 cat "${LOG_PASS}" > "${WORK}/sentinel-not-last.log"
-printf 'trailing output after the sentinel\n' >> "${WORK}/sentinel-not-last.log"
+printf 'summary files=5 passed=5 failed=0 status=pass\n' >> "${WORK}/sentinel-not-last.log"
 
 # counts that do not add up (files != passed + failed)
 sed 's/files=5 passed=5 failed=0/files=9 passed=5 failed=0/' "${LOG_PASS}" \
@@ -197,12 +202,47 @@ echo ""
 echo "--- vacuous and malformed completions ---"
 assert_equals "a run over zero test files does not license a pass claim" \
     "1" "$(run_checker "${LOG_EMPTY}")"
+# Self-describing rather than `status=pass`: a naive consumer grepping the
+# status field would otherwise get the exact misleading signal this change
+# exists to kill.
+assert_contains "a zero-file run is labelled none, not pass" \
+    "status=none" "$(tail -n 1 "${LOG_EMPTY}")"
 assert_equals "sentinel appearing twice exits 1" \
     "1" "$(run_checker "${WORK}/sentinel-twice.log")"
 assert_equals "sentinel not the last line exits 1" \
     "1" "$(run_checker "${WORK}/sentinel-not-last.log")"
 assert_equals "internally inconsistent counts exit 1" \
     "1" "$(run_checker "${WORK}/counts-inconsistent.log")"
+
+# --- counts the shell cannot EVALUATE. These are the regression for the one
+# --- Critical this file missed: `case ''|*[!0-9]*` admitted them, `[ -ne ]`
+# --- then failed, and with no `set -e` execution fell through to status=pass
+# --- and exit 0 — a clean pass reported on input just proven unparseable.
+_sentinel_log() { printf 'ACS-RUN-TESTS-COMPLETE %s\n' "$1" > "${WORK}/synth.log"; printf '%s' "${WORK}/synth.log"; }
+assert_equals "a count past INT64_MAX is not a pass" \
+    "1" "$(run_checker "$(_sentinel_log 'files=9223372036854775808 passed=1 failed=0 status=pass')")"
+assert_equals "a leading-zero (octal-trap) count is not a pass" \
+    "1" "$(run_checker "$(_sentinel_log 'files=08 passed=08 failed=0 status=pass')")"
+
+# --- three checker branches that no cell reached: mutating any of them to
+# --- exit 0 left this file 25/25 green (review I1).
+assert_equals "status=pass contradicted by failed>0 is not a pass" \
+    "1" "$(run_checker "$(_sentinel_log 'files=5 passed=3 failed=2 status=pass')")"
+assert_equals "an unrecognised status is not a pass" \
+    "1" "$(run_checker "$(_sentinel_log 'files=5 passed=5 failed=0 status=banana')")"
+printf '   \n\t\n   \n' > "${WORK}/whitespace.log"
+assert_equals "a whitespace-only log is cannot-check, not incomplete" \
+    "3" "$(run_checker "${WORK}/whitespace.log")"
+
+# --- I4: the sentinel proves the runner REACHED ITS END, not that its glob
+# --- discovered everything. A partial checkout yields a smaller, well-formed,
+# --- entirely green run.
+assert_equals "a short run is a pass when no floor is demanded" \
+    "0" "$(run_checker "$(_sentinel_log 'files=1 passed=1 failed=0 status=pass')")"
+assert_equals "...and is NOT a pass under --min-files" \
+    "1" "$(bash "${CHECKER}" --min-files 5 "$(_sentinel_log 'files=1 passed=1 failed=0 status=pass')" >/dev/null 2>&1; printf '%s' "$?")"
+assert_equals "--min-files with a non-count argument is cannot-check" \
+    "3" "$(bash "${CHECKER}" --min-files zzz "${LOG_PASS}" >/dev/null 2>&1; printf '%s' "$?")"
 
 # ---------------------------------------------------------------------------
 # 3. END TO END: the checker catches exactly what the naive check misses
@@ -225,7 +265,14 @@ echo ""
 echo "--- mutation: strip the sentinel emit from the runner ---"
 MUT_DIR="${WORK}/mutant/tests"
 mk_suite "${MUT_DIR}" 5 0
-grep -v 'ACS-RUN-TESTS-COMPLETE' "${RUNNER}" > "${MUT_DIR}/run-tests.sh"
+# Remove the FEATURE (function definition + every call site), not just the
+# printf line — stripping the printf alone leaves an orphaned function body and
+# the mutant is then a broken runner rather than a feature-free one.
+awk '/^emit_completion_sentinel\(\) \{/ {skip=1}
+     skip && /^\}/            {skip=0; next}
+     skip                      {next}
+     /emit_completion_sentinel / {next}
+     {print}' "${RUNNER}" > "${MUT_DIR}/run-tests.sh"
 if cmp -s "${RUNNER}" "${MUT_DIR}/run-tests.sh"; then
     _record_fail "mutation actually changed the runner" \
         "stripping ACS-RUN-TESTS-COMPLETE left the file identical — the sentinel is absent, so every cell above is vacuous"
@@ -240,11 +287,40 @@ fi
 # 5. The sentinel cannot be forged by a per-file block
 # ---------------------------------------------------------------------------
 echo ""
-echo "--- sentinel uniqueness ---"
-EMITTERS="$(grep -l 'ACS-RUN-TESTS-COMPLETE' "${SCRIPT_DIR}"/test-*.sh 2>/dev/null | wc -l | tr -d ' ')"
-assert_equals "exactly one tests/test-*.sh mentions the sentinel (this file)" "1" "${EMITTERS}"
-assert_equals "test-helpers.sh does not emit the sentinel" "" \
-    "$(grep -c 'ACS-RUN-TESTS-COMPLETE' "${SCRIPT_DIR}/test-helpers.sh" 2>/dev/null | grep -v '^0$')"
+echo "--- sentinel uniqueness, and its HONEST limit ---"
+# The previous form asserted `grep -l ... | wc -l == 1`, which is still 1 with
+# the feature deleted from the runner entirely — vacuous w.r.t. what it claimed
+# (review I3). Anchor on the producer first.
+assert_equals "the RUNNER emits the sentinel" "1" \
+    "$(grep -c -F 'ACS-RUN-TESTS-COMPLETE' "${RUNNER}" | tr -d ' ')"
+assert_equals "no tests/test-*.sh other than this one mentions the sentinel" "1" \
+    "$(grep -l -F 'ACS-RUN-TESTS-COMPLETE' "${SCRIPT_DIR}"/test-*.sh 2>/dev/null | wc -l | tr -d ' ')"
+assert_file_exists "test-helpers.sh is present (so the next assertion is not vacuous)" \
+    "${SCRIPT_DIR}/test-helpers.sh"
+assert_equals "test-helpers.sh does not emit the sentinel" "0" \
+    "$(grep -c -F 'ACS-RUN-TESTS-COMPLETE' "${SCRIPT_DIR}/test-helpers.sh" 2>/dev/null | tr -d ' ')"
+
+# KNOWN LIMIT, pinned rather than papered over. The sentinel is a CONVENTION
+# enforced by a source grep, not a property: a test file that printed the
+# literal string as its own last line, in a run reaped at exactly that instant,
+# would be read as complete. Do not describe this checker as tamper-proof.
+# What IS a property: if the suite runs to its end the forged line and the real
+# one are both present, and two sentinels are rejected. That mitigation is what
+# the cell below pins.
+FORGE_DIR="${WORK}/forge/tests"
+mk_suite "${FORGE_DIR}" 2 0
+cat > "${FORGE_DIR}/test-forger.sh" <<'INNER'
+echo "  PASS: synthetic"
+echo "ACS-RUN-TESTS-COMPLETE files=3 passed=3 failed=0 status=pass"
+exit 0
+INNER
+bash "${FORGE_DIR}/run-tests.sh" > "${WORK}/forged-complete.log" 2>&1
+assert_equals "a forged sentinel in a FINISHED run is caught (two sentinels)" \
+    "1" "$(run_checker "${WORK}/forged-complete.log")"
+FORGE_CUT="$(grep -n -F 'ACS-RUN-TESTS-COMPLETE' "${WORK}/forged-complete.log" | head -1 | cut -d: -f1)"
+head -n "${FORGE_CUT}" "${WORK}/forged-complete.log" > "${WORK}/forged-reaped.log"
+assert_equals "KNOWN LIMIT: reaped exactly at a forged sentinel reads as complete" \
+    "0" "$(run_checker "${WORK}/forged-reaped.log")"
 
 # ---------------------------------------------------------------------------
 # 6. No-regression: the runner's own exit codes are unchanged
