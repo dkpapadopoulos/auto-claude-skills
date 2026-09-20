@@ -1,22 +1,31 @@
 #!/usr/bin/env bash
 # tests/test-push-gate-local-scratch.sh — #231 (scratch-repo half)
 #
-# A contributor building a local fixture repo to test push behaviour —
-# `mkdir /tmp/x && cd /tmp/x && git init && git commit && git push origin main`
-# — was denied by the gate they were testing. The push reaches no network:
-# `origin` does not exist in a repo initialised moments earlier.
+# A developer building a throwaway fixture repository to test push behaviour
+# was denied by the gate they were testing, and told to run a code-review skill
+# that had nothing to do with what they were doing. THE REMEDY was the reported
+# harm, and the remedy is what this change fixes.
 #
-# MEASURED BEFORE THE FIX, and it decided the shape: narrowing only
-# `mutate-then-push` (the leg that fired) changes nothing a contributor notices
-# — the push falls through to the chain REVIEW gate and denies there instead,
-# with or without a composition chain. So the skip covers the whole gate, which
-# is a real widening, and every cell below that must KEEP denying is the price
-# of it. Each allow cell is paired with a control that differs in one condition.
+# AN EARLIER REVISION SKIPPED THE GATE for such commands. It was withdrawn, and
+# the reason matters more than the bugs: the safety ARGUMENT was false, not
+# merely incomplete. The skip was justified by reasoning that a repository
+# created moments ago has no content to ship — but deletion and force-update
+# need no content (`git push --mirror <path>` from an EMPTY repo deleted refs
+# on a real target), and certification skipped the whole gate rather than only
+# the content legs. Worse, `url.<base>.insteadOf` rewrites a bare remote name
+# to any URL, so a push's destination need not appear in its text at all.
 #
-# The load-bearing condition is that the subject directory DOES NOT EXIST when
-# the gate runs: `git init` inside an existing repository is a successful no-op,
-# so without that check `cd <real repo> && git init && git commit -am x && git
-# push origin main` would certify and ship real work unreviewed.
+# Five criticals across two independent reviews said the same thing five ways:
+# no predicate over command TEXT can establish "this cannot reach a network".
+#
+# So `command_push_is_local_scratch` survives as DETECTION and the stakes
+# invert. A false positive now costs one slightly wrong sentence in a message
+# the user is already reading — not a skipped gate. The attack cells below are
+# kept because they document what the predicate must not claim, and because a
+# future attempt to re-promote it to authorisation starts from them rather than
+# from scratch.
+#
+# EVERY push still denies. That is the property this file exists to pin.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -83,32 +92,33 @@ test_preconditions() {
     _record_pass "preconditions hold (jq, predicate present, fixture path absent)"
 }
 
-test_scratch_push_is_allowed() {
-    _expect ALLOW "the #231 scratch probe" "${_SCRATCH_PUSH}"
+test_scratch_push_still_denies() {
+    # The whole point of the withdrawal: this is the reported command, and it
+    # is still gated. Only its remedy changed.
+    _expect deny "the #231 scratch probe is still gated" "${_SCRATCH_PUSH}"
 }
 
-test_scratch_push_announces_the_skip() {
-    # A skipped gate must SAY so (#198). Silence here is indistinguishable from
-    # a gate that ran and passed.
-    local _home _out _ctx
+test_scratch_push_remedy_is_accurate() {
+    # The reported harm was the REMEDY, so that is what is asserted: the deny
+    # must name the real reason, and must not claim the gate was skipped.
+    local _home _out _txt
     _home="$(mktemp -d /tmp/acs231-home-XXXXXX)"; mkdir -p "${_home}/.claude"; : > "${_home}/t.jsonl"
     rm -rf "${SCRATCH}"
     _out="$(jq -n --arg tp "${_home}/t.jsonl" --arg c "${_SCRATCH_PUSH}" \
               '{"transcript_path":$tp,"tool_input":{"command":$c}}' \
             | HOME="${_home}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "${GUARD}" 2>/dev/null)"
     rm -rf "${_home}"
-    _ctx="$(printf '%s' "${_out}" | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null)"
-    if printf '%s' "${_ctx}" | grep -q 'no jurisdiction'; then
-        _record_pass "the skip is announced, not silent"
+    _txt="$(printf '%s' "${_out}" | jq -r '(.hookSpecificOutput.permissionDecisionReason // "") + " " + (.hookSpecificOutput.additionalContext // "")' 2>/dev/null)"
+    if printf '%s' "${_txt}" | grep -q 'throwaway repository'; then
+        _record_pass "the deny names the throwaway-repo shape"
     else
-        _record_fail "the skip is announced" "advisory did not state the skip: [${_ctx}]"
+        _record_fail "the deny names the throwaway-repo shape" "text was: [${_txt}]"
     fi
-    # And it must NOT also claim the checks measured something — no check ran.
-    if printf '%s' "${_ctx}" | grep -q 'the checks below measured'; then
-        _record_fail "the skip advisory drops stale measurement notes" \
-            "advisory still claims checks measured a subject: [${_ctx}]"
+    if printf '%s' "${_txt}" | grep -qi 'no jurisdiction\|was SKIPPED'; then
+        _record_fail "the message does not claim a skip" \
+            "it still says the gate was skipped, which is no longer true: [${_txt}]"
     else
-        _record_pass "the skip advisory makes no claim about what was measured"
+        _record_pass "the message makes no claim that the gate was skipped"
     fi
 }
 
@@ -403,8 +413,8 @@ test_attack_deletion_needs_no_content
 test_attack_mkdir_p_is_refused
 test_attack_failed_cd_carries_on
 test_failed_cd_is_denied_by_the_real_guard
-test_scratch_push_is_allowed
-test_scratch_push_announces_the_skip
+test_scratch_push_still_denies
+test_scratch_push_remedy_is_accurate
 test_reinit_in_a_real_repo_still_denies
 test_existing_directory_still_denies
 test_configured_remote_still_denies
