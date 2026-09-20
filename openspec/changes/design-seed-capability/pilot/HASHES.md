@@ -1,6 +1,6 @@
 # Frozen Pilot Artifact Hashes
 
-Recorded: 2026-09-18 (revised 2026-09-19 — see "Revision" below)
+Recorded: 2026-09-18 (revised 2026-09-19; **v2 on 2026-09-20** — see "v2" below)
 
 This file is the pre-registration record for the design-seed pilot. Git history and
 commit dates are rewritable and are not a trusted timestamp on their own; pushing this
@@ -11,6 +11,124 @@ file, which contains only Steps 3 and 4 below.
 **Nothing listed below may change after this file is pushed without making this
 pre-registration v2** (a new HASHES.md, a new date, and an explicit note of what
 changed and why).
+
+## v2, 2026-09-20 — the first revision after this file bound
+
+Both pilot branches are on the shared remote, so the sentence above has bound and
+this **is** a v2, not a re-record. It is declared as one.
+
+**No v1 results are being discarded, because none exist.** Neither arm has run; no
+artifact, screenshot, judge response or score has been produced or seen. The pooling
+rule exists to stop a protocol being tuned against observed results — there is
+nothing here to tune against. What follows was found by verifying the table below
+against the bytes on the branches, before launch.
+
+### What changed, and why
+
+**(1) `.claude/hooks/pilot-arm-deny.py` — the row was wrong when this file bound.**
+
+| | commit | sha256 |
+|---|---|---|
+| recorded in v1 | Dion `8364c07` | `f23aae06…` |
+| actually on the pushed branch | Dion `3e6902a` | `9172e24f…` |
+
+Dion `3e6902a` — *"fix: scope the pilot-arm deny hook to pilot-arm worktrees"*,
+2026-09-19 13:33 — changed that file by +97 lines. ACS `4c15261` — 13:40, seven
+minutes later — documented the change in `design.md` and **did not update this
+row**. Both branches were then pushed in that state. So this file bound while
+naming bytes that were not on the branch, for the artifact it itself calls "the
+arms' capability boundary".
+
+This is the exact failure the v1 text warns about two sections down — *"Re-hash and
+re-record together, or the row silently names a tree the hashes were not taken
+from"* — recurring one artifact later. The row now names the bytes that will
+actually run. **The hook is not being changed to match the record; the record is
+being corrected to match the hook**, and `3e6902a` is kept because the unscoped
+hook it replaced was wrong.
+
+**(2) The Dion base moves to `7d56694` — the hook suite could commit over the
+repository being pushed.**
+
+Dion's checkouts are linked worktrees, and git exports `GIT_DIR`/`GIT_WORK_TREE` to
+its hooks in exactly that case. `.githooks/pre-push` runs the whole suite through
+`scripts/ci.sh`, so `tests/test_pre_push_hook.py` inherited them — and `git -C` does
+not override them: it changes directory, not the repository. The throwaway fixture
+therefore operated on the repository being pushed: `git init <tmp_path>` silently
+reinitialised it, `git add .` staged the deletion of every tracked file, and the
+commit landed on the branch being pushed. **Two such commits reached
+`design-seed-pilot`** (author `t <t@t>`, subject `init`, ~236k deletions), preserved
+as `rescue/unknown-init-16eedb8` and `rescue/unknown-init-97b2fe9`.
+
+This had to be fixed **before** launch and **in the base**, not around it: the arms
+work in worktrees forked from this base, and a push from any of them would have run
+the unfixed suite against that arm's branch. A pilot cannot measure what arms
+produce in worktrees of a repo that commits over them unbidden.
+
+`7d56694` touches `tests/test_pre_push_hook.py` and `CLAUDE.md` only. **No hashed
+artifact moved** — verified, not assumed: `git diff --name-only 3e6902a 7d56694`
+lists those two paths, and both Dion rows below are byte-identical to v1
+(`9172e24f…` was already the truth; `c4c7dcd6…` is unchanged). Every
+`auto-claude-skills` row is byte-identical to v1 as well.
+
+**(3) Arms are dispatched as headless `claude -p` sessions, not as subagents —
+because the capability boundary is inert for subagents.**
+
+The design names `.claude/hooks/pilot-arm-deny.py` as "the arms' capability
+boundary" and hashes it for that reason. Measured before launch, it does not fire
+for a subagent of the orchestrating session. One probe subagent, instructed to
+report plainly:
+
+```
+CLAUDE_PROJECT_DIR = UNSET      pwd = the auto-claude-skills checkout
+WebFetch  https://example.com -> SUCCEEDED
+WebSearch "example domain"    -> SUCCEEDED
+pilot-arm-deny marker         -> never emitted
+```
+
+Three independent causes, any one sufficient: Dion's `.claude/settings.json` is
+never loaded, because a subagent belongs to the orchestrating session and not to
+the worktree's project; the hook's own command line is
+`python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/pilot-arm-deny.py"`, which with that
+variable unset names a nonexistent path; and `_is_arm_context()` reads
+`CLAUDE_PROJECT_DIR` and falls back to the HOOK PROCESS's cwd — the session's
+directory, never the arm's worktree. The file's docstring reasons that "an arm
+cannot rewrite `CLAUDE_PROJECT_DIR` for its own already-running session", which is
+true and beside the point: the harness never sets it for a subagent.
+
+Task 8 Step 4 of the plan already ruled on this state — "an `rc=0` ... means the
+boundary is not there" — so a faithful probe halts the launch. **It is recorded
+here rather than quietly worked around**, because a pilot that ships its safety
+control as prose is the failure the control was written to prevent.
+
+**The remedy is measured, not assumed.** The same worktree, hook and tool, varying
+only the dispatch mechanism:
+
+| dispatch | `CLAUDE_PROJECT_DIR` | `WebFetch` |
+|---|---|---|
+| subagent of the orchestrating session | unset | **succeeded** |
+| headless `claude -p`, cwd = the worktree | set by the harness | **denied**, with the `pilot-arm-deny:` marker |
+
+The headless leg is also the pair's positive control: it proves the hook, the
+settings wiring and the worktree are sound, so the subagent leg succeeding is
+genuine inertness rather than a broken probe.
+
+Each arm is therefore launched as its own headless session rooted in its worktree.
+**What this does not change:** the arms remain two fresh agents with disjoint
+context, one per worktree off the same base, receiving identical brief, fixture,
+model and budget. If anything the isolation is stronger — a headless session
+cannot see the orchestrating conversation at all, where a subagent inherits a
+dispatch prompt from it. No criterion, rubric dimension, budget rule, judging
+procedure or pre-registered outcome is touched. The hashed hook file itself is
+**unmodified**; what changed is how the arms are started, so that the file is
+actually in force.
+
+### What did not change
+
+The protocol did not. `rubric.md`, `brief.md`, `budget.md`,
+`advance-disclosures.md`, `pilot-egress-check.sh` and `pilot-capture.sh` are
+byte-identical to v1, and no arm, criterion, budget rule, judging procedure or
+pre-registered outcome has been touched. This v2 corrects one stale row and moves
+the Dion base by one commit that no hashed artifact depends on.
 
 ## Revision, 2026-09-19 — before any push
 
@@ -52,7 +170,7 @@ that does not was never a valid pilot artifact.
 | `scripts/pilot-egress-check.sh` | `863bf5d26353173dd769126d75dd857ffd5d464eee08a16a6d216b28403f2e03` | auto-claude-skills @ `53f37de5831ca5c7598bd40d14b875f47323a54e` |
 | `scripts/pilot-capture.sh` | `1d8feccb444e2a3bf18e30f431eb34fd97c20f4c94e424c925daedc77be93acc` | auto-claude-skills @ `53f37de5831ca5c7598bd40d14b875f47323a54e` |
 | `tests/fixtures/design_seed_pilot/review_report_envelope.json` | `c4c7dcd6c99ae3f21f0230b29c443292624e8cb96c31e83e967f6e498f35fadf` | Dion @ `3fbd89a` (base commit the fixture was generated from; see #211 note below) |
-| `.claude/hooks/pilot-arm-deny.py` | `f23aae0630e9623da8e9875080c0621ce18c001dd93cceed9b56ec82551d4139` | Dion @ `8364c076bd16e28210a4ed2d7071ff321b01e40b` |
+| `.claude/hooks/pilot-arm-deny.py` | `9172e24fdb5026b7aa7b330b3a9b63d18549243d7188e1ea0c531665fc16aca3` | Dion @ `7d56694d49c74bdbc8c62469fea53844b1bb21b7` (v2: corrected — v1 named `f23aae06…` @ `8364c07`, which was already superseded) |
 
 The two `scripts/` rows were added in the 2026-09-18 revision. The safety control
 and the capture parameters determine what the pilot refuses to send and what the
@@ -67,7 +185,10 @@ arms' capability boundary.
 | Repo | Branch | HEAD |
 |---|---|---|
 | auto-claude-skills | `design-seed-pilot-impl` | `53f37de5831ca5c7598bd40d14b875f47323a54e` |
-| Dion | `design-seed-pilot` | `8364c076bd16e28210a4ed2d7071ff321b01e40b` |
+| Dion | `design-seed-pilot` | `7d56694d49c74bdbc8c62469fea53844b1bb21b7` |
+
+The Dion row moved in v2 (`8364c07…` → `7d56694…`); see v2 item (2). The
+`auto-claude-skills` row is unchanged.
 
 **These are the commits the artifacts above were hashed at** — not a claim about what
 HEAD is now. This file is committed separately, immediately after, so HEAD at the
@@ -151,6 +272,21 @@ merely agrees with the code.
 
 ## Step 4: full suite result
 
+**auto-claude-skills — re-run in full for v2.** `bash tests/run-tests.sh`, run to
+completion against the working tree at `4c15261` plus this file's v2 edit (no test
+reads `HASHES.md`, so the run describes the code at `4c15261`):
+
+```
+  Files run:    153
+  Files passed: 153
+  Files failed: 0
+All test files passed.
+SUITE_EXIT=0
+```
+
+Result: **PASS — 153/153 files passed, 0 failed.** Unchanged from the previous
+revision, as expected: v2 edits documentation only on this side.
+
 **auto-claude-skills** — re-run in full for the 2026-09-19 revision, against the final
 content of `53f37de…`, with no concurrent suite run in the worktree.
 `bash tests/run-tests.sh`, run to completion. The runner's own final summary:
@@ -181,6 +317,22 @@ time-determinism, pytest fast lane):
 local CI gate passed
 ```
 
+**Dion — re-run in full for v2**, because v2 moves the Dion base
+(`3e6902a` → `7d56694`) and a result measured at another commit may not be carried
+across that move. `bash scripts/ci.sh` at `7d56694`, run to completion:
+
+```
+2346 passed, 12 skipped, 883 deselected, 21 warnings in 367.65s (0:06:07)
+ci: recorded pass for 7d56694d49c74bdbc8c62469fea53844b1bb21b7
+local CI gate passed
+```
+
+Result: **PASS — 2346 passed, 12 skipped, 0 failed.** The count rises from 2334 by
+12: eleven cells added by `3e6902a` (`tests/design_seed_pilot/test_arm_capability_boundary.py`)
+and one added by `7d56694` — the regression cell for the inherited-`GIT_DIR` defect
+in v2 item (2), which was confirmed to FAIL with the fix's three call sites reverted
+before being accepted as passing.
+
 Result: **PASS — 2334 passed, 12 skipped, 0 failed.** Dion is gated here because the
 arms' capability boundary (`.claude/hooks/pilot-arm-deny.py`) now lives in that repo
 and is hashed above; its 12-cell regression
@@ -197,8 +349,9 @@ and is hashed above; its 12-cell regression
   holds:** the script changed on 2026-09-19, and Step 3 was re-measured from scratch
   against the new hash — see "Re-run 2026-09-19" above. This bullet is kept rather
   than deleted so the record shows the carried-forward claim and its expiry.
-- (2026-09-19) Dion's gate was not re-run — see the Dion note under Step 4 for why,
-  and for the fact that the figures there are carried forward.
+- (2026-09-19) Dion's gate was not re-run for that revision. **Superseded in v2:**
+  it was re-run in full at the new base `7d56694` — see Step 4 — so no Dion figure in
+  this file is carried forward any longer.
 - The egress block is verified against the request shapes the regression cell drives
   (remote `<link>`, `<img>`, `fetch()`, `WebSocket`) plus a wider one-off probe
   (`<script src>`, `@font-face`, `<iframe>`, `sendBeacon`, `<a ping>`, `EventSource`,

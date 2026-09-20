@@ -361,9 +361,17 @@ licensed by this design, whatever the result.
 
 ### Arms
 
-Two fresh subagents, disjoint context, each in its own `git worktree` off the
-same base commit (subagents must not write to a shared checkout, and Dion's
+Two fresh agents, disjoint context, each in its own `git worktree` off the
+same base commit (arms must not write to a shared checkout, and Dion's
 pre-push gate defines a clean tree narrowly enough that a stray arm trips it).
+
+**Amended in HASHES.md v2, 2026-09-20, before either arm ran:** this originally
+said "two fresh **subagents**". Measured before launch, the arms' capability
+boundary (`.claude/hooks/pilot-arm-deny.py`) does not fire for a subagent of the
+orchestrating session — `WebFetch` and `WebSearch` both succeeded — so each arm is
+launched instead as its own headless `claude -p` session rooted in its worktree,
+where the same boundary denies them. Full measurement, causes and the unchanged
+properties are in v2 item (3) of `pilot/HASHES.md`.
 
 **Identical:** task brief, fixture bytes, model, tool access, output shape,
 budget. **Different:** arm S's worktree carries the seed **UNADAPTED**, plus
