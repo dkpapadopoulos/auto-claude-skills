@@ -572,6 +572,199 @@ command_invokes_gh_merge() {
     return 1
 }
 
+# _gc_segment_git_init_target <segment>
+#   The directory a `git init` segment targets: its first non-flag operand, or
+#   "." when it names none (meaning the segment's own cwd). Echoes nothing when
+#   the segment is not `git init`. Value-taking `git init` options are skipped
+#   so their VALUE is never read as the directory.
+_gc_segment_git_init_target() {
+    local _u _p
+    [ "$(_gc_segment_git_sub "$1")" = "init" ] || return 0
+    # shellcheck disable=SC2086
+    set -- $1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            '('|'{') shift ;;
+            '('*|'{'*) _u="$(_gc_strip_openers "$1")"; shift; set -- "${_u}" "$@"; break ;;
+            *) break ;;
+        esac
+    done
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            env) shift ;;
+            [A-Za-z_]*=*) shift ;;
+            *) break ;;
+        esac
+    done
+    shift 2>/dev/null || return 0          # the `git` word
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            init) shift; break ;;
+            *) shift ;;
+        esac
+    done
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            # Value-taking options: skip the option AND its value, so a value is
+            # never mistaken for the target directory.
+            --template|--separate-git-dir|--shared|-b|--initial-branch|--object-format|--ref-format)
+                shift; shift 2>/dev/null || return 0 ;;
+            --*=*|-q|--quiet|--bare|--*) shift ;;
+            -*) shift ;;
+            *) break ;;
+        esac
+    done
+    [ "$#" -ge 1 ] || { printf '%s' "."; return 0; }
+    _p="$(_gc_strip_closers "$1")"
+    _p="${_p%\"}"; _p="${_p#\"}"; _p="${_p%\'}"; _p="${_p#\'}"
+    [ -n "${_p}" ] || _p="."
+    printf '%s' "${_p}"
+}
+
+# _gc_seg_is_mkdir <segment>
+#   0 when the segment's command word is `mkdir`. `mkdir` creates the scratch
+#   directory and cannot push; it is separated from _gc_seg_is_inert because
+#   that whitelist is shared with command_push_is_all_deletions, where a
+#   segment's inertness must mean "ships no content" for a DIFFERENT claim.
+_gc_seg_is_mkdir() {
+    local _u
+    # shellcheck disable=SC2086
+    set -- $1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            '('|'{') shift ;;
+            '('*|'{'*) _u="$(_gc_strip_openers "$1")"; shift; set -- "${_u}" "$@"; break ;;
+            *) break ;;
+        esac
+    done
+    [ "${1:-}" = "mkdir" ]
+}
+
+# command_push_is_local_scratch <command>
+#   0 iff every `git push` in <command> acts on a repository that THIS COMMAND
+#   creates from nothing, in a directory that does not exist yet, with no remote
+#   ever configured — so the push cannot reach any network and this repository's
+#   push gate has no jurisdiction over it.
+#
+#   WHY THIS EXISTS (#231). A contributor writing a local fixture repo to test
+#   push behaviour — `mkdir /tmp/x && cd /tmp/x && git init && git commit && git
+#   push origin main` — was denied by the gate they were testing, with a remedy
+#   naming a skill unrelated to what they were doing. The push is entirely
+#   local: `origin` does not exist in a freshly-initialised repo, so it fails at
+#   git's own hands and reaches nothing.
+#
+#   WHY IT IS AN ALL-FORM, like command_push_is_all_deletions. "Some push looks
+#   local" is a weaker claim than "this command cannot push anywhere real".
+#   EVERY segment must be accounted for; a single unrecognised one refuses.
+#
+#   THE BYPASS THIS IS SHAPED AGAINST: `git init` in an already-initialised
+#   repository is a harmless REINIT that succeeds and changes nothing. So the
+#   presence of `git init` proves nothing on its own — `cd /real/repo && git
+#   init && git commit -am x && git push origin main` would otherwise certify
+#   and ship real work unreviewed. The load-bearing condition is therefore that
+#   the target directory DOES NOT EXIST ON DISK when the gate runs. A path that
+#   does not exist cannot be this repository, cannot be any repository, and
+#   cannot carry a configured remote.
+#
+#   A POSITIVE ALLOWLIST of git subcommands is safe HERE in a way #229 records
+#   it was not there. That predicate had to prove "ships no content", which is
+#   open-ended. This one only has to prove "no remote is ever configured", and
+#   anything outside {init, add, commit, push} — `remote`, `config`, `clone`,
+#   `fetch`, `subtree`, or a subcommand git has not shipped yet — refuses the
+#   skip and leaves today's deny in place. Unknown fails toward NOT skipping.
+#
+#   CEILINGS, stated rather than implied: a relative subject directory refuses
+#   (the hook's cwd is not the command's); a `cd` whose target is a variable
+#   refuses, because the scanner does not expand; and a leftover scratch
+#   directory from a previous run exists on disk, so it refuses too. All three
+#   fail toward the existing deny.
+command_push_is_local_scratch() {
+    local _cmd="$1"
+    local _segs _oldifs _seg _sub _cwd="" _cdt="" _t="" _initdir="" _pushdir="" _d
+    local _npush=0 _ninit=0 _ok=1
+
+    # A command substitution RUNS wherever it appears, so it smuggles an
+    # arbitrary command into a segment this predicate would otherwise vouch for
+    # — including inside the arguments of the push itself. Same refusal, and for
+    # the same reason, as command_push_is_all_deletions.
+    case "${_cmd}" in
+        *'$('*|*'`'*|*'<('*|*'>('*|*'=('*|*'${ '*|*'${|'*) return 1 ;;
+    esac
+
+    _segs="$(_gc_split_segments "${_cmd}")"
+    _oldifs="$IFS"
+    IFS="${_GC_SEP}"
+    for _seg in ${_segs}; do
+        IFS="${_oldifs}"
+        _sub="$(_gc_segment_git_sub "${_seg}")"
+        if [ -n "${_sub}" ]; then
+            case "${_sub}" in
+                init)
+                    _ninit=$(( _ninit + 1 ))
+                    _t="$(_gc_segment_git_init_target "${_seg}")"
+                    case "${_t}" in
+                        .|"") _initdir="${_cwd}" ;;
+                        /*)   _initdir="${_t}" ;;
+                        *)    [ -n "${_cwd}" ] && _initdir="${_cwd%/}/${_t}" || _ok=0 ;;
+                    esac
+                    ;;
+                add|commit) : ;;
+                push)
+                    _npush=$(( _npush + 1 ))
+                    _d="$(_gc_segment_dir_flag "${_seg}")"
+                    [ -n "${_d}" ] || _d="${_cwd}"
+                    if [ -z "${_pushdir}" ]; then
+                        _pushdir="${_d}"
+                    elif [ "${_pushdir}" != "${_d}" ]; then
+                        _ok=0
+                    fi
+                    # A URL-shaped remote reaches the network even from a repo
+                    # created moments ago, so it disqualifies outright.
+                    case "${_seg}" in
+                        *://*|*@*:*) _ok=0 ;;
+                    esac
+                    ;;
+                *) _ok=0 ;;
+            esac
+        else
+            _cdt="$(_gc_segment_cd_target "${_seg}")"
+            if [ -n "${_cdt}" ]; then
+                case "${_cdt}" in
+                    /*) _cwd="${_cdt}" ;;
+                    *)  [ -n "${_cwd}" ] && _cwd="${_cwd%/}/${_cdt}" || _ok=0 ;;
+                esac
+            elif _gc_seg_is_mkdir "${_seg}"; then
+                :
+            elif _gc_seg_is_inert "${_seg}"; then
+                :
+            else
+                _ok=0
+            fi
+        fi
+        IFS="${_GC_SEP}"
+    done
+    IFS="${_oldifs}"
+
+    [ "${_ok}" -eq 1 ]      || return 1
+    [ "${_npush}" -ge 1 ]   || return 1
+    [ "${_ninit}" -ge 1 ]   || return 1
+    [ -n "${_initdir}" ]    || return 1
+    [ -n "${_pushdir}" ]    || return 1
+    [ "${_initdir}" = "${_pushdir}" ] || return 1
+    case "${_pushdir}" in /*) ;; *) return 1 ;; esac
+    # THE load-bearing condition. Must not exist — see the reinit bypass above.
+    [ -e "${_pushdir}" ] && return 1
+
+    # An untrustworthy parse cannot certify anything (#229): this scanner does
+    # not interpret backslash escapes, so a `\'` outside an active quote merges
+    # segments and can hide a real push inside one that looks accounted for.
+    # Checked on the success path only, for the cost reason recorded on
+    # command_push_is_all_deletions.
+    command -v command_parse_balanced >/dev/null 2>&1 || return 1
+    command_parse_balanced "${_cmd}" || return 1
+    return 0
+}
+
 # command_git_mutate_before_push <command>
 #   Returns 0 when a content-mutating git subcommand (commit merge cherry-pick
 #   rebase revert am) is invoked in a segment ORDERED BEFORE a `git push`

@@ -561,6 +561,39 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # SHIP-phase advisories below still emit.
         _PUSHGATE_SKIP=false
         [ "${ACSM_SKIP_PUSH_GATE:-}" = "1" ] && _PUSHGATE_SKIP=true
+
+        # --- LOCAL SCRATCH REPO (issue #231) -------------------------------
+        # A command that creates a repository from nothing and pushes inside it
+        # — `mkdir /tmp/x && cd /tmp/x && git init && git commit && git push
+        # origin main` — reaches no network: `origin` does not exist in a repo
+        # initialised moments earlier, so git itself refuses. This gate has no
+        # jurisdiction over it, and denying it measured the wrong repository,
+        # which is the same defect #219 fixed for the subject pair.
+        #
+        # Measured before writing this: narrowing ONLY `mutate-then-push` (the
+        # leg that actually fired) changes nothing a contributor would notice —
+        # the push falls straight through to the chain REVIEW gate and denies
+        # there instead, with or without a composition chain. So the skip has to
+        # cover the whole gate or it is not a fix. That is a real widening, and
+        # `command_push_is_local_scratch` is shaped to earn it: the subject
+        # directory must not EXIST when this runs, which is what stops the
+        # reinit bypass (`git init` in an existing repo is a successful no-op),
+        # and every segment must be a known-local operation, so `git remote`,
+        # `git clone`, `git config`, a URL-shaped remote, a command
+        # substitution, an unparseable command or anything unrecognised all
+        # refuse and leave today's deny exactly where it is.
+        #
+        # Set here rather than at the five deny sites deliberately: those are
+        # already gated on `_PUSHGATE_SKIP`, and five parallel conditions is the
+        # shape that drifts when one of them is edited alone.
+        _SUBJ_LOCAL_SCRATCH=false
+        if [ "${_gc_is_push}" = "true" ] \
+           && command -v command_push_is_local_scratch >/dev/null 2>&1 \
+           && [ "${#_COMMAND}" -le "${_GC_MAX_TOTAL}" ] \
+           && command_push_is_local_scratch "${_COMMAND}"; then
+            _SUBJ_LOCAL_SCRATCH=true
+            _PUSHGATE_SKIP=true
+        fi
         _GATE_ACTION="pushing this branch"
         [ "${_gc_is_push}" != "true" ] && [ "${_gc_is_ghmerge}" = "true" ] && _GATE_ACTION="merging this PR"
         # Space-free action token for telemetry (F7): _GATE_ACTION is a
@@ -583,6 +616,10 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # hook and writes no record at all, so the log's denominator stays
         # incomplete and this alone does not make conversion rates complete.
         [ "${_PUSHGATE_SKIP}" = "true" ] && _DECISION="bypass:env"
+        # Distinct from the human bypass in telemetry: one is a person opting
+        # out, the other is the gate declining jurisdiction. Reading them as one
+        # decision would make a predicate defect look like human traffic.
+        [ "${_SUBJ_LOCAL_SCRATCH:-false}" = "true" ] && _DECISION="skip:local-scratch"
         # Positive "reached the decision point" sentinel for the capture replay
         # (issue #127). The on-disk replay re-runs this guard, which is itself
         # fail-open (`trap 'exit 0' ERR`) — so an empty replay stdout cannot tell
@@ -844,6 +881,18 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         if command -v command_push_is_all_deletions >/dev/null 2>&1 \
            && command_push_is_all_deletions "${_COMMAND}"; then
             _SUBJ_DELETION_ONLY=true
+        fi
+        # Never silent (#198): a leg that declined to run says so.
+        #
+        # ASSIGNMENT, not append. The subject resolver has by now produced notes
+        # of the form "... so the checks below measured X instead" — true of a
+        # command the gate measures, and false of this one, where no check ran
+        # at all. Appending left the advisory stating both, and a confident
+        # wrong statement about what was measured is worse than saying less,
+        # which is the whole point of #198. The earlier notes describe work that
+        # did not happen, so they go.
+        if [ "${_SUBJ_LOCAL_SCRATCH:-false}" = "true" ]; then
+            _SUBJ_NOTE="SUBJECT: every push in this command targets a repository this command creates from nothing, in a directory that does not exist yet and where no remote is ever configured, so it cannot reach any network and this repository's push gate has no jurisdiction over it. The gate was SKIPPED for this command — not satisfied. A push acting on this checkout is unaffected."
         fi
         if [ "${_SUBJ_DELETION_ONLY}" = "true" ]; then
             _SUBJ_NOTE="${_SUBJ_NOTE}${_SUBJ_NOTE:+ }SUBJECT: every push in this command deletes a ref, so it ships no content and no commit is its subject — the content-dependent checks (routing governance, verify hardening, implementation evidence, evaluator surface) were SKIPPED rather than measured against this checkout's HEAD, which this command does not push. The review and verification gates still apply."
