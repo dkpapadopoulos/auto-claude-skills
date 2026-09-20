@@ -78,6 +78,81 @@ test_green_safe_backticks_are_not_flagged() {
 }
 
 # ---------------------------------------------------------------------------
+# DESYNC CELLS. Each of these made the scanner lose track of its own quoting
+# state and report a file CLEAN while bash really did execute the backtick —
+# the silent direction, found by a reviewer after the first version shipped.
+#
+# They are red fixtures, not "cannot-check" fixtures: once the construct is
+# modelled the defect inside it must be FOUND, so a cell that merely stopped
+# claiming clean would not pin the fix.
+# ---------------------------------------------------------------------------
+_flags_defect() { python3 "${LINT}" "$1" 2>/dev/null | grep -q 'live backtick'; }
+
+test_desync_heredoc_opener_with_trailing_comment() {
+    _have_python || return
+    # `cat <<EOF   # note` — the comment branch consumed the newline that ends
+    # the opener without popping the pending heredoc, so body mode never began.
+    if _flags_defect "${FIXTURES}/red-heredoc-trailing-comment.sh"; then
+        _record_pass "a heredoc opener with a trailing comment still enters body mode"
+    else
+        _record_fail "heredoc opener with a trailing comment" "scanner missed the live backtick in the body"
+    fi
+}
+
+test_desync_ansi_c_quoting() {
+    _have_python || return
+    # $'don\'t' — a backslash DOES escape inside ANSI-C quoting, unlike an
+    # ordinary single-quoted string, so treating them alike desynced the state.
+    if _flags_defect "${FIXTURES}/red-ansi-c-quoting.sh"; then
+        _record_pass "ANSI-C quoting does not desynchronise the scan"
+    else
+        _record_fail "ANSI-C quoting" "scanner missed the live backtick after a \$'...' string"
+    fi
+}
+
+test_desync_backslash_heredoc_delimiter() {
+    _have_python || return
+    # `<<\EOF` quotes the delimiter exactly as `<<'EOF'` does.
+    if _flags_defect "${FIXTURES}/red-backslash-heredoc-delim.sh"; then
+        _record_pass "a backslash-quoted heredoc delimiter is recognised"
+    else
+        _record_fail "backslash-quoted heredoc delimiter" "scanner missed the live backtick after the body"
+    fi
+}
+
+test_herestring_is_not_a_heredoc() {
+    _have_python || return
+    # `<<<` re-matched as `<<` registered a heredoc named after the operand,
+    # whose terminator never arrives — the rest of the file went unscanned and
+    # therefore reported clean. This is the green direction: no defect, and the
+    # scan must remain COHERENT (exit 0, not the cannot-check exit 3).
+    local rc
+    python3 "${LINT}" "${FIXTURES}/green-herestring.sh" >/dev/null 2>&1; rc=$?
+    if [ "${rc}" -eq 0 ]; then
+        _record_pass "a here-string is not read as a heredoc opener"
+    else
+        _record_fail "here-string handling" "expected a clean coherent scan, got exit ${rc}"
+    fi
+}
+
+test_incoherent_scan_reports_cannot_check() {
+    # THE compensating control. A scan that ends with an unclosed quote must say
+    # it could not check, never that the file is clean — a blind spot in a
+    # scanner like this one goes silent, it does not announce itself.
+    _have_python || return
+    local f rc
+    f="$(mktemp /tmp/acs-lint-incoherent-XXXXXX.sh)"
+    printf '%s\n' '#!/bin/bash' 'echo "unterminated' > "${f}"
+    python3 "${LINT}" "${f}" >/dev/null 2>&1; rc=$?
+    rm -f "${f}"
+    if [ "${rc}" -eq 3 ]; then
+        _record_pass "an incoherent scan reports cannot-check, not clean"
+    else
+        _record_fail "incoherent scan reports cannot-check" "expected exit 3, got ${rc}"
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Second authority: bash. The fixtures must actually behave as labelled.
 # ---------------------------------------------------------------------------
 # _word_is_eaten <fixture> <word>
@@ -96,6 +171,11 @@ _word_is_eaten() {
     ! printf '%s' "${out}" | grep -qF "$2"
 }
 
+test_desync_heredoc_opener_with_trailing_comment
+test_desync_ansi_c_quoting
+test_desync_backslash_heredoc_delimiter
+test_herestring_is_not_a_heredoc
+test_incoherent_scan_reports_cannot_check
 test_red_fixtures_really_lose_the_word() {
     # Each red fixture is paired with the word its backtick swallows.
     local ok=1
