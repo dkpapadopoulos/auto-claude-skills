@@ -120,41 +120,54 @@ test_every_test_file_is_wired() {
 }
 
 # ---------------------------------------------------------------------------
-# Coverage limit, reported rather than hidden.
+# Coverage limit, checked as a SET rather than hidden or proxied.
 #
-# This sweep can only see assertions that sit inside a `test_*` function which
-# the file invokes. Several files run most of their assertions at top level or
-# from differently-named helpers; for those, a clean result from the sweep above
-# means very little, and folding that into a silent pass is the same shape as a
-# gate that falls open without saying so.
+# This sweep can only see assertions inside a `test_*` function the file
+# invokes. Four files run their assertions at top level instead; the sweep's
+# verdict on them means much less, and folding that into a clean pass hides the
+# limit.
 #
-# This does NOT fail. Those files are not broken — they are a different runner
-# shape, and failing them would be the arbitrary floor this commit removed,
-# wearing a new name. It names them so the limit is known.
+# It is NOT a defect check. A top-level assertion cannot have the
+# defined-but-never-invoked defect — it runs as the script runs. What the old
+# hardcoded floor of 5 accidentally provided was a shape SIGNAL, which this
+# reproduces exactly instead of by proxy, and with none of that floor's false
+# alarms on files that are simply small.
+#
+# The list is the gate. A FIFTH mixed-shape file must be loud, because that is
+# the one nobody has read; and an entry that stops qualifying must also be
+# loud, so a converted file cannot leave a stale exemption behind. Keyed by
+# name — the classifier, not a line number, decides membership.
 # ---------------------------------------------------------------------------
-test_report_files_the_sweep_barely_covers() {
-    echo "-- report: files whose assertions mostly escape this sweep --"
-    local f base defs asserts outside listed=0 checked=0
-    for f in "${SCRIPT_DIR}"/test-*.sh; do
-        base="$(basename "${f}")"
-        defs="$(grep -cE '^test_[A-Za-z0-9_]+[[:space:]]*\(\)|^function[[:space:]]+test_' "${f}")"
-        [ "${defs}" -eq 0 ] && continue
-        checked=$((checked + 1))
-        asserts="$(grep -cE '^[[:space:]]*(assert_|_record_)' "${f}")"
-        [ "${asserts}" -lt 20 ] && continue
-        # Assertions per definition: a file running dozens of assertions behind
-        # a handful of functions is either very dense or mostly outside them.
-        outside=$((asserts / defs))
-        if [ "${outside}" -ge 15 ]; then
-            listed=$((listed + 1))
-            echo "     ${base}: ${asserts} assertion lines behind ${defs} definitions"
-        fi
-    done
-    if [ "${checked}" -lt 15 ]; then
-        _record_fail "coverage-limit report ran over the suite" \
-            "only ${checked} files examined — the report is vacuous"
+_EXPECTED_MIXED_SHAPE="test-consultation-routing.sh
+test-routing-interactions.sh
+test-second-opinion-content.sh
+test-skill-content.sh"
+
+test_mixed_shape_file_set_is_unchanged() {
+    echo "-- test: the set of files this sweep barely covers is the known set --"
+    local _scan _actual _new _gone
+    _scan="${PROJECT_ROOT}/scripts/test-shape-scan.py"
+    if ! command -v python3 >/dev/null 2>&1 || [ ! -r "${_scan}" ]; then
+        _record_fail "mixed-shape scan is runnable" \
+            "python3 or ${_scan} unavailable — this cell would pass having checked nothing"
+        return
+    fi
+    _actual="$(python3 "${_scan}" "${SCRIPT_DIR}" | awk '{print $1}' | sort)"
+    if [ -z "${_actual}" ]; then
+        _record_fail "mixed-shape scan found the known files" \
+            "the classifier reported nothing at all — it is not seeing the suite, so this cell is vacuous"
+        return
+    fi
+    _new="$(comm -13 <(printf '%s\n' "${_EXPECTED_MIXED_SHAPE}" | sort) <(printf '%s\n' "${_actual}"))"
+    _gone="$(comm -23 <(printf '%s\n' "${_EXPECTED_MIXED_SHAPE}" | sort) <(printf '%s\n' "${_actual}"))"
+    if [ -n "${_new}" ]; then
+        _record_fail "no NEW file escapes the wiring sweep" \
+            "these run most assertions outside any test function, so the sweep says little about them — read them, then add them to _EXPECTED_MIXED_SHAPE: $(printf '%s' "${_new}" | tr '\n' ' ')"
+    elif [ -n "${_gone}" ]; then
+        _record_fail "the mixed-shape list has no stale entries" \
+            "these no longer qualify and must be removed from _EXPECTED_MIXED_SHAPE: $(printf '%s' "${_gone}" | tr '\n' ' ')"
     else
-        _record_pass "coverage-limit report examined ${checked} files (${listed} named)"
+        _record_pass "mixed-shape file set unchanged (4 known, none added or stale)"
     fi
 }
 
@@ -192,7 +205,7 @@ test_guard_flags_space_before_parens_definition
 test_guard_passes_a_legitimately_small_file
 test_guard_reports_an_unreadable_file
 test_every_test_file_is_wired
-test_report_files_the_sweep_barely_covers
+test_mixed_shape_file_set_is_unchanged
 test_counters_cannot_exceed_their_denominator
 
 print_summary
