@@ -1,0 +1,1025 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dion — execution list</title>
+
+<style>
+
+:root {
+  /* ---- scale: space (4px rhythm) ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* ---- scale: type ---- */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 15px;
+  --text-lg: 19px;
+  --text-xl: 24px;
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* ---- scale: radius ---- */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+
+  /* ---- scale: density (row heights; pick one per surface, do not mix) ---- */
+  --row-compact: 28px;
+  --row-comfortable: 40px;
+
+  /* ---- role: surface ---- */
+  --surface-page: #fbfaf8;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f2f0ec;
+
+  /* ---- role: text ---- */
+  --text-primary: #1b1a17;
+  --text-secondary: #5c574e;
+  --text-inverse: #fbfaf8;
+  --text-numeric: #1b1a17;
+
+  /* ---- role: line ---- */
+  --border-subtle: #e4e0d8;
+  --border-strong: #c8c2b6;
+  --focus-ring: #2f5d50;
+
+  /* ---- role: value (numbers carry meaning; missing is not zero) ---- */
+  --value-positive: #1f6f4a;
+  --value-negative: #a33224;
+  --value-missing: #8b857a;
+
+  /* ---- role: status ---- */
+  --status-ok-fg: #17503a;
+  --status-ok-bg: #e2efe7;
+  --status-warn-fg: #6b4a12;
+  --status-warn-bg: #f7eed8;
+  --status-block-fg: #7a2318;
+  --status-block-bg: #f7e2de;
+  --status-hold-fg: #3f4a5c;
+  --status-hold-bg: #e7eaef;
+  --status-neutral-fg: #4a463e;
+  --status-neutral-bg: #eeebe5;
+}
+
+:root[data-theme="dark"] {
+  --surface-page: #16151a;
+  --surface-raised: #1e1d23;
+  --surface-sunken: #121116;
+
+  --text-primary: #ece9e3;
+  --text-secondary: #a8a296;
+  --text-inverse: #16151a;
+  --text-numeric: #ece9e3;
+
+  --border-subtle: #2e2c33;
+  --border-strong: #46434c;
+  --focus-ring: #7fc0a9;
+
+  --value-positive: #6cc295;
+  --value-negative: #e88a7d;
+  --value-missing: #7d7871;
+
+  --status-ok-fg: #a6dcc0;
+  --status-ok-bg: #1b3329;
+  --status-warn-fg: #e3c184;
+  --status-warn-bg: #352b16;
+  --status-block-fg: #f0a496;
+  --status-block-bg: #3a201c;
+  --status-hold-fg: #b4c0d4;
+  --status-hold-bg: #23272f;
+  --status-neutral-fg: #bab5ab;
+  --status-neutral-bg: #26242a;
+}
+
+body {
+  margin: 0;
+  padding: var(--space-5);
+  background: var(--surface-page);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+}
+
+header.page { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-4); }
+h1 { font-size: var(--text-xl); font-weight: var(--weight-semibold); margin: 0; }
+h2 { font-size: var(--text-lg); font-weight: var(--weight-medium); margin: 0 0 var(--space-3); }
+h3 { font-size: var(--text-md); font-weight: var(--weight-medium); margin: 0 0 var(--space-2); }
+section { margin-bottom: var(--space-6); }
+
+.sub { color: var(--text-secondary); font-size: var(--text-sm); }
+.mono { font-family: var(--font-mono); }
+
+button {
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+.card {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-4); }
+
+table { border-collapse: collapse; width: 100%; font-size: var(--text-sm); }
+caption {
+  text-align: left;
+  padding: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  border-bottom: 1px solid var(--border-subtle);
+}
+th, td { height: var(--row-compact); padding: 0 var(--space-3); text-align: left; white-space: nowrap; }
+thead th {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: bottom;
+}
+tbody tr + tr td { border-top: 1px solid var(--border-subtle); }
+tfoot td {
+  border-top: 1px solid var(--border-strong);
+  font-weight: var(--weight-medium);
+  background: var(--surface-sunken);
+}
+
+/* Dense numerics: monospace, tabular figures, right aligned, fixed precision. */
+.num {
+  text-align: right;
+  font-family: var(--font-mono);
+  color: var(--text-numeric);
+  font-variant-numeric: tabular-nums;
+}
+.pos { color: var(--value-positive); }
+.neg { color: var(--value-negative); }
+
+/* Missing is NOT zero and NOT empty: its own token, its own glyph, a reason on hover. */
+.missing { color: var(--value-missing); font-family: var(--font-mono); text-align: right; }
+.missing-inline { color: var(--value-missing); font-family: var(--font-mono); text-align: left; }
+
+.pill {
+  display: inline-block;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  line-height: 1.8;
+  white-space: nowrap;
+}
+.ok      { color: var(--status-ok-fg);       background: var(--status-ok-bg); }
+.warn    { color: var(--status-warn-fg);     background: var(--status-warn-bg); }
+.block   { color: var(--status-block-fg);    background: var(--status-block-bg); }
+.hold    { color: var(--status-hold-fg);     background: var(--status-hold-bg); }
+.neutral { color: var(--status-neutral-fg);  background: var(--status-neutral-bg); }
+
+.banner {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-5);
+  color: var(--status-block-fg);
+  background: var(--status-block-bg);
+}
+.banner h2 { font-size: var(--text-md); margin: 0 0 var(--space-1); color: var(--status-block-fg); }
+.banner ul { margin: var(--space-2) 0 0; padding-left: var(--space-5); font-size: var(--text-sm); }
+
+.empty {
+  padding: var(--space-5);
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  background: var(--surface-sunken);
+}
+
+dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-4); margin: 0; padding: var(--space-3); }
+dl.facts dt { color: var(--text-secondary); font-size: var(--text-xs); }
+dl.facts dd { margin: 0; font-family: var(--font-mono); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+
+ul.plain { margin: 0; padding: var(--space-3) var(--space-3) var(--space-3) var(--space-6); font-size: var(--text-sm); }
+ul.plain li { margin-bottom: var(--space-1); }
+
+.gap { padding: var(--space-3); border-top: 1px solid var(--border-subtle); font-size: var(--text-sm); }
+.gap:first-child { border-top: 0; }
+.gap p { margin: var(--space-1) 0 0; color: var(--text-secondary); font-size: var(--text-xs); }
+
+footer { color: var(--text-secondary); font-size: var(--text-xs); }
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1>Execution list</h1>
+  <span class="sub" id="meta"></span>
+  <button id="theme" type="button">Toggle light / dark</button>
+</header>
+
+<div id="gate"></div>
+
+<section>
+  <h2>Proposed orders</h2>
+  <div id="orders"></div>
+</section>
+
+<section>
+  <h2>Context</h2>
+  <div class="grid" id="context"></div>
+</section>
+
+<section>
+  <h2>Action items</h2>
+  <div id="actions"></div>
+</section>
+
+<section>
+  <h2>What this envelope could not tell you</h2>
+  <p class="sub">Recorded rather than papered over. Each of these is a field the screen
+    wanted and the envelope does not carry; see
+    <span class="mono">artifacts/contract-delta.md</span>.</p>
+  <div id="gaps"></div>
+</section>
+
+<footer>
+  Read-only. This page never places an order, and it re-derives nothing the backend
+  already computed — a figure the envelope does not supply is shown as
+  <span class="missing-inline">—</span>, never as zero.
+</footer>
+
+<script type="application/json" id="dion-report">
+{
+  "command": "report",
+  "data": {
+    "report": {
+      "action_items": [
+        {
+          "description": "Buy: increase weight from 0.1324 to 0.3780",
+          "instrument_id": "inst-aggs",
+          "type": "buy"
+        },
+        {
+          "description": "Sell: reduce weight from 0.2574 to 0.1448",
+          "instrument_id": "inst-fflc",
+          "type": "sell"
+        },
+        {
+          "description": "Sell: reduce weight from 0.2574 to 0.0523",
+          "instrument_id": "inst-iwqu",
+          "type": "sell"
+        },
+        {
+          "description": "Buy: increase weight from 0.1324 to 0.2897",
+          "instrument_id": "inst-puls",
+          "type": "buy"
+        },
+        {
+          "description": "Sell: reduce weight from 0.2206 to 0.1232",
+          "instrument_id": "inst-spmo",
+          "type": "sell"
+        },
+        {
+          "description": "USD exposure 98.8% exceeds 30% warning threshold",
+          "instrument_id": "",
+          "type": "fx_warning"
+        },
+        {
+          "description": "Total unhedged FX 98.8% exceeds 50% warning threshold",
+          "instrument_id": "",
+          "type": "fx_warning"
+        },
+        {
+          "description": "USD exposure 98.8% exceeds 50% gate",
+          "instrument_id": "",
+          "type": "fx_review_gate"
+        },
+        {
+          "description": "Total unhedged FX 98.8% exceeds 70% gate",
+          "instrument_id": "",
+          "type": "fx_review_gate"
+        }
+      ],
+      "drift_analysis": {
+        "drift_max_pct": 24.567194849977945,
+        "proposal_drift": {
+          "inst-aggs": -0.24567194849977944,
+          "inst-fflc": 0.11250422926852938,
+          "inst-iwqu": 0.20501783967044115,
+          "inst-puls": -0.1573686610639706,
+          "inst-spmo": 0.09736794639382353
+        },
+        "snapshot_drift": {}
+      },
+      "eligibility_summary": {
+        "details": [
+          {
+            "instrument_id": "inst-aggs",
+            "reason": "UCITS-flagged instrument",
+            "rule_applied": "retail_safe",
+            "status": "eligible"
+          },
+          {
+            "instrument_id": "inst-fflc",
+            "reason": "UCITS-flagged instrument",
+            "rule_applied": "retail_safe",
+            "status": "eligible"
+          },
+          {
+            "instrument_id": "inst-iwqu",
+            "reason": "UCITS-flagged instrument",
+            "rule_applied": "retail_safe",
+            "status": "eligible"
+          },
+          {
+            "instrument_id": "inst-puls",
+            "reason": "UCITS-flagged instrument",
+            "rule_applied": "retail_safe",
+            "status": "eligible"
+          },
+          {
+            "instrument_id": "inst-spmo",
+            "reason": "UCITS-flagged instrument",
+            "rule_applied": "retail_safe",
+            "status": "eligible"
+          }
+        ],
+        "eligible": 5,
+        "restricted": 0,
+        "total": 5,
+        "unknown": 0
+      },
+      "fx_exposure": {
+        "by_currency": {
+          "USD": 0.988150594230956
+        },
+        "fx_risk_proxy": 0.0,
+        "gross_non_base": 0.988150594230956,
+        "review_gate_breaches": [
+          "USD exposure 98.8% exceeds 50% gate",
+          "Total unhedged FX 98.8% exceeds 70% gate"
+        ],
+        "warnings": [
+          "USD exposure 98.8% exceeds 30% warning threshold",
+          "Total unhedged FX 98.8% exceeds 50% warning threshold"
+        ]
+      },
+      "metric_comparison": {
+        "proposed": {
+          "annualized_return": 0.04581066716556629,
+          "cdar_95": -0.02414727441137623,
+          "cvar_95": -0.017632432125478954,
+          "estimated_fees": 53.8192525980824,
+          "martin_ratio": 3.886233236855964,
+          "max_drawdown": -0.033548891374931826,
+          "sharpe_ratio": 0.34142173976193896,
+          "turnover": 0.40896531244827206,
+          "ulcer_index": 0.011787935611046336
+        }
+      },
+      "optimizer_summary": {
+        "chosen_backend": "skfolio",
+        "diagnostics": {
+          "annualized_return": 0.04581066716556629,
+          "cdar_95": -0.02414727441137623,
+          "cvar_95": -0.017632432125478954,
+          "estimated_fees": 53.8192525980824,
+          "iterations": 0,
+          "martin_ratio": 3.886233236855964,
+          "max_drawdown": -0.033548891374931826,
+          "resampled": false,
+          "sharpe_ratio": 0.34142173976193896,
+          "turnover": 0.40896531244827206,
+          "ulcer_index": 0.011787935611046336
+        },
+        "policy_violations": [],
+        "weights": {
+          "inst-aggs": 0.37802488967625003,
+          "inst-fflc": 0.14484871190794119,
+          "inst-iwqu": 0.0523351015060294,
+          "inst-puls": 0.2897216022404412,
+          "inst-spmo": 0.12322028890029411
+        }
+      },
+      "portfolio_state": {
+        "positions": 5,
+        "total_value": 119680.0,
+        "weights": {
+          "inst-aggs": 0.1323529411764706,
+          "inst-fflc": 0.25735294117647056,
+          "inst-iwqu": 0.25735294117647056,
+          "inst-puls": 0.1323529411764706,
+          "inst-spmo": 0.22058823529411764
+        }
+      },
+      "proposal_summary": {
+        "classifications": {
+          "inst-aggs": {
+            "action": "buy_more",
+            "current_weight": 0.1323529411764706,
+            "proposed_weight": 0.37802488967625003,
+            "weight_delta": 0.24567194849977944
+          },
+          "inst-fflc": {
+            "action": "trim",
+            "current_weight": 0.25735294117647056,
+            "proposed_weight": 0.14484871190794119,
+            "weight_delta": -0.11250422926852938
+          },
+          "inst-iwqu": {
+            "action": "trim",
+            "current_weight": 0.25735294117647056,
+            "proposed_weight": 0.0523351015060294,
+            "weight_delta": -0.20501783967044115
+          },
+          "inst-puls": {
+            "action": "buy_more",
+            "current_weight": 0.1323529411764706,
+            "proposed_weight": 0.2897216022404412,
+            "weight_delta": 0.1573686610639706
+          },
+          "inst-spmo": {
+            "action": "trim",
+            "current_weight": 0.22058823529411764,
+            "proposed_weight": 0.12322028890029411,
+            "weight_delta": -0.09736794639382353
+          }
+        },
+        "orders": [
+          {
+            "action": "buy",
+            "analysis_currency": "CHF",
+            "cash_delta_chf": -29378.6119750904,
+            "currency": "USD",
+            "estimated_value_analysis": 29378.6119750904,
+            "estimated_value_local": 33384.78633533,
+            "exchange": "ARCA",
+            "expected_fee_chf": 16.4233459875452,
+            "instrument_id": "inst-aggs",
+            "limit_high": 59.4463,
+            "limit_low": 59.1498,
+            "post_trade_weight": 0.37802488967625003,
+            "reason": "Increase from 0.1324 to 0.3780",
+            "shares": 563,
+            "symbol": ""
+          },
+          {
+            "action": "sell",
+            "analysis_currency": "CHF",
+            "cash_delta_chf": 13415.407294150402,
+            "currency": "USD",
+            "estimated_value_analysis": 13415.407294150402,
+            "estimated_value_local": 15244.781016080002,
+            "exchange": "ARCA",
+            "expected_fee_chf": 7.1820236470752015,
+            "instrument_id": "inst-fflc",
+            "limit_high": 99.2396,
+            "limit_low": 98.7446,
+            "post_trade_weight": 0.14484871190794119,
+            "reason": "Reduce from 0.2574 to 0.1448",
+            "shares": 154,
+            "symbol": "FFLC"
+          },
+          {
+            "action": "sell",
+            "analysis_currency": "CHF",
+            "cash_delta_chf": 24490.8517077312,
+            "currency": "USD",
+            "estimated_value_analysis": 24490.8517077312,
+            "estimated_value_local": 27830.513304239998,
+            "exchange": "ARCA",
+            "expected_fee_chf": 13.3172658538656,
+            "instrument_id": "inst-iwqu",
+            "limit_high": 80.1727,
+            "limit_low": 79.7728,
+            "post_trade_weight": 0.0523351015060294,
+            "reason": "Reduce from 0.2574 to 0.0523",
+            "shares": 348,
+            "symbol": "IWQU"
+          },
+          {
+            "action": "buy",
+            "analysis_currency": "CHF",
+            "cash_delta_chf": -18829.2343060536,
+            "currency": "USD",
+            "estimated_value_analysis": 18829.2343060536,
+            "estimated_value_local": 21396.85716597,
+            "exchange": "ARCA",
+            "expected_fee_chf": 10.735937153026798,
+            "instrument_id": "inst-puls",
+            "limit_high": 50.0008,
+            "limit_low": 49.7514,
+            "post_trade_weight": 0.2897216022404412,
+            "reason": "Increase from 0.1324 to 0.2897",
+            "shares": 429,
+            "symbol": ""
+          },
+          {
+            "action": "sell",
+            "analysis_currency": "CHF",
+            "cash_delta_chf": 11631.439913139198,
+            "currency": "USD",
+            "estimated_value_analysis": 11631.439913139198,
+            "estimated_value_local": 13217.545355839999,
+            "exchange": "ARCA",
+            "expected_fee_chf": 6.1606799565695995,
+            "instrument_id": "inst-spmo",
+            "limit_high": 118.3088,
+            "limit_low": 117.7188,
+            "post_trade_weight": 0.12322028890029411,
+            "reason": "Reduce from 0.2206 to 0.1232",
+            "shares": 112,
+            "symbol": "SPMO"
+          }
+        ],
+        "suppressed_trades": 0,
+        "total_trade_value": 97745.54519616479
+      }
+    }
+  },
+  "findings": [],
+  "ok": true,
+  "run_id": "rev-b7bd753c33f9",
+  "run_type": "report",
+  "statement_ids": [],
+  "summary": {
+    "content_hash": "3d8de6d0fb9a495597e06c1e28ed80bd2c35d94c41f289cedcbe453bd4647433",
+    "created_at": "2026-09-18 14:37:04.148129",
+    "report_id": "rpt-a3ade10d6cf9",
+    "status": "found"
+  }
+}
+
+</script>
+<script>
+// execution_list.js — renders artifacts/execution-list.html from the embedded envelope.
+//
+// The ONLY data source is the application/json element with id "dion-report",
+// which holds the report envelope verbatim. Nothing here fetches, and
+// nothing here re-derives a number the backend already computed: a value the
+// envelope does not supply is rendered as missing, with a reason, not as a sum
+// invented on screen.
+(function () {
+  'use strict';
+
+  var ENVELOPE = JSON.parse(document.getElementById('dion-report').textContent);
+  var REPORT = (ENVELOPE.data || {}).report || {};
+  var PROPOSAL = REPORT.proposal_summary || {};
+  var ORDERS = PROPOSAL.orders || [];
+  var CLASS = PROPOSAL.classifications || {};
+  var GATES = (REPORT.fx_exposure || {}).review_gate_breaches || [];
+
+  var MINUS = '−';
+  var DASH = '—';
+
+  // ---- formatting -------------------------------------------------------
+  // Precision is a display decision, fixed per column, chosen once here.
+  function group(digits) {
+    var parts = digits.split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    return parts.join('.');
+  }
+
+  function fmt(value, dp, signed) {
+    var abs = Math.abs(value).toFixed(dp);
+    var sign = value < 0 ? MINUS : (signed ? '+' : '');
+    return sign + group(abs);
+  }
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) { node.className = cls; }
+    if (text !== undefined && text !== null) { node.textContent = text; }
+    return node;
+  }
+
+  // Missing is not zero and not empty: its own glyph, its own token, a reason.
+  function missingCell(reason, inline) {
+    var td = el('td', inline ? 'missing-inline' : 'missing', DASH);
+    td.title = reason;
+    return td;
+  }
+
+  function numCell(value, dp, signed, extraClass) {
+    if (typeof value !== 'number' || !isFinite(value)) {
+      return missingCell('the envelope does not supply this value for this row');
+    }
+    var cls = 'num';
+    if (extraClass) { cls += ' ' + extraClass; }
+    var td = el('td', cls, fmt(value, dp, signed));
+    td.title = String(value); // full source value survives the rounding
+    return td;
+  }
+
+  function signedCell(value, dp) {
+    if (typeof value !== 'number' || !isFinite(value)) {
+      return missingCell('the envelope does not supply this value for this row');
+    }
+    return numCell(value, dp, true, value > 0 ? 'pos' : (value < 0 ? 'neg' : ''));
+  }
+
+  function pill(kind, word) { return el('span', 'pill ' + kind, word); }
+
+  // ---- header -----------------------------------------------------------
+  function renderHeader() {
+    var s = ENVELOPE.summary || {};
+    document.getElementById('meta').textContent =
+      'run ' + (ENVELOPE.run_id || DASH) + '  ·  report ' + (s.report_id || DASH) +
+      '  ·  stored ' + (s.created_at || DASH) +
+      '  ·  backend ' + ((REPORT.optimizer_summary || {}).chosen_backend || DASH);
+  }
+
+  // ---- gate banner ------------------------------------------------------
+  function renderGate() {
+    var host = document.getElementById('gate');
+    if (!GATES.length) {
+      host.appendChild(el('p', 'sub', 'No review-gate breach recorded on this envelope.'));
+      return;
+    }
+    var box = el('div', 'banner');
+    var h = el('h2', null, 'Blocked — ' + GATES.length + ' review-gate breach' +
+      (GATES.length === 1 ? '' : 'es'));
+    box.appendChild(h);
+    box.appendChild(el('div', null,
+      'Do not place these orders. Clear the gate in the review pipeline, or acknowledge ' +
+      'the breach there, and regenerate. This screen is read-only and cannot clear it.'));
+    var ul = document.createElement('ul');
+    GATES.forEach(function (g) { ul.appendChild(el('li', null, g)); });
+    box.appendChild(ul);
+    host.appendChild(box);
+  }
+
+  // ---- orders -----------------------------------------------------------
+  var COLUMNS = [
+    ['Instrument', ''],
+    ['Exchange', ''],
+    ['Side', ''],
+    ['Shares', 'num'],
+    ['Limit low', 'num'],
+    ['Limit high', 'num'],
+    ['Order value', 'num'],
+    ['Fee', 'num'],
+    ['Current', 'num'],
+    ['Post-trade', 'num'],
+    ['Δ weight', 'num'],
+    ['Cash Δ', 'num'],
+    ['Status', '']
+  ];
+  var UNITS = ['', '', '', '#', 'local', 'local', 'local', 'CHF', '%', '%', 'pp', 'CHF', ''];
+
+  function instrumentCell(order) {
+    var td = document.createElement('td');
+    if (order.symbol) {
+      td.appendChild(el('span', 'mono', order.symbol));
+    } else {
+      var miss = el('span', 'missing-inline', DASH);
+      miss.title = 'the envelope supplied an empty symbol ("") for this order — not a ' +
+        'symbol-less instrument, a field the report could not resolve. There is no ticker ' +
+        'to type into a broker ticket.';
+      td.appendChild(miss);
+    }
+    td.appendChild(document.createElement('br'));
+    td.appendChild(el('span', 'sub mono', order.instrument_id || DASH));
+    return td;
+  }
+
+  function sideCell(order) {
+    var buy = order.action === 'buy';
+    // Colour AND a word AND a glyph: colour alone fails for ~1 in 12 men.
+    var td = el('td', null);
+    td.appendChild(el('span', buy ? 'pos' : 'neg',
+      (buy ? '▲ Buy' : '▼ Sell')));
+    return td;
+  }
+
+  function statusCell(order) {
+    var td = document.createElement('td');
+    if (GATES.length) { td.appendChild(pill('block', 'Gate blocked')); }
+    if (!order.symbol) {
+      var p = pill('warn', 'No symbol');
+      p.title = 'cannot be placed as written: no ticker';
+      td.appendChild(document.createTextNode(' '));
+      td.appendChild(p);
+    }
+    if (!td.childNodes.length) { td.appendChild(pill('ok', 'Ready')); }
+    return td;
+  }
+
+  function renderOrders() {
+    var host = document.getElementById('orders');
+    if (!ORDERS.length) {
+      var box = el('div', 'card');
+      box.appendChild(el('div', 'empty',
+        'This report contains no proposed orders. Run `dion review` to produce a proposal.'));
+      host.appendChild(box);
+      return;
+    }
+
+    var card = el('div', 'card');
+    var table = document.createElement('table');
+
+    var cur = ORDERS[0].currency || 'local';
+    var ccy = ORDERS[0].analysis_currency || 'CHF';
+    var caption = el('caption', null,
+      'Proposed orders — limits and order value in ' + cur + ' (the listing currency), ' +
+      'fees and cash in ' + ccy + ' (the analysis currency). Weights in %, Δ in ' +
+      'percentage points. Precision is fixed per column; hover a figure for the ' +
+      'unrounded source value.');
+    table.appendChild(caption);
+
+    var thead = document.createElement('thead');
+    var hr = document.createElement('tr');
+    COLUMNS.forEach(function (c, i) {
+      var th = el('th', c[1]);
+      th.appendChild(document.createTextNode(c[0]));
+      if (UNITS[i]) {
+        th.appendChild(document.createElement('br'));
+        th.appendChild(el('span', 'sub', UNITS[i] === '#' ? '#' : UNITS[i] === 'local' ? cur : UNITS[i]));
+      }
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    ORDERS.forEach(function (o) {
+      var c = CLASS[o.instrument_id] || {};
+      var tr = document.createElement('tr');
+      tr.appendChild(instrumentCell(o));
+      tr.appendChild(el('td', null, o.exchange || DASH));
+      tr.appendChild(sideCell(o));
+      tr.appendChild(numCell(o.shares, 0));
+      tr.appendChild(numCell(o.limit_low, 4));
+      tr.appendChild(numCell(o.limit_high, 4));
+      tr.appendChild(numCell(o.estimated_value_local, 2));
+      tr.appendChild(numCell(o.expected_fee_chf, 2));
+      tr.appendChild(typeof c.current_weight === 'number'
+        ? numCell(c.current_weight * 100, 2)
+        : missingCell('no classification row for this instrument in the envelope'));
+      tr.appendChild(numCell(o.post_trade_weight * 100, 2));
+      tr.appendChild(typeof c.weight_delta === 'number'
+        ? signedCell(c.weight_delta * 100, 2)
+        : missingCell('no classification row for this instrument in the envelope'));
+      tr.appendChild(signedCell(o.cash_delta_chf, 2));
+      tr.appendChild(statusCell(o));
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    // Totals come from the envelope. The net cash delta is NOT in the envelope,
+    // and summing the column here would be a number the backend never computed.
+    var diag = (REPORT.optimizer_summary || {}).diagnostics || {};
+    var tfoot = document.createElement('tfoot');
+    var fr = document.createElement('tr');
+    var lab = el('td', null, ORDERS.length + ' orders · totals as supplied');
+    lab.colSpan = 7;
+    fr.appendChild(lab);
+    fr.appendChild(numCell(diag.estimated_fees, 2));
+    var spacer = el('td', null, '');
+    spacer.colSpan = 3;
+    fr.appendChild(spacer);
+    fr.appendChild(missingCell(
+      'the envelope supplies no net cash delta, and no cash balance to apply it to. ' +
+      'The column is not summed here: a UI-derived total would be a second, ' +
+      'independently rounded number the backend never produced.'));
+    fr.appendChild(el('td', null, ''));
+    tfoot.appendChild(fr);
+    table.appendChild(tfoot);
+
+    card.appendChild(table);
+    host.appendChild(card);
+
+    var note = el('p', 'sub',
+      'Gross traded value ' + fmt(PROPOSAL.total_trade_value, 2, false) + ' ' + ccy +
+      '  ·  turnover ' + fmt((diag.turnover || 0) * 100, 2, false) + '%' +
+      '  ·  suppressed trades ' + PROPOSAL.suppressed_trades +
+      '  ·  cash deltas exclude the expected fee (each order’s |cash Δ| equals ' +
+      'its estimated value in ' + ccy + '; the fee sits in its own column).');
+    host.appendChild(note);
+  }
+
+  // ---- context panels ---------------------------------------------------
+  function factList(rows) {
+    var dl = el('dl', 'facts');
+    rows.forEach(function (r) {
+      dl.appendChild(el('dt', null, r[0]));
+      if (r[1] === null) {
+        var dd = el('dd', 'missing-inline', DASH);
+        dd.title = r[2] || 'not supplied by this envelope';
+        dl.appendChild(dd);
+      } else {
+        dl.appendChild(el('dd', null, r[1]));
+      }
+    });
+    return dl;
+  }
+
+  function card(title, body) {
+    var wrap = document.createElement('div');
+    wrap.appendChild(el('h3', null, title));
+    var c = el('div', 'card');
+    c.appendChild(body);
+    wrap.appendChild(c);
+    return wrap;
+  }
+
+  function renderContext() {
+    var host = document.getElementById('context');
+    var state = REPORT.portfolio_state || {};
+    var fx = REPORT.fx_exposure || {};
+    var elig = REPORT.eligibility_summary || {};
+    var opt = REPORT.optimizer_summary || {};
+    var diag = opt.diagnostics || {};
+    var drift = REPORT.drift_analysis || {};
+    var ccy = (ORDERS[0] || {}).analysis_currency || 'CHF';
+
+    host.appendChild(card('Portfolio before the trade', factList([
+      ['Total value (' + ccy + ')', fmt(state.total_value, 2, false)],
+      ['Positions', String(state.positions)],
+      ['Cash balance', null, 'the envelope carries no cash balance, so the post-trade cash ' +
+        'position cannot be shown'],
+      ['Account', null, 'the envelope carries no account identifier'],
+      ['Prices as of', null, 'the envelope carries no price/quote timestamp, so the age of ' +
+        'the limit bands is unknown on this screen'],
+      ['Max drift (%)', fmt(drift.drift_max_pct, 2, false)]
+    ])));
+
+    host.appendChild(card('Proposed vs current risk', (function () {
+      var t = document.createElement('table');
+      var th = document.createElement('thead');
+      var r = document.createElement('tr');
+      r.appendChild(el('th', null, 'Metric'));
+      r.appendChild(el('th', 'num', 'Current'));
+      r.appendChild(el('th', 'num', 'Proposed'));
+      th.appendChild(r);
+      t.appendChild(th);
+      var tb = document.createElement('tbody');
+      var mc = REPORT.metric_comparison || {};
+      var current = mc.current || null;
+      [['Annualised return', 'annualized_return', 4],
+       ['Sharpe ratio', 'sharpe_ratio', 4],
+       ['CVaR 95', 'cvar_95', 4],
+       ['CDaR 95', 'cdar_95', 4],
+       ['Max drawdown', 'max_drawdown', 4],
+       ['Ulcer index', 'ulcer_index', 4],
+       ['Martin ratio', 'martin_ratio', 4],
+       ['Turnover', 'turnover', 4],
+       ['Estimated fees (' + ccy + ')', 'estimated_fees', 2]
+      ].forEach(function (m) {
+        var tr = document.createElement('tr');
+        tr.appendChild(el('td', null, m[0]));
+        tr.appendChild(current
+          ? numCell(current[m[1]], m[2])
+          : missingCell('metric_comparison carries only a "proposed" block: the current ' +
+              'portfolio’s comparators are dropped when the report is stored, so there ' +
+              'is nothing to compare against.'));
+        tr.appendChild(numCell((mc.proposed || diag)[m[1]], m[2]));
+        tb.appendChild(tr);
+      });
+      t.appendChild(tb);
+      return t;
+    })()));
+
+    var fxRows = [];
+    Object.keys(fx.by_currency || {}).forEach(function (k) {
+      fxRows.push([k + ' exposure (%)', fmt(fx.by_currency[k] * 100, 2, false)]);
+    });
+    fxRows.push(['Gross non-base (%)', fmt(fx.gross_non_base * 100, 2, false)]);
+    fxRows.push(['FX risk proxy', fmt(fx.fx_risk_proxy, 4, false)]);
+    fxRows.push(['FX rate used', null, 'the envelope reports each order in both the listing ' +
+      'and the analysis currency but never states the rate that connects them, so the ' +
+      'conversion cannot be checked here']);
+    host.appendChild(card('FX exposure', factList(fxRows)));
+
+    host.appendChild(card('Eligibility', factList([
+      ['Eligible', String(elig.eligible)],
+      ['Restricted', String(elig.restricted)],
+      ['Unknown', String(elig.unknown)],
+      ['Total screened', String(elig.total)],
+      ['Rule applied', ((elig.details || [])[0] || {}).rule_applied || DASH]
+    ])));
+
+    // Empty and absent are different outcomes and are shown differently.
+    var checks = el('ul', 'plain');
+    function checkLine(label, value, emptyIsGood) {
+      var li = document.createElement('li');
+      li.appendChild(document.createTextNode(label + ': '));
+      if (value === undefined) {
+        var a = el('span', 'missing-inline', DASH + ' absent');
+        a.title = 'the key is not present in this envelope at all — which is not the ' +
+          'same as present-and-empty';
+        li.appendChild(a);
+      } else if (Array.isArray(value) ? value.length === 0 : Object.keys(value).length === 0) {
+        li.appendChild(pill(emptyIsGood ? 'ok' : 'neutral', 'present, empty'));
+      } else {
+        li.appendChild(pill('warn', String(Array.isArray(value) ? value.length : Object.keys(value).length) + ' entries'));
+      }
+      checks.appendChild(li);
+    }
+    checkLine('Policy violations', opt.policy_violations, true);
+    checkLine('Snapshot drift', drift.snapshot_drift, true);
+    checkLine('Findings on the envelope', ENVELOPE.findings, true);
+    checkLine('Statement ids', ENVELOPE.statement_ids, false);
+    checkLine('Integrity evidence', REPORT.integrity_evidence);
+    checkLine('Comparators', REPORT.comparators);
+    host.appendChild(card('Pre-flight checks', checks));
+  }
+
+  // ---- action items -----------------------------------------------------
+  function renderActions() {
+    var host = document.getElementById('actions');
+    var items = REPORT.action_items || [];
+    var c = el('div', 'card');
+    if (!items.length) {
+      c.appendChild(el('div', 'empty', 'The report raised no action items.'));
+      host.appendChild(c);
+      return;
+    }
+    var ul = el('ul', 'plain');
+    var kind = { buy: 'neutral', sell: 'neutral', fx_warning: 'warn', fx_review_gate: 'block' };
+    items.forEach(function (it) {
+      var li = document.createElement('li');
+      li.appendChild(pill(kind[it.type] || 'neutral', it.type.replace(/_/g, ' ')));
+      li.appendChild(document.createTextNode(' ' + it.description));
+      if (it.instrument_id) {
+        li.appendChild(document.createTextNode(' '));
+        li.appendChild(el('span', 'sub mono', it.instrument_id));
+      }
+      ul.appendChild(li);
+    });
+    c.appendChild(ul);
+    host.appendChild(c);
+  }
+
+  // ---- what this screen could not show ----------------------------------
+  var GAPS = [
+    ['Ticker for two of the five orders',
+     'proposal_summary.orders[].symbol is "" for inst-aggs and inst-puls, so those rows ' +
+     'cannot be typed into a broker ticket. Rendered as missing, not as a blank.'],
+    ['Price as-of / quote timestamp',
+     'Nothing in the envelope dates the limit bands, so the screen cannot tell a reader ' +
+     'whether they are minutes or days old.'],
+    ['The FX rate behind every CHF figure',
+     'Orders carry a local and an analysis value but not the rate joining them.'],
+    ['Current and post-trade share counts',
+     'Only weights are supplied, so the screen cannot show "hold 200 → 763" or let a ' +
+     'reader check the fill against the position.'],
+    ['Net cash effect of the list',
+     'No aggregate cash delta and no cash balance, so the totals row leaves it missing ' +
+     'rather than summing a column the backend never summed.'],
+    ['Current-portfolio risk comparators',
+     'metric_comparison has only a "proposed" block, so the comparison table has an ' +
+     'empty Current column.'],
+    ['Order type, time-in-force, limit validity',
+     'A limit band is supplied with no instruction for how it should be worked.'],
+    ['Provenance of the numbers',
+     'integrity_evidence is absent from the stored report, so the screen cannot show what ' +
+     'statement or price snapshot the list was computed from.']
+  ];
+
+  function renderGaps() {
+    var host = document.getElementById('gaps');
+    var c = el('div', 'card');
+    GAPS.forEach(function (g) {
+      var d = el('div', 'gap');
+      d.appendChild(el('strong', null, g[0]));
+      d.appendChild(el('p', null, g[1]));
+      c.appendChild(d);
+    });
+    host.appendChild(c);
+  }
+
+  // ---- theme ------------------------------------------------------------
+  document.getElementById('theme').addEventListener('click', function () {
+    var r = document.documentElement;
+    r.setAttribute('data-theme', r.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  });
+
+  renderHeader();
+  renderGate();
+  renderOrders();
+  renderContext();
+  renderActions();
+  renderGaps();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+worktree:          /private/tmp/pilot-arm-c
+model:             claude-opus-5
+settings:          /private/tmp/acs-pilot/openspec/changes/design-seed-capability/pilot/results/arm-settings.json
+prompt_sha256:     a3676d075e6b6aba72bbfc0d540d5c34939114d42df196b85c036ce32cfc4e8e
+stop_reason:       completed
+tool_calls:        44 (cap 60)
+skill_invocations: 0 (observed, not assumed)
+wall_clock:        853s (cap 2700s)
+started_utc:       2026-09-20T09:49:27Z
+ended_utc:         2026-09-20T10:03:40Z
