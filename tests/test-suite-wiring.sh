@@ -201,17 +201,35 @@ test_counters_cannot_exceed_their_denominator() {
     # twice and the cell reported one more file than it had examined.
     for f in "${SCRIPT_DIR}"/test-*.sh; do
         base="$(basename "${f}")"
-        n_verdict="$(grep -oE 'TESTS_(PASSED|FAILED)=\$\(\(' "${f}" | wc -l | tr -d ' ')"
+        # All three increment idioms, not just the assignment form. `(( X++ ))`
+        # and `let X+=1` are invisible to an assignment-only matcher, so a file
+        # adopting either scores zero verdict bumps, hits the `continue` below,
+        # and leaves the population entirely — after which it can carry any
+        # number of unpaired bumps while this cell still reports that every one
+        # is paired. That is the #271 defect returning under a new idiom, and
+        # the same reasoning already accepted for the `function` keyword form:
+        # no file uses it today; the point is the day one does.
+        #
+        # The increment OPERATOR is required, not merely the name after `((`.
+        # The first cut matched any `((` followed by the name, which caught
+        # `exit $((TESTS_FAILED == 0 ? 0 : 1))` — a READ — and reported
+        # test-serena-autoregister.sh as carrying an unpaired bump. A counter
+        # matcher must not count reads.
+        n_verdict="$(grep -oE 'TESTS_(PASSED|FAILED)=\$\(\(|\(\([[:space:]]*TESTS_(PASSED|FAILED)[[:space:]]*(\+\+|\+=|=[^=])|let[[:space:]]+TESTS_(PASSED|FAILED)[[:space:]]*(\+\+|\+=|=[^=])' "${f}" | wc -l | tr -d ' ')"
         [ "${n_verdict}" -eq 0 ] && continue
         checked=$((checked + 1))
-        n_run="$(grep -oE 'TESTS_RUN=\$\(\(' "${f}" | wc -l | tr -d ' ')"
+        n_run="$(grep -oE 'TESTS_RUN=\$\(\(|\(\([[:space:]]*TESTS_RUN[[:space:]]*(\+\+|\+=|=[^=])|let[[:space:]]+TESTS_RUN[[:space:]]*(\+\+|\+=|=[^=])' "${f}" | wc -l | tr -d ' ')"
         if [ "${n_run}" -lt "${n_verdict}" ]; then
             offenders="${offenders} ${base}(verdict=${n_verdict},run=${n_run})"
         fi
     done
-    if [ "${checked}" -eq 0 ]; then
+    # Floored at the CURRENT population, not at zero. A drop from five files to
+    # one is exactly what a file silently leaving the population looks like, and
+    # a floor of zero cannot see it — the same reasoning as the per-tree floors
+    # in tests/test-hook-string-lint.sh.
+    if [ "${checked}" -lt 5 ]; then
         _record_fail "verdict counters are paired with TESTS_RUN" \
-            "found no file bumping a verdict counter — the matcher is not seeing the suite"
+            "only ${checked} files carry a verdict bump (expected at least 5) — a file has left the population, or the matcher is not seeing the suite"
     elif [ -n "${offenders}" ]; then
         _record_fail "verdict counters are paired with TESTS_RUN" \
             "files reporting more verdicts than runs:${offenders}"
