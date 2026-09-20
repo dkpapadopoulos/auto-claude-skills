@@ -155,7 +155,104 @@ test_ordinary_pushes_still_deny() {
     _expect deny "commit && push" 'git commit -m x && git push origin main'
 }
 
+# ---------------------------------------------------------------------------
+# ATTACK CELLS. Every one of these CERTIFIED — i.e. skipped the whole push gate
+# — against the first version of this predicate, and the first three push the
+# REAL repository when executed. They are pinned at the predicate level because
+# that is where the decision is made, and each names the mechanism rather than
+# the symptom.
+#
+# Run through `/bin/bash -c` deliberately. This repo's own record is that the
+# agent shell is zsh, where `set -- $1` does not word-split a scalar, so every
+# one of these predicates returns a different answer there. The first run of
+# these probes was made in that shell and reported "no bypass" for all ten —
+# including the baseline, which is the only reason it was caught.
+# ---------------------------------------------------------------------------
+_certifies() { # 0 when the predicate certifies (gate would be skipped)
+    /bin/bash -c '. "$1"/hooks/lib/git-command.sh; command_push_is_local_scratch "$2"' _ "${PROJECT_ROOT}" "$1"
+}
+
+_attack() { # _attack <label> <command>
+    rm -rf "${SCRATCH}"
+    if _certifies "$2"; then
+        _record_fail "attack refused: $1" "the predicate CERTIFIED this command — the whole push gate would be skipped"
+    else
+        _record_pass "attack refused: $1"
+    fi
+}
+
+test_baseline_still_certifies_at_predicate_level() {
+    # The control for every attack cell below. Without it a predicate that
+    # refused everything would score a perfect attack sheet.
+    rm -rf "${SCRATCH}"
+    if _certifies "${_SCRATCH_PUSH}"; then
+        _record_pass "baseline scratch command still certifies (attack controls are live)"
+    else
+        _record_fail "baseline scratch command still certifies" \
+            "the predicate refuses even the intended case — every attack cell below passes vacuously"
+    fi
+}
+
+test_attack_env_prefix_redirects_git() {
+    # GIT_DIR/GIT_WORK_TREE are skipped by _gc_segment_git_sub (correct for
+    # DETECTION, fatal for certification): the segment reads as a push in the
+    # scratch dir while git acts on the real repository.
+    _attack "GIT_DIR= env prefix on the push" \
+        "mkdir -p ${SCRATCH} && cd ${SCRATCH} && git init -q . && git commit -m x && GIT_DIR=${PROJECT_ROOT}/.git git push origin main"
+    _attack "GIT_WORK_TREE= env prefix on the push" \
+        "mkdir -p ${SCRATCH} && cd ${SCRATCH} && git init -q . && git commit -m x && GIT_WORK_TREE=${PROJECT_ROOT} git push origin main"
+}
+
+test_attack_separate_git_dir() {
+    # Wires the scratch worktree to a real repository's gitdir. The option's
+    # VALUE was being skipped, so the reported target was the scratch dir.
+    _attack "git init --separate-git-dir <real>/.git" \
+        "mkdir -p ${SCRATCH} && cd ${SCRATCH} && git init -q --separate-git-dir ${PROJECT_ROOT}/.git . && git commit -m x && git push origin main"
+}
+
+test_attack_untrackable_cd() {
+    # Bare `cd` goes to $HOME and `cd -` to the previous directory; neither
+    # yields a target, so both fell through to the inert whitelist (which
+    # vouches for `cd`) leaving the tracked cwd stale while the real one moved.
+    _attack "bare cd (real cwd becomes \$HOME)" \
+        "mkdir -p ${SCRATCH} && cd ${SCRATCH} && cd && git init -q . && git commit -m x && git push origin main"
+    _attack "cd - (tracked cwd goes stale)" \
+        "mkdir -p ${SCRATCH} && cd ${SCRATCH} && cd - && git init -q . && git commit -m x && git push origin main"
+    # A relative target was appended textually, so `..` was never resolved:
+    # tracked cwd read <scratch>/../.. while the shell was at /.
+    _attack "cd ../.. escape" \
+        "mkdir -p ${SCRATCH} && cd ${SCRATCH} && cd ../.. && git init -q . && git commit -m x && git push origin main"
+}
+
+test_attack_push_before_init() {
+    # Ordering was never enforced, so a push was excused by an init that had
+    # not happened yet.
+    _attack "push ordered before the init" \
+        "mkdir -p ${SCRATCH} && cd ${SCRATCH} && git push origin main && git init -q . && git commit -m x"
+}
+
+test_attack_per_command_config() {
+    # `git -c` sets configuration for one command, including remote URLs and
+    # `url.*.insteadOf` rewrites.
+    _attack "git -c remote.origin.url=<url> on the push" \
+        "mkdir -p ${SCRATCH} && cd ${SCRATCH} && git init -q . && git commit -m x && git -c remote.origin.url=https://github.com/a/b push origin main"
+    # THIS is the cell that makes the `-c` refusal load-bearing. The command
+    # above is also caught by the URL-shape check, so deleting the `-c` refusal
+    # failed nothing and the check was dead code that implied coverage it did
+    # not provide — found by mutating it. `include.path` pulls in another
+    # repository's config, remotes and all, and contains no `://` and no
+    # `user@host:`, so the URL check cannot see it.
+    _attack "git -c include.path=<real>/.git/config (no URL shape)" \
+        "mkdir -p ${SCRATCH} && cd ${SCRATCH} && git init -q . && git commit -m x && git -c include.path=${PROJECT_ROOT}/.git/config push origin main"
+}
+
 test_preconditions
+test_baseline_still_certifies_at_predicate_level
+test_attack_env_prefix_redirects_git
+test_attack_separate_git_dir
+test_attack_untrackable_cd
+test_attack_push_before_init
+test_attack_per_command_config
 test_scratch_push_is_allowed
 test_scratch_push_announces_the_skip
 test_reinit_in_a_real_repo_still_denies

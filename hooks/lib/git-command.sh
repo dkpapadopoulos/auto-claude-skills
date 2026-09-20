@@ -605,9 +605,16 @@ _gc_segment_git_init_target() {
     done
     while [ "$#" -gt 0 ]; do
         case "$1" in
-            # Value-taking options: skip the option AND its value, so a value is
-            # never mistaken for the target directory.
-            --template|--separate-git-dir|--shared|-b|--initial-branch|--object-format|--ref-format)
+            # `--separate-git-dir` / `--git-dir` point the repository's real git
+            # directory somewhere else, so the directory this function reports
+            # is NOT where git will act. `git init --separate-git-dir
+            # <real>/.git .` certified while wiring the scratch worktree to a
+            # real repository's gitdir — measured. Refuse outright: echoing
+            # nothing makes the caller refuse, which is the safe direction.
+            --separate-git-dir|--separate-git-dir=*|--git-dir|--git-dir=*) return 0 ;;
+            # Other value-taking options: skip the option AND its value, so a
+            # value is never mistaken for the target directory.
+            --template|--shared|-b|--initial-branch|--object-format|--ref-format)
                 shift; shift 2>/dev/null || return 0 ;;
             --*=*|-q|--quiet|--bare|--*) shift ;;
             -*) shift ;;
@@ -638,6 +645,61 @@ _gc_seg_is_mkdir() {
         esac
     done
     [ "${1:-}" = "mkdir" ]
+}
+
+# _gc_seg_has_env_prefix <segment>
+#   0 when the segment's command word is preceded by a `VAR=value` assignment.
+#   `_gc_segment_git_sub` deliberately SKIPS such prefixes so that
+#   `GIT_DIR=x git push` is still recognised as a push — which is right for
+#   DETECTION and fatal for CERTIFICATION: `GIT_DIR=<real>/.git git push origin
+#   main` reads as a push whose subject directory is the scratch dir, while git
+#   acts on the real repository. Measured as a live bypass of
+#   command_push_is_local_scratch before this existed.
+_gc_seg_has_env_prefix() {
+    local _u
+    # shellcheck disable=SC2086
+    set -- $1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            '('|'{') shift ;;
+            '('*|'{'*) _u="$(_gc_strip_openers "$1")"; shift; set -- "${_u}" "$@"; break ;;
+            *) break ;;
+        esac
+    done
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            env) shift ;;
+            [A-Za-z_]*=*) return 0 ;;
+            *) return 1 ;;
+        esac
+    done
+    return 1
+}
+
+# _gc_seg_is_cd <segment>
+#   0 when the segment's command word is `cd`, whether or not a target can be
+#   extracted from it. _gc_segment_cd_target returns nothing for bare `cd` and
+#   for `cd -`; without this, such a segment fell through to the inert
+#   whitelist (which vouches for `cd`) and the tracked cwd silently went stale.
+_gc_seg_is_cd() {
+    local _u
+    # shellcheck disable=SC2086
+    set -- $1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            '('|'{') shift ;;
+            '('*|'{'*) _u="$(_gc_strip_openers "$1")"; shift; set -- "${_u}" "$@"; break ;;
+            *) break ;;
+        esac
+    done
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            env|command|builtin) shift ;;
+            [A-Za-z_]*=*) shift ;;
+            *) break ;;
+        esac
+    done
+    [ "${1:-}" = "cd" ]
 }
 
 # command_push_is_local_scratch <command>
@@ -696,16 +758,34 @@ command_push_is_local_scratch() {
     IFS="${_GC_SEP}"
     for _seg in ${_segs}; do
         IFS="${_oldifs}"
+        # An environment assignment in front of ANY segment can redirect git
+        # (GIT_DIR, GIT_WORK_TREE, GIT_CONFIG_GLOBAL, …) to a repository this
+        # function is not looking at. There is no modelling it here, so refuse.
+        if _gc_seg_has_env_prefix "${_seg}"; then
+            _ok=0
+            IFS="${_GC_SEP}"
+            continue
+        fi
         _sub="$(_gc_segment_git_sub "${_seg}")"
         if [ -n "${_sub}" ]; then
+            # `git -c <key>=<value>` sets configuration for that one command,
+            # including remote URLs and `url.*.insteadOf` rewrites. Refuse any
+            # segment carrying it rather than enumerating the harmful keys.
+            case " ${_seg} " in
+                *" -c "*|*" --config-env "*|*" --config-env="*) _ok=0 ;;
+            esac
             case "${_sub}" in
                 init)
                     _ninit=$(( _ninit + 1 ))
+                    # ORDER MATTERS: a push before the repository exists is not
+                    # a push into a repository this command created.
+                    [ "${_npush}" -eq 0 ] || _ok=0
                     _t="$(_gc_segment_git_init_target "${_seg}")"
                     case "${_t}" in
-                        .|"") _initdir="${_cwd}" ;;
+                        "")   _ok=0 ;;
+                        .)    [ -n "${_cwd}" ] && _initdir="${_cwd}" || _ok=0 ;;
                         /*)   _initdir="${_t}" ;;
-                        *)    [ -n "${_cwd}" ] && _initdir="${_cwd%/}/${_t}" || _ok=0 ;;
+                        *)    _ok=0 ;;
                     esac
                     ;;
                 add|commit) : ;;
@@ -726,20 +806,25 @@ command_push_is_local_scratch() {
                     ;;
                 *) _ok=0 ;;
             esac
-        else
+        elif _gc_seg_is_mkdir "${_seg}"; then
+            :
+        elif _gc_seg_is_cd "${_seg}"; then
+            # A `cd` this function cannot resolve EXACTLY makes every later
+            # subject wrong while still looking accounted for. Bare `cd` goes to
+            # $HOME, `cd -` to the previous directory, and a relative target is
+            # resolved by the shell against a cwd this function is only
+            # guessing at — all three were measured certifying while the real
+            # cwd was somewhere else entirely. Only an absolute, `..`-free path
+            # is tracked; anything else refuses.
             _cdt="$(_gc_segment_cd_target "${_seg}")"
-            if [ -n "${_cdt}" ]; then
-                case "${_cdt}" in
-                    /*) _cwd="${_cdt}" ;;
-                    *)  [ -n "${_cwd}" ] && _cwd="${_cwd%/}/${_cdt}" || _ok=0 ;;
-                esac
-            elif _gc_seg_is_mkdir "${_seg}"; then
-                :
-            elif _gc_seg_is_inert "${_seg}"; then
-                :
-            else
-                _ok=0
-            fi
+            case "${_cdt}" in
+                /*) case "${_cdt}" in *..*) _ok=0 ;; *) _cwd="${_cdt}" ;; esac ;;
+                *)  _ok=0 ;;
+            esac
+        elif _gc_seg_is_inert "${_seg}"; then
+            :
+        else
+            _ok=0
         fi
         IFS="${_GC_SEP}"
     done
