@@ -73,6 +73,11 @@ test_guard_flags_function_keyword_definition() {
         "${FIXTURES}/red-function-keyword.sh"
 }
 
+test_guard_flags_space_before_parens_definition() {
+    _probe_guard fail "guard sees a space-before-parens definition that is never invoked" \
+        "${FIXTURES}/red-space-before-parens.sh"
+}
+
 test_guard_flags_invoked_but_never_defined() {
     _probe_guard fail "guard flags an invoked-but-never-defined test" "${FIXTURES}/red-undefined.sh"
 }
@@ -115,6 +120,45 @@ test_every_test_file_is_wired() {
 }
 
 # ---------------------------------------------------------------------------
+# Coverage limit, reported rather than hidden.
+#
+# This sweep can only see assertions that sit inside a `test_*` function which
+# the file invokes. Several files run most of their assertions at top level or
+# from differently-named helpers; for those, a clean result from the sweep above
+# means very little, and folding that into a silent pass is the same shape as a
+# gate that falls open without saying so.
+#
+# This does NOT fail. Those files are not broken — they are a different runner
+# shape, and failing them would be the arbitrary floor this commit removed,
+# wearing a new name. It names them so the limit is known.
+# ---------------------------------------------------------------------------
+test_report_files_the_sweep_barely_covers() {
+    echo "-- report: files whose assertions mostly escape this sweep --"
+    local f base defs asserts outside listed=0 checked=0
+    for f in "${SCRIPT_DIR}"/test-*.sh; do
+        base="$(basename "${f}")"
+        defs="$(grep -cE '^test_[A-Za-z0-9_]+[[:space:]]*\(\)|^function[[:space:]]+test_' "${f}")"
+        [ "${defs}" -eq 0 ] && continue
+        checked=$((checked + 1))
+        asserts="$(grep -cE '^[[:space:]]*(assert_|_record_)' "${f}")"
+        [ "${asserts}" -lt 20 ] && continue
+        # Assertions per definition: a file running dozens of assertions behind
+        # a handful of functions is either very dense or mostly outside them.
+        outside=$((asserts / defs))
+        if [ "${outside}" -ge 15 ]; then
+            listed=$((listed + 1))
+            echo "     ${base}: ${asserts} assertion lines behind ${defs} definitions"
+        fi
+    done
+    if [ "${checked}" -lt 15 ]; then
+        _record_fail "coverage-limit report ran over the suite" \
+            "only ${checked} files examined — the report is vacuous"
+    else
+        _record_pass "coverage-limit report examined ${checked} files (${listed} named)"
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Sweep 2: TESTS_RUN is bumped wherever TESTS_PASSED/TESTS_FAILED is bumped.
 # ---------------------------------------------------------------------------
 test_counters_cannot_exceed_their_denominator() {
@@ -144,9 +188,11 @@ test_counters_cannot_exceed_their_denominator() {
 test_guard_flags_defined_but_never_invoked
 test_guard_flags_invoked_but_never_defined
 test_guard_flags_function_keyword_definition
+test_guard_flags_space_before_parens_definition
 test_guard_passes_a_legitimately_small_file
 test_guard_reports_an_unreadable_file
 test_every_test_file_is_wired
+test_report_files_the_sweep_barely_covers
 test_counters_cannot_exceed_their_denominator
 
 print_summary
