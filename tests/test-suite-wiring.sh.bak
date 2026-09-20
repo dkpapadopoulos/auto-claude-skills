@@ -22,7 +22,6 @@
 # cover the 21st. The sweep's own floors are what keep it from going vacuous.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck source=tests/test-helpers.sh
 . "${SCRIPT_DIR}/test-helpers.sh"
 
@@ -45,23 +44,14 @@ _probe_guard() {
     # Silence the inner guard: its own PASS/FAIL lines are probe internals, and a
     # green run that prints "FAIL:" is the log-misreading hazard this repo already
     # has a rule about. The counters it mutates are still read below.
-    # Output goes to a FILE, not through `$( )`. A command substitution runs the
-    # guard in a subshell, where its counter mutations are lost and every
-    # assertion below reads the pre-call values — the same subshell trap this
-    # repo has hit in assertion loops. FAIL_MESSAGES holds only the label, so
-    # the detail naming the offending function is on stdout and nowhere else.
-    local _out
-    _out="$(mktemp /tmp/acs-probe-guard-XXXXXX)"
-    assert_test_functions_wired "${_file}" > "${_out}" 2>&1
-    local _fired=0 _detail
-    _detail="$(cat "${_out}")"
-    rm -f "${_out}"
+    assert_test_functions_wired "${_file}" >/dev/null 2>&1
+    local _fired=0 _msg_after="${FAIL_MESSAGES}"
     [ "${TESTS_FAILED}" -gt "${_f}" ] && _fired=1
     TESTS_RUN="${_r}"; TESTS_PASSED="${_p}"; TESTS_FAILED="${_f}"; FAIL_MESSAGES="${_m}"
     if [ "${_expect}" = "fail" ]; then
         if [ "${_fired}" -ne 1 ]; then
             _record_fail "${_label}" "the red fixture PASSED — the guard would not catch the real instance"
-        elif [ -n "${_needle}" ] && ! printf '%s' "${_detail}" | grep -qF "${_needle}"; then
+        elif [ -n "${_needle}" ] && ! printf '%s' "${_msg_after}" | grep -qF "${_needle}"; then
             # A red cell that only checks "something failed" certifies that the
             # guard detects SOMETHING, not that it detects the defect the cell
             # is named for. Measured: mutating the floor to reject every file

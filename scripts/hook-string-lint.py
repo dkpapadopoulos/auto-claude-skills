@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""
+r"""
 hook-string-lint.py — flag backticks that are LIVE command substitutions inside
 hook source, i.e. the PR#38 class: a backticked word written as markdown quoting
 inside a DOUBLE-quoted shell string is executed at assignment time, prints
@@ -39,9 +39,6 @@ desync is the mechanism by which this class of scanner goes silent, and that is
 now the thing it detects.
 """
 import sys
-
-SAFE, ACTIVE = "safe", "active"
-
 
 def scan(text):
     """Yield (lineno, col, context) for every backtick in an ACTIVE context.

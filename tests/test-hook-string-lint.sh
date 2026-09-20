@@ -218,11 +218,18 @@ test_shell_tree_is_clean() {
     # exact defect, in the change that adds the lint for it.
     _have_python || return
     local out rc n
-    n="$(ls -1 "${PROJECT_ROOT}"/hooks/*.sh "${PROJECT_ROOT}"/hooks/lib/*.sh \
-                "${PROJECT_ROOT}"/tests/*.sh "${PROJECT_ROOT}"/scripts/*.sh 2>/dev/null | wc -l | tr -d ' ')"
-    if [ "${n}" -lt 60 ]; then
+    # PER-TREE floors, not one floor on the total. A single floor of 60 against
+    # ~235 files is cleared by tests/ alone (~120 files) with hooks/ entirely
+    # unscanned — and hooks/ is the tree #143 actually asks about. A floor is
+    # only meaningful against the population it guards.
+    local n_hooks n_tests n_scripts
+    n_hooks="$(ls -1 "${PROJECT_ROOT}"/hooks/*.sh "${PROJECT_ROOT}"/hooks/lib/*.sh 2>/dev/null | wc -l | tr -d ' ')"
+    n_tests="$(ls -1 "${PROJECT_ROOT}"/tests/*.sh 2>/dev/null | wc -l | tr -d ' ')"
+    n_scripts="$(ls -1 "${PROJECT_ROOT}"/scripts/*.sh 2>/dev/null | wc -l | tr -d ' ')"
+    n=$((n_hooks + n_tests + n_scripts))
+    if [ "${n_hooks}" -lt 30 ] || [ "${n_tests}" -lt 100 ] || [ "${n_scripts}" -lt 20 ]; then
         _record_fail "shell tree is clean of live backticks" \
-            "only ${n} files found — the glob is not seeing the tree, so a pass would be vacuous"
+            "globs saw hooks=${n_hooks} tests=${n_tests} scripts=${n_scripts} — a tree is not being seen, so a pass would be vacuous"
         return
     fi
     out="$(python3 "${LINT}" "${PROJECT_ROOT}"/hooks/*.sh "${PROJECT_ROOT}"/hooks/lib/*.sh \
