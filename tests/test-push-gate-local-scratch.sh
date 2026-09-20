@@ -218,10 +218,39 @@ test_attack_env_prefix_redirects_git() {
 }
 
 test_attack_separate_git_dir() {
-    # Wires the scratch worktree to a real repository's gitdir. The option's
-    # VALUE was being skipped, so the reported target was the scratch dir.
-    _attack "git init --separate-git-dir <real>/.git" \
-        "mkdir -p ${SCRATCH} && cd ${SCRATCH} && git init -q --separate-git-dir ${PROJECT_ROOT}/.git . && git commit -m x && git push origin main"
+    # THE `=` FORM IS WHAT PINS THE REFUSAL. This cell used the SPACE form, and
+    # deleting the refusal arm failed NOTHING: with the arm gone the space
+    # form's value lands in the init target, which the does-not-exist check then
+    # rejects for an unrelated reason. It read as coverage and was not — the
+    # same shape as the `git -c` check earlier on this branch. It also used
+    # `mkdir -p`, which now refuses on its own, so it was vacuous twice over.
+    # Verified: with the arm deleted the `=` form certifies and the space form
+    # still refuses.
+    _attack "git init --separate-git-dir=<real>/.git (the = form)" \
+        "mkdir ${SCRATCH} && cd ${SCRATCH} && git init -q --separate-git-dir=${PROJECT_ROOT}/.git . && git commit -m x && git push origin main"
+    _attack "git init --separate-git-dir <real>/.git (space form)" \
+        "mkdir ${SCRATCH} && cd ${SCRATCH} && git init -q --separate-git-dir ${PROJECT_ROOT}/.git . && git commit -m x && git push origin main"
+}
+
+test_clauses_with_no_other_cell() {
+    # Clauses the source relies on that no other cell pinned — established by a
+    # reviewer's mutation matrix, where deleting each failed zero cells.
+
+    # "THE load-bearing condition" per the source comment: the target must not
+    # already exist. Without it this is the reinit bypass, since `git init`
+    # inside an existing repository is a successful no-op.
+    _attack "mkdir over an EXISTING repo with a configured origin" \
+        "mkdir ${PROJECT_ROOT} && cd ${PROJECT_ROOT} && git init && git commit -am x && git push origin main"
+
+    # An escaped quote merges a trailing push into a segment already accounted
+    # for. CLAUDE.md records this gate being silently re-opened once in
+    # command_push_is_all_deletions by a change believed to be pure refactoring.
+    _attack "escaped quote merges a second push into an accounted segment" \
+        "mkdir ${SCRATCH} && cd ${SCRATCH} && git init && git commit --allow-empty -m x && git push origin main && git add \\' && git push origin main"
+
+    # The init target and the push directory must name the same place.
+    _attack "git init targets a different directory than the push" \
+        "mkdir ${SCRATCH} && cd ${SCRATCH} && git init ${SCRATCH}-other && git commit --allow-empty -m x && git push origin main"
 }
 
 test_attack_untrackable_cd() {
@@ -401,6 +430,7 @@ test_preconditions
 test_baseline_still_certifies_at_predicate_level
 test_attack_env_prefix_redirects_git
 test_attack_separate_git_dir
+test_clauses_with_no_other_cell
 test_attack_untrackable_cd
 test_attack_push_before_init
 test_attack_per_command_config
