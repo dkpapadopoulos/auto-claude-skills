@@ -151,9 +151,17 @@ below plus the human preview.
 ### Requirement: Pilot arms are denied the named outbound tools and the sensitive paths
 
 The previous wording — "Pilot arms SHALL have no outbound transmission
-capability of their own" — was not enforceable and was not true: arms are
-dispatched as `general-purpose` (tool access `*`) and the Agent tool exposes no
-tool-restriction parameter. What is enforceable is stated instead.
+capability of their own" — was not enforceable and was not true: an arm runs with
+unrestricted tool access and no dispatch mechanism here exposes a tool-restriction
+parameter. What is enforceable is stated instead.
+
+Arms SHALL be dispatched as headless sessions rooted in their own worktree, NOT as
+subagents of an orchestrating session. This is a capability requirement, not a
+preference: measured before launch, the deny rule below is **inert** for a subagent,
+because the worktree's `.claude/settings.json` — which registers it — is never loaded
+for an agent belonging to another session, and the rule's own arm-identification reads
+a project directory the harness does not set for one. A subagent dispatch therefore
+satisfies the letter of this requirement while enforcing nothing.
 
 Pilot arms SHALL be denied, by a `PreToolUse` deny rule, the named non-Bash
 outbound tools (`WebFetch`, `WebSearch`, and the whole `mcp__` tool namespace),
@@ -166,7 +174,8 @@ capability SHALL be stated in the design record rather than claimed absent.
 
 #### Scenario: A named outbound tool and a sensitive read are both refused
 
-- **GIVEN** a pilot arm subagent operating under the pilot's deny rule
+- **GIVEN** a pilot arm running as a headless session in its own worktree, under
+  the pilot's deny rule
 - **WHEN** it invokes `WebFetch`, any `mcp__` tool, or a read of an enumerated
   sensitive path
 - **THEN** the call MUST be refused, the refusal MUST be observable as coming

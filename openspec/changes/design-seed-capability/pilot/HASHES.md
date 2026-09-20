@@ -33,7 +33,8 @@ against the bytes on the branches, before launch.
 | actually on the pushed branch | Dion `3e6902a` | `9172e24f…` |
 
 Dion `3e6902a` — *"fix: scope the pilot-arm deny hook to pilot-arm worktrees"*,
-2026-09-19 13:33 — changed that file by +97 lines. ACS `4c15261` — 13:40, seven
+2026-09-19 13:33 — changed that file: `git show --numstat` reports **89 added, 8
+removed** (97 is the diffstat's changed-line total, not an addition count). ACS `4c15261` — 13:40, seven
 minutes later — documented the change in `design.md` and **did not update this
 row**. Both branches were then pushed in that state. So this file bound while
 naming bytes that were not on the branch, for the artifact it itself calls "the
@@ -85,13 +86,25 @@ WebSearch "example domain"    -> SUCCEEDED
 pilot-arm-deny marker         -> never emitted
 ```
 
-Three independent causes, any one sufficient: Dion's `.claude/settings.json` is
-never loaded, because a subagent belongs to the orchestrating session and not to
-the worktree's project; the hook's own command line is
-`python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/pilot-arm-deny.py"`, which with that
-variable unset names a nonexistent path; and `_is_arm_context()` reads
-`CLAUDE_PROJECT_DIR` and falls back to the HOOK PROCESS's cwd — the session's
-directory, never the arm's worktree. The file's docstring reasons that "an arm
+**One cause, with two further defects nested behind it** — an earlier draft of this
+section called them "three independent causes, any one sufficient", and that was
+wrong. Corrected on review, with the measurement that settles it:
+
+1. Dion's `.claude/settings.json` is **never loaded**, because a subagent belongs to
+   the orchestrating session, not to the worktree's project. The hook therefore never
+   runs. This is the only cause consistent with what was observed — `WebFetch`
+   succeeding with no marker at all.
+2. The hook's command line is `python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/pilot-arm-deny.py"`,
+   which with that variable unset names a nonexistent path. Measured: that command
+   **exits 2**, and a `PreToolUse` exit 2 is a *deny*. So this defect standing alone
+   would have produced universal refusal, not the inertness observed.
+3. `_is_arm_context()` reads `CLAUDE_PROJECT_DIR` and falls back to the HOOK PROCESS's
+   cwd — the session's directory, never the arm's worktree. This one presupposes the
+   hook ran at all, so it is unreachable while (1) holds.
+
+(2) and (3) are reachable only once (1) is fixed. The distinction matters for anyone
+later trying to repair the subagent path by exporting `CLAUDE_PROJECT_DIR`: that would
+move the failure from "enforces nothing" to "refuses everything", not to working. The file's docstring reasons that "an arm
 cannot rewrite `CLAUDE_PROJECT_DIR` for its own already-running session", which is
 true and beside the point: the harness never sets it for a subagent.
 
@@ -115,19 +128,129 @@ genuine inertness rather than a broken probe.
 Each arm is therefore launched as its own headless session rooted in its worktree.
 **What this does not change:** the arms remain two fresh agents with disjoint
 context, one per worktree off the same base, receiving identical brief, fixture,
-model and budget. If anything the isolation is stronger — a headless session
-cannot see the orchestrating conversation at all, where a subagent inherits a
-dispatch prompt from it. No criterion, rubric dimension, budget rule, judging
+model and budget.
+
+**What it costs, stated in the same breath** — an earlier draft noted only that
+isolation gets *stronger* (a headless session cannot see the orchestrating
+conversation, where a subagent inherits a dispatch prompt from it) and stopped there.
+That was one-directional. The symmetric fact is that a headless session loads **more**
+machinery than a subagent did: the worktree's project settings, its `CLAUDE.md`, the
+user-level plugin stack, and a `UserPromptSubmit` hook that a subagent never fires.
+Two of those turned out to be actively harmful and are dealt with under "Revised
+before v2's first push" below. The favourable direction was cheap to notice and the
+unfavourable one was measurable in about two minutes; reporting only the first is the
+failure mode this file exists to prevent. No criterion, rubric dimension, budget rule, judging
 procedure or pre-registered outcome is touched. The hashed hook file itself is
 **unmodified**; what changed is how the arms are started, so that the file is
 actually in force.
+
+### Revised before v2's first push, in response to review
+
+v2 was committed, then reviewed before being pushed, and the review found it **honest
+but not launch-ready**. Everything below was added or corrected *before* v2 reached any
+remote, so this is a revision of v2 rather than a v3 — the same treatment the
+2026-09-19 revision received, and for the same reason: a record that has not been
+published has not yet bound. It is written down anyway, because a pre-registration
+whose amendments are silent is not one. No arm had run at any point.
+
+**(a) The record now states its own standing.** At the moment these words were
+written, `git ls-remote` showed Dion `design-seed-pilot` at `3e6902a` and
+auto-claude-skills `design-seed-pilot-impl` at `4c15261`. **Neither the v2 commit nor
+the Dion base it names was on any remote.** v2's opening correctly invokes the *v1*
+push to establish that this must be a v2; the corollary it failed to state is that
+until the push at the end of this revision lands, **v2 and its base carried strictly
+less authority than v1 did**. A reader reaching the end of this file should not have
+had to infer that.
+
+**(b) The launch procedure itself was amended — it had not been.** v2 changed
+`design.md` and this file, and left the operative instructions untouched:
+`docs/plans/2026-09-18-design-seed-pilot-plan.md` still said "Dispatch two
+`general-purpose` subagents concurrently", and `specs/design-foundations/spec.md` still
+*justified* subagent dispatch in its rationale and said "GIVEN a pilot arm subagent" in
+its scenario — i.e. the committed normative spec argued for the very dispatch v2
+established was broken. Both are now amended. **A ruling recorded only in a ledger is
+not a ruling: the executor reads the plan.**
+
+The plan's Step 4 boundary probe was also replaced. It piped JSON into the deny script
+from the orchestrator's shell, so its exit code reflected the *orchestrator's*
+`CLAUDE_PROJECT_DIR` and cwd — it returned `rc=2` for a mechanism that in reality
+enforced nothing, and could not distinguish a subagent from a headless session, which
+is precisely the failure it existed to catch. This file cited it as the authority under
+which "a faithful probe halts the launch"; it was not that control. The replacement
+launches a real session in the worktree and reads what it reports.
+
+**(c) The arms' environment is now specified, measured and hashed — it was none of
+those.** Headless dispatch fires `UserPromptSubmit`, which a subagent never does, so
+the user-level plugin stack injects routing guidance into every arm prompt. Worse than
+asymmetry: the `auto-claude-skills` hook injects **"DESIGN SEED: for UI work, adopt the
+shipped styleguide seed rather than inventing tokens … read `design/styleguide.md`"**
+into BOTH arms — handing **the control arm the treatment's core instruction**, and
+making arm S's pointer arrive from the plugin rather than from adoption. `design.md`
+lists "no routed design skill" as out of scope; loading the stack puts one in both arms.
+
+Remedies, each measured (`results/pre-launch-measurements.md`, M2-M4):
+
+- every user-level plugin disabled for the arm sessions via `--settings` with an
+  explicit `false` each (an empty `enabledPlugins:{}` does not work; `CLAUDE_CONFIG_DIR`
+  isolation breaks authentication);
+- the two arm prompts **byte-identical apart from the worktree path**, asserted with
+  `cmp` and recorded — superseding the plan's differing-prompt instruction, which was
+  itself the deviation from `design.md`'s "arm S's difference is the seed plus the
+  `ADOPT.md` pointer line in that worktree's agent instructions". A headless session
+  loads the worktree's `CLAUDE.md` (verified), so the pointer arrives there;
+- the preamble reduced to worktree path, budget cap and the fact that no interactive
+  user can answer — its exact bytes now hashed below, because an unhashed input that
+  shapes arm behaviour is this file's own item (1) failure repeating;
+- skill invocations recorded **per arm as an observed variable**, since "0 invocations"
+  is one draw from a stochastic process, not a property.
+
+**(d) `SessionStart` exposure, raised in review as unmeasured, is now measured.** It
+fires per arm, injects the maintainer's Dion auto-memory index, and makes an outbound
+`uv pip install --upgrade` before any tool call — outside the PreToolUse boundary. Each
+arm worktree's `.claude/settings.json` is reduced to the deny hook alone for the run.
+The built-in auto-memory index could not be suppressed without `--bare`, which would
+also remove the hooks and `CLAUDE.md` — the boundary and the treatment — so it is
+disclosed, not eliminated. Full scope and severity in M5; no portfolio data is involved.
+
+**(e) The budget's enforceability changed, and "budget unchanged" was silent on it.**
+`budget.md`'s text is untouched and remains the rule. But "60 tool calls" was
+orchestrator-observable for a subagent and is not for `claude -p`: the CLI has no
+`--max-turns`, so the cap is enforced by `results/run-arm.sh`, which counts `tool_use`
+events in `--output-format stream-json` and stops the session at 60 calls or 45
+minutes. budget.md's "work in progress at the cap is submitted as-is" is what makes
+stopping the correct behaviour. The artifact did not move; the apparatus reading it did.
+
+**(f) The model is pinned explicitly.** `design.md` freezes "model" as held-identical.
+Under subagent dispatch both arms inherited the orchestrator's; under `claude -p` it
+comes from CLI config, mutable between two launches. Both arms are launched with the
+same explicit `--model`, recorded in `results/arm-consumption.md`.
+
+**(g) Two smaller corrections.** The Step 4 note said "this file's v2 edit" when the
+commit also edited `design.md` (no test reads either; `tests/test-pilot-artifacts.sh`
+reads only `pilot/`). And "preserved as `rescue/unknown-init-*`" is true **on this
+machine only** — both are local tags on no remote; their content verifies as described
+(1273 files, 3 insertions, 236592 deletions, author `t <t@t>`).
+
+**(h) The evidence for change (3) is preserved.** Review noted, correctly, that the
+subagent-inert and headless-denied measurements were the load-bearing justification for
+the largest amendment in this v2 and existed only as one person's report, absent from
+the design's "Preserved artifacts" list. They are now in
+`results/pre-launch-measurements.md`, with the verbatim refusal text and the negative
+result beside it.
 
 ### What did not change
 
 The protocol did not. `rubric.md`, `brief.md`, `budget.md`,
 `advance-disclosures.md`, `pilot-egress-check.sh` and `pilot-capture.sh` are
 byte-identical to v1, and no arm, criterion, budget rule, judging procedure or
-pre-registered outcome has been touched. This v2 corrects one stale row and moves
+pre-registered outcome has been touched.
+
+Read that precisely: it is a claim about the **frozen artifacts**, not about the
+apparatus that reads them. Two things around them did move and are recorded above —
+how the budget cap is enforced, now that the orchestrator no longer observes an arm's
+tool calls directly (e), and what else is loaded into an arm session besides the brief
+(c, d). Byte-identity of the instrument is necessary for "the protocol is unchanged";
+it was never sufficient, and v2's first draft leaned on it as though it were. This v2 corrects one stale row and moves
 the Dion base by one commit that no hashed artifact depends on.
 
 ## Revision, 2026-09-19 — before any push
@@ -170,7 +293,10 @@ that does not was never a valid pilot artifact.
 | `scripts/pilot-egress-check.sh` | `863bf5d26353173dd769126d75dd857ffd5d464eee08a16a6d216b28403f2e03` | auto-claude-skills @ `53f37de5831ca5c7598bd40d14b875f47323a54e` |
 | `scripts/pilot-capture.sh` | `1d8feccb444e2a3bf18e30f431eb34fd97c20f4c94e424c925daedc77be93acc` | auto-claude-skills @ `53f37de5831ca5c7598bd40d14b875f47323a54e` |
 | `tests/fixtures/design_seed_pilot/review_report_envelope.json` | `c4c7dcd6c99ae3f21f0230b29c443292624e8cb96c31e83e967f6e498f35fadf` | Dion @ `3fbd89a` (base commit the fixture was generated from; see #211 note below) |
-| `.claude/hooks/pilot-arm-deny.py` | `9172e24fdb5026b7aa7b330b3a9b63d18549243d7188e1ea0c531665fc16aca3` | Dion @ `7d56694d49c74bdbc8c62469fea53844b1bb21b7` (v2: corrected — v1 named `f23aae06…` @ `8364c07`, which was already superseded) |
+| `.claude/hooks/pilot-arm-deny.py` | `9172e24fdb5026b7aa7b330b3a9b63d18549243d7188e1ea0c531665fc16aca3` | Dion @ `a6475eb030cbb04feea214a35b04ccfa4501ec92` (v2: corrected — v1 named `f23aae06…` @ `8364c07`, which was already superseded) |
+| `openspec/changes/design-seed-capability/pilot/results/arm-preamble.txt` | `a1eb61c32fcb8863c84aa1a0c3838cf6ce4bc04c645e88fbedca230633847be7` | auto-claude-skills @ this revision (new in v2's pre-push revision) |
+| `openspec/changes/design-seed-capability/pilot/results/arm-settings.json` | `7c8bbd1a6ca24d3b1b21069f9fa225e78c9f290e0f8fc2343196cdc67a341980` | auto-claude-skills @ this revision (new in v2's pre-push revision) |
+| `openspec/changes/design-seed-capability/pilot/results/run-arm.sh` | `eeed3cc69da9ab8f9392e405f2614ce4ed83118f748a00036d3dbc2156cc327c` | auto-claude-skills @ this revision (new in v2's pre-push revision) |
 
 The two `scripts/` rows were added in the 2026-09-18 revision. The safety control
 and the capture parameters determine what the pilot refuses to send and what the
@@ -185,9 +311,10 @@ arms' capability boundary.
 | Repo | Branch | HEAD |
 |---|---|---|
 | auto-claude-skills | `design-seed-pilot-impl` | `53f37de5831ca5c7598bd40d14b875f47323a54e` |
-| Dion | `design-seed-pilot` | `7d56694d49c74bdbc8c62469fea53844b1bb21b7` |
+| Dion | `design-seed-pilot` | `a6475eb030cbb04feea214a35b04ccfa4501ec92` |
 
-The Dion row moved in v2 (`8364c07…` → `7d56694…`); see v2 item (2). The
+The Dion row moved in v2 (`8364c07…` → `7d56694…` → `a6475eb…`); see v2 item (2)
+and the review follow-up in "Revised before v2's first push". The
 `auto-claude-skills` row is unchanged.
 
 **These are the commits the artifacts above were hashed at** — not a claim about what
@@ -327,11 +454,23 @@ ci: recorded pass for 7d56694d49c74bdbc8c62469fea53844b1bb21b7
 local CI gate passed
 ```
 
-Result: **PASS — 2346 passed, 12 skipped, 0 failed.** The count rises from 2334 by
-12: eleven cells added by `3e6902a` (`tests/design_seed_pilot/test_arm_capability_boundary.py`)
-and one added by `7d56694` — the regression cell for the inherited-`GIT_DIR` defect
-in v2 item (2), which was confirmed to FAIL with the fix's three call sites reverted
-before being accepted as passing.
+Result at `7d56694`: **PASS — 2346 passed, 12 skipped, 0 failed.**
+
+**Re-run at `a6475eb`** after the review follow-up (which hardened the same defect a
+second way — see "Revised before v2's first push"):
+
+```
+2363 passed, 12 skipped, 883 deselected, 21 warnings in 390.93s (0:06:30)
+local CI gate passed
+```
+
+Result: **PASS — 2363 passed, 12 skipped, 0 failed.** The arithmetic, since this file's
+own thesis is a number that did not reproduce: 2334 at `8364c07`; +11 cells from
+`3e6902a` (`tests/design_seed_pilot/test_arm_capability_boundary.py`) = 2345 — the
+remaining +1 to 2346 is `7d56694`'s regression cell, confirmed to FAIL with that fix's
+three call sites reverted before being accepted. Then `a6475eb` replaces that single
+cell with 17 (sixteen variables, each injected in turn, plus all-at-once) and adds the
+superset assertion: 2346 − 1 + 18 = **2363**.
 
 Result: **PASS — 2334 passed, 12 skipped, 0 failed.** Dion is gated here because the
 arms' capability boundary (`.claude/hooks/pilot-arm-deny.py`) now lives in that repo

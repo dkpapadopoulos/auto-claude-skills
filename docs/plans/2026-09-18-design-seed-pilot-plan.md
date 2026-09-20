@@ -4,7 +4,7 @@
 
 **Goal:** Build the instrument and the subject fixtures for a pre-registered two-arm comparison, run both arms, and adjudicate the result under rules fixed before launch.
 
-**Architecture:** Two repos with a hard split — **Dion holds the subject** (frozen fixture, task brief, the arms' worktrees), **auto-claude-skills holds the instrument** (rubric, advance disclosures, budget rules, egress check, capture harness, adjudication). The arms are fresh subagents in disposable `git worktree`s with no egress capability; the orchestrator has egress but sends only human-approved frozen packages that pass a mechanical hash check.
+**Architecture:** Two repos with a hard split — **Dion holds the subject** (frozen fixture, task brief, the arms' worktrees), **auto-claude-skills holds the instrument** (rubric, advance disclosures, budget rules, egress check, capture harness, adjudication). The arms are fresh HEADLESS SESSIONS (`claude -p`) in disposable `git worktree`s, constrained by each worktree's own PreToolUse deny hook (they are NOT subagents — that hook is inert for one; see HASHES.md v2 item 3); the orchestrator has egress but sends only human-approved frozen packages that pass a mechanical hash check.
 
 **Tech Stack:** Bash 3.2 + jq (plugin instrument), Python 3.12 + pytest (Dion fixtures), headless Chromium via `npx playwright` (instrument-side capture only), `scripts/consult-dispatch.sh` (judging egress).
 
@@ -1065,7 +1065,43 @@ Expected: `No such file or directory`, and zero matches. A leaked pointer makes 
 
 - [ ] **Step 4: Dispatch both arms in one message**
 
-Dispatch two `general-purpose` subagents concurrently. Each receives the verbatim contents of `brief.md` plus its worktree path and the budget cap. **Tell neither that another arm exists, that a design system exists, or what is being tested.** Arm S's prompt differs from arm C's only by the addition of its own repo-standard instruction to consult `design/styleguide.md` and run `design/checks/token-lint.sh` — the same pointer any adopting project would have.
+**AMENDED (HASHES.md v2/v3, before either arm ran).** Launch two concurrent HEADLESS
+sessions, one per worktree, NOT subagents:
+
+```bash
+bash scripts/run-arm.sh <worktree> <prompt-file> <out-dir> <model>
+# which runs, with cwd = <worktree>:
+#   claude -p "$(cat <prompt-file>)" --model <model> \
+#       --settings <arm-settings.json> --permission-mode bypassPermissions \
+#       --output-format stream-json --verbose
+```
+
+Three parts of this are load-bearing and were each measured, not assumed:
+
+- **Headless, not subagent.** The capability boundary is INERT for a subagent — the
+  worktree's `.claude/settings.json` is never loaded for an agent of another session.
+  Measured: subagent `WebFetch` succeeded with no marker; headless `WebFetch` was denied
+  with the `pilot-arm-deny:` marker.
+- **`--settings` disabling every user-level plugin.** With the plugin stack loaded, the
+  `auto-claude-skills` `UserPromptSubmit` hook injects "DESIGN SEED: for UI work, adopt
+  the shipped styleguide seed …" into EVERY arm prompt — handing the control arm the
+  treatment's core instruction. A subagent fires no `UserPromptSubmit`, which is why this
+  only appears with headless dispatch. An empty `enabledPlugins: {}` does NOT work; each
+  plugin needs an explicit `false`. (`CLAUDE_CONFIG_DIR` isolation was tried first and
+  rejected: it breaks authentication.)
+- **The arm worktree's `.claude/settings.json` is reduced to the deny hook alone** for
+  the duration, removing a `SessionStart` hook that injects a maintainer-memory digest
+  and makes an outbound `uv pip install --upgrade` before any tool call — outside the
+  PreToolUse boundary.
+
+Each arm receives the verbatim contents of `brief.md` plus a minimal preamble giving its
+worktree path, the budget cap, and the fact that no interactive user can answer a
+question. **The two prompts are BYTE-IDENTICAL apart from the worktree path**, asserted
+with `cmp` and recorded — superseding this step's earlier instruction to put arm S's
+styleguide pointer in its prompt. A headless session loads the worktree's `CLAUDE.md`
+(verified), so the pointer reaches arm S there, which is what `design.md` specified all
+along. **Tell neither that another arm exists, that a design system exists, or what is
+being tested.**
 
 **On "give neither agent egress tools" — you cannot.** `general-purpose` has
 tool access `*` and the Agent tool exposes no tool-restriction parameter, so
@@ -1081,13 +1117,29 @@ enumerating it is unbounded. Confirm the hook is live in both worktrees before
 dispatching:
 
 ```bash
+# Exercise the ACTUAL mechanism. Piping JSON into the script from the orchestrator's
+# shell does NOT do this: the script then reads the ORCHESTRATOR's CLAUDE_PROJECT_DIR
+# and cwd, so it returns rc=2 for a mechanism that in reality enforces nothing. That
+# older probe could not tell a subagent from a headless session, which is exactly the
+# failure it was supposed to catch.
 for w in /tmp/pilot-arm-c /tmp/pilot-arm-s; do
-    printf '{"tool_name":"WebFetch","tool_input":{"url":"https://example.com"}}' \
-        | python3 "$w/.claude/hooks/pilot-arm-deny.py"; echo "$w -> rc=$?"
+    (cd "$w" && claude -p 'Use WebFetch on https://example.com. Then reply with one line: DENIED (quote any hook marker) or SUCCEEDED.' \
+        --settings "$ARM_SETTINGS" --permission-mode bypassPermissions)
 done
 ```
-Expected: `rc=2` for both, with a `pilot-arm-deny:` line on stderr. An `rc=0`,
-or an `rc=2` with no marker, means the boundary is not there.
+Expected: **DENIED** for both, quoting `pilot-arm-deny:`. A `SUCCEEDED`, or a DENIED
+with no marker, means the boundary is not there and **the launch halts**.
+
+Verify in the same pass, per arm, because each has been wrong once:
+
+```bash
+(cd "$w" && claude -p 'Three lines. 1: quote any project instruction about design/styleguide.md, or NONE. 2: quote any SKILL ACTIVATION / routing block, or NONE. 3: quote any memory digest or MEMORY.md index line, or NONE.' \
+    --settings "$ARM_SETTINGS" --permission-mode bypassPermissions)
+```
+Expected: arm S quotes its `CLAUDE.md` pointer and arm C says NONE (line 1); **both say
+NONE** for lines 2 and 3. A routing block on line 2 means plugin injection is live and
+the control is contaminated; a digest on line 3 means the worktree `SessionStart` hooks
+were not reduced.
 
 - [ ] **Step 5: Record consumption**
 

@@ -1,0 +1,11 @@
+Your working directory is REPO_PATH. That is the repository you work in, and the only
+one you touch.
+
+Budget: at most 60 tool calls and 45 minutes. You will be stopped at whichever comes
+first, and whatever is on disk at that moment is your submission — so get something
+complete and working written early, and improve it if budget remains.
+
+No interactive user is available to answer questions. If something is ambiguous, decide,
+note the decision briefly in your final message, and continue.
+
+--- TASK ---

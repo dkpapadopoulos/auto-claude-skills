@@ -1,0 +1,24 @@
+{
+ "enabledPlugins": {
+  "codex@openai-codex": false,
+  "auto-claude-skills@acsm": false,
+  "superpowers@superpowers-marketplace": false,
+  "frontend-design@claude-plugins-official": false,
+  "claude-md-management@claude-plugins-official": false,
+  "claude-code-setup@claude-plugins-official": false,
+  "pr-review-toolkit@claude-plugins-official": false,
+  "context7@claude-plugins-official": false,
+  "github@claude-plugins-official": false,
+  "commit-commands@claude-plugins-official": false,
+  "security-guidance@claude-plugins-official": false,
+  "feature-dev@claude-plugins-official": false,
+  "hookify@claude-plugins-official": false,
+  "skill-creator@claude-plugins-official": false,
+  "typescript-lsp@claude-plugins-official": false,
+  "pyright-lsp@claude-plugins-official": false,
+  "clangd-lsp@claude-plugins-official": false,
+  "swift-lsp@claude-plugins-official": false,
+  "jdtls-lsp@claude-plugins-official": false,
+  "ruby-lsp@claude-plugins-official": false
+ }
+}
