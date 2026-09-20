@@ -189,10 +189,17 @@ assert_file_exists() {
 # quietly deletes coverage. Both are checked here.
 #
 # The FLOOR matters as much as the comparison: with no needles (an unresolvable
-# path, a CRLF checkout, an indented call list) both sets are empty, every
+# path, a CRLF checkout, a changed idiom) the DEFINED set is empty, every
 # comparison trivially holds, and the guard reports a pass having checked
 # nothing — the repo's own "a gate anchor needs a floor equal to the needle
 # count" rule.
+#
+# The floor is zero-needles, NOT an arbitrary minimum. It was `< 5`, which is a
+# different claim: measured across the 20 files carrying this idiom, six of them
+# genuinely define fewer than five tests, so a floor of 5 failed them for having
+# no defect while catching nothing a zero-check misses. An indented call list is
+# not a vacuity case either — it leaves DEFINED populated and INVOKED empty,
+# which the comparison below reports loudly and correctly.
 assert_test_functions_wired() {
     local _f="${1:-}" _defined _invoked _undefined _uncalled _n
     if [ ! -r "${_f}" ]; then
@@ -202,9 +209,9 @@ assert_test_functions_wired() {
     _defined="$(grep -oE '^test_[A-Za-z0-9_]+\(\)' "${_f}" | sed 's/()$//' | sort -u)"
     _invoked="$(grep -oE '^test_[A-Za-z0-9_]+$'      "${_f}" | sort -u)"
     _n="$(printf '%s\n' "${_defined}" | grep -c '[^[:space:]]')"
-    if [ "${_n}" -lt 5 ]; then
+    if [ "${_n}" -eq 0 ]; then
         _record_fail "test functions are wired (${_f})" \
-            "found only ${_n} test definitions — the matcher is not seeing this file, so the checks below are vacuous"
+            "found 0 test definitions — the matcher is not seeing this file (unresolvable path, CRLF, or a changed idiom), so every comparison below would hold vacuously"
         return
     fi
     _undefined="$(comm -13 <(printf '%s\n' "${_defined}") <(printf '%s\n' "${_invoked}") | grep '[^[:space:]]' || true)"
