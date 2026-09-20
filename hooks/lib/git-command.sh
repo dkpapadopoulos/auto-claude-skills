@@ -764,7 +764,19 @@ _gc_segment_mkdir_target() {
     shift 2>/dev/null || return 0
     while [ "$#" -gt 0 ]; do
         case "$1" in
-            -p|--parents) shift ;;
+            # `-p` REFUSES, and this is the condition the guarantee rests on.
+            # `mkdir -p` SUCCEEDS on a path that already exists — including a
+            # symlink to a directory — so under `&&` the chain carries on into
+            # whatever P really is. Bare `mkdir` FAILS there and `&&` aborts.
+            #
+            # That is the difference between "the hook checked disk state at
+            # time T" and "the command itself proves P was absent when it ran".
+            # It matters because hook-time disk state is AGENT-WRITABLE: nothing
+            # gates creating a symlink at P between this check and execution,
+            # and this repo's rule is never to suppress a gate on agent-writable
+            # state. With bare `mkdir` the runtime is the proof and the
+            # `[ -e ]` check below is only a cheap early-out.
+            -p|--parents) return 0 ;;
             -m|--mode) shift; shift 2>/dev/null || return 0 ;;
             -*) shift ;;
             *) break ;;
@@ -866,8 +878,34 @@ command_push_is_local_scratch() {
                 add|commit) : ;;
                 push)
                     _npush=$(( _npush + 1 ))
-                    _d="$(_gc_segment_dir_flag "${_seg}")"
-                    [ -n "${_d}" ] || _d="${_cwd}"
+                    # A directory-redirecting global flag on the push REFUSES.
+                    # It is not enough to stop READING `--work-tree` as the
+                    # subject: the predicate needs to know where git will
+                    # actually act, and no unvalidated flag can answer that.
+                    #
+                    # `--work-tree` is the sharp case because it does NOT change
+                    # which repository git acts on — git still discovers `.git`
+                    # from the cwd. Measured: with the cwd inside a real
+                    # checkout, `git --work-tree=<fresh scratch> push origin
+                    # main` satisfied every condition honestly (the scratch dir
+                    # was absent, freshly `mkdir`ed, `&&`-chained, and equal to
+                    # the init target) while the push shipped the checkout's
+                    # unreviewed HEAD to its real remote. `-C` is genuinely
+                    # honoured, which makes it a usable decoy from the other
+                    # direction; and two flags together made the subject
+                    # resolver return nothing and fall back to the tracked cwd,
+                    # discarding the `-C` that git does obey.
+                    #
+                    # Deliberately NOT fixed by narrowing `_gc_segment_dir_flag`:
+                    # its other caller is #219's subject resolver, whose contract
+                    # is to REPORT the command's claim so the guard can validate
+                    # and discard it downstream. Narrowing it would change that
+                    # deny path to buy a fix belonging one level up.
+                    case " ${_seg} " in
+                        *" -C "*|*" --git-dir "*|*" --git-dir="*|*" --work-tree "*|*" --work-tree="*|*" --namespace "*|*" --namespace="*)
+                            _ok=0 ;;
+                    esac
+                    _d="${_cwd}"
                     if [ -z "${_pushdir}" ]; then
                         _pushdir="${_d}"
                     elif [ "${_pushdir}" != "${_d}" ]; then

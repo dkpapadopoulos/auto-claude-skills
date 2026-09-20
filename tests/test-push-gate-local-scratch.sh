@@ -59,7 +59,11 @@ _expect() { # _expect <deny|ALLOW> <label> <command>
     done
 }
 
-_SCRATCH_PUSH="mkdir -p ${SCRATCH} && cd ${SCRATCH} && git init -q . && git commit -q --allow-empty -m x && git push origin main"
+# BARE mkdir, not `mkdir -p`. This is the reported #231 command as filed; the
+# `-p` here was mine, and it is exactly the condition the guarantee rests on —
+# `mkdir -p` succeeds on an existing path (a symlink to a directory included),
+# so the chain would carry on into whatever the target really is.
+_SCRATCH_PUSH="mkdir ${SCRATCH} && cd ${SCRATCH} && git init -q . && git commit -q --allow-empty -m x && git push origin main"
 
 test_preconditions() {
     # Assert, do not arrange: without jq or the predicate every cell below is
@@ -121,12 +125,12 @@ test_existing_directory_still_denies() {
 
 test_configured_remote_still_denies() {
     _expect deny "git remote add present" \
-        "mkdir -p ${SCRATCH} && cd ${SCRATCH} && git init -q . && git remote add origin git@github.com:a/b.git && git commit -m x && git push origin main"
+        "mkdir ${SCRATCH} && cd ${SCRATCH} && git init -q . && git remote add origin git@github.com:a/b.git && git commit -m x && git push origin main"
 }
 
 test_url_remote_still_denies() {
     _expect deny "push names a URL" \
-        "mkdir -p ${SCRATCH} && cd ${SCRATCH} && git init -q . && git commit -m x && git push https://github.com/a/b.git main"
+        "mkdir ${SCRATCH} && cd ${SCRATCH} && git init -q . && git commit -m x && git push https://github.com/a/b.git main"
 }
 
 test_clone_still_denies() {
@@ -275,6 +279,34 @@ test_failed_cd_is_denied_by_the_real_guard() {
         "cd /tmp/acs-231-absent-$$ ; git init ; git commit --allow-empty -m X ; git push origin main"
 }
 
+test_attack_mkdir_p_is_refused() {
+    # `mkdir -p` succeeds on an existing path, so it cannot prove P was absent
+    # when the command ran — only that the hook thought so earlier. A reviewer
+    # demonstrated the difference with a symlink planted at P: under `-p` the
+    # chain continued and the commit reached the real remote; under bare
+    # `mkdir` it failed and `&&` aborted before anything ran.
+    _attack "mkdir -p cannot prove the target was absent" \
+        "mkdir -p ${SCRATCH} && cd ${SCRATCH} && git init -q . && git commit -m x && git push origin main"
+}
+
+test_attack_directory_redirecting_flags() {
+    # --work-tree is the sharp one: it does NOT change which repository git acts
+    # on (git still discovers .git from the cwd), so with the cwd inside a real
+    # checkout every condition is satisfied HONESTLY — the scratch dir is
+    # absent, freshly mkdir'ed, &&-chained and equal to the init target — while
+    # the push ships the checkout's unreviewed HEAD to its real remote. A
+    # reviewer executed it and the commit reached the remote.
+    _attack "--work-tree names a decoy while git pushes the checkout" \
+        "mkdir ${SCRATCH} && cd ${PROJECT_ROOT} && git init ${SCRATCH} && git --work-tree=${SCRATCH} push origin main"
+    # Two dir flags made the subject resolver return nothing, so the predicate
+    # fell back to the tracked cwd and discarded the -C that git DOES obey.
+    _attack "two directory flags discard the -C git honours" \
+        "mkdir ${SCRATCH} && cd ${SCRATCH} && git init && git commit -m x && git --work-tree=${SCRATCH} -C ${PROJECT_ROOT} push origin main"
+    _attack "a bare -C on the push segment" \
+        "mkdir ${SCRATCH} && cd ${SCRATCH} && git init && git commit -m x && git -C ${PROJECT_ROOT} push origin main"
+}
+
+
 test_attack_per_command_config() {
     # `git -c` sets configuration for one command, including remote URLs and
     # `url.*.insteadOf` rewrites.
@@ -297,6 +329,8 @@ test_attack_separate_git_dir
 test_attack_untrackable_cd
 test_attack_push_before_init
 test_attack_per_command_config
+test_attack_directory_redirecting_flags
+test_attack_mkdir_p_is_refused
 test_attack_failed_cd_carries_on
 test_failed_cd_is_denied_by_the_real_guard
 test_scratch_push_is_allowed
