@@ -703,8 +703,15 @@ _gc_seg_is_cd() {
 }
 
 # _gc_seps_all_and <command>
-#   0 when every separator between segments is `&&`. Refuses `;`, a newline, a
-#   pipe, `||` and a lone `&`, outside quotes.
+#   0 when the command is a flat `&&` chain: every separator is `&&` and there
+#   is no grouping. Refuses `;`, a newline, a pipe, `||`, a lone `&`, and any
+#   `(`/`)`/`{`/`}`, outside quotes.
+#
+#   PAIRED with `_gc_split_segments`, which is this file's OTHER hand-rolled
+#   quote scanner. That one deliberately does not interpret backslash escapes
+#   and this one does; every divergence found in review lands on refuse, but
+#   the two are the drift-prone shape this repo has been bitten by, so a change
+#   to either should be checked against the other.
 #
 #   THIS IS A SAFETY CONDITION, not tidiness. `_gc_split_segments` throws the
 #   operator away, so `A ; B` and `A && B` are identical to every predicate
@@ -737,6 +744,17 @@ _gc_seps_all_and() {
                     if [ "${_s:$(( _i + 1 )):1}" = "&" ]; then _i=$(( _i + 2 )); continue; fi
                     return 1 ;;
                 ';'|'|') return 1 ;;
+                # Group punctuation refuses for the same reason a `;` does: it
+                # decouples where this function thinks execution is from where
+                # it actually is. A `cd` inside `( … )` does NOT move the outer
+                # shell, but the tracked cwd followed it, so
+                #     ( mkdir /tmp/x && cd /tmp/x && git init && git commit ) \
+                #         && git push origin main
+                # certified while the push ran in the session's own checkout and
+                # reached its real remote — measured end to end by a reviewer.
+                # This predicate keeps no scope stack, so a `cd` whose effect it
+                # cannot bound must refuse, exactly as bare `cd` and `cd -` do.
+                '('|')'|'{'|'}') return 1 ;;
                 '
 ') return 1 ;;
             esac

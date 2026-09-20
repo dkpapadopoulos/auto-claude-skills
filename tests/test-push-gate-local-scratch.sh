@@ -307,6 +307,40 @@ test_attack_directory_redirecting_flags() {
 }
 
 
+test_attack_subshell_cd() {
+    # A `cd` inside `( … )` does NOT move the outer shell, but the tracked cwd
+    # followed it — so the push ran in the session's own checkout and reached
+    # its real remote. Measured end to end by a reviewer:
+    #   remote 3da25e2 -> 2c1e93c, guard ALLOW, control deny.
+    #
+    # Same failure as the `;` case (tracked cwd diverging from real cwd) via
+    # grouping instead of separators, which is why the separator fix did not
+    # cover it. This predicate keeps no scope stack, so a `cd` whose effect it
+    # cannot bound must refuse.
+    _attack "cd confined to a subshell, push outside it" \
+        "( mkdir ${SCRATCH} && cd ${SCRATCH} && git init && git commit --allow-empty -m x ) && git push origin main"
+    _attack "the brace-group variant" \
+        "{ mkdir ${SCRATCH} && cd ${SCRATCH} && git init && git commit --allow-empty -m x ; } && git push origin main"
+}
+
+test_subshell_cd_is_denied_by_the_real_guard() {
+    _expect deny "subshell cd, end to end" \
+        "( mkdir ${SCRATCH} && cd ${SCRATCH} && git init && git commit --allow-empty -m x ) && git push origin main"
+}
+
+test_attack_git_dir_on_the_push() {
+    # `_gc_segment_dir_flag` SKIPS --git-dir and its value, recording only -C
+    # and --work-tree, so the subject read as the scratch dir while git acted on
+    # the named repository. Closed by the same refusal list as B1 — recorded
+    # here because a reviewer found it independently and it is the flag the
+    # `git init` arm already treats as dangerous.
+    _attack "--git-dir= on the push segment" \
+        "mkdir ${SCRATCH} && cd ${SCRATCH} && git init && git commit -m x && git --git-dir=${PROJECT_ROOT}/.git push origin main"
+    _attack "--git-dir space form on the push segment" \
+        "mkdir ${SCRATCH} && cd ${SCRATCH} && git init && git commit -m x && git --git-dir ${PROJECT_ROOT}/.git push origin main"
+}
+
+
 test_attack_per_command_config() {
     # `git -c` sets configuration for one command, including remote URLs and
     # `url.*.insteadOf` rewrites.
@@ -330,6 +364,9 @@ test_attack_untrackable_cd
 test_attack_push_before_init
 test_attack_per_command_config
 test_attack_directory_redirecting_flags
+test_attack_subshell_cd
+test_subshell_cd_is_denied_by_the_real_guard
+test_attack_git_dir_on_the_push
 test_attack_mkdir_p_is_refused
 test_attack_failed_cd_carries_on
 test_failed_cd_is_denied_by_the_real_guard
