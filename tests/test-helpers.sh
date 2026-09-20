@@ -194,6 +194,12 @@ assert_file_exists() {
 # nothing — the repo's own "a gate anchor needs a floor equal to the needle
 # count" rule.
 #
+# KNOWN GAP, deliberately left and stated rather than silently carried: a
+# definition or a call that is INDENTED is not seen by either matcher, because
+# both anchor at column 0. That is the repo's own bare-call idiom, and widening
+# the invoked-set matcher to indented lines would match every conditional call
+# inside a helper. An indented file trips the zero-needles floor instead.
+#
 # The floor is zero-needles, NOT an arbitrary minimum. It was `< 5`, which is a
 # different claim: measured across the 20 files carrying this idiom, six of them
 # genuinely define fewer than five tests, so a floor of 5 failed them for having
@@ -206,7 +212,14 @@ assert_test_functions_wired() {
         _record_fail "test functions are wired (${_f})" "cannot read the file — the guard checked nothing"
         return
     fi
-    _defined="$(grep -oE '^test_[A-Za-z0-9_]+\(\)' "${_f}" | sed 's/()$//' | sort -u)"
+    # Both bash definition forms. `function test_x { ... }` defines a test just
+    # as `test_x() { ... }` does, and matching only the second makes such a test
+    # invisible to the DEFINED set — so one that is never invoked reads as
+    # correctly wired. No file uses that form today; the point is that the day
+    # one does, it must not open the gap this guard exists to close.
+    _defined="$( { grep -oE '^test_[A-Za-z0-9_]+\(\)' "${_f}" | sed 's/()$//'
+                   grep -oE '^function[[:space:]]+test_[A-Za-z0-9_]+' "${_f}" | sed 's/^function[[:space:]]*//'
+                 } | sort -u)"
     _invoked="$(grep -oE '^test_[A-Za-z0-9_]+$'      "${_f}" | sort -u)"
     _n="$(printf '%s\n' "${_defined}" | grep -c '[^[:space:]]')"
     if [ "${_n}" -eq 0 ]; then

@@ -68,6 +68,11 @@ test_guard_flags_defined_but_never_invoked() {
     _probe_guard fail "guard flags a defined-but-never-invoked test" "${FIXTURES}/red-uncalled.sh"
 }
 
+test_guard_flags_function_keyword_definition() {
+    _probe_guard fail "guard sees a function-keyword definition that is never invoked" \
+        "${FIXTURES}/red-function-keyword.sh"
+}
+
 test_guard_flags_invoked_but_never_defined() {
     _probe_guard fail "guard flags an invoked-but-never-defined test" "${FIXTURES}/red-undefined.sh"
 }
@@ -138,6 +143,7 @@ test_counters_cannot_exceed_their_denominator() {
 
 test_guard_flags_defined_but_never_invoked
 test_guard_flags_invoked_but_never_defined
+test_guard_flags_function_keyword_definition
 test_guard_passes_a_legitimately_small_file
 test_guard_reports_an_unreadable_file
 test_every_test_file_is_wired

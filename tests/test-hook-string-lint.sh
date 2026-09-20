@@ -9,8 +9,10 @@
 # That shipped once already (PR #38, a DISCOVER RED_FLAGS string).
 #
 # TWO AUTHORITIES, deliberately. The lint is one. The other is bash itself:
-# every fixture is EXECUTED, and a red fixture must produce a command-not-found
-# while the green one must not. Without that second authority the fixtures only
+# every fixture is EXECUTED, and the oracle is whether the backticked word
+# SURVIVES into the rendered output — gone in a red fixture, intact in a green
+# one. That is the defect as users meet it, and unlike the text of a failed PATH
+# lookup it does not vary with shell, locale or sandbox. Without that second authority the fixtures only
 # ever prove the scanner agrees with the fixture author — and on the first draft
 # it did not: a shape written as "green" genuinely executed `the docs`, which
 # only running it revealed.
@@ -78,36 +80,48 @@ test_green_safe_backticks_are_not_flagged() {
 # ---------------------------------------------------------------------------
 # Second authority: bash. The fixtures must actually behave as labelled.
 # ---------------------------------------------------------------------------
-_fires_substitution() {
-    # 0 = a substitution fired (command-not-found on stderr), 1 = none did.
-    local err
-    err="$(/bin/bash "$1" 2>&1 >/dev/null)"
-    printf '%s' "${err}" | grep -qi 'command not found'
+# _word_is_eaten <fixture> <word>
+#   0 when <word> does NOT survive into the fixture's rendered stdout, i.e. the
+#   backtick was executed and the word silently vanished — which IS the defect.
+#
+#   The oracle is the DISAPPEARANCE, not the error message. The first version
+#   grepped stderr for "command not found": that passed here and FAILED under a
+#   reviewer's sandbox, because the text of a failed PATH lookup depends on the
+#   shell, the locale and the sandbox, while the word going missing is the thing
+#   the issue is actually about. Asserting on runtime message text is this
+#   repo's own documented trap.
+_word_is_eaten() {
+    local out
+    out="$(/bin/bash "$1" 2>/dev/null)"
+    ! printf '%s' "${out}" | grep -qF "$2"
 }
 
-test_red_fixtures_really_execute_the_backtick() {
-    local f ok=1 checked=0
-    for f in "${FIXTURES}"/red-*.sh; do
-        checked=$((checked + 1))
-        _fires_substitution "${f}" || ok=0
-    done
-    if [ "${checked}" -eq 0 ]; then
-        _record_fail "red fixtures really execute the backtick" \
-            "no red fixtures found — the glob matched nothing and this cell is vacuous"
-    elif [ "${ok}" -eq 1 ]; then
-        _record_pass "every red fixture really executes its backtick under bash (${checked})"
+test_red_fixtures_really_lose_the_word() {
+    # Each red fixture is paired with the word its backtick swallows.
+    local ok=1
+    _word_is_eaten "${FIXTURES}/red-backtick-in-double-quotes.sh" "verification-before-completion" || ok=0
+    _word_is_eaten "${FIXTURES}/red-unquoted-heredoc.sh" "project-verification" || ok=0
+    if [ "${ok}" -eq 1 ]; then
+        _record_pass "every red fixture really loses its backticked word when run (2)"
     else
-        _record_fail "red fixtures really execute the backtick" \
-            "a red fixture ran clean — it does not reproduce the defect it is named for"
+        _record_fail "red fixtures really lose the backticked word" \
+            "a red fixture rendered its word intact — it does not reproduce the defect it is named for"
     fi
 }
 
-test_green_fixture_really_executes_nothing() {
-    if _fires_substitution "${FIXTURES}/green-safe-backticks.sh"; then
-        _record_fail "green fixture executes no substitution" \
-            "the green fixture DID run a command — it is a red case mislabelled"
+test_green_fixture_really_keeps_its_words() {
+    # The mirror assertion: in the green fixture the same shapes are literal, so
+    # the words must SURVIVE. Without this direction, a fixture that rendered
+    # nothing at all would satisfy the red cells above.
+    local ok=1
+    _word_is_eaten "${FIXTURES}/green-safe-backticks.sh" "verification-before-completion" && ok=0
+    _word_is_eaten "${FIXTURES}/green-safe-backticks.sh" "openspec/changes" && ok=0
+    _word_is_eaten "${FIXTURES}/green-safe-backticks.sh" "project-verification" && ok=0
+    if [ "${ok}" -eq 1 ]; then
+        _record_pass "green fixture renders every backticked word intact (3)"
     else
-        _record_pass "green fixture executes no substitution under bash"
+        _record_fail "green fixture renders its words intact" \
+            "a word went missing — a green shape is executing, so it is a red case mislabelled"
     fi
 }
 
@@ -115,20 +129,28 @@ test_green_fixture_really_executes_nothing() {
 # The real tree must be clean. This is what keeps a newly-mishandled shell
 # construct loud: it shows up as a false positive on a known-good file.
 # ---------------------------------------------------------------------------
-test_hooks_tree_is_clean() {
+test_shell_tree_is_clean() {
+    # Scope is hooks/ AND tests/ AND scripts/, not hooks/ alone. The issue asked
+    # only for hooks, but both other trees measured clean when this was written,
+    # so the coverage is free — and it is not hypothetical: a label written as
+    # "a `function`-keyword definition" in tests/test-suite-wiring.sh executed
+    # `function` and silently rendered as "a -keyword definition", which is this
+    # exact defect, in the change that adds the lint for it.
     _have_python || return
     local out rc n
-    n="$(ls -1 "${PROJECT_ROOT}"/hooks/*.sh "${PROJECT_ROOT}"/hooks/lib/*.sh 2>/dev/null | wc -l | tr -d ' ')"
-    if [ "${n}" -lt 10 ]; then
-        _record_fail "hooks tree is clean of live backticks" \
-            "only ${n} hook files found — the glob is not seeing the tree, so a pass would be vacuous"
+    n="$(ls -1 "${PROJECT_ROOT}"/hooks/*.sh "${PROJECT_ROOT}"/hooks/lib/*.sh \
+                "${PROJECT_ROOT}"/tests/*.sh "${PROJECT_ROOT}"/scripts/*.sh 2>/dev/null | wc -l | tr -d ' ')"
+    if [ "${n}" -lt 60 ]; then
+        _record_fail "shell tree is clean of live backticks" \
+            "only ${n} files found — the glob is not seeing the tree, so a pass would be vacuous"
         return
     fi
-    out="$(python3 "${LINT}" "${PROJECT_ROOT}"/hooks/*.sh "${PROJECT_ROOT}"/hooks/lib/*.sh 2>&1)"; rc=$?
+    out="$(python3 "${LINT}" "${PROJECT_ROOT}"/hooks/*.sh "${PROJECT_ROOT}"/hooks/lib/*.sh \
+                              "${PROJECT_ROOT}"/tests/*.sh "${PROJECT_ROOT}"/scripts/*.sh 2>&1)"; rc=$?
     if [ "${rc}" -eq 0 ] && [ -z "${out}" ]; then
-        _record_pass "hooks tree (${n} files) carries no live backtick substitution"
+        _record_pass "hooks, tests and scripts (${n} files) carry no live backtick substitution"
     else
-        _record_fail "hooks tree is clean of live backticks" "${out}"
+        _record_fail "shell tree is clean of live backticks" "${out}"
     fi
 }
 
@@ -136,8 +158,8 @@ test_lint_is_runnable
 test_red_double_quoted_is_flagged
 test_red_unquoted_heredoc_is_flagged
 test_green_safe_backticks_are_not_flagged
-test_red_fixtures_really_execute_the_backtick
-test_green_fixture_really_executes_nothing
-test_hooks_tree_is_clean
+test_red_fixtures_really_lose_the_word
+test_green_fixture_really_keeps_its_words
+test_shell_tree_is_clean
 
 print_summary
