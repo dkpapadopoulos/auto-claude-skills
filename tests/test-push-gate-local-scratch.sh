@@ -231,6 +231,50 @@ test_attack_push_before_init() {
         "mkdir -p ${SCRATCH} && cd ${SCRATCH} && git push origin main && git init -q . && git commit -m x"
 }
 
+test_attack_failed_cd_carries_on() {
+    # THE one a reviewer found and I did not. `_gc_split_segments` discards the
+    # operator, so `A ; B` and `A && B` are identical to every predicate built
+    # on it — and they are not identical at runtime. With `;` a FAILED `cd`
+    # does not stop the command: the shell stays in the session's own checkout,
+    # `git init` REINITIALISES the real repository, and the commit reaches the
+    # real remote. Executed end to end by the reviewer against a fixture with a
+    # remote, the commit landed on it.
+    #
+    # It is the reinit bypass arriving from the other side: the directory that
+    # does not exist is never entered, so the "target must not exist" condition
+    # is satisfied by a path nothing ever touches. And it is not exotic — it is
+    # the reported #231 command with `;` separators, which an agent writes by
+    # habit.
+    _attack "failed cd carried on by ';' separators" \
+        "cd /tmp/acs-231-absent-$$ ; git init ; git commit --allow-empty -m X ; git push origin main"
+    _attack "failed cd carried on by newline separators" \
+        "cd /tmp/acs-231-absent-$$
+git init
+git commit --allow-empty -m X
+git push origin main"
+    # THE cell that makes the `&&` requirement load-bearing. With a `mkdir`
+    # present the mkdir condition is satisfied, so only the separator check can
+    # refuse this: the mkdir itself FAILS (no parent), `;` carries execution on
+    # regardless, the `cd` fails too, and `git init` reinitialises the session's
+    # own repository. Without this cell, deleting the separator check failed
+    # nothing — dead code implying coverage it did not provide.
+    _attack "failing mkdir carried on by ';' separators" \
+        "mkdir /nope/deep/acs231-$$ ; cd /nope/deep/acs231-$$ ; git init ; git commit --allow-empty -m X ; git push origin main"
+    _attack "no mkdir: P's existence at exec time is unproven" \
+        "cd /tmp/acs-231-absent-$$ && git init -q . && git commit -m x && git push origin main"
+}
+
+test_failed_cd_is_denied_by_the_real_guard() {
+    # PAIRED WITH THE UNIT CELLS ABOVE, and not redundant with them. When a
+    # bypass hides the subject, a predicate-level cell can refuse for the wrong
+    # reason and still look green; only a guard-level assertion separates "we
+    # measured the wrong thing" from "we did not gate at all". This exact
+    # command was measured ALLOW against the real guard before the fix, with
+    # the bare push control denying.
+    _expect deny "failed cd with ';' separators (end to end)" \
+        "cd /tmp/acs-231-absent-$$ ; git init ; git commit --allow-empty -m X ; git push origin main"
+}
+
 test_attack_per_command_config() {
     # `git -c` sets configuration for one command, including remote URLs and
     # `url.*.insteadOf` rewrites.
@@ -253,6 +297,8 @@ test_attack_separate_git_dir
 test_attack_untrackable_cd
 test_attack_push_before_init
 test_attack_per_command_config
+test_attack_failed_cd_carries_on
+test_failed_cd_is_denied_by_the_real_guard
 test_scratch_push_is_allowed
 test_scratch_push_announces_the_skip
 test_reinit_in_a_real_repo_still_denies

@@ -702,6 +702,81 @@ _gc_seg_is_cd() {
     [ "${1:-}" = "cd" ]
 }
 
+# _gc_seps_all_and <command>
+#   0 when every separator between segments is `&&`. Refuses `;`, a newline, a
+#   pipe, `||` and a lone `&`, outside quotes.
+#
+#   THIS IS A SAFETY CONDITION, not tidiness. `_gc_split_segments` throws the
+#   operator away, so `A ; B` and `A && B` are identical to every predicate
+#   built on it — and they are not identical at runtime. With `;` a FAILED `cd`
+#   does not stop the command: the shell stays where it was, which is the
+#   session's own checkout. Measured against the real guard:
+#
+#       cd /tmp/does-not-exist ; git init ; git commit -m X ; git push origin main
+#
+#   certified and was ALLOWED, while the bare `git push origin main` control
+#   denied. Executed, the `cd` failed, `git init` REINITIALISED the real
+#   repository, and the commit reached the real remote. It is the reinit bypass
+#   that the "target must not exist" condition exists to stop, arriving from the
+#   other side: the directory that does not exist is never entered, so that
+#   condition is satisfied by a path nothing ever touches.
+#
+#   With `&&`, a failing `mkdir` or `cd` aborts the chain before the push, so
+#   the push can only run from the directory this function believes it runs in.
+#   That is what makes the tracked cwd trustworthy rather than a guess.
+_gc_seps_all_and() {
+    local _s="$1" _i=0 _n=${#1} _c _sq=0 _dq=0
+    while [ "${_i}" -lt "${_n}" ]; do
+        _c="${_s:${_i}:1}"
+        if [ "${_sq}" -eq 0 ] && [ "${_c}" = "\\" ]; then _i=$(( _i + 2 )); continue; fi
+        if [ "${_dq}" -eq 0 ] && [ "${_c}" = "'" ]; then _sq=$(( 1 - _sq )); _i=$(( _i + 1 )); continue; fi
+        if [ "${_sq}" -eq 0 ] && [ "${_c}" = '"' ]; then _dq=$(( 1 - _dq )); _i=$(( _i + 1 )); continue; fi
+        if [ "${_sq}" -eq 0 ] && [ "${_dq}" -eq 0 ]; then
+            case "${_c}" in
+                '&')
+                    if [ "${_s:$(( _i + 1 )):1}" = "&" ]; then _i=$(( _i + 2 )); continue; fi
+                    return 1 ;;
+                ';'|'|') return 1 ;;
+                '
+') return 1 ;;
+            esac
+        fi
+        _i=$(( _i + 1 ))
+    done
+    return 0
+}
+
+# _gc_segment_mkdir_target <segment>
+#   The single directory a `mkdir` segment names, absolute or not. Echoes
+#   nothing when the segment is not a mkdir or names anything but one path.
+_gc_segment_mkdir_target() {
+    local _u _p
+    _gc_seg_is_mkdir "$1" || return 0
+    # shellcheck disable=SC2086
+    set -- $1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            '('|'{') shift ;;
+            '('*|'{'*) _u="$(_gc_strip_openers "$1")"; shift; set -- "${_u}" "$@"; break ;;
+            *) break ;;
+        esac
+    done
+    shift 2>/dev/null || return 0
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            -p|--parents) shift ;;
+            -m|--mode) shift; shift 2>/dev/null || return 0 ;;
+            -*) shift ;;
+            *) break ;;
+        esac
+    done
+    [ "$#" -eq 1 ] || return 0
+    _p="$(_gc_strip_closers "$1")"
+    _p="${_p%\"}"; _p="${_p#\"}"; _p="${_p%\'}"; _p="${_p#\'}"
+    case "${_p}" in ''|*..*) return 0 ;; esac
+    printf '%s' "${_p}"
+}
+
 # command_push_is_local_scratch <command>
 #   0 iff every `git push` in <command> acts on a repository that THIS COMMAND
 #   creates from nothing, in a directory that does not exist yet, with no remote
@@ -743,7 +818,7 @@ _gc_seg_is_cd() {
 command_push_is_local_scratch() {
     local _cmd="$1"
     local _segs _oldifs _seg _sub _cwd="" _cdt="" _t="" _initdir="" _pushdir="" _d
-    local _npush=0 _ninit=0 _ok=1
+    local _npush=0 _ninit=0 _ok=1 _mkdir_p=""
 
     # A command substitution RUNS wherever it appears, so it smuggles an
     # arbitrary command into a segment this predicate would otherwise vouch for
@@ -807,7 +882,11 @@ command_push_is_local_scratch() {
                 *) _ok=0 ;;
             esac
         elif _gc_seg_is_mkdir "${_seg}"; then
-            :
+            _t="$(_gc_segment_mkdir_target "${_seg}")"
+            case "${_t}" in
+                /*) _mkdir_p="${_t}" ;;
+                *)  _ok=0 ;;
+            esac
         elif _gc_seg_is_cd "${_seg}"; then
             # A `cd` this function cannot resolve EXACTLY makes every later
             # subject wrong while still looking accounted for. Bare `cd` goes to
@@ -833,6 +912,13 @@ command_push_is_local_scratch() {
     [ "${_ok}" -eq 1 ]      || return 1
     [ "${_npush}" -ge 1 ]   || return 1
     [ "${_ninit}" -ge 1 ]   || return 1
+    # The command must CREATE the directory it pushes in, and every separator
+    # must be `&&` so a failure cannot carry execution onward into the
+    # session's own checkout. Neither condition alone is enough: `&&` without a
+    # `mkdir` leaves the directory's existence at exec time to chance, and a
+    # `mkdir` without `&&` does not stop a failed `cd` from continuing.
+    [ -n "${_mkdir_p}" ] && [ "${_mkdir_p}" = "${_pushdir}" ] || return 1
+    _gc_seps_all_and "${_cmd}" || return 1
     [ -n "${_initdir}" ]    || return 1
     [ -n "${_pushdir}" ]    || return 1
     [ "${_initdir}" = "${_pushdir}" ] || return 1
