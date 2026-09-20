@@ -341,6 +341,37 @@ test_attack_git_dir_on_the_push() {
 }
 
 
+test_attack_destination_shapes() {
+    # The old check EXCLUDED url shapes (`*://*|*@*:*`) and missed two whole
+    # families, both measured pushing to real repositories:
+    #   - git's scp-like syntax makes the user OPTIONAL, so `host:org/repo.git`
+    #     is an SSH URL with neither `://` nor `@` (confirmed: it invokes ssh);
+    #   - a bare filesystem path is a valid remote.
+    _attack "scp-style SSH remote (no :// and no @)" \
+        "mkdir ${SCRATCH} && cd ${SCRATCH} && git init && git commit --allow-empty -m x && git push github.com:o/r.git +HEAD:refs/heads/main"
+    _attack "local-path remote with --force" \
+        "mkdir ${SCRATCH} && cd ${SCRATCH} && git init && git commit --allow-empty -m x && git push --force /tmp/t/bare.git +HEAD:refs/heads/release"
+    _attack "--repo= carrying the destination" \
+        "mkdir ${SCRATCH} && cd ${SCRATCH} && git init && git commit --allow-empty -m x && git push --repo=github.com:o/r.git"
+}
+
+test_attack_deletion_needs_no_content() {
+    # THE finding that refuted this predicate's core safety argument. The design
+    # reasoned that a repository created moments ago has no content to ship.
+    # Deletion and force-update need NO content: `git push --mirror <path>` from
+    # an EMPTY repo deleted refs on the target — measured, two of three gone,
+    # `main` surviving only because the server refuses to delete its own HEAD
+    # branch. And certification skips the WHOLE gate, not merely the content
+    # legs, so "nothing to ship" never bounded the damage.
+    _attack "--mirror from an empty repo wipes the target" \
+        "mkdir ${SCRATCH} && cd ${SCRATCH} && git init && git push --mirror /tmp/t/bare.git"
+    _attack "--delete needs no content either" \
+        "mkdir ${SCRATCH} && cd ${SCRATCH} && git init && git push --delete origin main"
+    _attack "--all broadens beyond the named ref" \
+        "mkdir ${SCRATCH} && cd ${SCRATCH} && git init && git commit -m x && git push --all origin"
+}
+
+
 test_attack_per_command_config() {
     # `git -c` sets configuration for one command, including remote URLs and
     # `url.*.insteadOf` rewrites.
@@ -367,6 +398,8 @@ test_attack_directory_redirecting_flags
 test_attack_subshell_cd
 test_subshell_cd_is_denied_by_the_real_guard
 test_attack_git_dir_on_the_push
+test_attack_destination_shapes
+test_attack_deletion_needs_no_content
 test_attack_mkdir_p_is_refused
 test_attack_failed_cd_carries_on
 test_failed_cd_is_denied_by_the_real_guard

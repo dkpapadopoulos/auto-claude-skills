@@ -848,7 +848,7 @@ _gc_segment_mkdir_target() {
 command_push_is_local_scratch() {
     local _cmd="$1"
     local _segs _oldifs _seg _sub _cwd="" _cdt="" _t="" _initdir="" _pushdir="" _d
-    local _npush=0 _ninit=0 _ok=1 _mkdir_p=""
+    local _npush=0 _ninit=0 _ok=1 _mkdir_p="" _r_ok=0 _w
 
     # A command substitution RUNS wherever it appears, so it smuggles an
     # arbitrary command into a segment this predicate would otherwise vouch for
@@ -929,11 +929,52 @@ command_push_is_local_scratch() {
                     elif [ "${_pushdir}" != "${_d}" ]; then
                         _ok=0
                     fi
-                    # A URL-shaped remote reaches the network even from a repo
-                    # created moments ago, so it disqualifies outright.
-                    case "${_seg}" in
-                        *://*|*@*:*) _ok=0 ;;
-                    esac
+                    # WHITELIST the destination, do not exclude URL shapes.
+                    #
+                    # The exclusion `*://*|*@*:*` missed two whole families,
+                    # both measured pushing to real repositories: git's
+                    # scp-like syntax makes the user OPTIONAL, so
+                    # `github.com:org/repo.git` is an SSH URL with neither `://`
+                    # nor `@`; and a bare filesystem path is a valid remote, so
+                    # `git push --force /path/to/real.git +HEAD:refs/heads/x`
+                    # force-updated a branch on another repository.
+                    #
+                    # AND THE DESIGN ARGUMENT THAT BOUNDED THE DAMAGE WAS WRONG.
+                    # It reasoned that a repository created moments ago has no
+                    # content to ship. DELETION AND FORCE-UPDATE NEED NO
+                    # CONTENT: `git push --mirror /path/to/real.git` from an
+                    # EMPTY repo deleted refs on the target (measured: two of
+                    # three refs gone; `main` survived only because the server
+                    # refuses to delete its own HEAD branch). Certification
+                    # skips the whole gate, not merely the content legs, so
+                    # "nothing to ship" never bounded anything.
+                    _r_ok=0
+                    for _w in ${_seg}; do
+                        case "${_w}" in
+                            git|*/git|push) continue ;;
+                            # Anything that can redirect, broaden or force the
+                            # push refuses. `--repo` takes a URL; `--mirror`,
+                            # `--all` and `--tags` broaden beyond the named ref;
+                            # `--force`/`-f` and a `+`-prefixed refspec rewrite
+                            # history on the far side.
+                            --mirror|--all|--tags|--prune|--delete|-d) _ok=0; continue ;;
+                            --repo|--repo=*|--receive-pack|--receive-pack=*|--exec|--exec=*) _ok=0; continue ;;
+                            --force|-f|--force-with-lease|--force-with-lease=*|--force-if-includes) _ok=0; continue ;;
+                            +*) _ok=0; continue ;;
+                            -*) continue ;;
+                            *:*) _ok=0; continue ;;
+                        esac
+                        # The first bare operand is the destination. It must be
+                        # a plain remote NAME: no `:` (scp-style), no `/` (a
+                        # path), no leading `.` (a relative path).
+                        if [ "${_r_ok}" -eq 0 ]; then
+                            case "${_w}" in
+                                .*|*/*|*:*) _ok=0 ;;
+                                *[!A-Za-z0-9._-]*) _ok=0 ;;
+                            esac
+                            _r_ok=1
+                        fi
+                    done
                     ;;
                 *) _ok=0 ;;
             esac
@@ -981,6 +1022,25 @@ command_push_is_local_scratch() {
     case "${_pushdir}" in /*) ;; *) return 1 ;; esac
     # THE load-bearing condition. Must not exist — see the reinit bypass above.
     [ -e "${_pushdir}" ] && return 1
+
+    # THE DESTINATION CAN LIVE ENTIRELY IN CONFIGURATION (B3). `git push origin`
+    # in a repository with no remote `origin` is not an error: git treats the
+    # word as a URL and applies `url.<base>.insteadOf` rewriting from the user's
+    # gitconfig. Measured — with `[url "/path/to/real.git"] insteadOf = origin`
+    # set globally, a force-push from a three-command-old scratch repo
+    # rewrote a branch on that real repository.
+    #
+    # No condition on the command TEXT can see this, because the destination is
+    # not in the text. So the predicate reads the rewrite rules directly and
+    # refuses if any exist, along with `remote.pushDefault`, which redirects a
+    # bare `git push` the same way. `git config` is forked only here, on the
+    # success path, so only a certification candidate pays for it.
+    if command -v git >/dev/null 2>&1; then
+        git config --get-regexp 'url\..*\.(insteadof|pushinsteadof)' >/dev/null 2>&1 && return 1
+        git config --get remote.pushDefault >/dev/null 2>&1 && return 1
+    else
+        return 1
+    fi
 
     # An untrustworthy parse cannot certify anything (#229): this scanner does
     # not interpret backslash escapes, so a `\'` outside an active quote merges
