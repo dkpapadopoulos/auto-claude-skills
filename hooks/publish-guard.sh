@@ -82,6 +82,23 @@ fi
 # matches) to >&2, while stdout carries LEAK findings we do not want here.
 # Reversing to `>/dev/null 2>&1` would discard both and the probe would never
 # match — do not "tidy" it.
+# One corpus shingle per hook run, not one per body (#187 S8). The engine
+# rebuilds the cache itself whenever any corpus file is newer, so a stale
+# corpus cannot be compared against — it fails toward rebuilding.
+MLC_CORPUS_CACHE="$(mktemp "${TMPDIR:-/tmp}/pg-corpus.XXXXXXXX" 2>/dev/null)" || MLC_CORPUS_CACHE=""
+if [ -n "${MLC_CORPUS_CACHE}" ]; then
+    export MLC_CORPUS_CACHE
+fi
+# ONE EXIT trap for the whole hook. `trap ... EXIT` REPLACES, it does not add,
+# so the later `_TMP` cleanup used to silently disarm this one and every run
+# left a pg-corpus.* file behind. Arming the combined trap HERE also covers the
+# "no memory corpus" exit below, which returns before `_TMP` exists — hence the
+# `${_TMP:-}` guard rather than a second trap. Do not add another EXIT trap in
+# this file; extend this one.
+trap '[ -n "${MLC_CORPUS_CACHE:-}" ] && rm -f "${MLC_CORPUS_CACHE}" "${MLC_CORPUS_CACHE}.tmp"
+      [ -n "${_TMP:-}" ] && rm -rf "${_TMP}"
+      :' EXIT
+
 _MEMPROBE="$(/bin/bash "${_ENGINE}" /dev/null 2>&1 >/dev/null)" || _MEMPROBE=""
 case "${_MEMPROBE}" in
     *"no memory corpus"*)
@@ -94,7 +111,6 @@ if ! _TMP="$(mktemp -d "${TMPDIR:-/tmp}/pubguard.XXXXXXXX")"; then
     _announce "no temp dir"
     exit 0
 fi
-trap 'rm -rf "${_TMP}"' EXIT
 
 _FINDINGS=""
 _UNCHECKED=""
@@ -192,7 +208,22 @@ Additionally, part of this command could not be checked (${_UNCHECKED}) — fixi
     # receives on a deny, systemMessage is what the USER sees (#254). The
     # remediation here is the citation rule, which the agent is the one that
     # has to apply.
-    jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$msg},"systemMessage":$msg}'
+    # GUARDED (#187 S7). A bare `jq -n` here trips the blanket `trap 'exit 0' ERR`
+    # and a CONFIRMED LEAK passes silently — the maximally wrong direction for
+    # this gate, since every other failure mode of this hook errs toward
+    # allowing-and-announcing while this one allows in silence. Measured with a
+    # jq shim that fails on `-n`: the control denies, the shimmed run emits
+    # nothing at all.
+    #
+    # The fallback is a FIXED LITERAL, deliberately. `printf` does no JSON
+    # escaping, so interpolating `${_MSG}` — which carries model-authored
+    # citations — would emit unparseable JSON and the harness would drop it,
+    # restoring the exact silence this guard exists to end. The literal says
+    # less and always parses; the detail is already on stderr.
+    if ! jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$msg},"systemMessage":$msg}' 2>/dev/null; then
+        printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"PUBLICATION BLOCKED (#174): this publication reproduces private local-memory text verbatim. The detail could not be rendered (jq failed); see stderr. Cite memory/<file>.md:<line> instead of quoting it."},"systemMessage":"PUBLICATION BLOCKED (#174): this publication reproduces private local-memory text. Cite memory/<file>.md:<line> instead of quoting it."}'
+        printf '%s\n' "${_MSG}" >&2
+    fi
     exit 0
 fi
 
