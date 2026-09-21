@@ -93,7 +93,19 @@ if [ -x "${SCRIPT_PATH}" ]; then
     mkdir -p "${_tmp}/openspec/changes/feature-a"
     # Create a fake PATH without openspec
     _fake_bin="$(mktemp -d)"
-    if (cd "${_tmp}" && PATH="${_fake_bin}:/usr/bin:/bin" bash "${SCRIPT_PATH}" >/dev/null 2>&1); then
+    # ASSERT the precondition (#275). This PATH keeps /usr/bin and /bin, which
+    # is exactly the arrangement that silently handed a "no-jq" cell a working
+    # jq on macOS — an installed openspec on either of those paths would make
+    # the cell below test the CLI-present branch while claiming the opposite.
+    # SUBSHELL, not `PATH=X command -v` in this shell: bash HASHES command
+    # locations, and `command -v` consults that hash before PATH — so the
+    # in-shell form reported a tool as present purely because an earlier line
+    # had run it. Measured: two of these assertions failed against shims that
+    # provably lacked the tool. A fresh shell has an empty hash.
+    if PATH="${_fake_bin}:/usr/bin:/bin" /bin/bash -c 'command -v openspec' >/dev/null 2>&1; then
+        _record_fail "precondition: openspec is unresolvable on the fake PATH" \
+            "openspec resolves, so this cell would test the wrong branch"
+    elif (cd "${_tmp}" && PATH="${_fake_bin}:/usr/bin:/bin" bash "${SCRIPT_PATH}" >/dev/null 2>&1); then
         _record_fail "script errors when CLI missing" "exited 0 but should have failed"
     else
         _record_pass "script errors when CLI missing"
