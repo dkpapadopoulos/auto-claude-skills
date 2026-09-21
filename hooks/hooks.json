@@ -92,6 +92,15 @@
         ]
       },
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/serena-nudge.sh"
+          }
+        ]
+      },
+      {
         "matcher": "Grep",
         "hooks": [
           {
