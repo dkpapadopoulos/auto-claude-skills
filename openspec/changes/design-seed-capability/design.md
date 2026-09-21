@@ -528,3 +528,31 @@ Dion's financial logic, data, or brand inside the plugin; broad dashboards;
 trading or approval controls; any new owned skill; any `DesignSync` dependency;
 a component generator; pinned frontend dependencies; an upgrade/merge path for
 already-copied seeds.
+
+## Pilot outcome — recorded 2026-09-21
+
+Ran under the frozen protocol; full adjudication in `pilot/results/RESULT.md`.
+
+**Pre-registered outcome 1 on the screen comparison, outcome 5 on the process gates.**
+Both judges, in reversed presentation order, favoured the seeded arm: 26/32 and 25/32
+against 20/32 and 20/32. Order reversal moved the seeded arm by one point and the
+comparator not at all. Both judges named R7 — distinguishing an explicitly empty
+collection from an absent section — as the largest difference, and both found that
+*neither* arm implemented the declared numeric precision policy.
+
+The licensed claim, with the registration's "process gates were satisfied" clause struck
+because criterion (a) failed:
+
+> On this task, fixture, model configuration and resource cap, the seeded-adoption run
+> received a higher blinded rubric score than the comparator run. This single pair does
+> not distinguish a repeatable workflow advantage from generation variation.
+
+This licenses promoting the **method**, never the default preset.
+
+**Three instrument defects were found by running it**, and they bound what the result
+means: criterion (a) asks arm S for an artifact the framing-free brief forbids
+requesting; the capture procedure recognises only `prefers-color-scheme`, so the seeded
+arm's `data-theme`-gated dark appearance was never exercised and this run says nothing
+about dark-theme quality either way; and the arms' own gate cannot pass from inside an
+arm worktree, because the deny hook matches any path component `pilot-arm-*`. All three
+need resolving before a second run — the first two are protocol changes, not bug fixes.
