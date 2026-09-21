@@ -13,7 +13,22 @@
 trap 'exit 0' ERR
 set -uo pipefail
 
-_INPUT="$(cat 2>/dev/null)"
+# Bounded, not unbounded (#188). A socket or FIFO on fd 0 is not a TTY, so an
+# unbounded `cat` waits for an EOF that never arrives and this hook hangs
+# forever — silently, reading as slowness rather than as a fault. `read -t`
+# takes an integer in Bash 3.2, so the floor is one second, paid only when
+# stdin is hostile or absent; in production the payload is written and the pipe
+# closed, so data is available immediately. `$( )` strips trailing newlines
+# exactly as `$(cat)` did, so the parsed payload is unchanged.
+_INPUT="$(
+    _hs_line=""
+    while IFS= read -r -t "${ACS_HOOK_STDIN_TIMEOUT:-2}" _hs_line; do
+        printf '%s\n' "${_hs_line}"
+        _hs_line=""
+    done
+    [ -n "${_hs_line}" ] && printf '%s' "${_hs_line}"
+    exit 0
+)"
 [ -z "${_INPUT}" ] && exit 0
 
 command -v jq >/dev/null 2>&1 || exit 0

@@ -57,9 +57,38 @@ fi
 #   3. reuse-window, then <epoch>-<pid>-<rand> — when stdin carries neither field
 #      or jq is missing. Preserves the original collision-defense guarantees and
 #      the ScheduleWakeup reuse fix (#43).
+# A TTY CHECK IS NOT AN INPUT-AVAILABLE CHECK (#188). A socket or FIFO is not a
+# TTY, so `[ ! -t 0 ]` passes and an unbounded `cat` then waits for an EOF that
+# never arrives. Measured against this hook before the fix: a never-EOF FIFO on
+# fd 0 hangs indefinitely. The same mechanism idled a full suite run for ~2h in
+# the original #142 report, and it reads as "slow", never as a bug.
+#
+# The read is therefore BOUNDED rather than guarded. `read -t` takes an integer
+# in Bash 3.2 (fractional timeouts are a Bash 4 feature and `read -t 0` is not
+# available either), so the floor is one second — paid ONLY on hostile or absent
+# stdin. In production Claude Code writes the payload and closes the pipe, so
+# data is available immediately and the 200ms budget is untouched.
+#
+# The command-substitution shape is kept deliberately: `$( )` strips trailing
+# newlines exactly as `$(cat)` did, so the happy path stays byte-identical. The
+# tail `printf` outside the loop recovers a final line with no trailing newline,
+# which `read` reports as a failure while still setting the variable.
+#
+# FAIL-OPEN IS PRESERVED: a timeout yields an EMPTY payload and execution
+# continues into registry building, exactly as an absent payload always did.
+# Turning "no payload" into an early exit would skip the work this hook exists
+# to do, which is a worse failure than the hang.
 _HOOK_STDIN=""
 if [ ! -t 0 ]; then
-    _HOOK_STDIN="$(cat 2>/dev/null)" || _HOOK_STDIN=""
+    _HOOK_STDIN="$(
+        _hs_line=""
+        while IFS= read -r -t "${ACS_HOOK_STDIN_TIMEOUT:-2}" _hs_line; do
+            printf '%s\n' "${_hs_line}"
+            _hs_line=""
+        done
+        [ -n "${_hs_line}" ] && printf '%s' "${_hs_line}"
+        exit 0
+    )" || _HOOK_STDIN=""
 fi
 _HOOK_SESSION_ID=""
 _HOOK_TRANSCRIPT=""
