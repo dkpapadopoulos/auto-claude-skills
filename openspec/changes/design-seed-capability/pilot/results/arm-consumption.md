@@ -35,14 +35,37 @@ read the styleguide within them.
 **(b) Freeze boundary — PASS.** `design/` committed at `1714a14` before the arm started;
 `git status --porcelain design/` is empty afterwards, so no `design/` edit followed.
 
-**(a) Adaptation — NOT SATISFIED, and the criterion is at fault, not the arm.** Arm S
-recorded neither an adaptation nor an explicit "no justified adaptation needed". It could
-not have: the brief is framing-free by design and never mentions adaptation, and the only
-other channel — the `ADOPT.md` pointer line in `CLAUDE.md` — is the standard adopter
-pointer, which says nothing about recording adaptation decisions. **Criterion (a) is
-uncommunicable to an arm without breaking the framing-free requirement.** That is a
-defect in the pre-registration, discovered by running it, and it is recorded here rather
-than scored against arm S.
+**(a) Adaptation — NOT SATISFIED.** Arm S supplied neither required form: no adaptation
+record, and no explicit "no justified adaptation needed". The protocol gave it no
+instruction to produce either. The gate therefore fails, and **this observation does not
+distinguish absent adaptation reasoning from absent reporting** — arm S may have
+considered adaptation and rejected it, never considered it, or considered it without
+writing it down. Substantive engagement with the seed does not separate those.
+
+Two readings of the criterion are available and the frozen wording does not settle which
+was intended:
+
+1. **An obligation to document**, which the protocol then failed to communicate — the
+   brief is framing-free and never mentions adaptation, and the only other channel is the
+   seed's standard adopter pointer, which says nothing about recording such a decision.
+2. **A test of whether documentation emerges spontaneously** under ordinary adoption
+   instructions — in which case arm S simply failed it, and explicitly requesting the
+   behaviour would have measured something different.
+
+An earlier draft of this file asserted reading (1) and concluded the arm "could not have"
+satisfied (a). **That was too strong and is withdrawn.** Unrequested is not impossible: a
+criterion may legitimately measure unprompted behaviour, and choosing the more charitable
+reading *after* observing the failure — for an instrument this author wrote — is not a
+defensible move. Both readings are recorded; the gate is recorded as failed either way.
+
+What this does invalidate: any claim that this run assessed adaptation reasoning, or
+satisfied the full process protocol. What it does not invalidate: the screen comparison,
+whose separate reporting and retention were registered in advance.
+
+One wording correction while here: the arms were **not** treated identically, and the
+record should not say so. Arm S received the seed and its pointer — that is the intended
+treatment. The accurate claim is that brief, fixture, model, cap and tool access were
+matched, with the seed package as the sole intended difference.
 
 ## Gate status, both arms
 
