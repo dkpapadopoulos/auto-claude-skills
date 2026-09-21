@@ -85,19 +85,23 @@ fi
 # One corpus shingle per hook run, not one per body (#187 S8). The engine
 # rebuilds the cache itself whenever any corpus file is newer, so a stale
 # corpus cannot be compared against — it fails toward rebuilding.
+# ONE EXIT trap for the whole hook, ARMED BEFORE anything it cleans up exists.
+# `trap ... EXIT` REPLACES, it does not add, so the later `_TMP` cleanup used to
+# silently disarm this one and every run left a pg-corpus.* file behind. Arming
+# it first — rather than after the mktemp below — closes the window in which a
+# command substitution could trip the blanket ERR trap with the cache already
+# created and nothing scheduled to remove it; both names are `:-` guarded, so
+# firing before either is assigned is a no-op. It also covers the "no memory
+# corpus" exit below, which returns before `_TMP` exists. Do not add another
+# EXIT trap in this file; extend this one.
+trap '[ -n "${MLC_CORPUS_CACHE:-}" ] && rm -f "${MLC_CORPUS_CACHE}" "${MLC_CORPUS_CACHE}.tmp"
+      [ -n "${_TMP:-}" ] && rm -rf "${_TMP}"
+      :' EXIT
+
 MLC_CORPUS_CACHE="$(mktemp "${TMPDIR:-/tmp}/pg-corpus.XXXXXXXX" 2>/dev/null)" || MLC_CORPUS_CACHE=""
 if [ -n "${MLC_CORPUS_CACHE}" ]; then
     export MLC_CORPUS_CACHE
 fi
-# ONE EXIT trap for the whole hook. `trap ... EXIT` REPLACES, it does not add,
-# so the later `_TMP` cleanup used to silently disarm this one and every run
-# left a pg-corpus.* file behind. Arming the combined trap HERE also covers the
-# "no memory corpus" exit below, which returns before `_TMP` exists — hence the
-# `${_TMP:-}` guard rather than a second trap. Do not add another EXIT trap in
-# this file; extend this one.
-trap '[ -n "${MLC_CORPUS_CACHE:-}" ] && rm -f "${MLC_CORPUS_CACHE}" "${MLC_CORPUS_CACHE}.tmp"
-      [ -n "${_TMP:-}" ] && rm -rf "${_TMP}"
-      :' EXIT
 
 _MEMPROBE="$(/bin/bash "${_ENGINE}" /dev/null 2>&1 >/dev/null)" || _MEMPROBE=""
 case "${_MEMPROBE}" in
