@@ -104,7 +104,19 @@ def anchors(p):
     i=0; n=len(p); in_br=False; br=-1; found=[]
     while i<n:
         c=p[i]
-        if c=='\\': i+=2; continue
+        if c=='\\':
+            # GNU grep BUFFER anchors are line anchors for this purpose
+            # and would otherwise pass the audit unseen. They do not
+            # reproduce here: the grep on this box is ugrep, which lacks them,
+            # but CI runs GNU grep, so a pattern written this way would
+            # break the proof exactly where nobody is watching.
+            # chr(96) is a backtick, spelled this way deliberately: this
+            # heredoc is nested inside a command substitution, where bash
+            # resolves backticks and nested substitution openers at the outer
+            # level before heredoc processing, even though the delimiter is
+            # quoted. A literal backtick here is a parse error.
+            if i+1 < n and p[i+1] in (chr(96), chr(39)): found.append('buffer-anchor')
+            i+=2; continue
         if in_br:
             if c==']' and i>br+1 and not (i==br+2 and p[br+1]=='^'): in_br=False
             i+=1; continue
@@ -114,7 +126,12 @@ def anchors(p):
         i+=1
     return found
 bad=[]; total=0
-for f in sorted(glob.glob(os.path.join(root,'fixtures','*','evals','behavioral.json'))):
+# RECURSIVE. The old fixtures/*/evals/behavioral.json glob misses
+# tests/fixtures/serena/behavioral.json, a real runnable pack (--pack takes an
+# arbitrary path) carrying 3 text assertions. The audited population was 122,
+# the real one is 125, and an anchored pattern added there would have shipped
+# silently while this test reported the proof intact.
+for f in sorted(glob.glob(os.path.join(root,'fixtures','**','behavioral.json'), recursive=True)):
     for sc in json.load(open(f)):
         for a in sc.get('assertions',[]):
             if a.get('kind','text')!='text': continue

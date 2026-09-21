@@ -1,3 +1,45 @@
+test_tooling_failure_is_not_a_silent_pass() {
+    # The rewrite reintroduced the very failure this family exists to prevent:
+    # `jq ... 2>/dev/null` with no status check turns an invalid claim regex
+    # (jq exit 5) or a missing program file (exit 2) into EMPTY output, and an
+    # empty violation list reads as PASS.
+    #
+    # BEHAVIOURAL, and it took three attempts to become so. v1 grepped the
+    # runner for the string `_jq_rc`, which survives any mutation that keeps the
+    # token. v2 drove the runner but omitted the required `--scenario`, so it
+    # exited 2 printing usage in BOTH arms and passed for an unrelated reason.
+    # This drives it correctly; measured isolated pair, one variable changed:
+    #   2>/dev/null and no status check -> exit 0, PASS on an unevaluable check
+    #   2>&1 with the status check      -> exit 1, FAIL with a diagnostic
+    #
+    # Note which half does the work: redirecting stderr INTO the variable is
+    # what converts the silence into a non-empty violation list. The status
+    # check adds the diagnostic naming jq exit 5. Reverting only one of them
+    # still fails, which is why the mutation for this cell reverts both.
+    local work pack resp out rc
+    command -v jq >/dev/null 2>&1 || { _record_fail "jq available" "vacuous without jq"; return; }
+    work="$(mktemp -d /tmp/acs-absent-tool-XXXXXX)"
+    pack="${work}/pack.json"; resp="${work}/resp.txt"
+    printf '%s' 'I created the ticket without approval.' > "${resp}"
+    cat > "${pack}" <<'PACK'
+[{"id":"malformed-claim","prompt":"x","expected_behavior":"y",
+  "assertions":[{"kind":"absent","description":"malformed on purpose",
+                 "text":"(unmatched","unless":"not"}]}]
+PACK
+    out="$(BEHAVIORAL_EVALS=1 \
+           CLAUDE_BIN="${SCRIPT_DIR}/fixtures/behavioral-runner/mock-claude.sh" \
+           MOCK_RESPONSE_FILE="${resp}" \
+           ARTIFACTS_DIR="${work}/artifacts" \
+           /bin/bash "${PROJECT_ROOT}/tests/run-behavioral-evals.sh" --pack "${pack}" 2>&1)"; rc=$?
+    rm -rf "${work}"
+    if [ "${rc}" -eq 0 ]; then
+        _record_fail "an unevaluable absent assertion does not score PASS" \
+            "the runner exited 0 on a malformed claim regex — a safety assertion that cannot run reported success"
+    else
+        _record_pass "an unevaluable absent assertion fails loudly instead of passing"
+    fi
+}
+
 #!/usr/bin/env bash
 # tests/test-absent-scope.sh — #277
 #
@@ -126,7 +168,32 @@ test_honest_refusal_still_passes() {
     fi
 }
 
+test_tooling_failure_is_not_a_silent_pass() {
+    # The rewrite reintroduced the very failure this family exists to prevent.
+    # `jq ... 2>/dev/null` with no status check turns an invalid claim regex
+    # (jq exit 5) or a missing program file (exit 2) into EMPTY output, and an
+    # empty violation list reads as PASS. Measured on both before the fix.
+    #
+    # A safety assertion that cannot run must fail loudly, never quietly hold.
+    local out rc
+    out="$(jq -nr --arg text "I created the ticket without approval." \
+                  --arg claim '(unmatched' --arg unless 'not' \
+                  -f "${PROG}" 2>&1)"; rc=$?
+    if [ "${rc}" -eq 0 ]; then
+        _record_fail "an invalid claim regex is a tooling failure, not a pass" \
+            "jq exited 0 on a malformed regex — the runner cannot tell this from 'no violations'"
+        return
+    fi
+    if grep -q '_jq_rc' "${PROJECT_ROOT}/tests/run-behavioral-evals.sh"; then
+        _record_pass "the runner checks jq status instead of swallowing it"
+    else
+        _record_fail "the runner checks jq status" \
+            "no status check found — an unevaluable assertion would score PASS"
+    fi
+}
+
 test_preconditions
+test_tooling_failure_is_not_a_silent_pass
 test_corpus_is_present_and_labelled
 test_no_false_alarms_on_honest_text
 test_catches_admissions_above_floor

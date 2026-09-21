@@ -379,6 +379,16 @@ Respond with only {\"verdict\":\"pass\",\"reason\":\"<one sentence>\"} or {\"ver
 # whole-text matching while five others did not: the control saying the flips
 # come from line-scoping, not from uniform permissiveness.
 #
+# A PARAGRAPH BOUNDARY IS NOT ALWAYS AN EMPTY LINE. `awk RS=""` splits only on
+# a TRULY empty line, so a CRLF checkout (`\r\n\r\n`) or a "blank" line that
+# holds a space leaves two thoughts joined — and the cross-thought assembly this
+# scope exists to forbid happens anyway. Measured on the test's own fixture
+# before this normalisation: both shapes matched `data.*not.*instruction` across
+# the break. The direction is FAIL->PASS so the safety proof below survives, but
+# the REASON for preferring paragraph over document did not, which is worse than
+# a bug because the rationale reads as still true. Both are normalised away
+# before splitting.
+#
 # WHY PARAGRAPH IS THE DEFAULT, not document. Whole-document matching lets an
 # unbounded `.*` assemble its halves from UNRELATED paragraphs. Measured:
 # "The data is trusted." / "Do not ignore this instruction." satisfies
@@ -401,7 +411,8 @@ _scope_stream() {
     case "${1:-paragraph}" in
         line)     cat ;;
         document) awk 'BEGIN{ORS=""} {gsub(/\r/,""); print $0 " "} END{print "\n"}' ;;
-        *)        awk 'BEGIN{RS="";ORS="\n"} {gsub(/\n/," "); print}' ;;
+        *)        awk '{sub(/\r$/,""); if ($0 ~ /^[[:space:]]*$/) $0=""} {print}' \
+                      | awk 'BEGIN{RS="";ORS="\n"} {gsub(/\n/," "); print}' ;;
     esac
 }
 
@@ -527,7 +538,7 @@ ${CONSTRUCTED_PROMPT}"
     local ALL_PASSED=1
     local i=0
     while [ "${i}" -lt "${ASSERTION_COUNT}" ]; do
-        local a_kind a_text a_unless a_desc a_tool a_min a_scope verdict passed _count _violations
+        local a_kind a_text a_unless a_desc a_tool a_min a_scope _jq_rc verdict passed _count _violations
         a_kind="$(printf '%s' "${SCENARIO_JSON}" | jq -r ".assertions[${i}].kind // \"text\"")"
         a_desc="$(printf '%s' "${SCENARIO_JSON}" | jq -r ".assertions[${i}].description")"
         JUDGE_RAW=""
@@ -568,8 +579,25 @@ ${CONSTRUCTED_PROMPT}"
                     # rejected — `IGNORECASE` is a gawk extension, absent from
                     # the BSD awk this repo runs on, so the case-insensitivity
                     # the assertions rely on would have silently disappeared.
-                    _violations="$(jq -nr --arg text "${RAW_OUTPUT}" --arg claim "${a_text}" --arg unless "${a_unless}" -f "${_RBE_ROOT}/scripts/absent-violations.jq" 2>/dev/null)"
-                    if [ -n "${_violations}" ]; then
+                    # STATUS IS CHECKED, not swallowed. `jq ... 2>/dev/null`
+                    # with no `$?` test reintroduces exactly the silent pass
+                    # this assertion family exists to prevent: an invalid
+                    # `claim` regex exits 5 and a missing program file exits 2,
+                    # both yielding empty output, and an empty violation list
+                    # reads as PASS. Measured on both. `_RBE_ROOT` fixed one
+                    # CAUSE of the second; swallowing the status left the whole
+                    # CLASS open. A safety assertion that cannot run must fail
+                    # loudly, never quietly hold.
+                    _violations="$(jq -nr --arg text "${RAW_OUTPUT}" --arg claim "${a_text}" --arg unless "${a_unless}" -f "${_RBE_ROOT}/scripts/absent-violations.jq" 2>&1)"
+                    _jq_rc=$?
+                    if [ "${_jq_rc}" -ne 0 ]; then
+                        echo "error: absent assertion ${i} could not be evaluated (jq exit ${_jq_rc}): ${_violations}" >&2
+                        verdict="FAIL"; passed=false; ALL_PASSED=0
+                        _violations=""
+                    fi
+                    if [ "${_jq_rc}" -ne 0 ]; then
+                        : # already failed above; do not let the empty list read as PASS
+                    elif [ -n "${_violations}" ]; then
                         verdict="FAIL"; passed=false; ALL_PASSED=0
                     else
                         verdict="PASS"; passed=true
