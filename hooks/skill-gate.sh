@@ -33,6 +33,39 @@ if [ -f "${PLUGIN_ROOT}/hooks/lib/session-token.sh" ]; then
 fi
 [ -z "$_SESSION_TOKEN" ] && [ -f "${HOME}/.claude/.skill-session-token" ] && \
     _SESSION_TOKEN="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null)"
+# --- Diagnostic capture (issue #177) — OFF the decision path ----------------
+# Two Skill() calls were denied live while replaying this file on disk ALLOWED
+# every time, and nothing recorded which file actually ran. This is the
+# Skill-gate analogue of the push gate's #127 instrument.
+#
+# NEVER SOURCED: a source-time failure would trip the fail-open `trap 'exit 0'
+# ERR` above and skip enforcement entirely. It fires an external subprocess from
+# a hardened EXIT trap, which disarms both traps first so a failing capture
+# command cannot re-enter them, and redirects the subshell so it cannot leak a
+# byte into the one-JSON-object contract.
+#
+# Armed HERE rather than at the deny site: most exits in this gate are early
+# `exit 0`s, and a record only for denies would leave the log with no
+# denominator — the same incompleteness the push-gate log documents.
+_SG_DECISION="allow"
+if [ "${SKILL_GATE_CAPTURE_DISABLE:-}" != "1" ]; then
+    _SG_CAPTURE_ACTIVE=true
+    _sg_capture_on_exit() {
+        trap - ERR
+        trap - EXIT
+        [ "${_SG_CAPTURE_ACTIVE:-false}" = "true" ] || return 0
+        (
+            exec </dev/null >/dev/null 2>&1
+            SGC_DECISION="${_SG_DECISION:-allow}" SGC_SKILL="${_RAW_SKILL:-}" \
+            SGC_SESSION_TOKEN="${_SESSION_TOKEN:-}" SGC_TRANSCRIPT="${_TRANSCRIPT:-}" \
+            SGC_GATE_PATH="${BASH_SOURCE:-$0}" SGC_INPUT="${INPUT:-}" \
+            "${PLUGIN_ROOT}/scripts/skill-gate-capture.sh"
+        ) || true
+        return 0
+    }
+    trap '_sg_capture_on_exit' EXIT
+fi
+
 [ -z "$_SESSION_TOKEN" ] && exit 0
 
 _COMP="${HOME}/.claude/.skill-composition-state-${_SESSION_TOKEN}"
@@ -93,6 +126,18 @@ case "$_MODE" in deny|warn|off) ;; *) _MODE=""; [ -f "${_PROJ_ROOT}/.claude-plug
     _REPO_ID="$(jq -r '.name // empty' "${_PROJ_ROOT}/.claude-plugin/plugin.json" 2>/dev/null)" || _REPO_ID=""; \
     if [ "$_REPO_ID" = "auto-claude-skills" ]; then _MODE="deny"; else _MODE="warn"; fi ;; esac
 
+# Positive "reached the decision point" sentinel for the capture replay (#177).
+# Placed BEFORE the branch, so an ALLOW emits it too — with it only on the deny
+# path, a genuine allow would replay as `incomplete` and every allow would look
+# like a crash. The replayed gate is itself fail-open, so empty stdout cannot
+# distinguish "allowed" from "died early"; this is what makes the distinction
+# POSITIVE rather than inferred from silence.
+#
+# Under the replay flag ONLY. Live operation emits exactly the one JSON object
+# it always did — the harness contract is one object, and a stray line would
+# break it.
+[ "${SKILL_GATE_CAPTURE_REPLAY:-}" = "1" ] && printf '__SGC_EVALUATED__\n'
+
 if [ "$_MODE" = "off" ]; then
     phase_gate_log "skill-seq" "off" "$_SKILL" "$_MISSING"
     exit 0
@@ -127,5 +172,6 @@ phase_gate_log "skill-seq" "deny" "$_SKILL" "$_MISSING"
 # deny; systemMessage is shown to the user and never to Claude (#254). The
 # remediation above is useless in a channel the model cannot read, so both
 # carry the same text: the user sees it, and the agent can act on it.
+_SG_DECISION="deny"
 jq -n --arg msg "$_MSG" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$msg},"systemMessage":$msg}'
 exit 0
