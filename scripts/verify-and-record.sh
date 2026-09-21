@@ -96,11 +96,22 @@ SHA_BEFORE="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 # promoting it to could_not_verify[] would false-block routine pushes. Tracked
 # modifications only: gate commands routinely leave untracked build/test
 # artifacts, which would make this near-constantly true and the signal worthless.
-if [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+# The BOOLEAN is not enough for the reader (#274). "Measured on a dirty tree"
+# is only actionable if the advisory can name WHICH paths were uncommitted at
+# measurement time — otherwise the reader is told to distrust a verdict with no
+# way to judge whether the difference mattered. Captured at gate START, the same
+# instant as the sha, so the record describes one moment and not three.
+# Bounded: a large dirty tree would otherwise put an unbounded list into a state
+# file the guard reads on every push. The count is recorded separately so a
+# truncated list never reads as the whole list.
+_WD_PATHS="$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null | awk '{ $1=""; sub(/^ +/, ""); print }')"
+if [ -n "${_WD_PATHS}" ]; then
     WORKTREE_DIRTY=true
 else
     WORKTREE_DIRTY=false
 fi
+WORKTREE_DIRTY_COUNT="$(printf '%s' "${_WD_PATHS}" | grep -c . || :)"
+_WD_PATHS_CAPPED="$(printf '%s\n' "${_WD_PATHS}" | head -20)"
 
 PASSED=""; FAILED=""; CNV=""; CMDS=""
 LOG="$(mktemp "${TMPDIR:-/tmp}/verify-and-record.XXXXXX")" || exit 1
@@ -220,12 +231,14 @@ else TEST_DELTA="missing"; fi
 
 jq -n --arg sha "$SHA" --arg ts "$TS" --arg ex "$EXCERPT" --arg cmd "$CMDS" \
       --arg p "$PASSED" --arg f "$FAILED" --arg c "$CNV" --arg gg "$GG_STATUS" --arg td "$TEST_DELTA" \
-      --arg wd "$WORKTREE_DIRTY" '
+      --arg wd "$WORKTREE_DIRTY" --arg wdp "$_WD_PATHS_CAPPED" --arg wdn "$WORKTREE_DIRTY_COUNT" '
   def csv($s): if $s == "" then [] else ($s | split(",")) end;
+  def lines($s): [$s | split("\n")[] | select(. != "")];
   {substrate:"local", discovery_source:"verify-yml",
    passed:csv($p), failed:csv($f), could_not_verify:csv($c),
    gate_gaming_status:$gg, coverage_adequacy_status:"unverified",
    test_delta:$td, worktree_dirty:($wd == "true"),
+   dirty_paths:lines($wdp), dirty_path_count:($wdn | tonumber? // 0),
    sha:$sha, command:$cmd, output_excerpt:$ex, ts:$ts,
    writer:"verify-and-record.sh"}
 ' > "${OUT}.tmp.$$" || { rm -f "${OUT}.tmp.$$"; echo "verify-and-record: verdict write failed" >&2; exit 1; }

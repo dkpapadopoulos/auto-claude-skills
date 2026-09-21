@@ -1,0 +1,23 @@
+{
+  "substrate": "local",
+  "discovery_source": "verify-yml",
+  "passed": [
+    "tests"
+  ],
+  "failed": [],
+  "could_not_verify": [],
+  "gate_gaming_status": "clean",
+  "coverage_adequacy_status": "unverified",
+  "test_delta": "covered",
+  "worktree_dirty": true,
+  "dirty_paths": [
+    "hooks/openspec-guard.sh",
+    "tests/test-push-gate-verdict.sh"
+  ],
+  "dirty_path_count": 2,
+  "sha": "@SHA@",
+  "command": "bash tests/run-tests.sh",
+  "output_excerpt": "",
+  "ts": "2026-09-22T00:00:00Z",
+  "writer": "verify-and-record.sh"
+}

@@ -152,6 +152,45 @@ verdict_test_delta() {
 }
 
 # verdict_failing_gates <token> — prints comma-joined .failed command names.
+# #274. Reader for the dirty-tree measurement context. Two functions, not one:
+# `verdict_measured_dirty` answers the predicate the guard branches on, and
+# `verdict_dirty_note` renders the human half. Keeping them apart means a
+# caller that only needs to know IF cannot accidentally depend on the text.
+#
+# Both are ADVISORY inputs. Nothing here may become a deny predicate: verifying
+# uncommitted work and committing afterwards is a supported workflow, and the
+# whole point of #274 is that the gate should SAY what it accepted, not refuse
+# it.
+verdict_measured_dirty() {
+    local token="${1:-}" f
+    f="$(verdict_artifact_path "$token")" || return 1
+    [ -f "$f" ] || return 1
+    command -v jq >/dev/null 2>&1 || return 1
+    jq -e '.worktree_dirty == true' "$f" >/dev/null 2>&1
+}
+
+# Prints "<n> path(s): a, b, c[, +k more]" — or an empty string when the record
+# predates #274 and carries no path list. A pre-#274 verdict is a real state:
+# it is dirty and we cannot say where, which the caller must be able to tell
+# apart from "dirty in these two files".
+verdict_dirty_note() {
+    local token="${1:-}" f
+    f="$(verdict_artifact_path "$token")" || return 1
+    [ -f "$f" ] || return 1
+    command -v jq >/dev/null 2>&1 || return 1
+    jq -r '
+        (.dirty_paths // []) as $p
+        | if ($p | length) == 0 then ""
+          else
+            ((.dirty_path_count // ($p | length)) | tostring) + " path(s): "
+            + ($p[0:5] | join(", "))
+            + (if ($p | length) > 5 then ", +" + (($p | length) - 5 | tostring) + " more" else "" end)
+            + (if (.dirty_path_count // 0) > ($p | length)
+               then " (list truncated)" else "" end)
+          end
+    ' "$f" 2>/dev/null
+}
+
 verdict_failing_gates() {
     local token="${1:-}" f
     f="$(verdict_artifact_path "$token")" || return 0
