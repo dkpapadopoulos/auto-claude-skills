@@ -94,6 +94,24 @@ Each candidate MUST carry:
 - `meta` flag: true when the primary artifact is gate/loop/plugin-internals
   machinery rather than end-user-facing skill behavior; `end_user` = not meta
   and cites end-user-facing evidence.
+- `target_at_head`: **true only when checked at HEAD, this run** (issue #138).
+  Run `/bin/bash "$SCRIPT" target-at-head <path> [anchor]` for the candidate's
+  intervention target and again for its pre-registered metric's anchor. Exit 0
+  present, 1 gone, **2 cannot-check** — a 2 is not a 1, so an unreadable path
+  must not be reported as a vanished target.
+
+  A candidate without `target_at_head: true` is withheld by `select` with reason
+  `stale`; it is never presented and never reaches the human gate.
+
+  This is not hygiene. A stale presentation skews the **kill counter**, which is
+  the miner's own decommission signal, so it corrupts the instrument that
+  decides whether this skill should exist. Measured in run 1: 1 of 2 presented
+  proposals was stale (#125, target removed by PR #34).
+
+  Check the ANCHOR, not just the file. #125's file survived; the cited phrase
+  had been deleted. And re-check even a proposal filed days ago: #266 was filed
+  2026-09-19 citing a live divergence that had been repaired hours later, and
+  the metric it prescribed produced a false positive on the only case it named.
 - a DRAFT A/B contract: pre-registered metric, sha-bound baseline
   measurement plan, sha-bound candidate measurement plan, pinned never-delete
   eval set, hard no-regression clause on safety dimensions.

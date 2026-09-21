@@ -522,11 +522,11 @@ test_select_contract_gate_and_meta_cap() {
     setup_test_env
     local input out
     input='[
-      {"fp":"f1","title":"meta B","grade":"B","meta":true,"contract_complete":true,"end_user":false},
-      {"fp":"f2","title":"user C","grade":"C","meta":false,"contract_complete":true,"end_user":true},
-      {"fp":"f3","title":"meta C","grade":"C","meta":true,"contract_complete":true,"end_user":false},
-      {"fp":"f4","title":"meta D","grade":"D","meta":true,"contract_complete":true,"end_user":false},
-      {"fp":"f5","title":"no contract","grade":"A","meta":false,"contract_complete":false,"end_user":true}
+      {"fp":"f1","title":"meta B","grade":"B","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"f2","title":"user C","grade":"C","meta":false,"contract_complete":true,"target_at_head":true,"end_user":true},
+      {"fp":"f3","title":"meta C","grade":"C","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"f4","title":"meta D","grade":"D","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"f5","title":"no contract","grade":"A","meta":false,"contract_complete":false,"target_at_head":true,"end_user":true}
     ]'
     out="$(run_select "${input}")"
     assert_equals "f5 withheld missing_contract" "missing_contract" "$(printf '%s' "$out" | jq -r '.withheld[] | select(.fp=="f5") | .reason')"
@@ -541,12 +541,12 @@ test_select_cap_and_end_user_warning() {
     setup_test_env
     local input out
     input='[
-      {"fp":"m1","title":"m1","grade":"A","meta":true,"contract_complete":true,"end_user":false},
-      {"fp":"m2","title":"m2","grade":"A","meta":true,"contract_complete":true,"end_user":false},
-      {"fp":"u1","title":"u1","grade":"B","meta":false,"contract_complete":true,"end_user":false},
-      {"fp":"u2","title":"u2","grade":"B","meta":false,"contract_complete":true,"end_user":false},
-      {"fp":"u3","title":"u3","grade":"B","meta":false,"contract_complete":true,"end_user":false},
-      {"fp":"u4","title":"u4","grade":"B","meta":false,"contract_complete":true,"end_user":false}
+      {"fp":"m1","title":"m1","grade":"A","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"m2","title":"m2","grade":"A","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"u1","title":"u1","grade":"B","meta":false,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"u2","title":"u2","grade":"B","meta":false,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"u3","title":"u3","grade":"B","meta":false,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"u4","title":"u4","grade":"B","meta":false,"contract_complete":true,"target_at_head":true,"end_user":false}
     ]'
     out="$(run_select "${input}")"
     assert_equals "cap withholds 6th" "cap" "$(printf '%s' "$out" | jq -r '.withheld[] | select(.fp=="u4") | .reason')"
@@ -559,9 +559,9 @@ test_select_null_grade_degrades() {
     setup_test_env
     local input out rc
     input='[
-      {"fp":"f1","title":"meta A","grade":"A","meta":true,"contract_complete":true,"end_user":false},
-      {"fp":"f2","title":"meta B","grade":"B","meta":true,"contract_complete":true,"end_user":false},
-      {"fp":"f3","title":"meta null","grade":null,"meta":true,"contract_complete":true,"end_user":false}
+      {"fp":"f1","title":"meta A","grade":"A","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"f2","title":"meta B","grade":"B","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"f3","title":"meta null","grade":null,"meta":true,"contract_complete":true,"target_at_head":true,"end_user":false}
     ]'
     out="$(run_select "${input}")"; rc=$?
     assert_equals "select exits 0 (no crash)" "0" "$rc"
@@ -575,9 +575,9 @@ test_select_meta_tie_keeps_earlier() {
     setup_test_env
     local input out fps
     input='[
-      {"fp":"t1","title":"meta 1","grade":"C","meta":true,"contract_complete":true,"end_user":false},
-      {"fp":"t2","title":"meta 2","grade":"C","meta":true,"contract_complete":true,"end_user":false},
-      {"fp":"t3","title":"meta 3","grade":"C","meta":true,"contract_complete":true,"end_user":false}
+      {"fp":"t1","title":"meta 1","grade":"C","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"t2","title":"meta 2","grade":"C","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"t3","title":"meta 3","grade":"C","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false}
     ]'
     out="$(run_select "${input}")"
     fps="$(printf '%s' "$out" | jq -c '[.presented[].fp]')"
