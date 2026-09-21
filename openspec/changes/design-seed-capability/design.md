@@ -556,3 +556,45 @@ arm's `data-theme`-gated dark appearance was never exercised and this run says n
 about dark-theme quality either way; and the arms' own gate cannot pass from inside an
 arm worktree, because the deny hook matches any path component `pilot-arm-*`. All three
 need resolving before a second run — the first two are protocol changes, not bug fixes.
+
+## Disposition — 2026-09-21: HELD OPEN, not archived
+
+Decided by the user after the result was presented. The change stays open pending a
+second pair; it is **not** archived on the strength of one pair.
+
+The reason is not the result — outcome 1 was reached cleanly and the order reversal was
+stable. It is that **two of the three instrument defects would change what a second run
+measures**, so archiving now would freeze a protocol already known to need amendment.
+
+### Blocking a second pair — protocol changes, not bug fixes
+
+1. **Criterion (a) must be made communicable, or dropped.** As frozen it asks arm S to
+   record an adaptation decision that the framing-free brief forbids requesting. Either
+   the criterion changes, or the framing rule admits a narrow, arm-symmetric instruction
+   to record such decisions — which would itself become part of the treatment package and
+   must be declared as such. Leaving it as-is guarantees the same failure.
+2. **Theme capture needs an implementation-independent rule.** The frozen procedure
+   recognises `prefers-color-scheme` only, so a `data-theme`-gated implementation is
+   invisible to it. Either the capture reaches declared theme states by a rule that does
+   not privilege one mechanism, or the brief states explicitly that dark mode must
+   respond to OS preference. Until then no run can speak to dark-theme quality.
+
+### Not blocking, but fix before reuse
+
+3. **`TestNormalSessionIsUntouched` cannot pass from inside an arm worktree.** It sets
+   `NORMAL_DIR = cwd` and asserts the deny hook is inert there, while the hook matches any
+   path component `pilot-arm-*` — which is exactly the arms' cwd. Symmetric and
+   harness-caused, but it cost both arms a clean gate run and will again.
+
+### What carries forward, and what does not
+
+The v1 result stands as recorded and is **poolable with a second pair only if the
+protocol does not change**. Since items 1 and 2 above require it to change, a second pair
+run under an amended protocol is a **new registration**, and its results are not pooled
+with this one. That is the cost of holding open, and it is the honest accounting: the
+alternative — amending quietly and pooling anyway — is what the pooling rule exists to
+prevent.
+
+What transfers regardless: the apparatus (worktree isolation, the capability boundary,
+plugin-injection suppression, the egress gate ordering, budget enforcement), the frozen
+fixture, and the advance disclosures — none of which the defects touch.
