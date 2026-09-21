@@ -141,7 +141,24 @@ test_step_is_ordered_between_mitigation_and_risk_assessment() {
     fi
 }
 
+test_no_control_means_unmitigated_not_silence() {
+    # PR review: the template block read as unconditional, which invites
+    # boilerplate "N/A" rows on assessments where no control was discussed.
+    # Scoping it is right — but the escape must be CLOSED, or "claim no
+    # control" becomes the way to skip the step. A risk with no claimed control
+    # is reported UNMITIGATED, and silence is explicitly not the third option.
+    if _has 'no control to place' && _has 'unmitigated' && _has 'Saying\s*$' ; then
+        _record_pass "a risk with no claimed control is reported unmitigated, not silently"
+    elif _has 'no control to place' && _has 'reported as \*\*unmitigated\*\*'; then
+        _record_pass "a risk with no claimed control is reported unmitigated, not silently"
+    else
+        _record_fail "a risk with no claimed control is reported unmitigated" \
+            "without this, scoping the block to claimed controls makes 'claim nothing' the way to skip the check"
+    fi
+}
+
 test_skill_is_readable
+test_no_control_means_unmitigated_not_silence
 test_threat_and_control_regions_are_written_separately
 test_control_region_is_what_it_reads_not_what_it_is_called
 test_overlap_must_be_stated_explicitly

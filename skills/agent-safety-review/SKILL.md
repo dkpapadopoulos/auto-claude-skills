@@ -93,6 +93,12 @@ write these down **separately**, then state whether they overlap:
 3. **Overlap.** State plainly that region 2 contains region 1. If you cannot say
    that in one sentence, the control does not apply and the risk is unmitigated.
 
+**When there is no control to place.** This step is about a control you are
+*claiming*. A risk you are not claiming any control for needs no placement
+block — but it must then be reported as **unmitigated**, in those words. Saying
+nothing is not the third option: the whole failure this step exists for is a
+risk that reads as covered because a control was named near it.
+
 Then ask these two questions, **in this order**:
 
 > 1. **What does this check NOT look at?**
@@ -155,7 +161,7 @@ Output a structured assessment:
 **Autonomy:** <advise | recommend | execute-reversible | execute-irreversible · unattended> · **Oversight:** <strong | weak>
 **Autonomy advisory (if flagged):** <proportional recommendation, or "none">
 
-### Placement (per risk)
+### Placement (per risk with a claimed control)
 - Threat region: <where the threat lives>
 - Control region: <what the control inspects>
 - Overlap: <one sentence, or "NONE — control does not apply">
