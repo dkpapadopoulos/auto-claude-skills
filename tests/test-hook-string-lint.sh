@@ -171,11 +171,6 @@ _word_is_eaten() {
     ! printf '%s' "${out}" | grep -qF "$2"
 }
 
-test_desync_heredoc_opener_with_trailing_comment
-test_desync_ansi_c_quoting
-test_desync_backslash_heredoc_delimiter
-test_herestring_is_not_a_heredoc
-test_incoherent_scan_reports_cannot_check
 test_red_fixtures_really_lose_the_word() {
     # Each red fixture is paired with the word its backtick swallows.
     local ok=1
@@ -241,6 +236,11 @@ test_shell_tree_is_clean() {
     fi
 }
 
+test_desync_heredoc_opener_with_trailing_comment
+test_desync_ansi_c_quoting
+test_desync_backslash_heredoc_delimiter
+test_herestring_is_not_a_heredoc
+test_incoherent_scan_reports_cannot_check
 test_lint_is_runnable
 test_red_double_quoted_is_flagged
 test_red_unquoted_heredoc_is_flagged

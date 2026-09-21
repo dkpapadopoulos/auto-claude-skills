@@ -31,9 +31,13 @@ def classify(path):
             depth += line.count("{") - line.count("}")
             if ASSERT.match(line):
                 inside += 1
-            if depth <= 0 and "{" not in line and "}" in line:
-                in_fn = False
-            elif depth <= 0 and "}" in line:
+            # One condition, not two. This was written as two branches whose
+            # bodies are identical and whose first condition is strictly
+            # subsumed by the second — anything matching `"{" not in line` also
+            # matches without it — so the first arm could never change an
+            # outcome. Collapsing is behaviour-preserving, verified by
+            # comparing this script's output over tests/ before and after.
+            if depth <= 0 and "}" in line:
                 in_fn = False
             continue
         if ASSERT.match(line):
