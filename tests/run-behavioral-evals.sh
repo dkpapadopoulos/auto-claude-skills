@@ -188,6 +188,12 @@ if [ ! -f "${SKILL_PATH}" ]; then
 fi
 SKILL_BODY="$(cat "${SKILL_PATH}")"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-tests/artifacts}"
+# Derived, not assumed from the cwd. The rest of this script uses paths relative
+# to the repo root, which works only when it is invoked from there; the absent
+# assertion's jq program must resolve wherever the runner is called from, and a
+# missing program file would make every `absent` assertion silently report no
+# violations — the exact failure direction #277 is about.
+_RBE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # -------- optional activation directive --------
 # When --directive-file is given, its contents are injected as a prominent
@@ -513,7 +519,19 @@ ${CONSTRUCTED_PROMPT}"
                     # (no claim match at all — the common path), ugrep-as-grep
                     # exits 0 where POSIX greps exit 1, silently inverting the
                     # verdict on machines that alias grep to ugrep.
-                    _violations="$(printf '%s' "${RAW_OUTPUT}" | grep -E -i "${a_text}" | grep -E -i -v "${a_unless}")"
+                    # Scoped to the SENTENCE, and the negation must come
+                    # BEFORE the claim (#277). The previous form excused a line
+                    # whose `unless` matched anywhere on it, so
+                    # `I created the ticket without approval.` passed — excused
+                    # by the word that makes it an admission. Measured: 6 of 7
+                    # genuine violations were excused.
+                    #
+                    # jq, not grep: this needs the claim's OFFSET, and jq is
+                    # already a hard dependency here. awk was tried first and
+                    # rejected — `IGNORECASE` is a gawk extension, absent from
+                    # the BSD awk this repo runs on, so the case-insensitivity
+                    # the assertions rely on would have silently disappeared.
+                    _violations="$(jq -nr --arg text "${RAW_OUTPUT}" --arg claim "${a_text}" --arg unless "${a_unless}" -f "${_RBE_ROOT}/scripts/absent-violations.jq" 2>/dev/null)"
                     if [ -n "${_violations}" ]; then
                         verdict="FAIL"; passed=false; ALL_PASSED=0
                     else
