@@ -168,6 +168,13 @@ _json_escape() {
 _emit_deny() {
     local _dm="${1:-}"
     [ -n "${_SUBJ_NOTE:-}" ] && _dm="${_dm} ${_SUBJ_NOTE}"
+    # Rides the deny like _SUBJ_NOTE, and for the same reason (#219): when the
+    # deny's remedy would otherwise send the user somewhere unrelated, which
+    # part of the command provoked it IS part of the decision. Kept separate
+    # from _SUBJ_NOTE because it is computed BEFORE the subject block — the
+    # mutate-then-push leg denies earlier than that, and it is the leg this
+    # shape actually hits.
+    [ -n "${_SCRATCH_NOTE:-}" ] && _dm="${_dm} ${_SCRATCH_NOTE}"
     # TWO AUDIENCES, ONE TEXT (#254). Claude Code shows the MODEL
     # `permissionDecisionReason` on a deny and shows the USER `systemMessage`;
     # the model never sees systemMessage. Writing the remediation only there
@@ -561,6 +568,64 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # SHIP-phase advisories below still emit.
         _PUSHGATE_SKIP=false
         [ "${ACSM_SKIP_PUSH_GATE:-}" = "1" ] && _PUSHGATE_SKIP=true
+
+        # --- LOCAL SCRATCH REPO (issue #231) -------------------------------
+        # A command that creates a repository from nothing and pushes inside it
+        # — `mkdir /tmp/x && cd /tmp/x && git init && git commit && git push
+        # origin main` — reaches no network: `origin` does not exist in a repo
+        # initialised moments earlier, so git itself refuses. This gate has no
+        # jurisdiction over it, and denying it measured the wrong repository,
+        # which is the same defect #219 fixed for the subject pair.
+        #
+        # Measured before writing this: narrowing ONLY `mutate-then-push` (the
+        # leg that actually fired) changes nothing a contributor would notice —
+        # the push falls straight through to the chain REVIEW gate and denies
+        # there instead, with or without a composition chain. So the skip has to
+        # cover the whole gate or it is not a fix. That is a real widening, and
+        # `command_push_is_local_scratch` is shaped to earn it: the subject
+        # directory must not EXIST when this runs, which is what stops the
+        # reinit bypass (`git init` in an existing repo is a successful no-op),
+        # and every segment must be a known-local operation, so `git remote`,
+        # `git clone`, `git config`, a URL-shaped remote, a command
+        # substitution, an unparseable command or anything unrecognised all
+        # refuse and leave today's deny exactly where it is.
+        #
+        # Set here rather than at the five deny sites deliberately: those are
+        # already gated on `_PUSHGATE_SKIP`, and five parallel conditions is the
+        # shape that drifts when one of them is edited alone.
+        # DETECTION ONLY. This never sets _PUSHGATE_SKIP and never changes a
+        # decision; every deny below fires exactly as it did before. It exists
+        # to make the REMEDY accurate, which was the reported harm: a developer
+        # building a throwaway fixture repo was told to run a code-review skill
+        # that had nothing to do with what they were doing.
+        #
+        # An earlier revision of this change DID skip the gate for such
+        # commands. That was withdrawn after review, and the reason is worth
+        # keeping because it is not "we found bugs" — it is that the safety
+        # ARGUMENT was false. The skip was justified by reasoning that a
+        # repository created moments ago has no content to ship. Deletion and
+        # force-update need no content: `git push --mirror <path>` from an
+        # EMPTY repo deleted refs on a real target, and certification skipped
+        # the whole gate rather than only the content legs.
+        #
+        # Worse, `url.<base>.insteadOf` in the user's gitconfig rewrites a bare
+        # remote name to any URL, so the destination of a push need not appear
+        # in the command text at all. No predicate over command text can
+        # establish "this cannot reach a network"; five reviewer-found criticals
+        # across two independent reviews said so in five different ways.
+        #
+        # As DETECTION the stakes invert. A false positive costs one slightly
+        # wrong sentence in a message the user is already reading, not a skipped
+        # gate — so the predicate's remaining imprecision is affordable here in
+        # a way it was never affordable as authorisation.
+        _SUBJ_LOCAL_SCRATCH=false
+        if [ "${_gc_is_push}" = "true" ] \
+           && command -v command_push_is_local_scratch >/dev/null 2>&1 \
+           && [ "${#_COMMAND}" -le "${_GC_MAX_TOTAL}" ] \
+           && command_push_is_local_scratch "${_COMMAND}"; then
+            _SUBJ_LOCAL_SCRATCH=true
+            _SCRATCH_NOTE="NOTE: this command looks like it builds a throwaway repository and pushes inside it. The gate still applies — it governs this session regardless of which repository a command names, and a push cannot be shown from its text alone to stay local, because the destination can come from git configuration the command never mentions. If you are building a local fixture, run it from your own terminal, or start the session with ACSM_SKIP_PUSH_GATE=1."
+        fi
         _GATE_ACTION="pushing this branch"
         [ "${_gc_is_push}" != "true" ] && [ "${_gc_is_ghmerge}" = "true" ] && _GATE_ACTION="merging this PR"
         # Space-free action token for telemetry (F7): _GATE_ACTION is a
@@ -583,6 +648,12 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # hook and writes no record at all, so the log's denominator stays
         # incomplete and this alone does not make conversion rates complete.
         [ "${_PUSHGATE_SKIP}" = "true" ] && _DECISION="bypass:env"
+        # Distinct from the human bypass in telemetry: one is a person opting
+        # out, the other is the gate declining jurisdiction. Reading them as one
+        # decision would make a predicate defect look like human traffic.
+        # Telemetry records that the shape was RECOGNISED, not that anything
+        # was skipped — the decision itself is unchanged by this detection.
+        [ "${_SUBJ_LOCAL_SCRATCH:-false}" = "true" ] && _DECISION="${_DECISION}+local-scratch-shape"
         # Positive "reached the decision point" sentinel for the capture replay
         # (issue #127). The on-disk replay re-runs this guard, which is itself
         # fail-open (`trap 'exit 0' ERR`) — so an empty replay stdout cannot tell
