@@ -169,8 +169,10 @@ esac
 _LM="${TMP}/mixed.jsonl"; _AM="${TMP}/mixed-adj.jsonl"; : > "${_LM}"
 _rec "${_LM}" m1 "2026-08-28T10:00:00Z" /repo/x main tok-1 absent 1
 _rec "${_LM}" m2 "2026-08-28T11:00:00Z" /repo/x main tok-1 absent 1
-_rec "${_LM}" m3 "2026-09-20T10:00:00Z" /repo/x main tok-9 absent
+# Written NEWEST-FIRST on purpose: --next must sort by ts, and with the file
+# already in ts order the sort was unpinned (stripping it changed nothing).
 _rec "${_LM}" m4 "2026-09-20T12:00:00Z" /repo/y main tok-9 not-clean
+_rec "${_LM}" m3 "2026-09-20T10:00:00Z" /repo/x main tok-9 absent
 _outm="$(_run "${_LM}" "${_AM}" --status)"
 case "${_outm}" in
     *"EXCLUDED — other-predicate : 2 record(s)"*)
@@ -252,8 +254,11 @@ _rec "${_L5}" g1 "2026-09-10T10:00:00Z" /repo/x main tok-1 absent
 ( unset CLAUDECODE CLAUDE_CODE_SESSION_ID
   REVIEW_SHADOW_LOG="${_L5}" REVIEW_ADJUDICATION_LOG="${_A5}" /bin/bash "${SUT}" --adjudicate g1 --verdict false_block
   REVIEW_SHADOW_LOG="${_L5}" REVIEW_ADJUDICATION_LOG="${_A5}" /bin/bash "${SUT}" --adjudicate g1 --verdict true_catch ) >/dev/null 2>&1
-_k="$(_run "${_L5}" "${_A5}" --status | sed -n 's/^rate (human-confirmed only) : k=\([0-9]*\).*/\1/p')"
-assert_equals "a correcting re-adjudication supersedes the earlier verdict" "0" "${_k}"
+_kn="$(_run "${_L5}" "${_A5}" --status | sed -n 's/^rate (human-confirmed only) : k=\([0-9]*\) false blocks of n=\([0-9]*\).*/\1 \2/p')"
+# Asserts n as well as k. With k alone the cell is satisfied by _claimant always
+# returning agent, where the episode leaves the rate entirely and k=0 for the
+# wrong reason -- green under a mutation it does not name.
+assert_equals "a correcting re-adjudication supersedes the earlier verdict (k AND n)" "0 1" "${_kn}"
 
 # ---------------------------------------------------------------------------
 # 7. The shadow log is NEVER mutated by any command.
@@ -667,5 +672,109 @@ case "${_outl}" in
 esac
 _legeps="$(printf '%s' "${_outl}" | sed -n 's/^    episodes \([0-9]*\),.*/\1/p')"
 assert_equals "excluded-band episodes are grouped despite having no record_id" "2" "${_legeps}"
+
+# ---------------------------------------------------------------------------
+# 19. THE REAL PRODUCER FEEDING THE REAL READER.
+#
+#     Every other corpus in this file is hand-built by `_rec()`, which RETYPES
+#     the field names -- so the producer/consumer contract that is the whole
+#     point of this change had no coverage at all. Measured on the committed
+#     version: renaming `would_block` to `wouldblock`, or `ts` to `timestamp`,
+#     in hooks/lib/review-shadow.sh left BOTH test files fully green, while the
+#     real reader answered `all 1 adjudicable record(s) are labelled` for a
+#     record nobody had ever adjudicated -- the exact confusion cmd_next's two
+#     messages exist to prevent, reached by a different cause than the reader
+#     bug fixed alongside it.
+#
+#     This is the fixture rule this repo already records: a fixture the author
+#     invented rather than observed proves only that the code agrees with the
+#     author's assumption.
+# ---------------------------------------------------------------------------
+_RT="${TMP}/roundtrip.jsonl"; _RTA="${TMP}/roundtrip-adj.jsonl"; rm -f "${_RT}" "${_RTA}"
+( set -u; . "${WRITER}" 2>/dev/null
+  REVIEW_SHADOW_LOG="${_RT}" review_shadow_record "session-rt" "${PROJECT_ROOT}" "absent" "push" "HEAD" ) \
+  >/dev/null 2>&1
+if [ -s "${_RT}" ]; then
+    _record_pass "the real producer wrote a record"
+else
+    _record_fail "the real producer wrote a record" "nothing at ${_RT} -- cells below are vacuous"
+fi
+
+# The reader must SEE it: one adjudicable episode, and --next must OFFER it.
+_rt_eps="$(_run "${_RT}" "${_RTA}" --status | sed -n 's/^episodes (adjudicable) : \([0-9]*\).*/\1/p')"
+assert_equals "the real reader groups the real producer's record into 1 episode" "1" "${_rt_eps}"
+
+_rt_next="$(_run "${_RT}" "${_RTA}" --next)"
+case "${_rt_next}" in
+    *"are labelled"*)
+        _record_fail "--next OFFERS the real producer's record" \
+            "said the work is done for a record never adjudicated: ${_rt_next}" ;;
+    *"record_id : "*) _record_pass "--next OFFERS the real producer's record" ;;
+    *) _record_fail "--next OFFERS the real producer's record" "got: ${_rt_next}" ;;
+esac
+
+# And the id --next prints must be addressable by --adjudicate, which is the
+# workflow the tool prescribes.
+_rt_id="$(printf '%s' "${_rt_next}" | sed -n 's/^record_id : //p' | head -1)"
+if [ -n "${_rt_id}" ]; then
+    _rt_adj="$( ( unset CLAUDECODE CLAUDE_CODE_SESSION_ID
+      REVIEW_SHADOW_LOG="${_RT}" REVIEW_ADJUDICATION_LOG="${_RTA}" \
+        /bin/bash "${SUT}" --adjudicate "${_rt_id}" --verdict true_catch ) 2>&1 )"
+    case "${_rt_adj}" in
+        *"recorded: ${_rt_id}"*) _record_pass "the producer's record is addressable by --adjudicate" ;;
+        *) _record_fail "the producer's record is addressable by --adjudicate" "got: ${_rt_adj}" ;;
+    esac
+    _rt_n="$(_run "${_RT}" "${_RTA}" --status | sed -n 's/^rate (human-confirmed only) : k=[0-9]* false blocks of n=\([0-9]*\).*/\1/p')"
+    assert_equals "the producer's record reaches the denominator end to end" "1" "${_rt_n}"
+else
+    _record_fail "the producer's record is addressable by --adjudicate" "--next printed no record_id"
+fi
+
+# ---------------------------------------------------------------------------
+# 20. A record that parses but has an unusable ts must be ACCOUNTED FOR.
+#     It is correctly excluded from the grouping -- merging two corrupt records
+#     would satisfy (-1)-(-1)=0 <= window and collapse them on a time relation
+#     nothing verified -- but excluding it SILENTLY left the denominator short
+#     with no row explaining the gap: "2 parsed, 1 episode" and nothing said.
+#     That is the shortfall this file's own section 4 forbids for empty
+#     branches. `ts:""` is producer-reachable whenever `date` fails.
+# ---------------------------------------------------------------------------
+_LT="${TMP}/badts.jsonl"; _AT="${TMP}/badts-adj.jsonl"; : > "${_LT}"; : > "${_AT}"
+_rec "${_LT}" t1 "2026-09-20T10:00:00Z" /repo/x main tokt-1 absent
+jq -cn --argjson pv "${PV}" '{schema_version:2,predicate_version:$pv,record_id:"t2",
+   ts:"not-a-timestamp",repo:"/repo/x",branch:"main",head_sha:"d",session_token:"tokt-2",
+   action:"push",would_block:true,reason:"absent",transcript_path:""}' >> "${_LT}"
+_outt="$(_run "${_LT}" "${_AT}" --status)"
+case "${_outt}" in
+    *"EXCLUDED — unparseable ts : 1 record"*)
+        _record_pass "a malformed-ts record is reported as excluded, not silently dropped" ;;
+    *) _record_fail "a malformed-ts record is reported as excluded, not silently dropped" "got: ${_outt}" ;;
+esac
+assert_equals "...and it does not enter the episode population" "1" \
+    "$(printf '%s' "${_outt}" | sed -n 's/^episodes (adjudicable) : \([0-9]*\).*/\1/p')"
+# CONTROL: with every ts well-formed the exclusion row must NOT appear.
+_LT2="${TMP}/goodts.jsonl"; : > "${_LT2}"
+_rec "${_LT2}" g1 "2026-09-20T10:00:00Z" /repo/x main tokg-1 absent
+case "$(_run "${_LT2}" "${_AT}" --status)" in
+    *"unparseable ts"*) _record_fail "CONTROL: no ts-exclusion row when every ts is valid" "row printed anyway" ;;
+    *) _record_pass "CONTROL: no ts-exclusion row when every ts is valid" ;;
+esac
+
+# ---------------------------------------------------------------------------
+# 21. A malformed LINE in the corpus must not truncate the read. The `-R
+#     fromjson?` guards were added throughout, but no fixture contained a
+#     malformed line, so the protection was unpinned wherever it was added.
+# ---------------------------------------------------------------------------
+_LB="${TMP}/badline.jsonl"; _AB="${TMP}/badline-adj.jsonl"; : > "${_LB}"; : > "${_AB}"
+_rec "${_LB}" b1 "2026-09-20T10:00:00Z" /repo/x main tokb-1 absent
+printf '%s\n' '{"record_id":"broken","ts":' >> "${_LB}"
+_rec "${_LB}" b2 "2026-09-20T12:00:00Z" /repo/y main tokb-2 absent
+_outb="$(_run "${_LB}" "${_AB}" --status)"
+assert_equals "records AFTER a malformed line still form episodes" "2" \
+    "$(printf '%s' "${_outb}" | sed -n 's/^episodes (adjudicable) : \([0-9]*\).*/\1/p')"
+case "${_outb}" in
+    *"1 unparseable"*) _record_pass "the malformed line is counted as unparseable" ;;
+    *) _record_fail "the malformed line is counted as unparseable" "got: ${_outb}" ;;
+esac
 
 print_summary

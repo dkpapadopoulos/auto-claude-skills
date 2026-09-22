@@ -379,7 +379,7 @@ cmd_status() {
     local _tot=0 _lab=0 _fb=0 _tc=0 _unk=0 _agent=0 _unlab=0
     local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
     local _lines=0 _parsed=0 _unparsed=0 _legacy=0 _orphan=0 _lines_rc=0 _rkey=""
-    local _leg_eps=0 _leg_repos=0 _leg_span=0
+    local _leg_eps=0 _leg_repos=0 _leg_span=0 _badts=0
     local _band_hdl _den
 
     echo "=== REVIEW shadow corpus (leg: push/merge REVIEW verdict) ==="
@@ -409,10 +409,29 @@ cmd_status() {
         echo "ERROR: could not read ${SHADOW_LOG} (grep exit ${_lines_rc}). No claim is made about its contents."
         return 0
     fi
-    _parsed="$(jq -R -r 'fromjson? // empty | .ts // ""' "${SHADOW_LOG}" 2>/dev/null | grep -c . | tr -d '[:space:]')"
+    # Counts records that PARSE, not records with a non-empty ts. Counting the
+    # latter reported a well-formed record whose `ts` is "" as an unparseable
+    # LINE -- and review-shadow.sh emits exactly that whenever `date` fails, so
+    # it is producer-reachable, not a fixture curiosity.
+    _parsed="$(jq -R -r 'fromjson? // empty | 1' "${SHADOW_LOG}" 2>/dev/null | grep -c . | tr -d '[:space:]')"
     _unparsed=$(( ${_lines:-0} - ${_parsed:-0} ))
     _legacy="$(_legacy_count)"
     echo "records : ${_lines:-0} line(s), ${_parsed:-0} parsed, ${_unparsed} unparseable"
+
+    # A record that parses but whose ts is unusable is DROPPED from the episode
+    # grouping (shadow_group_episodes excludes rather than merges it -- two
+    # corrupt records would otherwise satisfy (-1)-(-1)=0 <= window and collapse
+    # on a time relation nothing verified). But dropping it SILENTLY leaves the
+    # denominator short with no row accounting for the difference: "2 parsed,
+    # 1 episode" and nothing said. That is the same silent shortfall this file
+    # forbids for empty branches.
+    _badts="$(_tsv '[.ts]' 2>/dev/null \
+              | awk -F'\t' '$1 !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$/ { n++ } END { print n+0 }')"
+    if [ "${_badts:-0}" -gt 0 ]; then
+        echo "EXCLUDED — unparseable ts : ${_badts} record(s) of the adjudicable version"
+        echo "  They parse as JSON but carry no usable timestamp, so they cannot be"
+        echo "  placed in an episode and are absent from the denominator below."
+    fi
 
     # The legacy band is REPORTED, with its cause, never silently folded in or
     # silently dropped. Quietly reporting 0 episodes for a live corpus and

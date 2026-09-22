@@ -406,22 +406,36 @@ _SUBJ_HEAD="$(git -C "${_SWT}" rev-parse HEAD 2>/dev/null)"
   git add -A; git commit -qm "session material" ) >/dev/null 2>&1
 _SESS_HEAD="$(git -C "${_SR}" rev-parse HEAD 2>/dev/null)"
 
-_subj_run() { # <command> <logfile> -> writes the record, echoes "<branch> <head>"
+# Reads `.repo` as well, and that is the whole point: branch and head_sha come
+# from the REV, which resolves identically whichever root is passed, because the
+# subject worktree and the session checkout SHARE refs and objects. Measured --
+# with the guard reverted to `_proot`, a branch+head-only assertion stays GREEN
+# and certifies the regression it is named after. `.repo` is the only field the
+# ROOT determines, and it is one third of the pre-registered episode key.
+#
+# This is the exact mirror of the trap caught one cell below: a rev-only cell was
+# added after `git -C <wt>` made the root redundant, and the root half was then
+# left with nothing pinning it.
+_subj_run() { # <command> <logfile> -> echoes "<branch> <head> <repo>"
     rm -f "$2"
     ( cd "${_SR}" && jq -n --arg tp "${_TPATH}" --arg c "$1" --arg cw "${_SR}" \
         '{transcript_path:$tp,cwd:$cw,tool_input:{command:$c}}' \
       | REVIEW_SHADOW_LOG="$2" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
         bash "${GUARD}" >/dev/null 2>&1 )
     [ -s "$2" ] || { echo "<no-record>"; return 0; }
-    jq -r '"\(.branch) \(.head_sha)"' "$2" 2>/dev/null | tail -1
+    jq -r '"\(.branch) \(.head_sha) \(.repo)"' "$2" 2>/dev/null | tail -1
 }
+# mktemp hands back /tmp/... while git reports /private/tmp/... on macOS, so
+# canonicalise the expected side or every comparison fails for the wrong reason.
+_SR_REAL="$(cd "${_SR}" && pwd -P)"
+_SWT_REAL="$(cd "${_SWT}" && pwd -P)"
 
 if [ -n "${_SUBJ_HEAD:-}" ] && [ -n "${_SESS_HEAD:-}" ] && \
    [ "${_SUBJ_HEAD}" != "${_SESS_HEAD}" ]; then
     _SUBJ_LOG="${_SUBJ_TMP}/shadow.jsonl"
     _got="$(_subj_run "git -C ${_SWT} push origin subj-branch" "${_SUBJ_LOG}")"
-    assert_equals "shadow record names the SUBJECT branch+head, not the session tree" \
-        "subj-branch ${_SUBJ_HEAD}" "${_got}"
+    assert_equals "shadow record names the SUBJECT branch+head+REPO, not the session tree" \
+        "subj-branch ${_SUBJ_HEAD} ${_SWT_REAL}" "${_got}"
 
     # The two halves of the subject are SEPARABLE, and a fixture that moves
     # both at once pins only the first. Mutation-verified: with the root fix in
@@ -435,14 +449,17 @@ if [ -n "${_SUBJ_HEAD:-}" ] && [ -n "${_SESS_HEAD:-}" ] && \
     # expected value.
     _got3="$(_subj_run "git push origin subj-branch" "${_SUBJ_LOG}")"
     assert_equals "shadow record follows the REFSPEC when the root is unchanged" \
-        "subj-branch ${_SUBJ_HEAD}" "${_got3}"
+        "subj-branch ${_SUBJ_HEAD} ${_SR_REAL}" "${_got3}"
 
-    # CONTROL: no subject hint, so the subject IS the session tree. This must
-    # report the session branch under both the fixed and the unfixed guard --
-    # without it, "always reports the subject" would pass the cell above.
+    # CONTROL. This command DOES carry a subject hint -- a refspec -- it simply
+    # names the SESSION branch, so the resolved subject and the session tree
+    # coincide. It must report the session branch and root under both the fixed
+    # and the unfixed guard; without it, "always reports the subject" would pass
+    # the cell above. (An earlier comment here called it "no subject hint",
+    # which misdescribed why it works.)
     _got2="$(_subj_run "git push origin sess-branch" "${_SUBJ_LOG}")"
-    assert_equals "CONTROL: with no subject hint the record names the session tree" \
-        "sess-branch ${_SESS_HEAD}" "${_got2}"
+    assert_equals "CONTROL: a refspec naming the SESSION branch keeps the session tree" \
+        "sess-branch ${_SESS_HEAD} ${_SR_REAL}" "${_got2}"
 else
     _record_fail "subject/session fixture built" \
         "subject=${_SUBJ_HEAD:-<none>} session=${_SESS_HEAD:-<none>} -- cell is vacuous"
@@ -452,17 +469,22 @@ rm -rf "${_SUBJ_TMP}"
 # Static companion, stated as what the site MUST pass rather than what it must
 # not. The section-8 form ("no _PROJ_ROOT") is satisfied by any defined name,
 # including the wrong one -- which is how this shipped.
-_shadow_call="$(grep -A2 'review_shadow_record "' "${GUARD}" 2>/dev/null | tr '\n' ' ')"
-case "${_shadow_call}" in
-    *_SUBJ_ROOT*) _record_pass "review_shadow_record is passed _SUBJ_ROOT" ;;
-    *) _record_fail "review_shadow_record is passed _SUBJ_ROOT" \
-           "call site does not mention _SUBJ_ROOT: ${_shadow_call}" ;;
-esac
-case "${_shadow_call}" in
-    *_SUBJ_REV*) _record_pass "review_shadow_record is passed _SUBJ_REV" ;;
-    *) _record_fail "review_shadow_record is passed _SUBJ_REV" \
-           "call site does not mention _SUBJ_REV: ${_shadow_call}" ;;
-esac
+# Match the ARGUMENT POSITION, not a substring of a three-line window. Measured:
+# passing `_proot` and appending `# was _SUBJ_ROOT` to the call left the ENTIRE
+# 74-cell file green with the regression present, because the window matcher
+# found the name in the comment. A guard a one-word edit satisfies is not a
+# guard, and this one was the only thing standing behind the runtime cell above.
+_shadow_arg2="$(grep -o 'review_shadow_record "\${_SESSION_TOKEN}" "\${[A-Za-z_]*}"' "${GUARD}" 2>/dev/null \
+                | head -1 | sed -n 's/.*"\${_SESSION_TOKEN}" "\${\([A-Za-z_]*\)}".*/\1/p')"
+assert_equals "review_shadow_record's 2nd argument is literally _SUBJ_ROOT" \
+    "_SUBJ_ROOT" "${_shadow_arg2:-<no call site matched>}"
+
+# And the rev argument, matched on the line that carries it rather than anywhere
+# in the neighbourhood.
+_shadow_rev="$(grep -A3 'review_shadow_record "' "${GUARD}" 2>/dev/null \
+               | grep -oE '^[[:space:]]*"\$\{_SUBJ_REV\}"' | head -1 | tr -d '[:space:]')"
+assert_equals "review_shadow_record's rev argument is literally _SUBJ_REV" \
+    '"${_SUBJ_REV}"' "${_shadow_rev:-<no rev argument found>}"
 
 # ---------------------------------------------------------------------------
 # 8c. The writer's version constants must be EXPORTED, and a record must carry
