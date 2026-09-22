@@ -239,11 +239,19 @@ jobs:
             - Scope is distinct from existing skills in `skills/` —
               read other SKILL.md files briefly to check for overlap.
               Flag duplicate scope as blocking.
-            - If `skills/incident-analysis/SKILL.md` is touched: word
-              count must stay under the 11,500-word ceiling
-              (`wc -w skills/incident-analysis/SKILL.md`). Tables, YAML
-              schemas >15 lines, and URL templates belong in
-              `references/`, not inlined.
+            - If `skills/incident-analysis/SKILL.md` is touched: it has a
+              word-count RATCHET, not a fixed ceiling. The authority is
+              `INCIDENT_SKILL_WORD_BASELINE` in
+              `tests/test-incident-analysis-content.sh`, pinned to the file's
+              exact size, so growth in either direction fails until that
+              constant is edited. Do NOT flag a word count against a number
+              from this prompt or from memory — read the constant in the diff.
+              A raise is allowed when the commit says why and extraction to
+              `references/` was tried first; flag a SILENT raise, or a raise
+              with heavy new prose that belongs in `references/`. (A fixed
+              11,500 ceiling preceded this and permitted regrowth up to the
+              cap; it is superseded.) Tables, YAML schemas >15 lines, URL
+              templates and rationale belong in `references/`, not inlined.
 
             ### Hook changes — `hooks/*.sh`, `hooks/lib/*.sh`
 

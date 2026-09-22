@@ -801,6 +801,35 @@ assert_file_contains "the reference distinguishes outward-sending from disk writ
 # A never-raise rule was considered and rejected: the file is a living skill, so
 # an absolute rule would simply be broken in contradiction of its own comment.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# THE WORD LIMIT IS STATED IN THREE PLACES AND THEY MUST AGREE.
+#
+# The limit lives here (the constant below), in CLAUDE.md, and in the review
+# workflow's own checklist prompt. When the fixed 11,500 ceiling was replaced
+# by the ratchet, only the constant changed — so CLAUDE.md and the CI reviewer
+# went on enforcing a number the implementation had abandoned. Measured: the
+# reviewer blocked this PR three times against the stale figure, once AFTER
+# CLAUDE.md was reconciled, because its checklist is a separate copy.
+#
+# This is the paired-sites-drift shape: a fact restated in N places, edited in
+# one. These cells make the other two fail rather than silently disagree.
+# ---------------------------------------------------------------------------
+_WORD_CLAUDE="${PROJECT_ROOT}/CLAUDE.md"
+_WORD_WF="${PROJECT_ROOT}/.github/workflows/claude-code-review.yml"
+
+if grep -q 'ratchet' "${_WORD_CLAUDE}"; then
+    _record_pass "CLAUDE.md describes the ratchet, not a fixed ceiling"
+else
+    _record_fail "CLAUDE.md describes the ratchet" \
+        "it still states a fixed ceiling — readers and the CI reviewer will enforce a number this test does not use"
+fi
+if grep -qi 'RATCHET' "${_WORD_WF}" && grep -q 'INCIDENT_SKILL_WORD_BASELINE' "${_WORD_WF}"; then
+    _record_pass "the review checklist points at the ratchet constant"
+else
+    _record_fail "the review checklist points at the ratchet constant" \
+        "the CI reviewer's own prompt is a separate copy of this rule; if it states a fixed number it will block on it"
+fi
+
 INCIDENT_SKILL_WORD_BASELINE=11531
 word_count=$(wc -w < "${SKILL_FILE}" | tr -d ' ')
 if [ "$word_count" -le "${INCIDENT_SKILL_WORD_BASELINE}" ]; then
