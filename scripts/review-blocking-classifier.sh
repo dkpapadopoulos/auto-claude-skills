@@ -41,9 +41,26 @@ _SECTION="$(awk '
             || (l ~ /^[[:space:]]*\*\*[^*]+\*\*[[:space:]]*$/) \
             || (l ~ /^[[:space:]]*-{3,}[[:space:]]*$/)
     }
+    # THE ANCHOR MUST BE A SECTION HEADER, not any line mentioning the phrase.
+    # Anchoring on the substring alone classified three non-blocking reviews as
+    # blocking, including a shape this workflow'"'"'s own prompt licenses ("If
+    # nothing blocks ... the review can be 4 lines"):
+    #
+    #   "No blocking issues. Two non-blocking notes:"   + bullets -> blocking
+    #   "No blocking issues found, though ..."          + bullets -> blocking
+    #   "Two non-blocking issues are worth a look:"     + bullets -> blocking
+    #
+    # Each submits CHANGES_REQUESTED on a clean PR, which blocks a human'"'"'s
+    # merge and cannot be deleted — the exact direction this file'"'"'s header
+    # says must never happen. A header is structural: a markdown heading, or a
+    # line that is entirely bold. Prose sentences are neither.
+    #
+    # Ceiling, stated: an undecorated "Blocking issues" on its own line does not
+    # anchor, so such a review classifies `unknown` and COMMENTS. That is the
+    # safe direction and is preferred to widening the anchor back toward prose.
     {
         low = tolower($0)
-        if (!inside && low ~ /blocking issue/) { inside = 1; next }
+        if (!inside && low ~ /blocking issue/ && is_boundary($0)) { inside = 1; next }
         if (inside && is_boundary($0)) { exit }
         if (inside) print
     }

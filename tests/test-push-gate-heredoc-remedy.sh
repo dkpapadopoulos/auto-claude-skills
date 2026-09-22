@@ -71,9 +71,24 @@ test_the_decision_is_unchanged() {
 
 test_a_data_sink_heredoc_is_not_a_push_at_all() {
     # #222's half: a `cat` body is DATA and is consumed, so it never reaches
-    # push detection. If this ever starts denying, the asymmetry this file
-    # documents has collapsed and the note below would be attached to the wrong
-    # population.
+    # push detection.
+    #
+    # PAIRED WITH A POSITIVE CONTROL, because the assertion is on the ABSENCE of
+    # a deny and the guard's output for this command is EMPTY. Found in review:
+    # the first version passed with hooks/openspec-guard.sh replaced by
+    # `exit 0` — it could not tell "allowed" from "the guard never ran", which
+    # is the empty-output failure CLAUDE.md names in the publish-guard bullet.
+    # The control runs in the SAME harness, so a guard that is not executing
+    # fails it and the absence assertion below is never read as evidence.
+    local ctrl
+    ctrl="$(_run "${PLAIN_CMD}")"
+    if [ "$(_decision "${ctrl}")" = "deny" ]; then
+        _record_pass "CONTROL: the guard is executing in this harness"
+    else
+        _record_fail "CONTROL: the guard is executing in this harness" \
+            "a plain push did not deny — every absence assertion here is vacuous"
+        return
+    fi
     assert_not_contains "a cat-heredoc mentioning a push does not deny" \
         '"deny"' "$(_run "${CAT_CMD}")"
 }

@@ -87,6 +87,25 @@ test_derived_blocking_bodies_classify_blocking() {
     done
 }
 
+test_prose_mentions_never_classify_blocking() {
+    # Found in review. The first classifier anchored its section on ANY line
+    # containing "blocking issue", so a review SAYING there are none — in the
+    # terse shape this workflow's own prompt licenses — was read as having them
+    # and would have submitted CHANGES_REQUESTED on a clean PR.
+    local f n
+    for f in "${FIX}"/regress-fp-*.md; do
+        n="$(/bin/bash "${CLS}" "${f}" 2>/dev/null)"
+        if [ "${n}" = "blocking" ]; then
+            _record_fail "prose $(basename "${f}") is not blocking" \
+                "classified blocking — this would request changes on a clean PR"
+        else
+            _record_pass "prose $(basename "${f}") is not blocking (got ${n})"
+        fi
+    done
+    assert_equals "3 false-positive bodies still pinned" "3" \
+        "$(ls -1 "${FIX}"/regress-fp-*.md 2>/dev/null | wc -l | tr -d ' ')"
+}
+
 test_ambiguous_and_absent_classify_unknown() {
     # `unknown` is the whole safety story: the caller comments on it. A
     # classifier that guessed `blocking` here would submit a CHANGES_REQUESTED
@@ -138,16 +157,37 @@ test_workflow_only_submits_a_review_on_blocking() {
 }
 
 test_unknown_does_not_request_changes() {
-    # Structural: the `blocking` arm is the ONLY one that may reach
-    # --request-changes. Extract the case block and check the other arm comments.
-    local _case
+    # THE CENTRAL GOVERNANCE CLAIM, and the first version of this cell pinned
+    # NOTHING: it asserted only that the strings `blocking)` and `gh pr comment`
+    # both appeared somewhere in the case block. Measured in review — fully
+    # INVERTING the arms, so every clean PR receives CHANGES_REQUESTED, left the
+    # file at 22/22 green. Each arm's BODY is now read separately.
+    local _case _blocking_arm _default_arm
     _case="$(awk '/case "\$_CLASS" in/,/esac/' "${WF}")"
-    if printf '%s' "${_case}" | grep -q 'blocking)' \
-       && printf '%s' "${_case}" | grep -q 'gh pr comment'; then
-        _record_pass "the non-blocking arm comments instead of requesting changes"
+    _blocking_arm="$(printf '%s' "${_case}" | awk '/^ *blocking\)/{f=1;next} f{print} f&&/;;/{exit}')"
+    _default_arm="$(printf '%s' "${_case}"  | awk '/^ *\*\)/{f=1;next}      f{print} f&&/;;/{exit}')"
+
+    if printf '%s' "${_blocking_arm}" | grep -q 'gh pr review .*--request-changes'; then
+        _record_pass "the blocking arm submits a review"
     else
-        _record_fail "the non-blocking arm comments" \
-            "could not find a blocking) arm paired with a comment fallback"
+        _record_fail "the blocking arm submits a review" \
+            "blocking) body: [${_blocking_arm}]"
+    fi
+    if printf '%s' "${_blocking_arm}" | grep -q 'gh pr comment'; then
+        _record_fail "the blocking arm does not merely comment" "blocking) body also comments"
+    else
+        _record_pass "the blocking arm does not merely comment"
+    fi
+    if printf '%s' "${_default_arm}" | grep -q 'gh pr comment'; then
+        _record_pass "the default arm comments"
+    else
+        _record_fail "the default arm comments" "default body: [${_default_arm}]"
+    fi
+    if printf '%s' "${_default_arm}" | grep -q 'gh pr review'; then
+        _record_fail "the default arm never submits a review" \
+            "an unknown/none classification would request changes on a clean PR"
+    else
+        _record_pass "the default arm never submits a review"
     fi
 }
 
@@ -167,6 +207,7 @@ test_preconditions
 test_observed_none_bodies_classify_none
 test_all_three_renderings_are_present_in_the_corpus
 test_derived_blocking_bodies_classify_blocking
+test_prose_mentions_never_classify_blocking
 test_ambiguous_and_absent_classify_unknown
 test_classifier_never_exits_nonzero
 test_workflow_only_submits_a_review_on_blocking
