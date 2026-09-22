@@ -165,7 +165,25 @@ fi
 # inside double quotes `\'` is NOT an escape — it is a backslash and a quote —
 # so the replacement is built from single-character variables.
 _SQ="'" ; _BS='\' ; _PR_SQ="${PLUGIN_ROOT//${_SQ}/${_SQ}${_BS}${_SQ}${_SQ}}"
-_MSG="PHASE GATE — Step '${_MISSING}' has no invocation evidence, but Skill(${_RAW_SKILL}) comes after it in the composition chain. Do now (one of): (1) invoke the missing step: Skill(${_MISSING}); (2) record an explicit, review-surfaced skip: source '${_PR_SQ}/hooks/lib/phase-attest.sh'; phase_attest ${_MISSING} \"<reason>\"; (3) human bypass: run the action yourself with the ! prefix. Gating milestones (requesting-code-review, verification-before-completion) accept only real invocations."
+# WHERE THE GATE LOOKED (#249). Two denies were observed live that no on-disk
+# replay reproduced, and the replay controlled the hook file but not the SUBJECT.
+# `phase_step_satisfied`'s second leg is `branch_ledger_has`, whose key hashes
+# (origin remote URL, BRANCH NAME) — so evidence recorded on one branch is
+# invisible from another, and a deny is correct for the branch it was measured
+# on while allowing from a sibling worktree. Reproduced under isolation with one
+# variable moved: same token, payload, chain and hook file; two branches of the
+# same repo; allow vs deny.
+#
+# The branch at deny time was never recorded, which is why the original pair is
+# not decidable after the fact. Naming it here makes the NEXT one self-
+# diagnosing. Message material only — nothing gates on it, and resolution
+# failure degrades to an empty note rather than changing the decision.
+_SG_BRANCH="$(git -C "${_PROJ_ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null)" || _SG_BRANCH=""
+_SG_WHERE=""
+if [ -n "${_SG_BRANCH}" ]; then
+    _SG_WHERE=" Evidence was looked up for branch '${_SG_BRANCH}' in ${_PROJ_ROOT} — a step recorded on a different branch, or in a detached HEAD, is not visible from here."
+fi
+_MSG="PHASE GATE — Step '${_MISSING}' has no invocation evidence, but Skill(${_RAW_SKILL}) comes after it in the composition chain. Do now (one of): (1) invoke the missing step: Skill(${_MISSING}); (2) record an explicit, review-surfaced skip: source '${_PR_SQ}/hooks/lib/phase-attest.sh'; phase_attest ${_MISSING} \"<reason>\"; (3) human bypass: run the action yourself with the ! prefix. Gating milestones (requesting-code-review, verification-before-completion) accept only real invocations.${_SG_WHERE}"
 if [ "$_MODE" = "warn" ]; then
     phase_gate_log "skill-seq" "warn" "$_SKILL" "$_MISSING"
     jq -n --arg msg "PHASE GATE (advisory): $_MSG" '{"systemMessage":$msg}'

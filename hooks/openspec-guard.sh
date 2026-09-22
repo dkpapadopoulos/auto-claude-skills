@@ -175,6 +175,7 @@ _emit_deny() {
     # mutate-then-push leg denies earlier than that, and it is the leg this
     # shape actually hits.
     [ -n "${_SCRATCH_NOTE:-}" ] && _dm="${_dm} ${_SCRATCH_NOTE}"
+    [ -n "${_HEREDOC_NOTE:-}" ] && _dm="${_dm} ${_HEREDOC_NOTE}"
     # TWO AUDIENCES, ONE TEXT (#254). Claude Code shows the MODEL
     # `permissionDecisionReason` on a deny and shows the USER `systemMessage`;
     # the model never sees systemMessage. Writing the remediation only there
@@ -625,6 +626,25 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
            && command_push_is_local_scratch "${_COMMAND}"; then
             _SUBJ_LOCAL_SCRATCH=true
             _SCRATCH_NOTE="NOTE: this command looks like it builds a throwaway repository and pushes inside it. The gate still applies — it governs this session regardless of which repository a command names, and a push cannot be shown from its text alone to stay local, because the destination can come from git configuration the command never mentions. If you are building a local fixture, run it from your own terminal, or start the session with ACSM_SKIP_PUSH_GATE=1."
+        fi
+        # #231: say WHY a command whose heredoc body only MENTIONS a push is read
+        # as one. The remedy is otherwise actively misleading — the measured case
+        # is a developer writing `python3 - <<PY` and being told to run
+        # requesting-code-review for a command that pushes nothing.
+        #
+        # The DECISION is deliberately unchanged. An interpreter heredoc's body
+        # is a PROGRAM, and `os.system("git push")` inside it really pushes, so
+        # narrowing detection here would trade a security property for
+        # ergonomics — the option this issue records as needing an explicit
+        # decision, not a quiet fix.
+        _HEREDOC_NOTE=""
+        if [ "${_gc_is_push}" = "true" ] \
+           && command -v command_untrusted_heredoc_owner >/dev/null 2>&1 \
+           && [ "${#_COMMAND}" -le "${_GC_MAX_TOTAL}" ]; then
+            _HD_OWNER="$(command_untrusted_heredoc_owner "${_COMMAND}" 2>/dev/null)" || _HD_OWNER=""
+            if [ -n "${_HD_OWNER}" ]; then
+                _HEREDOC_NOTE="NOTE: this command contains a heredoc owned by \`${_HD_OWNER}\`, whose body this gate cannot model — so the text \`git push\` inside it is read as a push even if nothing would run. That is deliberate rather than a parser bug: the body is a program, and a push issued from inside it (for example through a language's system-call API) is a real push the gate would otherwise miss. If the body genuinely pushes nothing, run the command from your own terminal, or start the session with ACSM_SKIP_PUSH_GATE=1."
+            fi
         fi
         _GATE_ACTION="pushing this branch"
         [ "${_gc_is_push}" != "true" ] && [ "${_gc_is_ghmerge}" = "true" ] && _GATE_ACTION="merging this PR"
@@ -1205,6 +1225,26 @@ EOF
             [ "${_verif_completed}" = "false" ] && _bridge_has "verification-before-completion" && _verif_completed=true
             if [ "${_verif_in_chain}" = "true" ] && [ "${_verif_completed}" = "false" ]; then
                 _MSG="PUSH GATE — Expected: verification-before-completion completed before push. Actual: it has not run on this active chain. Do now: invoke Skill(superpowers:verification-before-completion), then retry the denied command."
+                # #254 d2: SAY when a clean covering verdict exists and was not
+                # honoured here. The global fail-closed leg below accepts one as
+                # stronger, sha-bound evidence of VERIFY than the status
+                # milestone — its own comment says so — but this leg runs FIRST
+                # and tests four sources, none of them the verdict. So whenever
+                # a chain is active the deny fires before the leg that would
+                # have accepted the stronger evidence ever executes.
+                #
+                # THE DECISION IS NOT MOVED. Flipping a chain gate from deny to
+                # allow is the class this repo pre-registers before shipping,
+                # and the argument from consistency is not a substitute for
+                # measuring the population it would newly allow. What is fixed
+                # is the silence: whoever hits this can now see that the
+                # evidence exists and which leg declined to use it.
+                if [ "${_JQ_OK}" = "true" ] && [ "${_VERDICT_OK}" = "true" ] \
+                   && command -v verdict_is_clean >/dev/null 2>&1 \
+                   && verdict_is_clean "${_VERDICT_TOKEN}" \
+                   && verdict_covers_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
+                    _MSG="${_MSG} NOTE: a CLEAN verification verdict covering this commit does exist. The global fail-closed leg treats such a verdict as stronger evidence of VERIFY than this status milestone, but this chain-block check does not read it, so the deny stands (issue #254). Invoking the Skill records the milestone this leg is looking for; the verdict is not a substitute for it here."
+                fi
                 _skill_available "verification-before-completion" || _MSG="${_MSG} ${_SETUP_HINT}"
                 _emit_deny "${_MSG}"
                 _DECISION="deny:chain-verify"

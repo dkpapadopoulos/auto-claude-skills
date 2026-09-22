@@ -91,9 +91,39 @@ if [ -n "${FROM_GH}" ]; then
         DISPATCH_ATTEMPTED="true"; DISPATCH_SUCCEEDED="true"
         [ -n "${HEAD_ARG}" ] || HEAD_ARG="$(printf '%s' "${_GH}" | jq -r '.headRefOid // empty' 2>/dev/null)"
         [ -n "${BASE}" ]     || BASE="$(printf '%s' "${_GH}" | jq -r '.baseRefOid // empty' 2>/dev/null)"
-        _APPROVED="$(printf '%s' "${_GH}" | jq '[.reviews[]? | select(.state=="APPROVED")] | length' 2>/dev/null)"
-        _BLOCKING="$(printf '%s' "${_GH}" | jq '[.reviews[]? | select(.state=="CHANGES_REQUESTED")] | length' 2>/dev/null)"
-        _TOTAL="$(printf '%s' "${_GH}" | jq '[.reviews[]?] | length' 2>/dev/null)"
+        # A REVIEW COVERS THE COMMIT IT WAS SUBMITTED AGAINST, not the PR's
+        # current head. GitHub does not retire a review on push unless branch
+        # protection's "dismiss stale reviews" is enabled, so counting states
+        # without a commit filter bound an old review's verdict to a commit
+        # nobody looked at — while `reviewed_head_sha` below recorded the
+        # CURRENT head. Both directions were wrong and the approve direction is
+        # the dangerous one: APPROVED at commit A, push commit B, and this
+        # emitted verdict "clean" for B.
+        #
+        # This is the same defect class as #181 (a gate run whose HEAD moved),
+        # #133 (sha-bound invocation evidence) and #274 (a verdict measured on a
+        # different tree): a record naming a sha it was not measured at. Found
+        # by an outside model attacking the #239 plan, not by reading the code.
+        #
+        # `.commit.oid` is present in `gh pr view --json reviews` (verified
+        # against a real reviewed PR), so no second API call is needed. A review
+        # with no resolvable commit is NOT counted — unknown coverage is not
+        # coverage — and is reported below rather than dropped silently.
+        _APPROVED="$(printf '%s' "${_GH}" | jq --arg h "${HEAD_ARG}" \
+            '[.reviews[]? | select(.state=="APPROVED") | select((.commit.oid // "") == $h)] | length' 2>/dev/null)"
+        _BLOCKING="$(printf '%s' "${_GH}" | jq --arg h "${HEAD_ARG}" \
+            '[.reviews[]? | select(.state=="CHANGES_REQUESTED") | select((.commit.oid // "") == $h)] | length' 2>/dev/null)"
+        _TOTAL="$(printf '%s' "${_GH}" | jq --arg h "${HEAD_ARG}" \
+            '[.reviews[]? | select((.commit.oid // "") == $h)] | length' 2>/dev/null)"
+        # Announce what was excluded. A PR whose only reviews predate HEAD now
+        # resolves could-not-review, and the operator must be able to tell that
+        # from "nobody reviewed it" — #198's rule that a leg which cannot claim
+        # coverage says so.
+        _STALE="$(printf '%s' "${_GH}" | jq --arg h "${HEAD_ARG}" \
+            '[.reviews[]? | select((.commit.oid // "") != $h)] | length' 2>/dev/null)"
+        if [ "${_STALE:-0}" -gt 0 ] 2>/dev/null; then
+            echo "record-review-verdict: ${_STALE} review(s) on PR #${FROM_GH} were submitted against a commit other than ${HEAD_ARG:-<unknown>} and are NOT counted as covering it." >&2
+        fi
         [ -n "${FINDINGS}" ]   || FINDINGS="${_TOTAL:-0}"
         [ -n "${UNRESOLVED}" ] || UNRESOLVED="${_BLOCKING:-0}"
         if [ -z "${VERDICT}" ]; then

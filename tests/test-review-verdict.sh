@@ -538,11 +538,17 @@ fi
 _FAKEGH="$(mktemp -d /tmp/odt-fakegh-XXXXXX)"
 cp -R "${_NOGH}/." "${_FAKEGH}/" 2>/dev/null || true
 _ODT_HEAD="$(git -C "$_ODT_REPO" rev-parse HEAD)"
+# The review carries `commit.oid`, because the REAL producer does: verified
+# against a live reviewed PR, `gh pr view --json reviews` yields
+# {"state":"APPROVED","commit":{"oid":"<sha>"},...}. The first version of this
+# stub omitted it, so once the reader began filtering by reviewed commit the
+# stub described a shape the API never emits — and the cells below kept passing
+# for a reason that no longer matched production.
 cat > "${_FAKEGH}/gh" <<EOF
 #!/bin/sh
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
-    printf '{"headRefOid":"%s","baseRefOid":"%s","reviews":[{"state":"APPROVED"}]}\n' \
-        "${_ODT_HEAD}" "${_ODT_HEAD}"
+    printf '{"headRefOid":"%s","baseRefOid":"%s","reviews":[{"state":"APPROVED","commit":{"oid":"%s"}}]}\n' \
+        "${_ODT_HEAD}" "${_ODT_HEAD}" "${_ODT_HEAD}"
     exit 0
 fi
 exit 1
@@ -580,6 +586,46 @@ if [ "$(_probe_gh "${_FAKEGH}")" = "yes" ]; then
         "self-authored" "$(_odt_field independence)"
     assert_equals "...and the import is NOT destroyed by that precedence" \
         "imported" "$(_odt_field dispatch_evidence)"
+
+    # ---- A REVIEW COVERS THE COMMIT IT WAS SUBMITTED AGAINST ----------------
+    # GitHub does not retire a review on push unless branch protection's
+    # "dismiss stale reviews" is on, so an APPROVED review of an earlier commit
+    # stays APPROVED in the API. The reader counted states with no commit
+    # filter while recording `reviewed_head_sha` as the CURRENT head, so it
+    # emitted verdict "clean" for a commit nobody approved. Same class as #181,
+    # #133 and #274: a record naming a sha it was not measured at.
+    _STALEGH="$(mktemp -d /tmp/odt-stalegh-XXXXXX)"
+    cp -R "${_NOGH}/." "${_STALEGH}/" 2>/dev/null || true
+    cat > "${_STALEGH}/gh" <<EOF
+#!/bin/sh
+if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
+    printf '{"headRefOid":"%s","baseRefOid":"%s","reviews":[{"state":"APPROVED","commit":{"oid":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}}]}\n' \
+        "${_ODT_HEAD}" "${_ODT_HEAD}"
+    exit 0
+fi
+exit 1
+EOF
+    chmod +x "${_STALEGH}/gh"
+
+    # CONTROL: the same approval, at HEAD, must still be clean. Without this the
+    # cell below passes for a reader that simply never reports clean.
+    rm -f "${_ART}"
+    ( cd "$_ODT_REPO" && SKILL_SESSION_TOKEN="$_TOK" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        PATH="${_FAKEGH}" bash "${PROJECT_ROOT}/scripts/record-review-verdict.sh" \
+        --from-github 1 ) >/dev/null 2>&1
+    assert_equals "CONTROL: an approval AT head is clean" "clean" "$(_odt_field verdict)"
+
+    rm -f "${_ART}"
+    _STALE_ERR="$( cd "$_ODT_REPO" && SKILL_SESSION_TOKEN="$_TOK" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        PATH="${_STALEGH}" bash "${PROJECT_ROOT}/scripts/record-review-verdict.sh" \
+        --from-github 1 2>&1 >/dev/null )"
+    assert_equals "an approval of ANOTHER commit is not clean" \
+        "could-not-review" "$(_odt_field verdict)"
+    # Announced, not silently dropped (#198): "nobody reviewed it" and "the
+    # review does not cover this commit" must be distinguishable.
+    assert_contains "the excluded review is announced" \
+        "submitted against a commit other than" "${_STALE_ERR:-<empty>}"
+    rm -rf "${_STALEGH}"
 else
     _record_fail "could build a resolvable-gh PATH for the precedence test" \
         "gh not resolvable on the fake PATH"

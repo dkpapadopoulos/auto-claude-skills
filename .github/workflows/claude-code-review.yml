@@ -239,11 +239,19 @@ jobs:
             - Scope is distinct from existing skills in `skills/` —
               read other SKILL.md files briefly to check for overlap.
               Flag duplicate scope as blocking.
-            - If `skills/incident-analysis/SKILL.md` is touched: word
-              count must stay under the 11,500-word ceiling
-              (`wc -w skills/incident-analysis/SKILL.md`). Tables, YAML
-              schemas >15 lines, and URL templates belong in
-              `references/`, not inlined.
+            - If `skills/incident-analysis/SKILL.md` is touched: it has a
+              word-count RATCHET, not a fixed ceiling. The authority is
+              `INCIDENT_SKILL_WORD_BASELINE` in
+              `tests/test-incident-analysis-content.sh`, pinned to the file's
+              exact size, so growth in either direction fails until that
+              constant is edited. Do NOT flag a word count against a number
+              from this prompt or from memory — read the constant in the diff.
+              A raise is allowed when the commit says why and extraction to
+              `references/` was tried first; flag a SILENT raise, or a raise
+              with heavy new prose that belongs in `references/`. (A fixed
+              11,500 ceiling preceded this and permitted regrowth up to the
+              cap; it is superseded.) Tables, YAML schemas >15 lines, URL
+              templates and rationale belong in `references/`, not inlined.
 
             ### Hook changes — `hooks/*.sh`, `hooks/lib/*.sh`
 
@@ -386,14 +394,67 @@ jobs:
             done
 
       - name: Post review
-        if: always() && steps.guard.outputs.abort == 'false' && steps.review.outputs.structured_output
+        # `steps.review.outcome == 'success'`, NOT `always()` (found in review).
+        # The reap step below already requires success, so under `always()` a
+        # review step that failed AFTER populating structured_output could
+        # submit a truncated body as CHANGES_REQUESTED while being unable to
+        # delete stale comments — a deletable comment before this change, an
+        # undeletable blocking review after it. Not reproduced (no way to make
+        # the action fail while still emitting the output), so this is closing
+        # a reachable state rather than a demonstrated one; the cost is that a
+        # partially-failed review is not posted at all, which is the same
+        # outcome the reap gate already chose.
+        if: steps.review.outcome == 'success' && steps.guard.outputs.abort == 'false' && steps.review.outputs.structured_output
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}
+        # A BLOCKING review is submitted as a REAL PR REVIEW; everything else
+        # stays a comment (issue #239).
+        #
+        # Why: `scripts/record-review-verdict.sh --from-github` derives its
+        # verdict from review STATE, so a review posted as an issue comment is
+        # invisible to it — measured across three PRs that each carried a
+        # substantive review, `gh pr view --json reviews` returned []. The #197
+        # verdict layer was dark for every CI-reviewed PR, and the push gate's
+        # "REVIEW VERDICT not clean" advisory fired on every branch regardless
+        # of review quality.
+        #
+        # ONLY the blocking direction is submitted. `--approve` was rejected:
+        # letting an automated reviewer CLEAR a review gate is the same
+        # substitution #197 exists to prevent, one layer out. Absence of a
+        # blocking review still resolves `could-not-review`, exactly as now, so
+        # this moves information in one direction only.
+        #
+        # This is safe to feed the reader only because the reader now filters
+        # review states by the commit each was submitted against. Without that,
+        # a CHANGES_REQUESTED review would persist across force-pushes (GitHub
+        # retires reviews on push only under branch protection) and the reader
+        # would bind it to whatever HEAD came later — a durable false
+        # `findings-open`. That fix ships in the same change.
+        #
+        # Reviews are NOT reaped. The step below deletes prior review COMMENTS
+        # so force-pushes do not accumulate them; a submitted review can only be
+        # dismissed, not deleted. Stale ones are inert (the commit filter) and
+        # GitHub marks them outdated, so they are noise on the PR page rather
+        # than a wrong verdict.
         run: |
+          set -euo pipefail
           REVIEW=$(printf '%s' "$STRUCTURED_OUTPUT" | jq -r '.review // empty')
-          if [ -n "$REVIEW" ]; then
-            gh pr comment "$PR_NUMBER" --body "$REVIEW"
-          fi
+          [ -n "$REVIEW" ] || exit 0
+          _BODY_FILE="$(mktemp)"
+          printf '%s' "$REVIEW" > "$_BODY_FILE"
+          _CLASS="$(bash scripts/review-blocking-classifier.sh "$_BODY_FILE")"
+          echo "::notice::review classified as: ${_CLASS}"
+          case "$_CLASS" in
+            blocking)
+              gh pr review "$PR_NUMBER" --request-changes --body-file "$_BODY_FILE" ;;
+            *)
+              # `none` and `unknown` both comment. An `unknown` that guessed
+              # `blocking` would submit a CHANGES_REQUESTED that can block a
+              # human's merge and cannot be deleted; guessing `none` only leaves
+              # today's behaviour. Asymmetric, so bias to silence.
+              gh pr comment "$PR_NUMBER" --body-file "$_BODY_FILE" ;;
+          esac
+          rm -f "$_BODY_FILE"
 

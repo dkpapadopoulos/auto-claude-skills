@@ -54,6 +54,7 @@ _gc_split_segments() {
     # goes undetected. Re-assert it here so the fail direction stays CLOSED.
     [ -n "${_GC_SEP:-}" ] || _GC_SEP=$'\037'
     _GC_UNBALANCED=0
+    _GC_HEREDOC_OWNER=""
     while IFS= read -r _line || [ -n "${_line}" ]; do
         _line="${_line%$'\r'}"   # CRLF paste: \r glued to a terminator would
                                  # never compare equal and cost precision
@@ -210,6 +211,13 @@ _gc_split_segments() {
                                 # stream (Finding 2), and the trailing top-level
                                 # code must stay reliably segmented for the
                                 # precise mutate-then-push predicate.
+                                # Record the owner so a caller can SAY why the
+                                # command was read as a push (#231). The gate's
+                                # decision is unchanged — this is message
+                                # material only, and it is captured here rather
+                                # than re-scanned by a second parser, which is
+                                # how this file accumulated eight bypasses.
+                                _GC_HEREDOC_OWNER="${_w}"
                                 _hd_reg=1; _GC_UNBALANCED=1 ;;
                         esac
                         if [ "${_hd_reg}" -eq 1 ]; then
@@ -377,6 +385,26 @@ _gc_segment_cmd_word() {
 command_parse_balanced() {
     _gc_split_segments "$1" >/dev/null
     [ "${_GC_UNBALANCED:-1}" -eq 0 ]
+}
+
+# command_untrusted_heredoc_owner <command>
+#   Echoes the command word that owned an UNKNOWN-owner heredoc, if one was
+#   seen — `python3`, `ssh`, `docker`, … — and nothing otherwise.
+#
+#   This is the documented reason a command whose heredoc body merely MENTIONS
+#   a push is read as a push (#231): `cat`/`tee`/`git` bodies are data and are
+#   consumed, shell interpreters are scanned as code, and everything else is
+#   unmodellable, so the parse is marked untrusted and detection falls back to
+#   the substring path.
+#
+#   MESSAGE MATERIAL ONLY. Nothing may gate on this. A narrower deny is what
+#   #231 asks for and what this deliberately does not do: the body of an
+#   interpreter heredoc is a PROGRAM, and `os.system("git push")` inside it
+#   really pushes, so "the match is inside a heredoc, therefore inert" is false
+#   for exactly these owners.
+command_untrusted_heredoc_owner() {
+    _gc_split_segments "$1" >/dev/null
+    printf '%s' "${_GC_HEREDOC_OWNER:-}"
 }
 
 # _gc_segment_git_sub <segment>

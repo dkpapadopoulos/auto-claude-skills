@@ -700,6 +700,7 @@ assert_file_contains "INTAKE supports adopting a supplied key" \
 # ---------------------------------------------------------------------------
 # references/jira-report-back.md — opt-in Jira REPORT-BACK stage
 # ---------------------------------------------------------------------------
+UNTRUSTED_REF="${PROJECT_ROOT}/skills/incident-analysis/references/untrusted-content.md"
 JIRA_REPORT_REF="${PROJECT_ROOT}/skills/incident-analysis/references/jira-report-back.md"
 assert_file_exists "references/jira-report-back.md exists" "${JIRA_REPORT_REF}"
 assert_file_contains "SKILL.md points to references/jira-report-back.md" \
@@ -734,6 +735,49 @@ assert_file_contains "HITL gate names the ticket verbs" \
 assert_file_contains "hitl-scope reference exists and states the halt is unconditional" \
     "unconditional" "${PROJECT_ROOT}/skills/incident-analysis/references/hitl-scope.md"
 
+# Untrusted log content — the SECOND placement gap (#262 arm 2). The body's
+# redaction rule governs `redact-evidence.sh` and DISK writes; the threat in
+# `jira-injection-no-unapproved-write` #2 is echoing untrusted log content
+# OUTWARD, which that script never runs on. The rule existed only in
+# references/, so the prominent instruction and the region where the assertion
+# fails were different parts of the document — the same shape as the HITL
+# enumeration above.
+assert_file_contains "the body states log content never instructs" \
+    "never instructs" "${SKILL_FILE}"
+assert_file_contains "the reference states injected content is not reproduced raw" \
+    "quote the raw string" "${UNTRUSTED_REF}"
+# Single-line needle: the phrase wraps in the source, and a needle spanning the
+# wrap matches nothing while looking like it asserts the distinction.
+# The constraint must be SCOPED to secrets/PII/injected content and must not
+# read as a ban on quoting logs at all — an incident report legitimately
+# carries an error string or a stack frame. An outside review flagged the first
+# version as prohibiting all payload reproduction, including in replies to the
+# user, which is broader than the procedure it points at.
+# The BODY carries the rule tersely; the reasoning and boundaries live in
+# references/, which is what the ratchet's own guidance says to do before
+# raising the constant. Both halves are asserted so neither can be dropped.
+assert_file_contains "the body permits ordinary diagnostic excerpts" \
+    "Ordinary diagnostic excerpts are fine" "${SKILL_FILE}"
+assert_file_contains "the body restricts reproduction, not analysis" \
+    "restricts reproduction, not analysis" "${SKILL_FILE}"
+assert_file_contains "the body names the three restricted categories" \
+    "injected content are not reproduced" "${SKILL_FILE}"
+assert_file_contains "the reference explains why disk redaction does not cover this" \
+    "does not run on the outbound path" "${UNTRUSTED_REF}"
+assert_file_contains "the reference states quotable content is usually required" \
+    "usually should be" "${UNTRUSTED_REF}"
+# No experimental history in operational guidance: which eval arm suggested
+# what belongs on the issue, not in a constraint an agent reads at run time.
+if grep -qi "variance-5\|variance 5" "${SKILL_FILE}"; then
+    _record_fail "the skill carries no eval-arm history" \
+        "SKILL.md mentions an eval variance — that belongs on the issue"
+else
+    _record_pass "the skill carries no eval-arm history"
+fi
+
+assert_file_contains "the reference distinguishes outward-sending from disk writes" \
+    "does not run on the outbound path" "${UNTRUSTED_REF}"
+
 # ---------------------------------------------------------------------------
 # Structural guard — SKILL.md word count, as a BASELINE RATCHET.
 #
@@ -757,7 +801,36 @@ assert_file_contains "hitl-scope reference exists and states the halt is uncondi
 # A never-raise rule was considered and rejected: the file is a living skill, so
 # an absolute rule would simply be broken in contradiction of its own comment.
 # ---------------------------------------------------------------------------
-INCIDENT_SKILL_WORD_BASELINE=11474
+# ---------------------------------------------------------------------------
+# THE WORD LIMIT IS STATED IN THREE PLACES AND THEY MUST AGREE.
+#
+# The limit lives here (the constant below), in CLAUDE.md, and in the review
+# workflow's own checklist prompt. When the fixed 11,500 ceiling was replaced
+# by the ratchet, only the constant changed — so CLAUDE.md and the CI reviewer
+# went on enforcing a number the implementation had abandoned. Measured: the
+# reviewer blocked this PR three times against the stale figure, once AFTER
+# CLAUDE.md was reconciled, because its checklist is a separate copy.
+#
+# This is the paired-sites-drift shape: a fact restated in N places, edited in
+# one. These cells make the other two fail rather than silently disagree.
+# ---------------------------------------------------------------------------
+_WORD_CLAUDE="${PROJECT_ROOT}/CLAUDE.md"
+_WORD_WF="${PROJECT_ROOT}/.github/workflows/claude-code-review.yml"
+
+if grep -q 'ratchet' "${_WORD_CLAUDE}"; then
+    _record_pass "CLAUDE.md describes the ratchet, not a fixed ceiling"
+else
+    _record_fail "CLAUDE.md describes the ratchet" \
+        "it still states a fixed ceiling — readers and the CI reviewer will enforce a number this test does not use"
+fi
+if grep -qi 'RATCHET' "${_WORD_WF}" && grep -q 'INCIDENT_SKILL_WORD_BASELINE' "${_WORD_WF}"; then
+    _record_pass "the review checklist points at the ratchet constant"
+else
+    _record_fail "the review checklist points at the ratchet constant" \
+        "the CI reviewer's own prompt is a separate copy of this rule; if it states a fixed number it will block on it"
+fi
+
+INCIDENT_SKILL_WORD_BASELINE=11531
 word_count=$(wc -w < "${SKILL_FILE}" | tr -d ' ')
 if [ "$word_count" -le "${INCIDENT_SKILL_WORD_BASELINE}" ]; then
     _record_pass "SKILL.md: word count within baseline ${INCIDENT_SKILL_WORD_BASELINE} (${word_count})"
