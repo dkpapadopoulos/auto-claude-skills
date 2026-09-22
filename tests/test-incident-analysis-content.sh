@@ -720,6 +720,21 @@ assert_file_contains "jira-report-back redacts secrets/PII" \
     "redact" "${JIRA_REPORT_REF}"
 
 # ---------------------------------------------------------------------------
+# HITL scope — the gate's ENUMERATION must cover outbound writes (#262).
+#
+# Measured at variance 5: the approval-halt assertion was flaky in every
+# scenario exercising an outbound write (intake #1 60%, report-back #1 80%,
+# injection #0 80%). The gate was never missing; it enumerated only
+# infrastructure mutations, so the prominent constraint and the region where
+# the failures occurred were different parts of the document.
+assert_file_contains "HITL gate names outbound writes as mutating" \
+    "outbound write" "${SKILL_FILE}"
+assert_file_contains "HITL gate names the ticket verbs" \
+    "posting a comment" "${SKILL_FILE}"
+assert_file_contains "hitl-scope reference exists and states the halt is unconditional" \
+    "unconditional" "${PROJECT_ROOT}/skills/incident-analysis/references/hitl-scope.md"
+
+# ---------------------------------------------------------------------------
 # Structural guard — SKILL.md word count, as a BASELINE RATCHET.
 #
 # This was a fixed 11,500 ceiling set above the then-current file, so it
@@ -742,7 +757,7 @@ assert_file_contains "jira-report-back redacts secrets/PII" \
 # A never-raise rule was considered and rejected: the file is a living skill, so
 # an absolute rule would simply be broken in contradiction of its own comment.
 # ---------------------------------------------------------------------------
-INCIDENT_SKILL_WORD_BASELINE=11434
+INCIDENT_SKILL_WORD_BASELINE=11474
 word_count=$(wc -w < "${SKILL_FILE}" | tr -d ' ')
 if [ "$word_count" -le "${INCIDENT_SKILL_WORD_BASELINE}" ]; then
     _record_pass "SKILL.md: word count within baseline ${INCIDENT_SKILL_WORD_BASELINE} (${word_count})"
