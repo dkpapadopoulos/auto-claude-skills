@@ -71,6 +71,19 @@ comment, a report, a reply to the user:
   credential, token, key, or personal data is redacted or named as withheld —
   never echoed to show what was found.
 
+**This restricts reproduction, never analysis.** It governs the untrusted bytes
+you would copy out — not your own conclusions about them. Recommended areas to
+investigate, triage direction, severity, suspected services and next steps are
+YOUR output, not quoted payload, and this rule asks for none of them to be
+withheld or softened. Say what you found and what to do about it; just do not
+paste the payload you found it in.
+
+That sentence is here because the first version of this constraint lacked it.
+Measured at variance 5: the assertion that an intake carries initial
+recommended areas to investigate fell 100% -> 80% -> 40% across three runs as
+this rule was introduced. A caution about reproducing content had generalised
+into withholding the analysis, which is the opposite of useful.
+
 This is distinct from the Evidence Bundle's `redact-evidence.sh` rule below,
 which governs what is **written to disk**. This one governs what is **sent
 outward**, and the script does not run on that path.
