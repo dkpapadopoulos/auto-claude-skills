@@ -365,6 +365,156 @@ _seed_allow
 _reason3="$(jq -r '.reason' "${_SHADOW}" 2>/dev/null | tail -1)"
 assert_equals "no artifact at all still records reason=absent" "absent" "${_reason3:-<none>}"
 
+# ---------------------------------------------------------------------------
+# 8b. RUNTIME: the shadow record must name the SUBJECT, not the session tree.
+#
+#     Section 8 above asserts statically that the call sites pass no UNDEFINED
+#     variable, and its comment states the consequence it is protecting
+#     against: "the corpus recorded a CWD-derived repo/branch, which corrupts
+#     the pre-registered (repo, branch, session_token) episode key". That
+#     assertion cannot detect that consequence. It proves only that the name
+#     `_PROJ_ROOT` is absent; `_proot` IS the CWD-derived root, so the guard
+#     satisfied the check while doing exactly what the comment forbids. The
+#     original review was right about the smell (an undefined variable) and
+#     wrong about the fix (it named the session root, not the subject).
+#
+#     Its closing claim -- "Runtime cannot see this class" -- is also false,
+#     and that is why the defect survived: runtime cannot see it only when the
+#     fixture's subject and session tree are the SAME, which is true of every
+#     other cell in this file. Give the fixture a subject that differs from the
+#     session checkout and the class is directly observable.
+#
+#     Two cells, one variable moved. The control must keep naming the session
+#     tree, so a record that simply always reports the subject fails too.
+# ---------------------------------------------------------------------------
+_SUBJ_TMP="$(mktemp -d /tmp/rvsubj-XXXXXX)"
+_SR="${_SUBJ_TMP}/repo"; mkdir -p "${_SR}"
+( cd "${_SR}"; git init -q -b main; git config user.email t@t; git config user.name t
+  mkdir -p src; echo base > src/app.js; git add -A; git commit -qm base ) >/dev/null 2>&1
+_SBASE="$(git -C "${_SR}" rev-parse HEAD 2>/dev/null)"
+git -C "${_SR}" update-ref refs/remotes/origin/main "${_SBASE}" 2>/dev/null
+
+# The command's subject: a private worktree on its own branch, material change.
+_SWT="${_SUBJ_TMP}/wt"
+git -C "${_SR}" worktree add -q -b subj-branch "${_SWT}" main >/dev/null 2>&1
+( cd "${_SWT}"; echo subj > src/app.js; git add -A; git commit -qm "subject material" ) >/dev/null 2>&1
+_SUBJ_HEAD="$(git -C "${_SWT}" rev-parse HEAD 2>/dev/null)"
+
+# The session checkout, parked on a DIFFERENT branch -- the normal concurrent-
+# session shape this plugin prescribes worktrees for.
+( cd "${_SR}"; git checkout -q -b sess-branch; echo sess > src/app.js
+  git add -A; git commit -qm "session material" ) >/dev/null 2>&1
+_SESS_HEAD="$(git -C "${_SR}" rev-parse HEAD 2>/dev/null)"
+
+_subj_run() { # <command> <logfile> -> writes the record, echoes "<branch> <head>"
+    rm -f "$2"
+    ( cd "${_SR}" && jq -n --arg tp "${_TPATH}" --arg c "$1" --arg cw "${_SR}" \
+        '{transcript_path:$tp,cwd:$cw,tool_input:{command:$c}}' \
+      | REVIEW_SHADOW_LOG="$2" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        bash "${GUARD}" >/dev/null 2>&1 )
+    [ -s "$2" ] || { echo "<no-record>"; return 0; }
+    jq -r '"\(.branch) \(.head_sha)"' "$2" 2>/dev/null | tail -1
+}
+
+if [ -n "${_SUBJ_HEAD:-}" ] && [ -n "${_SESS_HEAD:-}" ] && \
+   [ "${_SUBJ_HEAD}" != "${_SESS_HEAD}" ]; then
+    _SUBJ_LOG="${_SUBJ_TMP}/shadow.jsonl"
+    _got="$(_subj_run "git -C ${_SWT} push origin subj-branch" "${_SUBJ_LOG}")"
+    assert_equals "shadow record names the SUBJECT branch+head, not the session tree" \
+        "subj-branch ${_SUBJ_HEAD}" "${_got}"
+
+    # The two halves of the subject are SEPARABLE, and a fixture that moves
+    # both at once pins only the first. Mutation-verified: with the root fix in
+    # place but the lib ignoring its rev argument, the cell above stays GREEN,
+    # because `git -C <wt>` makes the worktree's own HEAD the right answer and
+    # the rev is redundant there.
+    #
+    # This cell moves the REV alone. The command runs in the SESSION checkout,
+    # so `_SUBJ_ROOT` is the session tree either way; only the refspec names a
+    # different branch. Nothing but honouring `_SUBJ_REV` can produce the
+    # expected value.
+    _got3="$(_subj_run "git push origin subj-branch" "${_SUBJ_LOG}")"
+    assert_equals "shadow record follows the REFSPEC when the root is unchanged" \
+        "subj-branch ${_SUBJ_HEAD}" "${_got3}"
+
+    # CONTROL: no subject hint, so the subject IS the session tree. This must
+    # report the session branch under both the fixed and the unfixed guard --
+    # without it, "always reports the subject" would pass the cell above.
+    _got2="$(_subj_run "git push origin sess-branch" "${_SUBJ_LOG}")"
+    assert_equals "CONTROL: with no subject hint the record names the session tree" \
+        "sess-branch ${_SESS_HEAD}" "${_got2}"
+else
+    _record_fail "subject/session fixture built" \
+        "subject=${_SUBJ_HEAD:-<none>} session=${_SESS_HEAD:-<none>} -- cell is vacuous"
+fi
+rm -rf "${_SUBJ_TMP}"
+
+# Static companion, stated as what the site MUST pass rather than what it must
+# not. The section-8 form ("no _PROJ_ROOT") is satisfied by any defined name,
+# including the wrong one -- which is how this shipped.
+_shadow_call="$(grep -A2 'review_shadow_record "' "${GUARD}" 2>/dev/null | tr '\n' ' ')"
+case "${_shadow_call}" in
+    *_SUBJ_ROOT*) _record_pass "review_shadow_record is passed _SUBJ_ROOT" ;;
+    *) _record_fail "review_shadow_record is passed _SUBJ_ROOT" \
+           "call site does not mention _SUBJ_ROOT: ${_shadow_call}" ;;
+esac
+case "${_shadow_call}" in
+    *_SUBJ_REV*) _record_pass "review_shadow_record is passed _SUBJ_REV" ;;
+    *) _record_fail "review_shadow_record is passed _SUBJ_REV" \
+           "call site does not mention _SUBJ_REV: ${_shadow_call}" ;;
+esac
+
+# ---------------------------------------------------------------------------
+# 8c. The writer's version constants must be EXPORTED, and a record must carry
+#     a handle. Both are producer/consumer contracts: the adjudicator derives
+#     the required version from the lib instead of pinning its own literal
+#     (the IMPLEMENT pair's silent corpus blackout), and it addresses records
+#     by `record_id`, which v1 records did not have.
+# ---------------------------------------------------------------------------
+_RSLIB="${PROJECT_ROOT}/hooks/lib/review-shadow.sh"
+( set -u; . "${_RSLIB}" 2>/dev/null
+  printf '%s|%s\n' "${REVIEW_SHADOW_SCHEMA_VERSION:-}" "${REVIEW_SHADOW_PREDICATE_VERSION:-}" ) \
+  > "${TMP}/vers.txt" 2>/dev/null
+_vers="$(cat "${TMP}/vers.txt" 2>/dev/null)"
+case "${_vers}" in
+    *'|'*) : ;;
+    *) _vers="<lib did not source>" ;;
+esac
+_vs="${_vers%%|*}"; _vp="${_vers##*|}"
+if [ -n "${_vs}" ] && [ "${_vs}" != "<lib did not source>" ]; then
+    _record_pass "writer exports REVIEW_SHADOW_SCHEMA_VERSION (${_vs})"
+else
+    _record_fail "writer exports REVIEW_SHADOW_SCHEMA_VERSION" "got '${_vers}'"
+fi
+if [ -n "${_vp}" ] && [ "${_vp}" != "<lib did not source>" ]; then
+    _record_pass "writer exports REVIEW_SHADOW_PREDICATE_VERSION (${_vp})"
+else
+    _record_fail "writer exports REVIEW_SHADOW_PREDICATE_VERSION" "got '${_vers}'"
+fi
+
+# A record must carry the exported versions, not hardcoded literals: an
+# exported constant the emitter ignores is worse than none, because the reader
+# trusts it.
+_RSLOG="${TMP}/rs-ids.jsonl"; rm -f "${_RSLOG}"
+( set -u; . "${_RSLIB}" 2>/dev/null
+  REVIEW_SHADOW_LOG="${_RSLOG}" review_shadow_record "session-x" "${PROJECT_ROOT}" "absent" "push" "HEAD"
+  REVIEW_SHADOW_LOG="${_RSLOG}" review_shadow_record "session-x" "${PROJECT_ROOT}" "absent" "push" "HEAD" ) \
+  >/dev/null 2>&1
+assert_equals "record carries the exported schema_version" "${_vs}" \
+    "$(jq -r '.schema_version' "${_RSLOG}" 2>/dev/null | tail -1)"
+assert_equals "record carries the exported predicate_version" "${_vp}" \
+    "$(jq -r '.predicate_version' "${_RSLOG}" 2>/dev/null | tail -1)"
+
+# Two records written in the SAME SECOND by the SAME pid/token/action must get
+# distinct ids. This is not hypothetical: the live v1 corpus holds nine pairs
+# of byte-identical lines, each pair two genuinely distinct gate invocations,
+# so any id derived from content alone is not injective over this leg's own
+# history. That is exactly what the nonce is for.
+_ids_total="$(jq -r '.record_id // empty' "${_RSLOG}" 2>/dev/null | grep -c . | tr -d '[:space:]')"
+_ids_uniq="$(jq -r '.record_id // empty' "${_RSLOG}" 2>/dev/null | sort -u | grep -c . | tr -d '[:space:]')"
+assert_equals "every record carries a record_id" "2" "${_ids_total:-0}"
+assert_equals "same-second records get DISTINCT record_ids" "2" "${_ids_uniq:-0}"
+
 # --- observed dispatch telemetry (spec: observed-dispatch-telemetry) ---
 # A seeded reviewer-ran record must upgrade the telemetry to measured.
 _ODT_RAW="$(mktemp -d /tmp/odt-repo-XXXXXX)"

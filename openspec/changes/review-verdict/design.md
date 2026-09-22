@@ -97,3 +97,58 @@ Registered **before** the observation window so the result cannot be reinterpret
 **Known risk, stated up front:** the IMPLEMENT corpus was pre-registered at 0.697 episodes/day and is measured at 0.22, putting its n=29 near 2026-12 rather than its 2026-09-08 horizon. This corpus will likely accrue slower still, because it only fires when STATUS is already satisfied. The horizon is therefore set by *rate observed at n=5*, not guessed now — and that deferral is itself pre-registered here so it cannot be presented later as a rescue.
 
 `predicate_version` starts at 1. Bump it whenever the fire condition changes; never pool records across versions.
+
+## Amendment 2026-09-23 — reconstruction, not a horizon
+
+Recorded late, and that is the first thing this section has to say.
+
+### What was missed
+
+The horizon clause above says the value is `Computed ONCE at n=5, recorded in this file with the observed rate, and never recomputed`. **It was never computed.** n=5 was reached 2026-08-27; the n=29 floor was passed 2026-09-03; this section is being written 2026-09-23 with the corpus at 99 episodes across 5 repositories.
+
+Nothing enforced the clause because **no reader existed**. `scripts/shadow-adjudicate.sh` serves the IMPLEMENT leg only, and until this change the sole consumer of `REVIEW_SHADOW_LOG` outside the writer was a test. A pre-registration with a floor, a formula and a backstop but no instrument reaches its floor silently and stays advisory by inertia — the exact outcome the IMPLEMENT leg's history was cited here to avoid.
+
+The registered rate expectation was also wrong in the direction nobody guarded against. This file predicted accrual *slower* than the IMPLEMENT leg's measured 0.22 episodes/day. Observed: **3.68 episodes/day**, with 42 episodes in the last seven days. Only the starvation backstop could ever have fired, and it could not.
+
+### The reconstruction, and why it does not settle the horizon
+
+Applying the formula to inputs that were already fixed facts at n=5:
+
+| reading of `observed_episodes_per_day_at_n5` | elapsed | rate | horizon | episodes by then |
+|---|---|---|---|---:|
+| first record → 5th episode | 1.04 d | 4.81/day | 2026-09-01 | **21** |
+| registration (2026-08-25) → 5th episode | 2.90 d | 1.73/day | 2026-09-10 | 56 |
+
+The 29th episode arrived 2026-09-03. **The two readings give opposite pre-registered outcomes**: the first is below the n=29 floor and therefore *is* the registered sample-shortfall null result; the second is not. An earlier draft of this amendment reported that every reading fell in the past and treated the ambiguity as moot — that framing concealed precisely the distinction the clause protects, and selecting the later reading now, having seen which one clears the floor, would be the retrospective discretion the clause forbids.
+
+So this is a **reconstruction**, not a horizon. The rate's time origin was never uniquely specified, and no contemporaneous evidence resolves it.
+
+**This section computes nothing that constrains any future decision.** A deadline derived after the floor was already passed cannot do the job a stopping rule exists to do — that job was to fix a date before anyone knew whether the corpus would clear it, and it is unrecoverable now. Even the reassurance that "a pessimistic 1.0/day still lands in the past" is hindsight-directed: it is only reassuring to someone who already knows today's date. The table above is recorded as historical actuals, not asserted as binding. Any future prospective window must be registered as explicitly new, not presented as a continuation of this one.
+
+### The pre-registration modelled the wrong risk
+
+Worth carrying into the next one rather than patching here. Every safeguard in this file — the backstop, the deferred horizon, the "known risk" note — guards against **slow episode accrual**. The corpus accrued 15x faster than predicted and stalled anyway, on a step the pre-registration never mentions: the floor is n=29 *adjudicated* episodes, adjudication is human work, and nobody scheduled any. Zero of 99.
+
+No horizon arithmetic can diagnose that, because the horizon clause measures supply and the blocker is labelling. A pre-registration whose floor depends on human effort has to name who does it and when, or it registers a bar that can be reached and still never cleared.
+
+### The corpus is not poolable, for a reason that predates this amendment
+
+`78aa21e` ("measure the push gate's subject from the gated command, not the session cwd", #219, 2026-09-01) changed **this leg's own fire condition** — `_diff_touches_material_source` and `review_verdict_covers_head` both moved from the session root to the resolved subject. That commit bumped `hooks/lib/implement-shadow.sh` and left `hooks/lib/review-shadow.sh` untouched.
+
+All 199 live records therefore carry `predicate_version 1` while spanning two different fire conditions. The field whose entire job is to prevent pooling does not partition this corpus, and a timestamp cannot recover the provenance: sessions run cached plugin versions.
+
+Versioning is corrected as follows, keeping the three changes distinct:
+
+- `predicate_version 1` — pre-#219 fire condition (session-derived).
+- `predicate_version 2` — post-#219 fire condition (subject-derived). **This bump belongs to `78aa21e` and is recorded late**, not to the recorder fix below.
+- `schema_version 2` — the record now *describes* the subject rather than the session checkout (the recorder fix). Purely descriptive.
+
+Records already on disk are reportable but **not poolable**, and `--status` says so in those words with the cause named. Silently counting them and silently dropping them are the same error facing opposite ways; the second is what blacked out the IMPLEMENT corpus.
+
+### Standing conclusion
+
+**The deny-flip criterion is NOT established and the leg stays advisory.** This does not depend on resolving the horizon ambiguity: the floor is *n=29 at zero false blocks*, there are **zero adjudications**, and zero adjudications is not zero false blocks — it is no measurement.
+
+**Unchanged and not open:** the floor, the bands, the episode definition, the `false_block` definition and the diversity requirement. They were registered before any data existed. Missing the horizon is a reason to build the instrument, never a reason to renegotiate the bar.
+
+At the observed rate the floor is reachable again in roughly a week and a half of ordinary work, which is why a corpus nobody can vouch for is not worth keeping.

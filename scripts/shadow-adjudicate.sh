@@ -32,6 +32,27 @@ if [ -f "${_sa_lib}" ]; then
         *) REQUIRED_PREDICATE_VERSION="${IMPLEMENT_SHADOW_PREDICATE_VERSION}" ;;
     esac
 fi
+# Shared corpus measurement, single-sourced with the REVIEW leg's adjudicator:
+# the band rule, the ISO->epoch prelude and the episode grouping are ONE method
+# serving two pre-registrations, and re-deriving them per leg is how this repo
+# has repeatedly shipped two implementations of one rule that then drifted.
+#
+# REFUSE to run without it rather than falling back to a local copy. Every
+# other lib-absent path in this repo degrades to a weaker but honest answer;
+# here the degraded answer would be a NUMBER, and a measurement instrument that
+# silently reports a rate computed by unknown means is worse than one that
+# stops. The failure is loud and on stderr.
+_sc_lib="$(cd "$(dirname "${BASH_SOURCE:-$0}")/.." 2>/dev/null && pwd)/hooks/lib/shadow-corpus.sh"
+if [ -f "${_sc_lib}" ]; then
+    # shellcheck disable=SC1090
+    . "${_sc_lib}" 2>/dev/null || true
+fi
+if ! command -v shadow_band >/dev/null 2>&1 || ! command -v shadow_group_episodes >/dev/null 2>&1; then
+    echo "error: hooks/lib/shadow-corpus.sh did not load (looked at ${_sc_lib})." >&2
+    echo "       Refusing to report a rate computed by a local fallback." >&2
+    exit 2
+fi
+
 FLOOR_EPISODES=29
 FLOOR_REPOS=2
 EPISODE_WINDOW_SEC=1800
@@ -50,46 +71,12 @@ ADJ_LOG="${IMPLEMENT_ADJUDICATION_LOG:-$HOME/.claude/.push-implement-adjudicatio
 #   ADVISORY-ONLY <=> P(X >= k | n, 0.20) <= alpha
 # Do NOT substitute a normal approximation: Wilson is anti-conservative in the
 # tail and calls 8/23 ADVISORY-ONLY where exact says NARROWED (a pinned test).
-_band() {
-    awk -v k="${1:-0}" -v n="${2:-0}" -v a="${ALPHA}" \
-        -v dp="${DENY_P}" -v ap="${ADVISORY_P}" '
-    function tail(kk, nn, p, mode,   i, t, s) {
-        # mode "le": sum_{i<=kk}   mode "ge": sum_{i>=kk}
-        # Term recurrence rather than factorials, so large n cannot overflow.
-        s = 0; t = (1 - p) ^ nn
-        for (i = 0; i <= nn; i++) {
-            if (mode == "le" && i <= kk) s += t
-            if (mode == "ge" && i >= kk) s += t
-            if (i < nn) t = t * (nn - i) / (i + 1) * p / (1 - p)
-        }
-        return s
-    }
-    BEGIN {
-        if (n < 1) { print "INSUFFICIENT"; exit }
-        if (tail(k, n, dp, "le") <  a) { print "DENY";          exit }
-        if (tail(k, n, ap, "ge") <= a) { print "ADVISORY-ONLY"; exit }
-        print "NARROWED"
-    }'
-}
+_band() { shadow_band "${1:-0}" "${2:-0}"; }
 
 # _AWK_EPOCH — shared awk prelude converting ISO-8601 UTC to epoch seconds,
 # returning -1 when unparseable. In awk rather than `date` because `date -d`
 # (GNU) and `date -j -f` (BSD/macOS) are mutually incompatible.
-_AWK_EPOCH='
-    function days_from_civil(y, m, d,   era, yoe, doy, doe) {
-        if (m <= 2) y = y - 1
-        era = int((y >= 0 ? y : y - 399) / 400)
-        yoe = y - era * 400
-        doy = int((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5) + d - 1
-        doe = yoe * 365 + int(yoe / 4) - int(yoe / 100) + doy
-        return era * 146097 + doe - 719468
-    }
-    function iso_epoch(s,   y, mo, d, hh, mi, ss) {
-        if (s !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$/) return -1
-        y  = substr(s,1,4)+0;  mo = substr(s,6,2)+0;  d  = substr(s,9,2)+0
-        hh = substr(s,12,2)+0; mi = substr(s,15,2)+0; ss = substr(s,18,2)+0
-        return days_from_civil(y, mo, d) * 86400 + hh * 3600 + mi * 60 + ss
-    }'
+_AWK_EPOCH="${SHADOW_AWK_EPOCH}"
 
 # _shadow_tsv <jq-array-expr> — emit TSV for v2 records, tolerating malformed
 # lines. `jq` ABORTS on the first parse error, so a single truncated line would
@@ -119,37 +106,7 @@ _episodes() {
     [ -f "${SHADOW_LOG}" ] || return 0
     command -v jq >/dev/null 2>&1 || return 0
     _shadow_tsv '[.repo, .branch, .session_token, .ts, .record_id]' \
-    | awk -F'\t' "${_AWK_EPOCH}"'
-        {
-          # A malformed ts is EXCLUDED, not merged: iso_epoch returns -1 for
-          # every unparseable value, so two corrupt records sharing a key would
-          # satisfy (-1)-(-1)=0 <= window and collapse into one episode on a
-          # time relation nothing verified. Excluding keeps corrupt data from
-          # moving the denominator either way, and inflation is the dangerous
-          # direction because it makes the floor easier to reach.
-          if ($5 == "") next
-          e = iso_epoch($4)
-          if (e < 0) next
-          print $1 "\t" $2 "\t" $3 "\t" e "\t" $5
-        }' \
-    | sort -t "$(printf '\t')" -k1,1 -k2,2 -k3,3 -k4,4n \
-    | awk -F'\t' -v w="${EPISODE_WINDOW_SEC}" '
-        # Compare the three key fields DIRECTLY rather than concatenating them
-        # with a separator. A concatenated key collides whenever a field
-        # contains the separator byte: branch="x\001y" + token="t1" builds the
-        # same key as branch="x" + token="y\001t1", silently merging unrelated
-        # episodes and shrinking the denominator. Field-wise comparison has no
-        # such class of bug and is simpler.
-        {
-          if (NR == 1 || $1 != p1 || $2 != p2 || $3 != p3 || ($4 - anchor) > w) {
-            if (NR > 1) print eid "\t" erepo "\t" ebranch "\t" etok "\t" ids
-            eid = $5; erepo = $1; ebranch = $2; etok = $3; ids = $5
-            anchor = $4; p1 = $1; p2 = $2; p3 = $3
-          } else {
-            ids = ids "," $5
-          }
-        }
-        END { if (NR > 0) print eid "\t" erepo "\t" ebranch "\t" etok "\t" ids }'
+    | shadow_group_episodes "${EPISODE_WINDOW_SEC}"
 }
 
 # _claimant -> human | agent
