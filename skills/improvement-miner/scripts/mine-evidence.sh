@@ -16,7 +16,7 @@ set -u
 MODE="${1:-}"
 
 usage() {
-    echo "usage: mine-evidence.sh fingerprint <class> <id> | bundle | dedup <fp>... | select" >&2
+    echo "usage: mine-evidence.sh fingerprint <class> <id> | bundle | dedup <fp>... | select | target-at-head <path> [needle]" >&2
     exit 2
 }
 
@@ -445,6 +445,37 @@ case "${MODE}" in
                   else "\($fp) rejected" end'
         done
         ;;
+    target-at-head)
+        # target-at-head <path> [needle] — does a candidate's intervention
+        # target still exist at HEAD? Exit 0 yes, 1 no, 2 cannot-check.
+        #
+        # WHY. A proposal whose target was already removed wastes the human gate
+        # and skews the kill counter, which is the miner's own decommission
+        # signal. Measured in run 1: 1 of 2 presented proposals was stale.
+        #
+        # It recurred while this was still unimplemented. A 2026-09-19 proposal
+        # cited a live divergence that had been REPAIRED hours after filing, and
+        # its prescribed metric produced a false positive on the only case it
+        # named. Neither was visible without re-checking at HEAD.
+        #
+        # CANNOT-CHECK IS A DISTINCT EXIT, not folded into "gone". An
+        # unreadable path and an absent target are different states, and only
+        # the second justifies withholding a proposal as stale.
+        _p="${2:-}"; _needle="${3:-}"
+        [ -n "${_p}" ] || { echo "target-at-head: no path given" >&2; exit 2; }
+        if [ ! -e "${_p}" ]; then
+            echo "absent: ${_p}"; exit 1
+        fi
+        if [ -n "${_needle}" ]; then
+            [ -r "${_p}" ] || { echo "unreadable: ${_p}" >&2; exit 2; }
+            if grep -qF -- "${_needle}" "${_p}" 2>/dev/null; then
+                echo "present: ${_p} contains the anchor"; exit 0
+            fi
+            echo "anchor-gone: ${_p} no longer contains the cited anchor"; exit 1
+        fi
+        echo "present: ${_p}"; exit 0
+        ;;
+
     select)
         require jq
         jq '
@@ -452,7 +483,11 @@ case "${MODE}" in
           . as $in
           | [ $in[] | select(.contract_complete != true)
               | {fp, reason: "missing_contract"} ] as $w1
-          | [ $in[] | select(.contract_complete == true) ] as $pool
+          | [ $in[] | select(.contract_complete == true)
+              | select(.target_at_head != true)
+              | {fp, reason: "stale"} ] as $w0
+          | [ $in[] | select(.contract_complete == true)
+              | select(.target_at_head == true) ] as $pool
           | ([ $pool | to_entries[] | select(.value.meta == true) ]
              | sort_by([(.value | grank), .key]) | .[0:2] | [ .[].key ]) as $keepmeta
           | [ $pool | to_entries[]
@@ -464,7 +499,7 @@ case "${MODE}" in
           | ($afterMeta | .[0:5]) as $presented
           | [ $afterMeta | .[5:][] | {fp, reason: "cap"} ] as $w3
           | {presented: $presented,
-             withheld: ($w1 + $w2 + $w3),
+             withheld: ($w1 + $w0 + $w2 + $w3),
              warnings: (if ([ $presented[] | select(.end_user == true) ] | length) == 0
                         then ["no_end_user_facing"] else [] end)}'
         ;;
