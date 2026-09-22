@@ -660,6 +660,18 @@ fi
 # publish-guard.sh (#174 leak gate): same shape as skill-gate.sh above — it
 # executes and reads stdin (PreToolUse Bash), so parse-check only. It must NOT
 # join _GATE_ENFORCE_LIBS, whose members are source-probed.
+# scripts/memory-leak-check.sh is where DETECTION actually lives (#187 S9).
+# publish-guard.sh was covered here and in _DRIFT_FILES; the engine it calls
+# was in neither, so a stale engine in the versioned plugin cache — exactly the
+# drift class this canary exists for — went unnoticed. Parse-checked, and
+# deliberately NOT added to _GATE_ENFORCE_LIBS, which SOURCE-probes: this is a
+# script that is executed, not a lib that is sourced, the same treatment
+# publish-guard.sh gets and for the same reason.
+if [ ! -f "${PLUGIN_ROOT}/scripts/memory-leak-check.sh" ]; then
+    _CANARY_BAD="${_CANARY_BAD}${_CANARY_BAD:+, }memory-leak-check.sh (missing)"
+elif ! /bin/bash -n "${PLUGIN_ROOT}/scripts/memory-leak-check.sh" >/dev/null 2>&1; then
+    _CANARY_BAD="${_CANARY_BAD}${_CANARY_BAD:+, }memory-leak-check.sh (unparseable)"
+fi
 if [ ! -f "${PLUGIN_ROOT}/hooks/publish-guard.sh" ]; then
     _CANARY_BAD="${_CANARY_BAD}${_CANARY_BAD:+, }publish-guard.sh (missing)"
 elif ! /bin/bash -n "${PLUGIN_ROOT}/hooks/publish-guard.sh" >/dev/null 2>&1; then
@@ -716,7 +728,7 @@ if [ -f "${_SRC_MANIFEST}" ] && [ -f "${_RUN_MANIFEST}" ]; then
         # Reuses the F5 canary's _GATE_ENFORCE_LIBS so the two lists cannot
         # diverge; the guard script itself is added here (F5 checks it apart).
         _DRIFT_FILES=""
-        for _df in "hooks/openspec-guard.sh" "hooks/skill-gate.sh" "hooks/publish-guard.sh" ${_GATE_ENFORCE_LIBS}; do
+        for _df in "hooks/openspec-guard.sh" "hooks/skill-gate.sh" "hooks/publish-guard.sh" "scripts/memory-leak-check.sh" ${_GATE_ENFORCE_LIBS}; do
             _SRC_SUM="$(cksum "${_DRIFT_CWD}/${_df}" 2>/dev/null | awk '{print $1, $2}')" || _SRC_SUM=""
             _RUN_SUM="$(cksum "${PLUGIN_ROOT}/${_df}" 2>/dev/null | awk '{print $1, $2}')" || _RUN_SUM=""
             [ "${_SRC_SUM}" = "${_RUN_SUM}" ] \

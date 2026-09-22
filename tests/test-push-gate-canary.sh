@@ -18,6 +18,12 @@ mkdir -p "$HOME/.claude"
 _TROOT="$(mktemp -d /tmp/pgc-root-XXXXXX)"
 cp -R "${PROJECT_ROOT}/hooks" "${_TROOT}/hooks"
 cp -R "${PROJECT_ROOT}/config" "${_TROOT}/config"
+# scripts/ too: the canary parse-checks scripts/memory-leak-check.sh (#187),
+# so a root without it is not a HEALTHY root — cell (a) would fail for the
+# fixture's incompleteness rather than for anything the hook did. Copy the
+# whole directory so the next canary addition under scripts/ needs no edit
+# here.
+cp -R "${PROJECT_ROOT}/scripts" "${_TROOT}/scripts"
 
 _run_hook() {
     printf '{}' | CLAUDE_PLUGIN_ROOT="${_TROOT}" \
@@ -46,6 +52,24 @@ out="$(_run_hook)"
 assert_contains "missing lib => canary emitted"       "PUSH-GATE CANARY"  "${out:-<empty>}"
 assert_contains "canary names the missing component"  "verdict.sh"        "${out:-<empty>}"
 cp "${PROJECT_ROOT}/hooks/lib/verdict.sh" "${_TROOT}/hooks/lib/verdict.sh"
+
+# (c2) Unparseable leak-detection engine => canary names it. publish-guard.sh
+#      was covered before #187 and the engine it actually calls was not, so a
+#      stale or broken engine in the versioned plugin cache passed silently.
+#      Injected fault matches cells (e)/(f): the engine is EXECUTED, not
+#      sourced, so it is parse-checked only and — like publish-guard.sh — this
+#      cannot catch the Bash-3.2 quoted-arithmetic killer that cell (b) uses
+#      against a source-probed lib. Measured: that line leaves `bash -n` clean.
+printf 'if [ \n' > "${_TROOT}/scripts/memory-leak-check.sh"
+out="$(_run_hook)"
+assert_contains "unparseable leak engine trips the canary" "memory-leak-check.sh (unparseable)" "${out:-<empty>}"
+cp "${PROJECT_ROOT}/scripts/memory-leak-check.sh" "${_TROOT}/scripts/memory-leak-check.sh"
+
+# (c3) Missing leak-detection engine => canary names it.
+rm -f "${_TROOT}/scripts/memory-leak-check.sh"
+out="$(_run_hook)"
+assert_contains "missing leak engine trips the canary" "memory-leak-check.sh (missing)" "${out:-<empty>}"
+cp "${PROJECT_ROOT}/scripts/memory-leak-check.sh" "${_TROOT}/scripts/memory-leak-check.sh"
 
 # (d) jq-less PATH => the fallback message states the gate falls open.
 NOJQ_BIN="$(mktemp -d /tmp/pgc-nojq-XXXXXX)"

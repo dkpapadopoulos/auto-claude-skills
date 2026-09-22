@@ -82,11 +82,40 @@ set -- "${MEMDIR}"/*.md
 # actually compared. An unreadable corpus file (restrictive mode, dangling
 # symlink, removed between the glob and the read) is ordinary, so this is a
 # reachable silent-clean, not a theoretical one. Cannot-check is exit 3.
-shingle_files "$@" | awk -F'\t' '{ n = split($1, p, "/"); print $3 "\t" p[n] "\t" $2 }' \
-    | sort -t"$(printf '\t')" -k1,1 > "${TMP}/mem"
-_mem_rc=${PIPESTATUS[0]}
-[ "${_mem_rc}" -eq 0 ] || {
-    echo "ERROR: corpus shingling failed (exit ${_mem_rc}) — cannot check" >&2; exit 3; }
+# CORPUS SHINGLE CACHE (#187 S8). publish-guard.sh invokes this engine more
+# than once per publish — once per resolved body — and each run re-shingled the
+# whole corpus. The cache is opt-in via MLC_CORPUS_CACHE so the engine keeps
+# working standalone with no caller cooperation.
+#
+# INVALIDATION IS BY MTIME, and it fails toward REBUILDING: the cache is reused
+# only when it is strictly newer than every corpus file. A corpus file touched
+# after the cache was written makes `find -newer` non-empty and the cache is
+# discarded. Erring the other way would compare a body against a stale corpus
+# and report clean on text that is now private, which is the leak this gate
+# exists to stop.
+_mem_cache_valid() {
+    [ -n "${MLC_CORPUS_CACHE:-}" ] || return 1
+    [ -s "${MLC_CORPUS_CACHE}" ] || return 1
+    # any corpus file newer than the cache invalidates it
+    [ -z "$(find "${MEMDIR}" -name '*.md' -newer "${MLC_CORPUS_CACHE}" -print -quit 2>/dev/null)" ]
+}
+
+if _mem_cache_valid; then
+    cp "${MLC_CORPUS_CACHE}" "${TMP}/mem" 2>/dev/null || _mem_cache_miss=1
+fi
+if [ ! -s "${TMP}/mem" ] || [ -n "${_mem_cache_miss:-}" ]; then
+    shingle_files "$@" | awk -F'\t' '{ n = split($1, p, "/"); print $3 "\t" p[n] "\t" $2 }' \
+        | sort -t"$(printf '\t')" -k1,1 > "${TMP}/mem"
+    _mem_rc=${PIPESTATUS[0]}
+    [ "${_mem_rc}" -eq 0 ] || {
+        echo "ERROR: corpus shingling failed (exit ${_mem_rc}) — cannot check" >&2; exit 3; }
+    # Publish the cache only after a SUCCESSFUL build, so a failed shingling
+    # cannot leave a truncated set that later runs would treat as the corpus.
+    if [ -n "${MLC_CORPUS_CACHE:-}" ]; then
+        cp "${TMP}/mem" "${MLC_CORPUS_CACHE}.tmp" 2>/dev/null \
+            && mv "${MLC_CORPUS_CACHE}.tmp" "${MLC_CORPUS_CACHE}" 2>/dev/null || :
+    fi
+fi
 
 shingle_files "${BODY}" | awk -F'\t' '{ print $3 "\t" $2 }' \
     | sort -t"$(printf '\t')" -k1,1 > "${TMP}/body"
