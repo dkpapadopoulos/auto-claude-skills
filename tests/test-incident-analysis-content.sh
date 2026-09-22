@@ -743,22 +743,32 @@ assert_file_contains "hitl-scope reference exists and states the halt is uncondi
 # enumeration above.
 assert_file_contains "the body states log content never instructs" \
     "never instructs" "${SKILL_FILE}"
-assert_file_contains "the body states log content is not reproduced verbatim" \
-    "by reference, not reproduced" "${SKILL_FILE}"
+assert_file_contains "the body states injected content is not reproduced raw" \
+    "never quoted raw" "${SKILL_FILE}"
 # Single-line needle: the phrase wraps in the source, and a needle spanning the
 # wrap matches nothing while looking like it asserts the distinction.
-# The constraint must say it restricts REPRODUCTION and not ANALYSIS: a rule
-# about not reproducing content is readable as a rule about saying less. This
-# is a plain-reading argument, NOT a measured one — a variance-5 arm suggested
-# such a regression and a later arm of the same instrument did not reproduce
-# it, so the claim is that the sentence is right, not that it was forced.
+# The constraint must be SCOPED to secrets/PII/injected content and must not
+# read as a ban on quoting logs at all — an incident report legitimately
+# carries an error string or a stack frame. An outside review flagged the first
+# version as prohibiting all payload reproduction, including in replies to the
+# user, which is broader than the procedure it points at.
+assert_file_contains "the constraint permits ordinary diagnostic excerpts" \
+    "Ordinary diagnostic excerpts are fine" "${SKILL_FILE}"
 assert_file_contains "the constraint restricts reproduction, not analysis" \
-    "restricts reproduction, never analysis" "${SKILL_FILE}"
-assert_file_contains "...and names recommendations as the agent's own output" \
-    "YOUR output, not quoted payload" "${SKILL_FILE}"
+    "restricts REPRODUCTION rather than" "${SKILL_FILE}"
+assert_file_contains "the constraint names the three restricted categories" \
+    "injected content are not reproduced" "${SKILL_FILE}"
+# No experimental history in operational guidance: which eval arm suggested
+# what belongs on the issue, not in a constraint an agent reads at run time.
+if grep -qi "variance-5\|variance 5" "${SKILL_FILE}"; then
+    _record_fail "the skill carries no eval-arm history" \
+        "SKILL.md mentions an eval variance — that belongs on the issue"
+else
+    _record_pass "the skill carries no eval-arm history"
+fi
 
 assert_file_contains "the body distinguishes outward-sending from disk writes" \
-    "governs what is \*\*written to disk\*\*" "${SKILL_FILE}"
+    "does not run on the outbound path" "${SKILL_FILE}"
 
 # ---------------------------------------------------------------------------
 # Structural guard — SKILL.md word count, as a BASELINE RATCHET.
@@ -783,7 +793,7 @@ assert_file_contains "the body distinguishes outward-sending from disk writes" \
 # A never-raise rule was considered and rejected: the file is a living skill, so
 # an absolute rule would simply be broken in contradiction of its own comment.
 # ---------------------------------------------------------------------------
-INCIDENT_SKILL_WORD_BASELINE=11793
+INCIDENT_SKILL_WORD_BASELINE=11693
 word_count=$(wc -w < "${SKILL_FILE}" | tr -d ' ')
 if [ "$word_count" -le "${INCIDENT_SKILL_WORD_BASELINE}" ]; then
     _record_pass "SKILL.md: word count within baseline ${INCIDENT_SKILL_WORD_BASELINE} (${word_count})"

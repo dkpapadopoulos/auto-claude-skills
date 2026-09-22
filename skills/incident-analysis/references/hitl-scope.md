@@ -45,7 +45,10 @@ covered them.
 
 There is no "obvious enough to skip" case and no "the user clearly wants the
 ticket" case. A request to file a ticket authorises drafting the payload and
-asking; it does not authorise the write. If the user has already said "file it"
-in the same turn, present the payload and confirm — the cost of one redundant
-confirmation is a line of text, and the cost of a wrong unapproved write is a
-notification to everyone watching that ticket.
+asking; it does not authorise the write.
+
+This is not a new requirement. `references/jira-intake.md` already specifies
+"Present the exact ticket payload and HALT", and does not call `createJiraIssue`
+until the user answers — so a request to file and an approval of a specific
+payload were already distinct steps there. What this section adds is where that
+distinction is stated, not the distinction itself.
