@@ -116,7 +116,9 @@ assert_equals "worktree_dirty is still a boolean"   "boolean" "$(jq -r '.worktre
   _cnote="$(verdict_dirty_note "${TOK}")"
   seed dirty-legacy-no-paths "${NRHEAD}"
   _lnote="$(verdict_dirty_note "${TOK}")"
-  printf '%s\n%s\n%s\n%s\n%s\n' "${_r_dirty}" "${_r_clean}" "${_note}" "${_cnote}" "${_lnote}"
+  seed dirty-truncated "${NRHEAD}"
+  _tnote="$(verdict_dirty_note "${TOK}")"
+  printf '%s\n%s\n%s\n%s\n%s\n%s\n' "${_r_dirty}" "${_r_clean}" "${_note}" "${_cnote}" "${_lnote}" "${_tnote}"
 ) > "${TMP}/readers.txt"
 assert_equals   "reader: dirty record reads dirty"      "y" "$(sed -n 1p "${TMP}/readers.txt")"
 assert_equals   "reader: clean record reads clean"      "n" "$(sed -n 2p "${TMP}/readers.txt")"
@@ -125,6 +127,15 @@ assert_equals   "reader: clean record yields no note"   ""  "$(sed -n 4p "${TMP}
 # A pre-#274 record is dirty with no list. An empty note is what the guard
 # branches on to say "cannot say which paths" — fabricating one would be worse.
 assert_equals   "reader: legacy record yields no note"  ""  "$(sed -n 5p "${TMP}/readers.txt")"
+# Truncation: ONE remainder, counted against the true total (37 - 5 = 32), and
+# the cap stated as a fact about the RECORD. The first cut counted "+k more"
+# over the stored list and "(list truncated)" over the cap — two populations in
+# one sentence, neither of them the number the reader wants.
+_TNOTE="$(sed -n 6p "${TMP}/readers.txt")"
+assert_contains "reader: truncated note states the true total"   "37 path(s)"              "${_TNOTE:-<empty>}"
+assert_contains "reader: remainder counts from the true total"   "+32 more"                "${_TNOTE:-<empty>}"
+assert_contains "reader: the cap is stated about the record"     "only the first 20 were recorded" "${_TNOTE:-<empty>}"
+assert_not_contains "reader: the two populations are not mixed"  "list truncated"          "${_TNOTE:-}"
 
 # ---- (3) chain VERIFY acceptance: advisory + silent control ----------------
 # VERIFY absent from status, so the clean covering verdict is what satisfies it.
