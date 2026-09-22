@@ -56,9 +56,52 @@ All coordination via SendMessage. No file-based polling or locking. No structure
 3. Apply mode selection (< 3 groups -> fall back to subagent-driven-development)
 4. Create `shared-contracts.md` from `./shared-contracts-template.md`
 5. `TeamCreate("{feature-name}-impl")`
-6. Spawn specialists with synthesized Mini-Specs (see lead-prompt.md)
-7. Spawn one reviewer
-8. Create TaskList entries, assign to owning specialists
+6. **Propagate every ruling into the dispatch artifact before spawning.** See
+   "Rulings" below — this is the step that makes the rest of the Mini-Spec true.
+7. Spawn specialists with synthesized Mini-Specs (see lead-prompt.md)
+8. Spawn one reviewer
+9. Create TaskList entries, assign to owning specialists
+
+#### Rulings: recorded is step one of two
+
+A ruling that changes a task **not yet dispatched** must be written into the
+**dispatch artifact** — the plan entry the Mini-Spec is built from, or
+`shared-contracts.md` — in the same turn it is made.
+
+Recording a ruling in a progress ledger, a chat message, or a todo does not
+propagate it. The Mini-Spec is synthesized from the plan; nothing carries a
+ledger into the plan. An unpropagated ruling **reads as done in the record and
+is absent from the run**, which is worse than forgetting it, because the record
+is what stops you checking.
+
+Before dispatching a task, the lead does this, in this order:
+
+1. List the rulings made so far that mention that task.
+2. Grep **the dispatch text that will actually be sent** for each one.
+3. Dispatch only when every one is present in that text.
+
+The check is on the text being sent, not on the record. A ruling that is in the
+ledger and not in the brief fails this check, which is the entire point.
+
+**Observed twice in one session** (2026-09-19, `subagent-driven-development`,
+the same mechanism). A ruling that a task must gain a step which runs a capture
+and fails on identical outputs never reached the brief: the brief that executed
+had four steps and no mention of capture. Three parties — implementer, reviewer
+and controller — each accepted a test that exits 0 on skip, on the grounds that
+the step existed. It existed in the ledger. Separately, a ruling that every path
+resolve to the isolated worktree never reached its task, which then read HEAD
+from a shared checkout on a different branch, at a different commit, with
+another session live in it.
+
+The lesson was written down after the first instance and still not applied to
+two rulings sitting three lines above it in the same file. That is why this is a
+mechanical check before dispatch and not advice to remember.
+
+A ruling made **after** a task is dispatched follows the existing contract-update
+path instead: edit `shared-contracts.md`, then re-announce to the owning
+specialist (see Phase 2). That path already exists and is already documented —
+what was missing is the one for a task that has not been sent yet, which is the
+strictly more common case.
 
 ### Phase 2: Execution
 
