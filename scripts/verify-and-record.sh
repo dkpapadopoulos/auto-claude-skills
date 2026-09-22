@@ -104,7 +104,30 @@ SHA_BEFORE="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 # Bounded: a large dirty tree would otherwise put an unbounded list into a state
 # file the guard reads on every push. The count is recorded separately so a
 # truncated list never reads as the whole list.
-_WD_PATHS="$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null | awk '{ $1=""; sub(/^ +/, ""); print }')"
+# `-z`, not plain --porcelain. Without it git applies C-STYLE QUOTING to any
+# path that is not plain ASCII: measured, a dirty tree of seven files recorded
+# "back\\slash.txt", "quote\"name.txt" and "unicode-\303\274.txt" — the last
+# one octal-escaped past recognition. The advisory exists so a reader can judge
+# whether the uncommitted paths matter to what they are pushing, and a name
+# they cannot match against the one they know does not serve that.
+#
+# `-z` also renders a rename as two records (new path, then old) instead of one
+# "old -> new" line, so the count is entries and not a path pair masquerading
+# as one path. The awk skips the second record of an R/C entry.
+#
+# Ceiling, stated rather than hidden: `tr` splits on NUL, so a path containing
+# a literal newline is reported as two entries. That OVER-reports, which for an
+# advisory is the safe direction, and no other representation survives bash 3.2
+# without a NUL-capable read.
+_WD_PATHS="$(git -C "$ROOT" status --porcelain -z --untracked-files=no 2>/dev/null \
+    | tr '\0' '\n' \
+    | awk '
+        skip { skip = 0; next }
+        {
+            st = substr($0, 1, 2)
+            if (st ~ /[RC]/) skip = 1
+            print substr($0, 4)
+        }')"
 if [ -n "${_WD_PATHS}" ]; then
     WORKTREE_DIRTY=true
 else

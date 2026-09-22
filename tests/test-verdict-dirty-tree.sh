@@ -103,6 +103,41 @@ assert_equals "dirty_path_count agrees with the list" "2"   "$(jq -r '.dirty_pat
 # The boolean is format-frozen for existing readers; the list is additive.
 assert_equals "worktree_dirty is still a boolean"   "boolean" "$(jq -r '.worktree_dirty | type' "${_VR_OUT}" 2>/dev/null)"
 
+# ---- (1b) the writer records REAL path names, not git's quoted rendering ---
+# Plain --porcelain applies C-style quoting to anything non-ASCII: measured,
+# a backslash, a quote and a UTF-8 name came back as "back\\slash.txt",
+# "quote\"name.txt" and "unicode-\303\274.txt". The advisory exists so a
+# reader can judge whether the uncommitted paths matter to what they are
+# pushing, and an octal-escaped name cannot be matched against the one they
+# know. A rename must also be ONE entry, not a "old -> new" pair counted as a
+# single path.
+QR="${TMP}/quoted"; mkdir -p "${QR}"
+( cd "${QR}"; git init -q; git config user.email t@t; git config user.name t
+  printf 'substrate: local\ncommands:\n  - name: noop\n    run: "true"\nfail_fast: false\n' > .verify.yml
+  printf 'a\n' > 'plain.txt'
+  printf 'b\n' > 'with space.txt'
+  printf 'c\n' > 'quote"name.txt'
+  printf 'd\n' > 'back\slash.txt'
+  printf 'e\n' > 'unicode-ü.txt'
+  printf 'f\n' > 'to-rename.txt'
+  git add -A >/dev/null 2>&1; git commit -qm c1
+  printf 'A\n' > 'plain.txt'; printf 'B\n' > 'with space.txt'
+  printf 'C\n' > 'quote"name.txt'; printf 'D\n' > 'back\slash.txt'
+  printf 'E\n' > 'unicode-ü.txt'
+  git mv 'to-rename.txt' 'renamed.txt' >/dev/null 2>&1 )
+_QOUT="${HOME}/.claude/.skill-project-verified-session-quoted"
+( cd "${QR}" && SKILL_SESSION_TOKEN=session-quoted bash "${PROJECT_ROOT}/scripts/verify-and-record.sh" >/dev/null 2>&1 )
+_QP="$(jq -r '(.dirty_paths // []) | join("|")' "${_QOUT}" 2>/dev/null)"
+assert_equals   "a verdict is still written for an awkward tree" "true" \
+    "$([ -f "${_QOUT}" ] && jq -e . "${_QOUT}" >/dev/null 2>&1 && echo true || echo false)"
+assert_contains "a UTF-8 path is recorded as itself"    "unicode-ü.txt"    "${_QP:-<empty>}"
+assert_contains "a quote in a path is recorded as itself" 'quote"name.txt' "${_QP:-<empty>}"
+assert_contains "a backslash in a path is recorded as itself" 'back\slash.txt' "${_QP:-<empty>}"
+assert_contains "a space in a path is recorded as itself" "with space.txt"  "${_QP:-<empty>}"
+# The rename is the new path, once — not "old -> new" counted as one path.
+assert_contains "a rename records the new path"          "renamed.txt"      "${_QP:-<empty>}"
+assert_not_contains "a rename is not recorded as a pair" "->"               "${_QP:-}"
+
 # ---- (2) the READERS -------------------------------------------------------
 ( set +u
   . "${VLIB}"
