@@ -78,11 +78,13 @@ YOUR output, not quoted payload, and this rule asks for none of them to be
 withheld or softened. Say what you found and what to do about it; just do not
 paste the payload you found it in.
 
-That sentence is here because the first version of this constraint lacked it.
-Measured at variance 5: the assertion that an intake carries initial
-recommended areas to investigate fell 100% -> 80% -> 40% across three runs as
-this rule was introduced. A caution about reproducing content had generalised
-into withholding the analysis, which is the opposite of useful.
+That sentence is here because the first version of this constraint lacked it,
+and a rule about not reproducing content can be read as a rule about saying
+less. No measurement supports that having happened: it was suspected from a
+variance-5 eval arm, and a later arm of the same instrument returned the
+original result, so the evidence is absent rather than confirming. The sentence
+stays because a redaction rule genuinely should not restrict the agent's own
+conclusions — not because a regression was demonstrated.
 
 This is distinct from the Evidence Bundle's `redact-evidence.sh` rule below,
 which governs what is **written to disk**. This one governs what is **sent

@@ -747,10 +747,11 @@ assert_file_contains "the body states log content is not reproduced verbatim" \
     "by reference, not reproduced" "${SKILL_FILE}"
 # Single-line needle: the phrase wraps in the source, and a needle spanning the
 # wrap matches nothing while looking like it asserts the distinction.
-# The constraint must say it restricts REPRODUCTION and not ANALYSIS. Without
-# that sentence the rule generalised into withholding the agent's own
-# recommendations — measured 100%% -> 80%% -> 40%% at variance 5 across three
-# runs as it was introduced.
+# The constraint must say it restricts REPRODUCTION and not ANALYSIS: a rule
+# about not reproducing content is readable as a rule about saying less. This
+# is a plain-reading argument, NOT a measured one — a variance-5 arm suggested
+# such a regression and a later arm of the same instrument did not reproduce
+# it, so the claim is that the sentence is right, not that it was forced.
 assert_file_contains "the constraint restricts reproduction, not analysis" \
     "restricts reproduction, never analysis" "${SKILL_FILE}"
 assert_file_contains "...and names recommendations as the agent's own output" \
@@ -782,7 +783,7 @@ assert_file_contains "the body distinguishes outward-sending from disk writes" \
 # A never-raise rule was considered and rejected: the file is a living skill, so
 # an absolute rule would simply be broken in contradiction of its own comment.
 # ---------------------------------------------------------------------------
-INCIDENT_SKILL_WORD_BASELINE=11767
+INCIDENT_SKILL_WORD_BASELINE=11793
 word_count=$(wc -w < "${SKILL_FILE}" | tr -d ' ')
 if [ "$word_count" -le "${INCIDENT_SKILL_WORD_BASELINE}" ]; then
     _record_pass "SKILL.md: word count within baseline ${INCIDENT_SKILL_WORD_BASELINE} (${word_count})"
