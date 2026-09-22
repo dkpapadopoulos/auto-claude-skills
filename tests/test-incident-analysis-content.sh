@@ -700,6 +700,7 @@ assert_file_contains "INTAKE supports adopting a supplied key" \
 # ---------------------------------------------------------------------------
 # references/jira-report-back.md — opt-in Jira REPORT-BACK stage
 # ---------------------------------------------------------------------------
+UNTRUSTED_REF="${PROJECT_ROOT}/skills/incident-analysis/references/untrusted-content.md"
 JIRA_REPORT_REF="${PROJECT_ROOT}/skills/incident-analysis/references/jira-report-back.md"
 assert_file_exists "references/jira-report-back.md exists" "${JIRA_REPORT_REF}"
 assert_file_contains "SKILL.md points to references/jira-report-back.md" \
@@ -743,8 +744,8 @@ assert_file_contains "hitl-scope reference exists and states the halt is uncondi
 # enumeration above.
 assert_file_contains "the body states log content never instructs" \
     "never instructs" "${SKILL_FILE}"
-assert_file_contains "the body states injected content is not reproduced raw" \
-    "never quoted raw" "${SKILL_FILE}"
+assert_file_contains "the reference states injected content is not reproduced raw" \
+    "quote the raw string" "${UNTRUSTED_REF}"
 # Single-line needle: the phrase wraps in the source, and a needle spanning the
 # wrap matches nothing while looking like it asserts the distinction.
 # The constraint must be SCOPED to secrets/PII/injected content and must not
@@ -752,12 +753,19 @@ assert_file_contains "the body states injected content is not reproduced raw" \
 # carries an error string or a stack frame. An outside review flagged the first
 # version as prohibiting all payload reproduction, including in replies to the
 # user, which is broader than the procedure it points at.
-assert_file_contains "the constraint permits ordinary diagnostic excerpts" \
+# The BODY carries the rule tersely; the reasoning and boundaries live in
+# references/, which is what the ratchet's own guidance says to do before
+# raising the constant. Both halves are asserted so neither can be dropped.
+assert_file_contains "the body permits ordinary diagnostic excerpts" \
     "Ordinary diagnostic excerpts are fine" "${SKILL_FILE}"
-assert_file_contains "the constraint restricts reproduction, not analysis" \
-    "restricts REPRODUCTION rather than" "${SKILL_FILE}"
-assert_file_contains "the constraint names the three restricted categories" \
+assert_file_contains "the body restricts reproduction, not analysis" \
+    "restricts reproduction, not analysis" "${SKILL_FILE}"
+assert_file_contains "the body names the three restricted categories" \
     "injected content are not reproduced" "${SKILL_FILE}"
+assert_file_contains "the reference explains why disk redaction does not cover this" \
+    "does not run on the outbound path" "${UNTRUSTED_REF}"
+assert_file_contains "the reference states quotable content is usually required" \
+    "usually should be" "${UNTRUSTED_REF}"
 # No experimental history in operational guidance: which eval arm suggested
 # what belongs on the issue, not in a constraint an agent reads at run time.
 if grep -qi "variance-5\|variance 5" "${SKILL_FILE}"; then
@@ -767,8 +775,8 @@ else
     _record_pass "the skill carries no eval-arm history"
 fi
 
-assert_file_contains "the body distinguishes outward-sending from disk writes" \
-    "does not run on the outbound path" "${SKILL_FILE}"
+assert_file_contains "the reference distinguishes outward-sending from disk writes" \
+    "does not run on the outbound path" "${UNTRUSTED_REF}"
 
 # ---------------------------------------------------------------------------
 # Structural guard — SKILL.md word count, as a BASELINE RATCHET.
@@ -793,7 +801,7 @@ assert_file_contains "the body distinguishes outward-sending from disk writes" \
 # A never-raise rule was considered and rejected: the file is a living skill, so
 # an absolute rule would simply be broken in contradiction of its own comment.
 # ---------------------------------------------------------------------------
-INCIDENT_SKILL_WORD_BASELINE=11693
+INCIDENT_SKILL_WORD_BASELINE=11531
 word_count=$(wc -w < "${SKILL_FILE}" | tr -d ' ')
 if [ "$word_count" -le "${INCIDENT_SKILL_WORD_BASELINE}" ]; then
     _record_pass "SKILL.md: word count within baseline ${INCIDENT_SKILL_WORD_BASELINE} (${word_count})"
