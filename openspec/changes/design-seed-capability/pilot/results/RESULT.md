@@ -53,12 +53,18 @@ reported forming no impression of either artifact's origin.
 **(b) Freeze boundary — PASS.** `design/` was committed at `1714a14` before arm S began;
 `git status --porcelain design/` is empty afterwards. No `design/` edit followed.
 
-**(a) Adaptation — FAIL.** Arm S recorded neither an adaptation nor an explicit "no
-justified adaptation needed". Two readings of the criterion are available and the frozen
-wording does not settle which was intended — an obligation the protocol never
-communicated, or a test of whether documentation appears unprompted. The gate fails under
-either. The absence does not distinguish absent adaptation *reasoning* from absent
-*reporting*. See `arm-consumption.md`.
+**(a) Adaptation — FAIL, and the failure is about evidence, not about adaptation.** Arm
+S recorded neither an adaptation nor an explicit "no justified adaptation needed". Two
+readings of the criterion are available and the frozen wording does not settle which was
+intended — an obligation the protocol never communicated, or a test of whether
+documentation appears unprompted. The gate fails under either.
+
+**Missing documentation is missing evidence, not evidence of deficient adaptation.** To
+the extent this counts against arm S at all, it measures compliance with a reporting
+requirement the arm was never given, so it is recorded and not scored against the arm.
+The absence also does not distinguish absent adaptation *reasoning* from absent
+*reporting*. See `arm-consumption.md`, and `protocol-amendments.md` for what replaces
+this criterion.
 
 **(c) Contract delta — both arms produced one.** Assessed against the frozen
 `advance-disclosures.md`, where restating a disclosed gap scores zero:
@@ -113,10 +119,13 @@ Base commits: auto-claude-skills `design-seed-pilot-impl`, Dion `a6475eb`.
 - **That the seed's rules, rather than the workflow, caused the difference.** The
   treatment is the whole first-use workflow, and this design cannot separate its parts.
 - **That any adaptation improved anything.** Arm S made no adaptation to `design/`.
-- **Anything about dark-theme quality, for either artifact.** The capture procedure
-  recognises `prefers-color-scheme` and arm S's dark theme is gated on `data-theme`, so
-  its dark appearance was never exercised. Arm C declares no dark theme. This is a
-  permanent gap in this run; neither judging nor source inspection repairs it.
+- **Anything about dark-theme quality, or theme capability, for either artifact.** The
+  procedure produced renders under two **OS-preference conditions** and those are not two
+  theme states — conflating the two is the mistake. What the run establishes is that
+  neither artifact's appearance changed under that probe. Arm S's `data-theme`-gated
+  styles may be dormant, unfinished, or intended for a host that sets the attribute;
+  absent any registered requirement for theme access, their dormancy is **not** a task
+  failure and must not be read as one. A permanent gap in this run.
 - **That the arms were treated identically.** They were not, by design: arm S received
   the seed. Brief, fixture, model, cap and tool access were matched; the seed package is
   the intended difference.
@@ -130,12 +139,14 @@ Base commits: auto-claude-skills `design-seed-pilot-impl`, Dion `a6475eb`.
 
 Recorded because a pilot that only reports its result hides what it cost to get one.
 
-1. **Criterion (a) may be uncommunicable.** It asks arm S to produce an artifact the
-   framing-free brief forbids requesting. Either the criterion or the framing rule needs
-   to change before a second run.
-2. **The capture procedure recognises one theme mechanism.** A future protocol needs an
-   implementation-independent rule for reaching theme states, or an explicit requirement
-   that dark mode respond to OS preference.
+1. **Criterion (a) cannot be reliably satisfied** under the protocol's own communication
+   constraints. Not the same as "uncommunicable" — an instruction could elicit it, at the
+   price of changing what the comparison estimates. Replacement specified in
+   `protocol-amendments.md`.
+2. **The capture procedure reports environmental conditions as theme states.** There is
+   no universal implementation-independent way to reach arbitrary theme states: a
+   capability must be chosen and its requirement registered. See
+   `protocol-amendments.md`.
 3. **The arms' own gate cannot pass from inside an arm worktree.**
    `TestNormalSessionIsUntouched` asserts the deny hook is inert at cwd, but the hook
    matches any path component `pilot-arm-*` and the arms' cwd is exactly that. Symmetric

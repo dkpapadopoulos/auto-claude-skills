@@ -556,6 +556,10 @@ arm's `data-theme`-gated dark appearance was never exercised and this run says n
 about dark-theme quality either way; and the arms' own gate cannot pass from inside an
 arm worktree, because the deny hook matches any path component `pilot-arm-*`. All three
 need resolving before a second run — the first two are protocol changes, not bug fixes.
+Both were put to an outside model to attack; it rejected the first proposed fix and
+accepted the second with a condition. The resulting specification, including two
+corrections to how the defects were framed above, is in
+`pilot/results/protocol-amendments.md`.
 
 ## Disposition — 2026-09-21: HELD OPEN, not archived
 
