@@ -559,4 +559,113 @@ else
 fi
 chmod 644 "${_LU}" 2>/dev/null
 
+# ---------------------------------------------------------------------------
+# 15. CORRUPTED INPUT in either log must not silently shrink the measurement.
+#
+#     jq ABORTS on the first malformed line and returns what it parsed BEFORE
+#     the abort. Measured before the fix: one truncated line prepended to a
+#     sidecar holding two intact human adjudications took the readout from
+#     "k=1 of n=2, NARROWED" to "k=0 of n=0, INSUFFICIENT" with no warning.
+#     The POSITION is what makes it dangerous -- a bad line at row 29 of 35
+#     keeps rows 1-28, so a real false_block at row 34 vanishes while n>=29
+#     survives: k falls and the band CLEARS.
+# ---------------------------------------------------------------------------
+_LC="${TMP}/corrupt.jsonl"; _AC="${TMP}/corrupt-adj.jsonl"; : > "${_LC}"; : > "${_AC}"
+_rec "${_LC}" c1 "2026-09-10T10:00:00Z" /repo/x main tokc-1 absent
+_rec "${_LC}" c2 "2026-09-11T10:00:00Z" /repo/y main tokc-2 absent
+( unset CLAUDECODE CLAUDE_CODE_SESSION_ID
+  REVIEW_SHADOW_LOG="${_LC}" REVIEW_ADJUDICATION_LOG="${_AC}" /bin/bash "${SUT}" --adjudicate c1 --verdict false_block
+  REVIEW_SHADOW_LOG="${_LC}" REVIEW_ADJUDICATION_LOG="${_AC}" /bin/bash "${SUT}" --adjudicate c2 --verdict true_catch ) >/dev/null 2>&1
+_rate_before="$(_run "${_LC}" "${_AC}" --status | sed -n 's/^rate (human-confirmed only) : \(.*\)$/\1/p')"
+assert_equals "CONTROL: intact sidecar gives the expected rate" "k=1 false blocks of n=2 episode(s)" "${_rate_before}"
+
+# Prepend one truncated line to the SIDECAR -- the log whose corruption moves k.
+printf '%s\n' '{"record_id":"trunc","verdict":' > "${TMP}/bad.jsonl"
+cat "${_AC}" >> "${TMP}/bad.jsonl"; mv "${TMP}/bad.jsonl" "${_AC}"
+_rate_after="$(_run "${_LC}" "${_AC}" --status | sed -n 's/^rate (human-confirmed only) : \(.*\)$/\1/p')"
+assert_equals "a truncated SIDECAR line does not discard the adjudications after it" \
+    "${_rate_before}" "${_rate_after}"
+
+# And the corruption is ANNOUNCED, not merely survived.
+_out_corrupt="$(_run "${_LC}" "${_AC}" --status)"
+case "${_out_corrupt}" in
+    *"unparseable"*) _record_pass "sidecar corruption is announced" ;;
+    *) _record_fail "sidecar corruption is announced" "no unparseable count in: ${_out_corrupt}" ;;
+esac
+
+# Same for the CORPUS: a truncated line must not hide records after it from
+# --adjudicate, which is the exact workflow the tool prescribes.
+printf '%s\n' '{"record_id":"trunc2","ts":' > "${TMP}/bad2.jsonl"
+cat "${_LC}" >> "${TMP}/bad2.jsonl"; mv "${TMP}/bad2.jsonl" "${_LC}"
+_outadj="$( ( unset CLAUDECODE CLAUDE_CODE_SESSION_ID
+  REVIEW_SHADOW_LOG="${_LC}" REVIEW_ADJUDICATION_LOG="${_AC}" \
+    /bin/bash "${SUT}" --adjudicate c2 --verdict true_catch ) 2>&1 )"
+case "${_outadj}" in
+    *"no record 'c2'"*) _record_fail "a record after a truncated corpus line is still addressable" \
+        "adjudicate asserted the record does not exist: ${_outadj}" ;;
+    *) _record_pass "a record after a truncated corpus line is still addressable" ;;
+esac
+
+# ---------------------------------------------------------------------------
+# 16. --next must not claim the work is done when nothing is OFFERABLE.
+#     Measured before the fix: one empty-ts record plus one would_block:false
+#     record, sidecar empty, printed "all 2 adjudicable record(s) are labelled"
+#     with zero adjudications. `ts:""` is reachable from the producer, not only
+#     from fixtures -- review-shadow.sh emits it whenever `date` fails.
+# ---------------------------------------------------------------------------
+_LN="${TMP}/nooffer.jsonl"; _AN="${TMP}/nooffer-adj.jsonl"; : > "${_LN}"; : > "${_AN}"
+jq -cn --argjson pv "${PV}" '{schema_version:2,predicate_version:$pv,record_id:"n1",ts:"",
+   repo:"/repo/x",branch:"main",head_sha:"d",session_token:"t",action:"push",
+   would_block:true,reason:"absent",transcript_path:""}' >> "${_LN}"
+jq -cn --argjson pv "${PV}" '{schema_version:2,predicate_version:$pv,record_id:"n2",
+   ts:"2026-09-10T10:00:00Z",repo:"/repo/x",branch:"main",head_sha:"d",session_token:"t",
+   action:"push",would_block:false,reason:"absent",transcript_path:""}' >> "${_LN}"
+_outn2="$(_run "${_LN}" "${_AN}" --next)"
+case "${_outn2}" in
+    *"are labelled"*) _record_fail "--next does not say 'all labelled' with zero adjudications" \
+        "got: ${_outn2}" ;;
+    *) _record_pass "--next does not say 'all labelled' with zero adjudications" ;;
+esac
+case "${_outn2}" in
+    *"excluded from the"*) _record_pass "--next explains WHY nothing is offerable" ;;
+    *) _record_fail "--next explains WHY nothing is offerable" "got: ${_outn2}" ;;
+esac
+
+# ...and a would_block:false record must not form an episode or feed diversity.
+_eps_n="$(_run "${_LN}" "${_AN}" --status | sed -n 's/^episodes (adjudicable) : \([0-9]*\).*/\1/p')"
+assert_equals "a would_block:false record does NOT enter the episode population" "0" "${_eps_n}"
+
+# ---------------------------------------------------------------------------
+# 17. An AGENT-claimed verdict must not enter the human-confirmed counts.
+#     Measured before the fix: one episode with an agent false_block and a
+#     human true_catch reported "human-confirmed : false_block=1" and put the
+#     agent's verdict into k -- seconds after --adjudicate told the operator
+#     that row was excluded.
+# ---------------------------------------------------------------------------
+_LA="${TMP}/mixed.jsonl"; _AA="${TMP}/mixed-adj.jsonl"; : > "${_LA}"; : > "${_AA}"
+_rec "${_LA}" m1 "2026-09-10T10:00:00Z" /repo/x main tokm-1 absent
+_rec "${_LA}" m2 "2026-09-10T10:05:00Z" /repo/x main tokm-1 absent
+CLAUDECODE=1 REVIEW_SHADOW_LOG="${_LA}" REVIEW_ADJUDICATION_LOG="${_AA}" \
+    /bin/bash "${SUT}" --adjudicate m1 --verdict false_block >/dev/null 2>&1
+( unset CLAUDECODE CLAUDE_CODE_SESSION_ID
+  REVIEW_SHADOW_LOG="${_LA}" REVIEW_ADJUDICATION_LOG="${_AA}" \
+    /bin/bash "${SUT}" --adjudicate m2 --verdict true_catch ) >/dev/null 2>&1
+_km="$(_run "${_LA}" "${_AA}" --status | sed -n 's/^rate (human-confirmed only) : k=\([0-9]*\).*/\1/p')"
+assert_equals "an AGENT false_block does not enter k under a human-confirmed header" "0" "${_km}"
+
+# ---------------------------------------------------------------------------
+# 18. The EXCLUDED band is described, so the amendment's figures are
+#     reproducible by the instrument rather than by hand.
+# ---------------------------------------------------------------------------
+_LL="${TMP}/legacy.jsonl"; _AL="${TMP}/legacy-adj.jsonl"; : > "${_LL}"
+_rec "${_LL}" "" "2026-08-01T10:00:00Z" /repo/old main tokl-1 absent 1
+_rec "${_LL}" "" "2026-08-03T10:00:00Z" /repo/old main tokl-2 absent 1
+_outl="$(_run "${_LL}" "${_AL}" --status)"
+case "${_outl}" in
+    *"DESCRIPTIVE ONLY"*) _record_pass "the excluded band is described, not just counted" ;;
+    *) _record_fail "the excluded band is described, not just counted" "got: ${_outl}" ;;
+esac
+_legeps="$(printf '%s' "${_outl}" | sed -n 's/^    episodes \([0-9]*\),.*/\1/p')"
+assert_equals "excluded-band episodes are grouped despite having no record_id" "2" "${_legeps}"
+
 print_summary

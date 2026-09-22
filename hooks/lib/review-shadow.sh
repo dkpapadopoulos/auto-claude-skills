@@ -24,7 +24,11 @@
 #   absent       no verdict artifact covering HEAD  -> candidate TRUE CATCH
 #   not-clean    a verdict exists and is not clean  -> candidate TRUE CATCH
 #   unbound      clean, but not bound to this HEAD  -> the ancestor-policy question
-#   cannot-check the reader lib did not load        -> ALWAYS a false_block
+#   cannot-check the reader lib did not load        -> candidate FALSE BLOCK
+#                (the registration's false_block covers an infrastructure reason
+#                 "the advisory misnames"; this leg's cannot-check text makes no
+#                 claim at all, so treating it as always-false_block is an
+#                 INTERPRETATION, erring away from clearing the flip)
 #
 # That last row is why the field exists at all. Every one of these would render
 # an identical "no review" advisory to the user, but `cannot-check` means the

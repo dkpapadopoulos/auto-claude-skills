@@ -29,12 +29,20 @@
 # tail and calls 8/23 ADVISORY-ONLY where exact says NARROWED (a pinned test).
 #
 # The three probabilities are read from the CALLER's environment so each leg's
-# pre-registration stays the authority for its own numbers; the defaults match
-# both current pre-registrations and exist only so the function is usable
-# stand-alone.
+# pre-registration stays the authority for its own numbers. There are NO
+# defaults: a caller that has not set them gets an error, because a band
+# computed from probabilities nobody chose is worse than no band.
 shadow_band() {
-    awk -v k="${1:-0}" -v n="${2:-0}" -v a="${ALPHA:-0.05}" \
-        -v dp="${DENY_P:-0.10}" -v ap="${ADVISORY_P:-0.20}" '
+    # Absence is an ERROR, not a default. This file's stated principle is
+    # refusing to report a number computed by unknown means; silently
+    # substituting a probability a caller forgot to set is exactly that.
+    if [ -z "${ALPHA:-}" ] || [ -z "${DENY_P:-}" ] || [ -z "${ADVISORY_P:-}" ]; then
+        echo "error: shadow_band requires ALPHA, DENY_P and ADVISORY_P to be set by the caller" >&2
+        printf '%s\n' "INSUFFICIENT"
+        return 1
+    fi
+    awk -v k="${1:-0}" -v n="${2:-0}" -v a="${ALPHA}" \
+        -v dp="${DENY_P}" -v ap="${ADVISORY_P}" '
     function tail(kk, nn, p, mode,   i, t, s) {
         # mode "le": sum_{i<=kk}   mode "ge": sum_{i>=kk}
         # Term recurrence rather than factorials, so large n cannot overflow.
@@ -74,6 +82,11 @@ SHADOW_AWK_EPOCH='
         return days_from_civil(y, mo, d) * 86400 + hh * 3600 + mi * 60 + ss
     }'
 
+# The sort is LC_ALL=C deliberately: awk compares the key fields BYTEWISE with
+# `!=`, so any collation that orders two byte-different keys adjacently would
+# split one episode into two and inflate the denominator -- the direction that
+# makes the floor easier to reach.
+#
 # shadow_group_episodes <window_sec>
 #   stdin : TSV  <repo> <branch> <session_token> <ts-iso8601> <record_id>
 #   stdout: TSV  <episode_id> <repo> <branch> <session_token> <record_ids_csv>
@@ -104,7 +117,7 @@ shadow_group_episodes() {
           if (e < 0) next
           print $1 "\t" $2 "\t" $3 "\t" e "\t" $5
         }' \
-    | sort -t "$(printf '\t')" -k1,1 -k2,2 -k3,3 -k4,4n \
+    | LC_ALL=C sort -t "$(printf '\t')" -k1,1 -k2,2 -k3,3 -k4,4n \
     | awk -F'\t' -v w="${_w}" '
         # Compare the three key fields DIRECTLY rather than concatenating them
         # with a separator. A concatenated key collides whenever a field

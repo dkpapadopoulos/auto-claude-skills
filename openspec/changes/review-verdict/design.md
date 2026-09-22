@@ -128,9 +128,27 @@ What follows differs materially:
 - **Recorded `n` throughout.** The floor's `n=29` has been met since 2026-09-03; the conjunct that fails is *"at zero false blocks"*, not `n`. The backstop is dead.
 - **Human-confirmed `n` throughout** — what `scripts/review-shadow-adjudicate.sh` actually computes, and the conservative reading. Then **the backstop is LIVE**: `n = 0`, and `n<5 by 2026-11-24` converts continued non-adjudication into the registered permanent null result on that date.
 
-**This amendment does not choose.** Resolving an ambiguity in a pre-registration is a substantive act, and doing it in a document written after the data is visible is exactly the discretion this file exists to refuse — the more so because the two readings differ over whether a deadline binds. It is recorded here for the repository owner to settle, with the direction of each choice stated. What the amendment *can* do without choosing is stop asserting one reading while shipping the other, which is what the retracted sentence did.
+### Operative reading, and why not simply defer
 
-**Until it is settled, the honest statement is that no deadline is known to be live**, and the leg can therefore remain advisory by nobody adjudicating — the "unbounded *by construction*" hole the backstop was written to close, reopened through the one door it does not cover.
+A first draft of this section stated both readings and chose neither, leaving it "for the owner to settle". Review found that to be the backstop's own failure signature wearing a different hat, and it was right:
+
+- A state **reached by doing nothing**, in which **no clause can be shown to have fired**, is exactly what "unbounded *by construction*" describes. On 2026-11-24, with no ruling, nobody could say whether the backstop had fired.
+- It defers a binary interpretive choice **to the day its consequence lands**. Whoever settled it then would be settling it with the outcome already visible — the retrospective discretion this very amendment condemns two paragraphs above.
+- And the decisive one: **`scripts/review-shadow-adjudicate.sh` already implements human-confirmed `n`.** A document that declines to choose while the shipped instrument has chosen is the same defect as the retracted sentence — asserting one reading while shipping another — only harder to notice.
+
+So: **human-confirmed `n` is the operative reading, unless and until the repository owner rules otherwise.** Three things make that a defensible act rather than a seizure of authority:
+
+1. **The outcome is not yet realised.** n=0 adjudicated is known, but whether the backstop fires is 62 days out and still changeable by doing the adjudication work. No reading is being picked to make a result come out a particular way.
+2. **It is the against-interest choice.** Of the two, the recorded reading is the attractive one: it kills the deadline and imposes no obligation. The human-confirmed reading **re-imposes a deadline on the people choosing it**. The integrity rule exists to stop someone picking the reading that gets them what they want; this is definitionally not that.
+3. **Its error is the recoverable one.** Adopt it and be overruled: nothing is lost — the leg was advisory throughout and some adjudication happened early. Adopt the other (or adopt nothing, which behaves the same) and later be ruled the other way: the backstop may have fired unnoticed and the window closed with nobody deciding. That is unrecoverable. **Default to the reading whose error can be undone.**
+
+**Consequently the backstop is LIVE**: `n = 0`, and `n<5 by 2026-11-24` converts continued non-adjudication into the registered permanent null result on that date — the leg advisory by *decision* rather than by inertia, and the window closed.
+
+**The owner's override has its own deadline: 2026-10-27.** A ruling after that is a ruling made with the consequence in view, which is the thing being guarded against. Silence past that date is not consent to anything except the operative reading already stated here.
+
+**A cleaner route exists and is recommended over ruling between the two.** Declare *this* window closed as a null result on the honest ground that **it was never instrumented** — documented above and not in dispute — and register a NEW prospective window with an unambiguous `n`, a named adjudicator and a date. This amendment already requires any future window to be "registered as explicitly new", so that concession is spent; and it is the only route on which nobody has to adjudicate a textual ambiguity bearing on their own obligations.
+
+**The remedy this amendment owes and does not otherwise give.** It diagnoses that the real blocker is unscheduled human labelling, then registers no fix for it. With a backstop 62 days out, 99 unlabeled episodes and a `--next` that now works, naming **who adjudicates and by when** is concrete and cheap — and it is the whole difference between the null result being a decision and being another lapse.
 
 ### The reconstruction, and why it does not settle the horizon
 
@@ -162,8 +180,12 @@ All 199 live records therefore carry `predicate_version 1` while spanning two di
 Versioning is corrected as follows, keeping the three changes distinct:
 
 - `predicate_version 1` — pre-#219 fire condition (session-derived).
-- `predicate_version 2` — post-#219 fire condition (subject-derived). **This bump belongs to `78aa21e` and is recorded late**, not to the recorder fix below.
-- `schema_version 2` — the record now *describes* the subject rather than the session checkout (the recorder fix). Purely descriptive.
+- `predicate_version 2` — post-#219 fire condition (subject-derived). This bump has **two independent grounds**, and recording only the first would license treating the next recorder change to the episode key as schema-only:
+  - (a) `78aa21e` changed this leg's own fire condition on 2026-09-01 and the writer was never bumped; and
+  - (b) **the recorder fix independently qualifies**, because `repo` and `branch` are not description — they *are* the episode key `(repo, branch, session_token)`, the denominator this floor is computed over, and `head_sha` is the adjudicator's anchor. A session-derived branch can name a concurrent session's parked branch, so pooling can split one real episode into two (inflating `n` toward the floor) or send an adjudicator to the wrong branch's history.
+
+  So the rule stated in the original text — *fire condition ⇒ predicate, describes ⇒ schema* — **has a gap, and this record is the evidence.** The test is not "does this change when the leg fires" but "does this change what a pooled episode denominator, or a pooled true_catch/false_block label, MEANS". Read literally, the old rule gives the wrong answer here in good faith.
+- `schema_version 2` — the record now *describes* the subject rather than the session checkout. Descriptive, and carried alongside (b) above rather than instead of it.
 
 Records already on disk are reportable but **not poolable**, and `--status` says so in those words with the cause named. Silently counting them and silently dropping them are the same error facing opposite ways; the second is what blacked out the IMPLEMENT corpus.
 

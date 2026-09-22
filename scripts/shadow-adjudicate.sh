@@ -73,10 +73,6 @@ ADJ_LOG="${IMPLEMENT_ADJUDICATION_LOG:-$HOME/.claude/.push-implement-adjudicatio
 # tail and calls 8/23 ADVISORY-ONLY where exact says NARROWED (a pinned test).
 _band() { shadow_band "${1:-0}" "${2:-0}"; }
 
-# _AWK_EPOCH — shared awk prelude converting ISO-8601 UTC to epoch seconds,
-# returning -1 when unparseable. In awk rather than `date` because `date -d`
-# (GNU) and `date -j -f` (BSD/macOS) are mutually incompatible.
-_AWK_EPOCH="${SHADOW_AWK_EPOCH}"
 
 # _shadow_tsv <jq-array-expr> — emit TSV for v2 records, tolerating malformed
 # lines. `jq` ABORTS on the first parse error, so a single truncated line would
