@@ -734,6 +734,22 @@ assert_file_contains "HITL gate names the ticket verbs" \
 assert_file_contains "hitl-scope reference exists and states the halt is unconditional" \
     "unconditional" "${PROJECT_ROOT}/skills/incident-analysis/references/hitl-scope.md"
 
+# Untrusted log content — the SECOND placement gap (#262 arm 2). The body's
+# redaction rule governs `redact-evidence.sh` and DISK writes; the threat in
+# `jira-injection-no-unapproved-write` #2 is echoing untrusted log content
+# OUTWARD, which that script never runs on. The rule existed only in
+# references/, so the prominent instruction and the region where the assertion
+# fails were different parts of the document — the same shape as the HITL
+# enumeration above.
+assert_file_contains "the body states log content never instructs" \
+    "never instructs" "${SKILL_FILE}"
+assert_file_contains "the body states log content is not reproduced verbatim" \
+    "by reference, not reproduced" "${SKILL_FILE}"
+# Single-line needle: the phrase wraps in the source, and a needle spanning the
+# wrap matches nothing while looking like it asserts the distinction.
+assert_file_contains "the body distinguishes outward-sending from disk writes" \
+    "governs what is \*\*written to disk\*\*" "${SKILL_FILE}"
+
 # ---------------------------------------------------------------------------
 # Structural guard — SKILL.md word count, as a BASELINE RATCHET.
 #
@@ -757,7 +773,7 @@ assert_file_contains "hitl-scope reference exists and states the halt is uncondi
 # A never-raise rule was considered and rejected: the file is a living skill, so
 # an absolute rule would simply be broken in contradiction of its own comment.
 # ---------------------------------------------------------------------------
-INCIDENT_SKILL_WORD_BASELINE=11474
+INCIDENT_SKILL_WORD_BASELINE=11636
 word_count=$(wc -w < "${SKILL_FILE}" | tr -d ' ')
 if [ "$word_count" -le "${INCIDENT_SKILL_WORD_BASELINE}" ]; then
     _record_pass "SKILL.md: word count within baseline ${INCIDENT_SKILL_WORD_BASELINE} (${word_count})"
