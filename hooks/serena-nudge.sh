@@ -13,10 +13,32 @@ trap 'exit 0' ERR
 
 _INPUT="$(cat)"
 
-# Fast path: only care about Grep (matcher should handle this, but double-check)
+# Fast path: only care about Grep or Bash (the matcher should handle this, but
+# double-check). ONE jq fork for ALL THREE fields (PR review): since #124 this
+# hook fires on every Bash call, so a second parse is a fork per command for
+# every serena user. Both branches' inputs come out of this one call — the
+# first cut collapsed only the Bash pair and left the Grep branch re-parsing,
+# so the fork count was unchanged on that path.
+#
+# US (\x1f), not @tsv and not one field per line. A Bash command legitimately
+# contains newlines, so a line-per-field encoding cannot be read back at all;
+# @tsv would round-trip but ESCAPES an embedded tab or newline to a literal
+# `\t`/`\n`, which silently rewrites a pattern containing one. join() escapes
+# nothing. Measured under bash 3.2: a two-line command survives intact, and
+# ${b%%$'\x1f'*} splits it (US cannot occur in any of the three fields).
 _TOOL_NAME=""
+_CMD=""
+_RAW_PATTERN=""
 if command -v jq >/dev/null 2>&1; then
-    _TOOL_NAME="$(printf '%s' "${_INPUT}" | jq -r '.tool_name // empty' 2>/dev/null)" || true
+    _FIELDS="$(printf '%s' "${_INPUT}" \
+        | jq -r '[.tool_name // "", .tool_input.command // "", .tool_input.pattern // ""]
+                 | join("\u001f")' 2>/dev/null)" || _FIELDS=""
+    if [ -n "${_FIELDS}" ]; then
+        _TOOL_NAME="${_FIELDS%%$'\x1f'*}"
+        _REST="${_FIELDS#*$'\x1f'}"
+        _CMD="${_REST%%$'\x1f'*}"
+        _RAW_PATTERN="${_REST#*$'\x1f'}"
+    fi
 fi
 # THE POPULATION MOVED (#124). This hook required tool_name == "Grep", while
 # agents increasingly search with grep/rg through the BASH tool — sessions are
@@ -55,13 +77,19 @@ _SERENA="$(jq -r '.context_capabilities.serena // false' "${_CACHE}" 2>/dev/null
 # all yield nothing and simply do not fire.
 _PATTERN=""
 if [ "${_TOOL_NAME}" = "Grep" ]; then
-    _PATTERN="$(printf '%s' "${_INPUT}" | jq -r '.tool_input.pattern // empty' 2>/dev/null)" || true
+    _PATTERN="${_RAW_PATTERN}"
 else
-    _CMD="$(printf '%s' "${_INPUT}" | jq -r '.tool_input.command // empty' 2>/dev/null)" || true
-    # Cheap reject first: this hook now sees EVERY Bash call, so a non-search
-    # must cost almost nothing.
+    # _CMD came out of the single parse above. Cheap reject first: this hook
+    # now sees EVERY Bash call, so a non-search must cost almost nothing.
     case "${_CMD}" in
         grep\ *|rg\ *|ag\ *|env\ grep\ *|env\ rg\ *|env\ ag\ *)
+            # The class is exactly the two QUOTE characters. Inside
+            # ${var#pattern} bash processes these backslashes as escapes, so a
+            # lone backslash in the command does NOT match — measured under
+            # bash 3.2, both directions, because a review read it as a
+            # three-character class including `\`. Do not "clean up" the
+            # quoting here: dropping the backslashes changes which characters
+            # the class contains.
             _Q="${_CMD#*[\'\"]}"
             if [ "${_Q}" != "${_CMD}" ]; then
                 _PATTERN="${_Q%%[\'\"]*}"

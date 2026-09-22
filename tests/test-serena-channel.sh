@@ -84,6 +84,41 @@ test_non_search_bash_does_not_fire() {
         || _record_fail "non-search Bash commands do not fire" "fired on:${bad}"
 }
 
+test_multiline_command_survives_the_single_parse() {
+    # The single-fork extraction (PR review) joins two fields with US. A Bash
+    # command legitimately contains newlines — @tsv or a two-line jq output
+    # would mangle exactly those, and the pattern would be extracted from a
+    # corrupted string. Measured under bash 3.2 before the change; pinned here
+    # so a future "simplify the jq" cannot silently reintroduce it.
+    local c
+    # A command whose FIRST line is the search must still classify with more
+    # lines after it. This is the load-bearing direction: if the US split or the
+    # jq join mangled the text, the pattern is extracted from a corrupted string.
+    c="$(_fire "$(_bash_payload "$(printf 'grep -rn %s .\necho done\n' "'class UserService'")")")"
+    [ "${c}" = "definition_prefix" ] \
+        && _record_pass "a trailing newline in the command does not break extraction" \
+        || _record_fail "a trailing newline in the command does not break extraction" \
+           "class was '${c}', expected definition_prefix — the US split or the jq join mangled it"
+}
+
+test_one_jq_parse_per_invocation() {
+    # PR review: this hook fires on EVERY Bash call since #124, so a second
+    # parse is one fork per command for every serena user. Structural, because
+    # counting forks at run time would need a jq shim and the shim itself is
+    # the thing most likely to be wrong.
+    local n
+    # Count uses of the payload variable, minus its one assignment. The first
+    # cut of this cell counted only the Bash-branch parse and passed while the
+    # Grep branch still re-parsed — the fork it was written to eliminate.
+    n="$(grep -c '\${_INPUT}' "${NUDGE}" 2>/dev/null || echo 0)"
+    if [ "${n}" -le 1 ]; then
+        _record_pass "the payload is parsed at most once per invocation"
+    else
+        _record_fail "the payload is parsed at most once per invocation" \
+            "found ${n} jq parses of _INPUT"
+    fi
+}
+
 test_bash_matcher_is_wired() {
     # The hook can only see Bash if hooks.json routes Bash to it. Without this
     # the code above is correct and still never runs — which is the shape of
@@ -105,5 +140,7 @@ test_quoted_phrase_is_not_truncated
 test_classification_is_identical_to_grep
 test_non_search_bash_does_not_fire
 test_bash_matcher_is_wired
+test_multiline_command_survives_the_single_parse
+test_one_jq_parse_per_invocation
 
 print_summary
