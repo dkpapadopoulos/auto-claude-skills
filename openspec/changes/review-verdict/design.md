@@ -108,7 +108,29 @@ The horizon clause above says the value is `Computed ONCE at n=5, recorded in th
 
 Nothing enforced the clause because **no reader existed**. `scripts/shadow-adjudicate.sh` serves the IMPLEMENT leg only, and until this change the sole consumer of `REVIEW_SHADOW_LOG` outside the writer was a test. A pre-registration with a floor, a formula and a backstop but no instrument reaches its floor silently and stays advisory by inertia — the exact outcome the IMPLEMENT leg's history was cited here to avoid.
 
-The registered rate expectation was also wrong in the direction nobody guarded against. This file predicted accrual *slower* than the IMPLEMENT leg's measured 0.22 episodes/day. Observed: **3.68 episodes/day**, with 42 episodes in the last seven days. Only the starvation backstop could ever have fired, and it could not.
+The registered rate expectation was also wrong in the direction nobody guarded against. This file predicted accrual *slower* than the IMPLEMENT leg's measured 0.22 episodes/day. Observed: **3.68 episodes/day**, with 42 episodes in the last seven days.
+
+### `n` is used in two senses above, and they disagree about whether a deadline is live
+
+Found in review of this amendment, and it is a defect in the amendment as much as in the original text. An earlier draft of this section asserted that "only the starvation backstop could ever have fired, and it could not" — **that sentence is retracted**, because it silently adopts one reading of `n` while the instrument this change ships adopts the other.
+
+| clause | reading `n` requires | value today |
+|---|---|---|
+| Floor (L89) — "n = 29 … **at zero false blocks**" | **adjudicated**; the qualifier cannot be evaluated without labels | **0** |
+| "Agent-claimed adjudications are EXCLUDED from **the rate**" (L90) | adjudicated, human-confirmed | 0 |
+| Backstop (L93) — sized against "measured 0.22 **episodes/day**", "a corpus stalling at n=3" | **recorded**; its whole argument is accrual | 99 |
+| Horizon formula (L94) — "24 being the **episodes still needed**", `observed_episodes_per_day_at_n5` | recorded; under an adjudicated reading it has no referent, since nothing generates adjudications per day | 99 |
+
+Both readings are supportable from the registered text. That is not the defect. **The defect is choosing a different one per clause** — and an earlier draft chose, in each case, the reading that keeps the experiment open.
+
+What follows differs materially:
+
+- **Recorded `n` throughout.** The floor's `n=29` has been met since 2026-09-03; the conjunct that fails is *"at zero false blocks"*, not `n`. The backstop is dead.
+- **Human-confirmed `n` throughout** — what `scripts/review-shadow-adjudicate.sh` actually computes, and the conservative reading. Then **the backstop is LIVE**: `n = 0`, and `n<5 by 2026-11-24` converts continued non-adjudication into the registered permanent null result on that date.
+
+**This amendment does not choose.** Resolving an ambiguity in a pre-registration is a substantive act, and doing it in a document written after the data is visible is exactly the discretion this file exists to refuse — the more so because the two readings differ over whether a deadline binds. It is recorded here for the repository owner to settle, with the direction of each choice stated. What the amendment *can* do without choosing is stop asserting one reading while shipping the other, which is what the retracted sentence did.
+
+**Until it is settled, the honest statement is that no deadline is known to be live**, and the leg can therefore remain advisory by nobody adjudicating — the "unbounded *by construction*" hole the backstop was written to close, reopened through the one door it does not cover.
 
 ### The reconstruction, and why it does not settle the horizon
 
@@ -149,6 +171,10 @@ Records already on disk are reportable but **not poolable**, and `--status` says
 
 **The deny-flip criterion is NOT established and the leg stays advisory.** This does not depend on resolving the horizon ambiguity: the floor is *n=29 at zero false blocks*, there are **zero adjudications**, and zero adjudications is not zero false blocks — it is no measurement.
 
-**Unchanged and not open:** the floor, the bands, the episode definition, the `false_block` definition and the diversity requirement. They were registered before any data existed. Missing the horizon is a reason to build the instrument, never a reason to renegotiate the bar.
+**Unchanged and not open:** the floor's *value*, the bands, the episode definition, the `false_block` definition and the diversity requirement. They were registered before any data existed. Missing the horizon is a reason to build the instrument, never a reason to renegotiate the bar.
+
+One honest exception to that heading, stated rather than buried: the floor's **denominator** was ambiguous in the original text (above), and the shipped reader necessarily implements *one* reading — human-confirmed episodes. That is a **resolution, not a preservation**, and its direction is conservative: it makes the flip harder to clear, never easier, and it makes the terminating null result reachable again. The choice is still the owner's to ratify.
+
+Also worth recording, because it is what makes the version bump cheap rather than merely principled: since **zero episodes were ever adjudicated**, discarding the 199 older records destroys no measurement value at all. Only unlabeled supply is lost.
 
 At the observed rate the floor is reachable again in roughly a week and a half of ordinary work, which is why a corpus nobody can vouch for is not worth keeping.

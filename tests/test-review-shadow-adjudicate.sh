@@ -332,4 +332,231 @@ case "${_out7}" in
     *) _record_fail "40 unadjudicated episodes do NOT satisfy the n=29 floor" "got: ${_out7}" ;;
 esac
 
+# ---------------------------------------------------------------------------
+# 11. The PRE-REGISTERED CONSTANTS are pinned against design.md as a SECOND
+#     AUTHORITY, and against literals hardcoded here as a third.
+#
+#     Measured before this cell existed: `FLOOR_EPISODES 29 -> 1` plus
+#     `FLOOR_REPOS 2 -> 1` left the suite 30/30 GREEN, and so did
+#     `DENY_P 0.10 -> 0.45` plus `ADVISORY_P 0.20 -> 0.99`. For a change whose
+#     entire purpose is to make a pre-registration enforceable, its numbers
+#     were the one thing nothing pinned.
+#
+#     Cell 9 does not cover this and cannot: it sources the lib and sets
+#     ALPHA/DENY_P/ADVISORY_P *itself*, so it validates the band FUNCTION while
+#     reading none of the script's constants -- a mutation picked from the
+#     test's own needles rather than from the invariant.
+#
+#     Three authorities, because two that can drift together are one: the
+#     script, the registration prose, and literals written out here. A floor on
+#     the number of checks stops a reworded design.md from silently matching
+#     nothing and passing.
+# ---------------------------------------------------------------------------
+_DESIGN="${PROJECT_ROOT}/openspec/changes/review-verdict/design.md"
+_const() { grep -oE "^${1}=[0-9.]+" "${SUT}" 2>/dev/null | head -1 | cut -d= -f2; }
+_checked=0
+
+if [ -f "${_DESIGN}" ]; then
+    _record_pass "pre-registration design.md is present (second authority)"
+else
+    _record_fail "pre-registration design.md is present (second authority)" \
+        "missing at ${_DESIGN} -- every cell below would be vacuous"
+fi
+
+# floor: episodes. design.md says "n = 29 independent episodes"
+_d_floor="$(grep -oE 'n = ([0-9]+) independent episodes' "${_DESIGN}" 2>/dev/null | head -1 | grep -oE '[0-9]+')"
+assert_equals "design.md states the episode floor (not silently unmatched)" "29" "${_d_floor:-<no match>}"
+assert_equals "FLOOR_EPISODES == design.md == 29" "${_d_floor}" "$(_const FLOOR_EPISODES)"
+[ -n "${_d_floor}" ] && _checked=$(( _checked + 1 ))
+
+# floor: repo diversity. design.md says ">=2 distinct repos" (unicode >=)
+_d_repos="$(grep -oE '≥([0-9]+) distinct repos' "${_DESIGN}" 2>/dev/null | head -1 | grep -oE '[0-9]+')"
+assert_equals "design.md states the diversity floor" "2" "${_d_repos:-<no match>}"
+assert_equals "FLOOR_REPOS == design.md == 2" "${_d_repos}" "$(_const FLOOR_REPOS)"
+[ -n "${_d_repos}" ] && _checked=$(( _checked + 1 ))
+
+# band probabilities, from the two CDF comparisons in the bands clause.
+_d_deny="$(grep -oE 'P\(X≤k \| n, ([0-9.]+)\)' "${_DESIGN}" 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+')"
+assert_equals "design.md states the DENY probability" "0.10" "${_d_deny:-<no match>}"
+assert_equals "DENY_P == design.md == 0.10" "${_d_deny}" "$(_const DENY_P)"
+[ -n "${_d_deny}" ] && _checked=$(( _checked + 1 ))
+
+_d_adv="$(grep -oE 'P\(X≥k \| n, ([0-9.]+)\)' "${_DESIGN}" 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+')"
+assert_equals "design.md states the ADVISORY-ONLY probability" "0.20" "${_d_adv:-<no match>}"
+assert_equals "ADVISORY_P == design.md == 0.20" "${_d_adv}" "$(_const ADVISORY_P)"
+[ -n "${_d_adv}" ] && _checked=$(( _checked + 1 ))
+
+# episode window. design.md says "within 30 minutes"
+_d_win="$(grep -oE 'within ([0-9]+) minutes' "${_DESIGN}" 2>/dev/null | head -1 | grep -oE '[0-9]+')"
+assert_equals "design.md states the episode window in minutes" "30" "${_d_win:-<no match>}"
+if [ -n "${_d_win}" ]; then
+    assert_equals "EPISODE_WINDOW_SEC == design.md minutes * 60 == 1800" \
+        "$(( _d_win * 60 ))" "$(_const EPISODE_WINDOW_SEC)"
+    _checked=$(( _checked + 1 ))
+fi
+
+# ALPHA has no prose form to parse; pin it against a literal so a change to it
+# is still a red test rather than a silent relaxation.
+assert_equals "ALPHA == 0.05" "0.05" "$(_const ALPHA)"
+
+# Floor on the number of constants actually cross-checked. Without this, a
+# reworded design.md makes every grep above return empty and the cell degrades
+# to comparing "" with "" -- green, and pinning nothing.
+if [ "${_checked}" -ge 5 ]; then
+    _record_pass "cross-checked ${_checked} pre-registered constants against design.md (>=5)"
+else
+    _record_fail "cross-checked >=5 pre-registered constants against design.md" \
+        "only ${_checked} matched -- design.md wording drifted and these cells are going vacuous"
+fi
+
+# ---------------------------------------------------------------------------
+# 12. The DIVERSITY branch must be REACHED, and must be counted over the same
+#     population as the rate. Measured before the fix: 29 human-adjudicated
+#     true_catch episodes in ONE repo plus a single UNLABELED episode in a
+#     second printed "floor met on n and diversity" with band DENY -- the
+#     instrument certifying the deny-flip on single-repo evidence. No cell
+#     reached the branch at all, because none adjudicated 29 episodes.
+# ---------------------------------------------------------------------------
+_LD="${TMP}/div.jsonl"; _AD="${TMP}/div-adj.jsonl"; : > "${_LD}"; : > "${_AD}"
+_i=0
+while [ "${_i}" -lt 29 ]; do
+    _rec "${_LD}" "d${_i}" "2026-09-$(printf '%02d' $(( _i / 8 + 1 )))T$(printf '%02d' $(( _i % 8 * 3 ))):00:00Z" \
+        /repo/alpha "br${_i}" "tokd-${_i}" absent
+    _i=$(( _i + 1 ))
+done
+# One UNLABELED episode in a SECOND repo. It carries no evidence of anything.
+_rec "${_LD}" dbeta "2026-09-20T10:00:00Z" /repo/beta main tokd-beta absent
+_i=0
+while [ "${_i}" -lt 29 ]; do
+    ( unset CLAUDECODE CLAUDE_CODE_SESSION_ID
+      REVIEW_SHADOW_LOG="${_LD}" REVIEW_ADJUDICATION_LOG="${_AD}" \
+        /bin/bash "${SUT}" --adjudicate "d${_i}" --verdict true_catch ) >/dev/null 2>&1
+    _i=$(( _i + 1 ))
+done
+_outd="$(_run "${_LD}" "${_AD}" --status)"
+# The rate floor IS met (n=29, k=0) -- so the diversity branch is genuinely
+# reached rather than short-circuited by an unmet n.
+_nd="$(printf '%s' "${_outd}" | sed -n 's/^rate (human-confirmed only) : k=[0-9]* false blocks of n=\([0-9]*\).*/\1/p')"
+assert_equals "diversity branch is REACHED (n floor met at 29)" "29" "${_nd}"
+case "${_outd}" in
+    *"FLOOR NOT MET: diversity"*)
+        _record_pass "an UNLABELED episode in a second repo does NOT satisfy the diversity floor" ;;
+    *) _record_fail "an UNLABELED episode in a second repo does NOT satisfy the diversity floor" \
+           "got: ${_outd}" ;;
+esac
+# CONTROL: adjudicate the second repo's episode and the floor must now be met,
+# or the cell above would pass simply because diversity can never be satisfied.
+( unset CLAUDECODE CLAUDE_CODE_SESSION_ID
+  REVIEW_SHADOW_LOG="${_LD}" REVIEW_ADJUDICATION_LOG="${_AD}" \
+    /bin/bash "${SUT}" --adjudicate dbeta --verdict true_catch ) >/dev/null 2>&1
+_outd2="$(_run "${_LD}" "${_AD}" --status)"
+case "${_outd2}" in
+    *"floor met on n and diversity"*)
+        _record_pass "CONTROL: adjudicating the second repo DOES satisfy diversity" ;;
+    *) _record_fail "CONTROL: adjudicating the second repo DOES satisfy diversity" "got: ${_outd2}" ;;
+esac
+
+# ---------------------------------------------------------------------------
+# 13. DIVERSITY IS PER REPOSITORY, NOT PER WORKTREE PATH.
+#
+#     The writer sets `repo` from `git rev-parse --show-toplevel`, which is the
+#     WORKTREE path. On the live corpus that is 15 distinct values for 5
+#     repositories, so ">=2 distinct repos" was satisfiable by two worktrees of
+#     ONE repository -- zero cross-repository evidence, which is the entire
+#     purpose of the clause. This repo uses detached worktrees heavily, so it is
+#     not hypothetical.
+#
+#     Real git repositories, because the resolution asks git (origin URL, then
+#     --git-common-dir). A fabricated path fixture would prove nothing.
+# ---------------------------------------------------------------------------
+_WTR="${TMP}/wtrepo"; mkdir -p "${_WTR}"
+( cd "${_WTR}"; git init -q -b main; git config user.email t@t; git config user.name t
+  git remote add origin https://example.invalid/one.git
+  echo a > a; git add -A; git commit -qm a ) >/dev/null 2>&1
+_WT2="${TMP}/wtrepo-second"
+git -C "${_WTR}" worktree add -q --detach "${_WT2}" main >/dev/null 2>&1
+
+# A genuinely different repository, as the positive control.
+_OTHER="${TMP}/otherrepo"; mkdir -p "${_OTHER}"
+( cd "${_OTHER}"; git init -q -b main; git config user.email t@t; git config user.name t
+  git remote add origin https://example.invalid/two.git
+  echo b > b; git add -A; git commit -qm b ) >/dev/null 2>&1
+
+if [ -d "${_WT2}/.git" ] || [ -f "${_WT2}/.git" ]; then
+    _record_pass "two-worktree fixture built"
+else
+    _record_fail "two-worktree fixture built" "no worktree at ${_WT2} -- cells below are vacuous"
+fi
+
+_LW="${TMP}/wt.jsonl"; _AW="${TMP}/wt-adj.jsonl"; : > "${_LW}"; : > "${_AW}"
+_rec "${_LW}" w1 "2026-09-20T10:00:00Z" "${_WTR}" main tokw-1 absent
+_rec "${_LW}" w2 "2026-09-20T12:00:00Z" "${_WT2}" other tokw-2 absent
+( unset CLAUDECODE CLAUDE_CODE_SESSION_ID
+  REVIEW_SHADOW_LOG="${_LW}" REVIEW_ADJUDICATION_LOG="${_AW}" /bin/bash "${SUT}" --adjudicate w1 --verdict true_catch
+  REVIEW_SHADOW_LOG="${_LW}" REVIEW_ADJUDICATION_LOG="${_AW}" /bin/bash "${SUT}" --adjudicate w2 --verdict true_catch ) >/dev/null 2>&1
+_nw="$(_run "${_LW}" "${_AW}" --status | sed -n 's/^episodes (adjudicable) : [0-9]*   across \([0-9]*\) distinct.*/\1/p')"
+assert_equals "two WORKTREES of one repository count as ONE repository" "1" "${_nw}"
+
+# CONTROL: a genuinely different repository must still count as a second, or
+# the cell above would pass with the count hardwired to 1.
+_rec "${_LW}" w3 "2026-09-20T14:00:00Z" "${_OTHER}" main tokw-3 absent
+( unset CLAUDECODE CLAUDE_CODE_SESSION_ID
+  REVIEW_SHADOW_LOG="${_LW}" REVIEW_ADJUDICATION_LOG="${_AW}" /bin/bash "${SUT}" --adjudicate w3 --verdict true_catch ) >/dev/null 2>&1
+_nw2="$(_run "${_LW}" "${_AW}" --status | sed -n 's/^episodes (adjudicable) : [0-9]*   across \([0-9]*\) distinct.*/\1/p')"
+assert_equals "CONTROL: a DIFFERENT repository counts as a second" "2" "${_nw2}"
+
+# A repo path containing a SPACE must count as one repository, not two. The
+# first cut accumulated space-separated and counted with an unquoted `for`,
+# which read one such path as two and silently INFLATED diversity.
+_SPACE="${TMP}/My Projects/spacerepo"; mkdir -p "${_SPACE}"
+( cd "${_SPACE}"; git init -q -b main; git config user.email t@t; git config user.name t
+  echo c > c; git add -A; git commit -qm c ) >/dev/null 2>&1
+_LS="${TMP}/sp.jsonl"; _AS="${TMP}/sp-adj.jsonl"; : > "${_LS}"; : > "${_AS}"
+_rec "${_LS}" s1 "2026-09-20T10:00:00Z" "${_SPACE}" main toks-1 absent
+( unset CLAUDECODE CLAUDE_CODE_SESSION_ID
+  REVIEW_SHADOW_LOG="${_LS}" REVIEW_ADJUDICATION_LOG="${_AS}" /bin/bash "${SUT}" --adjudicate s1 --verdict true_catch ) >/dev/null 2>&1
+_ns="$(_run "${_LS}" "${_AS}" --status | sed -n 's/^episodes (adjudicable) : [0-9]*   across \([0-9]*\) distinct.*/\1/p')"
+assert_equals "a repo path containing a SPACE counts as ONE repository" "1" "${_ns}"
+
+git -C "${_WTR}" worktree remove --force "${_WT2}" >/dev/null 2>&1
+
+# ---------------------------------------------------------------------------
+# 14. "Exists but cannot be READ" must never render as "empty".
+#
+#     `-f` says nothing about readability, and the count pipelines end in `tr`,
+#     so a permission error is discarded with the pipeline's status. Measured
+#     before the fix: a chmod 000 corpus printed "0 line(s), 0 parsed" -- byte
+#     for byte what a genuinely empty corpus prints. This instrument exists
+#     precisely to stop a live corpus reading as an empty one; failing that on
+#     a different input is the same defect wearing a different hat.
+#
+#     Skipped when running as root, where chmod 000 does not deny reads.
+# ---------------------------------------------------------------------------
+_LU="${TMP}/unreadable.jsonl"; _AU="${TMP}/unreadable-adj.jsonl"; : > "${_LU}"
+_rec "${_LU}" u1 "2026-09-20T10:00:00Z" /repo/x main toku-1 absent
+_out_readable="$(_run "${_LU}" "${_AU}" --status)"
+case "${_out_readable}" in
+    *"records : 1 line(s)"*) _record_pass "CONTROL: a readable 1-record corpus reports 1 line" ;;
+    *) _record_fail "CONTROL: a readable 1-record corpus reports 1 line" "got: ${_out_readable}" ;;
+esac
+chmod 000 "${_LU}" 2>/dev/null
+if [ -r "${_LU}" ]; then
+    _record_pass "SKIPPED: chmod 000 still readable (running as root?) — unreadable cell not applicable"
+else
+    _out_unreadable="$(_run "${_LU}" "${_AU}" --status)"
+    case "${_out_unreadable}" in
+        *"NOT READABLE"*) _record_pass "an unreadable corpus is reported as unreadable, not as empty" ;;
+        *) _record_fail "an unreadable corpus is reported as unreadable, not as empty" \
+               "got: ${_out_unreadable}" ;;
+    esac
+    # And it must NOT claim a record count it could not obtain.
+    case "${_out_unreadable}" in
+        *"records : 0 line(s)"*)
+            _record_fail "an unreadable corpus does not report a zero record count" \
+                "printed '0 line(s)' — indistinguishable from an empty corpus" ;;
+        *) _record_pass "an unreadable corpus does not report a zero record count" ;;
+    esac
+fi
+chmod 644 "${_LU}" 2>/dev/null
+
 print_summary

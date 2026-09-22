@@ -109,6 +109,33 @@ _claimant() {
     echo human
 }
 
+# _repo_identity <toplevel-path> -> a REPOSITORY identity, not a worktree path.
+#
+# The writer sets `repo` from `git rev-parse --show-toplevel`, which is the
+# WORKTREE path. On the live corpus that is 15 distinct values for 5
+# repositories, so ">=2 distinct repos" was satisfiable by two worktrees of ONE
+# repository -- zero cross-repository evidence, which is the entire purpose of
+# the clause. This repo uses detached worktrees heavily (its own review
+# adjudication pattern mandates them), so it is not hypothetical.
+#
+# Resolved the way `branch_ledger_key` already resolves repo identity: the
+# origin remote URL, falling back to the common git dir, and only then to the
+# path itself. Each fallback is strictly weaker, and the last one reproduces the
+# old behaviour rather than erroring -- a repo that cannot be resolved must not
+# vanish from the diversity count.
+_repo_identity() {
+    local _p="${1:-}" _id=""
+    [ -n "${_p}" ] || { printf '%s' ""; return 0; }
+    if [ -d "${_p}" ]; then
+        _id="$(git -C "${_p}" remote get-url origin 2>/dev/null)" || _id=""
+        if [ -z "${_id}" ]; then
+            _id="$(git -C "${_p}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || _id=""
+        fi
+    fi
+    [ -n "${_id}" ] || _id="${_p}"
+    printf '%s' "${_id}"
+}
+
 _record_field() { # <record_id> <field>
     jq -r --arg id "${1:-}" --arg f "${2:-}" \
        'select(.record_id == $id) | .[$f] // empty' "${SHADOW_LOG}" 2>/dev/null | head -1
@@ -248,7 +275,7 @@ _episode_verdict() {
 cmd_status() {
     local _tot=0 _lab=0 _fb=0 _tc=0 _unk=0 _agent=0 _unlab=0
     local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
-    local _lines=0 _parsed=0 _unparsed=0 _legacy=0 _orphan=0
+    local _lines=0 _parsed=0 _unparsed=0 _legacy=0 _orphan=0 _lines_rc=0 _rkey=""
     local _band_hdl _den
 
     echo "=== REVIEW shadow corpus (leg: push/merge REVIEW verdict) ==="
@@ -257,8 +284,27 @@ cmd_status() {
     echo "adjudicable predicate_version: ${REQUIRED_PREDICATE_VERSION}"
     if [ ! -f "${SHADOW_LOG}" ]; then echo "(no corpus yet)"; return 0; fi
     if ! command -v jq >/dev/null 2>&1; then echo "(jq required)"; return 0; fi
+    # "exists but cannot be read" must never render as "empty". `-f` says
+    # nothing about readability, and the counts below pipe grep/jq into `tr`,
+    # so a permission error is discarded with the pipeline's status -- measured,
+    # a chmod 000 corpus printed "0 line(s), 0 parsed" identically to an empty
+    # one. This instrument exists to stop a live corpus reading as an empty
+    # corpus; failing that on a different input would be the same defect.
+    if [ ! -r "${SHADOW_LOG}" ]; then
+        echo "ERROR: ${SHADOW_LOG} exists but is NOT READABLE."
+        echo "  No claim is made about its contents. This is not an empty corpus."
+        return 0
+    fi
 
-    _lines="$(grep -c . "${SHADOW_LOG}" 2>/dev/null | tr -d '[:space:]')"
+    # PIPESTATUS[0], not the pipeline's status: `grep | tr` reports tr's.
+    _lines="$(grep -c . "${SHADOW_LOG}" 2>/dev/null)"; _lines_rc=$?
+    _lines="$(printf '%s' "${_lines}" | tr -d '[:space:]')"
+    # grep -c exits 1 on "no matching lines", which is a legitimate empty file;
+    # anything above 1 is a real read error and must not be reported as zero.
+    if [ "${_lines_rc}" -gt 1 ]; then
+        echo "ERROR: could not read ${SHADOW_LOG} (grep exit ${_lines_rc}). No claim is made about its contents."
+        return 0
+    fi
     _parsed="$(jq -R -r 'fromjson? // empty | .ts // ""' "${SHADOW_LOG}" 2>/dev/null | grep -c . | tr -d '[:space:]')"
     _unparsed=$(( ${_lines:-0} - ${_parsed:-0} ))
     _legacy="$(_legacy_count)"
@@ -286,31 +332,44 @@ cmd_status() {
     while IFS="$(printf '\037')" read -r _eid _repo _branch _tok _ids; do
         [ -z "${_eid}" ] && continue
         _tot=$(( _tot + 1 ))
-        case " ${_repos} " in *" ${_repo} "*) ;; *) _repos="${_repos} ${_repo}" ;; esac
         _vc="$(_episode_verdict "${_ids}")"
         _v="$(printf '%s' "${_vc}" | sed -n '1p')"
         _c="$(printf '%s' "${_vc}" | sed -n '2p')"
+        if [ "${_v}" = "unlabeled" ]; then _unlab=$(( _unlab + 1 )); continue; fi
+        if [ "${_c}" != "human" ];   then _agent=$(( _agent + 1 )); continue; fi
+        _lab=$(( _lab + 1 ))
+        # Diversity is counted over the SAME population as the rate: episodes
+        # that are human-confirmed. Counting it over every episode lets an
+        # UNLABELED record in a second repo satisfy ">=2 distinct repos" while
+        # all 29 adjudicated episodes sit in one -- measured, the instrument
+        # printed "floor met on n and diversity" and band DENY on exactly that
+        # body of evidence. The clause exists to require cross-repository
+        # EVIDENCE, and an unlabeled episode is not evidence of anything.
+        # The sibling already does this (shadow-adjudicate.sh: `continue`s past
+        # unlabeled and agent-claimed before accumulating the repo).
+        #
+        # Newline-separated with an exact whole-line match, not a space- or
+        # "|"-delimited membership test: a repo path may contain a space (or a
+        # literal "|"), which collapses two paths into one and UNDERCOUNTS
+        # diversity -- measured, one path containing a space read as two repos.
+        _rkey="$(_repo_identity "${_repo}")"
+        if [ -z "${_repos}" ] || ! printf '%s\n' "${_repos}" | grep -qxF "${_rkey}"; then
+            _repos="${_repos}${_rkey}
+"
+        fi
         case "${_v}" in
-            unlabeled) _unlab=$(( _unlab + 1 )) ;;
-            *) _lab=$(( _lab + 1 ))
-               if [ "${_c}" != "human" ]; then _agent=$(( _agent + 1 ));
-               else
-                   case "${_v}" in
-                       false_block) _fb=$(( _fb + 1 )) ;;
-                       true_catch)  _tc=$(( _tc + 1 )) ;;
-                       unknown)     _unk=$(( _unk + 1 )) ;;
-                   esac
-               fi ;;
+            false_block) _fb=$(( _fb + 1 )) ;;
+            true_catch)  _tc=$(( _tc + 1 )) ;;
+            unknown)     _unk=$(( _unk + 1 )) ;;
         esac
     done <<EOF
 $(_episodes | tr '\t' '\037')
 EOF
 
-    _nrepos=0
-    for _repo in ${_repos}; do _nrepos=$(( _nrepos + 1 )); done
+    _nrepos="$(printf '%s' "${_repos}" | grep -c . | tr -d '[:space:]')"
 
     echo
-    echo "episodes (adjudicable) : ${_tot}   across ${_nrepos} distinct repo path(s)"
+    echo "episodes (adjudicable) : ${_tot}   across ${_nrepos} distinct repositor(y|ies), counted over HUMAN-CONFIRMED episodes only"
     echo "  unlabeled            : ${_unlab}"
     echo "  labelled             : ${_lab}   (agent-claimed, excluded: ${_agent})"
     echo "  human-confirmed      : false_block=${_fb}  true_catch=${_tc}  unknown=${_unk}"
