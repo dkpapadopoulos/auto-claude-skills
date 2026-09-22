@@ -386,7 +386,17 @@ jobs:
             done
 
       - name: Post review
-        if: always() && steps.guard.outputs.abort == 'false' && steps.review.outputs.structured_output
+        # `steps.review.outcome == 'success'`, NOT `always()` (found in review).
+        # The reap step below already requires success, so under `always()` a
+        # review step that failed AFTER populating structured_output could
+        # submit a truncated body as CHANGES_REQUESTED while being unable to
+        # delete stale comments — a deletable comment before this change, an
+        # undeletable blocking review after it. Not reproduced (no way to make
+        # the action fail while still emitting the output), so this is closing
+        # a reachable state rather than a demonstrated one; the cost is that a
+        # partially-failed review is not posted at all, which is the same
+        # outcome the reap gate already chose.
+        if: steps.review.outcome == 'success' && steps.guard.outputs.abort == 'false' && steps.review.outputs.structured_output
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
