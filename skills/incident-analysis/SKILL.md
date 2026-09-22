@@ -53,7 +53,9 @@ Key re-entry paths:
 
 ### 1. HITL Gate — No Autonomous Mutations
 
-If a mutating action is identified (restart service, rollback deployment, scale pods, modify config), you MUST present the exact command you intend to run and HALT completely. Wait for explicit user confirmation before executing. Prefix any such command with a `RISK:` label (`references/command-risk.md`); read-only queries are never labeled.
+A mutating action is EITHER an infrastructure change (restart service, rollback deployment, scale pods, modify config) OR an **outbound write to an external system** — creating a ticket, posting a comment, attaching a file. Both are in scope; see `references/hitl-scope.md` for why the second is easy to miss.
+
+For any of them you MUST present the exact command or payload you intend to send and HALT completely. Wait for explicit user confirmation before executing. Prefix any such command with a `RISK:` label (`references/command-risk.md`); read-only queries are never labeled.
 
 ### 2. Scope Restriction — No Global Searches During Incidents
 
