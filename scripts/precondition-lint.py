@@ -147,11 +147,21 @@ def _fold_continuations(text):
 
 
 def _strip_comment(line):
-    """Drop a trailing `#` comment, respecting quotes."""
+    """Drop a trailing `#` comment, respecting quotes.
+
+    Index-based, because `continue` in a `for ... enumerate` loop advances to
+    the escaped character and then PROCESSES it: `PATH="a\\"b"` closed the
+    string at the escaped quote and everything after it was read as unquoted
+    (found in review). Skipping two positions is the whole fix.
+    """
     quote = None
-    for i, ch in enumerate(line):
+    i = 0
+    n = len(line)
+    while i < n:
+        ch = line[i]
         if quote:
             if ch == "\\" and quote == '"':
+                i += 2
                 continue
             if ch == quote:
                 quote = None
@@ -159,6 +169,7 @@ def _strip_comment(line):
             quote = ch
         elif ch == "#" and (i == 0 or line[i - 1].isspace()):
             return line[:i]
+        i += 1
     return line
 
 
@@ -345,18 +356,27 @@ def main(argv):
             sys.stderr.write("CANNOT-CHECK %s: %s\n" % (p, err))
             return 3
         all_hits.extend(hits)
-    # Dedupe: a function nested in a section is scanned twice by design, and
-    # the same defect must be reported once.
-    seen = set()
+    # Dedupe by CONTAINMENT. A function nested in a section is scanned twice by
+    # design and must be reported once — but the first cut suppressed a section
+    # finding whenever ANY earlier finding in the same file shared its rule, so
+    # two genuinely independent sections each arranging their own precondition
+    # reported as one (found in review). Only a section whose range CONTAINS a
+    # function that already reported the same rule is redundant.
+    funcs = [(p, st, en, r) for (p, st, en, k, _n, r, _w) in all_hits if k == "function"]
+    emitted = 0
+    shown = set()
     for path, start, end, kind, name, rule, why in all_hits:
-        key = (path, rule, name if kind == "function" else None)
-        if kind == "section" and any(k[0] == path and k[1] == rule for k in seen):
+        if kind == "section" and any(
+                fp == path and fr == rule and start <= fs and fe <= end
+                for (fp, fs, fe, fr) in funcs):
             continue
-        if key in seen:
+        key = (path, start, end, kind, name, rule)
+        if key in shown:
             continue
-        seen.add(key)
+        shown.add(key)
+        emitted += 1
         print("%s:%d-%d [%s] %s (%s) — %s" % (path, start, end, rule, kind, name, why))
-    return 1 if seen else 0
+    return 1 if emitted else 0
 
 
 if __name__ == "__main__":

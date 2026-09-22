@@ -34,52 +34,107 @@ fi
 
 _rules() { python3 "${LINT}" "$1" 2>/dev/null | sed -n 's/.*\[\([a-z-]*\)\].*/\1/p' | sort -u | paste -sd, - ; }
 
-# --- RED: each measured instance must fire, and fire its OWN rule ------------
+# _red <fixture> <expected-rule>
 # "Something fired" is not the claim. An early cut detected red-01 only through
 # the loose-json rule, so the arranged-absent-tool rule it exists for had zero
 # coverage while the fixture reported caught.
-_red() {  # _red <fixture> <expected-rule>
+_red() {
     local got; got="$(_rules "${FIX}/$1")"
     case ",${got}," in
         *",$2,"*) _record_pass "red $1 fires $2" ;;
         *) _record_fail "red $1 fires $2" "rules fired: ${got:-<none>}" ;;
     esac
 }
-_red red-01-arranged-absent-tool.sh.txt        arranged-absent-tool
-_red red-02-mutation-control-moved-roots.sh.txt mutation-control-moved-roots
-_red red-03-loose-json-oracle.sh.txt            loose-json-oracle
+
+# --- RED: each measured instance must fire, and fire its OWN rule ------------
+test_red_fixtures_fire_their_own_rule() {
+    _red red-01-arranged-absent-tool.sh.txt         arranged-absent-tool
+    _red red-02-mutation-control-moved-roots.sh.txt mutation-control-moved-roots
+    _red red-03-loose-json-oracle.sh.txt            loose-json-oracle
+}
 
 # --- GREEN: the repaired versions of the same three cells --------------------
-for _g in green-01-asserted-absent-tool green-02-mutation-control-one-file green-03-exact-object-count; do
-    if python3 "${LINT}" "${FIX}/${_g}.sh.txt" >/dev/null 2>&1; then
-        _record_pass "green ${_g} is clean"
-    else
-        _record_fail "green ${_g} is clean" "fired: $(_rules "${FIX}/${_g}.sh.txt")"
-    fi
-done
+test_green_fixtures_are_clean() {
+    local _g
+    for _g in green-01-asserted-absent-tool green-02-mutation-control-one-file green-03-exact-object-count; do
+        if python3 "${LINT}" "${FIX}/${_g}.sh.txt" >/dev/null 2>&1; then
+            _record_pass "green ${_g} is clean"
+        else
+            _record_fail "green ${_g} is clean" "fired: $(_rules "${FIX}/${_g}.sh.txt")"
+        fi
+    done
+}
 
 # --- the fixture set may not shrink -----------------------------------------
 # A gate driven by fixtures needs a floor equal to the needle count, or deleting
 # a fixture silently narrows the gate while every cell above still passes.
-_nred="$(ls -1 "${FIX}"/red-*.sh.txt 2>/dev/null | wc -l | tr -d ' ')"
-_ngreen="$(ls -1 "${FIX}"/green-*.sh.txt 2>/dev/null | wc -l | tr -d ' ')"
-assert_equals "the pinned red set still has 3 cases"   "3" "${_nred}"
-assert_equals "the pinned green set still has 3 cases" "3" "${_ngreen}"
+test_fixture_set_does_not_shrink() {
+    local _nred _ngreen
+    _nred="$(ls -1 "${FIX}"/red-*.sh.txt 2>/dev/null | wc -l | tr -d ' ')"
+    _ngreen="$(ls -1 "${FIX}"/green-*.sh.txt 2>/dev/null | wc -l | tr -d ' ')"
+    assert_equals "the pinned red set still has 3 cases"   "3" "${_nred}"
+    assert_equals "the pinned green set still has 3 cases" "3" "${_ngreen}"
+    # Named apart on purpose: the harvested claim, and the floors above that
+    # enforce it, must not be diluted by fixtures this repo authored.
+    assert_equals "the synthetic regression set still has 2 cases" "2" \
+        "$(ls -1 "${FIX}"/regress-*.sh.txt 2>/dev/null | wc -l | tr -d ' ')"
+}
+
+# --- two independent sections each report -----------------------------------
+# The dedup exists so a function nested in a section is not reported twice. The
+# first cut keyed it on (file, rule), so a SECOND independent section arranging
+# its own precondition was swallowed — the checker would under-report exactly
+# the file that needs it most (found in review).
+test_two_independent_sections_both_report() {
+    local _n
+    _n="$(python3 "${LINT}" "${FIX}/regress-two-sections.sh.txt" 2>/dev/null | grep -c 'arranged-absent-tool')"
+    assert_equals "two independent sections each report" "2" "${_n}"
+}
+
+# --- an escaped quote does not end the string -------------------------------
+# `_strip_comment` walked with `for ... enumerate` and `continue`, which
+# advances to the escaped character and then PROCESSES it — so a `\"` inside a
+# double-quoted string closed it early and everything after was read as
+# unquoted code. A `#` beyond that point would truncate the cell.
+test_escaped_quote_does_not_end_the_string() {
+    local _out
+    _out="$(python3 "${LINT}" "${FIX}/regress-escaped-quote.sh.txt" 2>/dev/null)"
+    case "${_out}" in
+        *arranged-absent-tool*) _record_pass "an escaped quote does not truncate the cell" ;;
+        *) _record_fail "an escaped quote does not truncate the cell" "got: ${_out:-<none>}" ;;
+    esac
+}
 
 # --- THE GATE: the live suite must be clean ---------------------------------
-_live="$(python3 "${LINT}" "${PROJECT_ROOT}"/tests/*.sh 2>&1)"
-if [ -z "${_live}" ]; then
-    _record_pass "no test cell in tests/*.sh arranges a precondition it claims to test"
-else
-    _record_fail "no test cell arranges a precondition it claims to test" \
-        "$(printf '%s' "${_live}" | head -20)"
-fi
+test_live_suite_is_clean() {
+    local _live
+    _live="$(python3 "${LINT}" "${PROJECT_ROOT}"/tests/*.sh 2>&1)"
+    if [ -z "${_live}" ]; then
+        _record_pass "no test cell in tests/*.sh arranges a precondition it claims to test"
+    else
+        _record_fail "no test cell arranges a precondition it claims to test" \
+            "$(printf '%s' "${_live}" | head -20)"
+    fi
+}
 
 # --- the checker reports CANNOT-CHECK rather than clean ----------------------
 # An unreadable input returning 0 would report every future file as clean.
-python3 "${LINT}" "${FIX}/definitely-not-here.sh.txt" >/dev/null 2>&1
-assert_equals "an unreadable input exits 3, never 0" "3" "$?"
-python3 "${LINT}" >/dev/null 2>&1
-assert_equals "no arguments exits 2" "2" "$?"
+test_unreadable_input_is_cannot_check() {
+    python3 "${LINT}" "${FIX}/definitely-not-here.sh.txt" >/dev/null 2>&1
+    assert_equals "an unreadable input exits 3, never 0" "3" "$?"
+    python3 "${LINT}" >/dev/null 2>&1
+    assert_equals "no arguments exits 2" "2" "$?"
+}
+
+# Every test_ function defined here must be invoked below (PR review).
+assert_test_functions_wired "$0"
+
+test_red_fixtures_fire_their_own_rule
+test_green_fixtures_are_clean
+test_fixture_set_does_not_shrink
+test_two_independent_sections_both_report
+test_escaped_quote_does_not_end_the_string
+test_live_suite_is_clean
+test_unreadable_input_is_cannot_check
 
 print_summary

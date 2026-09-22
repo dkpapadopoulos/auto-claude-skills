@@ -1,0 +1,4 @@
+echo "--- section one: the no-jq emitter ---"
+OUT1="$(PATH="${SHIM1}" /bin/bash "${GUARD}")"
+echo "--- section two: the no-gh path ---"
+OUT2="$(PATH="${SHIM2}" /bin/bash "${OTHER}")"
