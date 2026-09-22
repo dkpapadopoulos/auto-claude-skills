@@ -152,6 +152,10 @@ test_capture_is_not_source_probed() {
     fi
 }
 
+# Every test_ function defined here must be invoked below. The guard exists for
+# files that grow past the point where anyone audits the call list by eye, and
+# this one will (PR review).
+assert_test_functions_wired "$0"
 test_preconditions
 test_live_output_is_unchanged
 test_replay_flag_emits_the_sentinel

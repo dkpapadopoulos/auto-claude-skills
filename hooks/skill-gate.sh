@@ -49,11 +49,15 @@ fi
 # denominator — the same incompleteness the push-gate log documents.
 _SG_DECISION="allow"
 if [ "${SKILL_GATE_CAPTURE_DISABLE:-}" != "1" ]; then
-    _SG_CAPTURE_ACTIVE=true
+    # No "is capture still active?" flag here. The trap is installed only inside
+    # this branch, so it cannot fire with capture disabled — a guard for that
+    # state would be unreachable, and unreachable code in a gate reads as
+    # coverage it does not provide (the same reason the token/jq re-checks were
+    # removed from the implement-leg probe). If a future path needs to suppress
+    # capture after arming, `trap - EXIT` is the honest way to say so.
     _sg_capture_on_exit() {
         trap - ERR
         trap - EXIT
-        [ "${_SG_CAPTURE_ACTIVE:-false}" = "true" ] || return 0
         (
             exec </dev/null >/dev/null 2>&1
             SGC_DECISION="${_SG_DECISION:-allow}" SGC_SKILL="${_RAW_SKILL:-}" \
