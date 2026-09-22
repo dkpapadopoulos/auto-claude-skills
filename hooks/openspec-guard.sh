@@ -929,6 +929,40 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             [ -z "${_VERDICT_TOKEN}" ] && _VERDICT_TOKEN="${_SESSION_TOKEN}"
         fi
         _STALE_MSG="${_SUBJ_NOTE}"
+
+        # #274. A verdict names a COMMIT but measures the WORKING TREE. Those
+        # are the same thing only when the tree is clean, and `worktree_dirty`
+        # is deliberately advisory — verifying uncommitted work and committing
+        # afterwards is supported, so denying would break a real workflow. What
+        # was missing is the #198 half: the gate accepted such a verdict as
+        # covering HEAD and never said the measured tree differed from the named
+        # one. Two occurrences recorded 2026-09-19 while shipping.
+        #
+        # ONE writer, called from BOTH acceptance points (the chain VERIFY leg
+        # and routing-governance). Re-deriving the rule at a second call site is
+        # exactly how #161's merge-suppression rule diverged from itself (#166).
+        # Dedup flag, because both legs can accept the same verdict in one run.
+        #
+        # Degrades SILENTLY when the reader functions are absent: an older
+        # verdict.sh in the versioned plugin cache lacks them, and this leg
+        # enforces nothing, so there is no enforcement to announce the loss of.
+        _DIRTY_NOTED=false
+        _note_dirty_verdict() {
+            [ "${_DIRTY_NOTED}" = "true" ] && return 0
+            [ "${_VERDICT_OK}" = "true" ] || return 0
+            command -v verdict_measured_dirty >/dev/null 2>&1 || return 0
+            verdict_measured_dirty "${_VERDICT_TOKEN}" || return 0
+            _DIRTY_NOTED=true
+            local _where=""
+            if command -v verdict_dirty_note >/dev/null 2>&1; then
+                _where="$(verdict_dirty_note "${_VERDICT_TOKEN}" 2>/dev/null)" || _where=""
+            fi
+            if [ -n "${_where}" ]; then
+                _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }VERDICT SCOPE: the verification verdict accepted for this push was measured on a DIRTY tree, so the commit it names is not the tree that passed. Uncommitted at measurement time: ${_where}. Re-run project-verification after committing if any of those paths matter to what you are pushing."
+            else
+                _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }VERDICT SCOPE: the verification verdict accepted for this push was measured on a DIRTY tree, so the commit it names is not the tree that passed. The record does not say which paths were uncommitted (written before #274). Re-run project-verification to get a verdict that names its own scope."
+            fi
+        }
         # IMPLEMENT-only subset of _STALE_MSG (issue #161 I1). _STALE_MSG has
         # FIVE other writers (ledger staleness below, invocation-evidence /
         # bridge-acceptance notes, routing-delta, evaluator-surface) that are
@@ -1482,6 +1516,7 @@ EOF
             if [ "${_g_verify}" = "false" ] && [ "${_VERDICT_OK}" = "true" ] \
                && verdict_is_clean "${_VERDICT_TOKEN}" && verdict_covers_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
                 _g_verify=true
+                _note_dirty_verdict
             fi
             if [ "${_g_review}" = "false" ] || [ "${_g_verify}" = "false" ]; then
                 # Split the missing milestones by whether their remedy is
@@ -1595,6 +1630,7 @@ EOF
                     if ! verdict_sha_is_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
                         _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }routing change: the clean verification verdict covers an earlier commit, not HEAD (routing files unchanged since). Re-run project-verification to refresh."
                     fi
+                    _note_dirty_verdict
                     : # allow
                 else
                     # No clean covering verdict, OR the clean verdict is an ancestor and

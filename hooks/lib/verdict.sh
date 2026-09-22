@@ -151,6 +151,56 @@ verdict_test_delta() {
     jq -r '.test_delta // ""' "$f" 2>/dev/null
 }
 
+# #274. Reader for the dirty-tree measurement context. Two functions, not one:
+# `verdict_measured_dirty` answers the predicate the guard branches on, and
+# `verdict_dirty_note` renders the human half. Keeping them apart means a
+# caller that only needs to know IF cannot accidentally depend on the text.
+#
+# Both are ADVISORY inputs. Nothing here may become a deny predicate: verifying
+# uncommitted work and committing afterwards is a supported workflow, and the
+# whole point of #274 is that the gate should SAY what it accepted, not refuse
+# it.
+verdict_measured_dirty() {
+    local token="${1:-}" f
+    f="$(verdict_artifact_path "$token")" || return 1
+    [ -f "$f" ] || return 1
+    command -v jq >/dev/null 2>&1 || return 1
+    jq -e '.worktree_dirty == true' "$f" >/dev/null 2>&1
+}
+
+# Prints "<n> path(s): a, b, c[, +k more][ (only the first N were recorded)]" —
+# or an empty string when the record predates #274 and carries no path list. A
+# pre-#274 verdict is a real state: it is dirty and we cannot say where, which
+# the caller must be able to tell apart from "dirty in these two files".
+#
+# ONE remainder, counted against the TRUE total. The first cut emitted "+k more"
+# over the STORED list and "(list truncated)" over the recorded cap, so a tree
+# with 20 stored of 37 dirty paths read "37 path(s): a…e, +15 more (list
+# truncated)" — where the 15 and the truncation describe different populations
+# and neither number is the 32 the reader wants (caught in review). "+k more"
+# is now simply everything beyond the five shown, and the cap is stated
+# separately as a fact about the RECORD, not about the tree.
+verdict_dirty_note() {
+    local token="${1:-}" f
+    f="$(verdict_artifact_path "$token")" || return 1
+    [ -f "$f" ] || return 1
+    command -v jq >/dev/null 2>&1 || return 1
+    jq -r '
+        (.dirty_paths // []) as $p
+        | if ($p | length) == 0 then ""
+          else
+            ((.dirty_path_count // ($p | length)) | tostring) as $n
+            | ($n | tonumber) as $total
+            | $n + " path(s): "
+            + ($p[0:5] | join(", "))
+            + (if $total > 5 then ", +" + ($total - 5 | tostring) + " more" else "" end)
+            + (if $total > ($p | length)
+               then " (only the first " + (($p | length) | tostring) + " were recorded)"
+               else "" end)
+          end
+    ' "$f" 2>/dev/null
+}
+
 # verdict_failing_gates <token> — prints comma-joined .failed command names.
 verdict_failing_gates() {
     local token="${1:-}" f
