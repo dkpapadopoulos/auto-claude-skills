@@ -1,0 +1,13 @@
+_assert_deny_reaches_model() {  # $1=label  $2=hook stdout
+    local label="$1" out="${2:-}"
+    local dec reason sysmsg
+    if ! printf '%s' "${out}" | jq empty >/dev/null 2>&1; then
+        _record_fail "${label}: output is valid JSON" "got: ${out:-<empty>}"
+        return
+    fi
+    dec="$(printf '%s' "${out}" | jq -r '.hookSpecificOutput.permissionDecision // ""')"
+    if [ "${dec}" != "deny" ]; then
+        _record_fail "${label}: the cell actually produced a deny" \
+            "permissionDecision='${dec}' — this cell proves nothing unless it denies"
+        return
+    fi

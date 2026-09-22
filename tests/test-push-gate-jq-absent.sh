@@ -188,6 +188,21 @@ printf '%s' "${_B}" | jq -e . >/dev/null 2>&1 \
 # A quote or backslash in an interpolated path must not break the JSON. The
 # emitters interpolate ${_PLUGIN_ROOT}, so this is reachable from a plugin
 # installed under an odd path, not merely theoretical.
+# ASSERT the precondition, do not only arrange it (#275). The cells in this
+# file are paired with jq-relinked controls, which is strong — but the pairing
+# only shows a DIFFERENCE, and a shim that accidentally resolved jq would make
+# both legs agree and read as a clean pass.
+# SUBSHELL, not `PATH=X command -v` in this shell: bash HASHES command
+# locations, and `command -v` consults that hash before PATH — so the
+# in-shell form reported a tool as present purely because an earlier line
+# had run it. Measured: two of these assertions failed against shims that
+# provably lacked the tool. A fresh shell has an empty hash.
+if PATH="${_NOJQ}" /bin/bash -c 'command -v jq' >/dev/null 2>&1; then
+    _record_fail "precondition: jq is unresolvable on the shim PATH" "jq resolves"
+else
+    _record_pass "precondition: jq is unresolvable on the shim PATH"
+fi
+
 _ODD="$(mktemp -d '/tmp/pgjq-odd-XXXXXX')/we ird\\path"
 mkdir -p "${_ODD}"
 _C="$( cd "${PROJECT_ROOT}" && env -i PATH="${_NOJQ}" HOME="$HOME" \

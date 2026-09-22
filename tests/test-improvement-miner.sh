@@ -30,6 +30,19 @@ test_missing_gh_fails_loud() {
     for t in jq shasum git sed grep cut sort ls cat dirname basename mktemp printf; do
         p="$(command -v "$t" 2>/dev/null)" && ln -s "$p" "${TEST_TMPDIR}/stub/$t" 2>/dev/null
     done
+    # ASSERT the precondition, do not only arrange it (#275). If gh ever joins
+    # the loop above, or the stub dir is inherited from elsewhere, this cell
+    # would exercise the gh-present path and pass for the wrong reason.
+    # SUBSHELL, not `PATH=X command -v` in this shell: bash HASHES command
+    # locations, and `command -v` consults that hash before PATH — so the
+    # in-shell form reported a tool as present purely because an earlier line
+    # had run it. Measured: two of these assertions failed against shims that
+    # provably lacked the tool. A fresh shell has an empty hash.
+    if PATH="${TEST_TMPDIR}/stub" /bin/bash -c 'command -v gh' >/dev/null 2>&1; then
+        _record_fail "precondition: gh is unresolvable on the stub PATH" \
+            "gh resolves, so this cell would test the wrong branch"
+        teardown_test_env; return
+    fi
     out="$(cd "${TEST_TMPDIR}" && PATH="${TEST_TMPDIR}/stub" /bin/bash "${MINE}" bundle 2>&1)"; rc=$?
     [ "$rc" -ne 0 ] && _record_pass "expected non-zero exit" || _record_fail "expected non-zero exit" "rc=$rc"
     assert_contains "ERROR mentions gh" "gh" "$out"

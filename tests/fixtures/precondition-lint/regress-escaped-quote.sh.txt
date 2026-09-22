@@ -1,0 +1,2 @@
+echo "--- the no-jq emitter ---"
+MSG="x \" # y"; OUT="$(PATH="${SHIM}" /bin/bash "${GUARD}")"

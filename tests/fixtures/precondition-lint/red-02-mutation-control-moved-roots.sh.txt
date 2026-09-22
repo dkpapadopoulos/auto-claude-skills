@@ -1,0 +1,26 @@
+_sg() {  # $1 = hooks root to run from
+    printf '{"tool_name":"Skill","tool_input":{"skill":"superpowers:subagent-driven-development"},"transcript_path":""}' \
+        | CLAUDE_PLUGIN_ROOT="${1}" SKILL_PROJECT_ROOT="${1}" /bin/bash "${1}/hooks/skill-gate.sh" 2>/dev/null
+}
+SG_OUT="$(_sg "${PROJECT_ROOT}")"
+_assert_deny_reaches_model "skill-gate" "${SG_OUT}"
+assert_contains "skill-gate: the model is told which step is missing" \
+    "writing-plans" "$(printf '%s' "${SG_OUT}" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""')"
+
+# Mutation: a copy with the field stripped must stop satisfying the cell.
+SG_MUT="$(mktemp -d /tmp/drm-sgmut-XXXXXX)"
+cp -R "${PROJECT_ROOT}/hooks" "${SG_MUT}/hooks"
+cp -R "${PROJECT_ROOT}/config" "${SG_MUT}/config" 2>/dev/null || true
+sed 's/,"permissionDecisionReason":\$msg//; s/,"permissionDecisionReason":"%s"//' \
+    "${PROJECT_ROOT}/hooks/skill-gate.sh" > "${SG_MUT}/hooks/skill-gate.sh"
+if cmp -s "${PROJECT_ROOT}/hooks/skill-gate.sh" "${SG_MUT}/hooks/skill-gate.sh"; then
+    _record_fail "mutation actually changed skill-gate.sh" \
+        "the strip was a no-op — the field is absent, so the cell above is vacuous"
+else
+    _record_pass "mutation actually changed skill-gate.sh"
+    MUT_REASON="$(_sg "${SG_MUT}" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""' 2>/dev/null)"
+    assert_equals "mutation: stripping the field leaves the model with nothing" "" "${MUT_REASON}"
+fi
+rm -rf "${SG_MUT}"
+export HOME="${_OLDHOME}"
+rm -rf "${SG_HOME}"

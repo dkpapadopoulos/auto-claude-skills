@@ -244,6 +244,20 @@ for _tool in jq tr dirname env; do
     ln -s "$(command -v "${_tool}")" "${NOGIT}/${_tool}"
 done
 PY="$(command -v python3)"
+# ASSERT the precondition, do not only arrange it (#275): the loop above names
+# the tools to KEEP, so git's absence is a property of that list rather than
+# anything checked. Add git to it by accident and every cell below passes while
+# testing the git-present path.
+# SUBSHELL, not `PATH=X command -v` in this shell: bash HASHES command
+# locations, and `command -v` consults that hash before PATH — so the
+# in-shell form reported a tool as present purely because an earlier line
+# had run it. Measured: two of these assertions failed against shims that
+# provably lacked the tool. A fresh shell has an empty hash.
+if PATH="${NOGIT}" /bin/bash -c 'command -v git' >/dev/null 2>&1; then
+    _record_fail "precondition: git is unresolvable on NOGIT" "git resolves"
+else
+    _record_pass "precondition: git is unresolvable on NOGIT"
+fi
 for _script in "${EXTRACT}" "${ROUTED}"; do
     _err="$(PATH="${NOGIT}" "${PY}" "${_script}" --skill panel --projects "${PROJ}" --out "${OUT}/nogit.jsonl" 2>&1 >/dev/null)"
     [ "${_script}" = "${EXTRACT}" ] && _err="$(PATH="${NOGIT}" "${PY}" "${_script}" --projects "${PROJ}" --out "${OUT}/nogit.jsonl" 2>&1 >/dev/null)"
