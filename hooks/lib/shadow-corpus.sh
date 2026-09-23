@@ -117,15 +117,21 @@ shadow_group_episodes() {
     local _w="${1:-1800}"
     awk -F'\t' "${SHADOW_AWK_EPOCH}"'
         {
+          # No record_id, no episode: a record that cannot be addressed cannot
+          # be adjudicated, so it has no place in a denominator. (Legacy
+          # schema-1 records carry none -- which is why the REVIEW reader
+          # supplies a line-ordinal when it DESCRIBES that band.)
+          if ($5 == "") next
+
           # A malformed ts is EXCLUDED, not merged: iso_epoch returns -1 for
           # every unparseable value, so two corrupt records sharing a key would
           # satisfy (-1)-(-1)=0 <= window and collapse into one episode on a
           # time relation nothing verified. Excluding keeps corrupt data from
           # moving the denominator either way, and inflation is the dangerous
           # direction because it makes the floor easier to reach.
-          if ($5 == "") next
           e = iso_epoch($4)
           if (e < 0) next
+
           print $1 "\t" $2 "\t" $3 "\t" e "\t" $5
         }' \
     | LC_ALL=C sort -t "$(printf '\t')" -k1,1 -k2,2 -k3,3 -k4,4n \
