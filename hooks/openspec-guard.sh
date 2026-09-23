@@ -1211,7 +1211,7 @@ EOF
                     if command -v review_shadow_record >/dev/null 2>&1; then
                         review_shadow_record "${_SESSION_TOKEN}" "${_SUBJ_ROOT}" "${_rv_reason}" \
                             "$( [ "${_gc_is_ghmerge}" = "true" ] && echo merge || echo push )" \
-                            "${_SUBJ_REV}" 2>/dev/null || true
+                            "${_SUBJ_REV}" "${_TRANSCRIPT:-}" 2>/dev/null || true
                     fi
                 fi
             fi

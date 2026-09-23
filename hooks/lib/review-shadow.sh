@@ -39,6 +39,19 @@
 #
 # Raw command text is never written. transcript_path is the adjudication
 # pointer, keeping the secret posture identical to push-gate-capture.
+#
+# THAT POINTER WAS EMPTY IN EVERY RECORD UNTIL 2026-09-23. It read
+# `CLAUDE_CODE_TRANSCRIPT_PATH`, which is set NOWHERE in this repo -- measured
+# on the live corpus, 202 of 202 REVIEW records carry "", while the sibling
+# `implement-shadow.sh` takes the path as an ARGUMENT from the guard and
+# carries one in 149 of 152. Since no raw command text is written either, an
+# affected record identifies a repo, a branch and a sha and cannot be traced
+# back to the conversation that produced it -- which is the one thing the
+# pointer exists for.
+#
+# The caller now passes the payload-derived path. The env var is kept only as a
+# fallback so an older caller degrades to today's behaviour rather than losing
+# the field entirely.
 
 # Version constants are EXPORTED so the reader derives them instead of pinning
 # its own literals. The IMPLEMENT pair proved what an independent pin costs: a
@@ -94,7 +107,7 @@ REVIEW_SHADOW_PREDICATE_VERSION=2
 review_shadow_record() {
     # <session_token> <subj_root> <reason> <action:push|merge> [<subj_rev>]
     local token="${1:-}" proot="${2:-}" reason="${3:-}" action="${4:-push}"
-    local rev="${5:-HEAD}"
+    local rev="${5:-HEAD}" tp="${6:-}"
     local log branch head repo ts rec rid nonce
     command -v jq >/dev/null 2>&1 || return 0
 
@@ -163,7 +176,7 @@ review_shadow_record() {
         --arg rid "$rid" \
         --arg ts "$ts" --arg repo "$repo" --arg branch "$branch" \
         --arg head "$head" --arg token "$token" --arg reason "$reason" \
-        --arg action "$action" --arg tp "${CLAUDE_CODE_TRANSCRIPT_PATH:-}" \
+        --arg action "$action" --arg tp "${tp:-${CLAUDE_CODE_TRANSCRIPT_PATH:-}}" \
         '{schema_version:$sv, predicate_version:$pv, record_id:$rid,
           ts:$ts, repo:$repo, branch:$branch, head_sha:$head,
           session_token:$token, action:$action,
