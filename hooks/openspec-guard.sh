@@ -1209,8 +1209,9 @@ EOF
                             _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }REVIEW VERDICT: requesting-code-review was credited, but no review verdict covers this HEAD -- a Skill return is not evidence a review ran (#197). Record one with scripts/record-review-verdict.sh, or import a GitHub review with --from-github <pr>." ;;
                     esac
                     if command -v review_shadow_record >/dev/null 2>&1; then
-                        review_shadow_record "${_SESSION_TOKEN}" "${_proot}" "${_rv_reason}" \
-                            "$( [ "${_gc_is_ghmerge}" = "true" ] && echo merge || echo push )" 2>/dev/null || true
+                        review_shadow_record "${_SESSION_TOKEN}" "${_SUBJ_ROOT}" "${_rv_reason}" \
+                            "$( [ "${_gc_is_ghmerge}" = "true" ] && echo merge || echo push )" \
+                            "${_SUBJ_REV}" 2>/dev/null || true
                     fi
                 fi
             fi
