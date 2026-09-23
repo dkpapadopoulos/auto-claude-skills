@@ -537,6 +537,64 @@ _ids_uniq="$(jq -r '.record_id // empty' "${_RSLOG}" 2>/dev/null | sort -u | gre
 assert_equals "every record carries a record_id" "2" "${_ids_total:-0}"
 assert_equals "same-second records get DISTINCT record_ids" "2" "${_ids_uniq:-0}"
 
+
+# ---------------------------------------------------------------------------
+# 8d. The shadow record's ADJUDICATION POINTER must not be empty.
+#
+#     It read `CLAUDE_CODE_TRANSCRIPT_PATH`, which is set NOWHERE in this repo,
+#     so every record ever written carried "". Measured on the live corpus when
+#     found: 202 of 202 REVIEW records empty, against 149 of 152 for the sibling
+#     `implement-shadow.sh`, which takes the path as an argument from the guard.
+#     Since no raw command text is written either, such a record cannot be
+#     traced back to the conversation that produced it — the one thing the
+#     field exists for.
+#
+#     Asserted END TO END through the real guard, not by calling the lib with a
+#     path and checking it comes back: that would pass with the guard still
+#     passing nothing, which is exactly the defect.
+# ---------------------------------------------------------------------------
+_TPLOG="${TMP}/tp-shadow.jsonl"; rm -f "${_TPLOG}"
+_seed_allow 2>/dev/null || true
+( cd "${REPO}" && _mkinput "git push origin HEAD" \
+    | REVIEW_SHADOW_LOG="${_TPLOG}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+      bash "${GUARD}" >/dev/null 2>&1 )
+if [ -s "${_TPLOG}" ]; then
+    _tp_got="$(jq -r '.transcript_path // ""' "${_TPLOG}" 2>/dev/null | tail -1)"
+    assert_equals "the shadow record carries the payload's transcript path" \
+        "${_TPATH}" "${_tp_got}"
+else
+    _record_fail "a shadow record was written for the pointer check" "no file at ${_TPLOG}"
+fi
+
+# The signature comment must document every parameter. A recorder gains an
+# argument and its comment does not; the next caller then discovers the
+# interface by reading `local rev="${5:-HEAD}" tp="${6:-}"`. Cheap to assert,
+# and a stale signature is exactly the kind of doc that never gets fixed later.
+_rs_sig="$(grep -m1 '# <session_token> <subj_root>' "${PROJECT_ROOT}/hooks/lib/review-shadow.sh" 2>/dev/null)"
+case "${_rs_sig}" in
+    *transcript_path*) _record_pass "review_shadow_record's signature comment documents every parameter" ;;
+    *) _record_fail "review_shadow_record's signature comment documents every parameter" \
+           "got: ${_rs_sig:-<no signature comment found>}" ;;
+esac
+
+# The guard must PASS the path — a static companion, because the runtime cell
+# above would also pass if the lib happened to read a correct env var while the
+# guard passed nothing.
+_rs_call="$(grep -A3 'review_shadow_record "' "${GUARD}" 2>/dev/null | tr '\n' ' ')"
+case "${_rs_call}" in
+    *_TRANSCRIPT*) _record_pass "the guard passes a transcript path to review_shadow_record" ;;
+    *) _record_fail "the guard passes a transcript path to review_shadow_record" \
+           "call site does not mention _TRANSCRIPT: ${_rs_call}" ;;
+esac
+
+# And the never-set env var must not be the ONLY source any more.
+if grep -q 'tp "${CLAUDE_CODE_TRANSCRIPT_PATH:-}"' "${PROJECT_ROOT}/hooks/lib/review-shadow.sh" 2>/dev/null; then
+    _record_fail "the recorder no longer depends solely on the unset env var" \
+        "review-shadow.sh still reads CLAUDE_CODE_TRANSCRIPT_PATH as its only source"
+else
+    _record_pass "the recorder no longer depends solely on the unset env var"
+fi
+
 # --- observed dispatch telemetry (spec: observed-dispatch-telemetry) ---
 # A seeded reviewer-ran record must upgrade the telemetry to measured.
 _ODT_RAW="$(mktemp -d /tmp/odt-repo-XXXXXX)"
