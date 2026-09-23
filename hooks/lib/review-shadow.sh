@@ -50,8 +50,10 @@
 # pointer exists for.
 #
 # The caller now passes the payload-derived path. The env var is kept only as a
-# fallback so an older caller degrades to today's behaviour rather than losing
-# the field entirely.
+# fallback, so a caller that passes nothing degrades to the PRE-FIX behaviour
+# (an empty string) rather than losing the field entirely. Dated deliberately:
+# "today's behaviour" was the original wording and flips meaning the moment
+# this ships.
 
 # Version constants are EXPORTED so the reader derives them instead of pinning
 # its own literals. The IMPLEMENT pair proved what an independent pin costs: a
