@@ -346,7 +346,7 @@ the guarantee is not overstated beyond that.
 ### Frozen artifacts — digests (recorded 2026-09-23)
 
 The artifacts named above are frozen in **Dion** (private) at commit
-`01a4568d5f84919390badef3a2d78206b79b12e6`, branch `design-seed-pilot`. This
+`1feeeebd93aef39a97a20ac0603cc667dac3f1c5`, branch `design-seed-pilot`. This
 repository is public, so it records their paths and digests only — no Dion
 content is reproduced here. Each digest is re-checked on every Dion test run
 (`tests/design_seed_pilot/test_fixture_fidelity.py`), so an artifact edited
@@ -356,7 +356,7 @@ after freezing fails that suite rather than drifting quietly.
 |---|---|
 | `tests/fixtures/design_seed_pilot/review_report_envelope.json` | `c4c7dcd6c99ae3f21f0230b29c443292624e8cb96c31e83e967f6e498f35fadf` |
 | `docs/design-seed-pilot/advance-disclosures.md` | `85034ba1e11d1258fd7b113374ba303cc57066a1fcb8618e9d2d4dac7636c25e` |
-| `docs/design-seed-pilot/rubric.md` | `d75b2ec1b6779b34d6e996d8e0ba3c0a54469565aa91b100fb81ae87da955f23` |
+| `docs/design-seed-pilot/rubric.md` | `42750ab396e821491c6436f9de401422405166fa862eab61c2387e71f373a9d2` |
 | `docs/design-seed-pilot/brief.md` | `20183b4dd11bf1bc41f24b180ef3c2cb875fce86ce942a8a364a2268fceb8f82` |
 
 Two notes the sections above did not anticipate:
@@ -371,6 +371,40 @@ Two notes the sections above did not anticipate:
   directory is named after the treatment, so delivering it at that path would
   tell both arms the subject of the study from a filename. The brief names
   `input/report.json`, and the bytes are hash-checked against the digest above.
+
+### Rubric citation provenance — an open weakness, recorded not hidden
+
+A fresh reviewer checked the rubric against the citation requirement above
+("every dimension MUST cite a source that predates the seed or is independent
+of it") and found three dimensions that satisfy neither limb. R5 (visual
+hierarchy), R6 (readability of financial values) and R7 (consistency across
+repeated elements and states) rest on the presentation list stated in **this
+document**, which `git log -S` places at `14e02a5` — after the seed shipped at
+`2c038b1`, by the same author, in the same change. "Independent of it" cannot
+reasonably mean "another section of the document that defines the treatment",
+or the requirement is satisfiable by writing one more paragraph.
+
+Two things were fixed rather than argued: the rubric no longer *claims* those
+sources are independent, and R2 was re-grounded. R2 had cited Dion's Numeric
+Policy table for a display-precision rule that table does not contain — it is
+a DuckDB storage-type table that gives quantities and prices the **same**
+type — while the rule it actually stated ("decimal places fixed per column")
+is the seed styleguide's. It now cites `src/dion/cli_text.py:184-199`, the
+execution-list formatter Dion already ships, which is genuinely independent of
+the seed and is about display.
+
+**Still open, and it is a judgement for the owner, not the author:**
+
+1. R5/R6/R7 either get genuinely external sources, or the owner records a
+   ruling accepting author-stated dimensions. They are currently marked in the
+   rubric as an advance-committed list, with no claim of independence.
+2. The same reviewer observed that dimension *selection* tracks the seed
+   styleguide's section headings even where each citation is clean. No
+   rewording fixes that; it is a question of whether the instrument was
+   designed around the treatment.
+
+Recorded here, before either arm runs, because a weakness in the instrument
+that is discovered after a result is indistinguishable from an excuse.
 
 ### Judging
 
