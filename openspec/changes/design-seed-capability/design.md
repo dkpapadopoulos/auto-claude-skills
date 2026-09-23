@@ -343,6 +343,35 @@ an **audit trail, not a trusted timestamp** — local history and dates are
 rewritable — so the pre-run commit is pushed to the remote before launch, and
 the guarantee is not overstated beyond that.
 
+### Frozen artifacts — digests (recorded 2026-09-23)
+
+The artifacts named above are frozen in **Dion** (private) at commit
+`01a4568d5f84919390badef3a2d78206b79b12e6`, branch `design-seed-pilot`. This
+repository is public, so it records their paths and digests only — no Dion
+content is reproduced here. Each digest is re-checked on every Dion test run
+(`tests/design_seed_pilot/test_fixture_fidelity.py`), so an artifact edited
+after freezing fails that suite rather than drifting quietly.
+
+| Artifact | sha256 |
+|---|---|
+| `tests/fixtures/design_seed_pilot/review_report_envelope.json` | `c4c7dcd6c99ae3f21f0230b29c443292624e8cb96c31e83e967f6e498f35fadf` |
+| `docs/design-seed-pilot/advance-disclosures.md` | `85034ba1e11d1258fd7b113374ba303cc57066a1fcb8618e9d2d4dac7636c25e` |
+| `docs/design-seed-pilot/rubric.md` | `d75b2ec1b6779b34d6e996d8e0ba3c0a54469565aa91b100fb81ae87da955f23` |
+| `docs/design-seed-pilot/brief.md` | `20183b4dd11bf1bc41f24b180ef3c2cb875fce86ce942a8a364a2268fceb8f82` |
+
+Two notes the sections above did not anticipate:
+
+- **The disclosure list is derived, not inherited.** This document refers to
+  "the four known gaps" without enumerating them anywhere. Rather than guess
+  which four were meant, the frozen list was re-derived from Dion's source and
+  from the frozen envelope, and contains **five** entries, each pinned by a
+  test. An arm reporting any of them scores zero regardless of whether it was
+  among the original four.
+- **The arms receive the fixture at a neutral path.** The fixture's own
+  directory is named after the treatment, so delivering it at that path would
+  tell both arms the subject of the study from a filename. The brief names
+  `input/report.json`, and the bytes are hash-checked against the digest above.
+
 ### Judging
 
 **Two** fresh, framing-free consultations with presentation order reversed
