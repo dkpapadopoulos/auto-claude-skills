@@ -136,9 +136,21 @@ review_shadow_record() {
     # gate invocations. Any id derived from content alone is therefore not
     # injective over this leg's own history.
     #
-    # Failure is silent by design, matching every other path in this recorder:
-    # if the hash tool is unavailable _rid is empty and the event is skipped
-    # rather than written without a handle.
+    # NOT a length check, deliberately. Review suggested rejecting a short id;
+    # that would DROP a would-block event to avoid a cosmetic defect, trading
+    # real data for tidiness. The record is what matters; the handle only has to
+    # address it.
+    #
+    # The `cksum` fallback is DEGRADED but usable, and the contract below says so
+    # because the previous wording did not. Measured: `cksum` prints decimal, so
+    # `tr -dc 'a-f0-9'` keeps only digits and the id is ~9 numeric chars, not 16
+    # hex -- non-empty, so the guard passes and the record IS written. The old
+    # comment claimed the event would be "skipped", which was simply false for
+    # that path, and a future reader could have relied on it. Collision risk
+    # stays negligible (~10^9 space, a few hundred records, and the nonce is in
+    # the hash input), and it is reached only if `shasum` is absent.
+    #
+    # Genuinely empty output is still silent, matching every other path here.
     nonce="$(od -An -N4 -tx1 /dev/urandom 2>/dev/null | tr -dc 'a-f0-9')"
     [ -n "${nonce}" ] || nonce="$(date +%N 2>/dev/null | tr -dc '0-9')"
     rid="$(printf '%s|%s|%s|%s|%s' "${ts}" "$$" "${token}" "${action}" "${nonce}" \

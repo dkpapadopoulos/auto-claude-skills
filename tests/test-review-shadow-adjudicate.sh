@@ -777,4 +777,27 @@ case "${_outb}" in
     *) _record_fail "the malformed line is counted as unparseable" "got: ${_outb}" ;;
 esac
 
+# ---------------------------------------------------------------------------
+# 22. shadow_band refuses a degenerate probability rather than emitting awk's
+#     division-by-zero output. The recurrence divides by (1 - p), so p == 1 is
+#     a division by zero -- measured before the guard, awk printed "division by
+#     zero" and the caller got no usable band. Neither pre-registration can
+#     reach it, but this is shared code and a future leg's probabilities are
+#     not this file's to assume.
+# ---------------------------------------------------------------------------
+_band_err="$( ( . "${PROJECT_ROOT}/hooks/lib/shadow-corpus.sh" 2>/dev/null
+                ALPHA=0.05 DENY_P=1 ADVISORY_P=0.20 shadow_band 0 10 ) 2>&1 )"
+case "${_band_err}" in
+    *"division by zero"*)
+        _record_fail "shadow_band refuses DENY_P=1 instead of dividing by zero" \
+            "awk's division-by-zero surfaced: ${_band_err}" ;;
+    *"requires 0 <"*) _record_pass "shadow_band refuses DENY_P=1 instead of dividing by zero" ;;
+    *) _record_fail "shadow_band refuses DENY_P=1 instead of dividing by zero" "got: ${_band_err}" ;;
+esac
+# CONTROL: the pre-registered values must still compute a band, or the guard
+# would be satisfied by refusing everything.
+assert_equals "CONTROL: the pre-registered probabilities still yield a band" "DENY" \
+    "$( ( . "${PROJECT_ROOT}/hooks/lib/shadow-corpus.sh" 2>/dev/null
+          ALPHA=0.05 DENY_P=0.10 ADVISORY_P=0.20 shadow_band 0 29 ) 2>/dev/null )"
+
 print_summary

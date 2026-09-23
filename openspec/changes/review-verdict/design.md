@@ -128,7 +128,30 @@ What follows differs materially:
 - **Recorded `n` throughout.** The floor's `n=29` has been met since 2026-09-03; the conjunct that fails is *"at zero false blocks"*, not `n`. The backstop is dead.
 - **Human-confirmed `n` throughout** — what `scripts/review-shadow-adjudicate.sh` actually computes, and the conservative reading. Then **the backstop is LIVE**: `n = 0`, and `n<5 by 2026-11-24` converts continued non-adjudication into the registered permanent null result on that date.
 
-### Operative reading, and why not simply defer
+### DECIDED 2026-09-23: this window is CLOSED as a null result
+
+The repository owner has ruled, and the ruling is the one recommended below rather than a choice between the two readings of `n`: **this observation window is closed as a null result, on the ground that it was never instrumented.**
+
+That ground is documented above and is not in dispute — the corpus reached its floor on 2026-09-03 with no reader in existence, the horizon clause was never computed because nothing could compute it, and zero of 99 episodes were ever adjudicated. A window whose measurement apparatus did not exist cannot have produced a measurement, whichever reading of `n` one adopts.
+
+**Consequences, stated so none is reached by inertia:**
+
+- **The deny-flip is NOT authorised.** The leg remains advisory. This is now a decision rather than a default.
+- **The `n` ambiguity below is MOOT for this window** and is retained as the record of a defect to avoid in the next registration, not as a live question. The operative-reading argument that follows is superseded; it is kept because the reasoning is the thing worth carrying forward.
+- **The backstop and the horizon are spent.** Neither `n<5 by 2026-11-24` nor the override deadline of 2026-10-27 has any remaining effect: they belong to a window that is now closed.
+- **The 199 records and 99 episodes are retained as descriptive evidence only.** They were already non-poolable (two fire conditions under one `predicate_version`); they are now also outside any live measurement. `--status` continues to report them with their cause.
+
+**What a successor registration must fix, learned here and not before:**
+
+1. **Name `n` unambiguously** — "adjudicated episodes" or "recorded episodes", once, with no clause relying on the other sense. This document used both and they disagreed about whether a deadline bound.
+2. **Name the adjudicator and the labelling cadence.** Every safeguard here guarded against slow *accrual*; the corpus accrued 17x faster than predicted and stalled anyway, on human labelling nobody scheduled. A floor that depends on human effort with no named owner is a bar that can be reached and never cleared.
+3. **Ship the reader with the writer.** A pre-registration with a floor, a formula and a backstop but no instrument reaches its floor silently and stays advisory by inertia. That is the whole story of this window.
+
+No successor window is registered by this amendment. Registering one is a separate, deliberate act — which is the point.
+
+### Superseded: operative reading, and why not simply defer
+
+*(Retained for the reasoning. The decision above closes the window, so nothing in this section is live.)*
 
 A first draft of this section stated both readings and chose neither, leaving it "for the owner to settle". Review found that to be the backstop's own failure signature wearing a different hat, and it was right:
 

@@ -41,6 +41,17 @@ shadow_band() {
         printf '%s\n' "INSUFFICIENT"
         return 1
     fi
+    # The term recurrence divides by (1 - p), so p == 1 is a division by zero --
+    # measured, awk prints "division by zero" to stderr and the caller gets no
+    # usable band. Neither pre-registration can reach it (0.10 / 0.20), but this
+    # is shared code now and a future leg's probabilities are not this file's to
+    # assume. Refuse loudly rather than emit awk's implementation-defined output.
+    if awk -v dp="${DENY_P}" -v ap="${ADVISORY_P}" \
+        'BEGIN { exit !(dp > 0 && dp < 1 && ap > 0 && ap < 1) }'; then :; else
+        echo "error: shadow_band requires 0 < DENY_P < 1 and 0 < ADVISORY_P < 1 (got ${DENY_P} / ${ADVISORY_P})" >&2
+        printf '%s\n' "INSUFFICIENT"
+        return 1
+    fi
     awk -v k="${1:-0}" -v n="${2:-0}" -v a="${ALPHA}" \
         -v dp="${DENY_P}" -v ap="${ADVISORY_P}" '
     function tail(kk, nn, p, mode,   i, t, s) {
