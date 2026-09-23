@@ -346,7 +346,7 @@ the guarantee is not overstated beyond that.
 ### Frozen artifacts — digests (recorded 2026-09-23)
 
 The artifacts named above are frozen in **Dion** (private) at commit
-`1feeeebd93aef39a97a20ac0603cc667dac3f1c5`, branch `design-seed-pilot`. This
+`e0d7eb66b9749167c5c4d8c5647defcec6924cfb`, branch `design-seed-pilot`. This
 repository is public, so it records their paths and digests only — no Dion
 content is reproduced here. Each digest is re-checked on every Dion test run
 (`tests/design_seed_pilot/test_fixture_fidelity.py`), so an artifact edited
@@ -355,7 +355,9 @@ after freezing fails that suite rather than drifting quietly.
 | Artifact | sha256 |
 |---|---|
 | `tests/fixtures/design_seed_pilot/review_report_envelope.json` | `c4c7dcd6c99ae3f21f0230b29c443292624e8cb96c31e83e967f6e498f35fadf` |
-| `docs/design-seed-pilot/advance-disclosures.md` | `85034ba1e11d1258fd7b113374ba303cc57066a1fcb8618e9d2d4dac7636c25e` |
+| `tests/design_seed_pilot/build_fixture.py` | `b9fe6512e55a3eb86fdf8dd86bf84ae3b63c88f1921ca036884cf226a2885bdb` |
+| `docs/design-seed-pilot/advance-disclosures.md` | `d0dc7c7d0e7d565674528ebb6887535e96b2c56e512674a2b2d182ab27d01b1d` |
+| `docs/design-seed-pilot/budget.md` | `100b4a118546ec5c2554d061cd14a98d4dae107ce2210042b9a854a90f07140b` |
 | `docs/design-seed-pilot/rubric.md` | `42750ab396e821491c6436f9de401422405166fa862eab61c2387e71f373a9d2` |
 | `docs/design-seed-pilot/brief.md` | `20183b4dd11bf1bc41f24b180ef3c2cb875fce86ce942a8a364a2268fceb8f82` |
 
@@ -405,6 +407,15 @@ the seed and is about display.
 
 Recorded here, before either arm runs, because a weakness in the instrument
 that is discovered after a result is indistinguishable from an excuse.
+
+The same review closed three post-hoc escapes. The disclosure list is now
+**closed** — a gap not listed scores as `screen-discovered`, and no entry may
+be added once an arm has run, which removes the "that was known too" move. The
+**budget is a frozen artifact** rather than a phrase in the brief: outcome 4
+("exceeded the cap") was not decidable against a cap nobody had written down.
+And the generator is digested alongside the fixture, since it is what the
+regeneration test compares against — editing both would have left every check
+green.
 
 ### Judging
 
