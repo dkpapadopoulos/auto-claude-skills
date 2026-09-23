@@ -105,7 +105,7 @@ REVIEW_SHADOW_SCHEMA_VERSION=2
 REVIEW_SHADOW_PREDICATE_VERSION=2
 
 review_shadow_record() {
-    # <session_token> <subj_root> <reason> <action:push|merge> [<subj_rev>]
+    # <session_token> <subj_root> <reason> <action:push|merge> [<subj_rev>] [<transcript_path>]
     local token="${1:-}" proot="${2:-}" reason="${3:-}" action="${4:-push}"
     local rev="${5:-HEAD}" tp="${6:-}"
     local log branch head repo ts rec rid nonce

@@ -566,6 +566,17 @@ else
     _record_fail "a shadow record was written for the pointer check" "no file at ${_TPLOG}"
 fi
 
+# The signature comment must document every parameter. A recorder gains an
+# argument and its comment does not; the next caller then discovers the
+# interface by reading `local rev="${5:-HEAD}" tp="${6:-}"`. Cheap to assert,
+# and a stale signature is exactly the kind of doc that never gets fixed later.
+_rs_sig="$(grep -m1 '# <session_token> <subj_root>' "${PROJECT_ROOT}/hooks/lib/review-shadow.sh" 2>/dev/null)"
+case "${_rs_sig}" in
+    *transcript_path*) _record_pass "review_shadow_record's signature comment documents every parameter" ;;
+    *) _record_fail "review_shadow_record's signature comment documents every parameter" \
+           "got: ${_rs_sig:-<no signature comment found>}" ;;
+esac
+
 # The guard must PASS the path — a static companion, because the runtime cell
 # above would also pass if the lib happened to read a correct env var while the
 # guard passed nothing.
