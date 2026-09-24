@@ -355,9 +355,10 @@ be credited with evidence it did not collect.
 
 ### Probe faults hit on the way, recorded so the cells are auditable
 
-Five, each of which produced a plausible wrong reading before it was caught. The
+Six, each of which produced a plausible wrong reading before it was caught. The
 fourth was mine while trying to REFUTE a review finding, which is the one worth
-remembering:
+remembering. Four of the six would have ENDED an investigation with the wrong
+answer, which is the reason they are all listed rather than summarised:
 
 - **The first matrix measured the unpatched guard.** With capture enabled, a
   deny appeared on stdout carrying none of the patched copy's text. Caught by
@@ -381,6 +382,13 @@ remembering:
   emits `additionalContext` when it has an advisory to deliver, so the one
   source that ANNOUNCES itself was the one misread. Classify on
   `permissionDecision`, never on output presence.
+- **A candidate test was run from `/tmp` and produced pure noise.** Verifying a
+  proposed fix, the test file was copied to `/tmp` and executed there; it
+  resolves its project root from its own location, so every path collapsed to
+  `/` and the run emitted `cat`/`awk` errors and `command not found`. The
+  danger was not the error output — it was that the cell it should have printed
+  simply did not appear, which reads as "nothing to report". It was not
+  evidence in either direction. Test a fix where the fixture lives.
 - **The global-leg cells first denied uniformly, control included.** The guard
   reads the branch ledger from the *process-derived* root (#219, deliberately),
   so running it from the session cwd keyed the ledger to a different branch than
