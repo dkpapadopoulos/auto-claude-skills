@@ -750,6 +750,39 @@ registered outcome rather than a failure.
 Full outcome, both reads and all four scorecards:
 `docs/design-seed-pilot/calibration-outcome.md`.
 
+### v3-freeze — Instrument frozen for the runs, 2026-09-24
+
+Decision after two calibration reads: **freeze and run**, rather than write
+per-integer anchors for R3-R7 and read a third time. Two rounds of prose repair
+produced no alignment gain; a third round would likely surface a fourth
+boundary, and the claim this pilot may license is already capped at a single
+observed comparison. The risk that now dominates is the one the instrument
+cannot reduce: the pilot not running.
+
+Frozen at Dion `8787e68`. The instrument's properties are **measured, not
+assumed**, and travel with any result:
+
+- **Fidelity tier (R1, R2, R3, R4): unanimous across four judges and both
+  reads.** The dimensions carrying disqualifying force are the stable ones.
+- **Presentation dimensions (R5, R6): spread of up to one point.** This can
+  flip the decision rule's second step in a close pair, resolving it to "no
+  direction" — a registered outcome, not a failure.
+- **R6's low end is unanchored.** Two judges independently reported 0-vs-1 is
+  not decidable from the anchors.
+
+Known and accepted, rather than fixed: R3-R7 have no per-integer anchors, and
+every divergence observed fell on a dimension that is both unanchored and
+graded. A future replication should anchor them before spending more runs.
+
+**Isolation is partly instruction, not construction, and that is recorded
+rather than claimed away.** `setup_arm.sh` mechanically guarantees the base
+carries none of the pilot's documents, so an arm cannot read the instrument
+from its own worktree. It cannot prevent an arm from reading a sibling
+directory: a worktree `PreToolUse` hook is inert for a dispatched subagent —
+only a session rooted in that worktree loads it. The controls that are
+mechanical are the base check and the pre-egress contamination check; the rest
+is instruction, and a violation would be visible only in the preserved prompts.
+
 ### v2-9 — What v2 can no longer claim
 
 - **Requirement discovery is out of scope.** Whether the seed surfaces
