@@ -168,11 +168,31 @@ _json_escape() {
 _emit_deny() {
     local _dm="${1:-}"
     [ -n "${_SUBJ_NOTE:-}" ] && _dm="${_dm} ${_SUBJ_NOTE}"
+    # Rides the deny like _SUBJ_NOTE, and for the same reason (#219): when the
+    # deny's remedy would otherwise send the user somewhere unrelated, which
+    # part of the command provoked it IS part of the decision. Kept separate
+    # from _SUBJ_NOTE because it is computed BEFORE the subject block — the
+    # mutate-then-push leg denies earlier than that, and it is the leg this
+    # shape actually hits.
+    [ -n "${_SCRATCH_NOTE:-}" ] && _dm="${_dm} ${_SCRATCH_NOTE}"
+    [ -n "${_HEREDOC_NOTE:-}" ] && _dm="${_dm} ${_HEREDOC_NOTE}"
+    # TWO AUDIENCES, ONE TEXT (#254). Claude Code shows the MODEL
+    # `permissionDecisionReason` on a deny and shows the USER `systemMessage`;
+    # the model never sees systemMessage. Writing the remediation only there
+    # meant every push-gate deny reached the agent as a bare "denied", so it
+    # could not act on guidance this gate had already written — measured, an
+    # agent concluded pushes were simply disallowed and handed the work to a
+    # human three times. Both fields carry the same string; a future change
+    # that populates only one re-creates the defect.
+    # The fallback branch escapes ONCE and reuses it: escaping twice is a fork
+    # per field and an invitation to let the two copies drift.
     if command -v jq >/dev/null 2>&1; then
-        jq -n --arg msg "${_dm}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+        jq -n --arg msg "${_dm}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$msg},"systemMessage":$msg}'
     else
-        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"%s"}\n' \
-            "$(_json_escape "${_dm}")"
+        local _de
+        _de="$(_json_escape "${_dm}")"
+        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"},"systemMessage":"%s"}\n' \
+            "${_de}" "${_de}"
     fi
     return 0
 }
@@ -395,6 +415,45 @@ fi
 # Resolve session token payload-first (issue #51): the singleton is shared
 # across concurrent sessions (last-writer-wins) and may name ANOTHER session.
 _PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+
+# _attest_remedy <step> — a COPY-PASTEABLE attestation command (#248).
+#
+# Messages used to name `phase_attest` either with no source line at all, or
+# with the pair `$(git rev-parse --show-toplevel)/hooks/lib/...` ||
+# `$CLAUDE_PLUGIN_ROOT/hooks/lib/...`. BOTH halves fail outside this repo: the
+# first resolves to the USER's repo root, which has no hooks/lib, and
+# CLAUDE_PLUGIN_ROOT is UNSET in the model's Bash turn (the hook process has it,
+# the model's shell does not). Measured in an external repo: `phase_attest` is
+# `not found`, so the escape hatch the IMPLEMENT deny-flip pre-registration
+# leans on was unreachable exactly where the leg fires.
+#
+# We are holding the answer — _PLUGIN_ROOT is already an absolute path to the
+# running plugin — so emit it instead of a recipe the reader has to re-derive in
+# a shell where the inputs are missing.
+# Regression: tests/test-attest-remedy-reachable.sh (executes the remedy in an
+# external repo under BOTH bash and zsh, rather than matching its text).
+# PAIRED: hooks/skill-gate.sh renders the same remedy inline by hand, and
+# hooks/skill-activation-hook.sh substitutes {{PLUGIN_ROOT}} into the config
+# preconditions. A format change here must reach all three; the lint in
+# tests/test-attest-remedy-reachable.sh covers the shape, not the content.
+# _shq <string> — POSIX single-quote for safe paste into a shell.
+# The remedy below is TEXT A HUMAN OR AGENT IS TOLD TO PASTE AND RUN, so the
+# path must be inert. Double quoting was not: measured, a plugin path of
+# `/a$(touch /tmp/PWN)b` created the file in both bash and zsh when the emitted
+# line was pasted, and a path containing `"` produced a syntax error. Single
+# quotes make every character literal; an embedded `'` is closed, escaped and
+# reopened, which is the only sequence single quotes cannot contain.
+# NOTE this property is NEW with #248: the text this replaced named
+# `$CLAUDE_PLUGIN_ROOT` as a variable, which was merely unset — broken, but
+# inert. Making the path literal is what created the surface.
+_shq() {
+    printf "'%s'" "$(printf '%s' "${1:-}" | sed "s/'/'\\\\''/g")"
+}
+
+_attest_remedy() {
+    printf 'source %s; phase_attest %s "<reason>"' \
+        "$(_shq "${_PLUGIN_ROOT}/hooks/lib/phase-attest.sh")" "${1:-<step>}"
+}
 _SESSION_TOKEN=""
 # The source is guarded (`&& … || true`) because an UNguarded `. lib` here trips
 # `trap 'exit 0' ERR` ABOVE the deny checks below — the hook exits 0 and the push
@@ -510,6 +569,83 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # SHIP-phase advisories below still emit.
         _PUSHGATE_SKIP=false
         [ "${ACSM_SKIP_PUSH_GATE:-}" = "1" ] && _PUSHGATE_SKIP=true
+
+        # --- LOCAL SCRATCH REPO (issue #231) -------------------------------
+        # A command that creates a repository from nothing and pushes inside it
+        # — `mkdir /tmp/x && cd /tmp/x && git init && git commit && git push
+        # origin main` — reaches no network: `origin` does not exist in a repo
+        # initialised moments earlier, so git itself refuses. This gate has no
+        # jurisdiction over it, and denying it measured the wrong repository,
+        # which is the same defect #219 fixed for the subject pair.
+        #
+        # Measured before writing this: narrowing ONLY `mutate-then-push` (the
+        # leg that actually fired) changes nothing a contributor would notice —
+        # the push falls straight through to the chain REVIEW gate and denies
+        # there instead, with or without a composition chain. So the skip has to
+        # cover the whole gate or it is not a fix. That is a real widening, and
+        # `command_push_is_local_scratch` is shaped to earn it: the subject
+        # directory must not EXIST when this runs, which is what stops the
+        # reinit bypass (`git init` in an existing repo is a successful no-op),
+        # and every segment must be a known-local operation, so `git remote`,
+        # `git clone`, `git config`, a URL-shaped remote, a command
+        # substitution, an unparseable command or anything unrecognised all
+        # refuse and leave today's deny exactly where it is.
+        #
+        # Set here rather than at the five deny sites deliberately: those are
+        # already gated on `_PUSHGATE_SKIP`, and five parallel conditions is the
+        # shape that drifts when one of them is edited alone.
+        # DETECTION ONLY. This never sets _PUSHGATE_SKIP and never changes a
+        # decision; every deny below fires exactly as it did before. It exists
+        # to make the REMEDY accurate, which was the reported harm: a developer
+        # building a throwaway fixture repo was told to run a code-review skill
+        # that had nothing to do with what they were doing.
+        #
+        # An earlier revision of this change DID skip the gate for such
+        # commands. That was withdrawn after review, and the reason is worth
+        # keeping because it is not "we found bugs" — it is that the safety
+        # ARGUMENT was false. The skip was justified by reasoning that a
+        # repository created moments ago has no content to ship. Deletion and
+        # force-update need no content: `git push --mirror <path>` from an
+        # EMPTY repo deleted refs on a real target, and certification skipped
+        # the whole gate rather than only the content legs.
+        #
+        # Worse, `url.<base>.insteadOf` in the user's gitconfig rewrites a bare
+        # remote name to any URL, so the destination of a push need not appear
+        # in the command text at all. No predicate over command text can
+        # establish "this cannot reach a network"; five reviewer-found criticals
+        # across two independent reviews said so in five different ways.
+        #
+        # As DETECTION the stakes invert. A false positive costs one slightly
+        # wrong sentence in a message the user is already reading, not a skipped
+        # gate — so the predicate's remaining imprecision is affordable here in
+        # a way it was never affordable as authorisation.
+        _SUBJ_LOCAL_SCRATCH=false
+        if [ "${_gc_is_push}" = "true" ] \
+           && command -v command_push_is_local_scratch >/dev/null 2>&1 \
+           && [ "${#_COMMAND}" -le "${_GC_MAX_TOTAL}" ] \
+           && command_push_is_local_scratch "${_COMMAND}"; then
+            _SUBJ_LOCAL_SCRATCH=true
+            _SCRATCH_NOTE="NOTE: this command looks like it builds a throwaway repository and pushes inside it. The gate still applies — it governs this session regardless of which repository a command names, and a push cannot be shown from its text alone to stay local, because the destination can come from git configuration the command never mentions. If you are building a local fixture, run it from your own terminal, or start the session with ACSM_SKIP_PUSH_GATE=1."
+        fi
+        # #231: say WHY a command whose heredoc body only MENTIONS a push is read
+        # as one. The remedy is otherwise actively misleading — the measured case
+        # is a developer writing `python3 - <<PY` and being told to run
+        # requesting-code-review for a command that pushes nothing.
+        #
+        # The DECISION is deliberately unchanged. An interpreter heredoc's body
+        # is a PROGRAM, and `os.system("git push")` inside it really pushes, so
+        # narrowing detection here would trade a security property for
+        # ergonomics — the option this issue records as needing an explicit
+        # decision, not a quiet fix.
+        _HEREDOC_NOTE=""
+        if [ "${_gc_is_push}" = "true" ] \
+           && command -v command_untrusted_heredoc_owner >/dev/null 2>&1 \
+           && [ "${#_COMMAND}" -le "${_GC_MAX_TOTAL}" ]; then
+            _HD_OWNER="$(command_untrusted_heredoc_owner "${_COMMAND}" 2>/dev/null)" || _HD_OWNER=""
+            if [ -n "${_HD_OWNER}" ]; then
+                _HEREDOC_NOTE="NOTE: this command contains a heredoc owned by \`${_HD_OWNER}\`, whose body this gate cannot model — so the text \`git push\` inside it is read as a push even if nothing would run. That is deliberate rather than a parser bug: the body is a program, and a push issued from inside it (for example through a language's system-call API) is a real push the gate would otherwise miss. If the body genuinely pushes nothing, run the command from your own terminal, or start the session with ACSM_SKIP_PUSH_GATE=1."
+            fi
+        fi
         _GATE_ACTION="pushing this branch"
         [ "${_gc_is_push}" != "true" ] && [ "${_gc_is_ghmerge}" = "true" ] && _GATE_ACTION="merging this PR"
         # Space-free action token for telemetry (F7): _GATE_ACTION is a
@@ -532,6 +668,12 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # hook and writes no record at all, so the log's denominator stays
         # incomplete and this alone does not make conversion rates complete.
         [ "${_PUSHGATE_SKIP}" = "true" ] && _DECISION="bypass:env"
+        # Distinct from the human bypass in telemetry: one is a person opting
+        # out, the other is the gate declining jurisdiction. Reading them as one
+        # decision would make a predicate defect look like human traffic.
+        # Telemetry records that the shape was RECOGNISED, not that anything
+        # was skipped — the decision itself is unchanged by this detection.
+        [ "${_SUBJ_LOCAL_SCRATCH:-false}" = "true" ] && _DECISION="${_DECISION}+local-scratch-shape"
         # Positive "reached the decision point" sentinel for the capture replay
         # (issue #127). The on-disk replay re-runs this guard, which is itself
         # fail-open (`trap 'exit 0' ERR`) — so an empty replay stdout cannot tell
@@ -807,6 +949,40 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             [ -z "${_VERDICT_TOKEN}" ] && _VERDICT_TOKEN="${_SESSION_TOKEN}"
         fi
         _STALE_MSG="${_SUBJ_NOTE}"
+
+        # #274. A verdict names a COMMIT but measures the WORKING TREE. Those
+        # are the same thing only when the tree is clean, and `worktree_dirty`
+        # is deliberately advisory — verifying uncommitted work and committing
+        # afterwards is supported, so denying would break a real workflow. What
+        # was missing is the #198 half: the gate accepted such a verdict as
+        # covering HEAD and never said the measured tree differed from the named
+        # one. Two occurrences recorded 2026-09-19 while shipping.
+        #
+        # ONE writer, called from BOTH acceptance points (the chain VERIFY leg
+        # and routing-governance). Re-deriving the rule at a second call site is
+        # exactly how #161's merge-suppression rule diverged from itself (#166).
+        # Dedup flag, because both legs can accept the same verdict in one run.
+        #
+        # Degrades SILENTLY when the reader functions are absent: an older
+        # verdict.sh in the versioned plugin cache lacks them, and this leg
+        # enforces nothing, so there is no enforcement to announce the loss of.
+        _DIRTY_NOTED=false
+        _note_dirty_verdict() {
+            [ "${_DIRTY_NOTED}" = "true" ] && return 0
+            [ "${_VERDICT_OK}" = "true" ] || return 0
+            command -v verdict_measured_dirty >/dev/null 2>&1 || return 0
+            verdict_measured_dirty "${_VERDICT_TOKEN}" || return 0
+            _DIRTY_NOTED=true
+            local _where=""
+            if command -v verdict_dirty_note >/dev/null 2>&1; then
+                _where="$(verdict_dirty_note "${_VERDICT_TOKEN}" 2>/dev/null)" || _where=""
+            fi
+            if [ -n "${_where}" ]; then
+                _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }VERDICT SCOPE: the verification verdict accepted for this push was measured on a DIRTY tree, so the commit it names is not the tree that passed. Uncommitted at measurement time: ${_where}. Re-run project-verification after committing if any of those paths matter to what you are pushing."
+            else
+                _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }VERDICT SCOPE: the verification verdict accepted for this push was measured on a DIRTY tree, so the commit it names is not the tree that passed. The record does not say which paths were uncommitted (written before #274). Re-run project-verification to get a verdict that names its own scope."
+            fi
+        }
         # IMPLEMENT-only subset of _STALE_MSG (issue #161 I1). _STALE_MSG has
         # FIVE other writers (ledger staleness below, invocation-evidence /
         # bridge-acceptance notes, routing-delta, evaluator-surface) that are
@@ -1033,8 +1209,9 @@ EOF
                             _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }REVIEW VERDICT: requesting-code-review was credited, but no review verdict covers this HEAD -- a Skill return is not evidence a review ran (#197). Record one with scripts/record-review-verdict.sh, or import a GitHub review with --from-github <pr>." ;;
                     esac
                     if command -v review_shadow_record >/dev/null 2>&1; then
-                        review_shadow_record "${_SESSION_TOKEN}" "${_proot}" "${_rv_reason}" \
-                            "$( [ "${_gc_is_ghmerge}" = "true" ] && echo merge || echo push )" 2>/dev/null || true
+                        review_shadow_record "${_SESSION_TOKEN}" "${_SUBJ_ROOT}" "${_rv_reason}" \
+                            "$( [ "${_gc_is_ghmerge}" = "true" ] && echo merge || echo push )" \
+                            "${_SUBJ_REV}" "${_TRANSCRIPT:-}" 2>/dev/null || true
                     fi
                 fi
             fi
@@ -1049,6 +1226,40 @@ EOF
             [ "${_verif_completed}" = "false" ] && _bridge_has "verification-before-completion" && _verif_completed=true
             if [ "${_verif_in_chain}" = "true" ] && [ "${_verif_completed}" = "false" ]; then
                 _MSG="PUSH GATE — Expected: verification-before-completion completed before push. Actual: it has not run on this active chain. Do now: invoke Skill(superpowers:verification-before-completion), then retry the denied command."
+                # #254 d2: SAY when a clean covering verdict exists and was not
+                # honoured here. The global fail-closed leg below DOES accept
+                # one; this leg runs FIRST and tests four sources, none of them
+                # the verdict.
+                #
+                # THE DECISION IS SETTLED, AND NOT THE WAY #254 PROPOSED.
+                # The widening was pre-registered and REFUSED on measurement
+                # (openspec/changes/chain-verify-verdict-acceptance). A clean
+                # covering verdict is NOT stronger evidence in the sense that
+                # matters here: the artifact is model-authored by design, and
+                # `{"sha":"<HEAD>","gate_gaming_status":"clean"}` — two fields,
+                # no run — satisfies verdict_is_clean + verdict_covers_head and
+                # turns this deny into a guard-level allow. Adding an explicit
+                # worktree_dirty:false defeats the sha-exact tightening too.
+                # What is different about the verdict is NOT that this leg's
+                # evidence is unforgeable. Measured 2026-09-24: all four of this
+                # leg's sources are plain files under ~/.claude/ and each one,
+                # hand-written, flips this deny to an allow. The difference is
+                # that the verdict arrives WITHOUT any deliberate act — the
+                # project-verification skill instructs the model to author it —
+                # whereas the other four are normally written only by hooks, so
+                # supplying them takes a decision to fake evidence. That is a
+                # difference in how evidence arrives by default, not a security
+                # boundary, and the message must not claim otherwise. Do not
+                # "fix the inconsistency" by widening this leg; the open defect
+                # is artifact provenance across all of them (issue #295).
+                #
+                # The message must therefore not imply this leg is mistaken.
+                if [ "${_JQ_OK}" = "true" ] && [ "${_VERDICT_OK}" = "true" ] \
+                   && command -v verdict_is_clean >/dev/null 2>&1 \
+                   && verdict_is_clean "${_VERDICT_TOKEN}" \
+                   && verdict_covers_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
+                    _MSG="${_MSG} NOTE: a CLEAN verification verdict covering this commit does exist, and this leg deliberately does not accept it (issue #254, measured 2026-09-24). That artifact is authored by the model itself — project-verification Step 3 instructs it — so it arrives without any deliberate act, and a two-field file satisfies the predicate. This leg's sources are normally written only by hooks. None of them is forgery-proof either (issue #295); the difference is that the verdict is supplied by default. Invoke the Skill and let it complete."
+                fi
                 _skill_available "verification-before-completion" || _MSG="${_MSG} ${_SETUP_HINT}"
                 _emit_deny "${_MSG}"
                 _DECISION="deny:chain-verify"
@@ -1252,7 +1463,7 @@ EOF
                 if [ "${_impl_ok}" = "false" ] && \
                    { [ "${_impl_material}" = "true" ] || [ "${_pe_action}" = "gh-merge" ]; }; then
                     if [ "${_impl_material}" = "true" ] && [ "${_impl_recog_del}" != "true" ]; then
-                        _IMPL_TEXT="IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: phase_attest executing-plans \"<reason>\". (advisory; will become a deny after backtest)"
+                        _IMPL_TEXT="IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: $(_attest_remedy executing-plans) (advisory; will become a deny after backtest)"
                         _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }${_IMPL_TEXT}"
                         _IMPL_MSG="${_IMPL_MSG}${_IMPL_MSG:+; }${_IMPL_TEXT}"
                         command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "${_pe_action}" "executing-plans"
@@ -1355,11 +1566,16 @@ EOF
             [ "${_g_verify}" = "false" ] && _invoc_ok "verification-before-completion" && _g_verify=true
             [ "${_g_review}" = "false" ] && _bridge_has "requesting-code-review"         && _g_review=true
             [ "${_g_verify}" = "false" ] && _bridge_has "verification-before-completion" && _g_verify=true
-            # A clean verification verdict covering HEAD is stronger (SHA-bound) evidence
-            # of VERIFY than the status milestone, so it also satisfies the verify leg.
+            # A clean verification verdict covering HEAD is SHA-bound, so it also
+            # satisfies the verify leg. NOTE (#295): "stronger" is the wrong word
+            # and used to appear here — the artifact is model-authored by design
+            # and a two-field file satisfies it, measured 2026-09-24. It is
+            # sha-bound, not harder to forge. Narrowing this leg is a live
+            # question; it is a deny-side change and wants its own registration.
             if [ "${_g_verify}" = "false" ] && [ "${_VERDICT_OK}" = "true" ] \
                && verdict_is_clean "${_VERDICT_TOKEN}" && verdict_covers_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
                 _g_verify=true
+                _note_dirty_verdict
             fi
             if [ "${_g_review}" = "false" ] || [ "${_g_verify}" = "false" ]; then
                 # Split the missing milestones by whether their remedy is
@@ -1420,7 +1636,7 @@ EOF
                     # entirely, including telemetry.
                     case "${_pe_mode}" in deny|warn|off) ;; *) _pe_mode="warn" ;; esac
                     if [ "${_pe_mode}" != "off" ]; then
-                    _PE_MSG="PHASE GATE (outbound): this chain-covered ${_GATE_ACTION} has no evidence for '${_pe_missing}'. Invoke Skill(superpowers:${_pe_missing}) or record an explicit skip (phase_attest ${_pe_missing} \"<reason>\") before shipping."
+                    _PE_MSG="PHASE GATE (outbound): this chain-covered ${_GATE_ACTION} has no evidence for '${_pe_missing}'. Invoke Skill(superpowers:${_pe_missing}) or record an explicit skip: $(_attest_remedy "${_pe_missing}") before shipping."
                     [ "${PUSH_GATE_CAPTURE_REPLAY:-}" != "1" ] && command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "outbound" "${_pe_mode}" "${_pe_action}" "${_pe_missing}"
                     if [ "${_pe_mode}" = "deny" ]; then
                         _emit_deny "${_PE_MSG}"
@@ -1473,6 +1689,7 @@ EOF
                     if ! verdict_sha_is_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
                         _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }routing change: the clean verification verdict covers an earlier commit, not HEAD (routing files unchanged since). Re-run project-verification to refresh."
                     fi
+                    _note_dirty_verdict
                     : # allow
                 else
                     # No clean covering verdict, OR the clean verdict is an ancestor and

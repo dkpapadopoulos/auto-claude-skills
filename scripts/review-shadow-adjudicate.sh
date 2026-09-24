@@ -1,0 +1,585 @@
+#!/bin/bash
+# review-shadow-adjudicate.sh — label REVIEW-leg shadow records and report the
+# pre-registered false-block rate over independent episodes.
+#
+# DIAGNOSTIC ONLY. Never sourced by hooks/openspec-guard.sh, deliberately
+# EXCLUDED from _GATE_ENFORCE_LIBS, writes no gate state, emits no
+# permissionDecision, and its output MUST NOT be wired into an enforcement
+# decision — the guard is the only decider.
+#
+# The pre-registration in openspec/changes/review-verdict/design.md is an INPUT
+# here, not something this script may redefine: the bands, the n=29 floor, the
+# >=2-repo diversity requirement, the episode denominator and the definition of
+# `false_block` all come from that file.
+#
+# Adjudications append to a SIDECAR. The shadow log is NEVER mutated.
+#
+# Bash 3.2. Never `set -e`. Never reads stdin.
+set -u
+
+# --- pre-registered constants (openspec/changes/review-verdict/design.md) ---
+FLOOR_EPISODES=29
+FLOOR_REPOS=2
+EPISODE_WINDOW_SEC=1800
+ALPHA=0.05
+DENY_P=0.10
+ADVISORY_P=0.20
+
+SHADOW_LOG="${REVIEW_SHADOW_LOG:-$HOME/.claude/.push-review-shadow.jsonl}"
+ADJ_LOG="${REVIEW_ADJUDICATION_LOG:-$HOME/.claude/.push-review-adjudication.jsonl}"
+
+_ROOT="$(cd "$(dirname "${BASH_SOURCE:-$0}")/.." 2>/dev/null && pwd)"
+
+# Adjudicable predicate version, DERIVED FROM THE PRODUCER. The literal below is
+# only the fallback for a checkout where the lib is absent. Pinning it
+# independently is a silent corpus blackout: when #219 bumped the IMPLEMENT
+# producer while its reader stayed behind, `--status` reported 0 episodes with
+# live records counted "unpoolable" — indistinguishable from an empty corpus, on
+# the one instrument that must never fake that state.
+REQUIRED_PREDICATE_VERSION=2
+_rs_lib="${_ROOT}/hooks/lib/review-shadow.sh"
+if [ -f "${_rs_lib}" ]; then
+    # shellcheck disable=SC1090
+    . "${_rs_lib}" 2>/dev/null || true
+    case "${REVIEW_SHADOW_PREDICATE_VERSION:-}" in
+        ''|*[!0-9]*) : ;;
+        *) REQUIRED_PREDICATE_VERSION="${REVIEW_SHADOW_PREDICATE_VERSION}" ;;
+    esac
+fi
+
+# Shared corpus measurement, single-sourced with the IMPLEMENT adjudicator.
+# REFUSE to run without it rather than falling back to a local copy: the
+# degraded answer here would be a NUMBER, and an instrument that silently
+# reports a rate computed by unknown means is worse than one that stops.
+_sc_lib="${_ROOT}/hooks/lib/shadow-corpus.sh"
+if [ -f "${_sc_lib}" ]; then
+    # shellcheck disable=SC1090
+    . "${_sc_lib}" 2>/dev/null || true
+fi
+if ! command -v shadow_band >/dev/null 2>&1 || ! command -v shadow_group_episodes >/dev/null 2>&1; then
+    echo "error: hooks/lib/shadow-corpus.sh did not load (looked at ${_sc_lib})." >&2
+    echo "       Refusing to report a rate computed by a local fallback." >&2
+    exit 2
+fi
+
+# _tsv <jq-projection> — records of the ADJUDICABLE predicate version only.
+# `jq` ABORTS on the first parse error, so a single truncated line would
+# silently truncate the whole corpus. `-R` + `fromjson?` skips only the bad
+# line; unparseable lines are counted and reported by --status.
+_tsv() {
+    jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
+       "fromjson? // empty | select(.predicate_version == \$pv) | ${1} | @tsv" \
+       "${SHADOW_LOG}" 2>/dev/null
+}
+
+# _legacy_count — records of ANY OTHER predicate version.
+#
+# These are REPORTED, never silently dropped and never silently counted. The
+# live v1 corpus spans two fire conditions under one label: 78aa21e (#219,
+# 2026-09-01) moved this leg's material-source and coverage predicates onto the
+# resolved subject and bumped implement-shadow.sh while leaving review-shadow.sh
+# alone. A timestamp cannot recover which guard wrote a given record, because
+# sessions run cached plugin versions. So those records are describable but not
+# poolable, and saying so is the whole point of this line.
+_legacy_count() {
+    jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
+       'fromjson? // empty | select(.predicate_version != $pv) | .predicate_version' \
+       "${SHADOW_LOG}" 2>/dev/null | grep -c . | tr -d '[:space:]'
+}
+
+# _legacy_describe — episode count, span and rate for the EXCLUDED band.
+#
+# Descriptive only. These episodes can never enter a rate, but the amendment in
+# design.md rests on their count ("the floor was passed unnoticed"), and until
+# this existed those figures came from an ad-hoc computation no delivered tool
+# repeated and no test pinned -- unverifiable six months from now, which is the
+# opposite of what an instrument is for.
+#
+# Legacy records carry no `record_id`, and shadow_group_episodes drops any row
+# with an empty id, so the band would otherwise group to 0 BY CONSTRUCTION. A
+# line-ordinal stands in as the id. That is safe precisely because it is
+# descriptive: nothing is ever stored against these ids, so the re-numbering
+# hazard that rules synthetic ids out for ADJUDICATION does not arise -- they
+# live for the duration of one invocation and are never written anywhere.
+_legacy_describe() {
+    [ -f "${SHADOW_LOG}" ] && [ -r "${SHADOW_LOG}" ] || return 0
+    command -v jq >/dev/null 2>&1 || return 0
+    jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
+       'fromjson? // empty | select(.predicate_version != $pv)
+        | [.repo, .branch, .session_token, .ts] | @tsv' "${SHADOW_LOG}" 2>/dev/null \
+    | awk -F'\t' '{ print $0 "\t" NR }' \
+    | shadow_group_episodes "${EPISODE_WINDOW_SEC}"
+}
+
+_legacy_span_days() {
+    [ -f "${SHADOW_LOG}" ] && [ -r "${SHADOW_LOG}" ] || { printf '0'; return 0; }
+    jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
+       'fromjson? // empty | select(.predicate_version != $pv) | .ts // empty' \
+       "${SHADOW_LOG}" 2>/dev/null | LC_ALL=C sort \
+    | awk "${SHADOW_AWK_EPOCH}"'
+        { if (NR == 1) first = $0; last = $0 }
+        END {
+          if (NR == 0) { print "0"; exit }
+          a = iso_epoch(first); b = iso_epoch(last)
+          if (a < 0 || b < 0) { print "0"; exit }
+          printf "%.2f", (b - a) / 86400
+        }'
+}
+
+_episodes() {
+    [ -f "${SHADOW_LOG}" ] || return 0
+    command -v jq >/dev/null 2>&1 || return 0
+    # would_block == true, matching --next. The writer hardcodes it today, so
+    # this is latent -- but it is the IMPLEMENT leg's rule (5), where pooling
+    # non-blocking records overstated the backlog ~8x and biased the rate TOWARD
+    # CLEARING the flip. Filtered HERE and not inside shadow_group_episodes,
+    # which is shared with the IMPLEMENT leg where the population rule differs.
+    # Type-checked: a JSON string "true" must not join the population.
+    _tsv 'select(has("would_block") and ((.would_block|type) == "boolean") and .would_block == true)
+          | [.repo, .branch, .session_token, .ts, .record_id]' \
+    | shadow_group_episodes "${EPISODE_WINDOW_SEC}"
+}
+
+# _claimant -> human | agent
+# Biased toward "agent": this leg governs AGENT pushes, so the subject has a
+# live incentive to grade its own gate. A human misclassified inside a session
+# pays one re-confirmation; an agent's self-label counted silently would corrupt
+# the rate. Deliberately NO tty check — `[ ! -t 1 ]` fires on any redirect or
+# pipe, and since human-claimed episodes are the only countable ones that would
+# make the floor unreachable for anyone who pipes, rather than merely costing a
+# re-confirmation. The mitigation is not that forgery is impossible; it is that
+# a forged clean rate requires a deliberate lie about provenance.
+_claimant() {
+    if [ -n "${CLAUDECODE:-}" ] || [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then echo agent; return; fi
+    case "$(ps -o comm= -p "$PPID" 2>/dev/null)" in *claude*) echo agent; return;; esac
+    echo human
+}
+
+# _repo_identity <toplevel-path> -> a REPOSITORY identity, not a worktree path.
+#
+# The writer sets `repo` from `git rev-parse --show-toplevel`, which is the
+# WORKTREE path. On the live corpus that is 15 distinct values for 5
+# repositories, so ">=2 distinct repos" was satisfiable by two worktrees of ONE
+# repository -- zero cross-repository evidence, which is the entire purpose of
+# the clause. This repo uses detached worktrees heavily (its own review
+# adjudication pattern mandates them), so it is not hypothetical.
+#
+# Resolved the way `branch_ledger_key` already resolves repo identity: the
+# origin remote URL, falling back to the common git dir, and only then to the
+# path itself. Each fallback is strictly weaker, and the last one reproduces the
+# old behaviour rather than erroring -- a repo that cannot be resolved must not
+# vanish from the diversity count.
+_repo_identity() {
+    local _p="${1:-}" _id=""
+    [ -n "${_p}" ] || { printf '%s' ""; return 0; }
+    if [ -d "${_p}" ]; then
+        _id="$(git -C "${_p}" remote get-url origin 2>/dev/null)" || _id=""
+        if [ -z "${_id}" ]; then
+            _id="$(git -C "${_p}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || _id=""
+        fi
+    fi
+    [ -n "${_id}" ] || _id="${_p}"
+    printf '%s' "${_id}"
+}
+
+# Every reader below is `-R` + `fromjson?`. jq ABORTS on the first malformed
+# line and returns what it parsed BEFORE the abort, with exit status discarded
+# here -- so one truncated line silently truncates the corpus at that point.
+# Measured on the sidecar: a single bad first line dropped two intact human
+# adjudications, taking the readout from `k=1 of n=2, NARROWED` to `k=0 of n=0,
+# INSUFFICIENT` with no warning. The POSITION is what makes it dangerous: a bad
+# line at row 29 of 35 keeps rows 1-28, so a real false_block at row 34 vanishes
+# while n>=29 survives -- k falls and the band CLEARS. That is a wrong answer in
+# the single direction that must never be guessed.
+_record_field() { # <record_id> <field>
+    jq -R -r --arg id "${1:-}" --arg f "${2:-}" \
+       'fromjson? // empty | select(.record_id == $id) | .[$f] // empty' \
+       "${SHADOW_LOG}" 2>/dev/null | head -1
+}
+
+_adjudicated_ids() {
+    [ -f "${ADJ_LOG}" ] || return 0
+    jq -R -r 'fromjson? // empty | .record_id // empty' "${ADJ_LOG}" 2>/dev/null | sort -u
+}
+
+# Unparseable sidecar lines, counted so corruption is ANNOUNCED rather than
+# silently shrinking the rate. The corpus already gets this treatment; the
+# sidecar had none, which is the log whose corruption moves k.
+_adj_unparsed() {
+    [ -f "${ADJ_LOG}" ] || { printf '0'; return 0; }
+    local _t _p
+    _t="$(grep -c . "${ADJ_LOG}" 2>/dev/null | tr -d '[:space:]')"
+    _p="$(jq -R -r 'fromjson? // empty | 1' "${ADJ_LOG}" 2>/dev/null | grep -c . | tr -d '[:space:]')"
+    printf '%s' "$(( ${_t:-0} - ${_p:-0} ))"
+}
+
+cmd_adjudicate() {
+    local _rid="${1:-}" _verdict="${2:-}" _reason="${3:-}" _pv _ts _claim _tty
+    case "${_verdict}" in
+        true_catch|false_block|unknown) ;;
+        *) echo "error: --verdict must be true_catch, false_block, or unknown" >&2; return 1;;
+    esac
+    [ -f "${SHADOW_LOG}" ] || { echo "error: no shadow log at ${SHADOW_LOG}" >&2; return 1; }
+    command -v jq >/dev/null 2>&1 || { echo "error: jq required" >&2; return 1; }
+    _pv="$(_record_field "${_rid}" predicate_version)"
+    [ -z "${_pv}" ] && { echo "error: no record '${_rid}' in ${SHADOW_LOG}" >&2; return 1; }
+    if [ "${_pv}" != "${REQUIRED_PREDICATE_VERSION}" ]; then
+        echo "error: record '${_rid}' is predicate_version ${_pv}; only v${REQUIRED_PREDICATE_VERSION} is adjudicable." >&2
+        echo "       Records of another predicate version were written by a different fire" >&2
+        echo "       condition and MUST NOT be pooled." >&2
+        return 1
+    fi
+    if [ ! -f "${ADJ_LOG}" ]; then
+        : > "${ADJ_LOG}" 2>/dev/null || { echo "error: cannot write ${ADJ_LOG}" >&2; return 1; }
+    fi
+    chmod 600 "${ADJ_LOG}" 2>/dev/null
+    _ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)"
+    _claim="$(_claimant)"
+    # `tty` prints "not a tty" to STDOUT and ALSO exits 1, so `$(tty || echo X)`
+    # captures BOTH strings. Branch on the exit status instead.
+    if _tty="$(tty 2>/dev/null)"; then :; else _tty="not-a-tty"; fi
+    jq -cn --arg rid "${_rid}" --arg ts "${_ts}" --arg v "${_verdict}" \
+           --arg r "${_reason}" --arg c "${_claim}" \
+           --arg u "${USER:-unknown}" --arg tty "${_tty}" \
+           --arg corpus "${SHADOW_LOG}" \
+           --arg par "$(ps -o comm= -p "$PPID" 2>/dev/null || echo unknown)" \
+           --arg head "$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
+           --arg agentenv "$([ -n "${CLAUDECODE:-}" ] && echo present || echo absent)" \
+       '{schema_version:1,leg:"review",record_id:$rid,ts:$ts,verdict:$v,reason:$r,
+         claimant:$c,corpus:$corpus,
+         provenance:{user:$u,tty:$tty,parent:$par,repo_head:$head,agent_env:$agentenv}}' \
+       >> "${ADJ_LOG}" 2>/dev/null || { echo "error: append to ${ADJ_LOG} failed" >&2; return 1; }
+    echo "recorded: ${_rid}  ${_verdict}  (${_claim}-claimed)"
+    [ "${_claim}" = "agent" ] && \
+        echo "note: agent-claimed — excluded from the rate until a human re-confirms."
+    echo "label: $(printf '%s' "${_claim}" | tr '[:lower:]' '[:upper:]')-CLAIMED, not human-verified."
+    return 0
+}
+
+# cmd_next — oldest adjudicable record with no adjudication. Read-only.
+cmd_next() {
+    local _seen _line _id _row _n_ok _n_all _n_legacy
+    [ -f "${SHADOW_LOG}" ] || { echo "no shadow log at ${SHADOW_LOG} — nothing outstanding."; return 0; }
+    command -v jq >/dev/null 2>&1 || { echo "jq required — cannot read the corpus."; return 0; }
+    _seen="$(_adjudicated_ids)"
+    _line="$(_tsv 'select((.ts // "") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
+              | select(has("would_block") and ((.would_block|type) == "boolean") and .would_block == true)
+              | [.record_id,.ts,.repo,.branch,.action,.reason,.transcript_path]' \
+            | sort -t "$(printf '\t')" -k2,2 \
+            | while IFS= read -r _row; do
+                  _id="$(printf '%s' "${_row}" | cut -f1)"
+                  [ -z "${_id}" ] && continue
+                  if [ -n "${_seen}" ] && printf '%s\n' "${_seen}" | grep -qxF "${_id}"; then
+                      continue
+                  fi
+                  printf '%s\n' "${_row}"; break
+              done)"
+    if [ -z "${_line}" ]; then
+        # "no adjudicable records exist" and "all of them are adjudicated" are
+        # different states and must not share a message: the first means nothing
+        # is countable yet, the second means the work is done.
+        # Derived from the SAME selection the offer loop uses, not from every
+        # current-version record. Measured with one empty-ts record and one
+        # would_block:false record and an empty sidecar, the old form printed
+        # "all 2 adjudicable record(s) are labelled" with ZERO adjudications --
+        # the "no records" vs "records exist but none countable" collapse,
+        # inside the message written to distinguish them. `ts:""` is reachable
+        # from the producer, not only from fixtures: review-shadow.sh emits it
+        # whenever `date` fails.
+        _n_ok="$(_tsv 'select((.ts // "") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
+                  | select(has("would_block") and ((.would_block|type) == "boolean") and .would_block == true)
+                  | [.record_id]' | grep -c . | tr -d '[:space:]')"
+        _n_all="$(_tsv '[.record_id]' | grep -c . | tr -d '[:space:]')"
+        _n_legacy="$(_legacy_count)"
+        if [ "${_n_ok:-0}" -eq 0 ]; then
+            if [ "${_n_all:-0}" -gt 0 ]; then
+                echo "no OFFERABLE predicate_version ${REQUIRED_PREDICATE_VERSION} records — nothing is countable."
+                echo "  ${_n_all} record(s) of this version exist but are excluded from the"
+                echo "  population: a malformed ts, or would_block not boolean-true."
+            else
+                echo "no predicate_version ${REQUIRED_PREDICATE_VERSION} records yet — nothing is countable."
+            fi
+            if [ "${_n_legacy:-0}" -gt 0 ]; then
+                echo "  ${_n_legacy} record(s) of another predicate version are present and are NOT"
+                echo "  adjudicable: they were written by a different fire condition. See --status."
+            fi
+        else
+            echo "all ${_n_ok} adjudicable record(s) are labelled."
+        fi
+        return 0
+    fi
+    echo "record_id : $(printf '%s' "${_line}" | cut -f1)"
+    echo "ts        : $(printf '%s' "${_line}" | cut -f2)"
+    echo "repo      : $(printf '%s' "${_line}" | cut -f3)"
+    echo "branch    : $(printf '%s' "${_line}" | cut -f4)"
+    echo "action    : $(printf '%s' "${_line}" | cut -f5)"
+    echo "reason    : $(printf '%s' "${_line}" | cut -f6)"
+    echo "transcript: $(printf '%s' "${_line}" | cut -f7)"
+    echo
+    echo "A would-block resolved by the author actually running a review is a TRUE CATCH."
+    echo "It is a FALSE BLOCK only if a real review demonstrably did occur, or the"
+    echo "artifact was absent for an infrastructure reason the advisory misnames."
+    echo "reason=cannot-check means the gate could not LOOK. Treat it as a false_block"
+    echo "unless the advisory it rendered named the right remedy anyway — the"
+    echo "registration says 'an infrastructure reason the advisory misnames', and this"
+    echo "leg's cannot-check text makes no claim at all. That is an interpretation, not"
+    echo "a registered rule; it errs away from clearing the flip."
+    echo
+    echo "  $0 --adjudicate $(printf '%s' "${_line}" | cut -f1) --verdict true_catch|false_block|unknown [--reason '...']"
+    return 0
+}
+
+# _episode_verdict <ids_csv> -> two lines: <verdict> <claimant>
+#
+# Worst-verdict-wins (any false_block wins), with the LATEST adjudication per
+# record superseding earlier ones. The sidecar is append-only, so the last
+# matching row is the most recent. Folding over ALL rows instead makes a
+# correction a silent no-op: re-adjudicating a fat-fingered false_block to
+# true_catch would print success while the earlier verdict kept winning,
+# permanently poisoning a rate that gates a deny-flip.
+_episode_verdict() {
+    local _ids="${1:-}" _v="unlabeled" _claim="agent" _has_human=0 _saw_agent=0 _id _rows _latest _rv _rc
+    if [ ! -f "${ADJ_LOG}" ]; then printf 'unlabeled\nagent\n'; return; fi
+    _rows="$(jq -R -r 'fromjson? // empty | [.record_id,.verdict,.claimant] | @tsv' "${ADJ_LOG}" 2>/dev/null)"
+    for _id in $(printf '%s' "${_ids}" | tr ',' ' '); do
+        _latest="$(printf '%s\n' "${_rows}" \
+                   | awk -F'\t' -v id="${_id}" '$1 == id { v = $2; c = $3 }
+                                                END { if (v != "") print v "\t" c }')"
+        [ -z "${_latest}" ] && continue
+        _rv="$(printf '%s' "${_latest}" | cut -f1)"
+        _rc="$(printf '%s' "${_latest}" | cut -f2)"
+        # Worst-verdict-wins resolved over HUMAN-CLAIMED rows only. Resolving
+        # over every row and then reporting the episode as human-claimed if ANY
+        # row was, put an AGENT's false_block into k under a header that says
+        # "human-confirmed" -- seconds after --adjudicate told the operator that
+        # row was excluded. The bias is conservative (worst-wins can only raise
+        # severity, never clear the flip), but the number was wrong and the
+        # status line claimed a rule the code did not keep.
+        if [ "${_rc}" = "human" ]; then
+            _has_human=1
+            case "${_rv}" in
+                false_block) _v="false_block" ;;
+                unknown)     if [ "${_v}" != "false_block" ]; then _v="unknown"; fi ;;
+                true_catch)  if [ "${_v}" = "unlabeled" ];    then _v="true_catch"; fi ;;
+            esac
+        else
+            _saw_agent=1
+            if [ "${_v}" = "unlabeled" ]; then _v="agent-only"; fi
+        fi
+    done
+    [ "${_has_human}" -eq 1 ] && _claim="human"
+    # An episode with only agent labels is NOT unlabeled (someone looked) and
+    # NOT countable (the subject graded its own gate). Name the state.
+    if [ "${_has_human}" -eq 0 ] && [ "${_saw_agent:-0}" -eq 1 ]; then _v="agent-only"; fi
+    printf '%s\n%s\n' "${_v}" "${_claim}"
+}
+
+# cmd_status — episode-level readout. Observational; always exits 0.
+cmd_status() {
+    local _tot=0 _lab=0 _fb=0 _tc=0 _unk=0 _agent=0 _unlab=0
+    local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
+    local _lines=0 _parsed=0 _unparsed=0 _legacy=0 _orphan=0 _lines_rc=0 _rkey=""
+    local _leg_eps=0 _leg_repos=0 _leg_span=0 _badts=0
+    local _band_hdl _den
+
+    echo "=== REVIEW shadow corpus (leg: push/merge REVIEW verdict) ==="
+    echo "corpus  : ${SHADOW_LOG}"
+    echo "sidecar : ${ADJ_LOG}"
+    echo "adjudicable predicate_version: ${REQUIRED_PREDICATE_VERSION}"
+    if [ ! -f "${SHADOW_LOG}" ]; then echo "(no corpus yet)"; return 0; fi
+    if ! command -v jq >/dev/null 2>&1; then echo "(jq required)"; return 0; fi
+    # "exists but cannot be read" must never render as "empty". `-f` says
+    # nothing about readability, and the counts below pipe grep/jq into `tr`,
+    # so a permission error is discarded with the pipeline's status -- measured,
+    # a chmod 000 corpus printed "0 line(s), 0 parsed" identically to an empty
+    # one. This instrument exists to stop a live corpus reading as an empty
+    # corpus; failing that on a different input would be the same defect.
+    if [ ! -r "${SHADOW_LOG}" ]; then
+        echo "ERROR: ${SHADOW_LOG} exists but is NOT READABLE."
+        echo "  No claim is made about its contents. This is not an empty corpus."
+        return 0
+    fi
+
+    # PIPESTATUS[0], not the pipeline's status: `grep | tr` reports tr's.
+    _lines="$(grep -c . "${SHADOW_LOG}" 2>/dev/null)"; _lines_rc=$?
+    _lines="$(printf '%s' "${_lines}" | tr -d '[:space:]')"
+    # grep -c exits 1 on "no matching lines", which is a legitimate empty file;
+    # anything above 1 is a real read error and must not be reported as zero.
+    if [ "${_lines_rc}" -gt 1 ]; then
+        echo "ERROR: could not read ${SHADOW_LOG} (grep exit ${_lines_rc}). No claim is made about its contents."
+        return 0
+    fi
+    # Counts records that PARSE, not records with a non-empty ts. Counting the
+    # latter reported a well-formed record whose `ts` is "" as an unparseable
+    # LINE -- and review-shadow.sh emits exactly that whenever `date` fails, so
+    # it is producer-reachable, not a fixture curiosity.
+    _parsed="$(jq -R -r 'fromjson? // empty | 1' "${SHADOW_LOG}" 2>/dev/null | grep -c . | tr -d '[:space:]')"
+    _unparsed=$(( ${_lines:-0} - ${_parsed:-0} ))
+    _legacy="$(_legacy_count)"
+    echo "records : ${_lines:-0} line(s), ${_parsed:-0} parsed, ${_unparsed} unparseable"
+
+    # A record that parses but whose ts is unusable is DROPPED from the episode
+    # grouping (shadow_group_episodes excludes rather than merges it -- two
+    # corrupt records would otherwise satisfy (-1)-(-1)=0 <= window and collapse
+    # on a time relation nothing verified). But dropping it SILENTLY leaves the
+    # denominator short with no row accounting for the difference: "2 parsed,
+    # 1 episode" and nothing said. That is the same silent shortfall this file
+    # forbids for empty branches.
+    _badts="$(_tsv '[.ts]' 2>/dev/null \
+              | awk -F'\t' '$1 !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$/ { n++ } END { print n+0 }')"
+    if [ "${_badts:-0}" -gt 0 ]; then
+        echo "EXCLUDED — unparseable ts : ${_badts} record(s) of the adjudicable version"
+        echo "  They parse as JSON but carry no usable timestamp, so they cannot be"
+        echo "  placed in an episode and are absent from the denominator below."
+    fi
+
+    # The legacy band is REPORTED, with its cause, never silently folded in or
+    # silently dropped. Quietly reporting 0 episodes for a live corpus and
+    # quietly reporting all of them are the same error facing opposite ways.
+    if [ "${_legacy:-0}" -gt 0 ]; then
+        echo
+        echo "EXCLUDED — other-predicate : ${_legacy} record(s)"
+        echo "  Written by a different fire condition and NOT poolable into the rate."
+        echo "  78aa21e (#219, 2026-09-01) moved this leg's material-source and coverage"
+        echo "  predicates onto the resolved subject and bumped implement-shadow.sh while"
+        echo "  leaving review-shadow.sh at predicate_version 1, so v1 records span BOTH"
+        echo "  fire conditions under one label. A timestamp cannot recover which guard"
+        echo "  wrote a record: sessions run cached plugin versions."
+        # Describe the band so the amendment's figures are reproducible BY THE
+        # INSTRUMENT, not by hand. Labelled non-poolable on every line.
+        _leg_eps="$(_legacy_describe | grep -c . | tr -d '[:space:]')"
+        _leg_repos="$(_legacy_describe | awk -F'\t' '{print $2}' | LC_ALL=C sort -u | grep -c . | tr -d '[:space:]')"
+        _leg_span="$(_legacy_span_days)"
+        echo "  DESCRIPTIVE ONLY (never poolable, never adjudicable):"
+        echo "    episodes ${_leg_eps:-0}, across ${_leg_repos:-0} distinct repo-field value(s), span ${_leg_span:-0} day(s)"
+        if [ -n "${_leg_span}" ] && [ "${_leg_span}" != "0" ]; then
+            echo "    accrual $(awk -v e="${_leg_eps:-0}" -v d="${_leg_span}" 'BEGIN{ if (d>0) printf "%.2f", e/d; else printf "n/a" }') episodes/day"
+        fi
+        echo "    NOTE: repo-field values are worktree paths as recorded; the"
+        echo "    diversity floor above counts REPOSITORIES, which is fewer."
+    fi
+
+    # Episode loop MUST stay in the current shell, so the counters survive --
+    # hence a heredoc, never a pipe. And it re-splits on \x1f rather than tab:
+    # tab is IFS WHITESPACE, so an empty field (an unresolvable branch writes
+    # one) collapses and shifts every later column, which silently drops the
+    # episode from the denominator.
+    while IFS="$(printf '\037')" read -r _eid _repo _branch _tok _ids; do
+        [ -z "${_eid}" ] && continue
+        _tot=$(( _tot + 1 ))
+        _vc="$(_episode_verdict "${_ids}")"
+        _v="$(printf '%s' "${_vc}" | sed -n '1p')"
+        _c="$(printf '%s' "${_vc}" | sed -n '2p')"
+        if [ "${_v}" = "unlabeled" ];  then _unlab=$(( _unlab + 1 )); continue; fi
+        if [ "${_v}" = "agent-only" ]; then _agent=$(( _agent + 1 )); continue; fi
+        if [ "${_c}" != "human" ];     then _agent=$(( _agent + 1 )); continue; fi
+        _lab=$(( _lab + 1 ))
+        # Diversity is counted over the SAME population as the rate: episodes
+        # that are human-confirmed. Counting it over every episode lets an
+        # UNLABELED record in a second repo satisfy ">=2 distinct repos" while
+        # all 29 adjudicated episodes sit in one -- measured, the instrument
+        # printed "floor met on n and diversity" and band DENY on exactly that
+        # body of evidence. The clause exists to require cross-repository
+        # EVIDENCE, and an unlabeled episode is not evidence of anything.
+        # The sibling already does this (shadow-adjudicate.sh: `continue`s past
+        # unlabeled and agent-claimed before accumulating the repo).
+        #
+        # Newline-separated with an exact whole-line match, not a space- or
+        # "|"-delimited membership test: a repo path may contain a space (or a
+        # literal "|"), which collapses two paths into one and UNDERCOUNTS
+        # diversity -- measured, one path containing a space read as two repos.
+        _rkey="$(_repo_identity "${_repo}")"
+        if [ -z "${_repos}" ] || ! printf '%s\n' "${_repos}" | grep -qxF "${_rkey}"; then
+            _repos="${_repos}${_rkey}
+"
+        fi
+        case "${_v}" in
+            false_block) _fb=$(( _fb + 1 )) ;;
+            true_catch)  _tc=$(( _tc + 1 )) ;;
+            unknown)     _unk=$(( _unk + 1 )) ;;
+        esac
+    done <<EOF
+$(_episodes | tr '\t' '\037')
+EOF
+
+    _nrepos="$(printf '%s' "${_repos}" | grep -c . | tr -d '[:space:]')"
+
+    echo
+    echo "episodes (adjudicable) : ${_tot}   across ${_nrepos} distinct repositor(y|ies), counted over HUMAN-CONFIRMED episodes only"
+    echo "  unlabeled            : ${_unlab}"
+    echo "  labelled             : ${_lab}   (agent-claimed, excluded: ${_agent})"
+    echo "  human-confirmed      : false_block=${_fb}  true_catch=${_tc}  unknown=${_unk}"
+
+    # Adjudications naming records this corpus does not contain. Surfaced, not
+    # fatal: REVIEW_SHADOW_LOG can name an alternate corpus, and a sidecar
+    # carried across two of them would otherwise attach labels invisibly.
+    if [ -f "${ADJ_LOG}" ]; then
+        _orphan="$(jq -R -r 'fromjson? // empty | .record_id // empty' "${ADJ_LOG}" 2>/dev/null | sort -u \
+                   | while IFS= read -r _id; do
+                         [ -z "${_id}" ] && continue
+                         jq -e --arg i "${_id}" -R 'fromjson? // empty | select(.record_id == $i)' \
+                            "${SHADOW_LOG}" >/dev/null 2>&1 || printf 'x\n'
+                     done | grep -c . | tr -d '[:space:]')"
+        if [ "${_orphan:-0}" -gt 0 ]; then
+            echo
+            echo "WARNING: ${_orphan} adjudication(s) name a record_id absent from this corpus."
+            echo "  A sidecar reused across two different logs labels records it cannot see."
+        fi
+    fi
+
+    # k/n: ONLY human-confirmed episodes count. Zero adjudications is NOT zero
+    # false blocks -- it is no measurement, and reporting it as 0/0 clean is the
+    # direction that would clear a deny-flip on no evidence.
+    _den=$(( _fb + _tc + _unk ))
+    _band_hdl="$(shadow_band "${_fb}" "${_den}")"
+    echo
+    echo "rate (human-confirmed only) : k=${_fb} false blocks of n=${_den} episode(s)"
+    echo "band                        : ${_band_hdl}"
+    echo "pre-registered floor        : n>=${FLOOR_EPISODES} at zero false blocks, >=${FLOOR_REPOS} distinct repos"
+    if [ "${_den}" -lt "${FLOOR_EPISODES}" ]; then
+        echo "FLOOR NOT MET: the denominator is human-ADJUDICATED episodes, not recorded ones."
+        echo "  ${_tot} ADJUDICABLE episode(s) exist and ${_unlab} are unlabeled. The"
+        echo "  deny-flip criterion is NOT established; the leg stays advisory."
+        echo "  (This is NOT a statement that the corpus is empty — see the record"
+        echo "   counts above, including any excluded band.)"
+    elif [ "${_nrepos}" -lt "${FLOOR_REPOS}" ]; then
+        echo "FLOOR NOT MET: diversity — ${_nrepos} repo(s) < ${FLOOR_REPOS}."
+    else
+        echo "floor met on n and diversity; band above decides."
+    fi
+    return 0
+}
+
+_usage() {
+    cat <<USAGE
+usage: $0 <command>
+
+  --status                      episode-level readout and the pre-registered band
+  --next                        oldest unadjudicated record, with how to label it
+  --adjudicate <record_id> --verdict true_catch|false_block|unknown [--reason <text>]
+
+Diagnostic only. Writes to a sidecar; the shadow log is never mutated.
+The pre-registration in openspec/changes/review-verdict/design.md is the
+authority for the bands, the floor and the definition of false_block.
+USAGE
+}
+
+_CMD=""; _RID=""; _VERDICT=""; _REASON=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --status)     _CMD=status ;;
+        --next)       _CMD=next ;;
+        --adjudicate) _CMD=adjudicate; shift; _RID="${1:-}" ;;
+        --verdict)    shift; _VERDICT="${1:-}" ;;
+        --reason)     shift; _REASON="${1:-}" ;;
+        -h|--help)    _usage; exit 0 ;;
+        *) echo "error: unknown argument '$1'" >&2; _usage >&2; exit 1 ;;
+    esac
+    shift
+done
+case "${_CMD}" in
+    status)     cmd_status ;;
+    next)       cmd_next ;;
+    adjudicate) cmd_adjudicate "${_RID}" "${_VERDICT}" "${_REASON}" ;;
+    *)          _usage >&2; exit 1 ;;
+esac

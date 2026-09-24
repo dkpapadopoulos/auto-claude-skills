@@ -30,6 +30,19 @@ test_missing_gh_fails_loud() {
     for t in jq shasum git sed grep cut sort ls cat dirname basename mktemp printf; do
         p="$(command -v "$t" 2>/dev/null)" && ln -s "$p" "${TEST_TMPDIR}/stub/$t" 2>/dev/null
     done
+    # ASSERT the precondition, do not only arrange it (#275). If gh ever joins
+    # the loop above, or the stub dir is inherited from elsewhere, this cell
+    # would exercise the gh-present path and pass for the wrong reason.
+    # SUBSHELL, not `PATH=X command -v` in this shell: bash HASHES command
+    # locations, and `command -v` consults that hash before PATH — so the
+    # in-shell form reported a tool as present purely because an earlier line
+    # had run it. Measured: two of these assertions failed against shims that
+    # provably lacked the tool. A fresh shell has an empty hash.
+    if PATH="${TEST_TMPDIR}/stub" /bin/bash -c 'command -v gh' >/dev/null 2>&1; then
+        _record_fail "precondition: gh is unresolvable on the stub PATH" \
+            "gh resolves, so this cell would test the wrong branch"
+        teardown_test_env; return
+    fi
     out="$(cd "${TEST_TMPDIR}" && PATH="${TEST_TMPDIR}/stub" /bin/bash "${MINE}" bundle 2>&1)"; rc=$?
     [ "$rc" -ne 0 ] && _record_pass "expected non-zero exit" || _record_fail "expected non-zero exit" "rc=$rc"
     assert_contains "ERROR mentions gh" "gh" "$out"
@@ -522,11 +535,11 @@ test_select_contract_gate_and_meta_cap() {
     setup_test_env
     local input out
     input='[
-      {"fp":"f1","title":"meta B","grade":"B","meta":true,"contract_complete":true,"end_user":false},
-      {"fp":"f2","title":"user C","grade":"C","meta":false,"contract_complete":true,"end_user":true},
-      {"fp":"f3","title":"meta C","grade":"C","meta":true,"contract_complete":true,"end_user":false},
-      {"fp":"f4","title":"meta D","grade":"D","meta":true,"contract_complete":true,"end_user":false},
-      {"fp":"f5","title":"no contract","grade":"A","meta":false,"contract_complete":false,"end_user":true}
+      {"fp":"f1","title":"meta B","grade":"B","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"f2","title":"user C","grade":"C","meta":false,"contract_complete":true,"target_at_head":true,"end_user":true},
+      {"fp":"f3","title":"meta C","grade":"C","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"f4","title":"meta D","grade":"D","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"f5","title":"no contract","grade":"A","meta":false,"contract_complete":false,"target_at_head":true,"end_user":true}
     ]'
     out="$(run_select "${input}")"
     assert_equals "f5 withheld missing_contract" "missing_contract" "$(printf '%s' "$out" | jq -r '.withheld[] | select(.fp=="f5") | .reason')"
@@ -541,12 +554,12 @@ test_select_cap_and_end_user_warning() {
     setup_test_env
     local input out
     input='[
-      {"fp":"m1","title":"m1","grade":"A","meta":true,"contract_complete":true,"end_user":false},
-      {"fp":"m2","title":"m2","grade":"A","meta":true,"contract_complete":true,"end_user":false},
-      {"fp":"u1","title":"u1","grade":"B","meta":false,"contract_complete":true,"end_user":false},
-      {"fp":"u2","title":"u2","grade":"B","meta":false,"contract_complete":true,"end_user":false},
-      {"fp":"u3","title":"u3","grade":"B","meta":false,"contract_complete":true,"end_user":false},
-      {"fp":"u4","title":"u4","grade":"B","meta":false,"contract_complete":true,"end_user":false}
+      {"fp":"m1","title":"m1","grade":"A","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"m2","title":"m2","grade":"A","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"u1","title":"u1","grade":"B","meta":false,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"u2","title":"u2","grade":"B","meta":false,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"u3","title":"u3","grade":"B","meta":false,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"u4","title":"u4","grade":"B","meta":false,"contract_complete":true,"target_at_head":true,"end_user":false}
     ]'
     out="$(run_select "${input}")"
     assert_equals "cap withholds 6th" "cap" "$(printf '%s' "$out" | jq -r '.withheld[] | select(.fp=="u4") | .reason')"
@@ -559,9 +572,9 @@ test_select_null_grade_degrades() {
     setup_test_env
     local input out rc
     input='[
-      {"fp":"f1","title":"meta A","grade":"A","meta":true,"contract_complete":true,"end_user":false},
-      {"fp":"f2","title":"meta B","grade":"B","meta":true,"contract_complete":true,"end_user":false},
-      {"fp":"f3","title":"meta null","grade":null,"meta":true,"contract_complete":true,"end_user":false}
+      {"fp":"f1","title":"meta A","grade":"A","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"f2","title":"meta B","grade":"B","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"f3","title":"meta null","grade":null,"meta":true,"contract_complete":true,"target_at_head":true,"end_user":false}
     ]'
     out="$(run_select "${input}")"; rc=$?
     assert_equals "select exits 0 (no crash)" "0" "$rc"
@@ -575,9 +588,9 @@ test_select_meta_tie_keeps_earlier() {
     setup_test_env
     local input out fps
     input='[
-      {"fp":"t1","title":"meta 1","grade":"C","meta":true,"contract_complete":true,"end_user":false},
-      {"fp":"t2","title":"meta 2","grade":"C","meta":true,"contract_complete":true,"end_user":false},
-      {"fp":"t3","title":"meta 3","grade":"C","meta":true,"contract_complete":true,"end_user":false}
+      {"fp":"t1","title":"meta 1","grade":"C","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"t2","title":"meta 2","grade":"C","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false},
+      {"fp":"t3","title":"meta 3","grade":"C","meta":true,"contract_complete":true,"target_at_head":true,"end_user":false}
     ]'
     out="$(run_select "${input}")"
     fps="$(printf '%s' "$out" | jq -c '[.presented[].fp]')"
@@ -719,6 +732,107 @@ test_citation_contract_174() {
         "for the in-session report only" "${body}"
 }
 
+# --- #209: gh result caps have no truncation detection ---------------------
+# Both intake queries are capped (`--limit 50` for eval reports, `--limit 200`
+# for the run ledger) and neither notices when the cap is REACHED. A capped
+# result is indistinguishable from a complete one, so the miner would quietly
+# mine a truncated corpus.
+#
+# The ledger case is the severe one: it is the kill-math source of truth, so a
+# silently dropped run changes the approved/presented counters that decide
+# whether the skill decommissions itself.
+#
+# No live instance today — the eval query is search-scoped (1 hit) and the
+# ledger holds 3 of its 200 — which is exactly why this needs a test rather
+# than a note to look again later.
+_mk_issue_array() {  # <count> <eval|ledger> -> JSON array on stdout
+    jq -nc --argjson n "$1" --arg kind "$2" '
+        [ range(0; $n) as $i
+          | if $kind == "eval"
+            then {number: (100 + $i), title: "Behavioral eval regression: pack-\($i)",
+                  body: "b", author: {login: "app/github-actions", is_bot: true}}
+            else {number: (100 + $i),
+                  body: ("```json\n" + "{\"run\":\"2026-01-01\",\"presented\":[]}" + "\n```"),
+                  author: {login: "testowner"}}
+            end ]'
+}
+
+_truncation_case() {  # <label> <eval|ledger> <count> <loud|quiet>
+    local label="$1" kind="$2" count="$3" expect="$4" out rc
+    setup_test_env; make_fake_gh
+    mkdir -p "${TEST_TMPDIR}/repo" "${TEST_TMPDIR}/memory"
+    (cd "${TEST_TMPDIR}/repo" && git init -q && git -c user.email="t@e.com" -c user.name="T" commit -q --allow-empty -m init)
+    FAKE_GH_EVALS="${TEST_TMPDIR}/evals.json"
+    FAKE_GH_LEDGER="${TEST_TMPDIR}/ledger.json"
+    echo '[]' > "${FAKE_GH_EVALS}"; echo '[]' > "${FAKE_GH_LEDGER}"
+    if [ "${kind}" = "eval" ]; then
+        _mk_issue_array "${count}" eval > "${FAKE_GH_EVALS}"
+    else
+        _mk_issue_array "${count}" ledger > "${FAKE_GH_LEDGER}"
+    fi
+    out="$(run_bundle)"; rc=$?
+    if [ "${expect}" = "loud" ]; then
+        if [ "${rc}" -ne 0 ]; then _record_pass "${label}: exits non-zero"
+        else _record_fail "${label}: exits non-zero" "rc=${rc} — a capped result was accepted as complete"; fi
+        assert_contains "${label}: says the result may be truncated" "truncat" "${out}"
+    else
+        if [ "${rc}" -eq 0 ]; then _record_pass "${label}: exits zero (no false alarm)"
+        else _record_fail "${label}: exits zero (no false alarm)" "rc=${rc}; out=${out}"; fi
+        assert_not_contains "${label}: says nothing about truncation" "truncat" "${out}"
+    fi
+    teardown_test_env
+}
+
+test_eval_intake_truncation_fails_loud() {
+    echo "-- test: an eval query that hits its cap is reported, not mined --"
+    _truncation_case "eval at the cap" eval 50 loud
+}
+test_eval_intake_below_cap_is_quiet() {
+    echo "-- test: an eval query below its cap is not flagged (control) --"
+    _truncation_case "eval below the cap" eval 49 quiet
+}
+test_ledger_truncation_fails_loud() {
+    echo "-- test: a ledger query that hits its cap is reported — this is the kill-math source of truth --"
+    _truncation_case "ledger at the cap" ledger 200 loud
+}
+test_ledger_below_cap_is_quiet() {
+    echo "-- test: a ledger query below its cap is not flagged (control) --"
+    _truncation_case "ledger below the cap" ledger 199 quiet
+}
+test_ledger_limit_is_overridable() {
+    # The ledger grows one issue per run and is never pruned, so a fixed cap is
+    # a forward-dated hard stop. The remedy has to be applicable in a TARGET
+    # repo, where mine-evidence.sh lives in the versioned plugin cache and
+    # editing it is undone by the next plugin update.
+    echo "-- test: the ledger cap can be raised from the environment --"
+    local out rc
+    setup_test_env; make_fake_gh
+    mkdir -p "${TEST_TMPDIR}/repo" "${TEST_TMPDIR}/memory"
+    (cd "${TEST_TMPDIR}/repo" && git init -q && git -c user.email="t@e.com" -c user.name="T" commit -q --allow-empty -m init)
+    FAKE_GH_EVALS="${TEST_TMPDIR}/evals.json"; echo '[]' > "${FAKE_GH_EVALS}"
+    FAKE_GH_LEDGER="${TEST_TMPDIR}/ledger.json"; _mk_issue_array 200 ledger > "${FAKE_GH_LEDGER}"
+    # Control: at the default cap this is a hard stop.
+    out="$( cd "${TEST_TMPDIR}/repo" && IMPROVEMENT_MINER_MEMORY_DIR="${TEST_TMPDIR}/memory" \
+        GH_LOG="${GH_LOG}" FAKE_GH_LEDGER="${FAKE_GH_LEDGER}" FAKE_GH_EVALS="${FAKE_GH_EVALS}" \
+        PATH="${TEST_TMPDIR}/stub:${PATH}" /bin/bash "${MINE}" bundle 2>&1 )"; rc=$?
+    if [ "${rc}" -ne 0 ]; then _record_pass "control: 200 ledger issues stop the default cap"
+    else _record_fail "control: 200 ledger issues stop the default cap" "rc=${rc}"; fi
+    # Raising it from the environment clears the stop.
+    out="$( cd "${TEST_TMPDIR}/repo" && IMPROVEMENT_MINER_MEMORY_DIR="${TEST_TMPDIR}/memory" \
+        IMPROVEMENT_MINER_LEDGER_LIMIT=500 \
+        GH_LOG="${GH_LOG}" FAKE_GH_LEDGER="${FAKE_GH_LEDGER}" FAKE_GH_EVALS="${FAKE_GH_EVALS}" \
+        PATH="${TEST_TMPDIR}/stub:${PATH}" /bin/bash "${MINE}" bundle 2>&1 )"; rc=$?
+    if [ "${rc}" -eq 0 ]; then _record_pass "raising IMPROVEMENT_MINER_LEDGER_LIMIT clears the stop"
+    else _record_fail "raising IMPROVEMENT_MINER_LEDGER_LIMIT clears the stop" "rc=${rc}; out=${out}"; fi
+    assert_contains "the deny message names the override the user can actually apply" \
+        "IMPROVEMENT_MINER_LEDGER_LIMIT" "$( cd "${TEST_TMPDIR}/repo" && IMPROVEMENT_MINER_MEMORY_DIR="${TEST_TMPDIR}/memory" \
+        GH_LOG="${GH_LOG}" FAKE_GH_LEDGER="${FAKE_GH_LEDGER}" FAKE_GH_EVALS="${FAKE_GH_EVALS}" \
+        PATH="${TEST_TMPDIR}/stub:${PATH}" /bin/bash "${MINE}" bundle 2>&1 )"
+    teardown_test_env
+}
+
+# Both directions plus a floor; see tests/test-helpers.sh.
+assert_test_functions_wired "$0"
 test_fingerprint_stable_and_distinct
 test_missing_gh_fails_loud
 test_gh_runtime_failure_fails_loud
@@ -750,5 +864,10 @@ test_select_null_grade_degrades
 test_select_meta_tie_keeps_earlier
 test_skill_md_content
 test_citation_contract_174
+test_eval_intake_truncation_fails_loud
+test_eval_intake_below_cap_is_quiet
+test_ledger_truncation_fails_loud
+test_ledger_below_cap_is_quiet
+test_ledger_limit_is_overridable
 
 print_summary

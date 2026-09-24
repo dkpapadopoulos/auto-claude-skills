@@ -3684,6 +3684,7 @@ test_skill_explain_raw_scores() {
 test_idle_guard_cooldown
 test_idle_guard_sanitization
 test_idle_guard_non_numeric_cooldown
+test_no_stderr_without_explain
 test_skill_explain_with_matches
 test_skill_explain_no_matches
 test_skill_explain_off_by_default
@@ -6986,20 +6987,20 @@ EOF
 
     if printf '%s' "$output" | grep -q "test-process-skill"; then
         echo "  PASS: process skill not capped (role-allowlist invariant holds)"
-        TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
     else
         echo "  FAIL: process skill was capped despite role-allowlist guard"
         echo "  Output: $output"
-        TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
     fi
 
     if printf '%s' "$output" | grep -q "test-domain-skill"; then
         echo "  FAIL: domain skill not capped despite max_iterations: 1"
         echo "  Output: $output"
-        TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
     else
         echo "  PASS: domain skill capped at iteration 1"
-        TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
     fi
 
     teardown_test_env
@@ -7020,11 +7021,11 @@ test_supply_chain_investigation_fires_on_attack_language() {
 
     if printf '%s' "$output" | grep -q "supply-chain-investigation"; then
         echo "  PASS: supply-chain-investigation fires on attack-language prompt"
-        TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
     else
         echo "  FAIL: supply-chain-investigation did not fire"
         echo "  Output: $output"
-        TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
     fi
 
     teardown_test_env
@@ -7046,10 +7047,10 @@ test_generic_cve_does_not_fire_supply_chain() {
     if printf '%s' "$output" | grep -q "supply-chain-investigation"; then
         echo "  FAIL: supply-chain-investigation fired on generic CVE prompt"
         echo "  Output: $output"
-        TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
     else
         echo "  PASS: supply-chain-investigation correctly did NOT fire on generic CVE language"
-        TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
     fi
 
     teardown_test_env

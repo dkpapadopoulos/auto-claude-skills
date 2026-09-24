@@ -1,0 +1,41 @@
+{
+  "substrate": "local",
+  "discovery_source": "verify-yml",
+  "passed": [
+    "tests"
+  ],
+  "failed": [],
+  "could_not_verify": [],
+  "gate_gaming_status": "clean",
+  "coverage_adequacy_status": "unverified",
+  "test_delta": "covered",
+  "worktree_dirty": true,
+  "dirty_paths": [
+    "hooks/openspec-guard.sh",
+    "hooks/lib/verdict.sh",
+    "scripts/verify-and-record.sh",
+    "tests/f0.sh",
+    "tests/f1.sh",
+    "tests/f2.sh",
+    "tests/f3.sh",
+    "tests/f4.sh",
+    "tests/f5.sh",
+    "tests/f6.sh",
+    "tests/f7.sh",
+    "tests/f8.sh",
+    "tests/f9.sh",
+    "tests/f10.sh",
+    "tests/f11.sh",
+    "tests/f12.sh",
+    "tests/f13.sh",
+    "tests/f14.sh",
+    "tests/f15.sh",
+    "tests/f16.sh"
+  ],
+  "dirty_path_count": 37,
+  "sha": "@SHA@",
+  "command": "bash tests/run-tests.sh",
+  "output_excerpt": "",
+  "ts": "2026-09-22T00:00:00Z",
+  "writer": "verify-and-record.sh"
+}

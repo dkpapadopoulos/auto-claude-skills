@@ -1,0 +1,10 @@
+    # `jq empty` accepts a STREAM, so two concatenated objects pass it and the
+    # second one's empty fields then satisfy every assertion below (Codex).
+    # The hook contract is exactly ONE object, so count them.
+    local nobj
+    nobj="$(printf '%s' "${out}" | jq -s 'length' 2>/dev/null)" || nobj=""
+    if [ "${nobj}" != "1" ]; then
+        _record_fail "${label}: output is exactly one JSON object" \
+            "parsed ${nobj:-<unparseable>} objects; got: ${out:-<empty>}"
+        return
+    fi

@@ -33,6 +33,43 @@ if [ -f "${PLUGIN_ROOT}/hooks/lib/session-token.sh" ]; then
 fi
 [ -z "$_SESSION_TOKEN" ] && [ -f "${HOME}/.claude/.skill-session-token" ] && \
     _SESSION_TOKEN="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null)"
+# --- Diagnostic capture (issue #177) — OFF the decision path ----------------
+# Two Skill() calls were denied live while replaying this file on disk ALLOWED
+# every time, and nothing recorded which file actually ran. This is the
+# Skill-gate analogue of the push gate's #127 instrument.
+#
+# NEVER SOURCED: a source-time failure would trip the fail-open `trap 'exit 0'
+# ERR` above and skip enforcement entirely. It fires an external subprocess from
+# a hardened EXIT trap, which disarms both traps first so a failing capture
+# command cannot re-enter them, and redirects the subshell so it cannot leak a
+# byte into the one-JSON-object contract.
+#
+# Armed HERE rather than at the deny site: most exits in this gate are early
+# `exit 0`s, and a record only for denies would leave the log with no
+# denominator — the same incompleteness the push-gate log documents.
+_SG_DECISION="allow"
+if [ "${SKILL_GATE_CAPTURE_DISABLE:-}" != "1" ]; then
+    # No "is capture still active?" flag here. The trap is installed only inside
+    # this branch, so it cannot fire with capture disabled — a guard for that
+    # state would be unreachable, and unreachable code in a gate reads as
+    # coverage it does not provide (the same reason the token/jq re-checks were
+    # removed from the implement-leg probe). If a future path needs to suppress
+    # capture after arming, `trap - EXIT` is the honest way to say so.
+    _sg_capture_on_exit() {
+        trap - ERR
+        trap - EXIT
+        (
+            exec </dev/null >/dev/null 2>&1
+            SGC_DECISION="${_SG_DECISION:-allow}" SGC_SKILL="${_RAW_SKILL:-}" \
+            SGC_SESSION_TOKEN="${_SESSION_TOKEN:-}" SGC_TRANSCRIPT="${_TRANSCRIPT:-}" \
+            SGC_GATE_PATH="${BASH_SOURCE:-$0}" SGC_INPUT="${INPUT:-}" \
+            "${PLUGIN_ROOT}/scripts/skill-gate-capture.sh"
+        ) || true
+        return 0
+    }
+    trap '_sg_capture_on_exit' EXIT
+fi
+
 [ -z "$_SESSION_TOKEN" ] && exit 0
 
 _COMP="${HOME}/.claude/.skill-composition-state-${_SESSION_TOKEN}"
@@ -93,17 +130,70 @@ case "$_MODE" in deny|warn|off) ;; *) _MODE=""; [ -f "${_PROJ_ROOT}/.claude-plug
     _REPO_ID="$(jq -r '.name // empty' "${_PROJ_ROOT}/.claude-plugin/plugin.json" 2>/dev/null)" || _REPO_ID=""; \
     if [ "$_REPO_ID" = "auto-claude-skills" ]; then _MODE="deny"; else _MODE="warn"; fi ;; esac
 
+# Positive "reached the decision point" sentinel for the capture replay (#177).
+# Placed BEFORE the branch, so an ALLOW emits it too — with it only on the deny
+# path, a genuine allow would replay as `incomplete` and every allow would look
+# like a crash. The replayed gate is itself fail-open, so empty stdout cannot
+# distinguish "allowed" from "died early"; this is what makes the distinction
+# POSITIVE rather than inferred from silence.
+#
+# Under the replay flag ONLY. Live operation emits exactly the one JSON object
+# it always did — the harness contract is one object, and a stray line would
+# break it.
+[ "${SKILL_GATE_CAPTURE_REPLAY:-}" = "1" ] && printf '__SGC_EVALUATED__\n'
+
 if [ "$_MODE" = "off" ]; then
     phase_gate_log "skill-seq" "off" "$_SKILL" "$_MISSING"
     exit 0
 fi
 
-_MSG="PHASE GATE — Step '${_MISSING}' has no invocation evidence, but Skill(${_RAW_SKILL}) comes after it in the composition chain. Do now (one of): (1) invoke the missing step: Skill(${_MISSING}); (2) record an explicit, review-surfaced skip: source \"\$(git rev-parse --show-toplevel)/hooks/lib/phase-attest.sh\" 2>/dev/null || source \"\$CLAUDE_PLUGIN_ROOT/hooks/lib/phase-attest.sh\"; phase_attest ${_MISSING} \"<reason>\"; (3) human bypass: run the action yourself with the ! prefix. Gating milestones (requesting-code-review, verification-before-completion) accept only real invocations."
+# The attestation remedy names the RESOLVED plugin root (#248). It previously
+# offered `$(git rev-parse --show-toplevel)/hooks/lib/...` || `$CLAUDE_PLUGIN_ROOT/...`
+# and both halves fail outside this repo: the first is the USER's repo root,
+# which has no hooks/lib, and CLAUDE_PLUGIN_ROOT is unset in the model's shell.
+# This hook already resolved PLUGIN_ROOT; telling an agent how to find this
+# hook's own libs, while holding that path, was the avoidable indirection.
+# SINGLE-quoted on purpose: this text is pasted into a shell, and a double
+# quoted path expands `$…` and EXECUTES backticks (measured, both shells).
+# PAIRED with openspec-guard.sh::_attest_remedy and the {{PLUGIN_ROOT}}
+# substitution in skill-activation-hook.sh — three renderings, one shape.
+# The path goes into the message inside literal single quotes, so a `'` in it
+# would close the quote and break the pasted command (measured: an install path
+# of /tmp/od'd/plug emitted `source '/tmp/od'd/...'`, an unterminated string).
+# openspec-guard.sh escapes via _shq and skill-activation-hook.sh via the same
+# pattern; this was the one unescaped site of the three. Fork-free, because
+# inside double quotes `\'` is NOT an escape — it is a backslash and a quote —
+# so the replacement is built from single-character variables.
+_SQ="'" ; _BS='\' ; _PR_SQ="${PLUGIN_ROOT//${_SQ}/${_SQ}${_BS}${_SQ}${_SQ}}"
+# WHERE THE GATE LOOKED (#249). Two denies were observed live that no on-disk
+# replay reproduced, and the replay controlled the hook file but not the SUBJECT.
+# `phase_step_satisfied`'s second leg is `branch_ledger_has`, whose key hashes
+# (origin remote URL, BRANCH NAME) — so evidence recorded on one branch is
+# invisible from another, and a deny is correct for the branch it was measured
+# on while allowing from a sibling worktree. Reproduced under isolation with one
+# variable moved: same token, payload, chain and hook file; two branches of the
+# same repo; allow vs deny.
+#
+# The branch at deny time was never recorded, which is why the original pair is
+# not decidable after the fact. Naming it here makes the NEXT one self-
+# diagnosing. Message material only — nothing gates on it, and resolution
+# failure degrades to an empty note rather than changing the decision.
+_SG_BRANCH="$(git -C "${_PROJ_ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null)" || _SG_BRANCH=""
+_SG_WHERE=""
+if [ -n "${_SG_BRANCH}" ]; then
+    _SG_WHERE=" Evidence was looked up for branch '${_SG_BRANCH}' in ${_PROJ_ROOT} — a step recorded on a different branch, or in a detached HEAD, is not visible from here."
+fi
+_MSG="PHASE GATE — Step '${_MISSING}' has no invocation evidence, but Skill(${_RAW_SKILL}) comes after it in the composition chain. Do now (one of): (1) invoke the missing step: Skill(${_MISSING}); (2) record an explicit, review-surfaced skip: source '${_PR_SQ}/hooks/lib/phase-attest.sh'; phase_attest ${_MISSING} \"<reason>\"; (3) human bypass: run the action yourself with the ! prefix. Gating milestones (requesting-code-review, verification-before-completion) accept only real invocations.${_SG_WHERE}"
 if [ "$_MODE" = "warn" ]; then
     phase_gate_log "skill-seq" "warn" "$_SKILL" "$_MISSING"
     jq -n --arg msg "PHASE GATE (advisory): $_MSG" '{"systemMessage":$msg}'
     exit 0
 fi
 phase_gate_log "skill-seq" "deny" "$_SKILL" "$_MISSING"
-jq -n --arg msg "$_MSG" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":$msg}'
+# permissionDecisionReason is the ONLY field Claude Code shows the MODEL on a
+# deny; systemMessage is shown to the user and never to Claude (#254). The
+# remediation above is useless in a channel the model cannot read, so both
+# carry the same text: the user sees it, and the agent can act on it.
+_SG_DECISION="deny"
+jq -n --arg msg "$_MSG" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$msg},"systemMessage":$msg}'
 exit 0

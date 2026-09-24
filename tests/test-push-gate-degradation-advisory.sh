@@ -118,6 +118,19 @@ else
 fi
 assert_not_contains "healthy control emits no degradation advisory" \
     "GATE DEGRADED" "${out:-}"
+# The pinned fixture was REGENERATED for #254, which added
+# permissionDecisionReason to every deny. The byte-identical assertion above
+# still pins exactly what it was built to pin — that the #198 advisory adds no
+# output on a clean path — and the systemMessage text inside it is unchanged
+# from the pre-#254 capture; only the new field appeared.
+#
+# But "byte-identical to a file in the repo" is satisfied by any future
+# regeneration, including one that silently drops the field again. So the
+# property #254 bought is asserted here directly, against the live output, not
+# only against the fixture.
+assert_equals "healthy control tells the MODEL why, not only the user" \
+    "$(printf '%s' "${out}" | jq -r '.systemMessage // ""')" \
+    "$(printf '%s' "${out}" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""')"
 assert_equals "healthy control still reaches a decision" "true" "$(_has_decision "${out}")"
 
 # ---------------------------------------------------------------------------

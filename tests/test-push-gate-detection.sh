@@ -711,5 +711,40 @@ assert_equals "advisory form: unbalanced parse refuses"       "no" \
 assert_equals "advisory form: no push at all"                 "no" \
     "$(_rad 'echo hello')"
 
+# ---------------------------------------------------------------------------
+# _GC_HEREDOC_OWNER is reset on every scan (#231, found unpinned in review).
+#
+# WHY THE OBVIOUS CELL DOES NOT WORK, which is the whole reason this one is
+# shaped oddly. The natural form is
+#
+#     a="$(command_untrusted_heredoc_owner "<python heredoc>")"
+#     b="$(command_untrusted_heredoc_owner "git push origin main")"
+#
+# and it passes IDENTICALLY with the reset deleted — measured — because each
+# `$( )` runs the function in a subshell, so the global it mutates dies with
+# that subshell and never reaches the second call. Deleting the reset leaves
+# this file (211 cells) and tests/test-push-gate-heredoc-remedy.sh fully green.
+#
+# The leak is real for any caller that does NOT use command substitution. Two
+# such shapes flip, and both are asserted: reading the global after a plain
+# call, and redirecting the reader's output to a file. Today's sole call site
+# uses `$( )` and so cannot be bitten — which is exactly why the guarantee
+# needs a test rather than an argument from current usage.
+_hd_py="$(printf 'python3 - <<PY\n# git push origin main\nPY')"
+
+command_parse_balanced "${_hd_py}" >/dev/null 2>&1
+command_parse_balanced "git push origin main" >/dev/null 2>&1
+assert_equals "heredoc owner does not survive into the next scan (global)" \
+    "" "${_GC_HEREDOC_OWNER:-}"
+
+_hd_o1="$(mktemp)"; _hd_o2="$(mktemp)"
+command_untrusted_heredoc_owner "${_hd_py}"       > "${_hd_o1}"
+command_untrusted_heredoc_owner "git push origin main" > "${_hd_o2}"
+assert_equals "CONTROL: the heredoc owner is reported at all" \
+    "python3" "$(cat "${_hd_o1}")"
+assert_equals "heredoc owner does not survive into the next call (redirect)" \
+    "" "$(cat "${_hd_o2}")"
+rm -f "${_hd_o1}" "${_hd_o2}"
+
 print_summary
 exit $?

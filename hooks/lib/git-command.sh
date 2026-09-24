@@ -54,6 +54,7 @@ _gc_split_segments() {
     # goes undetected. Re-assert it here so the fail direction stays CLOSED.
     [ -n "${_GC_SEP:-}" ] || _GC_SEP=$'\037'
     _GC_UNBALANCED=0
+    _GC_HEREDOC_OWNER=""
     while IFS= read -r _line || [ -n "${_line}" ]; do
         _line="${_line%$'\r'}"   # CRLF paste: \r glued to a terminator would
                                  # never compare equal and cost precision
@@ -210,6 +211,13 @@ _gc_split_segments() {
                                 # stream (Finding 2), and the trailing top-level
                                 # code must stay reliably segmented for the
                                 # precise mutate-then-push predicate.
+                                # Record the owner so a caller can SAY why the
+                                # command was read as a push (#231). The gate's
+                                # decision is unchanged — this is message
+                                # material only, and it is captured here rather
+                                # than re-scanned by a second parser, which is
+                                # how this file accumulated eight bypasses.
+                                _GC_HEREDOC_OWNER="${_w}"
                                 _hd_reg=1; _GC_UNBALANCED=1 ;;
                         esac
                         if [ "${_hd_reg}" -eq 1 ]; then
@@ -377,6 +385,26 @@ _gc_segment_cmd_word() {
 command_parse_balanced() {
     _gc_split_segments "$1" >/dev/null
     [ "${_GC_UNBALANCED:-1}" -eq 0 ]
+}
+
+# command_untrusted_heredoc_owner <command>
+#   Echoes the command word that owned an UNKNOWN-owner heredoc, if one was
+#   seen — `python3`, `ssh`, `docker`, … — and nothing otherwise.
+#
+#   This is the documented reason a command whose heredoc body merely MENTIONS
+#   a push is read as a push (#231): `cat`/`tee`/`git` bodies are data and are
+#   consumed, shell interpreters are scanned as code, and everything else is
+#   unmodellable, so the parse is marked untrusted and detection falls back to
+#   the substring path.
+#
+#   MESSAGE MATERIAL ONLY. Nothing may gate on this. A narrower deny is what
+#   #231 asks for and what this deliberately does not do: the body of an
+#   interpreter heredoc is a PROGRAM, and `os.system("git push")` inside it
+#   really pushes, so "the match is inside a heredoc, therefore inert" is false
+#   for exactly these owners.
+command_untrusted_heredoc_owner() {
+    _gc_split_segments "$1" >/dev/null
+    printf '%s' "${_GC_HEREDOC_OWNER:-}"
 }
 
 # _gc_segment_git_sub <segment>
@@ -570,6 +598,486 @@ command_invokes_gh_merge() {
     done
     IFS="${_gc_oldifs}"
     return 1
+}
+
+# _gc_segment_git_init_target <segment>
+#   The directory a `git init` segment targets: its first non-flag operand, or
+#   "." when it names none (meaning the segment's own cwd). Echoes nothing when
+#   the segment is not `git init`. Value-taking `git init` options are skipped
+#   so their VALUE is never read as the directory.
+_gc_segment_git_init_target() {
+    local _u _p
+    [ "$(_gc_segment_git_sub "$1")" = "init" ] || return 0
+    # shellcheck disable=SC2086
+    set -- $1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            '('|'{') shift ;;
+            '('*|'{'*) _u="$(_gc_strip_openers "$1")"; shift; set -- "${_u}" "$@"; break ;;
+            *) break ;;
+        esac
+    done
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            env) shift ;;
+            [A-Za-z_]*=*) shift ;;
+            *) break ;;
+        esac
+    done
+    shift 2>/dev/null || return 0          # the `git` word
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            init) shift; break ;;
+            *) shift ;;
+        esac
+    done
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            # `--separate-git-dir` / `--git-dir` point the repository's real git
+            # directory somewhere else, so the directory this function reports
+            # is NOT where git will act. `git init --separate-git-dir
+            # <real>/.git .` certified while wiring the scratch worktree to a
+            # real repository's gitdir — measured. Refuse outright: echoing
+            # nothing makes the caller refuse, which is the safe direction.
+            --separate-git-dir|--separate-git-dir=*|--git-dir|--git-dir=*) return 0 ;;
+            # Other value-taking options: skip the option AND its value, so a
+            # value is never mistaken for the target directory.
+            --template|--shared|-b|--initial-branch|--object-format|--ref-format)
+                shift; shift 2>/dev/null || return 0 ;;
+            --*=*|-q|--quiet|--bare|--*) shift ;;
+            -*) shift ;;
+            *) break ;;
+        esac
+    done
+    [ "$#" -ge 1 ] || { printf '%s' "."; return 0; }
+    _p="$(_gc_strip_closers "$1")"
+    _p="${_p%\"}"; _p="${_p#\"}"; _p="${_p%\'}"; _p="${_p#\'}"
+    [ -n "${_p}" ] || _p="."
+    printf '%s' "${_p}"
+}
+
+# _gc_seg_is_mkdir <segment>
+#   0 when the segment's command word is `mkdir`. `mkdir` creates the scratch
+#   directory and cannot push; it is separated from _gc_seg_is_inert because
+#   that whitelist is shared with command_push_is_all_deletions, where a
+#   segment's inertness must mean "ships no content" for a DIFFERENT claim.
+_gc_seg_is_mkdir() {
+    local _u
+    # shellcheck disable=SC2086
+    set -- $1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            '('|'{') shift ;;
+            '('*|'{'*) _u="$(_gc_strip_openers "$1")"; shift; set -- "${_u}" "$@"; break ;;
+            *) break ;;
+        esac
+    done
+    [ "${1:-}" = "mkdir" ]
+}
+
+# _gc_seg_has_env_prefix <segment>
+#   0 when the segment's command word is preceded by a `VAR=value` assignment.
+#   `_gc_segment_git_sub` deliberately SKIPS such prefixes so that
+#   `GIT_DIR=x git push` is still recognised as a push — which is right for
+#   DETECTION and fatal for CERTIFICATION: `GIT_DIR=<real>/.git git push origin
+#   main` reads as a push whose subject directory is the scratch dir, while git
+#   acts on the real repository. Measured as a live bypass of
+#   command_push_is_local_scratch before this existed.
+_gc_seg_has_env_prefix() {
+    local _u
+    # shellcheck disable=SC2086
+    set -- $1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            '('|'{') shift ;;
+            '('*|'{'*) _u="$(_gc_strip_openers "$1")"; shift; set -- "${_u}" "$@"; break ;;
+            *) break ;;
+        esac
+    done
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            env) shift ;;
+            [A-Za-z_]*=*) return 0 ;;
+            *) return 1 ;;
+        esac
+    done
+    return 1
+}
+
+# _gc_seg_is_cd <segment>
+#   0 when the segment's command word is `cd`, whether or not a target can be
+#   extracted from it. _gc_segment_cd_target returns nothing for bare `cd` and
+#   for `cd -`; without this, such a segment fell through to the inert
+#   whitelist (which vouches for `cd`) and the tracked cwd silently went stale.
+_gc_seg_is_cd() {
+    local _u
+    # shellcheck disable=SC2086
+    set -- $1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            '('|'{') shift ;;
+            '('*|'{'*) _u="$(_gc_strip_openers "$1")"; shift; set -- "${_u}" "$@"; break ;;
+            *) break ;;
+        esac
+    done
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            env|command|builtin) shift ;;
+            [A-Za-z_]*=*) shift ;;
+            *) break ;;
+        esac
+    done
+    [ "${1:-}" = "cd" ]
+}
+
+# _gc_seps_all_and <command>
+#   0 when the command is a flat `&&` chain: every separator is `&&` and there
+#   is no grouping. Refuses `;`, a newline, a pipe, `||`, a lone `&`, and any
+#   `(`/`)`/`{`/`}`, outside quotes.
+#
+#   PAIRED with `_gc_split_segments`, which is this file's OTHER hand-rolled
+#   quote scanner. That one deliberately does not interpret backslash escapes
+#   and this one does; every divergence found in review lands on refuse, but
+#   the two are the drift-prone shape this repo has been bitten by, so a change
+#   to either should be checked against the other.
+#
+#   THIS IS A SAFETY CONDITION, not tidiness. `_gc_split_segments` throws the
+#   operator away, so `A ; B` and `A && B` are identical to every predicate
+#   built on it — and they are not identical at runtime. With `;` a FAILED `cd`
+#   does not stop the command: the shell stays where it was, which is the
+#   session's own checkout. Measured against the real guard:
+#
+#       cd /tmp/does-not-exist ; git init ; git commit -m X ; git push origin main
+#
+#   certified and was ALLOWED, while the bare `git push origin main` control
+#   denied. Executed, the `cd` failed, `git init` REINITIALISED the real
+#   repository, and the commit reached the real remote. It is the reinit bypass
+#   that the "target must not exist" condition exists to stop, arriving from the
+#   other side: the directory that does not exist is never entered, so that
+#   condition is satisfied by a path nothing ever touches.
+#
+#   With `&&`, a failing `mkdir` or `cd` aborts the chain before the push, so
+#   the push can only run from the directory this function believes it runs in.
+#   That is what makes the tracked cwd trustworthy rather than a guess.
+_gc_seps_all_and() {
+    local _s="$1" _i=0 _n=${#1} _c _sq=0 _dq=0
+    while [ "${_i}" -lt "${_n}" ]; do
+        _c="${_s:${_i}:1}"
+        if [ "${_sq}" -eq 0 ] && [ "${_c}" = "\\" ]; then _i=$(( _i + 2 )); continue; fi
+        if [ "${_dq}" -eq 0 ] && [ "${_c}" = "'" ]; then _sq=$(( 1 - _sq )); _i=$(( _i + 1 )); continue; fi
+        if [ "${_sq}" -eq 0 ] && [ "${_c}" = '"' ]; then _dq=$(( 1 - _dq )); _i=$(( _i + 1 )); continue; fi
+        if [ "${_sq}" -eq 0 ] && [ "${_dq}" -eq 0 ]; then
+            case "${_c}" in
+                '&')
+                    if [ "${_s:$(( _i + 1 )):1}" = "&" ]; then _i=$(( _i + 2 )); continue; fi
+                    return 1 ;;
+                ';'|'|') return 1 ;;
+                # Group punctuation refuses for the same reason a `;` does: it
+                # decouples where this function thinks execution is from where
+                # it actually is. A `cd` inside `( … )` does NOT move the outer
+                # shell, but the tracked cwd followed it, so
+                #     ( mkdir /tmp/x && cd /tmp/x && git init && git commit ) \
+                #         && git push origin main
+                # certified while the push ran in the session's own checkout and
+                # reached its real remote — measured end to end by a reviewer.
+                # This predicate keeps no scope stack, so a `cd` whose effect it
+                # cannot bound must refuse, exactly as bare `cd` and `cd -` do.
+                '('|')'|'{'|'}') return 1 ;;
+                '
+') return 1 ;;
+            esac
+        fi
+        _i=$(( _i + 1 ))
+    done
+    return 0
+}
+
+# _gc_segment_mkdir_target <segment>
+#   The single directory a `mkdir` segment names, absolute or not. Echoes
+#   nothing when the segment is not a mkdir or names anything but one path.
+_gc_segment_mkdir_target() {
+    local _u _p
+    _gc_seg_is_mkdir "$1" || return 0
+    # shellcheck disable=SC2086
+    set -- $1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            '('|'{') shift ;;
+            '('*|'{'*) _u="$(_gc_strip_openers "$1")"; shift; set -- "${_u}" "$@"; break ;;
+            *) break ;;
+        esac
+    done
+    shift 2>/dev/null || return 0
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            # `-p` REFUSES, and this is the condition the guarantee rests on.
+            # `mkdir -p` SUCCEEDS on a path that already exists — including a
+            # symlink to a directory — so under `&&` the chain carries on into
+            # whatever P really is. Bare `mkdir` FAILS there and `&&` aborts.
+            #
+            # That is the difference between "the hook checked disk state at
+            # time T" and "the command itself proves P was absent when it ran".
+            # It matters because hook-time disk state is AGENT-WRITABLE: nothing
+            # gates creating a symlink at P between this check and execution,
+            # and this repo's rule is never to suppress a gate on agent-writable
+            # state. With bare `mkdir` the runtime is the proof and the
+            # `[ -e ]` check below is only a cheap early-out.
+            -p|--parents) return 0 ;;
+            -m|--mode) shift; shift 2>/dev/null || return 0 ;;
+            -*) shift ;;
+            *) break ;;
+        esac
+    done
+    [ "$#" -eq 1 ] || return 0
+    _p="$(_gc_strip_closers "$1")"
+    _p="${_p%\"}"; _p="${_p#\"}"; _p="${_p%\'}"; _p="${_p#\'}"
+    case "${_p}" in ''|*..*) return 0 ;; esac
+    printf '%s' "${_p}"
+}
+
+# command_push_is_local_scratch <command>
+#   0 iff every `git push` in <command> acts on a repository that THIS COMMAND
+#   creates from nothing, in a directory that does not exist yet, with no remote
+#   ever configured — so the push cannot reach any network and this repository's
+#   push gate has no jurisdiction over it.
+#
+#   WHY THIS EXISTS (#231). A contributor writing a local fixture repo to test
+#   push behaviour — `mkdir /tmp/x && cd /tmp/x && git init && git commit && git
+#   push origin main` — was denied by the gate they were testing, with a remedy
+#   naming a skill unrelated to what they were doing. The push is entirely
+#   local: `origin` does not exist in a freshly-initialised repo, so it fails at
+#   git's own hands and reaches nothing.
+#
+#   WHY IT IS AN ALL-FORM, like command_push_is_all_deletions. "Some push looks
+#   local" is a weaker claim than "this command cannot push anywhere real".
+#   EVERY segment must be accounted for; a single unrecognised one refuses.
+#
+#   THE BYPASS THIS IS SHAPED AGAINST: `git init` in an already-initialised
+#   repository is a harmless REINIT that succeeds and changes nothing. So the
+#   presence of `git init` proves nothing on its own — `cd /real/repo && git
+#   init && git commit -am x && git push origin main` would otherwise certify
+#   and ship real work unreviewed. The load-bearing condition is therefore that
+#   the target directory DOES NOT EXIST ON DISK when the gate runs. A path that
+#   does not exist cannot be this repository, cannot be any repository, and
+#   cannot carry a configured remote.
+#
+#   A POSITIVE ALLOWLIST of git subcommands is safe HERE in a way #229 records
+#   it was not there. That predicate had to prove "ships no content", which is
+#   open-ended. This one only has to prove "no remote is ever configured", and
+#   anything outside {init, add, commit, push} — `remote`, `config`, `clone`,
+#   `fetch`, `subtree`, or a subcommand git has not shipped yet — refuses the
+#   skip and leaves today's deny in place. Unknown fails toward NOT skipping.
+#
+#   CEILINGS, stated rather than implied: a relative subject directory refuses
+#   (the hook's cwd is not the command's); a `cd` whose target is a variable
+#   refuses, because the scanner does not expand; and a leftover scratch
+#   directory from a previous run exists on disk, so it refuses too. All three
+#   fail toward the existing deny.
+command_push_is_local_scratch() {
+    local _cmd="$1"
+    local _segs _oldifs _seg _sub _cwd="" _cdt="" _t="" _initdir="" _pushdir="" _d
+    local _npush=0 _ninit=0 _ok=1 _mkdir_p="" _r_ok=0 _w
+
+    # A command substitution RUNS wherever it appears, so it smuggles an
+    # arbitrary command into a segment this predicate would otherwise vouch for
+    # — including inside the arguments of the push itself. Same refusal, and for
+    # the same reason, as command_push_is_all_deletions.
+    case "${_cmd}" in
+        *'$('*|*'`'*|*'<('*|*'>('*|*'=('*|*'${ '*|*'${|'*) return 1 ;;
+    esac
+
+    _segs="$(_gc_split_segments "${_cmd}")"
+    _oldifs="$IFS"
+    IFS="${_GC_SEP}"
+    for _seg in ${_segs}; do
+        IFS="${_oldifs}"
+        # An environment assignment in front of ANY segment can redirect git
+        # (GIT_DIR, GIT_WORK_TREE, GIT_CONFIG_GLOBAL, …) to a repository this
+        # function is not looking at. There is no modelling it here, so refuse.
+        if _gc_seg_has_env_prefix "${_seg}"; then
+            _ok=0
+            IFS="${_GC_SEP}"
+            continue
+        fi
+        _sub="$(_gc_segment_git_sub "${_seg}")"
+        if [ -n "${_sub}" ]; then
+            # `git -c <key>=<value>` sets configuration for that one command,
+            # including remote URLs and `url.*.insteadOf` rewrites. Refuse any
+            # segment carrying it rather than enumerating the harmful keys.
+            case " ${_seg} " in
+                *" -c "*|*" --config-env "*|*" --config-env="*) _ok=0 ;;
+            esac
+            case "${_sub}" in
+                init)
+                    _ninit=$(( _ninit + 1 ))
+                    # ORDER MATTERS: a push before the repository exists is not
+                    # a push into a repository this command created.
+                    [ "${_npush}" -eq 0 ] || _ok=0
+                    _t="$(_gc_segment_git_init_target "${_seg}")"
+                    case "${_t}" in
+                        "")   _ok=0 ;;
+                        .)    [ -n "${_cwd}" ] && _initdir="${_cwd}" || _ok=0 ;;
+                        /*)   _initdir="${_t}" ;;
+                        *)    _ok=0 ;;
+                    esac
+                    ;;
+                add|commit) : ;;
+                push)
+                    _npush=$(( _npush + 1 ))
+                    # A directory-redirecting global flag on the push REFUSES.
+                    # It is not enough to stop READING `--work-tree` as the
+                    # subject: the predicate needs to know where git will
+                    # actually act, and no unvalidated flag can answer that.
+                    #
+                    # `--work-tree` is the sharp case because it does NOT change
+                    # which repository git acts on — git still discovers `.git`
+                    # from the cwd. Measured: with the cwd inside a real
+                    # checkout, `git --work-tree=<fresh scratch> push origin
+                    # main` satisfied every condition honestly (the scratch dir
+                    # was absent, freshly `mkdir`ed, `&&`-chained, and equal to
+                    # the init target) while the push shipped the checkout's
+                    # unreviewed HEAD to its real remote. `-C` is genuinely
+                    # honoured, which makes it a usable decoy from the other
+                    # direction; and two flags together made the subject
+                    # resolver return nothing and fall back to the tracked cwd,
+                    # discarding the `-C` that git does obey.
+                    #
+                    # Deliberately NOT fixed by narrowing `_gc_segment_dir_flag`:
+                    # its other caller is #219's subject resolver, whose contract
+                    # is to REPORT the command's claim so the guard can validate
+                    # and discard it downstream. Narrowing it would change that
+                    # deny path to buy a fix belonging one level up.
+                    case " ${_seg} " in
+                        *" -C "*|*" --git-dir "*|*" --git-dir="*|*" --work-tree "*|*" --work-tree="*|*" --namespace "*|*" --namespace="*)
+                            _ok=0 ;;
+                    esac
+                    _d="${_cwd}"
+                    if [ -z "${_pushdir}" ]; then
+                        _pushdir="${_d}"
+                    elif [ "${_pushdir}" != "${_d}" ]; then
+                        _ok=0
+                    fi
+                    # WHITELIST the destination, do not exclude URL shapes.
+                    #
+                    # The exclusion `*://*|*@*:*` missed two whole families,
+                    # both measured pushing to real repositories: git's
+                    # scp-like syntax makes the user OPTIONAL, so
+                    # `github.com:org/repo.git` is an SSH URL with neither `://`
+                    # nor `@`; and a bare filesystem path is a valid remote, so
+                    # `git push --force /path/to/real.git +HEAD:refs/heads/x`
+                    # force-updated a branch on another repository.
+                    #
+                    # AND THE DESIGN ARGUMENT THAT BOUNDED THE DAMAGE WAS WRONG.
+                    # It reasoned that a repository created moments ago has no
+                    # content to ship. DELETION AND FORCE-UPDATE NEED NO
+                    # CONTENT: `git push --mirror /path/to/real.git` from an
+                    # EMPTY repo deleted refs on the target (measured: two of
+                    # three refs gone; `main` survived only because the server
+                    # refuses to delete its own HEAD branch). Certification
+                    # skips the whole gate, not merely the content legs, so
+                    # "nothing to ship" never bounded anything.
+                    _r_ok=0
+                    for _w in ${_seg}; do
+                        case "${_w}" in
+                            git|*/git|push) continue ;;
+                            # Anything that can redirect, broaden or force the
+                            # push refuses. `--repo` takes a URL; `--mirror`,
+                            # `--all` and `--tags` broaden beyond the named ref;
+                            # `--force`/`-f` and a `+`-prefixed refspec rewrite
+                            # history on the far side.
+                            --mirror|--all|--tags|--prune|--delete|-d) _ok=0; continue ;;
+                            --repo|--repo=*|--receive-pack|--receive-pack=*|--exec|--exec=*) _ok=0; continue ;;
+                            --force|-f|--force-with-lease|--force-with-lease=*|--force-if-includes) _ok=0; continue ;;
+                            +*) _ok=0; continue ;;
+                            -*) continue ;;
+                            *:*) _ok=0; continue ;;
+                        esac
+                        # The first bare operand is the destination. It must be
+                        # a plain remote NAME: no `:` (scp-style), no `/` (a
+                        # path), no leading `.` (a relative path).
+                        if [ "${_r_ok}" -eq 0 ]; then
+                            case "${_w}" in
+                                .*|*/*|*:*) _ok=0 ;;
+                                *[!A-Za-z0-9._-]*) _ok=0 ;;
+                            esac
+                            _r_ok=1
+                        fi
+                    done
+                    ;;
+                *) _ok=0 ;;
+            esac
+        elif _gc_seg_is_mkdir "${_seg}"; then
+            _t="$(_gc_segment_mkdir_target "${_seg}")"
+            case "${_t}" in
+                /*) _mkdir_p="${_t}" ;;
+                *)  _ok=0 ;;
+            esac
+        elif _gc_seg_is_cd "${_seg}"; then
+            # A `cd` this function cannot resolve EXACTLY makes every later
+            # subject wrong while still looking accounted for. Bare `cd` goes to
+            # $HOME, `cd -` to the previous directory, and a relative target is
+            # resolved by the shell against a cwd this function is only
+            # guessing at — all three were measured certifying while the real
+            # cwd was somewhere else entirely. Only an absolute, `..`-free path
+            # is tracked; anything else refuses.
+            _cdt="$(_gc_segment_cd_target "${_seg}")"
+            case "${_cdt}" in
+                /*) case "${_cdt}" in *..*) _ok=0 ;; *) _cwd="${_cdt}" ;; esac ;;
+                *)  _ok=0 ;;
+            esac
+        elif _gc_seg_is_inert "${_seg}"; then
+            :
+        else
+            _ok=0
+        fi
+        IFS="${_GC_SEP}"
+    done
+    IFS="${_oldifs}"
+
+    [ "${_ok}" -eq 1 ]      || return 1
+    [ "${_npush}" -ge 1 ]   || return 1
+    [ "${_ninit}" -ge 1 ]   || return 1
+    # The command must CREATE the directory it pushes in, and every separator
+    # must be `&&` so a failure cannot carry execution onward into the
+    # session's own checkout. Neither condition alone is enough: `&&` without a
+    # `mkdir` leaves the directory's existence at exec time to chance, and a
+    # `mkdir` without `&&` does not stop a failed `cd` from continuing.
+    [ -n "${_mkdir_p}" ] && [ "${_mkdir_p}" = "${_pushdir}" ] || return 1
+    _gc_seps_all_and "${_cmd}" || return 1
+    [ -n "${_initdir}" ]    || return 1
+    [ -n "${_pushdir}" ]    || return 1
+    [ "${_initdir}" = "${_pushdir}" ] || return 1
+    case "${_pushdir}" in /*) ;; *) return 1 ;; esac
+    # THE load-bearing condition. Must not exist — see the reinit bypass above.
+    [ -e "${_pushdir}" ] && return 1
+
+    # THE DESTINATION CAN LIVE ENTIRELY IN CONFIGURATION (B3). `git push origin`
+    # in a repository with no remote `origin` is not an error: git treats the
+    # word as a URL and applies `url.<base>.insteadOf` rewriting from the user's
+    # gitconfig. Measured — with `[url "/path/to/real.git"] insteadOf = origin`
+    # set globally, a force-push from a three-command-old scratch repo
+    # rewrote a branch on that real repository.
+    #
+    # No condition on the command TEXT can see this, because the destination is
+    # not in the text. So the predicate reads the rewrite rules directly and
+    # refuses if any exist, along with `remote.pushDefault`, which redirects a
+    # bare `git push` the same way. `git config` is forked only here, on the
+    # success path, so only a certification candidate pays for it.
+    if command -v git >/dev/null 2>&1; then
+        git config --get-regexp 'url\..*\.(insteadof|pushinsteadof)' >/dev/null 2>&1 && return 1
+        git config --get remote.pushDefault >/dev/null 2>&1 && return 1
+    else
+        return 1
+    fi
+
+    # An untrustworthy parse cannot certify anything (#229): this scanner does
+    # not interpret backslash escapes, so a `\'` outside an active quote merges
+    # segments and can hide a real push inside one that looks accounted for.
+    # Checked on the success path only, for the cost reason recorded on
+    # command_push_is_all_deletions.
+    command -v command_parse_balanced >/dev/null 2>&1 || return 1
+    command_parse_balanced "${_cmd}" || return 1
+    return 0
 }
 
 # command_git_mutate_before_push <command>

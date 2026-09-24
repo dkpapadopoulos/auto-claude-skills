@@ -81,6 +81,64 @@ The primary mitigation is **blast-radius control** — cutting at least one leg 
 - Require human-in-the-loop approval for all outbound actions
 - Use a narrowly scoped HITL: auto-approve low-risk actions, require approval for high-risk ones (sending data externally, deleting resources, creating public artifacts)
 
+## Step 3b: Placement check — does the control's region contain the threat?
+
+A control that exists is not a control that applies. For **each** identified risk,
+write these down **separately**, then state whether they overlap:
+
+1. **Threat region.** What the threat is, and *which region of the artifact it
+   occupies* — which file, which part of that file, which field, which request.
+2. **Control region.** Which region the control actually *inspects*. Not what it
+   is called or intended to cover — what it reads.
+3. **Overlap.** State plainly that region 2 contains region 1. If you cannot say
+   that in one sentence, the control does not apply and the risk is unmitigated.
+
+**When there is no control to place.** This step is about a control you are
+*claiming*. A risk you are not claiming any control for needs no placement
+block — but it must then be reported as **unmitigated**, in those words. Saying
+nothing is not the third option: the whole failure this step exists for is a
+risk that reads as covered because a control was named near it.
+
+Then ask these two questions, **in this order**:
+
+> 1. **What does this check NOT look at?**
+> 2. **Does this check work?**
+
+Answer the first in writing before you consider the second. The first is the
+question that finds a control aimed at the wrong region; the second only ever
+tests the region the control already inspects, so on its own it certifies a
+misplaced check.
+
+### `unvalidated-against`
+
+When the real threat **cannot be exercised** in the environment at hand — the
+sensitive data is absent, the account does not exist, the network is
+unreachable — record the control as **`unvalidated-against: <threat>`**.
+
+Do **not** report it as holding. Absent evidence is not evidence of absence, and
+without this clause the gap stops being visible: "the controls stay as designed"
+silently becomes "the controls hold".
+
+### Why this step exists
+
+Measured 2026-09-18. A control was written for a residual risk that had been
+correctly identified in a trifecta assessment. It hashed one designated element
+of the artifact against a frozen fixture. **The risk lived in a different region
+of the same file.** An artifact carrying a real account identifier in a visible
+table passed the check and exited 0. Two further bypasses followed: a second
+data block under another id, and a remote asset reference that fired during
+capture (proven against a local server — 8 requests before the fix, 0 after).
+
+Nine tasks of red-first testing, mutation verification and adversarial probing
+ran past it, because **every cell varied the contents of the inspected element
+and nothing probed outside it**. The rigor was real and entirely inside the
+wrong boundary.
+
+Third property, and the one that makes this durable rather than a one-off: the
+sensitive data happened to be absent from the machine, so the placement was
+**unfalsifiable** — which is what the `unvalidated-against` clause above exists
+to make visible.
+
 ## Step 4: Produce Risk Assessment
 
 Output a structured assessment:
@@ -102,6 +160,13 @@ Output a structured assessment:
 **Risk level:** Lethal trifecta / Elevated / Standard
 **Autonomy:** <advise | recommend | execute-reversible | execute-irreversible · unattended> · **Oversight:** <strong | weak>
 **Autonomy advisory (if flagged):** <proportional recommendation, or "none">
+
+### Placement (per risk with a claimed control)
+- Threat region: <where the threat lives>
+- Control region: <what the control inspects>
+- Overlap: <one sentence, or "NONE — control does not apply">
+- Not looked at: <what this check does not read>
+- `unvalidated-against`: <threat that could not be exercised here, or "none">
 
 ### Mitigation (if required)
 **Recommended approach:** <which leg to cut and how>

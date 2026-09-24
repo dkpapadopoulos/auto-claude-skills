@@ -16,7 +16,7 @@ set -u
 MODE="${1:-}"
 
 usage() {
-    echo "usage: mine-evidence.sh fingerprint <class> <id> | bundle | dedup <fp>... | select" >&2
+    echo "usage: mine-evidence.sh fingerprint <class> <id> | bundle | dedup <fp>... | select | target-at-head <path> [needle]" >&2
     exit 2
 }
 
@@ -146,7 +146,10 @@ json_eval_reports() {
     local EVAL_TITLE_PREFIX="Behavioral eval regression"
     # NOTE: field list deliberately excludes comments — trust boundary.
     local raw rc
-    raw="$(gh issue list --state all --limit 50 \
+    # The cap is a variable so the truncation check below cannot drift from
+    # the query it guards (#209).
+    local EVAL_LIMIT=50
+    raw="$(gh issue list --state all --limit "${EVAL_LIMIT}" \
             --search "\"${EVAL_TITLE_PREFIX}\" in:title" \
             --json number,title,body,author)"
     rc=$?
@@ -154,6 +157,7 @@ json_eval_reports() {
         echo "ERROR: gh issue list (eval reports) failed with exit ${rc} — improvement-miner is fail-loud, refusing to degrade to an empty bundle (see gh stderr above)" >&2
         exit 5
     fi
+    assert_not_truncated "${raw}" "${EVAL_LIMIT}" "eval reports"
     # Guard against empty-but-SUCCESSFUL output (e.g., no matching issues).
     [ -z "${raw}" ] && raw='[]'
     local filtered
@@ -222,6 +226,41 @@ json_eval_reports() {
 }
 LABEL_RUN="improvement-miner-run"
 
+# assert_not_truncated <json-array> <limit> <what> (#209)
+#
+# `gh issue list --limit N` returns AT MOST N items and says nothing about
+# whether more existed. A capped result is byte-indistinguishable from a
+# complete one, so the miner would quietly mine a partial corpus — and for the
+# run ledger that is the kill-math source of truth, where a dropped run moves
+# the approved/presented counters that decide whether the skill decommissions
+# itself.
+#
+# Fail-loud rather than paging: this script's whole posture is that an
+# incomplete bundle must never look like a complete one, and raising the cap is
+# a one-line change a human should make knowingly. Reaching the cap exactly is
+# treated as truncation because the two cases cannot be told apart from here.
+assert_not_truncated() {
+    local _json="${1:-}" _limit="${2:-}" _what="${3:-query}" _n
+    # An absent or non-numeric limit must not default to the most AGGRESSIVE
+    # value: `${2:-0}` made `assert_not_truncated '[]' '' x` compare 0 >= 0 and
+    # exit 5, i.e. a future call with an unset variable would brick every run.
+    case "${_limit}" in ''|*[!0-9]*) return 0 ;; esac
+    # Count only an ARRAY. `jq length` also counts object keys and string
+    # characters, so a non-array body could false-alarm; `gh --json` cannot
+    # produce one here, but the guard should not depend on that.
+    _n="$(printf '%s' "${_json}" | jq 'if type == "array" then length else empty end' 2>/dev/null)" || _n=""
+    # An uncountable result is NOT silently accepted: the caller's own jq filter
+    # rejects the same bytes with exit 5 a few lines below (pinned by
+    # test_garbage_json_fails_loud). This guard answers one question —
+    # truncation — and defers unparseable input to the parser, rather than
+    # duplicating a second, weaker parse here.
+    case "${_n}" in ''|*[!0-9]*) return 0 ;; esac
+    if [ "${_n}" -ge "${_limit}" ]; then
+        echo "ERROR: gh issue list (${_what}) returned ${_n} items at its --limit ${_limit} — the result may be truncated, and improvement-miner will not mine a corpus it cannot confirm is complete. Raise it (for the ledger: IMPROVEMENT_MINER_LEDGER_LIMIT=<n>) or page the query, then re-run." >&2
+        exit 5
+    fi
+}
+
 owner_login() {
     # fake-gh in tests ignores --jq and always emits the full JSON object,
     # so extract the login ourselves rather than relying on gh's --jq.
@@ -250,13 +289,23 @@ json_ledger_items() {
         echo "ERROR: gh repo view returned no owner login — cannot verify ledger authorship, refusing to degrade to an empty ledger" >&2
         exit 5
     fi
-    raw="$(gh issue list --label "${LABEL_RUN}" --state all --limit 200 \
+    # The ledger grows by exactly one issue per mine run and is never pruned,
+    # so this cap is a forward-dated hard stop: at run 200 both `bundle` and
+    # `dedup` would exit 5 permanently. The message used to say "raise the
+    # limit in mine-evidence.sh", but in a target repo that file lives in the
+    # versioned plugin cache — editing it is overwritten by the next plugin
+    # update and trips the drift canary. So the cap is overridable from the
+    # environment, which is a remedy the user can actually apply.
+    local LEDGER_LIMIT="${IMPROVEMENT_MINER_LEDGER_LIMIT:-200}"
+    case "${LEDGER_LIMIT}" in ''|*[!0-9]*) LEDGER_LIMIT=200 ;; esac
+    raw="$(gh issue list --label "${LABEL_RUN}" --state all --limit "${LEDGER_LIMIT}" \
             --json number,body,author)"
     rc=$?
     if [ "${rc}" -ne 0 ]; then
         echo "ERROR: gh issue list (ledger) failed with exit ${rc} — improvement-miner is fail-loud, refusing to degrade to an empty ledger (see gh stderr above)" >&2
         exit 5
     fi
+    assert_not_truncated "${raw}" "${LEDGER_LIMIT}" "run ledger"
     [ -z "${raw}" ] && raw='[]'
     local filtered
     filtered="$(printf '%s' "${raw}" | jq --arg o "${owner}" '
@@ -396,6 +445,37 @@ case "${MODE}" in
                   else "\($fp) rejected" end'
         done
         ;;
+    target-at-head)
+        # target-at-head <path> [needle] — does a candidate's intervention
+        # target still exist at HEAD? Exit 0 yes, 1 no, 2 cannot-check.
+        #
+        # WHY. A proposal whose target was already removed wastes the human gate
+        # and skews the kill counter, which is the miner's own decommission
+        # signal. Measured in run 1: 1 of 2 presented proposals was stale.
+        #
+        # It recurred while this was still unimplemented. A 2026-09-19 proposal
+        # cited a live divergence that had been REPAIRED hours after filing, and
+        # its prescribed metric produced a false positive on the only case it
+        # named. Neither was visible without re-checking at HEAD.
+        #
+        # CANNOT-CHECK IS A DISTINCT EXIT, not folded into "gone". An
+        # unreadable path and an absent target are different states, and only
+        # the second justifies withholding a proposal as stale.
+        _p="${2:-}"; _needle="${3:-}"
+        [ -n "${_p}" ] || { echo "target-at-head: no path given" >&2; exit 2; }
+        if [ ! -e "${_p}" ]; then
+            echo "absent: ${_p}"; exit 1
+        fi
+        if [ -n "${_needle}" ]; then
+            [ -r "${_p}" ] || { echo "unreadable: ${_p}" >&2; exit 2; }
+            if grep -qF -- "${_needle}" "${_p}" 2>/dev/null; then
+                echo "present: ${_p} contains the anchor"; exit 0
+            fi
+            echo "anchor-gone: ${_p} no longer contains the cited anchor"; exit 1
+        fi
+        echo "present: ${_p}"; exit 0
+        ;;
+
     select)
         require jq
         jq '
@@ -403,7 +483,11 @@ case "${MODE}" in
           . as $in
           | [ $in[] | select(.contract_complete != true)
               | {fp, reason: "missing_contract"} ] as $w1
-          | [ $in[] | select(.contract_complete == true) ] as $pool
+          | [ $in[] | select(.contract_complete == true)
+              | select(.target_at_head != true)
+              | {fp, reason: "stale"} ] as $w0
+          | [ $in[] | select(.contract_complete == true)
+              | select(.target_at_head == true) ] as $pool
           | ([ $pool | to_entries[] | select(.value.meta == true) ]
              | sort_by([(.value | grank), .key]) | .[0:2] | [ .[].key ]) as $keepmeta
           | [ $pool | to_entries[]
@@ -415,7 +499,7 @@ case "${MODE}" in
           | ($afterMeta | .[0:5]) as $presented
           | [ $afterMeta | .[5:][] | {fp, reason: "cap"} ] as $w3
           | {presented: $presented,
-             withheld: ($w1 + $w2 + $w3),
+             withheld: ($w1 + $w0 + $w2 + $w3),
              warnings: (if ([ $presented[] | select(.end_user == true) ] | length) == 0
                         then ["no_end_user_facing"] else [] end)}'
         ;;

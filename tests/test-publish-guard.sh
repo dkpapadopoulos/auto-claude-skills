@@ -192,6 +192,20 @@ NOJQ_BIN="${WORK}/nojq-bin"
 mkdir -p "${NOJQ_BIN}"
 ln -sf "$(command -v cat)" "${NOJQ_BIN}/cat"
 
+# ASSERT the precondition, do not only arrange it (#275). "could not check"
+# is emitted for several reasons; if jq resolved here the cell would still be
+# green for a different one and the jq-free emitter would have no coverage.
+# SUBSHELL, not `PATH=X command -v` in this shell: bash HASHES command
+# locations, and `command -v` consults that hash before PATH — so the
+# in-shell form reported a tool as present purely because an earlier line
+# had run it. Measured: two of these assertions failed against shims that
+# provably lacked the tool. A fresh shell has an empty hash.
+if PATH="${NOJQ_BIN}" /bin/bash -c 'command -v jq' >/dev/null 2>&1; then
+    _record_fail "precondition: jq is unresolvable on NOJQ_BIN" "jq resolves"
+else
+    _record_pass "precondition: jq is unresolvable on NOJQ_BIN"
+fi
+
 _leaky_payload="$(jq -n --arg c "gh issue create --title t --body-file ${WORK}/leaky.md" '{"tool_input":{"command":$c}}')"
 out="$( printf '%s' "${_leaky_payload}" \
         | ( cd "${REPO}" && MEMORY_LEAK_CHECK_MEMORY_DIR="${MEM}" \

@@ -578,30 +578,30 @@ EOF
     local marker="${HOME}/.claude/.auto-claude-skills-serena-registered"
     if [ -e "${marker}" ]; then
         echo "  PASS: marker written by session-start hook"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         echo "  FAIL: expected marker at ${marker}"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 
     if grep -qF 'claude mcp add --scope user serena' "${mock_log}"; then
         echo "  PASS: session-start invoked claude mcp add --scope user serena"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         echo "  FAIL: session-start did not invoke claude mcp add"
         echo "  log: $(cat "${mock_log}")"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 
     # Regression guard for the dashboard suppression (Scenario 1b in the design).
     # Without this flag, every Claude Code session opens a Serena browser tab.
     if grep -qF -- '--open-web-dashboard false' "${mock_log}"; then
         echo "  PASS: registered command suppresses dashboard auto-open"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         echo "  FAIL: registered command MUST include '--open-web-dashboard false'"
         echo "  log: $(cat "${mock_log}")"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 
     teardown_test_env
@@ -634,10 +634,10 @@ test_session_token_falls_back_when_no_session_id() {
     # Fallback shape: <digits>-<digits>-<digits>
     if printf '%s' "${token}" | grep -qE '^[0-9]+-[0-9]+-[0-9]+$'; then
         echo "  PASS: fallback token has epoch-pid-rand shape"
-        TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
     else
         echo "  FAIL: fallback token shape unexpected: '${token}'"
-        TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
     fi
 
     teardown_test_env
@@ -877,10 +877,10 @@ EOF
     assert_contains "lsp=false when binary missing" "lsp=false" "${context}"
     if printf '%s' "${context}" | grep -q "mcp__ide__getDiagnostics"; then
         echo "  FAIL: LSP guidance line emitted despite binary missing"
-        TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
     else
         echo "  PASS: LSP guidance line absent when binary missing"
-        TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
     fi
 
     # Partial-install diagnostic: tell the user exactly which plugin + which binary is missing
@@ -932,10 +932,10 @@ EOF
 
     if printf '%s' "${output}" | grep -q "mcp__ide__getDiagnostics"; then
         echo "  FAIL: LSP nudge fired on non-error pattern"
-        TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
     else
         echo "  PASS: LSP nudge silent on non-error pattern"
-        TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
     fi
 
     teardown_test_env
@@ -957,10 +957,10 @@ EOF
 
     if printf '%s' "${output}" | grep -q "mcp__ide__getDiagnostics"; then
         echo "  FAIL: LSP nudge fired despite lsp=false"
-        TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
     else
         echo "  PASS: LSP nudge silent when lsp=false"
-        TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
     fi
 
     teardown_test_env
@@ -980,10 +980,10 @@ test_lsp_nudge_silent_when_cache_missing() {
     assert_equals "nudge exits 0 when cache missing" "0" "${exit_code}"
     if printf '%s' "${output}" | grep -q "mcp__ide__getDiagnostics"; then
         echo "  FAIL: LSP nudge emitted hint despite missing cache"
-        TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
     else
         echo "  PASS: LSP nudge silent when cache missing"
-        TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
     fi
 
     teardown_test_env
@@ -1083,10 +1083,10 @@ test_lsp_guidance_absent_when_not_installed() {
     # Guidance line must NOT appear when lsp=false (zero-noise contract)
     if printf '%s' "${context}" | grep -q "mcp__ide__getDiagnostics"; then
         echo "  FAIL: LSP guidance line appeared when lsp=false"
-        TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
     else
         echo "  PASS: LSP guidance line absent when not installed"
-        TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
     fi
 
     teardown_test_env
@@ -2072,7 +2072,7 @@ test_fallback_registry_in_sync_with_default_triggers() {
 
     if [ -z "$regenerated" ]; then
         echo "  FAIL: jq pipeline produced empty output (default-triggers.json may be malformed)"
-        TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
         return 1
     fi
 
@@ -2084,13 +2084,13 @@ test_fallback_registry_in_sync_with_default_triggers() {
 
     if [ -z "$diff_output" ]; then
         echo "  PASS: fallback-registry.json is in sync"
-        TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((${TESTS_PASSED:-0} + 1))
     else
         echo "  FAIL: fallback-registry.json drifted from default-triggers.json"
         echo "  Run: bash hooks/session-start-hook.sh to regenerate (or apply the diff below)"
         echo "  --- diff (regenerated vs committed) ---"
         printf '%s\n' "$diff_output" | head -50
-        TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((${TESTS_FAILED:-0} + 1))
         return 1
     fi
 }
@@ -2117,14 +2117,14 @@ setup_test_env
 mkdir -p "${HOME}/.claude"
 output="$(_run_session_start_for_hint 5 10)"
 if printf '%s' "${output}" | grep -q "Routing hint:.*5 of 10.*skill-config.json"; then
-    echo "  PASS: hint line present with counts"; TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: hint line present with counts"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    echo "  FAIL: expected hint line with 5 of 10"; TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: expected hint line with 5 of 10"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 if [ -f "${HOME}/.claude/.skill-adjustability-hint-last" ]; then
-    echo "  PASS: cooldown marker touched"; TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: cooldown marker touched"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    echo "  FAIL: cooldown marker missing"; TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: cooldown marker missing"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 teardown_test_env
 
@@ -2133,9 +2133,9 @@ setup_test_env
 mkdir -p "${HOME}/.claude"
 output="$(_run_session_start_for_hint 5 50)"
 if printf '%s' "${output}" | grep -q "Routing hint:"; then
-    echo "  FAIL: hint fired at 10% rate"; TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: hint fired at 10% rate"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
 else
-    echo "  PASS: no hint at 10% rate"; TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: no hint at 10% rate"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
 fi
 teardown_test_env
 
@@ -2144,9 +2144,9 @@ setup_test_env
 mkdir -p "${HOME}/.claude"
 output="$(_run_session_start_for_hint 4 8)"
 if printf '%s' "${output}" | grep -q "Routing hint:"; then
-    echo "  FAIL: hint fired below ZM floor"; TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: hint fired below ZM floor"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
 else
-    echo "  PASS: no hint below ZM floor"; TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: no hint below ZM floor"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
 fi
 teardown_test_env
 
@@ -2155,9 +2155,9 @@ setup_test_env
 mkdir -p "${HOME}/.claude"
 output="$(_run_session_start_for_hint 5 7)"
 if printf '%s' "${output}" | grep -q "Routing hint:"; then
-    echo "  FAIL: hint fired below total floor"; TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: hint fired below total floor"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
 else
-    echo "  PASS: no hint below total floor"; TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: no hint below total floor"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
 fi
 teardown_test_env
 
@@ -2169,14 +2169,14 @@ _marker_before="$(ls -l "${HOME}/.claude/.skill-adjustability-hint-last")"
 output="$(_run_session_start_for_hint 5 10)"
 _marker_after="$(ls -l "${HOME}/.claude/.skill-adjustability-hint-last")"
 if printf '%s' "${output}" | grep -q "Routing hint:"; then
-    echo "  FAIL: hint fired under fresh cooldown"; TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: hint fired under fresh cooldown"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
 else
-    echo "  PASS: cooldown suppresses hint"; TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: cooldown suppresses hint"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
 fi
 if [ "${_marker_before}" = "${_marker_after}" ]; then
-    echo "  PASS: marker mtime unchanged"; TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: marker mtime unchanged"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    echo "  FAIL: marker was re-touched under cooldown"; TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: marker was re-touched under cooldown"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 teardown_test_env
 
@@ -2186,9 +2186,9 @@ mkdir -p "${HOME}/.claude"
 printf '{"skills": {"incident-analysis": {"enabled": false}}}' > "${HOME}/.claude/skill-config.json"
 output="$(_run_session_start_for_hint 5 10)"
 if printf '%s' "${output}" | grep -q "Routing hint:"; then
-    echo "  FAIL: hint fired despite existing overrides"; TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: hint fired despite existing overrides"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
 else
-    echo "  PASS: existing overrides suppress hint"; TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: existing overrides suppress hint"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
 fi
 teardown_test_env
 
@@ -2200,9 +2200,9 @@ printf '10' > "${HOME}/.claude/.skill-prompt-count-session-hinttest"
 output="$(CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${PROJECT_ROOT}/hooks/session-start-hook.sh" 2>/dev/null < /dev/null)"
 exit_code=$?
 if [ "${exit_code}" -eq 0 ] && ! printf '%s' "${output}" | grep -q "Routing hint:"; then
-    echo "  PASS: malformed counter -> upstream guard zeroes it, no hint, exit 0"; TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: malformed counter -> upstream guard zeroes it, no hint, exit 0"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    echo "  FAIL: malformed counter broke the hook or fired the hint"; TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: malformed counter broke the hook or fired the hint"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 teardown_test_env
 
@@ -2215,9 +2215,9 @@ printf '{"skills": TRUNCATED' > "${HOME}/.claude/skill-config.json"
 output="$(_run_session_start_for_hint 5 10)"
 exit_code=$?
 if [ "${exit_code}" -eq 0 ] && printf '%s' "${output}" | grep -q "Routing hint:"; then
-    echo "  PASS: jq parse error on overrides check fails open (hint still fires, exit 0)"; TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: jq parse error on overrides check fails open (hint still fires, exit 0)"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    echo "  FAIL: malformed skill-config.json suppressed the hint or broke the hook"; TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: malformed skill-config.json suppressed the hint or broke the hook"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 teardown_test_env
 
@@ -2226,18 +2226,18 @@ setup_test_env
 mkdir -p "${HOME}/.claude"
 output="$(_run_session_start_for_hint 5 17)"
 if printf '%s' "${output}" | grep -q "Routing hint:"; then
-    echo "  FAIL: hint fired at 29% (5/17)"; TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: hint fired at 29% (5/17)"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
 else
-    echo "  PASS: no hint at 29% (5/17)"; TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: no hint at 29% (5/17)"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
 fi
 teardown_test_env
 setup_test_env
 mkdir -p "${HOME}/.claude"
 output="$(_run_session_start_for_hint 6 20)"
 if printf '%s' "${output}" | grep -q "Routing hint:.*6 of 20.*(30%)"; then
-    echo "  PASS: hint fires at exactly 30% (6/20)"; TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: hint fires at exactly 30% (6/20)"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    echo "  FAIL: expected hint at exactly 30% (6/20)"; TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: expected hint at exactly 30% (6/20)"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 teardown_test_env
 
@@ -2262,9 +2262,9 @@ _trigs="$(jq -r '.skills[] | select(.name=="hub-skill") | .triggers[]' "${_cf}" 
 if printf '%s\n' "${_trigs}" | grep -qxF '(^|[^a-z0-9])branch($|[^a-z0-9])' \
    && printf '%s\n' "${_trigs}" | grep -qxF '(^|[^a-z0-9])values\.yaml($|[^a-z0-9])' \
    && printf '%s\n' "${_trigs}" | grep -qxF '(^|[^a-z0-9])pr($|[^a-z0-9])'; then
-    echo "  PASS: keywords translated to lowercased, escaped, boundary-wrapped triggers"; TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: keywords translated to lowercased, escaped, boundary-wrapped triggers"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    echo "  FAIL: got triggers=${_trigs}"; TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: got triggers=${_trigs}"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 teardown_test_env
 
@@ -2281,9 +2281,9 @@ run_hook >/dev/null
 _cf2="${HOME}/.claude/.skill-registry-cache.json"
 _ft="$(jq -c '.skills[] | select(.name=="fm-skill") | .triggers' "${_cf2}" 2>/dev/null)"
 if printf '%s' "${_ft}" | grep -qF 'customtrig' && ! printf '%s' "${_ft}" | grep -qF 'ignored'; then
-    echo "  PASS: frontmatter triggers preserved, skill-rules ignored"; TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: frontmatter triggers preserved, skill-rules ignored"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    echo "  FAIL: got triggers=${_ft}"; TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: got triggers=${_ft}"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 teardown_test_env
 
@@ -2308,9 +2308,9 @@ _it="$(jq -r '.skills[] | select(.name=="ip-skill") | .triggers[]' "${_cf3}" 2>/
 if printf '%s\n' "${_it}" | grep -qxF '(create|start).*(branch|feature)' \
    && ! printf '%s\n' "${_it}" | grep -qF '.*?(prod)' \
    && ! printf '%s\n' "${_it}" | grep -qF '(unbalanced'; then
-    echo "  PASS: valid ERE kept, PCRE and malformed intentPatterns dropped"; TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: valid ERE kept, PCRE and malformed intentPatterns dropped"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    echo "  FAIL: got triggers=${_it}"; TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: got triggers=${_it}"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 teardown_test_env
 
@@ -2325,9 +2325,9 @@ run_hook >/dev/null; _rc=$?
 _cf4="${HOME}/.claude/.skill-registry-cache.json"
 _bt="$(jq -c '.skills[] | select(.name=="bad-skill") | .triggers' "${_cf4}" 2>/dev/null)"
 if [ "${_rc}" -eq 0 ] && [ -f "${_cf4}" ] && [ "${_bt}" = "[]" ]; then
-    echo "  PASS: malformed skill-rules.json -> empty triggers, build completed (exit 0)"; TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: malformed skill-rules.json -> empty triggers, build completed (exit 0)"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    echo "  FAIL: rc=${_rc} triggers=${_bt}"; TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: rc=${_rc} triggers=${_bt}"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 teardown_test_env
 
@@ -2347,9 +2347,9 @@ if grep -qF '[skill-rules]' "/tmp/sr_stderr.$$" \
    && grep -qE 'dropped 2 ' "/tmp/sr_stderr.$$" \
    && ! grep -qF '[skill-rules]' "/tmp/sr_stdout.$$" \
    && jq -e . "/tmp/sr_stdout.$$" >/dev/null 2>&1; then
-    echo "  PASS: drop count on stderr, stdout is clean valid JSON"; TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo "  PASS: drop count on stderr, stdout is clean valid JSON"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    echo "  FAIL: stderr=$(cat "/tmp/sr_stderr.$$")"; TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: stderr=$(cat "/tmp/sr_stderr.$$")"; TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 rm -f "/tmp/sr_stderr.$$" "/tmp/sr_stdout.$$"
 teardown_test_env

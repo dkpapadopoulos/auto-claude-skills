@@ -102,11 +102,11 @@ test_eligible_and_not_registered_runs_mcp_add_and_writes_marker() {
     assert_file_exists "marker file written" "$(_marker_path)"
     if grep -qF "claude mcp add --scope user serena -- ${MOCK_BIN}/serena start-mcp-server" "${MOCK_LOG}"; then
         echo "  PASS: mcp add uses the absolute serena path"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         echo "  FAIL: expected absolute serena path in 'claude mcp add' command"
         echo "  log: $(cat "${MOCK_LOG}")"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 
     _teardown_mocks
@@ -126,10 +126,10 @@ test_already_registered_skips_add_but_writes_marker() {
     assert_file_exists "marker file written" "$(_marker_path)"
     if grep -qF 'claude mcp add' "${MOCK_LOG}"; then
         echo "  FAIL: should NOT have invoked 'claude mcp add' (already registered)"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
     else
         echo "  PASS: 'claude mcp add' skipped because serena already in mcp list"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
     fi
 
     _teardown_mocks
@@ -149,10 +149,10 @@ test_marker_exists_is_noop() {
     if [ -s "${MOCK_LOG}" ]; then
         echo "  FAIL: expected mock log to be empty when marker exists"
         echo "  log: $(cat "${MOCK_LOG}")"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
     else
         echo "  PASS: no mock binaries invoked when marker present"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
     fi
 
     _teardown_mocks
@@ -170,10 +170,10 @@ test_no_serena_on_path_is_noop() {
 
     if [ -e "$(_marker_path)" ]; then
         echo "  FAIL: marker should NOT be written when serena absent"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
     else
         echo "  PASS: no marker written when serena absent"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
     fi
 
     teardown_test_env
@@ -200,10 +200,10 @@ EOF
 
     if [ -e "$(_marker_path)" ]; then
         echo "  FAIL: marker should NOT be written when claude CLI absent"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
     else
         echo "  PASS: no marker written when claude CLI absent"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
     fi
 
     teardown_test_env
@@ -296,11 +296,11 @@ test_selfheal_rewrites_bare_local_registration() {
     if grep -qF "claude mcp remove serena -s local" "${MOCK_LOG}" \
        && grep -qF "claude mcp add serena -s local -- ${MOCK_BIN}/serena start-mcp-server" "${MOCK_LOG}"; then
         echo "  PASS: bare reg rewritten to abs path, scope preserved"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         echo "  FAIL: expected remove+add with abs path at local scope"
         echo "  log: $(cat "${MOCK_LOG}")"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
     _teardown_mocks
     teardown_test_env
@@ -318,11 +318,11 @@ test_selfheal_rewrites_bare_user_registration() {
     if grep -qF "claude mcp remove serena -s user" "${MOCK_LOG}" \
        && grep -qF "claude mcp add serena -s user -- ${MOCK_BIN}/serena start-mcp-server" "${MOCK_LOG}"; then
         echo "  PASS: bare user-scope reg rewritten to abs path, scope preserved"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         echo "  FAIL: expected remove+add with abs path at user scope"
         echo "  log: $(cat "${MOCK_LOG}")"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
     _teardown_mocks
     teardown_test_env
@@ -341,11 +341,11 @@ test_selfheal_add_failure_restores_original_reg() {
     # to restore the ORIGINAL bare command so the user is never left with no reg.
     if grep -qF "claude mcp add serena -s local -- serena start-mcp-server" "${MOCK_LOG}"; then
         echo "  PASS: original bare reg restore attempted after add failure"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         echo "  FAIL: expected a restore 'claude mcp add ... -- serena start-mcp-server' after add failure"
         echo "  log: $(cat "${MOCK_LOG}")"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
     assert_file_exists "breadcrumb written on add failure" "$(_migrate_error_path)"
     assert_file_exists "marker written on add failure" "$(_migrate_marker_path)"
@@ -365,10 +365,10 @@ test_selfheal_marker_present_is_noop() {
     if [ -s "${MOCK_LOG}" ]; then
         echo "  FAIL: no claude calls expected when marker present"
         echo "  log: $(cat "${MOCK_LOG}")"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
     else
         echo "  PASS: fully no-op when marker present"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
     fi
     _teardown_mocks
     teardown_test_env
@@ -384,10 +384,10 @@ test_selfheal_abspath_registration_is_noop() {
     serena_maybe_migrate_bare_registration
     if grep -qF "claude mcp remove" "${MOCK_LOG}"; then
         echo "  FAIL: should not rewrite an already-absolute registration"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
     else
         echo "  PASS: no rewrite for already-absolute reg"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
     fi
     _teardown_mocks
     teardown_test_env
@@ -416,10 +416,10 @@ EOF
     assert_equals "fail-open rc 0" "0" "${rc}"
     if grep -qF "claude mcp remove" "${MOCK_LOG}"; then
         echo "  FAIL: must NOT remove the reg when serena unresolvable"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
     else
         echo "  PASS: reg left intact when serena unresolvable"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
     fi
     assert_file_exists "breadcrumb written on unresolved" "$(_migrate_error_path)"
     teardown_test_env
@@ -436,14 +436,14 @@ test_setup_md_documents_abspath_registration() {
     # this test can't silently degrade to a no-op.
     if grep -nE 'claude mcp add.*-- +serena start-mcp-server' "${setup_md}"; then
         echo "  FAIL: setup.md still documents a bare 'serena' command after --"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
     elif grep -qF 'command -v serena' "${setup_md}" \
          && grep -qF -- '-- "$SERENA_BIN" start-mcp-server' "${setup_md}"; then
         echo "  PASS: setup.md registers serena via an absolute path (\$SERENA_BIN)"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         echo "  FAIL: setup.md lacks the absolute-path registration form (\$SERENA_BIN)"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
     teardown_test_env
 }
@@ -468,11 +468,11 @@ test_selfheal_bare_reg_with_empty_args_still_readds() {
     if grep -qF "claude mcp remove serena -s local" "${MOCK_LOG}" \
        && grep -qF "claude mcp add serena -s local -- ${MOCK_BIN}/serena" "${MOCK_LOG}"; then
         echo "  PASS: re-added with abs path despite empty args[]"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         echo "  FAIL: expected remove+add to still fire with empty args[]"
         echo "  log: $(cat "${MOCK_LOG}")"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
+        TESTS_RUN=$((${TESTS_RUN:-0} + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
     _teardown_mocks
     teardown_test_env

@@ -1,0 +1,23 @@
+# _sg <hook script> — the plugin/project root is ALWAYS the real checkout.
+# The mutant differs by ONE FILE, nothing else. Pointing the roots at a copied
+# tree instead changes the gate's resolved MODE (a foreign root defaults to
+# `warn`, which emits systemMessage only and no permissionDecision at all), so
+# the mutant would "lose the field" for a reason that has nothing to do with
+# the mutation — an apples-to-oranges control that passes vacuously. Caught in
+# review; the first cut of this cell had exactly that bug.
+_sg() {
+    printf '{"tool_name":"Skill","tool_input":{"skill":"superpowers:subagent-driven-development"},"transcript_path":""}' \
+        | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" SKILL_PROJECT_ROOT="${PROJECT_ROOT}" \
+          /bin/bash "${1}" 2>/dev/null
+}
+SG_OUT="$(_sg "${PROJECT_ROOT}/hooks/skill-gate.sh")"
+_assert_deny_reaches_model "skill-gate" "${SG_OUT}"
+assert_contains "skill-gate: the model is told which step is missing" \
+    "writing-plans" "$(printf '%s' "${SG_OUT}" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""')"
+
+# Mutation: a copy with the field stripped must stop satisfying the cell.
+SG_MUT="$(mktemp -d /tmp/drm-sgmut-XXXXXX)"
+sed 's/,"permissionDecisionReason":\$msg//; s/,"permissionDecisionReason":"%s"//' \
+    "${PROJECT_ROOT}/hooks/skill-gate.sh" > "${SG_MUT}/skill-gate.sh"
+if cmp -s "${PROJECT_ROOT}/hooks/skill-gate.sh" "${SG_MUT}/skill-gate.sh"; then
+    _record_fail "mutation actually changed skill-gate.sh" \

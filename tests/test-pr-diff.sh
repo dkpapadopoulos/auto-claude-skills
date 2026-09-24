@@ -107,6 +107,19 @@ assert_equals   "unknown PR yields nothing"  "" "$(PATH="${_STUB}:$PATH" pr_chan
 
 # gh absent entirely -> empty, never an error
 _EMPTY="$(mktemp -d /tmp/prdiff-empty-XXXXXX)"
+# ASSERT the precondition, do not only arrange it (#275): an empty result is
+# also what a RESOLVABLE gh would produce here, so without this check the cell
+# cannot tell the branch it names from the one beside it.
+# SUBSHELL, not `PATH=X command -v` in this shell: bash HASHES command
+# locations, and `command -v` consults that hash before PATH — so the
+# in-shell form reported a tool as present purely because an earlier line
+# had run it. Measured: two of these assertions failed against shims that
+# provably lacked the tool. A fresh shell has an empty hash.
+if PATH="${_EMPTY}" /bin/bash -c 'command -v gh' >/dev/null 2>&1; then
+    _record_fail "precondition: gh is unresolvable on the empty PATH" "gh resolves"
+else
+    _record_pass "precondition: gh is unresolvable on the empty PATH"
+fi
 assert_equals "gh absent yields nothing" "" "$(PATH="${_EMPTY}" pr_changed_files 7 "$PWD" 2>/dev/null)"
 
 # A rejected ref must never reach the subprocess: the stub records its argv.
