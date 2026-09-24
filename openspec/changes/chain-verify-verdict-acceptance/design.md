@@ -1,6 +1,6 @@
 # Design: a structural bar for the chain-block VERIFY widening
 
-**Status: rules frozen 2026-09-24. Bar not discharged.**
+**Status: rules frozen 2026-09-24. Bar DISCHARGED 2026-09-24 — outcome REFUSE, and separately REPAIR. See "Discharge".**
 
 This document is a pre-registration. "The claim", "Operational contract",
 "Enumerated falsifiers" and "Decision rule" were written and committed **before
@@ -205,12 +205,112 @@ the enumeration is organised across those boundaries rather than as a list.
 
 ## Discharge
 
-Not yet run.
+Run 2026-09-24 against the real guard at `7eed100` (+ this change's commit), in
+the detached worktree `/private/tmp/acs-254-d2`. Capture replay disabled
+(`PUSH_GATE_CAPTURE_DISABLE=1`) so each cell measures one guard process.
 
-**One pre-freeze execution, disclosed.** While verifying the factual basis of
-F15 during enumeration-building, the predicate half was run directly:
-`{"sha":"deadbeef","gate_gaming_status":"clean"}` returns CLEAN from
-`verdict_is_clean`. That is a check on a source claim, not a measurement of the
-marginal population, and it is **not** a discharge: the bar requires a
-guard-level paired run with a positive control. Recorded here so the bar cannot
-later be credited with evidence it did not collect.
+### Outcome: REFUSE, and separately REPAIR
+
+**F5 is reachable at guard level in the marginal population, and no named
+tightening closes it.** Check 2's acceptance predicate is left unchanged.
+
+### F5 — paired measurement
+
+The falsifier is the artifact an agent can write for itself:
+`{"sha":"<HEAD>","gate_gaming_status":"clean"}`. Two fields. No verification ran.
+
+| Cell | Guard | Falsifier | Result |
+|---|---|---|---|
+| A | widened | present | **ALLOW** |
+| B | widened | absent | deny — *the pair disagrees* |
+| C | on-disk (today) | present | deny — *marginal population confirmed: this state denies today* |
+| D | on-disk, milestone genuinely credited | — | ALLOW — **positive control**: the harness can produce an allow |
+| E | widened **with only the patch removed** | present | deny — the flip is caused by the widening, not by a neighbouring mechanism |
+
+The allow in A is a full guard-level allow: every remaining deny leg passed.
+
+### The named tightenings do not close it — measured, not argued
+
+Symmetry matters here: the registration forbids recording reachability by
+argument, so un-closability was measured the same way. NARROW was built exactly
+as registered — `verdict_sha_is_head` instead of `verdict_covers_head`, plus an
+explicitly recorded `worktree_dirty == false`.
+
+| Artifact | Result |
+|---|---|
+| 2-field, as in A | deny — *the tightening is active* |
+| 3-field: agent adds `"worktree_dirty": false` | **ALLOW** |
+| control: `"worktree_dirty": true` | deny |
+| control: ancestor sha | deny |
+
+Both tightenings are defeated by adding **one field** to a file the agent writes.
+The two controls establish that the tightening really was in force, so the ALLOW
+is not passing on a disabled check.
+
+### F5 is also reachable on the global fail-closed leg, today, unpatched
+
+With no composition state (so Check 2 cannot fire) and REVIEW satisfied from the
+branch ledger:
+
+| Artifact | Result |
+|---|---|
+| minimal 2-field | **ALLOW** |
+| full-shape (`failed:[] … passed:[…]`) | ALLOW |
+| none — control | deny, naming `verification-before-completion` |
+
+This is what selects REPAIR over a Check-2 fix. The evidence Check 2 was asked to
+start trusting is **already** sufficient on the leg downstream of it, so the
+"inconsistency" in #254 is Check 2 being the one leg that does **not** accept a
+self-authored file. It is a second, independent lock: its four sources all
+require a harness-observed `Skill` return, which the agent cannot produce by
+writing to `~/.claude/`. That is a different trust level from a JSON file, and
+the widening would have removed it.
+
+Note this is not forgery in the hypothetical sense. `project-verification/SKILL.md` Step 3 instructs the model to author this artifact from
+values it read out of its own output, and `verify-and-record.sh` says in its own
+header that the artifact is not a trust boundary. The measurement shows what
+that already costs.
+
+### What was NOT measured, and why
+
+**F1–F4, F6–F16 were not measured.** The decision rule terminates on the first
+reachable falsifier no named tightening closes, and F5 is that falsifier. They
+remain enumerated-but-unmeasured, and the bar must not be credited with evidence
+it did not collect. Several are relevant to the repair and are the natural
+starting set for it — F9 (exit zero without a completed run), F11 (non-atomic
+compound read) and F15 (schema permissiveness) all bear directly on artifact
+provenance.
+
+### Consequences
+
+1. **#254 d2 closes as not the defect it was reported to be.** Check 2 declining
+   the verdict is the correct behaviour of the only leg that still requires
+   harness-mediated evidence.
+2. **The #291 advisory text is wrong in emphasis** and should be corrected: it
+   tells the reader the global leg treats the verdict as "stronger evidence",
+   which measurement shows is true only in the sense that it is *easier to
+   supply*. It should stop implying Check 2 is the leg in the wrong.
+3. **A defect is filed against the shared component** — verdict provenance and
+   schema, `verdict_is_clean` accepting a two-field self-authored record — not
+   against the global leg alone, because `routing-governance` and
+   `verify-hardening` read the same predicates.
+
+### Probe faults hit on the way, recorded so the cells are auditable
+
+Three, each of which produced a plausible wrong reading before it was caught:
+
+- **The first matrix measured the unpatched guard.** With capture enabled, a
+  deny appeared on stdout carrying none of the patched copy's text. Caught by
+  fingerprinting the message in the copy under test and finding the marker
+  absent; settled by disabling capture. A subsequent clean check confirmed the
+  capture trap does **not** leak — exactly one JSON object in every
+  configuration, zero on an allow — so there is no defect here to file.
+- **`sed` corrupted a guard copy** whose deny message contains a multibyte
+  em-dash, flipping one cell's result while `bash -n` stayed green. All
+  instruments were rebuilt byte-safely in Python. This is the
+  `perl-pipe-delimiter-corrupts-file` class.
+- **The global-leg cells first denied uniformly, control included.** The guard
+  reads the branch ledger from the *process-derived* root (#219, deliberately),
+  so running it from the session cwd keyed the ledger to a different branch than
+  the worktree under test. Aligning the cwd made the control discriminate. A
+  uniform result across a control is the tell.
