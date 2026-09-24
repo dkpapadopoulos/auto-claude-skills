@@ -843,3 +843,42 @@ Dion's financial logic, data, or brand inside the plugin; broad dashboards;
 trading or approval controls; any new owned skill; any `DesignSync` dependency;
 a component generator; pinned frontend dependencies; an upgrade/merge path for
 already-copied seeds.
+
+## Implementation Notes (synced at ship time, 2026-09-24)
+
+What was built departs from the upfront design in three ways, all recorded in
+the v2 and v3 sections above rather than summarised away here.
+
+1. **The scoring instrument was replaced, not written as designed.** The
+   upfront design assumed the author would write the rubric. A reviewer found
+   that three of its seven dimensions cited a source `git log -S` places after
+   the seed shipped, by the same author, in the same change, and that five of
+   seven mirrored the seed styleguide's section headings. The instrument was
+   re-derived by a model with no access to the seed and then audited against a
+   disposition rule committed beforehand.
+
+2. **The pilot became three paired repetitions of one task, not one pair.**
+   The upfront design registered a single S/C pair. A cross-family critique
+   established that one pair cannot separate a workflow effect from generation
+   variance, and that three *different fixtures* would re-entangle the two.
+   The run then produced direct evidence for that choice: one dimension scored
+   3/3, 0/0 and split across the three repetitions.
+
+3. **A calibration read was added, ran, and forced repairs.** Not in the
+   upfront design at all. It found six defects before any arm existed,
+   including a fidelity tier that excluded the dimension its own gloss
+   described.
+
+Two artifacts the upfront design did not anticipate now exist and are load
+bearing: a mechanical pre-egress contamination check (four false-refusal
+classes, every one exposed by a real artifact and none by its own fixtures),
+and a blinding procedure that strips every comment from both artifacts and
+verifies the renders are unchanged.
+
+**The claim the pilot licenses is weaker than the design hoped for**, and
+`RESULT.md` in Dion states the reason first rather than last: the instrument
+excludes what the seed supplies and scores what it does not address, so it may
+be insensitive to the treatment rather than measuring it absent. Follow-ups are
+tracked as #298 (replication with an instrument that can see what the seed
+governs) and #299 (the styleguide gap the pilot exposed independently of the
+comparison).
