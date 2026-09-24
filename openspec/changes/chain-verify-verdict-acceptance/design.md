@@ -275,9 +275,13 @@ false, and measured so:
 | `.skill-composition-state-*` `.completed` | **ALLOW** |
 | `.skill-invocation-evidence-*` | **ALLOW** |
 | branch-ledger record (`<sha> <ts>`) | **ALLOW** |
+| SIBLING ledger dir at HEAD (the #131 bridge) | **ALLOW**, carrying the bridge advisory |
+| CONTROL: sibling ledger dir at an unrelated sha | deny — the bridge's HEAD binding holds |
 
-All four are plain files under `~/.claude/`, and the ledger key is no obstacle —
-it is a sha1 of (origin URL, branch) computed by a lib that ships in the repo.
+All four sources are plain files under `~/.claude/`, and the ledger key is no
+obstacle — it is a sha1 of (origin URL, branch) computed by a lib that ships in
+the repo. The bridge is the only one that announces itself, and its sha binding
+is real: an unrelated sha does not bridge.
 
 The frozen enumeration anticipated this: it recorded that a `Skill`-return
 milestone "does **not** prove the discipline happened either, so 'second lock'
@@ -351,7 +355,7 @@ be credited with evidence it did not collect.
 
 ### Probe faults hit on the way, recorded so the cells are auditable
 
-Four, each of which produced a plausible wrong reading before it was caught. The
+Five, each of which produced a plausible wrong reading before it was caught. The
 fourth was mine while trying to REFUTE a review finding, which is the one worth
 remembering:
 
@@ -372,6 +376,11 @@ remembering:
   same wrong reason, so the matrix looked coherent. Seeding a clean covering
   verdict isolated the gate under test and all four sources then flipped. A
   control that agrees with the cells is not a control.
+- **An advisory-carrying ALLOW was scored as a DENY.** Measuring the bridge
+  source, the classifier keyed on "is stdout non-empty" — but an allow still
+  emits `additionalContext` when it has an advisory to deliver, so the one
+  source that ANNOUNCES itself was the one misread. Classify on
+  `permissionDecision`, never on output presence.
 - **The global-leg cells first denied uniformly, control included.** The guard
   reads the branch ledger from the *process-derived* root (#219, deliberately),
   so running it from the session cwd keyed the ledger to a different branch than

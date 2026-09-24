@@ -142,9 +142,15 @@ test_the_note_claims_no_forgery_resistance() {
     jq -nc --arg s "${HEAD_SHA}" \
         '{passed:["tests"],failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' > "${ART}"
     local reason; reason="$(_reason "$(_run)")"
-    assert_not_contains "no claim that this leg's evidence is harness-only" "only harness-observed" "${reason:-}"
-    assert_not_contains "no claim the evidence cannot be written"           "cannot be produced by writing" "${reason:-}"
     assert_contains     "says plainly that none of it is forgery-proof"     "forgery-proof" "${reason:-<empty>}"
+    assert_not_contains "no claim that this leg's evidence is harness-only" "only harness-observed" "${reason:-}"
+    # The false claim lived in TWO places: the _MSG string (above) and the guard
+    # COMMENT. A `reason`-based assertion can never observe the comment, so the
+    # previous version of this line — which tested the comment's phrasing
+    # against `reason` — could not fail under any regression and pinned nothing.
+    # Re-pointed at the file, where that phrasing actually lived.
+    assert_not_contains "the guard COMMENT makes no unwritability claim" \
+        "cannot be produced by writing" "$(cat "${GUARD}")"
 }
 
 test_the_note_never_moves_the_decision() {
