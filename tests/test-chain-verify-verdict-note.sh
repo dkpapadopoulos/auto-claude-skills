@@ -18,10 +18,17 @@
 # explicit worktree_dirty:false defeats the sha-exact tightening as well. The
 # artifact is model-authored BY DESIGN (project-verification Step 3 instructs
 # it; verify-and-record.sh calls itself not a trust boundary), so it is
-# sha-bound, NOT harder to forge. This leg's four sources all require a
-# harness-observed Skill return, which cannot be produced by writing into
-# ~/.claude/ — it is the second, independent lock. The open defect is the
-# artifact's provenance: issue #295.
+# sha-bound, NOT harder to forge.
+#
+# THE DIFFERENCE IS NOT FORGEABILITY, and an earlier draft of this file said it
+# was. Measured 2026-09-24: all four of this leg's sources are plain files under
+# ~/.claude/ (.skill-composition-state-*, .skill-invocation-evidence-*, and the
+# branch-ledger dirs) and each one, hand-written, flips this deny to an ALLOW.
+# What distinguishes the verdict is that it arrives with NO deliberate act,
+# because the skill instructs the model to write it; the other four are normally
+# written only by hooks. The message must not claim this leg accepts only
+# unwritable evidence — see test_the_note_claims_no_forgery_resistance. The open
+# defect spans all of them: issue #295.
 #
 # Hence the message must NOT imply this leg is the one in the wrong. That is
 # what test_the_note_does_not_disparage_this_leg pins.
@@ -79,7 +86,7 @@ test_a_clean_covering_verdict_is_named_in_the_deny() {
     assert_contains "the deny says a clean covering verdict exists" "${NEEDLE}" "${reason:-<empty>}"
     assert_contains "...and says declining it here is deliberate" "deliberately does not accept" "${reason:-<empty>}"
     assert_contains "...and says why: the artifact is model-authored" "authored by the model itself" "${reason:-<empty>}"
-    assert_contains "...and names what this leg does accept"  "harness-observed evidence" "${reason:-<empty>}"
+    assert_contains "...and says the other sources are hook-written" "normally written only by hooks" "${reason:-<empty>}"
 }
 
 test_control_no_verdict_means_no_note() {
@@ -121,6 +128,22 @@ test_the_note_does_not_disparage_this_leg() {
     assert_not_contains "the note does not concede this leg is wrong"          "does not read it, so the deny stands" "${reason:-}"
 }
 
+test_the_note_claims_no_forgery_resistance() {
+    # Measured 2026-09-24: every source this leg accepts is a hand-writable file
+    # under ~/.claude/, and each flips the deny to an allow. A draft of this note
+    # asserted "this leg accepts only harness-observed evidence", which is a
+    # POSITIVE SAFETY CLAIM a reader could rely on when deciding not to harden
+    # those legs — a worse failure than the over-generous wording it replaced.
+    # The honest distinction is that the verdict arrives by default; keep the
+    # message on that ground and off forgeability.
+    jq -nc --arg s "${HEAD_SHA}" \
+        '{passed:["tests"],failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' > "${ART}"
+    local reason; reason="$(_reason "$(_run)")"
+    assert_not_contains "no claim that this leg's evidence is harness-only" "only harness-observed" "${reason:-}"
+    assert_not_contains "no claim the evidence cannot be written"           "cannot be produced by writing" "${reason:-}"
+    assert_contains     "says plainly that none of it is forgery-proof"     "forgery-proof" "${reason:-<empty>}"
+}
+
 test_the_note_never_moves_the_decision() {
     # Structural. If the verdict ever reaches _verif_completed or a decision on
     # this leg, that is the pre-registered flip, not this change.
@@ -142,6 +165,7 @@ test_control_no_verdict_means_no_note
 test_control_a_failing_verdict_means_no_note
 test_control_a_noncovering_verdict_means_no_note
 test_the_note_does_not_disparage_this_leg
+test_the_note_claims_no_forgery_resistance
 test_the_note_never_moves_the_decision
 
 export HOME="${_OLDHOME}"

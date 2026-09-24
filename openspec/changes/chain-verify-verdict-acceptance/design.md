@@ -261,10 +261,41 @@ branch ledger:
 This is what selects REPAIR over a Check-2 fix. The evidence Check 2 was asked to
 start trusting is **already** sufficient on the leg downstream of it, so the
 "inconsistency" in #254 is Check 2 being the one leg that does **not** accept a
-self-authored file. It is a second, independent lock: its four sources all
-require a harness-observed `Skill` return, which the agent cannot produce by
-writing to `~/.claude/`. That is a different trust level from a JSON file, and
-the widening would have removed it.
+self-authored file.
+
+**Correction, from review — the first draft of this paragraph overclaimed, and
+the frozen section had already flagged exactly this.** It said Check 2 is "a
+second, independent lock" whose four sources "require a harness-observed `Skill`
+return, which the agent cannot produce by writing to `~/.claude/`". That is
+false, and measured so:
+
+| Check 2 source, hand-written | Result |
+|---|---|
+| CONTROL: nothing forged | deny `chain-verify` |
+| `.skill-composition-state-*` `.completed` | **ALLOW** |
+| `.skill-invocation-evidence-*` | **ALLOW** |
+| branch-ledger record (`<sha> <ts>`) | **ALLOW** |
+
+All four are plain files under `~/.claude/`, and the ledger key is no obstacle —
+it is a sha1 of (origin URL, branch) computed by a lib that ships in the repo.
+
+The frozen enumeration anticipated this: it recorded that a `Skill`-return
+milestone "does **not** prove the discipline happened either, so 'second lock'
+is a claim about *independence* of two weak signals, not about one being sound.
+That is measured, not assumed." It was then asserted here without being
+measured. The pre-registration's own discipline is what caught it.
+
+**The distinction that actually survives is production, not forgeability.** The
+verdict arrives with **no deliberate act** — `project-verification` instructs the
+model to author it — so widening Check 2 would add an allow path satisfied in
+the ordinary course of doing the work wrong. The other four are normally written
+only by hooks, so supplying them takes a decision to fake evidence. Neither is a
+security boundary.
+
+**This does not disturb the outcome.** REFUSE rests on the measured cells above:
+F5 is reachable in the marginal population and no named tightening closes it.
+"Independent lock" was rationale, and the decision rule never referred to it. If
+anything the surviving reason is the stronger one, because it is true.
 
 Note this is not forgery in the hypothetical sense. `project-verification/SKILL.md` Step 3 instructs the model to author this artifact from
 values it read out of its own output, and `verify-and-record.sh` says in its own
@@ -297,7 +328,9 @@ provenance.
 
 ### Probe faults hit on the way, recorded so the cells are auditable
 
-Three, each of which produced a plausible wrong reading before it was caught:
+Four, each of which produced a plausible wrong reading before it was caught. The
+fourth was mine while trying to REFUTE a review finding, which is the one worth
+remembering:
 
 - **The first matrix measured the unpatched guard.** With capture enabled, a
   deny appeared on stdout carrying none of the patched copy's text. Caught by
@@ -309,6 +342,13 @@ Three, each of which produced a plausible wrong reading before it was caught:
   em-dash, flipping one cell's result while `bash -n` stayed green. All
   instruments were rebuilt byte-safely in Python. This is the
   `perl-pipe-delimiter-corrupts-file` class.
+- **The attempted refutation of the review finding denied uniformly, control
+  included** — and would have "disproved" a correct finding. Once this branch
+  touched `hooks/`, every cell run in a fresh `HOME` denied at
+  **routing-governance**, never reaching Check 2; the control denied for the
+  same wrong reason, so the matrix looked coherent. Seeding a clean covering
+  verdict isolated the gate under test and all four sources then flipped. A
+  control that agrees with the cells is not a control.
 - **The global-leg cells first denied uniformly, control included.** The guard
   reads the branch ledger from the *process-derived* root (#219, deliberately),
   so running it from the session cwd keyed the ledger to a different branch than

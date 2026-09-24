@@ -1240,18 +1240,25 @@ EOF
                 # no run — satisfies verdict_is_clean + verdict_covers_head and
                 # turns this deny into a guard-level allow. Adding an explicit
                 # worktree_dirty:false defeats the sha-exact tightening too.
-                # This leg's four sources all require a harness-observed Skill
-                # return, which cannot be produced by writing into ~/.claude/,
-                # so it is the second and independent lock — not the leg in the
-                # wrong. Do not "fix the inconsistency" by widening it; the
-                # open defect is the artifact's provenance (issue #295).
+                # What is different about the verdict is NOT that this leg's
+                # evidence is unforgeable. Measured 2026-09-24: all four of this
+                # leg's sources are plain files under ~/.claude/ and each one,
+                # hand-written, flips this deny to an allow. The difference is
+                # that the verdict arrives WITHOUT any deliberate act — the
+                # project-verification skill instructs the model to author it —
+                # whereas the other four are normally written only by hooks, so
+                # supplying them takes a decision to fake evidence. That is a
+                # difference in how evidence arrives by default, not a security
+                # boundary, and the message must not claim otherwise. Do not
+                # "fix the inconsistency" by widening this leg; the open defect
+                # is artifact provenance across all of them (issue #295).
                 #
                 # The message must therefore not imply this leg is mistaken.
                 if [ "${_JQ_OK}" = "true" ] && [ "${_VERDICT_OK}" = "true" ] \
                    && command -v verdict_is_clean >/dev/null 2>&1 \
                    && verdict_is_clean "${_VERDICT_TOKEN}" \
                    && verdict_covers_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
-                    _MSG="${_MSG} NOTE: a CLEAN verification verdict covering this commit does exist, and this leg deliberately does not accept it (issue #254, measured 2026-09-24). That artifact is authored by the model itself — project-verification Step 3 instructs it — so on its own it cannot show that verification ran: a two-field file satisfies the predicate. This leg accepts only harness-observed evidence. Invoke the Skill and let it complete."
+                    _MSG="${_MSG} NOTE: a CLEAN verification verdict covering this commit does exist, and this leg deliberately does not accept it (issue #254, measured 2026-09-24). That artifact is authored by the model itself — project-verification Step 3 instructs it — so it arrives without any deliberate act, and a two-field file satisfies the predicate. This leg's sources are normally written only by hooks. None of them is forgery-proof either (issue #295); the difference is that the verdict is supplied by default. Invoke the Skill and let it complete."
                 fi
                 _skill_available "verification-before-completion" || _MSG="${_MSG} ${_SETUP_HINT}"
                 _emit_deny "${_MSG}"
