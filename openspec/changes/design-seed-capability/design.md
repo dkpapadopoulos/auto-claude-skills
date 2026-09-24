@@ -470,6 +470,174 @@ hash, budget rules, all arm prompts and edits, both artifacts, screenshots,
 label mapping, both judge responses, and the adjudication — not merely this
 document.
 
+## Registration v2 — 2026-09-24 (committed before the relevance audit runs)
+
+v1 never ran. No arm executed, no artifact was produced, no judge was asked, so
+there are no v1 results and nothing to pool or discard. v2 replaces v1 outright.
+
+### Why
+
+Two defects in v1's instrument, both verified rather than argued. Three of seven
+dimensions cited a presentation-quality list that `git log -S` places in
+`14e02a5` — the commit that wrote this pre-registration, a direct child of
+`2c038b1`, which shipped the seed, same author, same change; the "predates the
+seed" limb fails on the commit graph. And five of seven dimensions mapped
+one-to-one onto the seed styleguide's own section headings, which no rewording
+reaches, because it is a fact about which qualities were chosen to measure.
+
+A separate instrument was then derived by a different model family shown only
+the task, the operator's decisions and the frozen payload — never the seed,
+never the rubric, never the fact that a comparison exists. A three-way design
+debate and a cross-family critique of that debate's consensus followed. The
+decisions below are the result.
+
+**The ordering of this document is itself a control.** These rules are
+committed and pushed *before* the relevance audit is run, because a disposition
+rule chosen with the findings already in view is not a rule.
+
+### v2-1 — The instrument is replaced, not repaired
+
+The derived instrument becomes the scoring instrument, subject to the audit in
+v2-2. v1's seven dimensions are published **unscored**, as a provenance
+appendix. Repair was rejected: the defect is selection, and the only party
+available to repair it is the one who cannot un-see the seed.
+
+Two honest limits on that reasoning, recorded because they cut against the
+decision. A different model family is **not** a certificate of independence —
+the protection is restricted access to information, and the task framing handed
+to the deriving model was written by the seed's author, so it could carry
+seed-derived assumptions. And repair was rejected as *less credible*, not as
+logically impossible.
+
+### v2-2 — Relevance-audit disposition rule
+
+Applied to every dimension **and every subcriterion** of the derived
+instrument, before freezing, with the outcome and reason recorded per item:
+
+1. Is it justified by the **task** — an operator decision named in the brief,
+   or a fact in the payload that those decisions make relevant? If yes, keep it
+   and record the justification.
+2. Failing that, is it a requirement the **arms' brief already states**? If
+   yes, keep it: both arms were told.
+3. Otherwise **cut it.**
+
+Presence in the payload is necessary but not sufficient: a payload may contain
+facts the screen should omit. Overlap with the seed is not itself
+disqualifying either — a valid criterion may coincide with seed guidance. The
+decisive test in both directions is independent task relevance.
+
+**"Move the requirement into the brief" is deliberately NOT a permitted
+disposition.** It was argued for and rejected: equalising the brief answers a
+different question ("given an explicit requirement, which workflow delivers
+it better?"), and mutating the shared input reopens "what else should the brief
+name?" without a principle that terminates it.
+
+### v2-3 — Dark theme is cut; captures are width-only
+
+Measured: the seed's files mention dark in five of six, `ADOPT.md:45` calls a
+light/dark role mismatch "the most common mistake", and its lint checks for it,
+while the arms' brief mentions themes **zero** times. Under v2-2 the dimension
+fails at every step — no operator decision requires it, no payload fact implies
+it, and the brief does not state it. The only arguments for keeping it were
+that the derived instrument measures it and that the seed supports it, which is
+the instrument manufacturing the task to justify its own inclusion criteria.
+
+The v1 capture protocol ("light and dark") is amended: captures are taken at
+**1280px and 400px**, both stated in the brief, under a pinned browser,
+viewport, zoom and declared font availability, with no theme forced and no
+theme scored. An artifact that ships a dark theme is neither credited nor
+penalised for it.
+
+### v2-4 — The judge decision rule
+
+v1 registered a direction call per judge and never said how dimension scores
+become one. Dropping the derived instrument's weights without supplying a rule
+would leave each judge to invent an unregistered one, which is worse than
+weights. Registered now, applied in order:
+
+1. **Fidelity tier.** A score of 0 on any dimension in the fidelity class —
+   corrupted or wrong execution values, invented data, or a false claim of
+   clearance — is disqualifying for direction. If exactly one artifact in a
+   pair has such a failure, the other is favoured, whatever the remaining
+   scores. A presentation advantage never outweighs a factual failure, because
+   the operator is transcribing these numbers into a broker.
+2. **Dimension count.** Otherwise, the artifact scoring strictly higher on more
+   dimensions is favoured.
+3. **No direction.** If the counts tie, that judge reports no direction, which
+   feeds the pair rule in v2-6 exactly as a split does.
+
+### v2-5 — What is kept and what is dropped from the derived instrument
+
+**Kept:** the 0-3 anchors; the shared reference-fact sheet, prepared and frozen
+before any candidate is viewed; and the double-counting table — amended, per
+the critique, to prevent two penalties for the same *consequence* rather than
+asserting that one defect can have only one relevant harm.
+
+**Kept as a validity screen, not as scoring:** an artifact that does not render,
+requires the network, or violates the read-only constraint is reported under
+outcome 4 rather than scored. v1 had no predefined treatment for this.
+
+**Dropped:** the weighted total and the eligibility floor, both superseded by
+v2-4; and the unresolved-disagreement interval rule, which directly contradicts
+the registered "split = inconclusive, no third call".
+
+### v2-6 — n = 3 paired repetitions of the same task
+
+Three independent S/C pairs on the **same** frozen fixture, brief and budget,
+each run from fresh context, with pairing and presentation order fixed in
+advance.
+
+Three *different fixtures* were rejected: with one pair each, fixture
+differences and generation variance stay entangled, which is the opposite of
+what this buys. Repetition on one task isolates the single thing no amount of
+instrument work can address — whether a first observed direction repeats under
+identical conditions.
+
+Each pair is judged by two judges under v2-4 and resolves to S, C, or
+inconclusive under the v1 agreement rule, unchanged. **All three pair outcomes
+are reported.** No overall verdict is produced and none may be introduced
+later: a majority rule adopted after seeing the pattern is the move this
+document exists to prevent. Six judge calls are three paired repetitions
+evaluated twice, and will never be described as six observations.
+
+### v2-7 — Calibration read
+
+Before any arm runs, both judges score one decoy artifact under the frozen
+instrument. Its purpose is narrow and registered: to expose unclear anchors, a
+missing evidence input, or an unusable scoring procedure, and to measure judge
+alignment — because "split = inconclusive" is a live outcome and alignment on a
+decoy is the only thing that separates *the instrument cannot discriminate*
+from *the arms were genuinely close*.
+
+**The alignment read is published whatever the pilot's outcome, including when
+the pilot is inconclusive.** Reported only alongside a decisive result it would
+be decoration.
+
+If the read exposes a serious problem, the permitted responses are to repair
+and re-freeze **before any arm runs**, or to stop. "Mark it and proceed anyway"
+is not one of them.
+
+### v2-8 — Versioned registration instead of a stopping rule
+
+A pre-committed "this is the final instrument change" was proposed and
+rejected: it creates an incentive to knowingly keep a defect in order to
+preserve a claim label. Instead, this registration is **versioned and dated**.
+Any further substantive change before the arms run increments it to v3, states
+what changed and why, and is pushed before launch. A discovered flaw triggers
+correction or cancellation, never a ceremonial demotion.
+
+### v2-9 — What v2 can no longer claim
+
+- **Requirement discovery is out of scope.** Whether the seed surfaces
+  requirements an unaided build would miss is not tested here, and no result
+  may be read as evidence about it either way.
+- **Generalisation remains out of scope**, as in v1. Three repetitions on one
+  fixture can show whether a direction repeats under identical conditions. They
+  cannot show it holds for another task, another payload, or another model.
+- At this sample size every control here buys only that the signal was not
+  fabricated. None of it buys generalisation, and that sentence travels with
+  any quotation of the result.
+
 ## Out of scope
 
 Dion's financial logic, data, or brand inside the plugin; broad dashboards;
