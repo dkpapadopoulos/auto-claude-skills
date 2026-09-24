@@ -346,7 +346,7 @@ the guarantee is not overstated beyond that.
 ### Frozen artifacts — digests (recorded 2026-09-23)
 
 The artifacts named above are frozen in **Dion** (private) at commit
-`54fa83d`, branch `design-seed-pilot`. This
+`8787e68`, branch `design-seed-pilot`. This
 repository is public, so it records their paths and digests only — no Dion
 content is reproduced here. Each digest is re-checked on every Dion test run
 (`tests/design_seed_pilot/test_fixture_fidelity.py`), so an artifact edited
@@ -360,7 +360,7 @@ after freezing fails that suite rather than drifting quietly.
 | `docs/design-seed-pilot/budget.md` | `5615b2170868192a052b86ea95ae42a5c2ea41ab90dd6a958b8d600cc95923a6` |
 | `docs/design-seed-pilot/calibration.md` | `4398a8a5be598c782866c3e6aa134d651ec71628fbe108a0307f1cebf1d13fde` |
 | `docs/design-seed-pilot/launch.md` | `9d74d571c9273e3f324c4fc7862205d999864ea2884c124879f72bf684129645` |
-| `docs/design-seed-pilot/calibration-outcome.md` | `9b4171a92f4ceb13502f4b990939db75c6ebd3ae4f7ca51689b66b767605665d` |
+| `docs/design-seed-pilot/calibration-outcome.md` | `8d3a43de64da27ecaace220272f9b095230c402462c92489aa4c0c95ac4cd167` |
 | `tests/fixtures/design_seed_pilot/decoy.html` | `a000a74d74ce894796cdb7715b2e75640fdde80eed77f31657c5f2b8e8b6164c` |
 | `docs/design-seed-pilot/rubric.md` | `215d2013fc4eac408a4a21ed35b591e1bca0917f33e0b196585bf6014aedee69` |
 | `docs/design-seed-pilot/relevance-audit.md` | `8a137838e705fd7d5496ed6c8d9444bb727cf66eaf061f25400d0979349a39ab` |
@@ -689,10 +689,13 @@ v2-7 registered a calibration read and a response rule. The read ran, before
 any arm existed, and found serious problems. The rule permitted repair-and-
 re-freeze or stop; "mark it and proceed" was excluded. Repaired, so this is v3.
 
-**Result: 6 of 7 dimensions agreed exactly between two independent judges,
-maximum divergence 1 point** — and the single disagreement fell on R6, the one
-dimension both judges had independently named unusable as written. The spread
-sits in the anchor, not in judge temperament.
+**First read: 6 of 7 dimensions agreed exactly between two independent judges,
+maximum divergence 1 point** — the single disagreement falling on R6, the one
+dimension both judges had independently named unusable as written.
+
+**Second read, after the repairs, on two FRESH judges: 5 of 7.** Alignment did
+not improve, and the prediction recorded before that read was wrong. See
+"The second read" below before quoting the 6-of-7 figure anywhere.
 
 **Six defects, each named independently by both judges.** The serious one: the
 fidelity tier listed R1, R2 and R4 while glossing itself as covering "a false
@@ -716,7 +719,36 @@ package and cannot carry a PNG, while judging from source alone would leave R6
 unscoreable. A cross-family judging configuration would need that path
 extended, and would not inherit this alignment figure.
 
-Full outcome, including both scorecards: `docs/design-seed-pilot/calibration-outcome.md`.
+### The second read — what two rounds of repair established
+
+The repaired instrument was re-read by two fresh judges (A and B were not
+reused: a judge who has scored the artifact anchors on its own number).
+Alignment went **6 of 7 to 5 of 7**. R6 still split, and R5 — which had agreed
+— split as well.
+
+The repair worked on the defect it named and exposed the one beneath it. Both
+round-two judges independently report that R6's remaining gap is **not
+decidable from the anchors**, because R6 has none: the generic 0-3 scale is all
+there is. That is the structural finding, and it is visible across all four
+judges — **only R1 and R2 carry their own per-integer anchors, and they are the
+two dimensions every judge scored identically in both rounds.** R3 and R7
+agreed because absence is unambiguous rather than because they are specified;
+R4 was scored 2 by all four judges while all four reported inventing a rule to
+reach it. Every divergence observed falls on a dimension that is both
+unanchored and graded.
+
+Twice now a wording patch has closed the named ambiguity and surfaced another,
+which is evidence about the remedy: per-integer anchors, not further prose.
+
+**What is nevertheless solid: the fidelity tier — R1, R2, R3, R4 — was scored
+identically by all four judges across both reads.** The dimensions carrying
+disqualifying force in the decision rule are the ones that agree. The spread is
+confined to presentation dimensions, where it can still flip the rule's second
+step in a close pair — resolving that pair to "no direction", which is a
+registered outcome rather than a failure.
+
+Full outcome, both reads and all four scorecards:
+`docs/design-seed-pilot/calibration-outcome.md`.
 
 ### v2-9 — What v2 can no longer claim
 
