@@ -161,9 +161,18 @@ test_the_note_never_moves_the_decision() {
     # Scan CODE ONLY. The captured region is now mostly English, and a future
     # comment reading "this leg must never set _DECISION=" would fail this cell
     # for the wrong reason — measured: inserting the words "exit 0" into the
-    # prose failed it. Stripping comments cannot hide a real violation, since an
-    # assignment after a '#' on the same line is not executable anyway.
-    _code="$(printf '%s' "${_block}" | sed 's/#.*$//')"
+    # prose failed it.
+    #
+    # Drop WHOLE comment lines, never `s/#.*$//`. That earlier form cut at the
+    # first '#' regardless of quoting, and the _MSG line this cell exists to
+    # police contains "(issue #254, ...)" INSIDE the quoted string — so the cell
+    # was scanning a truncated version of its own subject, and a violation
+    # appended past that point was invisible (measured: it passed). The comment
+    # that justified it claimed "an assignment after a '#' is not executable
+    # anyway", which is true of a real comment and false of a '#' in quotes.
+    # Prose lines are full-line comments, so this keeps everything that form
+    # bought.
+    _code="$(printf '%s' "${_block}" | sed '/^[[:space:]]*#/d')"
     # ANCHOR GUARD. The awk range STARTS AT A COMMENT LINE, so rewording that
     # line yields an empty block, the grep then matches nothing, and the cell
     # passes while asserting nothing. Measured: renaming only that comment left
