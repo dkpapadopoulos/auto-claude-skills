@@ -783,6 +783,48 @@ only a session rooted in that worktree loads it. The controls that are
 mechanical are the base check and the pre-egress contamination check; the rest
 is instruction, and a violation would be visible only in the preserved prompts.
 
+### v3-result — The pilot ran, 2026-09-24
+
+Three paired repetitions on the frozen task, instrument unchanged throughout.
+Artifacts, captures, sealed label mappings, judge scorecards and run records
+are preserved in Dion at `docs/design-seed-pilot/runs/`, summarised in
+`RESULT.md` (commit `d2a1fea`).
+
+| Pair | Direction | Decided at |
+|---|---|---|
+| 1 | arm-C (no seed) | step 2 — 3 dimensions to 0; all four judges identical |
+| 2 | inconclusive | judges split |
+| 3 | arm-C (no seed) | step 1 — the seeded arm took a fidelity-tier zero |
+
+**Two pairs favoured the arm without the seed, one was inconclusive, none
+favoured the arm with it. No overall verdict is produced, and none may be
+added** — v2-6 registered the three outcomes as the result precisely to stop an
+aggregate rule being chosen once the pattern was visible.
+
+**What this does not support.** Not "the seed makes UI worse". The run produced
+its own evidence of generation variance: R3 scored 3/3 in pair 1, 0/0 in pair
+2, and split in pair 3 — the same arm type both included and omitted the
+exposure gates across repetitions. A single pair would have read that as a
+difference between arms, which is what repeating the same task was registered
+to expose and what three different fixtures could not have shown.
+
+**The limitation that most constrains the reading, stated first rather than
+last.** The instrument excludes what the seed supplies — tokens, design-system
+presence, resemblance to any styleguide — and scores what it does not address.
+Every deduction against the seeded arm across all three pairs was information
+placement or completeness: venue not on the row, the unresolved-symbol gap not
+adjacent, percentage points labelled "%", gates absent. **None concerned
+typography, colour, spacing or consistency**, which is what the seed governs.
+The pilot may therefore be systematically insensitive to the seed's
+contribution rather than measuring it as absent. That is a consequence of
+building an instrument that could not be contaminated by the treatment, and it
+is the first thing a replication should address.
+
+Also on the record: R3 scores a requirement the brief never states (pair 2);
+the seeded arm exceeded the wall-clock cap by ~3 minutes in pair 3; and judges
+identified the seeded arm in every pair from structural evidence that cannot be
+removed without altering visible design, as the pre-registration anticipated.
+
 ### v2-9 — What v2 can no longer claim
 
 - **Requirement discovery is out of scope.** Whether the seed surfaces
