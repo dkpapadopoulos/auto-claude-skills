@@ -90,10 +90,19 @@ records.
 ## Impact
 
 - `openspec/changes/chain-verify-verdict-acceptance/` — the pre-registration.
-- `hooks/openspec-guard.sh` — Check 2's acceptance predicate, **only if** the bar
-  returns WIDEN or NARROW. Untouched under REFUSE.
-- `tests/` — one new test file pinning whichever outcome lands, plus the paired
-  reachability cells.
+- `hooks/openspec-guard.sh` — Check 2's **acceptance predicate** only if the bar
+  returns WIDEN or NARROW. The bar returned REFUSE, so the predicate is
+  unchanged. What the outcome does change is the **advisory text and the
+  comments around it**: the #291 note told the reader the global leg treats the
+  verdict as "stronger evidence ... than this status milestone", which reads as
+  a concession that this leg is mistaken. Measurement says the opposite — the
+  verdict is easier to supply, not harder — so a reader acting on that wording
+  would widen the gate in the wrong direction. Corrected, with a pointer to the
+  provenance defect.
+- `tests/test-chain-verify-verdict-note.sh` — the stale header prose (which
+  asserted the refuted "stronger evidence" framing) is replaced with the
+  discharge outcome, and a cell pins that the message does not disparage this
+  leg. Mutation-verified: reverting only the guard's wording fails 5 cells.
 
 No new skill, so neither done-gate binds on anything new. No `predicate_version`
 bump: this change does not alter when the IMPLEMENT or REVIEW shadow legs fire,

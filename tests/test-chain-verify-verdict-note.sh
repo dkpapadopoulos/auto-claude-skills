@@ -1,22 +1,30 @@
 #!/usr/bin/env bash
 # tests/test-chain-verify-verdict-note.sh — #254 defect 2
 #
-# The guard already holds that a clean, sha-bound verdict is STRONGER evidence
-# of VERIFY than the status milestone — the global fail-closed leg says so in
-# its own comment and accepts one. The chain-block VERIFY check tests four
-# sources (`.completed`, ledger, invocation, bridge) and the verdict is not
-# among them, and that check runs FIRST. So whenever a composition chain is
-# active, the deny fires before the leg that would have accepted the stronger
-# evidence ever executes.
+# The chain-block VERIFY check tests four sources (`.completed`, ledger,
+# invocation, bridge); the verdict is not among them, and this check runs FIRST,
+# so with a chain active the deny fires before the global fail-closed leg — which
+# DOES accept a clean covering verdict — ever executes. This file pins the note
+# that says so, and the decision it must not move.
 #
-# Reproduced with the verdict held constant: same repo, HEAD, token and verdict
-# artifact; chain active -> deny, no chain -> allow.
+# THE WIDENING WAS PRE-REGISTERED AND REFUSED ON MEASUREMENT (2026-09-24,
+# openspec/changes/chain-verify-verdict-acceptance). Do not "fix the
+# inconsistency" by making this leg read the verdict:
 #
-# WHAT THIS CHANGE DOES AND DOES NOT DO. It does not move the decision. A
-# deny->allow flip on a chain gate is the class this repo pre-registers before
-# shipping, and an argument from consistency is not a substitute for measuring
-# the population it would newly allow. It fixes the SILENCE: whoever hits this
-# can now see that the evidence exists and which leg declined to read it.
+#   {"sha":"<HEAD>","gate_gaming_status":"clean"}
+#
+# Two fields, no run, written by the agent — that satisfies verdict_is_clean +
+# verdict_covers_head and converts this deny into a guard-level ALLOW. Adding an
+# explicit worktree_dirty:false defeats the sha-exact tightening as well. The
+# artifact is model-authored BY DESIGN (project-verification Step 3 instructs
+# it; verify-and-record.sh calls itself not a trust boundary), so it is
+# sha-bound, NOT harder to forge. This leg's four sources all require a
+# harness-observed Skill return, which cannot be produced by writing into
+# ~/.claude/ — it is the second, independent lock. The open defect is the
+# artifact's provenance: issue #295.
+#
+# Hence the message must NOT imply this leg is the one in the wrong. That is
+# what test_the_note_does_not_disparage_this_leg pins.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -69,8 +77,9 @@ test_a_clean_covering_verdict_is_named_in_the_deny() {
     out="$(_run)"; reason="$(_reason "${out}")"
     assert_equals   "the chain VERIFY gate still denies"        "deny"      "$(_decision "${out}")"
     assert_contains "the deny says a clean covering verdict exists" "${NEEDLE}" "${reason:-<empty>}"
-    assert_contains "...and names which leg would have accepted it" "global fail-closed leg" "${reason:-<empty>}"
-    assert_contains "...and says the verdict is not a substitute here" "not a substitute" "${reason:-<empty>}"
+    assert_contains "...and says declining it here is deliberate" "deliberately does not accept" "${reason:-<empty>}"
+    assert_contains "...and says why: the artifact is model-authored" "authored by the model itself" "${reason:-<empty>}"
+    assert_contains "...and names what this leg does accept"  "harness-observed evidence" "${reason:-<empty>}"
 }
 
 test_control_no_verdict_means_no_note() {
@@ -98,6 +107,20 @@ test_control_a_noncovering_verdict_means_no_note() {
     assert_not_contains "a clean verdict for ANOTHER commit produces no note" "${NEEDLE}" "${reason:-}"
 }
 
+test_the_note_does_not_disparage_this_leg() {
+    # The refused framing, pinned so it cannot creep back. Before the bar was
+    # discharged this message told the reader the global leg treats the verdict
+    # as "stronger evidence ... than this status milestone", which reads as an
+    # admission that THIS leg is mistaken. Measurement says the opposite: the
+    # verdict is easier to supply, not harder, so a reader acting on the old
+    # wording would widen the gate in the wrong direction.
+    jq -nc --arg s "${HEAD_SHA}" \
+        '{passed:["tests"],failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' > "${ART}"
+    local reason; reason="$(_reason "$(_run)")"
+    assert_not_contains "the note does not call the verdict stronger evidence" "stronger evidence" "${reason:-}"
+    assert_not_contains "the note does not concede this leg is wrong"          "does not read it, so the deny stands" "${reason:-}"
+}
+
 test_the_note_never_moves_the_decision() {
     # Structural. If the verdict ever reaches _verif_completed or a decision on
     # this leg, that is the pre-registered flip, not this change.
@@ -118,6 +141,7 @@ test_a_clean_covering_verdict_is_named_in_the_deny
 test_control_no_verdict_means_no_note
 test_control_a_failing_verdict_means_no_note
 test_control_a_noncovering_verdict_means_no_note
+test_the_note_does_not_disparage_this_leg
 test_the_note_never_moves_the_decision
 
 export HOME="${_OLDHOME}"
