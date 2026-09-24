@@ -346,7 +346,7 @@ the guarantee is not overstated beyond that.
 ### Frozen artifacts — digests (recorded 2026-09-23)
 
 The artifacts named above are frozen in **Dion** (private) at commit
-`6962124`, branch `design-seed-pilot`. This
+`54fa83d`, branch `design-seed-pilot`. This
 repository is public, so it records their paths and digests only — no Dion
 content is reproduced here. Each digest is re-checked on every Dion test run
 (`tests/design_seed_pilot/test_fixture_fidelity.py`), so an artifact edited
@@ -359,9 +359,10 @@ after freezing fails that suite rather than drifting quietly.
 | `docs/design-seed-pilot/advance-disclosures.md` | `d0dc7c7d0e7d565674528ebb6887535e96b2c56e512674a2b2d182ab27d01b1d` |
 | `docs/design-seed-pilot/budget.md` | `5615b2170868192a052b86ea95ae42a5c2ea41ab90dd6a958b8d600cc95923a6` |
 | `docs/design-seed-pilot/calibration.md` | `4398a8a5be598c782866c3e6aa134d651ec71628fbe108a0307f1cebf1d13fde` |
-| `docs/design-seed-pilot/launch.md` | `15bacbb6398575792d82e19a729e87be6a97a4d50ef60459269fbcae7bb072c2` |
+| `docs/design-seed-pilot/launch.md` | `9d74d571c9273e3f324c4fc7862205d999864ea2884c124879f72bf684129645` |
+| `docs/design-seed-pilot/calibration-outcome.md` | `9b4171a92f4ceb13502f4b990939db75c6ebd3ae4f7ca51689b66b767605665d` |
 | `tests/fixtures/design_seed_pilot/decoy.html` | `a000a74d74ce894796cdb7715b2e75640fdde80eed77f31657c5f2b8e8b6164c` |
-| `docs/design-seed-pilot/rubric.md` | `001206a1870602c3f8f7a14473a0d8f7fb3881f7e7f834b02add787a9ef1dbff` |
+| `docs/design-seed-pilot/rubric.md` | `215d2013fc4eac408a4a21ed35b591e1bca0917f33e0b196585bf6014aedee69` |
 | `docs/design-seed-pilot/relevance-audit.md` | `8a137838e705fd7d5496ed6c8d9444bb727cf66eaf061f25400d0979349a39ab` |
 | `docs/design-seed-pilot/provenance-appendix.md` | `717bfd75280f9c02fc6261718d77877e351b3041a65e11a9136c7123ebd6895e` |
 | `docs/design-seed-pilot/brief.md` | `20183b4dd11bf1bc41f24b180ef3c2cb875fce86ce942a8a364a2268fceb8f82` |
@@ -681,6 +682,41 @@ scheme, reduced motion, with every non-`file:` request blocked and counted.
 Capturing the decoy also refuted a claim in the calibration protocol: it
 predicted a `?` sentinel this input cannot produce, since the input has no
 unresolved fee or venue. Predictions are now read off the captures.
+
+## Registration v3 — 2026-09-24 (the calibration read)
+
+v2-7 registered a calibration read and a response rule. The read ran, before
+any arm existed, and found serious problems. The rule permitted repair-and-
+re-freeze or stop; "mark it and proceed" was excluded. Repaired, so this is v3.
+
+**Result: 6 of 7 dimensions agreed exactly between two independent judges,
+maximum divergence 1 point** — and the single disagreement fell on R6, the one
+dimension both judges had independently named unusable as written. The spread
+sits in the anchor, not in judge temperament.
+
+**Six defects, each named independently by both judges.** The serious one: the
+fidelity tier listed R1, R2 and R4 while glossing itself as covering "a false
+claim of clearance", which is **R3's** subject — so omitting both breached
+review gates was not disqualifying while a symbol lapse was, inverting the
+rubric's own words. Also: R2 anchored one of the three failure shapes it
+names, so the real case admitted 0 or 1 equally; R5 never said at which width
+its tests apply, and the same artifact scored 3 and 1; R6's closed failure list
+could not see a 400px render that kept every value legible while detaching it
+from its heading; R4's provenance clause silently covered page furniture, and
+the judges invented different scope rules. In the harness, the capture manifest
+recorded the **source filename**, which in a real pair names the arm and
+reaches the judge — one judge had read it before scoring.
+
+**Two things this read does not support, stated because they are easy to
+elide.** The alignment was measured on the instrument the findings replaced, so
+it describes a superseded rubric; whether the repaired anchors agree better is
+unmeasured until a second read is run. And the judges were **local, not
+cross-family**: the consent-gated egress path freezes and hashes one text
+package and cannot carry a PNG, while judging from source alone would leave R6
+unscoreable. A cross-family judging configuration would need that path
+extended, and would not inherit this alignment figure.
+
+Full outcome, including both scorecards: `docs/design-seed-pilot/calibration-outcome.md`.
 
 ### v2-9 — What v2 can no longer claim
 
