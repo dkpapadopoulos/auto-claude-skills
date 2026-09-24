@@ -304,10 +304,23 @@ that already costs.
 
 ### What was NOT measured, and why
 
-**F1–F4, F6–F16 were not measured.** The decision rule terminates on the first
-reachable falsifier no named tightening closes, and F5 is that falsifier. They
-remain enumerated-but-unmeasured, and the bar must not be credited with evidence
-it did not collect. Several are relevant to the repair and are the natural
+**F1–F4, F6–F14 and F16 were not measured at all.** The decision rule terminates
+on the first reachable falsifier no named tightening closes, and F5 is that
+falsifier. They remain enumerated-but-unmeasured, and the bar must not be
+credited with evidence it did not collect.
+
+**F15 is the one exception, and it is a partial one.** Its frozen row says
+"predicate half confirmed by execution", which is accurate and narrower than it
+may look: during enumeration-building `verdict_is_clean` was called directly on
+`{"sha":"deadbeef","gate_gaming_status":"clean"}` and returned CLEAN. That is a
+**predicate evaluated in isolation**, which `specs/pdlc-safety/spec.md` expressly
+forbids recording as reachability — the guard's other legs still run, so a true
+predicate is not yet an allow. F15 therefore has **no reachability pair** and is
+not a measured falsifier; what was confirmed is only that the schema accepts a
+two-field record. An earlier draft of this section stated a blanket "F1–F4,
+F6–F16 were not measured", which contradicted the frozen row and left its
+"(see Discharge note)" pointing at a paragraph that same draft had deleted.
+Both are corrected here; the frozen row is untouched. Several are relevant to the repair and are the natural
 starting set for it — F9 (exit zero without a completed run), F11 (non-atomic
 compound read) and F15 (schema permissiveness) all bear directly on artifact
 provenance.
@@ -325,6 +338,16 @@ provenance.
    schema, `verdict_is_clean` accepting a two-field self-authored record — not
    against the global leg alone, because `routing-governance` and
    `verify-hardening` read the same predicates.
+
+### Pre-freeze execution, disclosed
+
+Restored after being dropped in a rewrite. While verifying the factual basis of
+F15 during enumeration-building, its predicate half was run directly:
+`{"sha":"deadbeef","gate_gaming_status":"clean"}` returns CLEAN from
+`verdict_is_clean`. That is a check on a source claim, not a measurement of the
+marginal population, and it is **not** a discharge — the bar requires a
+guard-level paired run with a positive control. Recorded so the bar cannot later
+be credited with evidence it did not collect.
 
 ### Probe faults hit on the way, recorded so the cells are auditable
 

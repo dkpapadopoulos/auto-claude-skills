@@ -124,6 +124,9 @@ test_the_note_does_not_disparage_this_leg() {
     jq -nc --arg s "${HEAD_SHA}" \
         '{passed:["tests"],failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' > "${ART}"
     local reason; reason="$(_reason "$(_run)")"
+    # Positive anchor FIRST. Two assert_not_contains pin nothing on their own:
+    # measured, deleting the whole _MSG note line left both of them PASSING.
+    assert_contains     "the note is present at all (anchors the negatives below)" "${NEEDLE}" "${reason:-<empty>}"
     assert_not_contains "the note does not call the verdict stronger evidence" "stronger evidence" "${reason:-}"
     assert_not_contains "the note does not concede this leg is wrong"          "does not read it, so the deny stands" "${reason:-}"
 }
@@ -147,9 +150,25 @@ test_the_note_claims_no_forgery_resistance() {
 test_the_note_never_moves_the_decision() {
     # Structural. If the verdict ever reaches _verif_completed or a decision on
     # this leg, that is the pre-registered flip, not this change.
-    local _block
+    local _block _code
     _block="$(awk '/#254 d2: SAY when a clean covering verdict/,/^                fi$/' "${GUARD}")"
-    if printf '%s' "${_block}" | grep -qE '_verif_completed=|_DECISION=|exit 0|permissionDecision'; then
+    # Scan CODE ONLY. The captured region is now mostly English, and a future
+    # comment reading "this leg must never set _DECISION=" would fail this cell
+    # for the wrong reason — measured: inserting the words "exit 0" into the
+    # prose failed it. Stripping comments cannot hide a real violation, since an
+    # assignment after a '#' on the same line is not executable anyway.
+    _code="$(printf '%s' "${_block}" | sed 's/#.*$//')"
+    # ANCHOR GUARD. The awk range STARTS AT A COMMENT LINE, so rewording that
+    # line yields an empty block, the grep then matches nothing, and the cell
+    # passes while asserting nothing. Measured: renaming only that comment left
+    # the whole file green. Assert the block really captured the note's CODE
+    # before drawing any conclusion from the scan.
+    if [ -z "${_code}" ] || ! printf '%s' "${_code}" | grep -q '_MSG=.*NOTE: a CLEAN verification verdict'; then
+        _record_fail "the #254 note never moves the decision" \
+            "awk anchors no longer capture the note block (empty or missing the _MSG line) — re-point them; this cell is vacuous until you do"
+        return
+    fi
+    if printf '%s' "${_code}" | grep -qE '_verif_completed=|_DECISION=|exit 0|permissionDecision'; then
         _record_fail "the #254 note never moves the decision" \
             "the note block also assigns a decision, completion flag or exit"
     else

@@ -48,10 +48,13 @@ outcome and is authored afterwards in this same change.
    before measurement. The enumeration is recorded as known-possibly-incomplete
    rather than as a proof: it went from 8 entries to 16 under one adversarial
    review pass, which is the evidence for that label.
-2. **Discharge the bar** — measure each enumerated falsifier for reachability
-   against the real guard, paired (present/absent, everything else fixed, the
-   two runs must disagree) with a positive control in the same harness, per the
-   #205 adjudication discipline.
+2. **Discharge the bar** — measure enumerated falsifiers for reachability
+   against the real guard **until the decision rule terminates**, which it does
+   on the first reachable falsifier no named tightening closes. Each measurement
+   is paired (present/absent, everything else fixed, the two runs must disagree)
+   with a positive control in the same harness, per the #205 adjudication
+   discipline. In the event that was **F5 alone**; the rest are enumerated and
+   unmeasured, and `design.md` says which.
 3. **Apply whichever outcome the rule returns** — WIDEN, NARROW, or
    REFUSE-AND-REPAIR. All three are real terminal states of this change. The
    rule deliberately separates *adding* an acceptance path to Check 2 from
