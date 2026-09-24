@@ -346,7 +346,7 @@ the guarantee is not overstated beyond that.
 ### Frozen artifacts — digests (recorded 2026-09-23)
 
 The artifacts named above are frozen in **Dion** (private) at commit
-`710938d14844026261a5d287aa78bb75bfd7bcd6`, branch `design-seed-pilot`. This
+`bade9a1626239142a596effd813a4a3328871b3d`, branch `design-seed-pilot`. This
 repository is public, so it records their paths and digests only — no Dion
 content is reproduced here. Each digest is re-checked on every Dion test run
 (`tests/design_seed_pilot/test_fixture_fidelity.py`), so an artifact edited
@@ -357,7 +357,8 @@ after freezing fails that suite rather than drifting quietly.
 | `tests/fixtures/design_seed_pilot/review_report_envelope.json` | `c4c7dcd6c99ae3f21f0230b29c443292624e8cb96c31e83e967f6e498f35fadf` |
 | `tests/design_seed_pilot/build_fixture.py` | `b9fe6512e55a3eb86fdf8dd86bf84ae3b63c88f1921ca036884cf226a2885bdb` |
 | `docs/design-seed-pilot/advance-disclosures.md` | `d0dc7c7d0e7d565674528ebb6887535e96b2c56e512674a2b2d182ab27d01b1d` |
-| `docs/design-seed-pilot/budget.md` | `100b4a118546ec5c2554d061cd14a98d4dae107ce2210042b9a854a90f07140b` |
+| `docs/design-seed-pilot/budget.md` | `5615b2170868192a052b86ea95ae42a5c2ea41ab90dd6a958b8d600cc95923a6` |
+| `docs/design-seed-pilot/calibration.md` | `83c060c2507e39ddebffe5b285646ebbcab3cd848ba98d33fb128f8ed05c87fb` |
 | `docs/design-seed-pilot/rubric.md` | `001206a1870602c3f8f7a14473a0d8f7fb3881f7e7f834b02add787a9ef1dbff` |
 | `docs/design-seed-pilot/relevance-audit.md` | `8a137838e705fd7d5496ed6c8d9444bb727cf66eaf061f25400d0979349a39ab` |
 | `docs/design-seed-pilot/provenance-appendix.md` | `717bfd75280f9c02fc6261718d77877e351b3041a65e11a9136c7123ebd6895e` |
