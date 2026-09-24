@@ -346,7 +346,7 @@ the guarantee is not overstated beyond that.
 ### Frozen artifacts — digests (recorded 2026-09-23)
 
 The artifacts named above are frozen in **Dion** (private) at commit
-`e0d7eb66b9749167c5c4d8c5647defcec6924cfb`, branch `design-seed-pilot`. This
+`710938d14844026261a5d287aa78bb75bfd7bcd6`, branch `design-seed-pilot`. This
 repository is public, so it records their paths and digests only — no Dion
 content is reproduced here. Each digest is re-checked on every Dion test run
 (`tests/design_seed_pilot/test_fixture_fidelity.py`), so an artifact edited
@@ -358,7 +358,9 @@ after freezing fails that suite rather than drifting quietly.
 | `tests/design_seed_pilot/build_fixture.py` | `b9fe6512e55a3eb86fdf8dd86bf84ae3b63c88f1921ca036884cf226a2885bdb` |
 | `docs/design-seed-pilot/advance-disclosures.md` | `d0dc7c7d0e7d565674528ebb6887535e96b2c56e512674a2b2d182ab27d01b1d` |
 | `docs/design-seed-pilot/budget.md` | `100b4a118546ec5c2554d061cd14a98d4dae107ce2210042b9a854a90f07140b` |
-| `docs/design-seed-pilot/rubric.md` | `42750ab396e821491c6436f9de401422405166fa862eab61c2387e71f373a9d2` |
+| `docs/design-seed-pilot/rubric.md` | `001206a1870602c3f8f7a14473a0d8f7fb3881f7e7f834b02add787a9ef1dbff` |
+| `docs/design-seed-pilot/relevance-audit.md` | `8a137838e705fd7d5496ed6c8d9444bb727cf66eaf061f25400d0979349a39ab` |
+| `docs/design-seed-pilot/provenance-appendix.md` | `717bfd75280f9c02fc6261718d77877e351b3041a65e11a9136c7123ebd6895e` |
 | `docs/design-seed-pilot/brief.md` | `20183b4dd11bf1bc41f24b180ef3c2cb875fce86ce942a8a364a2268fceb8f82` |
 
 Two notes the sections above did not anticipate:
@@ -625,6 +627,29 @@ preserve a claim label. Instead, this registration is **versioned and dated**.
 Any further substantive change before the arms run increments it to v3, states
 what changed and why, and is pushed before launch. A discovered flaw triggers
 correction or cancellation, never a ceremonial demotion.
+
+### v2-audit — Outcome, recorded 2026-09-24
+
+Run after v2-1..v2-9 were pushed at `1b1c91f`. Seven dimensions audited,
+**seven kept, one subcriterion cut** (the theme requirement, per v2-3). The
+aggregation machinery was dropped and the delivery screen retained as a
+validity check, as registered. Full dispositions with per-item justification
+and the seed-overlap assessment: `docs/design-seed-pilot/relevance-audit.md`
+in Dion, digest below. The superseded list is published unscored at
+`docs/design-seed-pilot/provenance-appendix.md`.
+
+A high keep rate is not a vindication. The instrument was derived by a party
+with no access to the seed, so few leaks were expected; the one that was found
+was found by looking, which is not evidence it was the only one. The audit
+records R3 as the weakest kept dimension — the exposure gates are
+portfolio-level while the rest of the card is row-level — rather than hiding
+the concession.
+
+One dimension of the superseded instrument was **withdrawn as incorrect**, not
+merely as contaminated: it required limit prices at two decimals, citing this
+project's text-mode formatter, against an input whose limit endpoints carry
+four decimals. It would have marked a correct build defective and rewarded
+discarding execution precision.
 
 ### v2-9 — What v2 can no longer claim
 
