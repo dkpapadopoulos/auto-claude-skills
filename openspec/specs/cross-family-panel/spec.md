@@ -43,34 +43,41 @@ The `synthesize` skill MUST apply the merge rubric point by point (agreement →
 
 ### Requirement: Cross-family sends are refused without a user-answered, payload-bound receipt
 
-`panel` and `second-opinion` MUST send cross-family content only through
-`scripts/consult-dispatch.sh`. Digests MUST be sha256 over the package bytes with trailing
-newlines removed, and no other normalisation. The dispatcher MUST verify, scan and send a single private copy of the frozen package, MUST
-run the secret scan so that no environment, working-directory or inline allowance can
-silence it, and MUST refuse to send unless a
-consent receipt for the frozen package's digest exists, is no older than 900 seconds, and is
-claimed by an atomic move before sending; one receipt MUST authorise at most one send, and a
-send whose outcome is uncertain MUST NOT restore it. The dispatcher MUST accept only
-receipts in the format the PostToolUse `AskUserQuestion` hook writes, and that hook MUST
-write one only when: exactly one question in the call carried an
-`[egress-consent:<digest>]` marker in its question text; the same `tool_use_id` was recorded
-as a clean ask at PreToolUse and has not been consumed; the answer for that question is
-exactly `Approve and send`; and the harness-returned preview annotation for that question
-exists and hashes to the digest. Any other answer to a clean consent ask MUST revoke every
-unused receipt of the conversation and MUST record a veto that outranks any receipt for that
-digest whose ask is not newer, so the latest answer wins whatever order answers arrive in.
-Asking about a package MUST withdraw its earlier unused receipts, and a new user prompt MUST
-withdraw every unused receipt of the conversation, except a prompt consisting entirely of
-background-task notification blocks, which is not the user speaking. A marked question MUST be denied at PreToolUse when its
-input contains an `answers` or `annotations` key, when it comes from a subagent, when its `tool_use_id` was
-already recorded, when its first (default) option is the approve label, or when it
-violates the consent-question schema. Receipt files are
-agent-writable, so these rules defend against a skipped ask, not a deliberate forgery.
-Session identity MUST be resolved without the shared singleton on both sides. When the
-dispatcher cannot verify consent it MUST refuse and MUST say that verification could not
-run, naming the missing component, distinctly from a missing approval — unless the user has
-set `consultation.egress_consent` to `warn`, in which case it MUST announce on every send
-that consent enforcement is off.
+The binding rule is unchanged — a send requires a fresh, unused, digest-bound receipt
+produced by the user's own answer. What changes is WHERE the preview is verified, because
+the harness-returned preview annotation is size-gated and absent for every real package.
+
+The PostToolUse `AskUserQuestion` hook MUST write a receipt only when: exactly one question
+in the call carried an `[egress-consent:<digest>]` marker in its question text; the same
+`tool_use_id` was recorded as a clean ask at PreToolUse and has not been consumed; the
+answer for that question is exactly `Approve and send`; and the approved preview is bound to
+the digest by **one** of these, recorded in the receipt as `preview_verified`:
+
+- `post` — the harness returned a preview annotation for that question and it hashes to the
+  digest; or
+- `pre` — the harness returned **no** annotation for that question, in which case the
+  binding is the PreToolUse snapshot, which the ask hook writes ONLY after the approve
+  option's preview hashes to the marker digest.
+
+A returned annotation that exists but carries no readable preview string MUST be refused,
+never treated as absent. A returned preview that exists and does NOT hash to the digest MUST
+be refused. The `pre` path MUST be announced, never silent.
+
+#### Scenario: A real package is approvable although the harness returns no preview
+
+- **GIVEN** a clean consent ask whose approve-option preview hashed to the marker digest at
+  PreToolUse, and a package large enough that the harness returns `annotations: {}`
+- **WHEN** the user answers `Approve and send`
+- **THEN** exactly one receipt MUST be written, carrying `preview_verified: "pre"`, and the
+  weaker verification MUST be announced
+
+#### Scenario: An unreadable returned annotation refuses rather than downgrading
+
+- **GIVEN** a clean consent ask whose answer carries an annotation for that question with no
+  readable preview string
+- **WHEN** the receipt hook processes the answer
+- **THEN** no receipt MUST be written, and the refusal MUST state that an unreadable preview
+  is not the same as an absent one
 
 #### Scenario: an approved package is sent exactly once
 
