@@ -298,8 +298,8 @@ only by hooks, so supplying them takes a decision to fake evidence.
 **Read the rest of that sentence before relying on it.** What the difference
 buys is a lower rate of *accidental* production, NOT resistance to a deliberate
 act. All five sources are equally writable, and the forgery cost for the other
-four is **low, not merely non-zero**: all four were produced in a single probe
-using a library that ships in this repo, the ledger key included. So "second
+four is **low, not merely non-zero**: all four were produced by hand-writing
+files, the ledger key derived from a library that ships in this repo. So "second
 lock" is a claim about the **independence** of two weak signals — which is
 exactly what the frozen enumeration said it would have to be, and the sentence
 the Discharge should have reused in the first place rather than inventing a
