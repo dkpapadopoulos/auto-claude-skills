@@ -346,7 +346,7 @@ the guarantee is not overstated beyond that.
 ### Frozen artifacts — digests (recorded 2026-09-23)
 
 The artifacts named above are frozen in **Dion** (private) at commit
-`bade9a1626239142a596effd813a4a3328871b3d`, branch `design-seed-pilot`. This
+`6962124`, branch `design-seed-pilot`. This
 repository is public, so it records their paths and digests only — no Dion
 content is reproduced here. Each digest is re-checked on every Dion test run
 (`tests/design_seed_pilot/test_fixture_fidelity.py`), so an artifact edited
@@ -358,7 +358,9 @@ after freezing fails that suite rather than drifting quietly.
 | `tests/design_seed_pilot/build_fixture.py` | `b9fe6512e55a3eb86fdf8dd86bf84ae3b63c88f1921ca036884cf226a2885bdb` |
 | `docs/design-seed-pilot/advance-disclosures.md` | `d0dc7c7d0e7d565674528ebb6887535e96b2c56e512674a2b2d182ab27d01b1d` |
 | `docs/design-seed-pilot/budget.md` | `5615b2170868192a052b86ea95ae42a5c2ea41ab90dd6a958b8d600cc95923a6` |
-| `docs/design-seed-pilot/calibration.md` | `83c060c2507e39ddebffe5b285646ebbcab3cd848ba98d33fb128f8ed05c87fb` |
+| `docs/design-seed-pilot/calibration.md` | `4398a8a5be598c782866c3e6aa134d651ec71628fbe108a0307f1cebf1d13fde` |
+| `docs/design-seed-pilot/launch.md` | `15bacbb6398575792d82e19a729e87be6a97a4d50ef60459269fbcae7bb072c2` |
+| `tests/fixtures/design_seed_pilot/decoy.html` | `a000a74d74ce894796cdb7715b2e75640fdde80eed77f31657c5f2b8e8b6164c` |
 | `docs/design-seed-pilot/rubric.md` | `001206a1870602c3f8f7a14473a0d8f7fb3881f7e7f834b02add787a9ef1dbff` |
 | `docs/design-seed-pilot/relevance-audit.md` | `8a137838e705fd7d5496ed6c8d9444bb727cf66eaf061f25400d0979349a39ab` |
 | `docs/design-seed-pilot/provenance-appendix.md` | `717bfd75280f9c02fc6261718d77877e351b3041a65e11a9136c7123ebd6895e` |
@@ -651,6 +653,34 @@ merely as contaminated: it required limit prices at two decimals, citing this
 project's text-mode formatter, against an input whose limit endpoints carry
 four decimals. It would have marked a correct build defective and rewarded
 discarding execution precision.
+
+### v2-launch — Controls built before launch, 2026-09-24
+
+The pilot's residual trifecta risk now has the mechanical control the
+re-classification demanded, authored failing first. `egress_check.py` refuses
+an artifact whose embedded payload is not the frozen fixture, whose identifiers
+or symbols appear in the operator's **private store** but not in the fixture,
+or whose numbers no fixture value explains. It reports `cannot-verify`
+separately from `refuse`, borrowing the egress dispatcher's own vocabulary, so
+a leg that could not run never reads as a clean bill.
+
+Two of its rules were **corrected by building the calibration decoy**, not by
+review: the first version refused this project's own shipped renderer over a
+faithful `[:8]` truncation and over the words BUY, SELL and TBD. Guessing which
+uppercase tokens are tickers was the wrong shape of rule; comparing against the
+private store is the threat stated precisely.
+
+Arm setup (`setup_arm.sh`) verifies the input digest before and after copying,
+places it at the neutral path, and takes the seed from its pinned shipped
+commit. It **refuses a base commit that contains the pilot's own documents** —
+an arm whose worktree carries the rubric can read the instrument it is about to
+be scored against, so that is a mechanical check, not a thing to remember.
+
+Captures are full-page at both widths under a pinned browser, forced light
+scheme, reduced motion, with every non-`file:` request blocked and counted.
+Capturing the decoy also refuted a claim in the calibration protocol: it
+predicted a `?` sentinel this input cannot produce, since the input has no
+unresolved fee or venue. Predictions are now read off the captures.
 
 ### v2-9 — What v2 can no longer claim
 
