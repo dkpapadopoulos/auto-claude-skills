@@ -293,8 +293,19 @@ measured. The pre-registration's own discipline is what caught it.
 verdict arrives with **no deliberate act** — `project-verification` instructs the
 model to author it — so widening Check 2 would add an allow path satisfied in
 the ordinary course of doing the work wrong. The other four are normally written
-only by hooks, so supplying them takes a decision to fake evidence. Neither is a
-security boundary.
+only by hooks, so supplying them takes a decision to fake evidence.
+
+**Read the rest of that sentence before relying on it.** What the difference
+buys is a lower rate of *accidental* production, NOT resistance to a deliberate
+act. All five sources are equally writable, and the forgery cost for the other
+four is **low, not merely non-zero**: all four were produced in a single probe
+using a library that ships in this repo, the ledger key included. So "second
+lock" is a claim about the **independence** of two weak signals — which is
+exactly what the frozen enumeration said it would have to be, and the sentence
+the Discharge should have reused in the first place rather than inventing a
+trust-level claim. Independence alone is doing the work here. A reader who
+concludes from this paragraph that Check 2 is expensive to defeat has taken the
+same wrong turn this section exists to correct.
 
 **This does not disturb the outcome.** REFUSE rests on the measured cells above:
 F5 is reachable in the marginal population and no named tightening closes it.
