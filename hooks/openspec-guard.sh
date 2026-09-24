@@ -1227,24 +1227,38 @@ EOF
             if [ "${_verif_in_chain}" = "true" ] && [ "${_verif_completed}" = "false" ]; then
                 _MSG="PUSH GATE — Expected: verification-before-completion completed before push. Actual: it has not run on this active chain. Do now: invoke Skill(superpowers:verification-before-completion), then retry the denied command."
                 # #254 d2: SAY when a clean covering verdict exists and was not
-                # honoured here. The global fail-closed leg below accepts one as
-                # stronger, sha-bound evidence of VERIFY than the status
-                # milestone — its own comment says so — but this leg runs FIRST
-                # and tests four sources, none of them the verdict. So whenever
-                # a chain is active the deny fires before the leg that would
-                # have accepted the stronger evidence ever executes.
+                # honoured here. The global fail-closed leg below DOES accept
+                # one; this leg runs FIRST and tests four sources, none of them
+                # the verdict.
                 #
-                # THE DECISION IS NOT MOVED. Flipping a chain gate from deny to
-                # allow is the class this repo pre-registers before shipping,
-                # and the argument from consistency is not a substitute for
-                # measuring the population it would newly allow. What is fixed
-                # is the silence: whoever hits this can now see that the
-                # evidence exists and which leg declined to use it.
+                # THE DECISION IS SETTLED, AND NOT THE WAY #254 PROPOSED.
+                # The widening was pre-registered and REFUSED on measurement
+                # (openspec/changes/chain-verify-verdict-acceptance). A clean
+                # covering verdict is NOT stronger evidence in the sense that
+                # matters here: the artifact is model-authored by design, and
+                # `{"sha":"<HEAD>","gate_gaming_status":"clean"}` — two fields,
+                # no run — satisfies verdict_is_clean + verdict_covers_head and
+                # turns this deny into a guard-level allow. Adding an explicit
+                # worktree_dirty:false defeats the sha-exact tightening too.
+                # What is different about the verdict is NOT that this leg's
+                # evidence is unforgeable. Measured 2026-09-24: all four of this
+                # leg's sources are plain files under ~/.claude/ and each one,
+                # hand-written, flips this deny to an allow. The difference is
+                # that the verdict arrives WITHOUT any deliberate act — the
+                # project-verification skill instructs the model to author it —
+                # whereas the other four are normally written only by hooks, so
+                # supplying them takes a decision to fake evidence. That is a
+                # difference in how evidence arrives by default, not a security
+                # boundary, and the message must not claim otherwise. Do not
+                # "fix the inconsistency" by widening this leg; the open defect
+                # is artifact provenance across all of them (issue #295).
+                #
+                # The message must therefore not imply this leg is mistaken.
                 if [ "${_JQ_OK}" = "true" ] && [ "${_VERDICT_OK}" = "true" ] \
                    && command -v verdict_is_clean >/dev/null 2>&1 \
                    && verdict_is_clean "${_VERDICT_TOKEN}" \
                    && verdict_covers_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
-                    _MSG="${_MSG} NOTE: a CLEAN verification verdict covering this commit does exist. The global fail-closed leg treats such a verdict as stronger evidence of VERIFY than this status milestone, but this chain-block check does not read it, so the deny stands (issue #254). Invoking the Skill records the milestone this leg is looking for; the verdict is not a substitute for it here."
+                    _MSG="${_MSG} NOTE: a CLEAN verification verdict covering this commit does exist, and this leg deliberately does not accept it (issue #254, measured 2026-09-24). That artifact is authored by the model itself — project-verification Step 3 instructs it — so it arrives without any deliberate act, and a two-field file satisfies the predicate. This leg's sources are normally written only by hooks. None of them is forgery-proof either (issue #295); the difference is that the verdict is supplied by default. Invoke the Skill and let it complete."
                 fi
                 _skill_available "verification-before-completion" || _MSG="${_MSG} ${_SETUP_HINT}"
                 _emit_deny "${_MSG}"
@@ -1552,8 +1566,12 @@ EOF
             [ "${_g_verify}" = "false" ] && _invoc_ok "verification-before-completion" && _g_verify=true
             [ "${_g_review}" = "false" ] && _bridge_has "requesting-code-review"         && _g_review=true
             [ "${_g_verify}" = "false" ] && _bridge_has "verification-before-completion" && _g_verify=true
-            # A clean verification verdict covering HEAD is stronger (SHA-bound) evidence
-            # of VERIFY than the status milestone, so it also satisfies the verify leg.
+            # A clean verification verdict covering HEAD is SHA-bound, so it also
+            # satisfies the verify leg. NOTE (#295): "stronger" is the wrong word
+            # and used to appear here — the artifact is model-authored by design
+            # and a two-field file satisfies it, measured 2026-09-24. It is
+            # sha-bound, not harder to forge. Narrowing this leg is a live
+            # question; it is a deny-side change and wants its own registration.
             if [ "${_g_verify}" = "false" ] && [ "${_VERDICT_OK}" = "true" ] \
                && verdict_is_clean "${_VERDICT_TOKEN}" && verdict_covers_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
                 _g_verify=true
