@@ -19,9 +19,11 @@ Discover the repository's own declared test/lint/type gate, run it **locally**, 
 
 ## Step 1: Discover the gate (deterministic-first)
 
-Walk the ladder in `references/discovery-ladder.md` top-down, first-match-wins. Prefer the deterministic rungs (`.verify.yml`, manifest-standard targets, a clearly-labelled "run all tests" row) before any prose reasoning. On a genuine tie in the CLAUDE.md `## Commands` table (0 or ≥2 surviving candidates), STOP, show the candidates, ask which command(s) are the gate, and offer to write `.verify.yml` so the next run is deterministic. Note which rung produced the gate — it decides which commands run. It reaches
-`discovery_source` only on the hand-authored last resort; the deterministic
-writer records `explicit` for any caller-supplied gate.
+Walk the ladder in `references/discovery-ladder.md` top-down, first-match-wins. Prefer the deterministic rungs (`.verify.yml`, manifest-standard targets, a clearly-labelled "run all tests" row) before any prose reasoning. On a genuine tie in the CLAUDE.md `## Commands` table (0 or ≥2 surviving candidates), STOP, show the candidates, ask which command(s) are the gate, and offer to write `.verify.yml` so the next run is deterministic. Note which rung produced the gate — it decides which commands run. Whether the
+rung's NAME survives into `discovery_source` depends on who writes the artifact:
+the deterministic writer stamps `verify-yml` for a declared gate and `explicit`
+for a caller-supplied one, so rungs 2 and 3 are not distinguishable in the
+record; only the hand-authored last resort names them.
 
 ## Preferred path: deterministic writer (when `.verify.yml` exists)
 

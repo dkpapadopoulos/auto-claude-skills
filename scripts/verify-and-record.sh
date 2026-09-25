@@ -96,10 +96,20 @@ while [ $# -gt 0 ]; do
             # refuses every command. Same idiom the execution loop uses.
             case "$2" in *$'\x1f'*) echo "verify-and-record: run may not contain US" >&2; exit 1 ;; esac
             case "$2" in *$'\n'*) echo "verify-and-record: run may not span lines" >&2; exit 1 ;; esac
-            # Not merely non-empty: `eval " "` exits 0, so a whitespace-only
-            # command records PASS having executed nothing. The line is drawn at
-            # "not entirely whitespace" — this does NOT validate command CONTENT,
-            # which is the caller's completeness obligation, not the script's.
+            # This REPLACES the old `[ -n "$2" ]`, it does not join it: `-n` was
+            # always meant to answer "did the caller supply a command", and it is
+            # simply the wrong test for that — a stray space passes it while
+            # `eval " "` exits 0, recording PASS having executed nothing. So the
+            # justification is that the empty-argument check was buggy, not that
+            # we validate command content; there is no slope to slide down.
+            #
+            # CEILING, deliberate: "executes nothing" is strictly wider than
+            # "whitespace only". Measured under bash 3.2, `eval "# npm test"` and
+            # `eval ":"` both exit 0 — and a commented-out command is the LIKELIER
+            # accident, a caller pasting a line they had disabled. Neither is
+            # refused: rejecting `#` means parsing shell intent, and `:` may be
+            # genuinely meant. A command that runs but checks nothing is the
+            # caller's completeness obligation, which nothing here can adjudicate.
             case "$2" in
                 *[![:space:]]*) : ;;
                 *) echo "verify-and-record: run may not be empty or whitespace-only" >&2; exit 1 ;;

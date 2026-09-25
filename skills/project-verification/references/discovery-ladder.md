@@ -3,12 +3,14 @@
 First-match-wins, top-down. The rung that fires decides WHICH commands are the
 gate.
 
-**It does not always survive into `discovery_source`.** When the deterministic
-writer runs a caller-supplied gate (`--name/--run`, the no-`.verify.yml` path in
-SKILL.md) it stamps `discovery_source: explicit` and the rung is not recoverable
-from the artifact — the writer owns that field precisely so an explicitly
-supplied gate cannot claim to be a declared one. The rung names below therefore
-apply only when the verdict is hand-authored, which is now the last resort.
+**Whether the rung's NAME survives into `discovery_source` depends on who writes
+the artifact.** The deterministic writer owns that field and records only two
+values: `verify-yml` when the gate came from a declared `.verify.yml` (§1), and
+`explicit` when the caller supplied it (`--name/--run`, the no-`.verify.yml` path
+in SKILL.md) — so §1's name does survive, while §2 and §3 collapse to `explicit`
+and are not recoverable from the record. The writer owns the field precisely so
+a caller-supplied gate cannot claim to be a declared one. The §2 and §3 names
+below therefore appear only on the hand-authored last resort.
 
 ## 1. `.verify.yml` (authoritative — the correctness contract)
 
@@ -25,7 +27,8 @@ commands:
     run: uv run pytest -m "not slow"
 fail_fast: false          # run all and aggregate; default false
 ```
-`discovery_source: verify-yml`.
+`discovery_source: verify-yml` — recorded by the deterministic writer on this
+rung, and the one rung name that survives into the artifact.
 
 ## 2. Manifest-standard targets
 

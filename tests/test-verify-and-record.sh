@@ -430,10 +430,11 @@ _refuses "${R25}" "a bare-newline name is refused (else: FALSE CLEAN)"   --name 
 # US is the other transport-corrupting byte, in either field.
 _refuses "${R25}" "US in a name is refused"    --name "$(printf 'a\037b')" --run "false"
 _refuses "${R25}" "US in a command is refused" --name a --run "$(printf 'fal\037se')"
-# I2. `eval " "` exits 0, so a whitespace-only command records PASS having run
-# nothing — the degenerate shape the non-empty guard exists to stop, which a
-# bare -n test walks straight past. The line is drawn at "not entirely
-# whitespace"; this deliberately does NOT validate command CONTENT.
+# I2. `-n` was the wrong test for "did the caller supply a command": a stray
+# space passes it, and `eval " "` exits 0, so PASS is recorded having executed
+# nothing. These cells pin the corrected predicate. CEILING (deliberate, not a
+# gap): `# npm test` and `:` also execute nothing and are NOT refused — that
+# would mean parsing shell intent. See the comment at the guard.
 _refuses "${R25}" "a whitespace-only command is refused" --name unit --run " "
 _refuses "${R25}" "a tab-only command is refused"        --name unit --run "$(printf '\t')"
 # P2a: "" doubled as BOTH "no pending name" and "an explicitly empty name", so a
