@@ -19,7 +19,9 @@ Discover the repository's own declared test/lint/type gate, run it **locally**, 
 
 ## Step 1: Discover the gate (deterministic-first)
 
-Walk the ladder in `references/discovery-ladder.md` top-down, first-match-wins. Prefer the deterministic rungs (`.verify.yml`, manifest-standard targets, a clearly-labelled "run all tests" row) before any prose reasoning. On a genuine tie in the CLAUDE.md `## Commands` table (0 or ≥2 surviving candidates), STOP, show the candidates, ask which command(s) are the gate, and offer to write `.verify.yml` so the next run is deterministic. Record which rung produced the gate as `discovery_source`.
+Walk the ladder in `references/discovery-ladder.md` top-down, first-match-wins. Prefer the deterministic rungs (`.verify.yml`, manifest-standard targets, a clearly-labelled "run all tests" row) before any prose reasoning. On a genuine tie in the CLAUDE.md `## Commands` table (0 or ≥2 surviving candidates), STOP, show the candidates, ask which command(s) are the gate, and offer to write `.verify.yml` so the next run is deterministic. Note which rung produced the gate — it decides which commands run. It reaches
+`discovery_source` only on the hand-authored last resort; the deterministic
+writer records `explicit` for any caller-supplied gate.
 
 ## Preferred path: deterministic writer (when `.verify.yml` exists)
 
@@ -141,6 +143,11 @@ Print the resolved `${TOKEN}` alongside the artifact path — a scattered write 
   "ts": "<UTC ISO-8601>"
 }
 ```
+
+`discovery_source` names the rung only on this hand-authored path. The
+deterministic writer owns that field and stamps `explicit` for any
+caller-supplied gate, so an explicitly supplied gate cannot claim to be a
+declared one.
 
 The example above is a **field-shape illustration**, not an accepted-evidence sample: because its `could_not_verify` is non-empty (the `types` gate could not run), `deploy-gate` correctly does **not** accept it as local verification of record. A fully-accepted evidence file has `failed` and `could_not_verify` both empty and `gate_gaming_status: "clean"`.
 

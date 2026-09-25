@@ -329,7 +329,7 @@ fi
 # hand-author the JSON and the artifact records belief instead of execution.
 R21="$(mkrepo "${TEST_HOME}/r21")"
 rm -f "${R21}/.verify.yml" "${ARTIFACT}"
-( cd "${R21}" && bash "${VAR}" --name unit --run "true" ) >/dev/null 2>&1
+( cd "${R21}" && /bin/bash "${VAR}" --name unit --run "true" ) >/dev/null 2>&1
 if [ -f "${ARTIFACT}" ]; then
     _record_pass "explicit mode writes a verdict when no .verify.yml exists"
     assert_equals "passing command lands in passed[]" "true" "$(jq -r '((.passed // []) | index("unit")) != null' "${ARTIFACT}")"
@@ -347,7 +347,7 @@ fi
 # T22: the honesty property — a FAILING explicit command is never laundered.
 R22="$(mkrepo "${TEST_HOME}/r22")"
 rm -f "${R22}/.verify.yml" "${ARTIFACT}"
-( cd "${R22}" && bash "${VAR}" --name unit --run "false" ) >/dev/null 2>&1
+( cd "${R22}" && /bin/bash "${VAR}" --name unit --run "false" ) >/dev/null 2>&1
 if [ -f "${ARTIFACT}" ]; then
     assert_equals "failing explicit command lands in failed[]" "true" "$(jq -r '((.failed // []) | index("unit")) != null' "${ARTIFACT}")"
     if ( cd "${R22}" && . "${REPO_ROOT}/hooks/lib/verdict.sh" >/dev/null 2>&1; verdict_is_clean session-vartest ); then
@@ -365,7 +365,7 @@ fi
 R23="$(mkrepo "${TEST_HOME}/r23")"
 printf 'substrate: local\ncommands:\n  - name: real\n    run: false\n' > "${R23}/.verify.yml"
 rm -f "${ARTIFACT}"
-( cd "${R23}" && bash "${VAR}" --name lint --run "true" ) >/dev/null 2>&1
+( cd "${R23}" && /bin/bash "${VAR}" --name lint --run "true" ) >/dev/null 2>&1
 _r23_rc=$?
 # Assert REFUSAL, not just "lint absent". The weaker assertion is equally
 # satisfied by silently ignoring the explicit args and running the YAML gate,
@@ -384,7 +384,7 @@ fi
 _refuses() {
     local repo="$1" lbl="$2"; shift 2
     rm -f "${ARTIFACT}"
-    ( cd "${repo}" && bash "${VAR}" "$@" ) >/dev/null 2>&1
+    ( cd "${repo}" && /bin/bash "${VAR}" "$@" ) >/dev/null 2>&1
     local rc=$?
     if [ -f "${ARTIFACT}" ]; then
         _record_fail "${lbl}" "a verdict was written"
@@ -409,7 +409,7 @@ _refuses "${R24}" "a name with no run is refused" --name unit
 # under-gating toward a false clean. Without this cell the trailing check is
 # untested (mutation-verified: deleting it failed nothing).
 rm -f "${ARTIFACT}"
-( cd "${R24}" && bash "${VAR}" --name unit --run "true" --name dropped ) >/dev/null 2>&1
+( cd "${R24}" && /bin/bash "${VAR}" --name unit --run "true" --name dropped ) >/dev/null 2>&1
 if [ -f "${ARTIFACT}" ]; then
     _record_fail "a dangling name after a valid pair is refused" "artifact written; the second check silently vanished"
 else
@@ -432,6 +432,12 @@ _refuses "${R25}" "US in a name is refused"    --name "$(printf 'a\037b')" --run
 _refuses "${R25}" "US in a command is refused" --name a --run "$(printf 'fal\037se')"
 # P2a: "" doubled as BOTH "no pending name" and "an explicitly empty name", so a
 # trailing --name "" passed the dangling check and its declared check vanished.
+# B1. This is the ONLY new guard that survived deletion with zero failing cells,
+# and it is the silent-drop class: with it gone, `--name lint --name tests --run
+# true` records tests, drops lint, and reports CLEAN. The trailing-dangling cell
+# exercises a DIFFERENT guard (the one after the loop), and the duplicate cell
+# passes complete pairs, so neither reaches this one.
+_refuses "${R25}" "a second --name before the first has a --run is refused" --name lint --name tests --run "true"
 _refuses "${R25}" "a trailing empty name is refused"                   --name unit --run "true" --name ""
 # Duplicate names produce a duplicated entry in passed[]/failed[] that no reader
 # can attribute back to a command.
@@ -446,7 +452,7 @@ _refuses "${R25}" "there is no caller flag for provenance"             --name a 
 R26="$(mkrepo "${TEST_HOME}/r26")"
 rm -rf "${R26}/.verify.yml"; mkdir -p "${R26}/.verify.yml"
 rm -f "${ARTIFACT}"
-( cd "${R26}" && bash "${VAR}" --name a --run "true" ) >/dev/null 2>&1
+( cd "${R26}" && /bin/bash "${VAR}" --name a --run "true" ) >/dev/null 2>&1
 if [ -f "${ARTIFACT}" ]; then
     _record_fail "a directory at .verify.yml does not fall through to explicit mode" "verdict written"
 else
@@ -454,7 +460,7 @@ else
 fi
 rm -rf "${R26}/.verify.yml"; ln -s /nonexistent-target "${R26}/.verify.yml"
 rm -f "${ARTIFACT}"
-( cd "${R26}" && bash "${VAR}" --name a --run "true" ) >/dev/null 2>&1
+( cd "${R26}" && /bin/bash "${VAR}" --name a --run "true" ) >/dev/null 2>&1
 if [ -f "${ARTIFACT}" ]; then
     _record_fail "a dangling .verify.yml symlink does not fall through" "verdict written"
 else
@@ -467,7 +473,7 @@ fi
 # refuses.
 R27="$(mkrepo "${TEST_HOME}/r27")"
 rm -f "${R27}/.verify.yml" "${ARTIFACT}"
-( cd "${R27}" && bash "${VAR}" --name alpha --run "true" --name beta --run "false" ) >/dev/null 2>&1
+( cd "${R27}" && /bin/bash "${VAR}" --name alpha --run "true" --name beta --run "false" ) >/dev/null 2>&1
 if [ -f "${ARTIFACT}" ]; then
     assert_equals "multi-pair: the passing check is recorded" "true" "$(jq -r '((.passed // []) | index("alpha")) != null' "${ARTIFACT}")"
     assert_equals "multi-pair: the failing check is recorded" "true" "$(jq -r '((.failed // []) | index("beta")) != null' "${ARTIFACT}")"

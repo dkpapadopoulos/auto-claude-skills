@@ -69,10 +69,15 @@ gate. Selection stays with the caller; only measurement moves.
   straddle detection (#181), `could_not_verify` semantics and the subshell /
   `set +u` / nulled-stdin contract are all unchanged and shared.
 - `skills/project-verification/SKILL.md` — the no-`.verify.yml` path.
-- `tests/test-verify-and-record.sh` — 83 cells total (up from 47). Mutation-verified
+- `tests/test-verify-and-record.sh` — 84 cells total, up from 60 (both measured by
+  running the file; an earlier draft said 47, which was a count of `assert` calls
+  rather than cells). Mutation-verified
   by deletion, each failing the cell that names it: the empty-name, name-charset
   (comma / newline / US), duplicate-name and `.verify.yml`-existence guards; the
-  dangling-name check; append-not-replace of the command list; and the refusal
+  dangling-name check; the second-`--name`-before-a-`--run` check (which review
+  found survived deletion with ZERO failing cells — the silent-drop class this
+  change exists to prevent, correct in code and untested until now);
+  append-not-replace of the command list; and the refusal
   contract itself (no artifact AND non-zero exit — the artifact-only form passes
   when a refusal exits 0). Every mutation was checked for application first.
 
