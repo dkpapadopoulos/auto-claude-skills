@@ -378,31 +378,31 @@ else
     _record_pass "explicit args do NOT substitute for a declared gate"
 fi
 
+# _refuses <repo> <label> <args...> — the shared refusal contract: NO artifact
+# AND a non-zero exit. An artifact-only assertion is equally satisfied by
+# "refused but exited 0", which a caller cannot detect.
+_refuses() {
+    local repo="$1" lbl="$2"; shift 2
+    rm -f "${ARTIFACT}"
+    ( cd "${repo}" && bash "${VAR}" "$@" ) >/dev/null 2>&1
+    local rc=$?
+    if [ -f "${ARTIFACT}" ]; then
+        _record_fail "${lbl}" "a verdict was written"
+    elif [ "${rc}" -eq 0 ]; then
+        _record_fail "${lbl}" "refused but exited 0 — callers cannot tell"
+    else
+        _record_pass "${lbl}"
+    fi
+}
+
 # T24: refuse rather than silently transform. The command transport is
 # \x1f-delimited and read LINE-wise, and names are comma-split at serialization,
 # so a multiline run or a comma in a name would corrupt the record.
 R24="$(mkrepo "${TEST_HOME}/r24")"
-rm -f "${R24}/.verify.yml" "${ARTIFACT}"
-( cd "${R24}" && bash "${VAR}" --name unit --run "$(printf 'true\nfalse')" ) >/dev/null 2>&1
-if [ -f "${ARTIFACT}" ]; then
-    _record_fail "a multiline run is refused, not silently split" "artifact written for an unsupported command"
-else
-    _record_pass "a multiline run is refused, not silently split"
-fi
-rm -f "${ARTIFACT}"
-( cd "${R24}" && bash "${VAR}" --name "a,b" --run "true" ) >/dev/null 2>&1
-if [ -f "${ARTIFACT}" ]; then
-    _record_fail "a comma in a name is refused, not silently split" "artifact written for an unsupported name"
-else
-    _record_pass "a comma in a name is refused, not silently split"
-fi
-rm -f "${ARTIFACT}"
-( cd "${R24}" && bash "${VAR}" --name unit ) >/dev/null 2>&1
-if [ -f "${ARTIFACT}" ]; then
-    _record_fail "a name with no run is refused" "artifact written with zero executed commands"
-else
-    _record_pass "a name with no run is refused"
-fi
+rm -f "${R24}/.verify.yml"
+_refuses "${R24}" "a multiline run is refused, not silently split" --name unit --run "$(printf 'true\nfalse')"
+_refuses "${R24}" "a comma in a name is refused, not silently split" --name "a,b" --run "true"
+_refuses "${R24}" "a name with no run is refused" --name unit
 # A DANGLING name after a valid pair is the case the trailing check uniquely
 # catches: EXPLICIT_PAIRS is non-empty here, so the "no commands given" guard
 # does not fire and the run would silently drop the second declared check —
@@ -419,34 +419,26 @@ fi
 # --- T25: refusals found in review of the first cut ---------------------------
 R25="$(mkrepo "${TEST_HOME}/r25")"
 rm -f "${R25}/.verify.yml"
-_refuses() {  # _refuses <label> <args...>  — no artifact AND non-zero exit
-    local lbl="$1"; shift
-    rm -f "${ARTIFACT}"
-    ( cd "${R25}" && bash "${VAR}" "$@" ) >/dev/null 2>&1
-    local rc=$?
-    if [ -f "${ARTIFACT}" ]; then
-        _record_fail "${lbl}" "a verdict was written"
-    elif [ "${rc}" -eq 0 ]; then
-        _record_fail "${lbl}" "refused but exited 0 — callers cannot tell"
-    else
-        _record_pass "${lbl}"
-    fi
-}
-# P1, and it is a FALSE CLEAN, not merely a corrupt record: the transport is read
-# LINE-wise, so a newline in the name splits the pair into two nameless records,
-# BOTH are skipped by the execution loop, and the failing command never runs —
-# leaving empty failed[]/could_not_verify[] that satisfy verdict_is_clean.
-_refuses "a newline in a name is refused (else: false clean)" --name "$(printf 'a\nb')" --run "false"
-_refuses "a bare-newline name is refused"                     --name $'\n' --run "false"
+# P1. The transport is read LINE-wise, so a newline in a name splits one declared
+# check across two records — in one of TWO shapes, and only the second is a false
+# clean. Measured against the pre-fix script, so do not merge these:
+#   "a\nb"  -> could_not_verify=[a], failed=[b]. A CORRUPT record, not clean.
+#   bare \n  -> both records nameless, both SKIPPED, `false` never runs, and the
+#              empty arrays satisfy verdict_is_clean. THAT is the false clean.
+_refuses "${R25}" "a newline in a name is refused (corrupts the record)" --name "$(printf 'a\nb')" --run "false"
+_refuses "${R25}" "a bare-newline name is refused (else: FALSE CLEAN)"   --name $'\n' --run "false"
+# US is the other transport-corrupting byte, in either field.
+_refuses "${R25}" "US in a name is refused"    --name "$(printf 'a\037b')" --run "false"
+_refuses "${R25}" "US in a command is refused" --name a --run "$(printf 'fal\037se')"
 # P2a: "" doubled as BOTH "no pending name" and "an explicitly empty name", so a
 # trailing --name "" passed the dangling check and its declared check vanished.
-_refuses "a trailing empty name is refused"                   --name unit --run "true" --name ""
+_refuses "${R25}" "a trailing empty name is refused"                   --name unit --run "true" --name ""
 # Duplicate names produce a duplicated entry in passed[]/failed[] that no reader
 # can attribute back to a command.
-_refuses "a duplicate name is refused"                        --name a --run "true" --name a --run "true"
+_refuses "${R25}" "a duplicate name is refused"                        --name a --run "true" --name a --run "true"
 # R2 has no caller flag at all — assert the override attempt is rejected, rather
 # than only asserting the default stamp (which cannot detect an override route).
-_refuses "there is no caller flag for provenance"             --name a --run "true" --discovery-source verify-yml
+_refuses "${R25}" "there is no caller flag for provenance"             --name a --run "true" --discovery-source verify-yml
 
 # P2b: R1 must key on EXISTENCE, not regular-file-ness. A directory or dangling
 # symlink at .verify.yml is a declared-gate location the caller cannot measure,
@@ -467,6 +459,23 @@ if [ -f "${ARTIFACT}" ]; then
     _record_fail "a dangling .verify.yml symlink does not fall through" "verdict written"
 else
     _record_pass "a dangling .verify.yml symlink does not fall through"
+fi
+
+# T27: a SUCCESSFUL multi-pair run. Every other multi-pair cell exercises a
+# REFUSAL, so replacing rather than appending EXPLICIT_PAIRS would escape all of
+# them — the surviving pair would just be the last one, and a refusal still
+# refuses.
+R27="$(mkrepo "${TEST_HOME}/r27")"
+rm -f "${R27}/.verify.yml" "${ARTIFACT}"
+( cd "${R27}" && bash "${VAR}" --name alpha --run "true" --name beta --run "false" ) >/dev/null 2>&1
+if [ -f "${ARTIFACT}" ]; then
+    assert_equals "multi-pair: the passing check is recorded" "true" "$(jq -r '((.passed // []) | index("alpha")) != null' "${ARTIFACT}")"
+    assert_equals "multi-pair: the failing check is recorded" "true" "$(jq -r '((.failed // []) | index("beta")) != null' "${ARTIFACT}")"
+    assert_equals "multi-pair: BOTH ran, neither dropped" "2" "$(jq -r '((.passed // [])|length) + ((.failed // [])|length) + ((.could_not_verify // [])|length)' "${ARTIFACT}")"
+else
+    for _t in "multi-pair: the passing check is recorded" "multi-pair: the failing check is recorded" "multi-pair: BOTH ran, neither dropped"; do
+        _record_fail "${_t}" "no artifact written"
+    done
 fi
 
 cd "${REPO_ROOT}" || true

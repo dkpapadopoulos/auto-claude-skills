@@ -53,9 +53,12 @@ _x_name=""
 _x_validate_name() {
     [ -n "$1" ] || { echo "verify-and-record: name may not be empty" >&2; return 1; }
     # A name is a KEY in the record: it is comma-split at serialization, and the
-    # pair transport is read LINE-wise, so a newline splits one declared check
-    # into two NAMELESS records that the execution loop skips — the command never
-    # runs and the empty failed[] reads as CLEAN. Refuse; do not try to repair.
+    # pair transport is read LINE-wise. A newline therefore splits one declared
+    # check across two records, in one of two shapes — measured, and only the
+    # second is a false clean: "a\nb" yields could_not_verify=[a] failed=[b] (a
+    # CORRUPT record), while a BARE newline leaves both records nameless, so the
+    # execution loop skips both, the command never runs, and the empty arrays
+    # satisfy verdict_is_clean. Refuse both; do not try to repair either.
     case "$1" in
         *,*|*$'\x1f'*|*$'\n'*)
             echo "verify-and-record: name may not contain ',', a newline, or US" >&2; return 1 ;;

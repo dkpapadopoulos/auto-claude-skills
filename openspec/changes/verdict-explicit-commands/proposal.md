@@ -29,9 +29,9 @@ which commands constitute the gate — after the discovery ladder's own
 disambiguation, which may involve the user — and the script executes them and
 records its own exit codes, stamping `discovery_source: explicit`.
 
-Three refusals. Each of the *enforcement* guards is pinned by a
-mutation-verified test; R2 is structural — there is no flag to override, so what
-is pinned is that an override attempt is rejected as an unknown argument:
+Three refusals. Each *enforcement* guard is pinned by a mutation-verified test.
+R2 is structural rather than enforced — there is no flag to override — so what is
+pinned there is that an override attempt is rejected as an unknown argument:
 
 1. **A declared gate wins.** Explicit args are refused when `.verify.yml` exists;
    the declaration is the repo's contract and must not be substituted by a
@@ -69,7 +69,12 @@ gate. Selection stays with the caller; only measurement moves.
   straddle detection (#181), `could_not_verify` semantics and the subshell /
   `set +u` / nulled-stdin contract are all unchanged and shared.
 - `skills/project-verification/SKILL.md` — the no-`.verify.yml` path.
-- `tests/test-verify-and-record.sh` — 11 cells, 4 mutation-verified guards.
+- `tests/test-verify-and-record.sh` — 83 cells total (up from 47). Mutation-verified
+  by deletion, each failing the cell that names it: the empty-name, name-charset
+  (comma / newline / US), duplicate-name and `.verify.yml`-existence guards; the
+  dangling-name check; append-not-replace of the command list; and the refusal
+  contract itself (no artifact AND non-zero exit — the artifact-only form passes
+  when a refusal exits 0). Every mutation was checked for application first.
 
 ## A claim this change does NOT make
 
