@@ -29,7 +29,9 @@ which commands constitute the gate — after the discovery ladder's own
 disambiguation, which may involve the user — and the script executes them and
 records its own exit codes, stamping `discovery_source: explicit`.
 
-Three refusals, each pinned by a mutation-verified test:
+Three refusals. Each of the *enforcement* guards is pinned by a
+mutation-verified test; R2 is structural — there is no flag to override, so what
+is pinned is that an override attempt is rejected as an unknown argument:
 
 1. **A declared gate wins.** Explicit args are refused when `.verify.yml` exists;
    the declaration is the repo's contract and must not be substituted by a
@@ -86,7 +88,9 @@ are satisfied:
 It is bidirectional, and "predicate identity" is not an exemption from saying so.
 What bounds it is that explicit mode does not *create* verdicts where none was
 intended — the model was already about to author one — it changes their
-provenance. That is why manifest auto-detection, which genuinely would grow the
+provenance. That bound is an **assumption about the intended workflow, not an
+enforced property**: nothing stops a caller invoking the writer in a repo where
+no verdict would otherwise have been produced. That is why manifest auto-detection, which genuinely would grow the
 population, is excluded above.
 
 The active-chain VERIFY leg still does **not** accept a verdict (#254), unchanged.

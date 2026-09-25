@@ -44,8 +44,31 @@ PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 # OUTCOMES even though no predicate moves (routing-governance newly passes).
 # Selection stays with the caller; only measurement moves here.
 EXPLICIT_PAIRS=""
+_SEEN_NAMES=""
 _EXPLICIT_USED=false
 _x_name=""
+# Validation lives where the value ARRIVES, not where it is consumed. An earlier
+# cut validated the name in the --run branch, so a trailing `--name ""` was never
+# checked at all and its declared check silently vanished.
+_x_validate_name() {
+    [ -n "$1" ] || { echo "verify-and-record: name may not be empty" >&2; return 1; }
+    # A name is a KEY in the record: it is comma-split at serialization, and the
+    # pair transport is read LINE-wise, so a newline splits one declared check
+    # into two NAMELESS records that the execution loop skips — the command never
+    # runs and the empty failed[] reads as CLEAN. Refuse; do not try to repair.
+    case "$1" in
+        *,*|*$'\x1f'*|*$'\n'*)
+            echo "verify-and-record: name may not contain ',', a newline, or US" >&2; return 1 ;;
+    esac
+    # NOTE the unquoted $'\x1f' operands: $'..' is NOT expanded inside double
+    # quotes, so "$'\x1f'${_SEEN_NAMES}" compares against a literal dollar-quote
+    # and never matches. A duplicate name yields a repeated array entry that no
+    # reader can attribute back to a command.
+    case $'\x1f'"${_SEEN_NAMES}" in
+        *$'\x1f'"$1"$'\x1f'*) echo "verify-and-record: duplicate name '$1'" >&2; return 1 ;;
+    esac
+    return 0
+}
 while [ $# -gt 0 ]; do
     case "$1" in
         --name)
@@ -53,20 +76,17 @@ while [ $# -gt 0 ]; do
             [ $# -ge 2 ] || { echo "verify-and-record: --name needs a value" >&2; exit 1; }
             # A pending name with no --run would record a check that never ran.
             [ -z "$_x_name" ] || { echo "verify-and-record: --name '${_x_name}' has no --run" >&2; exit 1; }
-            _x_name="$2"; shift 2 ;;
+            _x_validate_name "$2" || exit 1
+            _x_name="$2"
+            _SEEN_NAMES="${_SEEN_NAMES}${2}"$'\x1f'
+            shift 2 ;;
         --run)
             _EXPLICIT_USED=true
             [ $# -ge 2 ] || { echo "verify-and-record: --run needs a value" >&2; exit 1; }
             [ -n "$_x_name" ] || { echo "verify-and-record: --run without a preceding --name" >&2; exit 1; }
-            # REFUSE rather than silently transform. The pair transport is
-            # \x1f-delimited and read LINE-wise, and names are comma-split at
-            # serialization, so either character would corrupt the record into a
-            # shape the reader cannot detect.
-            # $'..' throughout: $(printf '\n') is EMPTY because command
-            # substitution strips trailing newlines, so a ${2%%$(...)*} guard
-            # matches everything and refuses every command. Same idiom the
-            # execution loop already uses (IFS=$'\x1f').
-            case "$_x_name" in *,*|*$'\x1f'*) echo "verify-and-record: name may not contain ',' or US" >&2; exit 1 ;; esac
+            # $'..' rather than $(printf '\n'): command substitution STRIPS
+            # trailing newlines, so a ${2%%$(...)*} guard matches everything and
+            # refuses every command. Same idiom the execution loop uses.
             case "$2" in *$'\x1f'*) echo "verify-and-record: run may not contain US" >&2; exit 1 ;; esac
             case "$2" in *$'\n'*) echo "verify-and-record: run may not span lines" >&2; exit 1 ;; esac
             [ -n "$2" ] || { echo "verify-and-record: run may not be empty" >&2; exit 1; }
@@ -87,7 +107,7 @@ if [ "$_EXPLICIT_USED" = "true" ]; then
     # A declared gate is the repo's contract and outranks anything a caller
     # passes. Allowing explicit args to win would turn this mode into a way to
     # substitute a narrower check for the declaration.
-    [ -f "$VY" ] && { echo "verify-and-record: .verify.yml exists — it is the declared gate; explicit --name/--run refused" >&2; exit 1; }
+    { [ -e "$VY" ] || [ -L "$VY" ]; } && { echo "verify-and-record: .verify.yml exists — it is the declared gate; explicit --name/--run refused" >&2; exit 1; }
     [ -n "$EXPLICIT_PAIRS" ] || { echo "verify-and-record: no commands given" >&2; exit 1; }
     DISCOVERY="explicit"
 else

@@ -30,7 +30,11 @@ unspecified: first wins, merge, or prefer an aggregate? Nothing says.
 Critically, auto-detection would **create verdicts where none was intended**,
 which changes gate outcomes even with every predicate untouched. Explicit mode
 does not: the model was already about to hand-author a verdict at that point, so
-the population is the same and only its provenance improves. That asymmetry is
+the population is the same and only its provenance improves. That is an
+assumption about the intended workflow rather than a measured or enforced
+property — nothing prevents a caller running the writer where no verdict would
+otherwise have existed. It is the reason the two differ in *kind*, not a
+guarantee. That asymmetry is
 the whole reason one shipped and the other did not.
 
 **The completeness obligation is a caller contract, not an enforced property.**

@@ -60,12 +60,16 @@ the commands; the script decides what happened.** That distinction is the
 whole point: a hand-authored verdict records what the model believed, and
 nothing downstream can tell the two apart.
 
-Two refusals are deliberate. Explicit `--name/--run` is rejected when
-`.verify.yml` exists — the declaration is the repo's contract and must not be
-substituted by a narrower set. And the commands you pass must be the
-**complete** gate, not a convenient subset: the artifact is replaced wholesale,
-so re-running one check after a failing run would certify that check as if it
-were the whole gate.
+One refusal and one obligation, and the difference matters. **Refused:**
+explicit `--name/--run` when `.verify.yml` exists — the declaration is the
+repo's contract and must not be substituted by a narrower set. Malformed input
+is refused too, never repaired.
+
+**Not refused, because nothing can detect it:** the commands you pass must be
+the **complete** gate, not a convenient subset. The artifact is replaced
+wholesale and carries no completeness marker, so re-running one check after a
+failing run would certify that check as if it were the whole gate. The script
+cannot tell; you have to.
 
 Hand-authoring Steps 2–3 below is now the last resort only — no `jq`, or the
 script cannot run.

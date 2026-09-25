@@ -366,9 +366,14 @@ R23="$(mkrepo "${TEST_HOME}/r23")"
 printf 'substrate: local\ncommands:\n  - name: real\n    run: false\n' > "${R23}/.verify.yml"
 rm -f "${ARTIFACT}"
 ( cd "${R23}" && bash "${VAR}" --name lint --run "true" ) >/dev/null 2>&1
+_r23_rc=$?
+# Assert REFUSAL, not just "lint absent". The weaker assertion is equally
+# satisfied by silently ignoring the explicit args and running the YAML gate,
+# which is a different behaviour with a different failure mode.
 if [ -f "${ARTIFACT}" ]; then
-    assert_equals "explicit args do NOT substitute for a declared gate" "true" \
-        "$(jq -r '((.passed // []) | index("lint")) == null' "${ARTIFACT}")"
+    _record_fail "explicit args do NOT substitute for a declared gate" "a verdict was written"
+elif [ "${_r23_rc}" -eq 0 ]; then
+    _record_fail "explicit args do NOT substitute for a declared gate" "refused but exited 0 — callers cannot tell"
 else
     _record_pass "explicit args do NOT substitute for a declared gate"
 fi
@@ -409,6 +414,59 @@ if [ -f "${ARTIFACT}" ]; then
     _record_fail "a dangling name after a valid pair is refused" "artifact written; the second check silently vanished"
 else
     _record_pass "a dangling name after a valid pair is refused"
+fi
+
+# --- T25: refusals found in review of the first cut ---------------------------
+R25="$(mkrepo "${TEST_HOME}/r25")"
+rm -f "${R25}/.verify.yml"
+_refuses() {  # _refuses <label> <args...>  — no artifact AND non-zero exit
+    local lbl="$1"; shift
+    rm -f "${ARTIFACT}"
+    ( cd "${R25}" && bash "${VAR}" "$@" ) >/dev/null 2>&1
+    local rc=$?
+    if [ -f "${ARTIFACT}" ]; then
+        _record_fail "${lbl}" "a verdict was written"
+    elif [ "${rc}" -eq 0 ]; then
+        _record_fail "${lbl}" "refused but exited 0 — callers cannot tell"
+    else
+        _record_pass "${lbl}"
+    fi
+}
+# P1, and it is a FALSE CLEAN, not merely a corrupt record: the transport is read
+# LINE-wise, so a newline in the name splits the pair into two nameless records,
+# BOTH are skipped by the execution loop, and the failing command never runs —
+# leaving empty failed[]/could_not_verify[] that satisfy verdict_is_clean.
+_refuses "a newline in a name is refused (else: false clean)" --name "$(printf 'a\nb')" --run "false"
+_refuses "a bare-newline name is refused"                     --name $'\n' --run "false"
+# P2a: "" doubled as BOTH "no pending name" and "an explicitly empty name", so a
+# trailing --name "" passed the dangling check and its declared check vanished.
+_refuses "a trailing empty name is refused"                   --name unit --run "true" --name ""
+# Duplicate names produce a duplicated entry in passed[]/failed[] that no reader
+# can attribute back to a command.
+_refuses "a duplicate name is refused"                        --name a --run "true" --name a --run "true"
+# R2 has no caller flag at all — assert the override attempt is rejected, rather
+# than only asserting the default stamp (which cannot detect an override route).
+_refuses "there is no caller flag for provenance"             --name a --run "true" --discovery-source verify-yml
+
+# P2b: R1 must key on EXISTENCE, not regular-file-ness. A directory or dangling
+# symlink at .verify.yml is a declared-gate location the caller cannot measure,
+# and must not silently fall through to explicit mode.
+R26="$(mkrepo "${TEST_HOME}/r26")"
+rm -rf "${R26}/.verify.yml"; mkdir -p "${R26}/.verify.yml"
+rm -f "${ARTIFACT}"
+( cd "${R26}" && bash "${VAR}" --name a --run "true" ) >/dev/null 2>&1
+if [ -f "${ARTIFACT}" ]; then
+    _record_fail "a directory at .verify.yml does not fall through to explicit mode" "verdict written"
+else
+    _record_pass "a directory at .verify.yml does not fall through to explicit mode"
+fi
+rm -rf "${R26}/.verify.yml"; ln -s /nonexistent-target "${R26}/.verify.yml"
+rm -f "${ARTIFACT}"
+( cd "${R26}" && bash "${VAR}" --name a --run "true" ) >/dev/null 2>&1
+if [ -f "${ARTIFACT}" ]; then
+    _record_fail "a dangling .verify.yml symlink does not fall through" "verdict written"
+else
+    _record_pass "a dangling .verify.yml symlink does not fall through"
 fi
 
 cd "${REPO_ROOT}" || true
