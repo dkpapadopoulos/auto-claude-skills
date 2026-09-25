@@ -398,14 +398,17 @@ if [ -f "${HOME}/.claude/plugins/installed_plugins.json" ]; then
     # raises, and because jq STREAMS that aborts the program after emitting the
     # entries it had already produced -- so one malformed entry silently drops
     # itself AND every entry after it, and those plugins fall back to guessing.
-    # `objects` degrades that element to empty instead. A key containing a
-    # newline is dropped: it would forge a whole line that the line-anchored
-    # lookup below cannot distinguish from a real one.
+    # `objects` degrades that element to empty instead.
+    # The newline filter is applied to the ASSEMBLED LINE, not to either half:
+    # the lookup below is anchored on a line start, so a newline ANYWHERE in an
+    # entry forges a second line indistinguishable from a legitimate one, and
+    # being earlier it wins the shortest match. Filtering only the key left the
+    # installPath VALUE mounting the identical forgery (measured).
     _INSTALLED_MAP="$(jq -r '
         (.plugins // {}) | to_entries[]
         | select((.value | type) == "array" and (.value | length) > 0)
-        | select((.key | contains("\n")) | not)
-        | "\(.key)|\((.value[0] | objects | .installPath) // "")"
+        | (.key + "|" + (((.value[0] | objects | .installPath) // "") | tostring))
+        | select(contains("\n") | not)
     ' "${HOME}/.claude/plugins/installed_plugins.json" 2>/dev/null)"
     [ -n "${_INSTALLED_MAP}" ] && _INSTALLED_MAP="
 ${_INSTALLED_MAP}"
@@ -423,10 +426,13 @@ _resolve_plugin_dir() {
     # 1. The recorded installPath, when it is still on disk. Authoritative:
     #    ten version dirs (nine sha-named plus `unknown`) coexist for one
     #    plugin on a real machine, so the mtime rule below is a guess and this
-    #    is not. Lookup is a bash prefix strip, which is quadratic in map size:
-    #    measured ~5ms at 20 entries and ~180ms at 160, per pass, over two
-    #    passes. Accepted at today's populations; memoise across the two call
-    #    sites before this file grows a third.
+    #    is not. Lookup is a bash prefix strip, quadratic in map size. Measured
+    #    WORST-CASE SINGLE LOOKUP: 4.6ms at 20 entries, 12.7 at 40, 45.8 at 80,
+    #    182.8 at 160 -- and a pass performs one per plugin, so a 160-plugin
+    #    pass is ~9.2s, not 183ms, and there are two passes. Today's real cost
+    #    is ~24-27ms per pass at 21 plugins. Accepted at that size; memoise
+    #    across the two call sites well before the population reaches triple
+    #    digits.
     if [ -n "${_INSTALLED_MAP}" ]; then
         _rp_rest="${_INSTALLED_MAP#*"
 ${_rp_pn}@${_rp_mk}|"}"

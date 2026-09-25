@@ -379,6 +379,48 @@ JSON
 }
 
 # ---------------------------------------------------------------------------
+# 4g. A newline anywhere in an entry must not forge a second map line
+#
+# The lookup is anchored on a line start, so a newline lets one entry emit a
+# SECOND line that is byte-identical in shape to a legitimate one -- and being
+# earlier, it wins the shortest match. Filtering the key alone closes only half
+# of this: the installPath VALUE mounts the identical forgery. Containment
+# bounds the damage to dirs inside the same plugin, so the forged line can still
+# select which already-present version routes.
+# ---------------------------------------------------------------------------
+test_newline_in_entry_cannot_forge_a_map_line() {
+    echo "-- test: a newline in an entry cannot forge a map line --"
+    setup_test_env
+
+    local pbase="${HOME}/.claude/plugins/cache/claude-plugins-official/frontend-design"
+    mkdir -p "${pbase}/ad30d62cd52a/skills/frontend-design"
+    printf '%s\n' '---' 'name: frontend-design' 'description: Real' '---' '# R' > \
+        "${pbase}/ad30d62cd52a/skills/frontend-design/SKILL.md"
+    mkdir -p "${pbase}/zzz999stale/skills/acs-stale-probe"
+    printf '%s\n' '---' 'name: acs-stale-probe' 'description: Stale' '---' '# S' > \
+        "${pbase}/zzz999stale/skills/acs-stale-probe/SKILL.md"
+
+    # "aaa-forge" sorts first, so its forged line precedes the real entry.
+    cat > "${HOME}/.claude/plugins/installed_plugins.json" <<JSON
+{"version":1,"plugins":{
+  "aaa-forge@claude-plugins-official":[
+    {"scope":"user","installPath":"/x\nfrontend-design@claude-plugins-official|${pbase}/zzz999stale"}],
+  "frontend-design@claude-plugins-official":[
+    {"scope":"user","installPath":"${pbase}/ad30d62cd52a","version":"ad30d62cd52a"}]}}
+JSON
+
+    run_hook >/dev/null
+
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    assert_equals "the forged line does not redirect the plugin" "" \
+        "$(jq -r '.skills[] | select(.name == "acs-stale-probe") | .invoke' "${cache_file}" 2>/dev/null)"
+    assert_equals "the real installed version still resolves" "true" \
+        "$(jq -r '.skills[] | select(.name == "frontend-design") | .available' "${cache_file}" 2>/dev/null)"
+
+    teardown_test_env
+}
+
+# ---------------------------------------------------------------------------
 # 5. Missing plugin dirs don't crash
 # ---------------------------------------------------------------------------
 test_missing_dirs_no_crash() {
@@ -1624,6 +1666,7 @@ test_installed_version_beats_newer_stale_dir
 test_install_path_outside_plugin_dir_is_refused
 test_install_path_outranks_newer_semver_dir
 test_malformed_installed_entry_does_not_truncate_map
+test_newline_in_entry_cannot_forge_a_map_line
 test_missing_dirs_no_crash
 test_user_config_disables_skill
 test_health_check_output
