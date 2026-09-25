@@ -17,6 +17,14 @@ Where a `.verify.yml` exists, it is the repository's declared contract and MUST
 outrank caller-supplied commands: explicit commands MUST be refused rather than
 substituted for the declaration.
 
+This requirement is scoped to the **caller-supplied argument surface**. It is not
+a claim about the repository state: a caller that removes `.verify.yml`, or runs
+from a tree where it is absent, reaches explicit mode legitimately, and the
+resulting verdict still covers the subject commit. That is consistent with the
+writer's own statement that the artifact is not a trust boundary, and with
+`verdict_is_clean` ignoring `writer` and `discovery_source`. Closing it would
+require a different trust model, not a stronger refusal.
+
 The recorded provenance (`discovery_source`) MUST be determined by the writer and
 MUST NOT be settable by the caller, so that an explicitly-supplied gate cannot
 claim to be a declared one.

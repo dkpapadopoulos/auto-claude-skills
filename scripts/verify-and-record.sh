@@ -16,9 +16,13 @@
 # boundary, per the skill's own disclaimer) — it is provenance + ergonomics.
 #
 # Exit code: 0 = a verdict was RECORDED (even an all-failing one — recording
-# is this script's job); non-zero = could not measure or write (no .verify.yml,
-# non-local substrate, no git repo, jq missing, write failure). Callers must
-# read the printed verdict summary, never treat exit 0 as "gates passed".
+# is this script's job); non-zero = could not measure or write (no .verify.yml
+# AND no explicit commands, non-local substrate, no git repo, jq missing, write
+# failure) OR the explicit arguments were REFUSED: a declared .verify.yml is
+# present, an unknown flag, a name that is empty / duplicated / contains a
+# comma, newline or US, a command that is empty, whitespace-only, multiline or
+# contains US, or a --name with no --run. Callers must read the printed verdict
+# summary, never treat exit 0 as "gates passed".
 #
 # Bash 3.2.
 
@@ -92,7 +96,14 @@ while [ $# -gt 0 ]; do
             # refuses every command. Same idiom the execution loop uses.
             case "$2" in *$'\x1f'*) echo "verify-and-record: run may not contain US" >&2; exit 1 ;; esac
             case "$2" in *$'\n'*) echo "verify-and-record: run may not span lines" >&2; exit 1 ;; esac
-            [ -n "$2" ] || { echo "verify-and-record: run may not be empty" >&2; exit 1; }
+            # Not merely non-empty: `eval " "` exits 0, so a whitespace-only
+            # command records PASS having executed nothing. The line is drawn at
+            # "not entirely whitespace" — this does NOT validate command CONTENT,
+            # which is the caller's completeness obligation, not the script's.
+            case "$2" in
+                *[![:space:]]*) : ;;
+                *) echo "verify-and-record: run may not be empty or whitespace-only" >&2; exit 1 ;;
+            esac
             EXPLICIT_PAIRS="${EXPLICIT_PAIRS}${_x_name}"$'\x1f'"$2
 "
             _x_name=""; shift 2 ;;
@@ -138,7 +149,14 @@ PAIRS="$(awk '
     END { if (n != "") printf "%s\x1f\n", n }
 ' "$VY")"
 fi
-[ -n "$PAIRS" ] || { echo "verify-and-record: no commands declared in .verify.yml" >&2; exit 1; }
+if [ -z "$PAIRS" ]; then
+    if [ "$DISCOVERY" = "explicit" ]; then
+        echo "verify-and-record: no commands given" >&2
+    else
+        echo "verify-and-record: no commands declared in .verify.yml" >&2
+    fi
+    exit 1
+fi
 
 # Capture the session token BEFORE running the gate (issue #122). This repo's
 # suite runs ~16 minutes (measured 943s at c2ae84f); a concurrent session prompting in that window rebinds

@@ -57,7 +57,15 @@ bash "${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)}/scripts/verify-and
 ```
 
 It executes them and records its own measured exit codes exactly as the
-`.verify.yml` path does, stamping `discovery_source: explicit`. **You choose
+`.verify.yml` path does, stamping `discovery_source: explicit`.
+
+**Each command runs at the repository root**, not your current directory — the
+same as the `.verify.yml` path. In a monorepo, `--run "npm test"` therefore runs
+at the root, not in the package you were looking at; write `--run "npm --prefix
+packages/api test"` or an equivalent. A command that cannot run there is
+recorded (non-zero as failed, 127 as unverifiable) rather than skipped, so this
+errs toward a dirty verdict rather than a false clean — but it will not be the
+gate you meant. **You choose
 the commands; the script decides what happened.** That distinction is the
 whole point: a hand-authored verdict records what the model believed, and
 nothing downstream can tell the two apart.
