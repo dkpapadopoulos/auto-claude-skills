@@ -18,11 +18,13 @@
 # Exit code: 0 = a verdict was RECORDED (even an all-failing one — recording
 # is this script's job); non-zero = could not measure or write (no .verify.yml
 # AND no explicit commands, non-local substrate, no git repo, jq missing, write
-# failure) OR the explicit arguments were REFUSED: a declared .verify.yml is
-# present, an unknown flag, a name that is empty / duplicated / contains a
-# comma, newline or US, a command that is empty, whitespace-only, multiline or
-# contains US, or a --name with no --run. Callers must read the printed verdict
-# summary, never treat exit 0 as "gates passed".
+# failure) OR the explicit arguments were REFUSED. The refusals are, e.g.: a
+# declared .verify.yml is present, an unknown flag, a flag given with no value,
+# --run with no preceding --name, a --name with no --run, a name that is empty /
+# duplicated / contains a comma, newline or US, or a command that is empty,
+# whitespace-only, multiline or contains US. Treat that list as illustrative --
+# any refusal exits non-zero and prints its own reason. Callers must read the
+# printed verdict summary, never treat exit 0 as "gates passed".
 #
 # Bash 3.2.
 

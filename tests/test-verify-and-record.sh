@@ -437,14 +437,14 @@ _refuses "${R25}" "US in a command is refused" --name a --run "$(printf 'fal\037
 # would mean parsing shell intent. See the comment at the guard.
 _refuses "${R25}" "a whitespace-only command is refused" --name unit --run " "
 _refuses "${R25}" "a tab-only command is refused"        --name unit --run "$(printf '\t')"
-# P2a: "" doubled as BOTH "no pending name" and "an explicitly empty name", so a
-# trailing --name "" passed the dangling check and its declared check vanished.
 # B1. This is the ONLY new guard that survived deletion with zero failing cells,
 # and it is the silent-drop class: with it gone, `--name lint --name tests --run
 # true` records tests, drops lint, and reports CLEAN. The trailing-dangling cell
 # exercises a DIFFERENT guard (the one after the loop), and the duplicate cell
 # passes complete pairs, so neither reaches this one.
 _refuses "${R25}" "a second --name before the first has a --run is refused" --name lint --name tests --run "true"
+# P2a: "" doubled as BOTH "no pending name" and "an explicitly empty name", so a
+# trailing --name "" passed the dangling check and its declared check vanished.
 _refuses "${R25}" "a trailing empty name is refused"                   --name unit --run "true" --name ""
 # Duplicate names produce a duplicated entry in passed[]/failed[] that no reader
 # can attribute back to a command.
