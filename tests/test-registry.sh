@@ -178,6 +178,249 @@ test_discovers_official_plugins() {
 }
 
 # ---------------------------------------------------------------------------
+# 4b. Discovers skills in HASH-versioned marketplace plugins
+#
+# The official marketplace caches plugins under a git-commit directory
+# (`<plugin>/ad30d62cd52a/skills/...`), not a semver one. Test 4 above uses the
+# UNVERSIONED layout (`<plugin>/skills/...`), which the resolver's fallback
+# already handles -- so it cannot fail on this. Production measured
+# `frontend-design` as the only `available: false` skill of 48 because of it.
+# ---------------------------------------------------------------------------
+test_discovers_hash_versioned_plugin_skills() {
+    echo "-- test: discovers skills under a hash-named version dir --"
+    setup_test_env
+
+    local plugin_base="${HOME}/.claude/plugins/cache/claude-plugins-official"
+    mkdir -p "${plugin_base}/frontend-design/ad30d62cd52a/skills/frontend-design"
+    printf '%s\n' '---' 'name: frontend-design' 'description: Frontend design skill' '---' '# Frontend Design' > \
+        "${plugin_base}/frontend-design/ad30d62cd52a/skills/frontend-design/SKILL.md"
+    # A name absent from default-triggers.json: config cannot supply its invoke,
+    # so only discovery can put it in the registry. Asserting `invoke` on
+    # frontend-design alone is VACUOUS -- config carries that string already, and
+    # the merge keeps it even when the skill was never found on disk (measured).
+    mkdir -p "${plugin_base}/frontend-design/ad30d62cd52a/skills/acs-hashlayout-probe"
+    printf '%s\n' '---' 'name: acs-hashlayout-probe' 'description: Probe skill' '---' '# Probe' > \
+        "${plugin_base}/frontend-design/ad30d62cd52a/skills/acs-hashlayout-probe/SKILL.md"
+
+    run_hook >/dev/null
+
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    assert_equals "hash-versioned skill is marked available" "true" \
+        "$(jq -r '.skills[] | select(.name == "frontend-design") | .available' "${cache_file}" 2>/dev/null)"
+    assert_equals "a hash-versioned skill unknown to config reaches the registry" \
+        "Skill(frontend-design:acs-hashlayout-probe)" \
+        "$(jq -r '.skills[] | select(.name == "acs-hashlayout-probe") | .invoke' "${cache_file}" 2>/dev/null)"
+
+    teardown_test_env
+}
+
+# ---------------------------------------------------------------------------
+# 4c. With several version dirs, the INSTALLED one wins
+#
+# Nine sha-named dirs coexist for a single official plugin on a real machine.
+# Picking the newest by mtime is a guess; installed_plugins.json records which
+# one is actually installed, so it is the authority when present.
+# ---------------------------------------------------------------------------
+test_installed_version_beats_newer_stale_dir() {
+    echo "-- test: installed_plugins.json picks the version dir --"
+    setup_test_env
+
+    local pbase="${HOME}/.claude/plugins/cache/claude-plugins-official/frontend-design"
+    mkdir -p "${pbase}/aaa111installed/skills/acs-installed-probe"
+    printf '%s\n' '---' 'name: acs-installed-probe' 'description: Installed' '---' '# I' > \
+        "${pbase}/aaa111installed/skills/acs-installed-probe/SKILL.md"
+    # A stale checkout left behind by an earlier update, deliberately NEWER.
+    mkdir -p "${pbase}/zzz999stale/skills/acs-stale-probe"
+    printf '%s\n' '---' 'name: acs-stale-probe' 'description: Stale' '---' '# S' > \
+        "${pbase}/zzz999stale/skills/acs-stale-probe/SKILL.md"
+    # Explicit timestamps: same-second mtimes made this cell pass for the wrong
+    # reason (the resolver kept the first glob entry, not the newest).
+    touch -t 202001010000 "${pbase}/aaa111installed"
+    touch -t 203001010000 "${pbase}/zzz999stale"
+
+    cat > "${HOME}/.claude/plugins/installed_plugins.json" <<JSON
+{"version":1,"plugins":{"frontend-design@claude-plugins-official":[
+  {"scope":"user","installPath":"${pbase}/aaa111installed","version":"aaa111installed"}]}}
+JSON
+
+    run_hook >/dev/null
+
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    assert_equals "the installed version's skill is discovered" \
+        "Skill(frontend-design:acs-installed-probe)" \
+        "$(jq -r '.skills[] | select(.name == "acs-installed-probe") | .invoke' "${cache_file}" 2>/dev/null)"
+    assert_equals "the stale newer version's skill is NOT discovered" "" \
+        "$(jq -r '.skills[] | select(.name == "acs-stale-probe") | .invoke' "${cache_file}" 2>/dev/null)"
+
+    teardown_test_env
+}
+
+# ---------------------------------------------------------------------------
+# 4d. An installPath outside the plugin's own cache dir is refused
+#
+# installed_plugins.json lives in ~/.claude and is agent-writable, so its
+# installPath must not be able to move the discovery root anywhere on disk. A
+# legitimate installPath is always a version dir INSIDE the plugin it describes
+# (verified against all 20 entries on a real machine), so containment costs
+# nothing and keeps discovery's root invariant.
+# ---------------------------------------------------------------------------
+test_install_path_outside_plugin_dir_is_refused() {
+    echo "-- test: installPath outside the plugin dir is refused --"
+    setup_test_env
+
+    local pbase="${HOME}/.claude/plugins/cache/claude-plugins-official/frontend-design"
+    mkdir -p "${pbase}/ad30d62cd52a/skills/frontend-design"
+    printf '%s\n' '---' 'name: frontend-design' 'description: Real' '---' '# Real' > \
+        "${pbase}/ad30d62cd52a/skills/frontend-design/SKILL.md"
+
+    # A skill tree planted outside the plugin cache entirely.
+    local outside="${TEST_TMPDIR}/elsewhere"
+    mkdir -p "${outside}/skills/acs-outside-probe"
+    printf '%s\n' '---' 'name: acs-outside-probe' 'description: Outside' '---' '# O' > \
+        "${outside}/skills/acs-outside-probe/SKILL.md"
+
+    cat > "${HOME}/.claude/plugins/installed_plugins.json" <<JSON
+{"version":1,"plugins":{"frontend-design@claude-plugins-official":[
+  {"scope":"user","installPath":"${outside}","version":"x"}]}}
+JSON
+
+    run_hook >/dev/null
+
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    assert_equals "a skill outside the plugin's cache dir is NOT discovered" "" \
+        "$(jq -r '.skills[] | select(.name == "acs-outside-probe") | .invoke' "${cache_file}" 2>/dev/null)"
+    assert_equals "the plugin's own sha dir is still used" "true" \
+        "$(jq -r '.skills[] | select(.name == "frontend-design") | .available' "${cache_file}" 2>/dev/null)"
+
+    teardown_test_env
+}
+
+# ---------------------------------------------------------------------------
+# 4e. installPath outranks a NEWER on-disk semver dir
+#
+# Pins a deliberate precedence decision that otherwise rests on line order
+# alone. It changes behaviour for semver-cached plugins too -- superpowers is
+# where requesting-code-review and verification-before-completion come from --
+# so a stale installPath makes those gate skills unavailable. The failure
+# direction is safe (an unroutable gate skill means the push gate denies, not
+# allows), but the choice should be asserted rather than inferred from the
+# order of two `if` blocks.
+# ---------------------------------------------------------------------------
+test_install_path_outranks_newer_semver_dir() {
+    echo "-- test: installPath outranks a newer semver dir --"
+    setup_test_env
+
+    local pbase="${HOME}/.claude/plugins/cache/acme/widget"
+    mkdir -p "${pbase}/1.0.0/skills/acs-old-probe"
+    printf '%s\n' '---' 'name: acs-old-probe' 'description: Old' '---' '# O' > \
+        "${pbase}/1.0.0/skills/acs-old-probe/SKILL.md"
+    mkdir -p "${pbase}/9.9.9/skills/acs-new-probe"
+    printf '%s\n' '---' 'name: acs-new-probe' 'description: New' '---' '# N' > \
+        "${pbase}/9.9.9/skills/acs-new-probe/SKILL.md"
+
+    cat > "${HOME}/.claude/plugins/installed_plugins.json" <<JSON
+{"version":1,"plugins":{"widget@acme":[
+  {"scope":"user","installPath":"${pbase}/1.0.0","version":"1.0.0"}]}}
+JSON
+
+    run_hook >/dev/null
+
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    assert_equals "the recorded installPath wins over a newer semver dir" \
+        "Skill(widget:acs-old-probe)" \
+        "$(jq -r '.skills[] | select(.name == "acs-old-probe") | .invoke' "${cache_file}" 2>/dev/null)"
+    assert_equals "the newer semver dir is not scanned" "" \
+        "$(jq -r '.skills[] | select(.name == "acs-new-probe") | .invoke' "${cache_file}" 2>/dev/null)"
+
+    teardown_test_env
+}
+
+# ---------------------------------------------------------------------------
+# 4f. One malformed installed_plugins.json entry must not drop the others
+#
+# jq streams: an unguarded typed index (`.value[0].installPath` on a non-object)
+# aborts the program and emits only what it had already produced, so a single
+# bad entry silently drops itself AND every entry after it -- the plugins that
+# follow then fall back to guessing. The file is written by the harness, not by
+# this repo, so its shape is not ours to assume.
+# ---------------------------------------------------------------------------
+test_malformed_installed_entry_does_not_truncate_map() {
+    echo "-- test: a malformed installed_plugins entry does not drop later ones --"
+    setup_test_env
+
+    local pbase="${HOME}/.claude/plugins/cache/claude-plugins-official/frontend-design"
+    mkdir -p "${pbase}/ad30d62cd52a/skills/frontend-design"
+    printf '%s\n' '---' 'name: frontend-design' 'description: Real' '---' '# R' > \
+        "${pbase}/ad30d62cd52a/skills/frontend-design/SKILL.md"
+    # A stale sibling that the mtime fallback would pick if the map were lost.
+    mkdir -p "${pbase}/zzz999stale/skills/acs-stale-probe"
+    printf '%s\n' '---' 'name: acs-stale-probe' 'description: Stale' '---' '# S' > \
+        "${pbase}/zzz999stale/skills/acs-stale-probe/SKILL.md"
+    touch -t 202001010000 "${pbase}/ad30d62cd52a"
+    touch -t 203001010000 "${pbase}/zzz999stale"
+
+    # "aaa-bad" sorts before the real entry, so an abort here loses the rest.
+    cat > "${HOME}/.claude/plugins/installed_plugins.json" <<JSON
+{"version":1,"plugins":{
+  "aaa-bad@claude-plugins-official":["not-an-object"],
+  "frontend-design@claude-plugins-official":[
+    {"scope":"user","installPath":"${pbase}/ad30d62cd52a","version":"ad30d62cd52a"}]}}
+JSON
+
+    run_hook >/dev/null
+
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    assert_equals "the entry after the malformed one is still honoured" "" \
+        "$(jq -r '.skills[] | select(.name == "acs-stale-probe") | .invoke' "${cache_file}" 2>/dev/null)"
+    assert_equals "the plugin still resolves to its installed version" "true" \
+        "$(jq -r '.skills[] | select(.name == "frontend-design") | .available' "${cache_file}" 2>/dev/null)"
+
+    teardown_test_env
+}
+
+# ---------------------------------------------------------------------------
+# 4g. A newline anywhere in an entry must not forge a second map line
+#
+# The lookup is anchored on a line start, so a newline lets one entry emit a
+# SECOND line that is byte-identical in shape to a legitimate one -- and being
+# earlier, it wins the shortest match. Filtering the key alone closes only half
+# of this: the installPath VALUE mounts the identical forgery. Containment
+# bounds the damage to dirs inside the same plugin, so the forged line can still
+# select which already-present version routes.
+# ---------------------------------------------------------------------------
+test_newline_in_entry_cannot_forge_a_map_line() {
+    echo "-- test: a newline in an entry cannot forge a map line --"
+    setup_test_env
+
+    local pbase="${HOME}/.claude/plugins/cache/claude-plugins-official/frontend-design"
+    mkdir -p "${pbase}/ad30d62cd52a/skills/frontend-design"
+    printf '%s\n' '---' 'name: frontend-design' 'description: Real' '---' '# R' > \
+        "${pbase}/ad30d62cd52a/skills/frontend-design/SKILL.md"
+    mkdir -p "${pbase}/zzz999stale/skills/acs-stale-probe"
+    printf '%s\n' '---' 'name: acs-stale-probe' 'description: Stale' '---' '# S' > \
+        "${pbase}/zzz999stale/skills/acs-stale-probe/SKILL.md"
+
+    # "aaa-forge" sorts first, so its forged line precedes the real entry.
+    cat > "${HOME}/.claude/plugins/installed_plugins.json" <<JSON
+{"version":1,"plugins":{
+  "aaa-forge@claude-plugins-official":[
+    {"scope":"user","installPath":"/x\nfrontend-design@claude-plugins-official|${pbase}/zzz999stale"}],
+  "frontend-design@claude-plugins-official":[
+    {"scope":"user","installPath":"${pbase}/ad30d62cd52a","version":"ad30d62cd52a"}]}}
+JSON
+
+    run_hook >/dev/null
+
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    assert_equals "the forged line does not redirect the plugin" "" \
+        "$(jq -r '.skills[] | select(.name == "acs-stale-probe") | .invoke' "${cache_file}" 2>/dev/null)"
+    assert_equals "the real installed version still resolves" "true" \
+        "$(jq -r '.skills[] | select(.name == "frontend-design") | .available' "${cache_file}" 2>/dev/null)"
+
+    teardown_test_env
+}
+
+# ---------------------------------------------------------------------------
 # 5. Missing plugin dirs don't crash
 # ---------------------------------------------------------------------------
 test_missing_dirs_no_crash() {
@@ -1418,6 +1661,12 @@ test_empty_env_produces_fallback
 test_discovers_superpowers_skills
 test_discovers_user_skills
 test_discovers_official_plugins
+test_discovers_hash_versioned_plugin_skills
+test_installed_version_beats_newer_stale_dir
+test_install_path_outside_plugin_dir_is_refused
+test_install_path_outranks_newer_semver_dir
+test_malformed_installed_entry_does_not_truncate_map
+test_newline_in_entry_cannot_forge_a_map_line
 test_missing_dirs_no_crash
 test_user_config_disables_skill
 test_health_check_output
