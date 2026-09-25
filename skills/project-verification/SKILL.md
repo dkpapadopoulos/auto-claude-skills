@@ -41,8 +41,34 @@ never treat exit 0 as "gates passed"; non-zero means it could not measure or
 write). Then print the human summary table from its output and continue at
 the Verification checklist — the human should still eyeball that summary
 before any downstream push relies on it. If there is no `.verify.yml`, offer
-to write one (per Step 1) — the manual Steps 2–3 below remain the fallback
-and may require per-instance user approval for the evidence write.
+to write one (per Step 1).
+
+### No `.verify.yml`: still do not author the JSON by hand
+
+Once Step 1 has settled **which** commands are the gate — including after a
+rung-3 disambiguation with the user — pass them to the same deterministic
+writer instead of hand-writing the verdict:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)}/scripts/verify-and-record.sh" \
+  --name tests --run "npm test" --name lint --run "npm run lint"
+```
+
+It executes them and records its own measured exit codes exactly as the
+`.verify.yml` path does, stamping `discovery_source: explicit`. **You choose
+the commands; the script decides what happened.** That distinction is the
+whole point: a hand-authored verdict records what the model believed, and
+nothing downstream can tell the two apart.
+
+Two refusals are deliberate. Explicit `--name/--run` is rejected when
+`.verify.yml` exists — the declaration is the repo's contract and must not be
+substituted by a narrower set. And the commands you pass must be the
+**complete** gate, not a convenient subset: the artifact is replaced wholesale,
+so re-running one check after a failing run would certify that check as if it
+were the whole gate.
+
+Hand-authoring Steps 2–3 below is now the last resort only — no `jq`, or the
+script cannot run.
 
 ## Step 2: Run locally (fallback — no `.verify.yml`)
 

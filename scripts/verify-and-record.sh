@@ -27,18 +27,85 @@ set -u
 # Plugin root: env, else this script's parent dir (scripts/ -> repo root).
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 
+# --- Explicit-commands mode (#295) -------------------------------------------
+# This script does two separable jobs: decide WHICH commands are the gate, and
+# RUN them while recording what actually happened. It used to refuse both
+# together whenever .verify.yml was absent, so project-verification's SKILL.md
+# had the MODEL hand-author the verdict JSON instead — and a hand-authored
+# record states what the model believed, not what executed.
+#
+# Explicit mode separates them: the caller (after the discovery ladder's own
+# disambiguation, which may involve the user) says which commands constitute the
+# gate; this script executes them and records measured exit codes.
+#
+# It deliberately does NOT infer a gate from manifests. "A declared tool" is not
+# "a declared gate": a package script `"test": "echo ok"` would manufacture a
+# clean verdict, and creating verdicts where none was intended CHANGES GATE
+# OUTCOMES even though no predicate moves (routing-governance newly passes).
+# Selection stays with the caller; only measurement moves here.
+EXPLICIT_PAIRS=""
+_EXPLICIT_USED=false
+_x_name=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --name)
+            _EXPLICIT_USED=true
+            [ $# -ge 2 ] || { echo "verify-and-record: --name needs a value" >&2; exit 1; }
+            # A pending name with no --run would record a check that never ran.
+            [ -z "$_x_name" ] || { echo "verify-and-record: --name '${_x_name}' has no --run" >&2; exit 1; }
+            _x_name="$2"; shift 2 ;;
+        --run)
+            _EXPLICIT_USED=true
+            [ $# -ge 2 ] || { echo "verify-and-record: --run needs a value" >&2; exit 1; }
+            [ -n "$_x_name" ] || { echo "verify-and-record: --run without a preceding --name" >&2; exit 1; }
+            # REFUSE rather than silently transform. The pair transport is
+            # \x1f-delimited and read LINE-wise, and names are comma-split at
+            # serialization, so either character would corrupt the record into a
+            # shape the reader cannot detect.
+            # $'..' throughout: $(printf '\n') is EMPTY because command
+            # substitution strips trailing newlines, so a ${2%%$(...)*} guard
+            # matches everything and refuses every command. Same idiom the
+            # execution loop already uses (IFS=$'\x1f').
+            case "$_x_name" in *,*|*$'\x1f'*) echo "verify-and-record: name may not contain ',' or US" >&2; exit 1 ;; esac
+            case "$2" in *$'\x1f'*) echo "verify-and-record: run may not contain US" >&2; exit 1 ;; esac
+            case "$2" in *$'\n'*) echo "verify-and-record: run may not span lines" >&2; exit 1 ;; esac
+            [ -n "$2" ] || { echo "verify-and-record: run may not be empty" >&2; exit 1; }
+            EXPLICIT_PAIRS="${EXPLICIT_PAIRS}${_x_name}"$'\x1f'"$2
+"
+            _x_name=""; shift 2 ;;
+        *) echo "verify-and-record: unknown argument '$1'" >&2; exit 1 ;;
+    esac
+done
+[ -z "$_x_name" ] || { echo "verify-and-record: --name '${_x_name}' has no --run" >&2; exit 1; }
+
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "verify-and-record: not a git repo" >&2; exit 1; }
 command -v jq >/dev/null 2>&1 || { echo "verify-and-record: jq required to write the verdict" >&2; exit 1; }
 VY="${ROOT}/.verify.yml"
-[ -f "$VY" ] || { echo "verify-and-record: no .verify.yml — refusing to guess the gate (see project-verification discovery ladder)" >&2; exit 1; }
 
-SUBSTRATE="$(awk -F': *' '$1=="substrate"{print $2; exit}' "$VY")"
-[ "$SUBSTRATE" = "local" ] || { echo "verify-and-record: unsupported substrate '${SUBSTRATE:-none}' — only 'local' runs here" >&2; exit 1; }
+DISCOVERY="verify-yml"
+if [ "$_EXPLICIT_USED" = "true" ]; then
+    # A declared gate is the repo's contract and outranks anything a caller
+    # passes. Allowing explicit args to win would turn this mode into a way to
+    # substitute a narrower check for the declaration.
+    [ -f "$VY" ] && { echo "verify-and-record: .verify.yml exists — it is the declared gate; explicit --name/--run refused" >&2; exit 1; }
+    [ -n "$EXPLICIT_PAIRS" ] || { echo "verify-and-record: no commands given" >&2; exit 1; }
+    DISCOVERY="explicit"
+else
+    [ -f "$VY" ] || { echo "verify-and-record: no .verify.yml — refusing to guess the gate (see project-verification discovery ladder)" >&2; exit 1; }
+fi
+
+if [ "$DISCOVERY" = "verify-yml" ]; then
+    SUBSTRATE="$(awk -F': *' '$1=="substrate"{print $2; exit}' "$VY")"
+    [ "$SUBSTRATE" = "local" ] || { echo "verify-and-record: unsupported substrate '${SUBSTRATE:-none}' — only 'local' runs here" >&2; exit 1; }
+fi
 
 # Parse "- name: X" / "run: CMD" pairs. A declared name whose run: is missing
 # (typo'd key) is emitted with an EMPTY run so the loop records it in
 # could_not_verify[] — a declared-but-never-run check must never silently
 # vanish from the verdict (that would under-gate toward a false clean).
+if [ "$DISCOVERY" = "explicit" ]; then
+    PAIRS="$EXPLICIT_PAIRS"
+else
 PAIRS="$(awk '
     /^[[:space:]]*-[[:space:]]*name:/ {
         if (n != "") printf "%s\x1f\n", n
@@ -47,6 +114,7 @@ PAIRS="$(awk '
     /^[[:space:]]*run:/ { sub(/^[[:space:]]*run:[[:space:]]*/,""); if (n != "") { printf "%s\x1f%s\n", n, $0; n="" } }
     END { if (n != "") printf "%s\x1f\n", n }
 ' "$VY")"
+fi
 [ -n "$PAIRS" ] || { echo "verify-and-record: no commands declared in .verify.yml" >&2; exit 1; }
 
 # Capture the session token BEFORE running the gate (issue #122). This repo's
@@ -252,12 +320,12 @@ if [ "$_TD_SRC" -eq 0 ]; then TEST_DELTA="n/a"
 elif [ "$_TD_TEST" -eq 1 ]; then TEST_DELTA="covered"
 else TEST_DELTA="missing"; fi
 
-jq -n --arg sha "$SHA" --arg ts "$TS" --arg ex "$EXCERPT" --arg cmd "$CMDS" \
+jq -n --arg sha "$SHA" --arg ts "$TS" --arg ex "$EXCERPT" --arg cmd "$CMDS" --arg disc "$DISCOVERY" \
       --arg p "$PASSED" --arg f "$FAILED" --arg c "$CNV" --arg gg "$GG_STATUS" --arg td "$TEST_DELTA" \
       --arg wd "$WORKTREE_DIRTY" --arg wdp "$_WD_PATHS_CAPPED" --arg wdn "$WORKTREE_DIRTY_COUNT" '
   def csv($s): if $s == "" then [] else ($s | split(",")) end;
   def lines($s): [$s | split("\n")[] | select(. != "")];
-  {substrate:"local", discovery_source:"verify-yml",
+  {substrate:"local", discovery_source:$disc,
    passed:csv($p), failed:csv($f), could_not_verify:csv($c),
    gate_gaming_status:$gg, coverage_adequacy_status:"unverified",
    test_delta:$td, worktree_dirty:($wd == "true"),

@@ -322,6 +322,95 @@ else
     _record_pass "straddled failure is never laundered to clean"
 fi
 
+# --- T21-T24: explicit-commands mode (#295 step 1) ---------------------------
+# Separates the two jobs the script conflates: WHICH commands are the gate
+# (judgment, caller) from RUN THEM AND RECORD WHAT HAPPENED (mechanical, script).
+# Today a repo with no .verify.yml gets neither, so SKILL.md has the MODEL
+# hand-author the JSON and the artifact records belief instead of execution.
+R21="$(mkrepo "${TEST_HOME}/r21")"
+rm -f "${R21}/.verify.yml" "${ARTIFACT}"
+( cd "${R21}" && bash "${VAR}" --name unit --run "true" ) >/dev/null 2>&1
+if [ -f "${ARTIFACT}" ]; then
+    _record_pass "explicit mode writes a verdict when no .verify.yml exists"
+    assert_equals "passing command lands in passed[]" "true" "$(jq -r '((.passed // []) | index("unit")) != null' "${ARTIFACT}")"
+    assert_equals "explicit mode stamps the deterministic writer" "verify-and-record.sh" "$(jq -r '.writer // ""' "${ARTIFACT}")"
+    # The SCRIPT owns provenance. A caller-supplied rung would let explicit mode
+    # impersonate verify-yml and imply a declaration that does not exist.
+    assert_equals "provenance is script-owned and says explicit" "explicit" "$(jq -r '.discovery_source // ""' "${ARTIFACT}")"
+else
+    for _t in "explicit mode writes a verdict when no .verify.yml exists" "passing command lands in passed[]" \
+              "explicit mode stamps the deterministic writer" "provenance is script-owned and says explicit"; do
+        _record_fail "${_t}" "no artifact written"
+    done
+fi
+
+# T22: the honesty property — a FAILING explicit command is never laundered.
+R22="$(mkrepo "${TEST_HOME}/r22")"
+rm -f "${R22}/.verify.yml" "${ARTIFACT}"
+( cd "${R22}" && bash "${VAR}" --name unit --run "false" ) >/dev/null 2>&1
+if [ -f "${ARTIFACT}" ]; then
+    assert_equals "failing explicit command lands in failed[]" "true" "$(jq -r '((.failed // []) | index("unit")) != null' "${ARTIFACT}")"
+    if ( cd "${R22}" && . "${REPO_ROOT}/hooks/lib/verdict.sh" >/dev/null 2>&1; verdict_is_clean session-vartest ); then
+        _record_fail "a failing explicit command is never laundered to clean" "verdict_is_clean accepted a failing run"
+    else
+        _record_pass "a failing explicit command is never laundered to clean"
+    fi
+else
+    _record_fail "failing explicit command lands in failed[]" "no artifact"
+    _record_fail "a failing explicit command is never laundered to clean" "no artifact"
+fi
+
+# T23: explicit args MUST NOT bypass a declared gate. Otherwise the mode becomes
+# a way to substitute a narrower check for the repo's own contract.
+R23="$(mkrepo "${TEST_HOME}/r23")"
+printf 'substrate: local\ncommands:\n  - name: real\n    run: false\n' > "${R23}/.verify.yml"
+rm -f "${ARTIFACT}"
+( cd "${R23}" && bash "${VAR}" --name lint --run "true" ) >/dev/null 2>&1
+if [ -f "${ARTIFACT}" ]; then
+    assert_equals "explicit args do NOT substitute for a declared gate" "true" \
+        "$(jq -r '((.passed // []) | index("lint")) == null' "${ARTIFACT}")"
+else
+    _record_pass "explicit args do NOT substitute for a declared gate"
+fi
+
+# T24: refuse rather than silently transform. The command transport is
+# \x1f-delimited and read LINE-wise, and names are comma-split at serialization,
+# so a multiline run or a comma in a name would corrupt the record.
+R24="$(mkrepo "${TEST_HOME}/r24")"
+rm -f "${R24}/.verify.yml" "${ARTIFACT}"
+( cd "${R24}" && bash "${VAR}" --name unit --run "$(printf 'true\nfalse')" ) >/dev/null 2>&1
+if [ -f "${ARTIFACT}" ]; then
+    _record_fail "a multiline run is refused, not silently split" "artifact written for an unsupported command"
+else
+    _record_pass "a multiline run is refused, not silently split"
+fi
+rm -f "${ARTIFACT}"
+( cd "${R24}" && bash "${VAR}" --name "a,b" --run "true" ) >/dev/null 2>&1
+if [ -f "${ARTIFACT}" ]; then
+    _record_fail "a comma in a name is refused, not silently split" "artifact written for an unsupported name"
+else
+    _record_pass "a comma in a name is refused, not silently split"
+fi
+rm -f "${ARTIFACT}"
+( cd "${R24}" && bash "${VAR}" --name unit ) >/dev/null 2>&1
+if [ -f "${ARTIFACT}" ]; then
+    _record_fail "a name with no run is refused" "artifact written with zero executed commands"
+else
+    _record_pass "a name with no run is refused"
+fi
+# A DANGLING name after a valid pair is the case the trailing check uniquely
+# catches: EXPLICIT_PAIRS is non-empty here, so the "no commands given" guard
+# does not fire and the run would silently drop the second declared check —
+# under-gating toward a false clean. Without this cell the trailing check is
+# untested (mutation-verified: deleting it failed nothing).
+rm -f "${ARTIFACT}"
+( cd "${R24}" && bash "${VAR}" --name unit --run "true" --name dropped ) >/dev/null 2>&1
+if [ -f "${ARTIFACT}" ]; then
+    _record_fail "a dangling name after a valid pair is refused" "artifact written; the second check silently vanished"
+else
+    _record_pass "a dangling name after a valid pair is refused"
+fi
+
 cd "${REPO_ROOT}" || true
 teardown_test_env
 print_summary
