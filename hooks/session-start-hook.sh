@@ -374,6 +374,104 @@ RECEOF
 }
 
 # -----------------------------------------------------------------
+# Resolve the directory that actually holds a plugin's skills/.
+# Three layouts are live on disk and only the first two were handled:
+#   <plugin>/skills                 (unversioned)
+#   <plugin>/<semver>/skills        (e.g. superpowers, codex)
+#   <plugin>/<git-sha>/skills       (the official marketplace)
+#   <plugin>/unknown/skills         (also live today, for the same plugins)
+# Such a dir matches no semver, so resolution fell back to <plugin>/skills,
+# which does not exist there, and every skill in those plugins was silently
+# marked available:false. Eight official plugins use this layout; three of them
+# (frontend-design, hookify, skill-creator) actually carry skills/.
+# The last branch keys on the PREDICATE `has a skills/ subdir` rather than on
+# the directory's NAME, which is why it also covers the `unknown` dir that no
+# sha-or-semver name rule would have matched. Sets _RESOLVED (with a trailing
+# slash); never fails.
+# -----------------------------------------------------------------
+# installed_plugins.json records the exact installPath per <plugin>@<marketplace>.
+# Built once (one jq call); looked up fork-free below. Leading newline so the
+# first entry matches the same pattern as every other.
+_INSTALLED_MAP=""
+if [ -f "${HOME}/.claude/plugins/installed_plugins.json" ]; then
+    # `.value[0].installPath` is a TYPED INDEX: on a non-object element jq
+    # raises, and because jq STREAMS that aborts the program after emitting the
+    # entries it had already produced -- so one malformed entry silently drops
+    # itself AND every entry after it, and those plugins fall back to guessing.
+    # `objects` degrades that element to empty instead. A key containing a
+    # newline is dropped: it would forge a whole line that the line-anchored
+    # lookup below cannot distinguish from a real one.
+    _INSTALLED_MAP="$(jq -r '
+        (.plugins // {}) | to_entries[]
+        | select((.value | type) == "array" and (.value | length) > 0)
+        | select((.key | contains("\n")) | not)
+        | "\(.key)|\((.value[0] | objects | .installPath) // "")"
+    ' "${HOME}/.claude/plugins/installed_plugins.json" 2>/dev/null)"
+    [ -n "${_INSTALLED_MAP}" ] && _INSTALLED_MAP="
+${_INSTALLED_MAP}"
+fi
+
+_resolve_plugin_dir() {
+    _RESOLVED="$1"
+    # The marketplace and plugin names are the last two path segments; deriving
+    # them here rather than taking them as arguments keeps the call sites
+    # unchanged, so a future loop cannot forget to pass them.
+    _rp_p="${1%/}"
+    _rp_pn="${_rp_p##*/}"
+    _rp_mk="${_rp_p%/*}"
+    _rp_mk="${_rp_mk##*/}"
+    # 1. The recorded installPath, when it is still on disk. Authoritative:
+    #    ten version dirs (nine sha-named plus `unknown`) coexist for one
+    #    plugin on a real machine, so the mtime rule below is a guess and this
+    #    is not. Lookup is a bash prefix strip, which is quadratic in map size:
+    #    measured ~5ms at 20 entries and ~180ms at 160, per pass, over two
+    #    passes. Accepted at today's populations; memoise across the two call
+    #    sites before this file grows a third.
+    if [ -n "${_INSTALLED_MAP}" ]; then
+        _rp_rest="${_INSTALLED_MAP#*"
+${_rp_pn}@${_rp_mk}|"}"
+        if [ "${_rp_rest}" != "${_INSTALLED_MAP}" ]; then
+            _rp_ip="${_rp_rest%%"
+"*}"
+            # Containment: installed_plugins.json lives in ~/.claude and is
+            # agent-writable, so an installPath must never move the discovery
+            # root off this plugin. A legitimate one is always a version dir
+            # inside the plugin it describes (true of all 20 entries measured
+            # on a real machine), so this refuses nothing that works today.
+            # Rejecting `..` textually is deliberately broad: the only cost is
+            # falling through to the rules below, never a wrong acceptance.
+            case "${_rp_ip}" in
+                *..*) _rp_ip="" ;;
+            esac
+            case "${_rp_ip}/" in
+                "$1"*) ;;
+                *) _rp_ip="" ;;
+            esac
+            if [ -n "${_rp_ip}" ] && [ -d "${_rp_ip}/skills" ]; then
+                _RESOLVED="${_rp_ip}/"
+                return 0
+            fi
+        fi
+    fi
+    _rp_ver="$(ls -1 "$1" 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)"
+    if [ -n "${_rp_ver}" ]; then
+        _RESOLVED="$1${_rp_ver}/"
+        return 0
+    fi
+    [ -d "$1skills" ] && return 0
+    # Non-semver version dirs: newest by mtime among those that hold skills/.
+    _rp_cand=""
+    for _rp_c in "$1"*/; do
+        [ -d "${_rp_c}skills" ] || continue
+        if [ -z "${_rp_cand}" ] || [ "${_rp_c}" -nt "${_rp_cand}" ]; then
+            _rp_cand="${_rp_c}"
+        fi
+    done
+    [ -n "${_rp_cand}" ] && _RESOLVED="${_rp_cand}"
+    return 0
+}
+
+# -----------------------------------------------------------------
 # Step 3: Discover all external plugin skills (unified scanner)
 # -----------------------------------------------------------------
 EXTERNAL_DISCOVERED=""
@@ -385,12 +483,9 @@ for _mkt_dir in "${HOME}/.claude/plugins/cache"/*/; do
         # Skip self (bundled skills handled separately in Step 4b)
         [ "${_pname}" = "auto-claude-skills" ] && continue
 
-        # Resolve version dir: filter to strict semver, pick latest
-        _resolved="${_plugin_dir}"
-        _latest_ver="$(ls -1 "${_plugin_dir}" 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)"
-        if [ -n "${_latest_ver}" ]; then
-            _resolved="${_plugin_dir}${_latest_ver}/"
-        fi
+        # Resolve version dir (semver, sha-named, or unversioned)
+        _resolve_plugin_dir "${_plugin_dir}"
+        _resolved="${_RESOLVED}"
 
         # Scan skills
         if [ -d "${_resolved}skills" ]; then
@@ -455,11 +550,8 @@ for _mkt_dir in "${HOME}/.claude/plugins/cache"/*/; do
         [ -d "${_plugin_dir}" ] || continue
         _pname="$(basename "${_plugin_dir}")"
         [ "${_pname}" = "auto-claude-skills" ] && continue
-        _resolved="${_plugin_dir}"
-        _latest_ver="$(ls -1 "${_plugin_dir}" 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)"
-        if [ -n "${_latest_ver}" ]; then
-            _resolved="${_plugin_dir}${_latest_ver}/"
-        fi
+        _resolve_plugin_dir "${_plugin_dir}"
+        _resolved="${_RESOLVED}"
         # Hub-style routing metadata sits beside skills/ (one file per plugin)
         if [ -f "${_resolved}skill-rules.json" ]; then
             _SR_FILES="${_SR_FILES} ${_resolved}skill-rules.json"
