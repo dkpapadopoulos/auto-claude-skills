@@ -19,7 +19,11 @@ Discover the repository's own declared test/lint/type gate, run it **locally**, 
 
 ## Step 1: Discover the gate (deterministic-first)
 
-Walk the ladder in `references/discovery-ladder.md` top-down, first-match-wins. Prefer the deterministic rungs (`.verify.yml`, manifest-standard targets, a clearly-labelled "run all tests" row) before any prose reasoning. On a genuine tie in the CLAUDE.md `## Commands` table (0 or ≥2 surviving candidates), STOP, show the candidates, ask which command(s) are the gate, and offer to write `.verify.yml` so the next run is deterministic. Record which rung produced the gate as `discovery_source`.
+Walk the ladder in `references/discovery-ladder.md` top-down, first-match-wins. Prefer the deterministic rungs (`.verify.yml`, manifest-standard targets, a clearly-labelled "run all tests" row) before any prose reasoning. On a genuine tie in the CLAUDE.md `## Commands` table (0 or ≥2 surviving candidates), STOP, show the candidates, ask which command(s) are the gate, and offer to write `.verify.yml` so the next run is deterministic. Note which rung produced the gate — it decides which commands run. Whether the
+rung's NAME survives into `discovery_source` depends on who writes the artifact:
+the deterministic writer stamps `verify-yml` for a declared gate and `explicit`
+for a caller-supplied one, so rungs 2 and 3 are not distinguishable in the
+record; only the hand-authored last resort names them.
 
 ## Preferred path: deterministic writer (when `.verify.yml` exists)
 
@@ -41,8 +45,46 @@ never treat exit 0 as "gates passed"; non-zero means it could not measure or
 write). Then print the human summary table from its output and continue at
 the Verification checklist — the human should still eyeball that summary
 before any downstream push relies on it. If there is no `.verify.yml`, offer
-to write one (per Step 1) — the manual Steps 2–3 below remain the fallback
-and may require per-instance user approval for the evidence write.
+to write one (per Step 1).
+
+### No `.verify.yml`: still do not author the JSON by hand
+
+Once Step 1 has settled **which** commands are the gate — including after a
+rung-3 disambiguation with the user — pass them to the same deterministic
+writer instead of hand-writing the verdict:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)}/scripts/verify-and-record.sh" \
+  --name tests --run "npm test" --name lint --run "npm run lint"
+```
+
+It executes them and records its own measured exit codes exactly as the
+`.verify.yml` path does, stamping `discovery_source: explicit`.
+
+**Each command runs at the repository root**, not your current directory — the
+same as the `.verify.yml` path. In a monorepo, `--run "npm test"` therefore runs
+at the root, not in the package you were looking at; write `--run "npm --prefix
+packages/api test"` or an equivalent. A command that cannot run there is
+recorded (non-zero as failed, 127 as unverifiable) rather than skipped, so this
+errs toward a dirty verdict rather than a false clean — but it will not be the
+gate you meant. **You choose
+the commands; the script decides what happened.** That distinction is the
+whole point: a hand-authored verdict records what the model believed, and
+nothing downstream can tell the two apart.
+
+One refusal and one obligation, and the difference matters. **Refused:**
+explicit `--name/--run` when `.verify.yml` exists — the declaration is the
+repo's contract and must not be substituted by a narrower set. Malformed input
+is refused too, never repaired.
+
+**Not refused, because nothing can detect it:** the commands you pass must be
+the **complete** gate, not a convenient subset. The artifact is replaced
+wholesale and carries no completeness marker, so re-running one check after a
+failing run would certify that check as if it were the whole gate. The script
+cannot tell; you have to.
+
+Hand-authoring Steps 2–3 below is now the last resort only — no `jq`, or the
+script cannot run.
 
 ## Step 2: Run locally (fallback — no `.verify.yml`)
 
@@ -111,6 +153,11 @@ Print the resolved `${TOKEN}` alongside the artifact path — a scattered write 
   "ts": "<UTC ISO-8601>"
 }
 ```
+
+`discovery_source` names the rung only on this hand-authored path. The
+deterministic writer owns that field and stamps `explicit` for any
+caller-supplied gate, so an explicitly supplied gate cannot claim to be a
+declared one.
 
 The example above is a **field-shape illustration**, not an accepted-evidence sample: because its `could_not_verify` is non-empty (the `types` gate could not run), `deploy-gate` correctly does **not** accept it as local verification of record. A fully-accepted evidence file has `failed` and `could_not_verify` both empty and `gate_gaming_status: "clean"`.
 

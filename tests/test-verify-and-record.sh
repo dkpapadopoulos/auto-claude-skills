@@ -322,6 +322,175 @@ else
     _record_pass "straddled failure is never laundered to clean"
 fi
 
+# --- T21-T24: explicit-commands mode (#295 step 1) ---------------------------
+# Separates the two jobs the script conflates: WHICH commands are the gate
+# (judgment, caller) from RUN THEM AND RECORD WHAT HAPPENED (mechanical, script).
+# Today a repo with no .verify.yml gets neither, so SKILL.md has the MODEL
+# hand-author the JSON and the artifact records belief instead of execution.
+R21="$(mkrepo "${TEST_HOME}/r21")"
+rm -f "${R21}/.verify.yml" "${ARTIFACT}"
+( cd "${R21}" && /bin/bash "${VAR}" --name unit --run "true" ) >/dev/null 2>&1
+if [ -f "${ARTIFACT}" ]; then
+    _record_pass "explicit mode writes a verdict when no .verify.yml exists"
+    assert_equals "passing command lands in passed[]" "true" "$(jq -r '((.passed // []) | index("unit")) != null' "${ARTIFACT}")"
+    assert_equals "explicit mode stamps the deterministic writer" "verify-and-record.sh" "$(jq -r '.writer // ""' "${ARTIFACT}")"
+    # The SCRIPT owns provenance. A caller-supplied rung would let explicit mode
+    # impersonate verify-yml and imply a declaration that does not exist.
+    assert_equals "provenance is script-owned and says explicit" "explicit" "$(jq -r '.discovery_source // ""' "${ARTIFACT}")"
+else
+    for _t in "explicit mode writes a verdict when no .verify.yml exists" "passing command lands in passed[]" \
+              "explicit mode stamps the deterministic writer" "provenance is script-owned and says explicit"; do
+        _record_fail "${_t}" "no artifact written"
+    done
+fi
+
+# T22: the honesty property — a FAILING explicit command is never laundered.
+R22="$(mkrepo "${TEST_HOME}/r22")"
+rm -f "${R22}/.verify.yml" "${ARTIFACT}"
+( cd "${R22}" && /bin/bash "${VAR}" --name unit --run "false" ) >/dev/null 2>&1
+if [ -f "${ARTIFACT}" ]; then
+    assert_equals "failing explicit command lands in failed[]" "true" "$(jq -r '((.failed // []) | index("unit")) != null' "${ARTIFACT}")"
+    if ( cd "${R22}" && . "${REPO_ROOT}/hooks/lib/verdict.sh" >/dev/null 2>&1; verdict_is_clean session-vartest ); then
+        _record_fail "a failing explicit command is never laundered to clean" "verdict_is_clean accepted a failing run"
+    else
+        _record_pass "a failing explicit command is never laundered to clean"
+    fi
+else
+    _record_fail "failing explicit command lands in failed[]" "no artifact"
+    _record_fail "a failing explicit command is never laundered to clean" "no artifact"
+fi
+
+# T23: explicit args MUST NOT bypass a declared gate. Otherwise the mode becomes
+# a way to substitute a narrower check for the repo's own contract.
+R23="$(mkrepo "${TEST_HOME}/r23")"
+printf 'substrate: local\ncommands:\n  - name: real\n    run: false\n' > "${R23}/.verify.yml"
+rm -f "${ARTIFACT}"
+( cd "${R23}" && /bin/bash "${VAR}" --name lint --run "true" ) >/dev/null 2>&1
+_r23_rc=$?
+# Assert REFUSAL, not just "lint absent". The weaker assertion is equally
+# satisfied by silently ignoring the explicit args and running the YAML gate,
+# which is a different behaviour with a different failure mode.
+if [ -f "${ARTIFACT}" ]; then
+    _record_fail "explicit args do NOT substitute for a declared gate" "a verdict was written"
+elif [ "${_r23_rc}" -eq 0 ]; then
+    _record_fail "explicit args do NOT substitute for a declared gate" "refused but exited 0 — callers cannot tell"
+else
+    _record_pass "explicit args do NOT substitute for a declared gate"
+fi
+
+# _refuses <repo> <label> <args...> — the shared refusal contract: NO artifact
+# AND a non-zero exit. An artifact-only assertion is equally satisfied by
+# "refused but exited 0", which a caller cannot detect.
+_refuses() {
+    local repo="$1" lbl="$2"; shift 2
+    rm -f "${ARTIFACT}"
+    ( cd "${repo}" && /bin/bash "${VAR}" "$@" ) >/dev/null 2>&1
+    local rc=$?
+    if [ -f "${ARTIFACT}" ]; then
+        _record_fail "${lbl}" "a verdict was written"
+    elif [ "${rc}" -eq 0 ]; then
+        _record_fail "${lbl}" "refused but exited 0 — callers cannot tell"
+    else
+        _record_pass "${lbl}"
+    fi
+}
+
+# T24: refuse rather than silently transform. The command transport is
+# \x1f-delimited and read LINE-wise, and names are comma-split at serialization,
+# so a multiline run or a comma in a name would corrupt the record.
+R24="$(mkrepo "${TEST_HOME}/r24")"
+rm -f "${R24}/.verify.yml"
+_refuses "${R24}" "a multiline run is refused, not silently split" --name unit --run "$(printf 'true\nfalse')"
+_refuses "${R24}" "a comma in a name is refused, not silently split" --name "a,b" --run "true"
+_refuses "${R24}" "a name with no run is refused" --name unit
+# A DANGLING name after a valid pair is the case the trailing check uniquely
+# catches: EXPLICIT_PAIRS is non-empty here, so the "no commands given" guard
+# does not fire and the run would silently drop the second declared check —
+# under-gating toward a false clean. Without this cell the trailing check is
+# untested (mutation-verified: deleting it failed nothing).
+rm -f "${ARTIFACT}"
+( cd "${R24}" && /bin/bash "${VAR}" --name unit --run "true" --name dropped ) >/dev/null 2>&1
+if [ -f "${ARTIFACT}" ]; then
+    _record_fail "a dangling name after a valid pair is refused" "artifact written; the second check silently vanished"
+else
+    _record_pass "a dangling name after a valid pair is refused"
+fi
+
+# --- T25: refusals found in review of the first cut ---------------------------
+R25="$(mkrepo "${TEST_HOME}/r25")"
+rm -f "${R25}/.verify.yml"
+# P1. The transport is read LINE-wise, so a newline in a name splits one declared
+# check across two records — in one of TWO shapes, and only the second is a false
+# clean. Measured against the pre-fix script, so do not merge these:
+#   "a\nb"  -> could_not_verify=[a], failed=[b]. A CORRUPT record, not clean.
+#   bare \n  -> both records nameless, both SKIPPED, `false` never runs, and the
+#              empty arrays satisfy verdict_is_clean. THAT is the false clean.
+_refuses "${R25}" "a newline in a name is refused (corrupts the record)" --name "$(printf 'a\nb')" --run "false"
+_refuses "${R25}" "a bare-newline name is refused (else: FALSE CLEAN)"   --name $'\n' --run "false"
+# US is the other transport-corrupting byte, in either field.
+_refuses "${R25}" "US in a name is refused"    --name "$(printf 'a\037b')" --run "false"
+_refuses "${R25}" "US in a command is refused" --name a --run "$(printf 'fal\037se')"
+# I2. `-n` was the wrong test for "did the caller supply a command": a stray
+# space passes it, and `eval " "` exits 0, so PASS is recorded having executed
+# nothing. These cells pin the corrected predicate. CEILING (deliberate, not a
+# gap): `# npm test` and `:` also execute nothing and are NOT refused — that
+# would mean parsing shell intent. See the comment at the guard.
+_refuses "${R25}" "a whitespace-only command is refused" --name unit --run " "
+_refuses "${R25}" "a tab-only command is refused"        --name unit --run "$(printf '\t')"
+# B1. This is the ONLY new guard that survived deletion with zero failing cells,
+# and it is the silent-drop class: with it gone, `--name lint --name tests --run
+# true` records tests, drops lint, and reports CLEAN. The trailing-dangling cell
+# exercises a DIFFERENT guard (the one after the loop), and the duplicate cell
+# passes complete pairs, so neither reaches this one.
+_refuses "${R25}" "a second --name before the first has a --run is refused" --name lint --name tests --run "true"
+# P2a: "" doubled as BOTH "no pending name" and "an explicitly empty name", so a
+# trailing --name "" passed the dangling check and its declared check vanished.
+_refuses "${R25}" "a trailing empty name is refused"                   --name unit --run "true" --name ""
+# Duplicate names produce a duplicated entry in passed[]/failed[] that no reader
+# can attribute back to a command.
+_refuses "${R25}" "a duplicate name is refused"                        --name a --run "true" --name a --run "true"
+# R2 has no caller flag at all — assert the override attempt is rejected, rather
+# than only asserting the default stamp (which cannot detect an override route).
+_refuses "${R25}" "there is no caller flag for provenance"             --name a --run "true" --discovery-source verify-yml
+
+# P2b: R1 must key on EXISTENCE, not regular-file-ness. A directory or dangling
+# symlink at .verify.yml is a declared-gate location the caller cannot measure,
+# and must not silently fall through to explicit mode.
+R26="$(mkrepo "${TEST_HOME}/r26")"
+rm -rf "${R26}/.verify.yml"; mkdir -p "${R26}/.verify.yml"
+rm -f "${ARTIFACT}"
+( cd "${R26}" && /bin/bash "${VAR}" --name a --run "true" ) >/dev/null 2>&1
+if [ -f "${ARTIFACT}" ]; then
+    _record_fail "a directory at .verify.yml does not fall through to explicit mode" "verdict written"
+else
+    _record_pass "a directory at .verify.yml does not fall through to explicit mode"
+fi
+rm -rf "${R26}/.verify.yml"; ln -s /nonexistent-target "${R26}/.verify.yml"
+rm -f "${ARTIFACT}"
+( cd "${R26}" && /bin/bash "${VAR}" --name a --run "true" ) >/dev/null 2>&1
+if [ -f "${ARTIFACT}" ]; then
+    _record_fail "a dangling .verify.yml symlink does not fall through" "verdict written"
+else
+    _record_pass "a dangling .verify.yml symlink does not fall through"
+fi
+
+# T27: a SUCCESSFUL multi-pair run. Every other multi-pair cell exercises a
+# REFUSAL, so replacing rather than appending EXPLICIT_PAIRS would escape all of
+# them — the surviving pair would just be the last one, and a refusal still
+# refuses.
+R27="$(mkrepo "${TEST_HOME}/r27")"
+rm -f "${R27}/.verify.yml" "${ARTIFACT}"
+( cd "${R27}" && /bin/bash "${VAR}" --name alpha --run "true" --name beta --run "false" ) >/dev/null 2>&1
+if [ -f "${ARTIFACT}" ]; then
+    assert_equals "multi-pair: the passing check is recorded" "true" "$(jq -r '((.passed // []) | index("alpha")) != null' "${ARTIFACT}")"
+    assert_equals "multi-pair: the failing check is recorded" "true" "$(jq -r '((.failed // []) | index("beta")) != null' "${ARTIFACT}")"
+    assert_equals "multi-pair: BOTH ran, neither dropped" "2" "$(jq -r '((.passed // [])|length) + ((.failed // [])|length) + ((.could_not_verify // [])|length)' "${ARTIFACT}")"
+else
+    for _t in "multi-pair: the passing check is recorded" "multi-pair: the failing check is recorded" "multi-pair: BOTH ran, neither dropped"; do
+        _record_fail "${_t}" "no artifact written"
+    done
+fi
+
 cd "${REPO_ROOT}" || true
 teardown_test_env
 print_summary

@@ -16,9 +16,15 @@
 # boundary, per the skill's own disclaimer) — it is provenance + ergonomics.
 #
 # Exit code: 0 = a verdict was RECORDED (even an all-failing one — recording
-# is this script's job); non-zero = could not measure or write (no .verify.yml,
-# non-local substrate, no git repo, jq missing, write failure). Callers must
-# read the printed verdict summary, never treat exit 0 as "gates passed".
+# is this script's job); non-zero = could not measure or write (no .verify.yml
+# AND no explicit commands, non-local substrate, no git repo, jq missing, write
+# failure) OR the explicit arguments were REFUSED. The refusals are, e.g.: a
+# declared .verify.yml is present, an unknown flag, a flag given with no value,
+# --run with no preceding --name, a --name with no --run, a name that is empty /
+# duplicated / contains a comma, newline or US, or a command that is empty,
+# whitespace-only, multiline or contains US. Treat that list as illustrative --
+# any refusal exits non-zero and prints its own reason. Callers must read the
+# printed verdict summary, never treat exit 0 as "gates passed".
 #
 # Bash 3.2.
 
@@ -27,18 +33,125 @@ set -u
 # Plugin root: env, else this script's parent dir (scripts/ -> repo root).
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 
+# --- Explicit-commands mode (#295) -------------------------------------------
+# This script does two separable jobs: decide WHICH commands are the gate, and
+# RUN them while recording what actually happened. It used to refuse both
+# together whenever .verify.yml was absent, so project-verification's SKILL.md
+# had the MODEL hand-author the verdict JSON instead — and a hand-authored
+# record states what the model believed, not what executed.
+#
+# Explicit mode separates them: the caller (after the discovery ladder's own
+# disambiguation, which may involve the user) says which commands constitute the
+# gate; this script executes them and records measured exit codes.
+#
+# It deliberately does NOT infer a gate from manifests. "A declared tool" is not
+# "a declared gate": a package script `"test": "echo ok"` would manufacture a
+# clean verdict, and creating verdicts where none was intended CHANGES GATE
+# OUTCOMES even though no predicate moves (routing-governance newly passes).
+# Selection stays with the caller; only measurement moves here.
+EXPLICIT_PAIRS=""
+_SEEN_NAMES=""
+_EXPLICIT_USED=false
+_x_name=""
+# Validation lives where the value ARRIVES, not where it is consumed. An earlier
+# cut validated the name in the --run branch, so a trailing `--name ""` was never
+# checked at all and its declared check silently vanished.
+_x_validate_name() {
+    [ -n "$1" ] || { echo "verify-and-record: name may not be empty" >&2; return 1; }
+    # A name is a KEY in the record: it is comma-split at serialization, and the
+    # pair transport is read LINE-wise. A newline therefore splits one declared
+    # check across two records, in one of two shapes — measured, and only the
+    # second is a false clean: "a\nb" yields could_not_verify=[a] failed=[b] (a
+    # CORRUPT record), while a BARE newline leaves both records nameless, so the
+    # execution loop skips both, the command never runs, and the empty arrays
+    # satisfy verdict_is_clean. Refuse both; do not try to repair either.
+    case "$1" in
+        *,*|*$'\x1f'*|*$'\n'*)
+            echo "verify-and-record: name may not contain ',', a newline, or US" >&2; return 1 ;;
+    esac
+    # NOTE the unquoted $'\x1f' operands: $'..' is NOT expanded inside double
+    # quotes, so "$'\x1f'${_SEEN_NAMES}" compares against a literal dollar-quote
+    # and never matches. A duplicate name yields a repeated array entry that no
+    # reader can attribute back to a command.
+    case $'\x1f'"${_SEEN_NAMES}" in
+        *$'\x1f'"$1"$'\x1f'*) echo "verify-and-record: duplicate name '$1'" >&2; return 1 ;;
+    esac
+    return 0
+}
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --name)
+            _EXPLICIT_USED=true
+            [ $# -ge 2 ] || { echo "verify-and-record: --name needs a value" >&2; exit 1; }
+            # A pending name with no --run would record a check that never ran.
+            [ -z "$_x_name" ] || { echo "verify-and-record: --name '${_x_name}' has no --run" >&2; exit 1; }
+            _x_validate_name "$2" || exit 1
+            _x_name="$2"
+            _SEEN_NAMES="${_SEEN_NAMES}${2}"$'\x1f'
+            shift 2 ;;
+        --run)
+            _EXPLICIT_USED=true
+            [ $# -ge 2 ] || { echo "verify-and-record: --run needs a value" >&2; exit 1; }
+            [ -n "$_x_name" ] || { echo "verify-and-record: --run without a preceding --name" >&2; exit 1; }
+            # $'..' rather than $(printf '\n'): command substitution STRIPS
+            # trailing newlines, so a ${2%%$(...)*} guard matches everything and
+            # refuses every command. Same idiom the execution loop uses.
+            case "$2" in *$'\x1f'*) echo "verify-and-record: run may not contain US" >&2; exit 1 ;; esac
+            case "$2" in *$'\n'*) echo "verify-and-record: run may not span lines" >&2; exit 1 ;; esac
+            # This REPLACES the old `[ -n "$2" ]`, it does not join it: `-n` was
+            # always meant to answer "did the caller supply a command", and it is
+            # simply the wrong test for that — a stray space passes it while
+            # `eval " "` exits 0, recording PASS having executed nothing. So the
+            # justification is that the empty-argument check was buggy, not that
+            # we validate command content; there is no slope to slide down.
+            #
+            # CEILING, deliberate: "executes nothing" is strictly wider than
+            # "whitespace only". Measured under bash 3.2, `eval "# npm test"` and
+            # `eval ":"` both exit 0 — and a commented-out command is the LIKELIER
+            # accident, a caller pasting a line they had disabled. Neither is
+            # refused: rejecting `#` means parsing shell intent, and `:` may be
+            # genuinely meant. A command that runs but checks nothing is the
+            # caller's completeness obligation, which nothing here can adjudicate.
+            case "$2" in
+                *[![:space:]]*) : ;;
+                *) echo "verify-and-record: run may not be empty or whitespace-only" >&2; exit 1 ;;
+            esac
+            EXPLICIT_PAIRS="${EXPLICIT_PAIRS}${_x_name}"$'\x1f'"$2
+"
+            _x_name=""; shift 2 ;;
+        *) echo "verify-and-record: unknown argument '$1'" >&2; exit 1 ;;
+    esac
+done
+[ -z "$_x_name" ] || { echo "verify-and-record: --name '${_x_name}' has no --run" >&2; exit 1; }
+
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "verify-and-record: not a git repo" >&2; exit 1; }
 command -v jq >/dev/null 2>&1 || { echo "verify-and-record: jq required to write the verdict" >&2; exit 1; }
 VY="${ROOT}/.verify.yml"
-[ -f "$VY" ] || { echo "verify-and-record: no .verify.yml — refusing to guess the gate (see project-verification discovery ladder)" >&2; exit 1; }
 
-SUBSTRATE="$(awk -F': *' '$1=="substrate"{print $2; exit}' "$VY")"
-[ "$SUBSTRATE" = "local" ] || { echo "verify-and-record: unsupported substrate '${SUBSTRATE:-none}' — only 'local' runs here" >&2; exit 1; }
+DISCOVERY="verify-yml"
+if [ "$_EXPLICIT_USED" = "true" ]; then
+    # A declared gate is the repo's contract and outranks anything a caller
+    # passes. Allowing explicit args to win would turn this mode into a way to
+    # substitute a narrower check for the declaration.
+    { [ -e "$VY" ] || [ -L "$VY" ]; } && { echo "verify-and-record: .verify.yml exists — it is the declared gate; explicit --name/--run refused" >&2; exit 1; }
+    [ -n "$EXPLICIT_PAIRS" ] || { echo "verify-and-record: no commands given" >&2; exit 1; }
+    DISCOVERY="explicit"
+else
+    [ -f "$VY" ] || { echo "verify-and-record: no .verify.yml — refusing to guess the gate (see project-verification discovery ladder)" >&2; exit 1; }
+fi
+
+if [ "$DISCOVERY" = "verify-yml" ]; then
+    SUBSTRATE="$(awk -F': *' '$1=="substrate"{print $2; exit}' "$VY")"
+    [ "$SUBSTRATE" = "local" ] || { echo "verify-and-record: unsupported substrate '${SUBSTRATE:-none}' — only 'local' runs here" >&2; exit 1; }
+fi
 
 # Parse "- name: X" / "run: CMD" pairs. A declared name whose run: is missing
 # (typo'd key) is emitted with an EMPTY run so the loop records it in
 # could_not_verify[] — a declared-but-never-run check must never silently
 # vanish from the verdict (that would under-gate toward a false clean).
+if [ "$DISCOVERY" = "explicit" ]; then
+    PAIRS="$EXPLICIT_PAIRS"
+else
 PAIRS="$(awk '
     /^[[:space:]]*-[[:space:]]*name:/ {
         if (n != "") printf "%s\x1f\n", n
@@ -47,7 +160,15 @@ PAIRS="$(awk '
     /^[[:space:]]*run:/ { sub(/^[[:space:]]*run:[[:space:]]*/,""); if (n != "") { printf "%s\x1f%s\n", n, $0; n="" } }
     END { if (n != "") printf "%s\x1f\n", n }
 ' "$VY")"
-[ -n "$PAIRS" ] || { echo "verify-and-record: no commands declared in .verify.yml" >&2; exit 1; }
+fi
+if [ -z "$PAIRS" ]; then
+    if [ "$DISCOVERY" = "explicit" ]; then
+        echo "verify-and-record: no commands given" >&2
+    else
+        echo "verify-and-record: no commands declared in .verify.yml" >&2
+    fi
+    exit 1
+fi
 
 # Capture the session token BEFORE running the gate (issue #122). This repo's
 # suite runs ~16 minutes (measured 943s at c2ae84f); a concurrent session prompting in that window rebinds
@@ -252,12 +373,12 @@ if [ "$_TD_SRC" -eq 0 ]; then TEST_DELTA="n/a"
 elif [ "$_TD_TEST" -eq 1 ]; then TEST_DELTA="covered"
 else TEST_DELTA="missing"; fi
 
-jq -n --arg sha "$SHA" --arg ts "$TS" --arg ex "$EXCERPT" --arg cmd "$CMDS" \
+jq -n --arg sha "$SHA" --arg ts "$TS" --arg ex "$EXCERPT" --arg cmd "$CMDS" --arg disc "$DISCOVERY" \
       --arg p "$PASSED" --arg f "$FAILED" --arg c "$CNV" --arg gg "$GG_STATUS" --arg td "$TEST_DELTA" \
       --arg wd "$WORKTREE_DIRTY" --arg wdp "$_WD_PATHS_CAPPED" --arg wdn "$WORKTREE_DIRTY_COUNT" '
   def csv($s): if $s == "" then [] else ($s | split(",")) end;
   def lines($s): [$s | split("\n")[] | select(. != "")];
-  {substrate:"local", discovery_source:"verify-yml",
+  {substrate:"local", discovery_source:$disc,
    passed:csv($p), failed:csv($f), could_not_verify:csv($c),
    gate_gaming_status:$gg, coverage_adequacy_status:"unverified",
    test_delta:$td, worktree_dirty:($wd == "true"),
