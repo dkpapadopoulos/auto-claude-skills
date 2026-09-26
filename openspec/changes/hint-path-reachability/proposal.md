@@ -88,6 +88,15 @@ against the seed's own copy.
 Not claimed: `-n` is not POSIX and no GNU `cp` was available here, so whether GNU
 returns 0 where BSD returns 1 on a skip is unmeasured.
 
+A fifth defect came from the TEST's shape rather than the product's: the cells ran
+three `grep` anchors out of a six-statement fenced block, so a destructive
+statement on an unanchored line was unreachable. That hid an unguarded
+`cat > design/adopted.json` (it destroyed a reader's provenance record with the
+suite green), and it made a replay of the `rm` defect score 89/91 *with the cell
+named for that data loss passing*. The block is what a reader pastes, so the block
+is now extracted whole and executed — twice per shell, against a fresh tree and
+against one where the reader already owns every file.
+
 ## Impact
 
 - `hooks/skill-activation-hook.sh`, both registry configs,

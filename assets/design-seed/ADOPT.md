@@ -10,6 +10,9 @@ rewrites them, and has no upgrade path that could overwrite your edits.
 #    agent's shell, and this file is not in your repo. Arrived without a path?
 #    This lists the installed copies, newest first; pick the version you run:
 #      ls -dt ~/.claude/plugins/cache/*/auto-claude-skills/*/assets/design-seed
+#    It covers the marketplace-cache layout only. A --plugin-dir or repo-checkout
+#    install prints nothing, with no error -- in that case the seed is the
+#    assets/design-seed/ directory of wherever the plugin actually lives.
 SEED_DIR="${SEED_DIR:-<replace with the directory you read this file from>}"
 # Three guards, all on the copy line itself because that is the line you paste:
 #   `:?`            -- SEED_DIR unset or empty (otherwise "${SEED_DIR}/." is "/.")
@@ -20,13 +23,20 @@ SEED_DIR="${SEED_DIR:-<replace with the directory you read this file from>}"
 #   `-n`            -- never overwrite. If you ALREADY have a design/, your files
 #                      win and you get a mixed tree, which is not an adoption --
 #                      read your own design/styleguide.md instead of adopting.
+# If you already have a design/, `-n` below keeps YOUR files and the copy exits
+# non-zero with nothing on stderr -- and the natural reading of "adoption failed"
+# is `rm -rf design`, which destroys exactly what `-n` just protected. So say it.
+[ -e design ] && echo "you already have design/ -- read design/styleguide.md instead of adopting over it" >&2
 test -f "${SEED_DIR:?set SEED_DIR to the directory holding this file}/tokens.css" || { echo "SEED_DIR is not the design seed (no tokens.css in it)" >&2; false; } && mkdir -p design && cp -Rn "${SEED_DIR}/." design/
 # Removes the seed's copy of THIS file, never a design/ADOPT.md you already had
 # (`-n` above preserves yours, so an unconditional rm would delete it).
-cmp -s "${SEED_DIR}/ADOPT.md" design/ADOPT.md && rm -f design/ADOPT.md
+cmp -s "${SEED_DIR:?set SEED_DIR to the directory holding this file}/ADOPT.md" design/ADOPT.md && rm -f design/ADOPT.md
 
-# 2. Record where it came from
-cat > design/adopted.json <<JSON
+# 2. Record where it came from. Guarded like the two statements above, and for the
+#    same reason: `-n` preserves an adopted.json you already had, and an
+#    unguarded `>` on the next statement would then destroy it -- this file calls
+#    adopted.json the provenance record, so that loss is your preset and date.
+[ -e design/adopted.json ] || cat > design/adopted.json <<JSON
 {"preset": "quiet-dense", "version": 1, "adopted": "$(date +%Y-%m-%d)"}
 JSON
 

@@ -4,14 +4,24 @@
 
 ### Requirement: Rendered guidance MUST name a plugin file by an absolute path
 
-Any text the routing hooks render into a prompt — a methodology `hint`, a
-composition `hint`, a skill `precondition` — that names a file shipped inside
-this plugin MUST name it by a path the reader can open. Because
-`CLAUDE_PLUGIN_ROOT` is not set in the model's shell and the file is absent from
-the user's project, a repo-relative name is openable only in this repo. Such a
-path SHALL be written in the config as `{{PLUGIN_ROOT}}/<path>` and the renderer
-SHALL substitute the running plugin root before emission. A path naming a file in
-the USER's project MUST stay relative.
+Any text the routing hooks render into a prompt from a skill's `precondition` or
+from a `methodology_hints[].hint` that names a file shipped inside this plugin
+MUST name it by a path the reader can open. Because `CLAUDE_PLUGIN_ROOT` is not
+set in the model's shell and the file is absent from the user's project, a
+repo-relative name is openable only in this repo. Such a path SHALL be written in
+the config as `{{PLUGIN_ROOT}}/<path>` and the renderer SHALL substitute the
+running plugin root before emission. A path naming a file in the USER's project
+MUST stay relative.
+
+`phase_compositions[*].hints[].text` is rendered by the same hook and is
+deliberately OUT of this requirement's scope, because three instances violate it
+today (DISCOVER and DESIGN name `scripts/persist-state.sh` via the unset
+`CLAUDE_PLUGIN_ROOT` pair; PLAN names `scripts/scope-conformance.sh` relatively —
+measured `rc=127` in an external repo). Widening the requirement to that field
+without fixing them would commit a spec the shipped code violates. Bringing that
+field in is a separate change; until then this requirement's population is stated
+here rather than implied, and the lint enforcing it reads
+`methodology_hints` only.
 
 #### Scenario: A hint's plugin path is substituted and opens in an adopting repo
 

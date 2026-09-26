@@ -380,6 +380,21 @@ else
     # assignment that a selective paste leaves behind.
     assert_contains "the copy command refuses an unset/empty SEED_DIR" ':?' "${CP_LINE}"
 
+    # THE SHIM CELLS REFUSE TO RUN ON AN EMPTY CP_LINE.
+    # The extraction anchor (`^test .*cp -Rn`) embeds the guards under test, so
+    # deleting a guard can empty CP_LINE — and `sh -c ""` invokes no `cp`, which
+    # every "cp is never reached" cell reads as success. Measured by review at
+    # 92999aa: removing the guard scored 69/91 with ALL TEN shim cells PASSING,
+    # each of them named for the guard that was gone. An assertion satisfied by
+    # the fallback path pins nothing, so the guard is checked before the cells
+    # that depend on it rather than after.
+    if [ -z "${CP_LINE}" ]; then
+        _record_fail "CP_LINE is non-empty before the shim cells run" \
+            "empty — every 'cp is never reached' cell below would pass on a command that does not exist"
+    else
+        _record_pass "CP_LINE is non-empty before the shim cells run"
+    fi
+
     # Asserted through a `cp` SHIM, deliberately. Running the unguarded form for
     # real is the disaster this cell exists to prevent, so a regression must be
     # OBSERVABLE without being destructive: the shim records its arguments and
@@ -396,6 +411,11 @@ else
         _ud="${WORK}/unreplaced-${_b}"; mkdir -p "${_ud}"
         _shimlog="${_ud}/cp-invocations"
         : > "${_shimlog}"
+        if [ -z "${CP_LINE}" ]; then
+            _record_fail "an unset SEED_DIR fails non-zero (${_b})" "CP_LINE empty — nothing was run"
+            _record_fail "cp is never reached with an unset SEED_DIR (${_b})" "CP_LINE empty — nothing was run"
+            continue
+        fi
         _urc=0
         ( cd "${_ud}" && env -u SEED_DIR CP_SHIM_LOG="${_shimlog}" \
             PATH="${_shimdir}:${PATH}" "${_sh}" -c "${CP_LINE}" ) >/dev/null 2>&1 || _urc=$?
@@ -514,6 +534,180 @@ else
                 "still present — the guard disabled the remove entirely"
         else
             _record_pass "the seed's own ADOPT.md is removed (${_b})"
+        fi
+    done
+
+    # ============================================================
+    # THE WHOLE FENCED BLOCK, EXECUTED AS ONE UNIT.
+    # ============================================================
+    # Every cell above executes THREE hand-picked lines (`^SEED_DIR=`,
+    # `^test .*cp -Rn`, `^cmp -s`) out of a six-statement fenced block. Review
+    # measured what that costs: reintroducing the unconditional
+    # `rm -f design/ADOPT.md` scored 89/91 and the cell whose SUBJECT is that
+    # data loss — "a reader's own design/ADOPT.md survives the remove" — PASSED,
+    # because the destructive statement was on a line no anchor selects, so it
+    # was never in the string the cell ran. Worse, the two cells that did fail
+    # pointed at the opposite diagnosis ("the guard disabled the remove").
+    #
+    # The same blind spot hid a live defect: step 2's `cat > design/adopted.json`
+    # was unguarded and destroyed a reader's provenance record, with the suite
+    # green. Anchors cannot be trusted to enumerate a block's statements; the
+    # block is what a reader pastes, so the block is what must run.
+    _fence="${WORK}/adopt-block.sh"
+    awk '/^```bash/{f=1;next} /^```/{if(f)exit} f{print}' \
+        "${PROJECT_ROOT}/assets/design-seed/ADOPT.md" > "${_fence}"
+    _fence_stmts="$(grep -cE '^[^#[:space:]]' "${_fence}" | tr -d ' ')"
+    case "${_fence_stmts}" in ''|*[!0-9]*) _fence_stmts=0 ;; esac
+    # A floor: if the extraction silently yielded nothing, every cell below
+    # would pass having run an empty script.
+    if [ "${_fence_stmts}" -ge 4 ]; then
+        _record_pass "extracted the fenced block (${_fence_stmts} statements)"
+    else
+        _record_fail "extracted the fenced block" \
+            "found ${_fence_stmts} statements — the cells below would run an empty script"
+    fi
+    # The extracted fence must be the ADOPTION block, by IDENTITY not position.
+    # `awk` takes the FIRST ```bash fence and ADOPT.md has a second one (the
+    # tokens.json pipeline), so a reordering would silently hand these cells the
+    # wrong script.
+    if grep -q 'cp -Rn' "${_fence}"; then
+        _record_pass "the extracted fence is the adoption block (contains the copy)"
+    else
+        _record_fail "the extracted fence is the adoption block (contains the copy)" \
+            "no 'cp -Rn' — awk picked a different fence and every block cell below is testing the wrong script"
+    fi
+
+    # A CHANGE DETECTOR over the statements touching `design/`, deliberately NOT
+    # a list of destructive verbs. The first version grepped for
+    # `(>|cp -Rn|rm -f) *design/…` and MISSED `tee`, `mv`, `install`, `ln -sf`,
+    # `truncate`, `sed -i`, `rsync`, `dd`, `rm -rf design` and even a plain
+    # `cp -R` — measured. That is this repo's recurring lesson: a blocklist of
+    # command shapes is unsound, and a whitelist/ratchet is what holds. So the
+    # COUNT is pinned instead: add or remove a statement touching `design/` and
+    # this fails, forcing whoever does it to cover it above and bump the number.
+    # The block-execution cells are the real control; this is the tripwire that
+    # says "you added a statement nobody covered".
+    ADOPT_DESIGN_STMTS=6
+    _dstmt="$(grep -E '^[^#[:space:]]' "${_fence}" | grep -c 'design/' | tr -d ' ')"
+    case "${_dstmt}" in ''|*[!0-9]*) _dstmt=0 ;; esac
+    assert_equals "the block touches exactly ${ADOPT_DESIGN_STMTS} design/ statements (bump + cover if you add one)" \
+        "${ADOPT_DESIGN_STMTS}" "${_dstmt}"
+    # …and the two that WRITE are the ones the cells below exercise, by name.
+    for _w in 'design/adopted.json' 'design/ADOPT.md'; do
+        if grep -qF "${_w}" "${_fence}"; then
+            _record_pass "the block still writes ${_w} (covered below)"
+        else
+            _record_fail "the block still writes ${_w} (covered below)" \
+                "absent — a cell below now asserts about a statement that is gone"
+        fi
+    done
+
+    for _sh in ${SHELLS}; do
+        _b="$(basename "${_sh}")"
+
+        # --- a fresh adoption: the block must produce a usable design/ --------
+        _fb="${WORK}/fence-fresh-${_b}"; mkdir -p "${_fb}"
+        ( cd "${_fb}" && env SEED_DIR="${_ADOPT_DIR}" "${_sh}" "${_fence}" ) >/dev/null 2>&1
+        for _want in tokens.css styleguide.md checks/token-lint.sh adopted.json; do
+            if [ -r "${_fb}/design/${_want}" ]; then
+                _record_pass "block: fresh adoption produced design/${_want} (${_b})"
+            else
+                _record_fail "block: fresh adoption produced design/${_want} (${_b})" "missing"
+            fi
+        done
+        if [ -e "${_fb}/design/ADOPT.md" ]; then
+            _record_fail "block: the seed's ADOPT.md is removed (${_b})" "still present"
+        else
+            _record_pass "block: the seed's ADOPT.md is removed (${_b})"
+        fi
+
+        # --- a reader who ALREADY has files: NOTHING of theirs is lost --------
+        # A WHOLE-TREE SNAPSHOT, not a list of filenames. The previous version
+        # named four files under design/ and review measured two escapes at
+        # 116/116 green: `rm -f design/reference.html` (a design/ file in neither
+        # the survival set nor the fresh-adoption set) and
+        # `…; rm -f README.md CLAUDE.md` appended to an existing statement (the
+        # count ratchet sees one line, and the damage is outside design/ where
+        # nothing looked). Replacing a verb blocklist with a FILE enumeration was
+        # the same defect on a different axis; the fix is to enumerate nothing and
+        # compare the tree to itself.
+        # The launch dir sits inside a WRAPPER whose siblings are snapshotted
+        # too. The previous version snapshotted only the launch dir, so a
+        # relocation (`cd ..`, `rm -f ../x`) wrote where nothing looked. The
+        # guard for that was a `grep` for `cd ` — review measured it missing 11
+        # of 16 shapes (subshell and brace grouping, bare `cd`, `pushd`, and the
+        # whole `-C` family: `env -C`, `git -C`, `tar -C`, `make -C`,
+        # `find -execdir`, which need no `cd` at all). That was the FOURTH
+        # blocklist in this file's history, so it is deleted rather than
+        # extended: containment is checked instead of spelling forbidden.
+        #
+        # RESIDUAL, and honest: a statement relocating to an ABSOLUTE path
+        # outside the wrapper is not covered by this. The block contains none.
+        # A `cd` at the TOP of the block is separately caught by the "it still
+        # ran" control below, since the adoption then lands elsewhere.
+        _wrap="${WORK}/fence-own-${_b}"
+        _fo="${_wrap}/repo"; mkdir -p "${_fo}/design/checks" "${_fo}/src"
+        printf 'sibling of the launch dir\n'  > "${_wrap}/sibling.txt"
+        mkdir -p "${_wrap}/neighbour"
+        printf 'neighbour file\n'             > "${_wrap}/neighbour/keep.txt"
+        printf 'READER STYLEGUIDE\n'                        > "${_fo}/design/styleguide.md"
+        printf '{"preset":"loud-airy","notes":"mine"}\n'     > "${_fo}/design/adopted.json"
+        printf 'READER ADOPT NOTES\n'                        > "${_fo}/design/ADOPT.md"
+        printf '/* reader tokens */\n'                       > "${_fo}/design/tokens.css"
+        printf 'READER REFERENCE\n'                          > "${_fo}/design/reference.html"
+        printf 'reader note\n'                               > "${_fo}/design/notes.md"
+        # …and files OUTSIDE design/, because a statement can reach anywhere.
+        printf '# reader readme\n'                           > "${_fo}/README.md"
+        printf 'reader claude md\n'                          > "${_fo}/CLAUDE.md"
+        printf 'reader source\n'                             > "${_fo}/src/app.js"
+        # `find -type f` uses lstat, so replacing a file with a SYMLINK (even to
+        # identical content), a directory, a FIFO or a device node drops its
+        # before-line and fails the comparison — measured. An earlier comment
+        # here claimed symlink swaps were invisible; that was wrong, and a false
+        # "known limit" invites someone to close a non-problem or to distrust the
+        # neighbouring claim that is real. `chmod 000` is also caught, because
+        # `cksum` then fails and the line disappears. What IS invisible: a
+        # readability-PRESERVING mode or ownership change (`chmod +x`, `chown`).
+        # Not closed with a mode column: such a statement must appear in the
+        # block, where ADOPT_DESIGN_STMTS catches it if it names `design/`.
+        #
+        # SOUNDNESS LIMIT of this comparison, stated beside the control it
+        # affects: `cksum` emits `sum size path`, so a filename containing a
+        # NEWLINE splits one entry across two lines and `comm -23` can mis-pair
+        # them (measured: two files produced three lines). Nothing in the seeded
+        # tree or the seed has such a name and creating one needs a deliberate
+        # edit, so this is recorded rather than closed — but it is a limit of the
+        # load-bearing control, not of a peripheral cell, and it matters if this
+        # snapshot is ever pointed at a user-supplied tree.
+        _before="${WORK}/snap-before-${_b}"
+        ( cd "${_wrap}" && find . -type f -exec cksum {} + | LC_ALL=C sort ) > "${_before}" 2>/dev/null
+        _snap_n="$(wc -l < "${_before}" | tr -d ' ')"
+        case "${_snap_n}" in ''|*[!0-9]*) _snap_n=0 ;; esac
+        if [ "${_snap_n}" -ge 11 ]; then
+            _record_pass "block: snapshotted ${_snap_n} reader files before the run (${_b})"
+        else
+            _record_fail "block: snapshotted the reader's files before the run (${_b})" \
+                "only ${_snap_n} — the comparison below would check almost nothing"
+        fi
+        ( cd "${_fo}" && env SEED_DIR="${_ADOPT_DIR}" "${_sh}" "${_fence}" ) >/dev/null 2>&1
+        _after="${WORK}/snap-after-${_b}"
+        ( cd "${_wrap}" && find . -type f -exec cksum {} + | LC_ALL=C sort ) > "${_after}" 2>/dev/null
+        # Every line present BEFORE must still be present after, byte-identical.
+        # Adoption is allowed to ADD files, so this is one-directional.
+        _lost="$(LC_ALL=C comm -23 "${_before}" "${_after}" | sed 's/^[0-9]* *[0-9]* *//' | tr '\n' ' ')"
+        if [ -z "${_lost}" ]; then
+            _record_pass "block: every pre-existing reader file is byte-identical after (${_b})"
+        else
+            _record_fail "block: every pre-existing reader file is byte-identical after (${_b})" \
+                "changed or deleted: ${_lost}"
+        fi
+        # CONTROL: the block must still have RUN, or the comparison above is
+        # satisfied by a script that did nothing.
+        if [ -r "${_fo}/design/checks/token-lint.sh" ]; then
+            _record_pass "block: …and it still ran (a file the reader lacked landed) (${_b})"
+        else
+            _record_fail "block: …and it still ran (a file the reader lacked landed) (${_b})" \
+                "checks/token-lint.sh absent — the comparison above proves nothing"
         fi
     done
 
