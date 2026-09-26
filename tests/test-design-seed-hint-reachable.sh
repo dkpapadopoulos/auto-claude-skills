@@ -511,6 +511,50 @@ else
         done
     done
 
+    # A DECOY DIRECTORY THAT MERELY CONTAINS tokens.css IS NOT THE SEED.
+    #
+    # Identity by ONE filename is too weak: `tokens.css` is a plausible file in
+    # any design-system repo, so a coincidental match sends the copy at that tree
+    # instead. Measured before the second marker was added: cp was invoked with
+    # the decoy. Two markers (`tokens.css` AND `checks/token-lint.sh`) separate
+    # them.
+    #
+    # This cell exists because the mutation said so: reverting to the single
+    # marker failed NOTHING — the traversal cells use `/`, `$HOME` and the plugin
+    # root, none of which has a top-level tokens.css, so the fix was unverified
+    # until a decoy shaped like the near-miss was added.
+    _decoy="${WORK}/decoy-seed"
+    mkdir -p "${_decoy}"
+    printf '/* someone else design tokens */\n' > "${_decoy}/tokens.css"
+    for _sh in ${SHELLS}; do
+        _b="$(basename "${_sh}")"
+        _dd="${WORK}/decoy-dest-${_b}"; mkdir -p "${_dd}"
+        _dlog="${_dd}/cp-invocations"; : > "${_dlog}"
+        ( cd "${_dd}" && env SEED_DIR="${_decoy}" CP_SHIM_LOG="${_dlog}" \
+            PATH="${_shimdir}:${PATH}" "${_sh}" -c "${CP_LINE}" ) >/dev/null 2>&1
+        if [ -s "${_dlog}" ]; then
+            _record_fail "cp is never reached for a decoy holding only tokens.css (${_b})" \
+                "cp would have run with: $(cat "${_dlog}")"
+        else
+            _record_pass "cp is never reached for a decoy holding only tokens.css (${_b})"
+        fi
+    done
+    # CONTROL: the real seed must still be ACCEPTED, or the cell above is
+    # satisfied by an identity check that rejects everything.
+    for _sh in ${SHELLS}; do
+        _b="$(basename "${_sh}")"
+        _ad="${WORK}/decoy-accept-${_b}"; mkdir -p "${_ad}"
+        _alog="${_ad}/cp-invocations"; : > "${_alog}"
+        ( cd "${_ad}" && env SEED_DIR="${_ADOPT_DIR}" CP_SHIM_LOG="${_alog}" \
+            PATH="${_shimdir}:${PATH}" "${_sh}" -c "${CP_LINE}" ) >/dev/null 2>&1
+        if [ -s "${_alog}" ]; then
+            _record_pass "…and the real seed is still accepted (${_b})"
+        else
+            _record_fail "…and the real seed is still accepted (${_b})" \
+                "cp was never reached for the REAL seed — the identity check rejects everything"
+        fi
+    done
+
     # THE `rm` MUST NOT DELETE A design/ADOPT.md THE READER ALREADY HAD.
     # `-n` preserves their file, and an unconditional `rm -f design/ADOPT.md` on
     # the next line then destroyed it — `-n` protecting a file that the following
@@ -561,10 +605,10 @@ else
     # A floor: if the extraction silently yielded nothing, every cell below
     # would pass having run an empty script.
     if [ "${_fence_stmts}" -ge 4 ]; then
-        _record_pass "extracted the fenced block (${_fence_stmts} statements)"
+        _record_pass "extracted the fenced block (${_fence_stmts} non-comment lines)"
     else
         _record_fail "extracted the fenced block" \
-            "found ${_fence_stmts} statements — the cells below would run an empty script"
+            "found ${_fence_stmts} non-comment lines — the cells below would run an empty script"
     fi
     # The extracted fence must be the ADOPTION block, by IDENTITY not position.
     # `awk` takes the FIRST ```bash fence and ADOPT.md has a second one (the
@@ -587,11 +631,40 @@ else
     # this fails, forcing whoever does it to cover it above and bump the number.
     # The block-execution cells are the real control; this is the tripwire that
     # says "you added a statement nobody covered".
+    # TWO derivations, because one constant compared against itself is a single
+    # authority: an author who adds a statement and bumps the number satisfies it.
+    # These read the same file at different granularities — every statement, and
+    # the statements touching `design/` — so adding anything moves the first and
+    # adding a design-touching statement moves both. Neither is a hand-written
+    # list of the statements, which is the enumeration this file spent four
+    # rounds removing; a disagreement is a prompt to look, which is the whole
+    # job of the constant.
+    # NON-COMMENT LINES, not statements: this counts the heredoc body and its
+    # `JSON` terminator too. That is fine for a change detector — any edit moves
+    # it — and the label is accurate rather than flattering. The first version
+    # called them statements and pinned 8, which was already stale by one from
+    # the advisory added above; the cell caught its own author on its first run.
+    ADOPT_BLOCK_LINES=9
     ADOPT_DESIGN_STMTS=6
     _dstmt="$(grep -E '^[^#[:space:]]' "${_fence}" | grep -c 'design/' | tr -d ' ')"
     case "${_dstmt}" in ''|*[!0-9]*) _dstmt=0 ;; esac
-    assert_equals "the block touches exactly ${ADOPT_DESIGN_STMTS} design/ statements (bump + cover if you add one)" \
-        "${ADOPT_DESIGN_STMTS}" "${_dstmt}"
+    # The failure PRINTS the statements. Without that a bump is a judgement call
+    # made with no information — the author is told a number changed, not which
+    # statement is new, and the cheapest response is to edit the constant.
+    if [ "${_dstmt}" = "${ADOPT_DESIGN_STMTS}" ]; then
+        _record_pass "the block touches exactly ${ADOPT_DESIGN_STMTS} design/ statements"
+    else
+        _record_fail "the block touches exactly ${ADOPT_DESIGN_STMTS} design/ statements (found ${_dstmt})" \
+            "cover the new statement above, then bump ADOPT_DESIGN_STMTS. Statements now:
+$(grep -nE '^[^#[:space:]]' "${_fence}" | grep 'design/' | cut -c1-100)"
+    fi
+    if [ "${_fence_stmts}" = "${ADOPT_BLOCK_LINES}" ]; then
+        _record_pass "the block has exactly ${ADOPT_BLOCK_LINES} non-comment lines"
+    else
+        _record_fail "the block has exactly ${ADOPT_BLOCK_LINES} non-comment lines (found ${_fence_stmts})" \
+            "a line was added or removed; cover it, then bump ADOPT_BLOCK_LINES. Lines now:
+$(grep -nE '^[^#[:space:]]' "${_fence}" | cut -c1-100)"
+    fi
     # …and the two that WRITE are the ones the cells below exercise, by name.
     for _w in 'design/adopted.json' 'design/ADOPT.md'; do
         if grep -qF "${_w}" "${_fence}"; then
@@ -819,6 +892,17 @@ fi
 _md_rel="$(grep -oE '`(assets|docs|hooks|scripts|skills|config|tests)/[^`]*`' "${METHOD}" 2>/dev/null | tr -d '`' | tr '\n' ' ')"
 assert_equals "the method doc names no plugin path relative to the reader's repo" "" \
     "$(printf '%s' "${_md_rel}" | sed 's/[[:space:]]*$//')"
+# BARE paths too. The config lint grew a bare-path leg because all three live
+# `phase_compositions` violations are unbackticked; this leg did not get one, so
+# the paired sites had drifted. Zero live matches today — a guard against the
+# next occurrence, added at the right time rather than after it. `docs/plans/` is
+# the USER's scratch dir and is excluded, as in the config lint.
+_md_bare="$(sed 's/`[^`]*`//g' "${METHOD}" 2>/dev/null \
+    | grep -oE '(^|[^A-Za-z0-9/_.-])(assets|hooks|scripts|skills|config|tests)/[A-Za-z0-9_./-]*' \
+    | grep -oE '(assets|hooks|scripts|skills|config|tests)/[A-Za-z0-9_./-]*' \
+    | LC_ALL=C sort -u | tr '\n' ' ')"
+assert_equals "the method doc names no plugin path by bare relative path" "" \
+    "$(printf '%s' "${_md_bare}" | sed 's/[[:space:]]*$//')"
 
 # ---------------------------------------------------------------------------
 # 5. A plugin root containing a space still yields openable paths.

@@ -51,11 +51,12 @@ are literal characters that break it. The dominant consumer decides the form, an
 the two sites are deliberately asymmetric. Both halves are pinned by tests, so
 neither can be "made consistent" with the other by a later pass.
 
-## Two destructive paths the fix made live, and what closed them
+## The destructive paths the fix made live, and what closed them
 
 Making `ADOPT.md` reachable turns its copy command from dead text into something
-an agent runs. Two latent hazards in it therefore became live, and both were
-found by mutation testing rather than by reading:
+an agent runs, so its latent hazards became live. Each was found by mutation
+testing or review rather than by reading, and each fix was incomplete until the
+next round found it:
 
 1. **`cp -R "${SEED_DIR}/." design/` with SEED_DIR unset is `cp -R "/." design/`.**
    Measured: 123 GB of the filesystem root copied into a temp dir, with a hung

@@ -16,10 +16,13 @@ rewrites them, and has no upgrade path that could overwrite your edits.
 SEED_DIR="${SEED_DIR:-<replace with the directory you read this file from>}"
 # Three guards, all on the copy line itself because that is the line you paste:
 #   `:?`            -- SEED_DIR unset or empty (otherwise "${SEED_DIR}/." is "/.")
-#   tokens.css test -- SEED_DIR set to a real but WRONG directory. `/`, `$HOME` and
+#   marker tests   -- SEED_DIR set to a real but WRONG directory. `/`, `$HOME` and
 #                      the plugin root are all "set", so `:?` does not see them, and
-#                      `-n` prevents overwriting, NOT traversing: without this test
-#                      they each start a full recursive copy of that tree.
+#                      `-n` prevents overwriting, NOT traversing: without these
+#                      they each start a full recursive copy of that tree. TWO
+#                      markers, not one: `tokens.css` alone is a plausible file in
+#                      any design-system repo, and a coincidental match copies that
+#                      tree instead (measured).
 #   `-n`            -- never overwrite. If you ALREADY have a design/, your files
 #                      win and you get a mixed tree, which is not an adoption --
 #                      read your own design/styleguide.md instead of adopting.
@@ -27,7 +30,7 @@ SEED_DIR="${SEED_DIR:-<replace with the directory you read this file from>}"
 # non-zero with nothing on stderr -- and the natural reading of "adoption failed"
 # is `rm -rf design`, which destroys exactly what `-n` just protected. So say it.
 [ -e design ] && echo "you already have design/ -- read design/styleguide.md instead of adopting over it" >&2
-test -f "${SEED_DIR:?set SEED_DIR to the directory holding this file}/tokens.css" || { echo "SEED_DIR is not the design seed (no tokens.css in it)" >&2; false; } && mkdir -p design && cp -Rn "${SEED_DIR}/." design/
+test -f "${SEED_DIR:?set SEED_DIR to the directory holding this file}/tokens.css" && test -f "${SEED_DIR}/checks/token-lint.sh" || { echo "SEED_DIR is not the design seed (need tokens.css AND checks/token-lint.sh in it)" >&2; false; } && mkdir -p design && cp -Rn "${SEED_DIR}/." design/
 # Removes the seed's copy of THIS file, never a design/ADOPT.md you already had
 # (`-n` above preserves yours, so an unconditional rm would delete it).
 cmp -s "${SEED_DIR:?set SEED_DIR to the directory holding this file}/ADOPT.md" design/ADOPT.md && rm -f design/ADOPT.md
