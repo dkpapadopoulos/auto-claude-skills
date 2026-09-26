@@ -20,6 +20,7 @@ paths:
   - "skills/improvement-miner/**"
   - "skills/panel/**"
   - "skills/second-opinion/**"
+  - "hooks/lib/branch-ledger.sh"
 ---
 
 # Outbound guards: publish, egress, reviewer evidence

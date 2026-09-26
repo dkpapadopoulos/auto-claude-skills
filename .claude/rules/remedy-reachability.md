@@ -10,6 +10,8 @@ paths:
   - "docs/design-seed-method.md"
   - "tests/test-attest-remedy-reachable.sh"
   - "tests/test-design-seed-hint-reachable.sh"
+  - "scripts/persist-state.sh"
+  - "scripts/scope-conformance.sh"
 ---
 
 # Gate remedies an agent can actually execute

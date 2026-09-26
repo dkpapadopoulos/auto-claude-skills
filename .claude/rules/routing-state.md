@@ -14,6 +14,9 @@ paths:
   - "tests/test-session-token*.sh"
   - "tests/test-persist-state.sh"
   - "tests/test-state-file-cleanup.sh"
+  - "scripts/gate-status.sh"
+  - "scripts/verify-and-record.sh"
+  - "skills/openspec-ship/SKILL.md"
 ---
 
 # Routing, session tokens and composition state

@@ -37,6 +37,7 @@ on:
       - ".claude-plugin/**"
       - ".github/workflows/**"
       - "CLAUDE.md"
+      - ".claude/rules/**"
       - "AGENTS.md"
       - "docs/eval-pack-schema.md"
 

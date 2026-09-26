@@ -18,6 +18,7 @@ paths:
   - "tests/test-deny-reason-reaches-model.sh"
   - "tests/test-hook-source-guard*.sh"
   - "tests/test-suite-completion.sh"
+  - "hooks/publish-guard.sh"
 ---
 
 # Push gate: enforcement legs
