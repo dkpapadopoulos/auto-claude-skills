@@ -4,9 +4,26 @@ Four steps. The seed becomes **your** files — this plugin never reads them aga
 rewrites them, and has no upgrade path that could overwrite your edits.
 
 ```bash
-# 1. Copy it in (from the plugin's assets/design-seed/)
-mkdir -p design && cp -R "<plugin>/assets/design-seed/." design/
-rm design/ADOPT.md                      # this file is instructions, not a project file
+# 1. Copy it in. SEED_DIR is the directory holding THIS file: you opened it from
+#    an absolute path (the routing hint that sent you here names one), so you
+#    already have it. Nothing else does -- CLAUDE_PLUGIN_ROOT is not set in an
+#    agent's shell, and this file is not in your repo. Arrived without a path?
+#    This lists the installed copies, newest first; pick the version you run:
+#      ls -dt ~/.claude/plugins/cache/*/auto-claude-skills/*/assets/design-seed
+SEED_DIR="${SEED_DIR:-<replace with the directory you read this file from>}"
+# Three guards, all on the copy line itself because that is the line you paste:
+#   `:?`            -- SEED_DIR unset or empty (otherwise "${SEED_DIR}/." is "/.")
+#   tokens.css test -- SEED_DIR set to a real but WRONG directory. `/`, `$HOME` and
+#                      the plugin root are all "set", so `:?` does not see them, and
+#                      `-n` prevents overwriting, NOT traversing: without this test
+#                      they each start a full recursive copy of that tree.
+#   `-n`            -- never overwrite. If you ALREADY have a design/, your files
+#                      win and you get a mixed tree, which is not an adoption --
+#                      read your own design/styleguide.md instead of adopting.
+test -f "${SEED_DIR:?set SEED_DIR to the directory holding this file}/tokens.css" || { echo "SEED_DIR is not the design seed (no tokens.css in it)" >&2; false; } && mkdir -p design && cp -Rn "${SEED_DIR}/." design/
+# Removes the seed's copy of THIS file, never a design/ADOPT.md you already had
+# (`-n` above preserves yours, so an unconditional rm would delete it).
+cmp -s "${SEED_DIR}/ADOPT.md" design/ADOPT.md && rm -f design/ADOPT.md
 
 # 2. Record where it came from
 cat > design/adopted.json <<JSON

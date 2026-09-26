@@ -1686,8 +1686,26 @@ while IFS="$FS" read -r hint_skill hint_text hint_triggers_joined hint_phases_jo
       fi
       [[ -z "$htrigger" ]] && continue
       if [[ "$P" =~ $htrigger ]]; then
+        # A hint may name a file that lives in the PLUGIN, not in the user's
+        # repo, and the rendered text is the ONLY place the reader can learn
+        # where: `CLAUDE_PLUGIN_ROOT` is unset in the model's Bash turn and the
+        # file is absent from the project, so a repo-relative name is
+        # unopenable everywhere but this repo (#248 for the `precondition`
+        # sites; the same defect reached `hint` because only that renderer
+        # substituted).
+        #
+        # UNLIKE a precondition the path is emitted BARE, not single-quoted. A
+        # precondition IS a shell command (`source '<path>'`), so #248 quotes
+        # it to survive a paste; a hint NAMES a file for the agent to read, and
+        # shell quotes handed to a Read tool are literal characters that break
+        # it. A space in the path is survivable because backticks delimit the
+        # span; nothing downstream re-splits it.
+        _htext="$hint_text"
+        if [[ "$_htext" == *'{{PLUGIN_ROOT}}'* ]]; then
+          _htext="${_htext//\{\{PLUGIN_ROOT\}\}/${PLUGIN_ROOT}}"
+        fi
         HINTS="${HINTS}
-- ${hint_text}"
+- ${_htext}"
         break
       fi
     done
