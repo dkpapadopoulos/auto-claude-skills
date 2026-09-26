@@ -1,8 +1,8 @@
 # The design method
 
 How to get a good interface out of Claude, and keep it good as it grows. Five steps. The
-seed (`assets/design-seed/`, see its `ADOPT.md`) is step 0's output; this document is the
-rest.
+seed (`../assets/design-seed/`, resolved from this file — see its `ADOPT.md`) is step 0's
+output; this document is the rest.
 
 It needs **no** external design-system connector. If you have Claude Design and the
 `DesignSync` MCP tool, step 2 can happen there instead — the artefacts are the same files
