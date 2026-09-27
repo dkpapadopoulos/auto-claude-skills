@@ -1,0 +1,19 @@
+# Regex fixtures for skill: frontend-design
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# NO_MATCH line is verbatim-borrowed from supply-chain-investigation MATCH fixture.
+
+# Corpus-sourced (extracted verbatim from the real-prompt corpus during
+# planning of the plural-UI-noun trigger fix, task-1-brief.md).
+MATCH: publish the viewable page with the six screens
+
+MATCH: polish the dashboards
+MATCH: add wireframes
+MATCH: build the react components
+MATCH: design the dashboard screens
+MATCH: fix the responsive layout
+MATCH: update the css styles
+
+NO_MATCH: was the npm package compromised in the latest attack

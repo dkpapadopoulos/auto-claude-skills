@@ -7407,4 +7407,129 @@ REGISTRY
 }
 test_writing_skills_required_on_skill_creation
 
+# ---------------------------------------------------------------------------
+# test_frontend_design_matches_plural_ui_nouns
+# Regression: frontend-design's trigger must match plural UI nouns
+# (dashboards, wireframes, components, screens) as well as the singulars.
+# The trigger is sourced LIVE from config/default-triggers.json (via jq),
+# never hardcoded here -- so this test genuinely fails against the unfixed
+# config (no plural support) and genuinely passes once triggers[0] is edited,
+# with no second edit to this file required. See task-1-brief.md Interfaces
+# for the exact trigger string this is meant to converge on.
+# ---------------------------------------------------------------------------
+test_frontend_design_matches_plural_ui_nouns() {
+    echo "-- test: frontend-design matches plural UI nouns --"
+    setup_test_env
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    mkdir -p "$(dirname "${cache_file}")"
+
+    local fd_trigger
+    fd_trigger="$(jq -r '.skills[] | select(.name=="frontend-design") | .triggers[0]' "${PROJECT_ROOT}/config/default-triggers.json")"
+
+    jq -n --arg trig "${fd_trigger}" '{
+      "version": "test",
+      "skills": [
+        {
+          "name": "frontend-design",
+          "role": "domain",
+          "phase": "DESIGN",
+          "triggers": [$trig],
+          "trigger_mode": "regex",
+          "priority": 15,
+          "invoke": "Skill(frontend-design:frontend-design)",
+          "available": true,
+          "enabled": true
+        }
+      ],
+      "methodology_hints": [],
+      "phase_compositions": {}
+    }' > "${cache_file}"
+
+    local output context
+
+    output="$(run_hook "polish the dashboards")"
+    context="$(extract_context "${output}")"
+    assert_contains "matches plural dashboards" "frontend-design" "${context}"
+
+    output="$(run_hook "add wireframes")"
+    context="$(extract_context "${output}")"
+    assert_contains "matches plural wireframes" "frontend-design" "${context}"
+
+    output="$(run_hook "build the react components")"
+    context="$(extract_context "${output}")"
+    assert_contains "matches plural components" "frontend-design" "${context}"
+
+    output="$(run_hook "design the dashboard screens")"
+    context="$(extract_context "${output}")"
+    assert_contains "matches plural screens" "frontend-design" "${context}"
+
+    # Singulars must still match (no regression from the pluralization).
+    output="$(run_hook "polish the dashboard")"
+    context="$(extract_context "${output}")"
+    assert_contains "still matches singular dashboard" "frontend-design" "${context}"
+
+    output="$(run_hook "add a wireframe")"
+    context="$(extract_context "${output}")"
+    assert_contains "still matches singular wireframe" "frontend-design" "${context}"
+
+    output="$(run_hook "build the react component")"
+    context="$(extract_context "${output}")"
+    assert_contains "still matches singular component" "frontend-design" "${context}"
+
+    output="$(run_hook "design the dashboard screen")"
+    context="$(extract_context "${output}")"
+    assert_contains "still matches singular screen" "frontend-design" "${context}"
+
+    teardown_test_env
+}
+test_frontend_design_matches_plural_ui_nouns
+
+# ---------------------------------------------------------------------------
+# test_frontend_design_unavailable_emits_no_invocation
+# Review Focus 2: an unavailable skill (available: false, e.g. plugin not
+# installed) must never appear as a Skill(...) invocation, even when its
+# trigger regex matches the prompt.
+#
+# NOTE: the trigger here is hardcoded to the TARGET (post-fix) value, not
+# read from config/default-triggers.json, because this test exercises the
+# available:false selection gate, not the trigger content -- it therefore
+# already passes before Step 3's config edit. It is a standing regression
+# guard for the availability gate, not evidence that this task's trigger
+# change works (see task-1-brief.md ruling 3 / Step 6).
+# ---------------------------------------------------------------------------
+test_frontend_design_unavailable_emits_no_invocation() {
+    echo "-- test: frontend-design unavailable emits no invocation --"
+    setup_test_env
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    mkdir -p "$(dirname "${cache_file}")"
+    cat > "${cache_file}" <<'REGISTRY'
+{
+  "version": "test",
+  "skills": [
+    {
+      "name": "frontend-design",
+      "role": "domain",
+      "phase": "DESIGN",
+      "triggers": ["(^|[^a-z])(ui|frontend|front.end|components?|layouts?|styles?|css|tailwind|responsive|dashboards?|screens?|landing.?pages?|mockups?|wireframes?)($|[^a-z])"],
+      "trigger_mode": "regex",
+      "priority": 15,
+      "invoke": "Skill(frontend-design:frontend-design)",
+      "available": false,
+      "enabled": true
+    }
+  ],
+  "methodology_hints": [],
+  "phase_compositions": {}
+}
+REGISTRY
+
+    local output context
+    output="$(run_hook "polish the dashboards")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "unavailable frontend-design never invoked" "Skill(frontend-design:frontend-design)" "${context}"
+
+    teardown_test_env
+}
+test_frontend_design_unavailable_emits_no_invocation
+
 print_summary
