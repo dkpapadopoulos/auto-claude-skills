@@ -1,0 +1,36 @@
+---
+paths:
+  - "hooks/skill-activation-hook.sh"
+  - "hooks/session-start-hook.sh"
+  - "hooks/skill-completion-hook.sh"
+  - "hooks/lib/session-token.sh"
+  - "hooks/compact-recovery*.sh"
+  - "hooks/consolidation-stop.sh"
+  - "config/*.json"
+  - "scripts/persist-state.sh"
+  - "tests/test-routing.sh"
+  - "tests/test-registry.sh"
+  - "tests/test-context.sh"
+  - "tests/test-session-token*.sh"
+  - "tests/test-persist-state.sh"
+  - "tests/test-state-file-cleanup.sh"
+  - "scripts/gate-status.sh"
+  - "scripts/verify-and-record.sh"
+  - "skills/openspec-ship/SKILL.md"
+---
+
+# Routing, session tokens and composition state
+
+Path-scoped rule, split out of the repo-root `CLAUDE.md` Gotchas section so it
+loads only when you touch the files it governs. Every bullet is verbatim.
+
+- Concurrent sessions share `~/.claude/` — session-token scoping prevents counter races.
+
+- **Writer/reader token symmetry** — the recurring bug class behind #51/#97/#122/#131/#133/#151/#156. Hooks resolve their token payload-first (their own `transcript_path`); anything running in the model's Bash turn has no payload and historically fell back to the shared last-writer-wins singleton `~/.claude/.skill-session-token`, which under concurrent sessions names a *different* conversation — so writes scatter into foreign token files the reader never opens. Model-side writers therefore derive `session-$CLAUDE_CODE_SESSION_ID` (the env var IS the transcript basename readers derive from), validated against `~/.claude/projects/*/<id>.jsonl` and falling back to the singleton — single-sourced as `hooks/lib/session-token.sh::resolve_own_session_token` (consumers: `phase-attest.sh::_phase_attest_token`, `scripts/verify-and-record.sh`, `scripts/gate-status.sh`, and the SKILL.md Bash blocks in `project-verification`, `product-discovery`, `openspec-ship` (#157); all degrade to the singleton when the lib is absent, never to a locally re-derived shape). Any NEW state written from a Bash turn and read by a hook must call that resolver or it will silently scatter; readers keep the fail-open singleton fallback. The `SKILL_SESSION_TOKEN` override (#122) is wired ONLY into the verdict family: nothing in the repo sets it, no openspec-state reader honors it, and that family has no cross-token bridge — so honoring it there would only add a way to write state nobody reads (#157). **Bash tool calls do not share shell state**, so a doc that resolves `$TOKEN` in one block and uses it in another silently writes nothing (every `openspec_state_*` helper no-ops on an empty token) — each executable block must re-resolve. **The retyped incantation is now single-sourced** (openspec: `state-scripts-injection-cut`): `scripts/persist-state.sh <op> <args>` resolves the token internally (`resolve_own_session_token` → singleton — deliberately WITHOUT `SKILL_SESSION_TOKEN`, unlike `verify-and-record.sh`, because no openspec-state reader honors that override so writing under it would scatter, #157) and the injection/config surfaces + `product-discovery` call it instead of retyping the resolution; `agent-team-review` delegates to `record-review-verdict.sh` (also self-resolving). The old 6-copy pin `test-openspec-state-token-symmetry.sh` is retired in favour of `tests/test-persist-state.sh` (unit tests on the script + a call-site assertion that no converted surface re-derives the incantation). **`skills/openspec-ship/SKILL.md` is the one surface NOT yet converted** — it also READS state and `mark_archived`s across a documented flow, so it keeps the inline resolver until that larger rewrite; it is the sole remaining copy, so there is nothing left for it to drift against. **A bridge is not a substitute** (#156): the verdict's cross-token bridge is exact-HEAD only, so a scattered write silently loses own-token *ancestor* acceptance — the scatter degrades a designed accept into a deny one commit later. Regression: `tests/test-session-token-race.sh` (U6–U9), `tests/test-skill-gate.sh` (attest), `tests/test-verify-and-record.sh` (T12–T15).
+
+- PLAN-phase activation reads `design_path` from `~/.claude/.skill-openspec-state-<token>` and grep-checks the file for `## Capabilities Affected`, `## Out-of-Scope`, and `## Acceptance Scenarios`. All failures (missing token, missing state, missing keys, unreadable file, grep errors) fail-open — never block the hook. `SKILL_EXPLAIN=1` emits a `[design-guard]` breadcrumb to stderr.
+
+- Composition state (`~/.claude/.skill-composition-state-<token>`) has two writers: (1) the `UserPromptSubmit` walker in `hooks/skill-activation-hook.sh` (advances `.completed` on trigger matches, primary writer), and (2) the `PostToolUse` `^Skill$` hook in `hooks/skill-completion-hook.sh` (advances `.completed` when a chain-member Skill tool returns successfully, fills the walker's in-turn blind spot). Both use the same idempotent jq-merge shape. Malformed state, non-chain skills, errored tool returns, missing jq, and missing session token all degrade silently. `.completed` is **monotonic within the same chain**: the walker unions its computed prefix with the on-disk array, so a prompt that re-anchors earlier in the chain (e.g. "merge PR49" hitting the review trigger after verification ran) cannot truncate progress and re-arm the push gate. Resets happen only on chain switch, pure-cancel prompts, or token rotation. Regression: `tests/test-routing.sh::test_completed_never_regresses_behind_disk_state`. **Gating-milestone exclusion (audit F1):** the walker's computed prefix NEVER contains `requesting-code-review` / `verification-before-completion` — a trigger match is not invocation evidence, and pre-fix a "ship it"/"as built" prompt could fabricate both milestones and defeat the push gate. Those names enter `.completed` only via the completion hook (real Skill return) or the on-disk union; consequently a prior-session review that left NO branch-ledger record is not resurrectable by re-anchoring — that deny is correct, not a false block (the ledger is the cross-session carrier). Regression: `tests/test-routing.sh::test_backfill_excludes_gating_milestones` + e2e in `tests/test-push-gate-failclosed.sh`.
+
+- `max_iterations` is role-gated: the cap in `config/default-triggers.json` is only honored for skills with `role: domain` or `role: required`. Process and workflow skills (e.g., `verification-before-completion`, `openspec-ship`, `finishing-a-development-branch`, `requesting-code-review`) are NEVER capped — this is a hardcoded invariant in `hooks/skill-activation-hook.sh::_score_skills`, not config-driven. Protects SDLC phase gates from accidental misconfiguration. Push-gate (`hooks/openspec-guard.sh`) is independent of this mechanism. Regression: `tests/test-routing.sh::test_max_iterations_role_allowlist`.
+
