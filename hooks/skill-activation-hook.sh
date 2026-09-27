@@ -1390,6 +1390,22 @@ _render_driver_precondition() {
   # predicate is also what keeps the fallback from displacing either anchor or
   # reordering the two.
   [[ -n "$COMPOSITION_CHAIN" ]] && return 0
+  # "No chain" is NOT the same set as "no process skill was selected", and the
+  # spec's condition is the latter. Three shipped process skills carry
+  # `precedes: [] requires: []` — systematic-debugging, receiving-code-review,
+  # subagent-driven-development — so selecting one anchors the walker but
+  # produces no 2+-skill chain, leaving COMPOSITION_CHAIN empty while a process
+  # skill is MUST INVOKE. Without this line the output then contradicts itself
+  # in adjacent lines, naming the very skill it is ordering:
+  #
+  #   Process: systematic-debugging -> Skill(superpowers:systematic-debugging)
+  #   DEBUG driver not invoked: Skill(superpowers:systematic-debugging)
+  #
+  # Suppressing only when the driver EQUALS the selected process skill was
+  # rejected: it is a second predicate to maintain beside this one, and it
+  # leaves the spec divergence standing. PROCESS_SKILL is set by
+  # _determine_label_phase, which runs well before this function's call site.
+  [[ -n "${PROCESS_SKILL:-}" ]] && return 0
   # No phase, nothing to look up. _determine_label_phase falls back through
   # process -> workflow -> domain -> required, so a domain-only match still has
   # one; an empty value means no skill carried a phase at all.

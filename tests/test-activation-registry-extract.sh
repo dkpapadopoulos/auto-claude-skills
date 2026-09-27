@@ -90,19 +90,25 @@ N_EMPTY="$(tr '\036\n' '\n ' < "${JQLOG}" | grep -c '^empty ')"
 # The old per-section calls read the registry from STDIN, so they never name the file;
 # count calls by what their program extracts instead.
 #
-# `phase_compositions` has a SECOND legitimate reader — _render_driver_precondition,
-# which resolves phase_compositions[<phase>].driver when no composition anchor
-# resolved — so a bare count of calls naming ANY of the three keys is no longer 1.
-# Treating that as a violation would turn this cell into a tripwire against every new
+# `phase_compositions` has a SECOND potential reader — _render_driver_precondition,
+# which resolves phase_compositions[<phase>].driver — so a bare count of calls naming
+# ANY of the three keys risks turning this cell into a tripwire against every new
 # reader rather than against the regression it exists for, which is splitting the
 # registry LOAD back into one call per section. So the census is by SHAPE:
 #
 #   GROUPED  names all three keys — the batched extraction, of which there is exactly
 #            one. A per-section re-split makes this 0.
 #   PARTIAL  names some but not all — a per-section re-split makes this 3.
-#   DRIVER   names phase_compositions AND .driver — the one legitimate partial reader,
-#            identified POSITIVELY by what its program does rather than exempted by
-#            name, so a second partial reader still fails.
+#   DRIVER   names phase_compositions AND .driver — identified POSITIVELY by what its
+#            program does rather than exempted by name.
+#
+# On THIS prompt both PARTIAL and DRIVER are 0: the prompt selects the process skill
+# systematic-debugging, and _render_driver_precondition returns on `PROCESS_SKILL`
+# being non-empty BEFORE its jq call. So this cell also pins that the driver fallback
+# costs no fork on a prompt where a process skill was selected. The complementary
+# case — exactly one driver lookup on an anchorless prompt — is pinned in
+# tests/test-context.sh::test_driver_fallback_forks_jq_once_and_only_when_needed,
+# which owns that property rather than bolting it onto the registry-load cell.
 N_GROUPED="$(tr '\036\n' '\n ' < "${JQLOG}" \
     | grep 'methodology_hints' | grep 'phase_compositions' | grep -c 'required_when')"
 N_ANY="$(tr '\036\n' '\n ' < "${JQLOG}" | grep -c 'methodology_hints\|phase_compositions\|required_when')"
@@ -116,8 +122,8 @@ fi
 assert_contains "C1 setup: the hook routed the prompt" "Skill(test:zz-marker-skill)" "${OUT1}"
 assert_equals "C1: the registry cache file is opened by exactly one jq call" "1" "${N_CACHE}"
 assert_equals "C1: one jq call extracts hints, compositions and required_when" "1" "${N_GROUPED}"
-assert_equals "C1: the driver lookup is one call" "1" "${N_DRIVER}"
-assert_equals "C1: the driver lookup is the ONLY partial section reader" "${N_DRIVER}" "${N_PARTIAL}"
+assert_equals "C1: no driver lookup fires when a process skill was selected" "0" "${N_DRIVER}"
+assert_equals "C1: no partial section reader on this prompt" "0" "${N_PARTIAL}"
 assert_equals "C1: no separate 'jq empty' validation call" "0" "${N_EMPTY}"
 
 # ---------------------------------------------------------------------------

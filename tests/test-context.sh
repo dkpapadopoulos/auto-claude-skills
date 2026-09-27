@@ -1664,10 +1664,22 @@ test_driver_render_inert_when_process_anchored() {
 # CONTROL. A second control is not redundant: one control cannot pin a
 # three-way priority order. Without this one, an implementation that resolves
 # the driver BEFORE the workflow scan still passes the process-anchored cell.
+#
+# The SHIP driver is given a MARKER `precondition`, and that is what makes this
+# cell a control at all. As first written it was VACUOUS: `_DP_WORKFLOW_ANCHOR`
+# lands in phase SHIP, whose shipped driver `verification-before-completion`
+# carries no `precondition`, so the render is empty on that prompt whether the
+# empty-chain guard works or not — and its assert_not_contains passed for that
+# reason rather than for the one it claims. Measured against the mutant this
+# cell exists to catch (the `[[ -n "$COMPOSITION_CHAIN" ]] && return 0` guard
+# deleted): process-anchored DIFFERENT (cell failed, correct), workflow-anchored
+# IDENTICAL (cell passed, missed it) — so only the process control was
+# load-bearing, which is exactly the gap this one was added to close.
 test_driver_render_inert_when_workflow_anchored() {
     echo "-- test: the driver fallback is inert where a workflow anchor resolved --"
     setup_test_env
-    install_real_registry
+    install_real_registry \
+        '.skills = [.skills[] | if .name == "verification-before-completion" then .precondition = "PRECONDITION: SHIP-DRIVER-MARKER" else . end]'
 
     local off="${TEST_TMPDIR}/hook-feature-off.sh"
     if ! _dp_make_feature_off_hook "${off}"; then
@@ -1684,10 +1696,73 @@ test_driver_render_inert_when_workflow_anchored() {
         "Process:" "${ctx}"
     assert_contains "precondition: the workflow skill is the anchor" \
         "[CURRENT] Step 6: Skill(auto-claude-skills:openspec-ship)" "${ctx}"
+    # NON-VACUITY: the SHIP driver really does carry a renderable precondition in
+    # this environment, so "the marker is absent" is a statement about the guard
+    # and not about a driver that had nothing to say. The marker appears in the
+    # registry the hook was handed.
+    if grep -q 'SHIP-DRIVER-MARKER' "${HOME}/.claude/.skill-registry-cache.json" 2>/dev/null; then
+        _record_pass "precondition: the SHIP driver carries a renderable precondition"
+    else
+        _record_fail "precondition: the SHIP driver carries a renderable precondition" \
+            "the marker is not in the registry — the assertions below would hold vacuously"
+    fi
     assert_equals "workflow-anchored output is byte-identical with the fallback off" \
         "${off_out}" "${on_out}"
     assert_not_contains "no driver attribution where a workflow anchored" \
         "driver not invoked" "${ctx}"
+    assert_not_contains "the SHIP driver's precondition is not rendered" \
+        "SHIP-DRIVER-MARKER" "${ctx}"
+
+    teardown_test_env
+}
+
+# MUST-FAIL CELL. "No chain" is not the same set as "no process skill was
+# selected", and the spec's condition is the latter. Three shipped process
+# skills carry `precedes: [] requires: []` (systematic-debugging,
+# receiving-code-review, subagent-driven-development), so selecting one anchors
+# the walker but yields no 2+-skill chain: COMPOSITION_CHAIN stays empty while a
+# process skill is MUST INVOKE. Excludes an implementation that gates on the
+# chain alone, which then contradicts itself in adjacent lines and names the very
+# skill it is ordering:
+#
+#   Process: systematic-debugging -> Skill(superpowers:systematic-debugging)
+#   DEBUG driver not invoked: Skill(superpowers:systematic-debugging)
+#
+# LATENT on the shipped config: DEBUG's driver `systematic-debugging` ships no
+# `precondition`, and of the shipped drivers only brainstorming and
+# executing-plans carry one — both of which chain. So the marker below has to be
+# seeded, and this cell is a guard against a future config edit rather than a
+# reproduction of a live failure. The attribution assertion needs no marker and
+# holds either way.
+test_driver_render_inert_when_a_chainless_process_skill_is_selected() {
+    echo "-- test: the driver fallback is inert when a chainless process skill is selected --"
+    setup_test_env
+    install_real_registry \
+        '.skills = [.skills[] | if .name == "systematic-debugging" then .precondition = "PRECONDITION: DEBUG-DRIVER-MARKER" else . end]'
+
+    local ctx
+    ctx="$(_dp_ctx "debug this crash in the auth module" chainless1)"
+
+    # Preconditions: a process skill really is selected, and the walker really
+    # produced no chain — the two halves that together make this the case the
+    # chain-only predicate mishandles. Without them the cell is equally
+    # satisfied by a prompt that selected nothing.
+    assert_contains "precondition: a process skill is MUST INVOKE" \
+        "Process: systematic-debugging" "${ctx}"
+    assert_not_contains "precondition: the walker produced no chain" \
+        "Composition:" "${ctx}"
+
+    assert_not_contains "no driver attribution when a process skill was selected" \
+        "driver not invoked" "${ctx}"
+    assert_not_contains "the driver's own precondition is not rendered back at it" \
+        "DEBUG-DRIVER-MARKER" "${ctx}"
+
+    # CONTROL: the render is live in this very environment, so the absences above
+    # are the guard's doing and not a fallback that is broken for every prompt.
+    local ctx_dom
+    ctx_dom="$(_dp_ctx "${_DP_DOMAIN_ONLY}" chainless2)"
+    assert_contains "control: a domain-only prompt still renders the fallback" \
+        "driver not invoked" "${ctx_dom}"
 
     teardown_test_env
 }
@@ -1875,22 +1950,100 @@ test_driver_render_suppressed_on_consultation_prompt() {
     teardown_test_env
 }
 
-# No hook source may carry a RAW control byte where an escape was intended.
+# The fallback resolves the driver in exactly ONE jq call, and forks nothing at
+# all on the paths where it cannot render.
+#
+# This property used to be asserted inside
+# tests/test-activation-registry-extract.sh's C1, which is the wrong home: that
+# cell exists to pin that the registry LOAD is one call rather than one per
+# section, and its prompt selects a process skill, so after the PROCESS_SKILL
+# guard landed the driver lookup no longer runs there at all and the assertion
+# became false. C1 now pins the zero-fork half on its own prompt; this cell owns
+# both halves, on prompts chosen for them.
+#
+# The census is by jq PROGRAM TEXT via a PATH shim, the idiom C1 uses: the
+# driver lookup is the only program naming `.driver`.
+test_driver_fallback_forks_jq_once_and_only_when_needed() {
+    echo "-- test: the driver lookup is one jq call, and none where it cannot render --"
+    setup_test_env
+    install_real_registry
+
+    local real_jq shim jqlog
+    real_jq="$(command -v jq 2>/dev/null)"
+    if [ -z "${real_jq}" ]; then
+        _record_fail "jq is resolvable for the shim" "jq not found"
+        teardown_test_env
+        return
+    fi
+    shim="${TEST_TMPDIR}/jqshim"
+    mkdir -p "${shim}"
+    jqlog="${TEST_TMPDIR}/jq.log"
+    cat > "${shim}/jq" <<SHIM
+#!/bin/bash
+printf '%s\x1e' "\$*" >> "${jqlog}"
+exec "${real_jq}" "\$@"
+SHIM
+    chmod +x "${shim}/jq"
+
+    # _dp_count_driver_calls <prompt> <tag> — driver-lookup jq calls in one run.
+    _dp_count_driver_calls() {
+        local tp="${TEST_TMPDIR}/$2.jsonl" pay="${TEST_TMPDIR}/$2.json"
+        : > "${tp}"
+        "${real_jq}" -n --arg p "$1" --arg t "${tp}" \
+            '{"prompt":$p,"transcript_path":$t}' > "${pay}"
+        : > "${jqlog}"
+        env PATH="${shim}:${PATH}" HOME="${HOME}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+            /bin/bash "${HOOK}" < "${pay}" >/dev/null 2>&1
+        tr '\036\n' '\n ' < "${jqlog}" | grep -c '\.driver'
+    }
+
+    # SETUP CHECK: the shim must actually be intercepting. Without this, every
+    # count below is 0 and the zero-fork assertions pass for the wrong reason.
+    local n_total
+    : > "${jqlog}"
+    _dp_count_driver_calls "${_DP_DOMAIN_ONLY}" fork-warm >/dev/null
+    n_total="$(tr -cd '\036' < "${jqlog}" | wc -c | tr -d ' ')"
+    if [ "${n_total:-0}" -gt 1 ]; then
+        _record_pass "the jq shim intercepted the hook's calls (${n_total})"
+    else
+        _record_fail "the jq shim intercepted the hook's calls" \
+            "recorded ${n_total} — the counts below would all be 0 regardless"
+        teardown_test_env
+        return
+    fi
+
+    assert_equals "one driver lookup on an anchorless prompt" \
+        "1" "$(_dp_count_driver_calls "${_DP_DOMAIN_ONLY}" fork-dom)"
+    assert_equals "no driver lookup where a process anchor resolved" \
+        "0" "$(_dp_count_driver_calls "${_DP_PROCESS_ANCHOR}" fork-proc)"
+    assert_equals "no driver lookup where a workflow anchor resolved" \
+        "0" "$(_dp_count_driver_calls "${_DP_WORKFLOW_ANCHOR}" fork-wf)"
+    assert_equals "no driver lookup when a chainless process skill was selected" \
+        "0" "$(_dp_count_driver_calls "debug this crash in the auth module" fork-chainless)"
+
+    teardown_test_env
+}
+
+# No shell source may carry a RAW control byte where an escape was intended.
 #
 # Added because it happened here: the driver lookup's jq program was authored
-# with `""` and reached disk as the literal 0x1f BYTE — the editing tool
+# with a `\uXXXX` escape and reached disk as the literal 0x1f BYTE — the editing tool
 # turns the escape into the character. It still works (jq reads the byte as that
 # byte) and every cell above passed, so nothing but a byte scan can see it; what
 # is lost is that the delimiter becomes invisible in source, in diffs and in
 # review, and survives only as long as nobody's editor normalises it.
 #
-# Scoped to hooks/ deliberately: that is the population measured clean at the
-# time of writing (every hooks/*.sh and hooks/lib/*.sh), and a claim about a
-# wider tree would be one nobody has checked.
+# The population is hooks/, hooks/lib/, tests/ and scripts/, all measured clean.
+# It was hooks/ ONLY on the first cut, and that scope was wrong in the most
+# direct way available: the very comment above, describing the hazard, had itself
+# reached disk carrying a raw 0x1f, in tests/ where this cell could not see it.
+# A guard narrower than the population its own author writes into is a guard that
+# will be evaded by accident.
 test_hook_source_has_no_raw_control_bytes() {
-    echo "-- test: no hook source carries a raw control byte --"
+    echo "-- test: no shell source carries a raw control byte --"
     local _f _n _bad="" _seen=0
-    for _f in "${PROJECT_ROOT}"/hooks/*.sh "${PROJECT_ROOT}"/hooks/lib/*.sh; do
+    for _f in "${PROJECT_ROOT}"/hooks/*.sh "${PROJECT_ROOT}"/hooks/lib/*.sh \
+              "${PROJECT_ROOT}"/tests/*.sh "${PROJECT_ROOT}"/scripts/*.sh; do
         [ -f "${_f}" ] || continue
         _seen=$(( _seen + 1 ))
         _n="$(LC_ALL=C grep -c $'[\x01-\x08\x0b-\x1f]' "${_f}" 2>/dev/null)" || _n=0
@@ -1898,13 +2051,13 @@ test_hook_source_has_no_raw_control_bytes() {
     done
     # FLOOR: with an unresolvable glob the loop body never runs, every file is
     # trivially clean, and the cell would report a pass having scanned nothing.
-    if [ "${_seen}" -lt 10 ]; then
-        _record_fail "the control-byte scan saw the hooks" \
-            "scanned ${_seen} files — the glob is not resolving, so the assertion below is vacuous"
+    if [ "${_seen}" -lt 100 ]; then
+        _record_fail "the control-byte scan saw the shell sources" \
+            "scanned ${_seen} files — a glob is not resolving, so the assertion below is vacuous"
         return
     fi
-    _record_pass "the control-byte scan saw ${_seen} hook files"
-    assert_equals "no hook source carries a raw control byte" "" "${_bad}"
+    _record_pass "the control-byte scan saw ${_seen} shell source files"
+    assert_equals "no shell source carries a raw control byte" "" "${_bad}"
 
     # RED CONTROL: the scan must actually detect one. Without this, "clean" is
     # equally true of a grep that matches nothing at all (a bad bracket class, a
@@ -1921,6 +2074,7 @@ test_hook_source_has_no_raw_control_bytes() {
 }
 
 test_precondition_label_is_a_config_convention
+test_driver_fallback_forks_jq_once_and_only_when_needed
 test_hook_source_has_no_raw_control_bytes
 test_domain_only_match_renders_driver_precondition
 test_driver_name_tracks_config
@@ -1929,6 +2083,7 @@ test_driver_render_writes_no_composition_state
 test_driver_render_not_creditable_on_a_later_turn
 test_driver_render_inert_when_process_anchored
 test_driver_render_inert_when_workflow_anchored
+test_driver_render_inert_when_a_chainless_process_skill_is_selected
 test_driver_absent_degrades
 test_driver_render_distinct_from_infra_failure
 test_driver_render_absent_without_jq
