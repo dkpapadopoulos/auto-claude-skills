@@ -1312,4 +1312,632 @@ test_ship_sequence_requests_the_verdict() {
 
 test_ship_sequence_requests_the_verdict
 
+# ===========================================================================
+# Phase driver precondition on a domain-only match
+#
+# _walk_composition_chain anchors on a `process` skill, else on a selected
+# `workflow` skill carrying precedes/requires. A `domain` skill can NEVER
+# anchor, so a domain-only prompt ("the dashboard components and the card
+# layout need a visual pass") loses the whole chain block -- and with it the
+# CURRENT-step `precondition`, which is the only channel carrying the
+# product-discovery prerequisite and the lethal-trifecta classification gate.
+#
+# _render_driver_precondition renders that precondition ALONE: no sequenced
+# chain, no continuation directive, no composition state. Establishing a chain
+# here would be a push-gate change, not a display change -- the DESIGN chain
+# contains both gating milestones, so a session that merely asked a UI question
+# would owe a dispatched review and a verification run before it could push.
+# ===========================================================================
+
+# A registry built from the REAL shipped config (every skill available), so the
+# cells below run against the shipped driver, invoke and precondition text
+# instead of a fixture that can only agree with itself. An optional jq filter
+# is applied on top for the cells that must perturb exactly one field.
+install_real_registry() {
+    local _filter="${1:-.}"
+    mkdir -p "${HOME}/.claude"
+    jq "(.skills = [.skills[] | .available = true | .enabled = true]) | ${_filter}" \
+        "${PROJECT_ROOT}/config/default-triggers.json" \
+        > "${HOME}/.claude/.skill-registry-cache.json"
+}
+
+# Plugin root for _dp_run_capture; overridden only by the infra-fault cell.
+_DP_PLUGIN_ROOT=""
+
+# _dp_run_capture <script> <prompt> <tag> — sets _DP_OUT and _DP_RC.
+#
+# Every run gets its OWN transcript_path, hence its own session token, hence a
+# prompt count of 1. Without that, a second run in the same HOME increments
+# .skill-prompt-count-* and _format_output picks a different template — so an
+# A/B comparison of two runs would differ for a reason that has nothing to do
+# with the feature under test.
+_dp_run_capture() {
+    local _script="$1" _prompt="$2" _tag="$3"
+    local _tp="${TEST_TMPDIR}/${_tag}.jsonl" _pay="${TEST_TMPDIR}/${_tag}.json"
+    : > "${_tp}"
+    jq -n --arg p "${_prompt}" --arg t "${_tp}" '{"prompt":$p,"transcript_path":$t}' > "${_pay}"
+    _DP_OUT="$(CLAUDE_PLUGIN_ROOT="${_DP_PLUGIN_ROOT:-${PROJECT_ROOT}}" \
+                bash "${_script}" < "${_pay}" 2>/dev/null)"
+    _DP_RC=$?
+}
+
+# _dp_ctx <prompt> <tag> — the real hook's additionalContext for one prompt.
+_dp_ctx() {
+    _dp_run_capture "${HOOK}" "$1" "$2"
+    extract_context "${_DP_OUT}"
+}
+
+# _dp_make_feature_off_hook <dest> — the REAL hook with the driver fallback
+# switched off: the call site becomes an empty assignment.
+#
+# This is the pre-change hook, synthesised rather than fetched from git. A
+# pinned base sha stops resolving once this branch is squash-merged, which
+# would leave the inert controls failing forever (and one red test blocks every
+# routing push in this repo); deriving the control from the shipped file cannot
+# rot that way, and it doubles as a mutation test that the call site is
+# load-bearing. The assignment (rather than a plain deletion) is required
+# because the hook runs under `set -u` and the templates interpolate the
+# variable unconditionally -- deleting the call alone would kill the hook, and
+# a dead hook is not a control.
+_dp_make_feature_off_hook() {
+    sed 's/^_render_driver_precondition$/DRIVER_PRECONDITION=""/' "${HOOK}" > "$1"
+    # The strip MUST have changed something. Asserting only "the pattern is
+    # absent from the copy" is equally true when the strip worked and when the
+    # pattern never matched (tests/test-suite-stdin-guard.sh, same trap).
+    if cmp -s "${HOOK}" "$1"; then
+        _record_fail "the feature-off control differs from the shipped hook" \
+            "sed matched nothing — the call site was renamed, so every cell below would compare the hook with itself"
+        return 1
+    fi
+    _record_pass "the feature-off control differs from the shipped hook"
+    return 0
+}
+
+_DP_DOMAIN_ONLY="the dashboard components and the card layout need a visual pass"
+_DP_PROCESS_ANCHOR="let's build a new reporting feature for the dashboard"
+_DP_WORKFLOW_ANCHOR="document what we built as-built with openspec"
+_DP_DIRECTIVE_TEXT="Do not stop at the current step"
+
+# The rendered shape is `  PRECONDITION: <text>` only because every shipped
+# `precondition` begins with that label; the hook renders the field verbatim
+# rather than synthesising a prefix. Held here in both configs, so a config
+# edit that drops the label fails loudly instead of quietly changing the shape.
+test_precondition_label_is_a_config_convention() {
+    echo "-- test: every shipped precondition begins with the PRECONDITION: label --"
+    local _reg _n _bad
+    for _reg in config/default-triggers.json config/fallback-registry.json; do
+        _n="$(jq '[.skills[] | select(.precondition != null)] | length' "${PROJECT_ROOT}/${_reg}")"
+        if [ "${_n}" -lt 1 ]; then
+            _record_fail "at least one precondition exists (${_reg})" \
+                "found ${_n} — the loop below would hold vacuously"
+            continue
+        fi
+        _bad="$(jq -r '[.skills[] | select(.precondition != null)
+                        | select((.precondition | startswith("PRECONDITION:")) | not)
+                        | .name] | join(",")' "${PROJECT_ROOT}/${_reg}")"
+        assert_equals "all ${_n} preconditions carry the label (${_reg})" "" "${_bad}"
+    done
+}
+
+# MUST-FAIL CELL. Excludes: the pre-change hook, which renders nothing at all
+# for a domain-only prompt. Also excludes an implementation that renders the
+# precondition without expanding {{PLUGIN_ROOT}} (#248), and one that renders
+# it by establishing a chain (the step-marker and Composition: assertions).
+test_domain_only_match_renders_driver_precondition() {
+    echo "-- test: a domain-only match renders the phase driver's precondition --"
+    setup_test_env
+    install_real_registry
+
+    local ctx
+    ctx="$(_dp_ctx "${_DP_DOMAIN_ONLY}" dom1)"
+
+    # Non-vacuity: the probe prompt really is domain-only. If a process skill
+    # ever starts matching it, every assertion below would be satisfied by the
+    # ordinary CURRENT-step render and this cell would stop covering anything.
+    assert_not_contains "the probe prompt selects no process skill" "Process:" "${ctx}"
+    assert_contains "the probe prompt is a DESIGN-phase match" "Phase: [DESIGN]" "${ctx}"
+
+    # Two lines: the attribution gives the precondition an antecedent ("then
+    # return to brainstorming" does not parse with nothing before it).
+    assert_contains "attribution and precondition render as two lines" \
+        "DESIGN driver not invoked: Skill(superpowers:brainstorming)
+  PRECONDITION:" "${ctx}"
+    assert_contains "the precondition carries the discovery prerequisite" \
+        "product-discovery" "${ctx}"
+    assert_contains "the precondition carries the trifecta gate" "TRIFECTA" "${ctx}"
+    assert_contains "the precondition names agent-safety-review" \
+        "agent-safety-review" "${ctx}"
+
+    # No chain, no sequence: this render is a phase default, not evidence of
+    # intent, and the DESIGN chain contains both push-gate milestones.
+    assert_not_contains "no step markers" "[CURRENT] Step" "${ctx}"
+    assert_not_contains "no composition chain line" "Composition:" "${ctx}"
+
+    # This is another rendering of a `precondition`, so it inherits #248: the
+    # placeholder must be expanded here too, or the fallback ships the
+    # unrunnable phase_attest remedy that issue closed.
+    assert_not_contains "{{PLUGIN_ROOT}} is expanded, not shipped raw" \
+        "{{PLUGIN_ROOT}}" "${ctx}"
+    assert_contains "the expanded remedy names an absolute path into the plugin" \
+        "${PROJECT_ROOT}/hooks/lib/phase-attest.sh" "${ctx}"
+
+    teardown_test_env
+}
+
+# MUST-FAIL CELL. Excludes a hardcoded `brainstorming`: the DESIGN driver is
+# repointed at another skill that ships its own precondition, and the
+# attribution must follow the edit. Asserted on the attribution LINE, not the
+# whole output — the DESIGN red-flag block names brainstorming unconditionally,
+# so a whole-output assert_not_contains would fail for an unrelated reason.
+test_driver_name_tracks_config() {
+    echo "-- test: the rendered driver tracks config, not a hardcoded name --"
+    setup_test_env
+    install_real_registry '.phase_compositions.DESIGN.driver = "executing-plans"'
+
+    local ctx line
+    ctx="$(_dp_ctx "${_DP_DOMAIN_ONLY}" cfg1)"
+    line="$(printf '%s\n' "${ctx}" | grep 'driver not invoked' || true)"
+
+    assert_contains "the edited driver is the one attributed" \
+        "Skill(superpowers:executing-plans)" "${line}"
+    assert_not_contains "the pre-edit driver is not attributed" \
+        "brainstorming" "${line}"
+    assert_contains "the precondition follows the driver" \
+        "silently skips the IMPLEMENT phase" "${ctx}"
+    assert_not_contains "the pre-edit driver's precondition is gone" \
+        "TRIFECTA" "${ctx}"
+
+    teardown_test_env
+}
+
+# MUST-FAIL CELL. Excludes an implementation that reaches the render by
+# anchoring the chain on the driver: that would emit the continuation directive
+# and push a full DESIGN->SHIP sequence off a phase default. The control pins
+# that the directive is still emitted where a trigger really matched, so the
+# cell cannot pass by the directive having been removed altogether.
+test_driver_render_has_no_continuation_directive() {
+    echo "-- test: a driver-derived render carries no continuation directive --"
+    setup_test_env
+    install_real_registry
+
+    local ctx_dom ctx_proc
+    ctx_dom="$(_dp_ctx "${_DP_DOMAIN_ONLY}" dir1)"
+    ctx_proc="$(_dp_ctx "${_DP_PROCESS_ANCHOR}" dir2)"
+
+    assert_contains "the driver render happened at all" "driver not invoked" "${ctx_dom}"
+    assert_not_contains "no directive on a driver-derived render" \
+        "${_DP_DIRECTIVE_TEXT}" "${ctx_dom}"
+    assert_contains "control: a process-anchored prompt still carries the directive" \
+        "${_DP_DIRECTIVE_TEXT}" "${ctx_proc}"
+
+    teardown_test_env
+}
+
+# MUST-FAIL CELL. Excludes any implementation that sets _full_chain /
+# _current_idx to reach the render, because the composition-state write is
+# gated on exactly those two. Compared as a WHOLE FILE with cmp: a per-field
+# jq check passes an implementation that suppresses .completed while still
+# rewriting .chain or .updated_at.
+test_driver_render_writes_no_composition_state() {
+    echo "-- test: a driver-derived render writes no composition state --"
+    setup_test_env
+    install_real_registry
+
+    local tp="${TEST_TMPDIR}/state-probe.jsonl" token="session-state-probe"
+    : > "${tp}"
+    local sf="${HOME}/.claude/.skill-composition-state-${token}"
+    cat > "${sf}" <<'DPSTATE'
+{
+  "chain": ["outcome-review", "product-discovery"],
+  "current_index": 1,
+  "completed": ["outcome-review"],
+  "updated_at": "2026-01-01T00:00:00Z",
+  "marker": "UNRELATED-CHAIN"
+}
+DPSTATE
+    cp "${sf}" "${TEST_TMPDIR}/state.before"
+
+    local pay="${TEST_TMPDIR}/state-probe.json" out ctx
+    jq -n --arg p "${_DP_DOMAIN_ONLY}" --arg t "${tp}" \
+        '{"prompt":$p,"transcript_path":$t}' > "${pay}"
+    out="$(CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${HOOK}" < "${pay}" 2>/dev/null)"
+    ctx="$(extract_context "${out}")"
+
+    # Two preconditions, both asserted rather than assumed. Without the first,
+    # "no state was written" is equally true of a run that rendered nothing;
+    # without the second, it is equally true of a run whose token never
+    # resolved, in which case every token-scoped write is skipped for a reason
+    # unrelated to this change. .skill-last-invoked-<token> is written on the
+    # same token under the same run, so its presence proves the token resolved.
+    assert_contains "precondition: the driver render happened" "driver not invoked" "${ctx}"
+    if [ -f "${HOME}/.claude/.skill-last-invoked-${token}" ]; then
+        _record_pass "precondition: the run resolved this session token"
+    else
+        _record_fail "precondition: the run resolved this session token" \
+            "no .skill-last-invoked-${token} — token-scoped writes were skipped, so the cmp below proves nothing"
+    fi
+
+    if cmp -s "${TEST_TMPDIR}/state.before" "${sf}"; then
+        _record_pass "the composition state file is byte-for-byte unchanged"
+    else
+        _record_fail "the composition state file is byte-for-byte unchanged" \
+            "now: $(cat "${sf}" 2>/dev/null)"
+    fi
+
+    teardown_test_env
+}
+
+# MUST-FAIL CELL. Excludes an implementation that persists the driver as chain
+# progress: the monotonic union in the walker would then carry it into a later
+# turn's .completed, and the driver would read as a completed composition step
+# nobody invoked.
+test_driver_render_not_creditable_on_a_later_turn() {
+    echo "-- test: a driver-derived render is not creditable on a later turn --"
+    setup_test_env
+    install_real_registry
+
+    # Session A: turn 1 renders the fallback, turn 2 genuinely anchors a chain.
+    local tpa="${TEST_TMPDIR}/conv-a.jsonl" sfa
+    : > "${tpa}"
+    sfa="${HOME}/.claude/.skill-composition-state-session-conv-a"
+    local pay="${TEST_TMPDIR}/pay.json" ctx1
+    jq -n --arg p "${_DP_DOMAIN_ONLY}" --arg t "${tpa}" \
+        '{"prompt":$p,"transcript_path":$t}' > "${pay}"
+    ctx1="$(extract_context "$(CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${HOOK}" < "${pay}" 2>/dev/null)")"
+    assert_contains "precondition: turn 1 rendered the fallback" \
+        "driver not invoked" "${ctx1}"
+    if [ -f "${sfa}" ]; then
+        _record_fail "turn 1 leaves no composition state behind" "state exists: $(cat "${sfa}")"
+    else
+        _record_pass "turn 1 leaves no composition state behind"
+    fi
+
+    jq -n --arg p "${_DP_PROCESS_ANCHOR}" --arg t "${tpa}" \
+        '{"prompt":$p,"transcript_path":$t}' > "${pay}"
+    CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${HOOK}" < "${pay}" >/dev/null 2>&1
+
+    # Session B (control): the same second prompt, with no first turn.
+    local tpb="${TEST_TMPDIR}/conv-b.jsonl" sfb
+    : > "${tpb}"
+    sfb="${HOME}/.claude/.skill-composition-state-session-conv-b"
+    jq -n --arg p "${_DP_PROCESS_ANCHOR}" --arg t "${tpb}" \
+        '{"prompt":$p,"transcript_path":$t}' > "${pay}"
+    CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${HOOK}" < "${pay}" >/dev/null 2>&1
+
+    # updated_at is a timestamp and is excluded; chain, current_index and
+    # completed are the recorded progress the spec constrains.
+    local prog_a prog_b
+    prog_a="$(jq -cS '{chain, current_index, completed}' "${sfa}" 2>/dev/null)"
+    prog_b="$(jq -cS '{chain, current_index, completed}' "${sfb}" 2>/dev/null)"
+    if [ -z "${prog_b}" ]; then
+        _record_fail "precondition: the control turn recorded progress" \
+            "no state at ${sfb} — the comparison below would be empty-vs-empty"
+    else
+        _record_pass "precondition: the control turn recorded progress"
+    fi
+    assert_equals "recorded progress equals what the second prompt alone produces" \
+        "${prog_b}" "${prog_a}"
+    assert_not_contains "the driver is not in completed" \
+        "brainstorming" "$(jq -c '.completed' "${sfa}" 2>/dev/null)"
+
+    teardown_test_env
+}
+
+# CONTROL, not a must-fail cell: it passes before the change and must never
+# fail after it. Byte-identical against the feature switched off.
+test_driver_render_inert_when_process_anchored() {
+    echo "-- test: the driver fallback is inert where a process anchor resolved --"
+    setup_test_env
+    install_real_registry
+
+    local off="${TEST_TMPDIR}/hook-feature-off.sh"
+    if ! _dp_make_feature_off_hook "${off}"; then
+        teardown_test_env
+        return
+    fi
+
+    local on_out off_out
+    _dp_run_capture "${HOOK}" "${_DP_PROCESS_ANCHOR}" proc-on;  on_out="${_DP_OUT}"
+    _dp_run_capture "${off}"  "${_DP_PROCESS_ANCHOR}" proc-off; off_out="${_DP_OUT}"
+
+    assert_contains "precondition: the process anchor resolved a chain" \
+        "[CURRENT] Step" "$(extract_context "${on_out}")"
+    assert_equals "process-anchored output is byte-identical with the fallback off" \
+        "${off_out}" "${on_out}"
+
+    # POSITIVE CONTROL for the harness. Without it, "the two runs agree" is
+    # equally explained by a harness that can never see a difference — e.g. the
+    # feature-off copy failing to start, or both runs being empty.
+    local dom_on dom_off
+    _dp_run_capture "${HOOK}" "${_DP_DOMAIN_ONLY}" pc-on;  dom_on="${_DP_OUT}"
+    _dp_run_capture "${off}"  "${_DP_DOMAIN_ONLY}" pc-off; dom_off="${_DP_OUT}"
+    if [ "${dom_on}" = "${dom_off}" ]; then
+        _record_fail "positive control: the harness can see the fallback at all" \
+            "domain-only output is identical with the feature off, so the byte-identity assertions above pin nothing"
+    else
+        _record_pass "positive control: the harness can see the fallback at all"
+    fi
+
+    teardown_test_env
+}
+
+# CONTROL. A second control is not redundant: one control cannot pin a
+# three-way priority order. Without this one, an implementation that resolves
+# the driver BEFORE the workflow scan still passes the process-anchored cell.
+test_driver_render_inert_when_workflow_anchored() {
+    echo "-- test: the driver fallback is inert where a workflow anchor resolved --"
+    setup_test_env
+    install_real_registry
+
+    local off="${TEST_TMPDIR}/hook-feature-off.sh"
+    if ! _dp_make_feature_off_hook "${off}"; then
+        teardown_test_env
+        return
+    fi
+
+    local on_out off_out ctx
+    _dp_run_capture "${HOOK}" "${_DP_WORKFLOW_ANCHOR}" wf-on;  on_out="${_DP_OUT}"
+    _dp_run_capture "${off}"  "${_DP_WORKFLOW_ANCHOR}" wf-off; off_out="${_DP_OUT}"
+    ctx="$(extract_context "${on_out}")"
+
+    assert_not_contains "precondition: no process skill matched this prompt" \
+        "Process:" "${ctx}"
+    assert_contains "precondition: the workflow skill is the anchor" \
+        "[CURRENT] Step 6: Skill(auto-claude-skills:openspec-ship)" "${ctx}"
+    assert_equals "workflow-anchored output is byte-identical with the fallback off" \
+        "${off_out}" "${on_out}"
+    assert_not_contains "no driver attribution where a workflow anchored" \
+        "driver not invoked" "${ctx}"
+
+    teardown_test_env
+}
+
+# MUST-FAIL CELL (the degradation half). Excludes an implementation that
+# renders an attribution line for a driver it could not resolve, and one that
+# dies rather than degrading.
+test_driver_absent_degrades() {
+    echo "-- test: a driver naming a missing skill degrades rather than failing --"
+    setup_test_env
+    install_real_registry '.phase_compositions.DESIGN.driver = "no-such-skill-anywhere"'
+
+    local ctx
+    _dp_run_capture "${HOOK}" "${_DP_DOMAIN_ONLY}" abs1
+    ctx="$(extract_context "${_DP_OUT}")"
+
+    assert_equals "the hook exits successfully" "0" "${_DP_RC}"
+    assert_not_contains "no driver attribution is rendered" "driver not invoked" "${ctx}"
+    assert_not_contains "no precondition is rendered" "PRECONDITION:" "${ctx}"
+    # The rest of the output must be unchanged, so the omission is a degraded
+    # driver and not a degraded hook.
+    assert_contains "the remaining output still renders" \
+        "Skill(frontend-design:frontend-design)" "${ctx}"
+    assert_contains "the phase assessment still renders" "Phase: [DESIGN]" "${ctx}"
+
+    teardown_test_env
+}
+
+# MUST-FAIL CELL (the distinguishability half). An infrastructure fault must
+# not be reached through the same catch-all as an absent driver. The two arms
+# differ in exactly one variable — whether the registry parses — and the
+# repaired arm proves the omission in the broken arm was caused by the fault.
+test_driver_render_distinct_from_infra_failure() {
+    echo "-- test: an infrastructure fault does not masquerade as an absent driver --"
+    setup_test_env
+
+    # A plugin root whose fallback registry is unparseable, with the real libs,
+    # scripts and assets still reachable: the ONLY fault is the registry.
+    local plug="${TEST_TMPDIR}/plug"
+    mkdir -p "${plug}/config"
+    ln -s "${PROJECT_ROOT}/hooks"   "${plug}/hooks"
+    ln -s "${PROJECT_ROOT}/scripts" "${plug}/scripts"
+    ln -s "${PROJECT_ROOT}/assets"  "${plug}/assets"
+    printf '%s' '{ "skills": [ this is not json' > "${plug}/config/fallback-registry.json"
+    mkdir -p "${HOME}/.claude"
+    printf '%s' '{ "skills": [ neither is this' > "${HOME}/.claude/.skill-registry-cache.json"
+
+    local ctx_broken
+    _DP_PLUGIN_ROOT="${plug}"
+    _dp_run_capture "${HOOK}" "${_DP_DOMAIN_ONLY}" infra-broken
+    ctx_broken="$(extract_context "${_DP_OUT}")"
+
+    assert_equals "the hook exits successfully with an unparseable registry" "0" "${_DP_RC}"
+    assert_not_contains "no driver render under the fault" "driver not invoked" "${ctx_broken}"
+    # Non-vacuity: the hook RAN. Without this the cell is equally satisfied by
+    # a hook that produced nothing for any reason at all.
+    assert_contains "the hook still emitted its documented degraded output" \
+        "phase checkpoint only" "${ctx_broken}"
+
+    # Repaired: one variable changes — the cache now parses. Same prompt, same
+    # (still-broken) fallback, same plugin root.
+    install_real_registry
+    local ctx_ok
+    _dp_run_capture "${HOOK}" "${_DP_DOMAIN_ONLY}" infra-ok
+    ctx_ok="$(extract_context "${_DP_OUT}")"
+    _DP_PLUGIN_ROOT=""
+
+    assert_equals "the repaired arm also exits successfully" "0" "${_DP_RC}"
+    assert_contains "the identical prompt renders once the registry parses" \
+        "driver not invoked" "${ctx_ok}"
+
+    teardown_test_env
+}
+
+# NOT a driver-specific cell, by ruling. With jq unresolvable the hook exits 0
+# at its top-of-file `command -v jq` guard -- before the registry loads and
+# long before this function is reached -- and emits NOTHING. So "no driver
+# render" would be equally explained by "the hook never ran", and asserting it
+# would pin nothing. This cell asserts the DOCUMENTED degradation (exit 0, no
+# output at all) and pairs it with a with-jq twin that DOES render, which is
+# the only thing that distinguishes the two states.
+test_driver_render_absent_without_jq() {
+    echo "-- test: with jq unresolvable the hook emits nothing (documented degradation) --"
+    setup_test_env
+    install_real_registry
+
+    # Two shims differing by exactly one symlink, built from the real PATH so
+    # bash, grep, sed and friends stay reachable. A tools-only PATH is NOT
+    # enough: macOS and the GitHub runners both ship /usr/bin/jq, so appending
+    # /usr/bin "for safety" silently exercises the jq path instead.
+    local nojq="${TEST_TMPDIR}/nojq-bin" withjq="${TEST_TMPDIR}/withjq-bin"
+    mkdir -p "${nojq}" "${withjq}"
+    local _oIFS="${IFS}" _d _f _b
+    IFS=:
+    for _d in ${PATH}; do
+        [ -d "${_d}" ] || continue
+        for _f in "${_d}"/*; do
+            [ -x "${_f}" ] || continue
+            _b="$(basename "${_f}")"
+            [ "${_b}" = "jq" ] && continue
+            [ -e "${nojq}/${_b}" ] && continue
+            ln -s "${_f}" "${nojq}/${_b}" 2>/dev/null
+        done
+    done
+    IFS="${_oIFS}"
+    cp -R "${nojq}/." "${withjq}/" 2>/dev/null || true
+    ln -sf "$(command -v jq)" "${withjq}/jq"
+
+    # SUBSHELL, not `PATH=X command -v` in this shell: bash hashes command
+    # locations and command -v consults the hash before PATH.
+    if PATH="${nojq}" /bin/bash -c 'command -v jq' >/dev/null 2>&1; then
+        _record_fail "precondition: jq is unresolvable on the shim PATH" \
+            "jq still resolves — the cell below would exercise the jq path"
+        teardown_test_env
+        return
+    fi
+    _record_pass "precondition: jq is unresolvable on the shim PATH"
+
+    local tp="${TEST_TMPDIR}/nojq.jsonl" pay="${TEST_TMPDIR}/nojq.json"
+    : > "${tp}"
+    jq -n --arg p "${_DP_DOMAIN_ONLY}" --arg t "${tp}" \
+        '{"prompt":$p,"transcript_path":$t}' > "${pay}"
+
+    local out rc
+    out="$(env -i PATH="${nojq}" HOME="${HOME}" TMPDIR="${TMPDIR:-/tmp}" \
+            CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+            /bin/bash "${HOOK}" < "${pay}" 2>/dev/null)"
+    rc=$?
+    assert_equals "the hook exits successfully without jq" "0" "${rc}"
+    assert_equals "the hook emits no output at all without jq" "" "${out}"
+
+    # The with-jq twin is what makes the emptiness above informative: it shows
+    # the shim is usable and the payload is well formed.
+    local out2
+    out2="$(env -i PATH="${withjq}" HOME="${HOME}" TMPDIR="${TMPDIR:-/tmp}" \
+            CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+            /bin/bash "${HOOK}" < "${pay}" 2>/dev/null)"
+    assert_contains "control: the same shim WITH jq renders the driver" \
+        "driver not invoked" "$(extract_context "${out2}")"
+
+    teardown_test_env
+}
+
+# MUST-FAIL CELL (ordering). Excludes placing the call after the
+# _prompt_is_consultation_only block: that block empties COMPOSITION_CHAIN, so
+# a render gated on "the chain is empty" would fire on a consultation prompt
+# and hand it a DESIGN precondition it never asked for.
+test_driver_render_suppressed_on_consultation_prompt() {
+    echo "-- test: a consultation-only prompt renders no driver precondition --"
+    setup_test_env
+    # The PLAN driver is given a marker precondition: a consultation prompt
+    # selecting only domain skills lands in PLAN (second-opinion carries it),
+    # and writing-plans ships no precondition of its own, so without this the
+    # second arm below would have nothing to render either way.
+    install_real_registry \
+        '.skills = [.skills[] | if .name == "writing-plans" then .precondition = "PRECONDITION: PLAN-DRIVER-MARKER" else . end]'
+
+    # Arm 1: a consultation prompt that DOES anchor a chain (brainstorming
+    # matches "approach"), which the consultation block then clears. This is
+    # the ordering case: the chain is non-empty when the fallback runs and
+    # empty afterwards.
+    local ctx1
+    ctx1="$(_dp_ctx "ask codex to weigh in on this dashboard layout approach" cons1)"
+    assert_not_contains "no chain is displayed on a consultation prompt" \
+        "Composition:" "${ctx1}"
+    assert_not_contains "no driver attribution after the chain is cleared" \
+        "driver not invoked" "${ctx1}"
+    assert_not_contains "no DESIGN precondition on a consultation prompt" \
+        "TRIFECTA" "${ctx1}"
+
+    # Arm 2: a consultation prompt that selects only domain skills, so no chain
+    # ever existed and the in-block clear is what has to suppress the render.
+    local ctx2
+    ctx2="$(_dp_ctx "ask codex what it thinks of these dashboard components" cons2)"
+    assert_not_contains "no driver precondition on a domain-only consultation" \
+        "PLAN-DRIVER-MARKER" "${ctx2}"
+
+    # CONTROL: the marker is renderable in this very environment. Without it,
+    # arm 2 passes just as well when the render is broken for every prompt.
+    local ctx3
+    ctx3="$(_dp_ctx "these dashboard components need a plan and a breakdown" cons3)"
+    assert_contains "control: a non-consultation prompt can render a driver precondition" \
+        "driver not invoked" "${ctx3}"
+
+    teardown_test_env
+}
+
+# No hook source may carry a RAW control byte where an escape was intended.
+#
+# Added because it happened here: the driver lookup's jq program was authored
+# with `""` and reached disk as the literal 0x1f BYTE — the editing tool
+# turns the escape into the character. It still works (jq reads the byte as that
+# byte) and every cell above passed, so nothing but a byte scan can see it; what
+# is lost is that the delimiter becomes invisible in source, in diffs and in
+# review, and survives only as long as nobody's editor normalises it.
+#
+# Scoped to hooks/ deliberately: that is the population measured clean at the
+# time of writing (every hooks/*.sh and hooks/lib/*.sh), and a claim about a
+# wider tree would be one nobody has checked.
+test_hook_source_has_no_raw_control_bytes() {
+    echo "-- test: no hook source carries a raw control byte --"
+    local _f _n _bad="" _seen=0
+    for _f in "${PROJECT_ROOT}"/hooks/*.sh "${PROJECT_ROOT}"/hooks/lib/*.sh; do
+        [ -f "${_f}" ] || continue
+        _seen=$(( _seen + 1 ))
+        _n="$(LC_ALL=C grep -c $'[\x01-\x08\x0b-\x1f]' "${_f}" 2>/dev/null)" || _n=0
+        [ "${_n:-0}" -gt 0 ] && _bad="${_bad} $(basename "${_f}"):${_n}"
+    done
+    # FLOOR: with an unresolvable glob the loop body never runs, every file is
+    # trivially clean, and the cell would report a pass having scanned nothing.
+    if [ "${_seen}" -lt 10 ]; then
+        _record_fail "the control-byte scan saw the hooks" \
+            "scanned ${_seen} files — the glob is not resolving, so the assertion below is vacuous"
+        return
+    fi
+    _record_pass "the control-byte scan saw ${_seen} hook files"
+    assert_equals "no hook source carries a raw control byte" "" "${_bad}"
+
+    # RED CONTROL: the scan must actually detect one. Without this, "clean" is
+    # equally true of a grep that matches nothing at all (a bad bracket class, a
+    # locale that swallows the range).
+    local _probe="${TEST_TMPDIR:-${TMPDIR:-/tmp}}/ctl-probe-$$.sh"
+    printf 'x=%s\n' "$(printf 'a\037b')" > "${_probe}"
+    if LC_ALL=C grep -q $'[\x01-\x08\x0b-\x1f]' "${_probe}" 2>/dev/null; then
+        _record_pass "control: the scan detects a planted raw 0x1f"
+    else
+        _record_fail "control: the scan detects a planted raw 0x1f" \
+            "the matcher found nothing in a file that contains one, so the clean result above means nothing"
+    fi
+    rm -f "${_probe}"
+}
+
+test_precondition_label_is_a_config_convention
+test_hook_source_has_no_raw_control_bytes
+test_domain_only_match_renders_driver_precondition
+test_driver_name_tracks_config
+test_driver_render_has_no_continuation_directive
+test_driver_render_writes_no_composition_state
+test_driver_render_not_creditable_on_a_later_turn
+test_driver_render_inert_when_process_anchored
+test_driver_render_inert_when_workflow_anchored
+test_driver_absent_degrades
+test_driver_render_distinct_from_infra_failure
+test_driver_render_absent_without_jq
+test_driver_render_suppressed_on_consultation_prompt
+
+# A defined-but-never-invoked test does not run and nothing reports it; an
+# invoked-but-undefined name prints `command not found` while the summary still
+# says every test passed. Both directions are checked here.
+assert_test_functions_wired "${SCRIPT_DIR}/test-context.sh"
+
+
 print_summary

@@ -89,7 +89,25 @@ N_CACHE="$(tr '\036\n' '\n ' < "${JQLOG}" | grep -c '\.skill-registry-cache\.jso
 N_EMPTY="$(tr '\036\n' '\n ' < "${JQLOG}" | grep -c '^empty ')"
 # The old per-section calls read the registry from STDIN, so they never name the file;
 # count calls by what their program extracts instead.
-N_SECTIONS="$(tr '\036\n' '\n ' < "${JQLOG}" | grep -c 'methodology_hints\|phase_compositions\|required_when')"
+#
+# `phase_compositions` has a SECOND legitimate reader — _render_driver_precondition,
+# which resolves phase_compositions[<phase>].driver when no composition anchor
+# resolved — so a bare count of calls naming ANY of the three keys is no longer 1.
+# Treating that as a violation would turn this cell into a tripwire against every new
+# reader rather than against the regression it exists for, which is splitting the
+# registry LOAD back into one call per section. So the census is by SHAPE:
+#
+#   GROUPED  names all three keys — the batched extraction, of which there is exactly
+#            one. A per-section re-split makes this 0.
+#   PARTIAL  names some but not all — a per-section re-split makes this 3.
+#   DRIVER   names phase_compositions AND .driver — the one legitimate partial reader,
+#            identified POSITIVELY by what its program does rather than exempted by
+#            name, so a second partial reader still fails.
+N_GROUPED="$(tr '\036\n' '\n ' < "${JQLOG}" \
+    | grep 'methodology_hints' | grep 'phase_compositions' | grep -c 'required_when')"
+N_ANY="$(tr '\036\n' '\n ' < "${JQLOG}" | grep -c 'methodology_hints\|phase_compositions\|required_when')"
+N_PARTIAL=$(( N_ANY - N_GROUPED ))
+N_DRIVER="$(tr '\036\n' '\n ' < "${JQLOG}" | grep 'phase_compositions' | grep -c '\.driver')"
 if [ "${N_ALL}" -gt 1 ]; then
     _record_pass "C1 setup: the jq shim recorded the hook's calls (${N_ALL})"
 else
@@ -97,7 +115,9 @@ else
 fi
 assert_contains "C1 setup: the hook routed the prompt" "Skill(test:zz-marker-skill)" "${OUT1}"
 assert_equals "C1: the registry cache file is opened by exactly one jq call" "1" "${N_CACHE}"
-assert_equals "C1: one jq call extracts hints, compositions and required_when" "1" "${N_SECTIONS}"
+assert_equals "C1: one jq call extracts hints, compositions and required_when" "1" "${N_GROUPED}"
+assert_equals "C1: the driver lookup is one call" "1" "${N_DRIVER}"
+assert_equals "C1: the driver lookup is the ONLY partial section reader" "${N_DRIVER}" "${N_PARTIAL}"
 assert_equals "C1: no separate 'jq empty' validation call" "0" "${N_EMPTY}"
 
 # ---------------------------------------------------------------------------
