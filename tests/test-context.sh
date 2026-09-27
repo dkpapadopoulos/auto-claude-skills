@@ -2085,7 +2085,7 @@ test_driver_render_absent_without_jq() {
     teardown_test_env
 }
 
-# MUST-FAIL CELL (ordering, see Arm 1b). Excludes placing the call after the
+# MUST-FAIL CELL (ordering, see Arm 2). Excludes placing the call after the
 # _prompt_is_consultation_only block: that block empties COMPOSITION_CHAIN, so
 # a render gated on "the chain is empty" would fire on a consultation prompt
 # and hand it a DESIGN precondition it never asked for.
@@ -2108,7 +2108,8 @@ test_driver_render_suppressed_on_consultation_prompt() {
     # block runs before or after the render call. This arm is therefore inert
     # to the ordering mutant it was written to catch -- it pins the
     # PROCESS_SKILL guard on a consultation prompt instead, which is a real
-    # but different property. See Arm 1b for the actual ordering cell.
+    # but different property. See Arm 2 for the cell that actually pins
+    # ordering (it did so before this comment was written).
     local ctx1
     ctx1="$(_dp_ctx "ask codex to weigh in on this dashboard layout approach" cons1)"
     assert_not_contains "no chain is displayed on a consultation prompt" \
@@ -2118,17 +2119,25 @@ test_driver_render_suppressed_on_consultation_prompt() {
     assert_not_contains "no DESIGN precondition on a consultation prompt" \
         "TRIFECTA" "${ctx1}"
 
-    # Arm 1b: the genuine ordering case Arm 1 was meant to be. A WORKFLOW
-    # anchor (openspec-ship, matched via "as-built"/"openspec") is not a
-    # process skill, so it is not caught by the PROCESS_SKILL guard -- the
-    # only thing suppressing its render is the COMPOSITION_CHAIN-non-empty
-    # guard seeing the chain the walker resolved, before the consultation
-    # block clears it. Swapping the call to after the consultation block
-    # would leave COMPOSITION_CHAIN already emptied when the render runs, so
-    # the first guard would not fire and SHIP's driver would render on a
-    # prompt that only asked for an opinion. Verified against the real hook
-    # (SKILL_EXPLAIN=1) to be classified consultation-only ("[consultation]
-    # chain DISPLAY suppressed") with no process skill selected.
+    # Arm 1b: an attempt at a workflow-anchored counterpart to Arm 1 -- a
+    # WORKFLOW anchor (openspec-ship, matched via "as-built"/"openspec") is
+    # not a process skill, so it is not caught by the PROCESS_SKILL guard the
+    # way Arm 1 is. CORRECTED (a re-review built the order-swap mutant and
+    # measured it): this does NOT discriminate the order-swap mutant either.
+    # The swap sends this prompt's PRIMARY_PHASE to SHIP, and SHIP's driver
+    # (verification-before-completion) is one of the six of eight shipped
+    # drivers that carry NO precondition -- SKILL_EXPLAIN confirms the
+    # ordering bug IS mechanically triggered (the render reaches the
+    # "carries no precondition" branch instead of being suppressed by the
+    # first guard) but there is no "driver not invoked" text to compose or
+    # leak either way, so this arm's assertions pass identically whether the
+    # call order is correct or swapped. The cell that actually catches the
+    # order-swap mutant is Arm 2 below (PLAN's driver DOES carry a marker
+    # precondition), and it did so before this arm existed. This arm is kept
+    # because it still asserts something true of the current implementation
+    # (a workflow-anchored consultation prompt renders no chain or driver
+    # attribution) -- it just does not pin ordering, contrary to an earlier
+    # version of this comment.
     local ctx1b
     ctx1b="$(_dp_ctx "ask codex what it thinks about documenting this as-built with openspec" cons1b)"
     assert_not_contains "no chain is displayed on a workflow-anchored consultation" \
@@ -2138,6 +2147,12 @@ test_driver_render_suppressed_on_consultation_prompt() {
 
     # Arm 2: a consultation prompt that selects only domain skills, so no chain
     # ever existed and the in-block clear is what has to suppress the render.
+    # This is ALSO the cell that actually pins the call-order guard (see Arm
+    # 1b's corrected comment above): PLAN's driver carries a real marker
+    # precondition here, so an order-swapped implementation -- which would let
+    # the render run after COMPOSITION_CHAIN/DRIVER_PRECONDITION are cleared --
+    # leaks PLAN-DRIVER-MARKER on this prompt. This cell predates this fix
+    # wave and was not modified by it.
     local ctx2
     ctx2="$(_dp_ctx "ask codex what it thinks of these dashboard components" cons2)"
     assert_not_contains "no driver precondition on a domain-only consultation" \
