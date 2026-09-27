@@ -46,8 +46,9 @@ not been designed, it has been sketched.
 
 Compare the variants against the question from step 1, not against taste. Record the
 decision and the losing options in the project's design intent (an OpenSpec change here;
-a design doc elsewhere). `prototype-lab` owns this comparison — it exists, use it rather
-than inventing a second comparison format.
+a design doc elsewhere). Invoke `prototype-lab` at this step to run the comparison — do
+not wait for it to have been routed by the prompt, and do not invent a second comparison
+format.
 
 ## 4. Implement
 

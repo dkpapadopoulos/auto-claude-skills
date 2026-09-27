@@ -89,7 +89,42 @@ N_CACHE="$(tr '\036\n' '\n ' < "${JQLOG}" | grep -c '\.skill-registry-cache\.jso
 N_EMPTY="$(tr '\036\n' '\n ' < "${JQLOG}" | grep -c '^empty ')"
 # The old per-section calls read the registry from STDIN, so they never name the file;
 # count calls by what their program extracts instead.
-N_SECTIONS="$(tr '\036\n' '\n ' < "${JQLOG}" | grep -c 'methodology_hints\|phase_compositions\|required_when')"
+#
+# `phase_compositions` has a SECOND potential reader — _render_driver_precondition,
+# which resolves phase_compositions[<phase>].driver — so a bare count of calls naming
+# ANY of the three keys risks turning this cell into a tripwire against every new
+# reader rather than against the regression it exists for, which is splitting the
+# registry LOAD back into one call per section. So the census is by SHAPE:
+#
+#   GROUPED  names all three keys — the batched extraction, of which there is exactly
+#            one. A per-section re-split makes this 0.
+#   PARTIAL  names some but not all — a per-section re-split makes this 3.
+#   DRIVER   names phase_compositions AND .driver — identified POSITIVELY by what its
+#            program does rather than exempted by name.
+#
+# On THIS prompt both PARTIAL and DRIVER are 0: the prompt selects the process skill
+# systematic-debugging, and _render_driver_precondition returns on `PROCESS_SKILL`
+# being non-empty BEFORE its jq call. So this cell also pins that the driver fallback
+# costs no fork on a prompt where a process skill was selected. The complementary
+# case — exactly one driver lookup on an anchorless prompt — is pinned in
+# tests/test-context.sh::test_driver_fallback_forks_jq_once_and_only_when_needed,
+# which owns that property rather than bolting it onto the registry-load cell.
+#
+# HIDDEN DEPENDENCY, stated so a future failure is not hunted in the wrong file:
+# `N_DRIVER == 0` holds only while this cell's probe prompt keeps selecting a
+# `process` skill. It does today because `debug ...` matches systematic-debugging.
+# Change the prompt to something domain-only and the count becomes 1 — measured:
+# `zzmarker the layout needs a visual pass` gives N_DRIVER=1 (frontend-design
+# co-selects, so PRIMARY_PHASE resolves to DESIGN), while a bare `zzmarker` gives 0
+# again for a THIRD reason (zz-marker-skill is created with phase "", so
+# PRIMARY_PHASE is empty and the lookup returns before its jq call). Three prompts,
+# three different causes for the same number: if this assertion ever fails, read it
+# as "the probe prompt's routing changed", not as a registry-extraction regression.
+N_GROUPED="$(tr '\036\n' '\n ' < "${JQLOG}" \
+    | grep 'methodology_hints' | grep 'phase_compositions' | grep -c 'required_when')"
+N_ANY="$(tr '\036\n' '\n ' < "${JQLOG}" | grep -c 'methodology_hints\|phase_compositions\|required_when')"
+N_PARTIAL=$(( N_ANY - N_GROUPED ))
+N_DRIVER="$(tr '\036\n' '\n ' < "${JQLOG}" | grep 'phase_compositions' | grep -c '\.driver')"
 if [ "${N_ALL}" -gt 1 ]; then
     _record_pass "C1 setup: the jq shim recorded the hook's calls (${N_ALL})"
 else
@@ -97,7 +132,9 @@ else
 fi
 assert_contains "C1 setup: the hook routed the prompt" "Skill(test:zz-marker-skill)" "${OUT1}"
 assert_equals "C1: the registry cache file is opened by exactly one jq call" "1" "${N_CACHE}"
-assert_equals "C1: one jq call extracts hints, compositions and required_when" "1" "${N_SECTIONS}"
+assert_equals "C1: one jq call extracts hints, compositions and required_when" "1" "${N_GROUPED}"
+assert_equals "C1: no driver lookup fires when a process skill was selected" "0" "${N_DRIVER}"
+assert_equals "C1: no partial section reader on this prompt" "0" "${N_PARTIAL}"
 assert_equals "C1: no separate 'jq empty' validation call" "0" "${N_EMPTY}"
 
 # ---------------------------------------------------------------------------

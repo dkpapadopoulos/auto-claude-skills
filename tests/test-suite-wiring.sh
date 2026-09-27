@@ -159,6 +159,7 @@ test_every_test_file_is_wired() {
 # name — the classifier, not a line number, decides membership.
 # ---------------------------------------------------------------------------
 _EXPECTED_MIXED_SHAPE="test-consultation-routing.sh
+test-design-seed-hint-reachable.sh
 test-routing-interactions.sh
 test-second-opinion-content.sh
 test-skill-content.sh"
@@ -187,7 +188,7 @@ test_mixed_shape_file_set_is_unchanged() {
         _record_fail "the mixed-shape list has no stale entries" \
             "these no longer qualify and must be removed from _EXPECTED_MIXED_SHAPE: $(printf '%s' "${_gone}" | tr '\n' ' ')"
     else
-        _record_pass "mixed-shape file set unchanged (4 known, none added or stale)"
+        _record_pass "mixed-shape file set unchanged (5 known, none added or stale)"
     fi
 }
 

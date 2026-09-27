@@ -7407,4 +7407,376 @@ REGISTRY
 }
 test_writing_skills_required_on_skill_creation
 
+# ---------------------------------------------------------------------------
+# test_frontend_design_matches_plural_ui_nouns
+# Regression: frontend-design's trigger must match plural UI nouns
+# (dashboards, wireframes, components, screens) as well as the singulars.
+# The trigger is sourced LIVE from config/default-triggers.json (via jq),
+# never hardcoded here -- so this test genuinely fails against the unfixed
+# config (no plural support) and genuinely passes once triggers[0] is edited,
+# with no second edit to this file required. See task-1-brief.md Interfaces
+# for the exact trigger string this is meant to converge on.
+# ---------------------------------------------------------------------------
+test_frontend_design_matches_plural_ui_nouns() {
+    echo "-- test: frontend-design matches plural UI nouns --"
+    setup_test_env
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    mkdir -p "$(dirname "${cache_file}")"
+
+    local fd_trigger
+    fd_trigger="$(jq -r '.skills[] | select(.name=="frontend-design") | .triggers[0]' "${PROJECT_ROOT}/config/default-triggers.json")"
+
+    jq -n --arg trig "${fd_trigger}" '{
+      "version": "test",
+      "skills": [
+        {
+          "name": "frontend-design",
+          "role": "domain",
+          "phase": "DESIGN",
+          "triggers": [$trig],
+          "trigger_mode": "regex",
+          "priority": 15,
+          "invoke": "Skill(frontend-design:frontend-design)",
+          "available": true,
+          "enabled": true
+        }
+      ],
+      "methodology_hints": [],
+      "phase_compositions": {}
+    }' > "${cache_file}"
+
+    local output context
+
+    output="$(run_hook "polish the dashboards")"
+    context="$(extract_context "${output}")"
+    assert_contains "matches plural dashboards" "frontend-design" "${context}"
+
+    output="$(run_hook "add wireframes")"
+    context="$(extract_context "${output}")"
+    assert_contains "matches plural wireframes" "frontend-design" "${context}"
+
+    output="$(run_hook "build the react components")"
+    context="$(extract_context "${output}")"
+    assert_contains "matches plural components" "frontend-design" "${context}"
+
+    output="$(run_hook "polish the screens")"
+    context="$(extract_context "${output}")"
+    assert_contains "matches plural screens" "frontend-design" "${context}"
+
+    # Singulars must still match (no regression from the pluralization).
+    output="$(run_hook "polish the dashboard")"
+    context="$(extract_context "${output}")"
+    assert_contains "still matches singular dashboard" "frontend-design" "${context}"
+
+    output="$(run_hook "add a wireframe")"
+    context="$(extract_context "${output}")"
+    assert_contains "still matches singular wireframe" "frontend-design" "${context}"
+
+    output="$(run_hook "build the react component")"
+    context="$(extract_context "${output}")"
+    assert_contains "still matches singular component" "frontend-design" "${context}"
+
+    output="$(run_hook "design the dashboard screen")"
+    context="$(extract_context "${output}")"
+    assert_contains "still matches singular screen" "frontend-design" "${context}"
+
+    # "screens?" is restored (owner decision, 2026-09-27): frontend-design's
+    # own description covers "building new UI or reshaping an existing one",
+    # so a bare "screen" mention is in remit. This prompt -- previously a
+    # NO_MATCH regression guard for the removed "screens?" alternative --
+    # now legitimately matches via the bare singular noun.
+    output="$(run_hook "the collapsible panel on the settings screen needs a scrollbar")"
+    context="$(extract_context "${output}")"
+    assert_contains "bare singular screen now legitimately matches" "frontend-design" "${context}"
+
+    teardown_test_env
+}
+test_frontend_design_matches_plural_ui_nouns
+
+# ---------------------------------------------------------------------------
+# test_frontend_design_unavailable_emits_no_invocation
+# Review Focus 2: an unavailable skill (available: false, e.g. plugin not
+# installed) must never appear as a Skill(...) invocation, even when its
+# trigger regex matches the prompt.
+#
+# NOTE: the trigger here is hardcoded to the TARGET (post-fix) value, not
+# read from config/default-triggers.json, because this test exercises the
+# available:false selection gate, not the trigger content -- it therefore
+# already passes before Step 3's config edit. It is a standing regression
+# guard for the availability gate, not evidence that this task's trigger
+# change works (see task-1-brief.md ruling 3 / Step 6).
+# ---------------------------------------------------------------------------
+test_frontend_design_unavailable_emits_no_invocation() {
+    echo "-- test: frontend-design unavailable emits no invocation --"
+    setup_test_env
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    mkdir -p "$(dirname "${cache_file}")"
+    cat > "${cache_file}" <<'REGISTRY'
+{
+  "version": "test",
+  "skills": [
+    {
+      "name": "frontend-design",
+      "role": "domain",
+      "phase": "DESIGN",
+      "triggers": ["(^|[^a-z])(ui|frontend|front.end|components?|layouts?|styles?|css|tailwind|responsive|dashboards?|landing.?pages?|mockups?|wireframes?)($|[^a-z])"],
+      "trigger_mode": "regex",
+      "priority": 15,
+      "invoke": "Skill(frontend-design:frontend-design)",
+      "available": false,
+      "enabled": true
+    }
+  ],
+  "methodology_hints": [],
+  "phase_compositions": {}
+}
+REGISTRY
+
+    local output context
+    output="$(run_hook "polish the dashboards")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "unavailable frontend-design never invoked" "Skill(frontend-design:frontend-design)" "${context}"
+
+    # DISCRIMINATING TWIN. Without this, the assertion above is satisfied just
+    # as well by EMPTY output -- e.g. a broken trigger, a broken hook, or the
+    # availability gate rejecting every skill regardless of its flag -- as by
+    # the gate genuinely distinguishing available:true from available:false.
+    # Same registry, same prompt, only `available` flipped: this must render
+    # the invocation, proving the prior assertion's absence means what it
+    # claims.
+    cat > "${cache_file}" <<'REGISTRY'
+{
+  "version": "test",
+  "skills": [
+    {
+      "name": "frontend-design",
+      "role": "domain",
+      "phase": "DESIGN",
+      "triggers": ["(^|[^a-z])(ui|frontend|front.end|components?|layouts?|styles?|css|tailwind|responsive|dashboards?|landing.?pages?|mockups?|wireframes?)($|[^a-z])"],
+      "trigger_mode": "regex",
+      "priority": 15,
+      "invoke": "Skill(frontend-design:frontend-design)",
+      "available": true,
+      "enabled": true
+    }
+  ],
+  "methodology_hints": [],
+  "phase_compositions": {}
+}
+REGISTRY
+
+    output="$(run_hook "polish the dashboards")"
+    context="$(extract_context "${output}")"
+    assert_contains "available frontend-design twin IS invoked" "Skill(frontend-design:frontend-design)" "${context}"
+
+    teardown_test_env
+}
+test_frontend_design_unavailable_emits_no_invocation
+
+# ---------------------------------------------------------------------------
+# test_side_by_side_requires_a_variant_noun
+# Regression: prototype-lab's bare "side.by.side" alternative fired on any
+# "side by side" prompt regardless of subject, causing measured false
+# dispatches on non-design comparisons (API responses, dose-response plots,
+# review-UI diffs, mobile layout bugs). The fix gates it on a variant-shaped
+# noun (variants/options/approach(es)/alternatives/designs/versions/
+# mock-ups/layouts/prototypes) within 40 non-terminal characters.
+#
+# The trigger is sourced LIVE from config/default-triggers.json (via jq),
+# never hardcoded here -- so this test genuinely fails against the unfixed
+# config and genuinely passes once triggers[0] is edited, with no second
+# edit to this file required. See task-2-brief.md Interfaces for the exact
+# trigger string this is meant to converge on.
+#
+# `keywords` is ALSO sourced live (not hardcoded/omitted): keyword_score
+# scores on an independent path (hooks/skill-activation-hook.sh:586-606)
+# that admits a skill even with zero trigger_score, so a registry fixture
+# that drops `keywords` cannot catch a shipped "side by side" keyword entry
+# bypassing the trigger's proximity narrowing entirely. See the load-bearing
+# half of this fix at config/default-triggers.json's prototype-lab entry:
+# the "side by side" keyword was removed from `keywords`, and this fixture
+# must reflect that removal, not silently omit the field.
+# ---------------------------------------------------------------------------
+test_side_by_side_requires_a_variant_noun() {
+    echo "-- test: side-by-side requires a variant noun --"
+    setup_test_env
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    mkdir -p "$(dirname "${cache_file}")"
+
+    local pl_trigger pl_keywords
+    pl_trigger="$(jq -r '.skills[] | select(.name=="prototype-lab") | .triggers[0]' "${PROJECT_ROOT}/config/default-triggers.json")"
+    pl_keywords="$(jq -c '.skills[] | select(.name=="prototype-lab") | .keywords' "${PROJECT_ROOT}/config/default-triggers.json")"
+
+    # Assert the "side by side" keyword's absence in BOTH config files -- a
+    # shipped re-addition (to either) would silently defeat the trigger
+    # narrowing above via the independent keyword-scoring path.
+    local dt_kw_hit fb_kw_hit
+    dt_kw_hit="$(jq -r '[.skills[] | select(.name=="prototype-lab") | .keywords[] | select(ascii_downcase == "side by side")] | length' "${PROJECT_ROOT}/config/default-triggers.json")"
+    assert_equals "side by side absent from default-triggers.json keywords" "0" "${dt_kw_hit}"
+    fb_kw_hit="$(jq -r '[.skills[] | select(.name=="prototype-lab") | .keywords[] | select(ascii_downcase == "side by side")] | length' "${PROJECT_ROOT}/config/fallback-registry.json")"
+    assert_equals "side by side absent from fallback-registry.json keywords" "0" "${fb_kw_hit}"
+
+    jq -n --arg trig "${pl_trigger}" --argjson kw "${pl_keywords}" '{
+      "version": "test",
+      "skills": [
+        {
+          "name": "prototype-lab",
+          "role": "domain",
+          "phase": "DESIGN",
+          "triggers": [$trig],
+          "keywords": $kw,
+          "trigger_mode": "regex",
+          "priority": 15,
+          "invoke": "Skill(auto-claude-skills:prototype-lab)",
+          "available": true,
+          "enabled": true
+        }
+      ],
+      "methodology_hints": [],
+      "phase_compositions": {}
+    }' > "${cache_file}"
+
+    local output context
+
+    # Six measured false dispatches -- none carry a variant-shaped noun near
+    # "side by side" -- must NOT match.
+    output="$(run_hook "plot the dose response side by side with the control")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "dose response is not a variant noun" "prototype-lab" "${context}"
+
+    output="$(run_hook "put the two api responses side by side in the gemini_adapter test")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "api responses is not a variant noun" "prototype-lab" "${context}"
+
+    output="$(run_hook "show the analysts opinions side by side for the investment committee")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "opinions is not a variant noun" "prototype-lab" "${context}"
+
+    output="$(run_hook "show the recorded responses side-by-side for gemini_eval and codex_eval")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "recorded responses is not a variant noun (hyphenated form)" "prototype-lab" "${context}"
+
+    output="$(run_hook "show the two diffs side by side in the review ui")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "diffs is not a variant noun" "prototype-lab" "${context}"
+
+    output="$(run_hook "the admin panel breaks on mobile, the side by side comparison view needs to stack under 640px")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "comparison view is not a variant noun" "prototype-lab" "${context}"
+
+    # Five true positives -- a variant-shaped noun is present near
+    # "side by side" -- must MATCH.
+    output="$(run_hook "show me both dashboard designs side by side")"
+    context="$(extract_context "${output}")"
+    assert_contains "designs is a variant noun" "prototype-lab" "${context}"
+
+    output="$(run_hook "put the two layout options side by side so i can pick")"
+    context="$(extract_context "${output}")"
+    assert_contains "layout options is a variant noun" "prototype-lab" "${context}"
+
+    output="$(run_hook "i want the three variants side by side")"
+    context="$(extract_context "${output}")"
+    assert_contains "variants is a variant noun" "prototype-lab" "${context}"
+
+    output="$(run_hook "show the alternatives side by side before we commit")"
+    context="$(extract_context "${output}")"
+    assert_contains "alternatives is a variant noun" "prototype-lab" "${context}"
+
+    output="$(run_hook "render both approaches side by side")"
+    context="$(extract_context "${output}")"
+    assert_contains "approaches is a variant noun" "prototype-lab" "${context}"
+
+    teardown_test_env
+}
+test_side_by_side_requires_a_variant_noun
+
+# ---------------------------------------------------------------------------
+# test_side_by_side_pairs_differ_only_by_the_noun
+# Spec scenario "The variant noun is what decides, not the phrase": for each
+# pair below, the two prompts are identical but for the noun in the same
+# position -- only the variant-shaped one may match. Also covers the
+# proximity window (a variant noun more than 40 non-terminal characters from
+# "side by side" must not match) and the sentence boundary (a variant noun
+# separated from "side by side" by a ./!/? must not match, even within 40
+# characters).
+# ---------------------------------------------------------------------------
+test_side_by_side_pairs_differ_only_by_the_noun() {
+    echo "-- test: side-by-side pairs differ only by the noun --"
+    setup_test_env
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    mkdir -p "$(dirname "${cache_file}")"
+
+    local pl_trigger pl_keywords
+    pl_trigger="$(jq -r '.skills[] | select(.name=="prototype-lab") | .triggers[0]' "${PROJECT_ROOT}/config/default-triggers.json")"
+    # `keywords` is sourced live too, not omitted -- see the sibling test
+    # function's comment for why an omitted `keywords` fixture cannot catch
+    # a shipped "side by side" keyword re-addition bypassing this trigger.
+    pl_keywords="$(jq -c '.skills[] | select(.name=="prototype-lab") | .keywords' "${PROJECT_ROOT}/config/default-triggers.json")"
+
+    jq -n --arg trig "${pl_trigger}" --argjson kw "${pl_keywords}" '{
+      "version": "test",
+      "skills": [
+        {
+          "name": "prototype-lab",
+          "role": "domain",
+          "phase": "DESIGN",
+          "triggers": [$trig],
+          "keywords": $kw,
+          "trigger_mode": "regex",
+          "priority": 15,
+          "invoke": "Skill(auto-claude-skills:prototype-lab)",
+          "available": true,
+          "enabled": true
+        }
+      ],
+      "methodology_hints": [],
+      "phase_compositions": {}
+    }' > "${cache_file}"
+
+    local output context
+
+    # Pair 1: "versions" (variant noun) vs "photos" (not).
+    output="$(run_hook "compare the two versions side by side")"
+    context="$(extract_context "${output}")"
+    assert_contains "pair1 variant noun matches" "prototype-lab" "${context}"
+
+    output="$(run_hook "compare the two photos side by side")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "pair1 non-variant noun does not match" "prototype-lab" "${context}"
+
+    # Pair 2: "layouts" (variant noun) vs "screenshots" (not).
+    output="$(run_hook "look at the layouts side by side")"
+    context="$(extract_context "${output}")"
+    assert_contains "pair2 variant noun matches" "prototype-lab" "${context}"
+
+    output="$(run_hook "look at the screenshots side by side")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "pair2 non-variant noun does not match" "prototype-lab" "${context}"
+
+    # Pair 3: "mockups" (variant noun) vs "screenshots" (not).
+    output="$(run_hook "put the mockups side by side for review")"
+    context="$(extract_context "${output}")"
+    assert_contains "pair3 variant noun matches" "prototype-lab" "${context}"
+
+    output="$(run_hook "put the screenshots side by side for review")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "pair3 non-variant noun does not match" "prototype-lab" "${context}"
+
+    # Proximity window: a variant noun ("options") is present, but more than
+    # 40 non-terminal characters away from "side by side" -- must not match.
+    output="$(run_hook "these two options have a lot of extra unrelated context words padded in between them so it grows past forty characters before side by side")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "variant noun beyond the proximity window does not match" "prototype-lab" "${context}"
+
+    # Sentence boundary: a variant noun ("options") is present within the
+    # raw character count, but a "." separates it from "side by side" in a
+    # different sentence -- must not match.
+    output="$(run_hook "we reviewed the design options. now show the render side by side")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "variant noun across a sentence boundary does not match" "prototype-lab" "${context}"
+
+    teardown_test_env
+}
+test_side_by_side_pairs_differ_only_by_the_noun
+
 print_summary

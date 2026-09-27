@@ -1,0 +1,30 @@
+# Regex fixtures for skill: frontend-design
+# Format: one directive per non-empty, non-comment line.
+#   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
+#   NO_MATCH: <prompt>  — regex must NOT match
+# Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
+# NO_MATCH line is verbatim-borrowed from supply-chain-investigation MATCH fixture.
+
+# CONSTRUCTED, not corpus-sourced: the 2451-prompt real-prompt corpus
+# (714 human) contains ZERO plural-dependent frontend-design prompts
+# (measured) -- every real prompt matching the plural alternatives also
+# matched the pre-existing singular trigger independently. This line exists
+# only to exercise the plural morphology (dashboards?, wireframes?,
+# components?) directly; do not read it as evidence of real-world usage.
+MATCH: ship the new dashboards and wireframes for review
+
+MATCH: polish the dashboards
+MATCH: add wireframes
+MATCH: build the react components
+MATCH: design the dashboard screen
+MATCH: fix the responsive layout
+MATCH: update the css styles
+
+NO_MATCH: was the npm package compromised in the latest attack
+
+# `screens?` was restored to the trigger (owner decision, 2026-09-27): a
+# bare singular "screen" mention is in remit per frontend-design's own
+# description ("building new UI or reshaping an existing one"). This was
+# previously a NO_MATCH regression guard for a since-removed `screens?`
+# addition; it now legitimately matches.
+MATCH: the collapsible panel on the settings screen needs a scrollbar

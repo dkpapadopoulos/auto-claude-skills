@@ -1060,6 +1060,47 @@ EOF
   fi
 }
 
+# --- _expand_precondition_plugin_root -----------------------------
+# In/out global: _cprecond (mutated in place). Input global: PLUGIN_ROOT.
+#
+# A precondition may name `phase_attest`, which lives in this plugin and is NOT
+# on any path the model's shell knows: CLAUDE_PLUGIN_ROOT is unset in a Bash
+# turn, and `git rev-parse --show-toplevel` is the USER's repo, which has no
+# hooks/lib. Rendering the call verbatim therefore shipped an unrunnable remedy
+# to every IMPLEMENT-phase prompt in every repo — more often than the push
+# gate's own advisory, and it is the exact remedy the IMPLEMENT deny-flip
+# pre-registration treats as available (#248).
+#
+# The path is single-quoted IN THE CONFIG TEXT, so this substitution inserts a
+# literal; a path containing `'` is the one case single quotes cannot hold, so
+# it is escaped here rather than left to produce a broken line.
+#
+# TWO call sites read a `precondition` out of the registry and render it: the
+# CURRENT step of a composition chain, and _render_driver_precondition below.
+# Both must expand and escape, or one of them re-ships the #248 defect — and
+# hand-copying the escape is precisely how the four paired #248 renderings
+# drifted in the first place. It lives here so there is one copy to get right.
+# tests/test-attest-remedy-reachable.sh lifts the three lines below out of this
+# file with `sed` and executes them, so it tests THIS code and not a copy; it
+# also asserts there is exactly ONE `_pr_esc=` line in the repo, which a second
+# inline copy would break. Mutating the escape must fail that file.
+#
+# It mutates the caller's variable rather than echoing, because the CURRENT-step
+# site is the ~50ms hot path and a command substitution there is a fork.
+_expand_precondition_plugin_root() {
+  if [[ -n "$_cprecond" && "$_cprecond" == *'{{PLUGIN_ROOT}}'* ]]; then
+    # POSIX single-quote escaping, fork-free (this is the ~50ms hot
+    # path). Inside double quotes `\'` is NOT an escape — it is a
+    # backslash followed by a quote — so the replacement is assembled
+    # from explicit single-character variables. Getting this wrong
+    # emitted `a\'\\'\'b`, a malformed line that breaks the whole
+    # pasted command, which is worse than the missing path it replaced.
+    _sq="'" ; _bs='\' ; _rep="${_sq}${_bs}${_sq}${_sq}"
+    _pr_esc="${PLUGIN_ROOT//${_sq}/${_rep}}"
+    _cprecond="${_cprecond//\{\{PLUGIN_ROOT\}\}/${_pr_esc}}"
+  fi
+}
+
 # --- _walk_composition_chain --------------------------------------
 # Input globals: REGISTRY, PROCESS_SKILL, SELECTED
 # Output globals: COMPOSITION_CHAIN, COMPOSITION_DIRECTIVE, COMPOSITION_HINTS (unused here but declared)
@@ -1248,30 +1289,7 @@ EOF
         # only when a composition is being rendered. Fail-open: no field => no line.
         if [[ "$_marker" == "CURRENT" ]]; then
           _cprecond="$(printf '%s' "$REGISTRY" | jq -r --arg n "$_cname" '.skills[] | select(.name == $n) | .precondition // empty' 2>/dev/null)"
-          # A precondition may name `phase_attest`, which lives in this plugin
-          # and is NOT on any path the model's shell knows: CLAUDE_PLUGIN_ROOT
-          # is unset in a Bash turn, and `git rev-parse --show-toplevel` is the
-          # USER's repo, which has no hooks/lib. Rendering the call verbatim
-          # therefore shipped an unrunnable remedy to every IMPLEMENT-phase
-          # prompt in every repo — more often than the push gate's own
-          # advisory, and it is the exact remedy the IMPLEMENT deny-flip
-          # pre-registration treats as available (#248).
-          #
-          # The path is single-quoted IN THE CONFIG TEXT, so this substitution
-          # inserts a literal; a path containing `'` is the one case single
-          # quotes cannot hold, so it is escaped here rather than left to
-          # produce a broken line.
-          if [[ -n "$_cprecond" && "$_cprecond" == *'{{PLUGIN_ROOT}}'* ]]; then
-            # POSIX single-quote escaping, fork-free (this is the ~50ms hot
-            # path). Inside double quotes `\'` is NOT an escape — it is a
-            # backslash followed by a quote — so the replacement is assembled
-            # from explicit single-character variables. Getting this wrong
-            # emitted `a\'\\'\'b`, a malformed line that breaks the whole
-            # pasted command, which is worse than the missing path it replaced.
-            _sq="'" ; _bs='\' ; _rep="${_sq}${_bs}${_sq}${_sq}"
-            _pr_esc="${PLUGIN_ROOT//${_sq}/${_rep}}"
-            _cprecond="${_cprecond//\{\{PLUGIN_ROOT\}\}/${_pr_esc}}"
-          fi
+          _expand_precondition_plugin_root
           if [[ -n "$_cprecond" ]]; then
             _chain_lines="${_chain_lines}
       ${_cprecond}"
@@ -1333,8 +1351,177 @@ EOF
   fi
 }
 
+# --- _render_driver_precondition ----------------------------------
+# Input globals: REGISTRY, PRIMARY_PHASE, COMPOSITION_CHAIN, PLUGIN_ROOT
+# Output global: DRIVER_PRECONDITION ("" when nothing should render)
+#
+# _walk_composition_chain anchors on a `process` skill, else on a selected
+# `workflow` skill carrying precedes/requires. A `domain` skill can NEVER
+# anchor, so a prompt whose only matches are domain skills ("prototype the
+# dashboard components") got no chain block at all — and the CURRENT-step
+# `precondition` renders ONLY inside that block. For DESIGN that silently
+# dropped both the product-discovery prerequisite and the lethal-trifecta
+# classification gate, on exactly the prompts most likely to need them.
+#
+# This renders that one precondition and nothing else, attributed by a single
+# line naming the driver's Skill() invocation so the text has an antecedent
+# ("...then return to brainstorming" does not parse with nothing before it).
+#
+# IT MUST NOT ESTABLISH A CHAIN, and that is a gate constraint rather than a
+# display preference. _full_chain/_current_idx are what the composition-state
+# write is gated on, and the DESIGN chain contains BOTH push-gate milestones
+# (requesting-code-review, verification-before-completion) which
+# openspec-guard.sh reads out of `.chain`. Anchoring here would make a session
+# that merely asked a UI question owe a dispatched code review and a
+# verification run before it could push anything. So: no _full_chain, no
+# _current_idx, no COMPOSITION_CHAIN, no COMPOSITION_DIRECTIVE — and no
+# continuation directive either, because no trigger matched the driver and a
+# directive would push a full DESIGN->SHIP sequence off a phase default rather
+# than off evidence of intent.
+#
+# The driver name is read from `phase_compositions[<phase>].driver`, never
+# hardcoded. Fail-open throughout: every unresolved case leaves
+# DRIVER_PRECONDITION empty and the rest of the output untouched.
+_render_driver_precondition() {
+  DRIVER_PRECONDITION=""
+
+  # Only where NO anchor resolved. A resolved chain already renders its CURRENT
+  # step's precondition, so firing here as well would duplicate it — and this
+  # predicate is also what keeps the fallback from displacing either anchor or
+  # reordering the two.
+  if [[ -n "$COMPOSITION_CHAIN" ]]; then
+    [[ -n "${SKILL_EXPLAIN:-}" ]] && \
+      printf '[skill-hook]   [driver-precondition] skipped: a chain already anchored\n' >&2
+    return 0
+  fi
+  # "No chain" is NOT the same set as "no process skill was selected", and the
+  # spec's condition is the latter. Three shipped process skills carry
+  # `precedes: [] requires: []` — systematic-debugging, receiving-code-review,
+  # subagent-driven-development — so selecting one anchors the walker but
+  # produces no 2+-skill chain, leaving COMPOSITION_CHAIN empty while a process
+  # skill is MUST INVOKE. Without this line the output then contradicts itself
+  # in adjacent lines, naming the very skill it is ordering:
+  #
+  #   Process: systematic-debugging -> Skill(superpowers:systematic-debugging)
+  #   DEBUG driver not invoked: Skill(superpowers:systematic-debugging)
+  #
+  # Suppressing only when the driver EQUALS the selected process skill was
+  # rejected: it is a second predicate to maintain beside this one, and it
+  # leaves the spec divergence standing. PROCESS_SKILL is set by
+  # _determine_label_phase, which runs well before this function's call site.
+  if [[ -n "${PROCESS_SKILL:-}" ]]; then
+    [[ -n "${SKILL_EXPLAIN:-}" ]] && \
+      printf '[skill-hook]   [driver-precondition] skipped: a process skill (%s) was selected\n' \
+        "$PROCESS_SKILL" >&2
+    return 0
+  fi
+  # No phase, nothing to look up. _determine_label_phase falls back through
+  # process -> workflow -> domain -> required, so a domain-only match still has
+  # one; an empty value means no skill carried a phase at all.
+  if [[ -z "${PRIMARY_PHASE:-}" ]]; then
+    [[ -n "${SKILL_EXPLAIN:-}" ]] && \
+      printf '[skill-hook]   [driver-precondition] skipped: no skill (and so no phase) was selected\n' >&2
+    return 0
+  fi
+
+  # ONE jq call for the driver name plus that skill's invoke and precondition.
+  # It runs only on this path — where no anchor resolved — so the ~50ms
+  # activation budget is unaffected on the chain path.
+  #
+  # `gsub` is deliberately not used to flatten the text: a jq built without the
+  # regex library raises on it, which would read here as an unparseable
+  # registry. split/join needs no regex engine.
+  _dp_raw=""
+  _dp_raw="$(printf '%s' "$REGISTRY" | jq -r --arg ph "$PRIMARY_PHASE" '
+    ((.phase_compositions // {}) | if type == "object" then . else {} end) as $pc |
+    (($pc[$ph] // {}) | if type == "object" then (.driver // "") else "" end) as $d0 |
+    (if ($d0 | type) == "string" then $d0 else "" end) as $d |
+    if $d == "" then "\u001f\u001f"
+    else
+      ((.skills | if type == "array" then . else [] end)
+        | map(select((.name? // "") == $d)) | first) as $s |
+      if ($s | type) != "object" then $d + "\u001f\u001f"
+      else
+        $d + "\u001f"
+        + (($s.invoke // "") | if type == "string" and . != "" then . else "Skill(" + $d + ")" end)
+        + "\u001f"
+        + ((($s.precondition // "") | if type == "string" then . else "" end)
+            | split("\n") | join(" ") | split("\r") | join(" "))
+      end
+    end
+  ' 2>/dev/null)"
+  _dp_rc=$?
+
+  # INFRASTRUCTURE FAULT — a SEPARATE early return from "this phase has no
+  # driver" below, per the spec requirement that the two be distinguishable. A
+  # non-zero jq (an unparseable registry, a jq that cannot compile this program,
+  # no jq at all) means we could not look; an empty stdout means the same, since
+  # the program above always emits at least the two field separators. Routing
+  # both through the same silent return as an absent driver is what would make a
+  # broken install read as a phase that simply has no driver configured.
+  if [[ "$_dp_rc" -ne 0 ]] || [[ -z "$_dp_raw" ]]; then
+    [[ -n "${SKILL_EXPLAIN:-}" ]] && \
+      printf '[skill-hook]   [driver-precondition] could not resolve for %s (jq rc=%s) — infrastructure fault, not an absent driver\n' \
+        "$PRIMARY_PHASE" "$_dp_rc" >&2
+    return 0
+  fi
+
+  # Literal \x1f rather than $FS: FS is assigned further down this file, and a
+  # function must not depend on where it is called from under `set -u`.
+  IFS=$'\x1f' read -r _dp_name _dp_invoke _dp_precond <<EOF
+${_dp_raw}
+EOF
+
+  if [[ -z "${_dp_name:-}" ]]; then
+    [[ -n "${SKILL_EXPLAIN:-}" ]] && \
+      printf '[skill-hook]   [driver-precondition] %s has no driver configured\n' "$PRIMARY_PHASE" >&2
+    return 0
+  fi
+  if [[ -z "${_dp_invoke:-}" ]]; then
+    # Named, but absent from the registry: uninstalled, renamed, or misspelt.
+    [[ -n "${SKILL_EXPLAIN:-}" ]] && \
+      printf '[skill-hook]   [driver-precondition] %s driver %s is not in the registry\n' \
+        "$PRIMARY_PHASE" "$_dp_name" >&2
+    return 0
+  fi
+  if [[ -z "${_dp_precond:-}" ]]; then
+    # Present, but has nothing conditional to say. Rendering a bare attribution
+    # line would be noise, not guidance.
+    #
+    # This is the function's MOST COMMON outcome — six of the eight shipped
+    # drivers carry no `precondition` — and it was the only one of the four that
+    # left no trace, so "checked, nothing to say" could not be told apart from
+    # "never ran". That silence already cost real diagnostic effort: it is why
+    # establishing where the infra-fault arm actually fires needed a second
+    # probe. A path that declines to act must say so.
+    [[ -n "${SKILL_EXPLAIN:-}" ]] && \
+      printf '[skill-hook]   [driver-precondition] %s driver %s carries no precondition\n' \
+        "$PRIMARY_PHASE" "$_dp_name" >&2
+    return 0
+  fi
+
+  # Shared with the CURRENT-step render (#248): the remedy the text names lives
+  # in this plugin and is unreachable from the model's shell without the
+  # absolute path.
+  _cprecond="$_dp_precond"
+  _expand_precondition_plugin_root
+
+  # The precondition is rendered VERBATIM under the attribution, as the
+  # CURRENT-step site renders it. Every shipped precondition already opens with
+  # the `PRECONDITION:` label (held by
+  # tests/test-context.sh::test_precondition_label_is_a_config_convention), so
+  # the label is config text, not something synthesised here.
+  DRIVER_PRECONDITION="
+${PRIMARY_PHASE} driver not invoked: ${_dp_invoke}
+  ${_cprecond}"
+  [[ -n "${SKILL_EXPLAIN:-}" ]] && \
+    printf '[skill-hook]   [driver-precondition] rendered %s driver %s\n' \
+      "$PRIMARY_PHASE" "$_dp_name" >&2
+}
+
 # --- _format_output -----------------------------------------------
 # Input globals: TOTAL_COUNT, PLABEL, SKILL_LINES, COMPOSITION_CHAIN, COMPOSITION_LINES,
+#                DRIVER_PRECONDITION,
 #                EVAL_SKILLS, PRIMARY_PHASE, DOMAIN_HINT, COMPOSITION_DIRECTIVE,
 #                HINTS, COMPOSITION_HINTS, REGISTRY, SORTED, _PROMPT_COUNT
 # Output globals: OUT (+ prints final JSON)
@@ -1391,7 +1578,7 @@ _format_output() {
     [[ -z "$EVAL_PHASE" ]] && EVAL_PHASE="IMPLEMENT"
 
     OUT="SKILL ACTIVATION (${TOTAL_COUNT} skills | ${PLABEL})
-${SKILL_LINES}${COMPOSITION_CHAIN}
+${SKILL_LINES}${COMPOSITION_CHAIN}${DRIVER_PRECONDITION}
 
 Evaluate: **Phase: [${EVAL_PHASE}]** | ${EVAL_SKILLS}${COMPOSITION_DIRECTIVE}"
 
@@ -1401,7 +1588,7 @@ Evaluate: **Phase: [${EVAL_PHASE}]** | ${EVAL_SKILLS}${COMPOSITION_DIRECTIVE}"
     [[ -z "$EVAL_PHASE" ]] && EVAL_PHASE="IMPLEMENT"
 
     OUT="SKILL ACTIVATION (${TOTAL_COUNT} skills | ${PLABEL})
-${SKILL_LINES}${COMPOSITION_CHAIN}${COMPOSITION_LINES}
+${SKILL_LINES}${COMPOSITION_CHAIN}${DRIVER_PRECONDITION}${COMPOSITION_LINES}
 
 Evaluate: **Phase: [${EVAL_PHASE}]** | ${EVAL_SKILLS}${DOMAIN_HINT}${COMPOSITION_DIRECTIVE}"
 
@@ -1419,7 +1606,7 @@ Evaluate: **Phase: [${EVAL_PHASE}]** | ${EVAL_SKILLS}${DOMAIN_HINT}${COMPOSITION
 Step 1 -- ASSESS PHASE. Check conversation context:
 ${_PHASE_GUIDE}
 
-Step 2 -- EVALUATE skills against your phase assessment.${SKILL_LINES}${COMPOSITION_CHAIN}${COMPOSITION_LINES}
+Step 2 -- EVALUATE skills against your phase assessment.${SKILL_LINES}${COMPOSITION_CHAIN}${DRIVER_PRECONDITION}${COMPOSITION_LINES}
 You MUST print a brief evaluation for each skill above. Format:
   **Phase: [PHASE]** | ${EVAL_SKILLS}
 Process skills marked MUST INVOKE are mandatory — invoke them. Domain/workflow skills marked YES/NO are optional.
@@ -1433,7 +1620,7 @@ Step 3 -- INVOKE the process skill. Do not skip to a later phase.${DOMAIN_HINT}$
     [[ -z "$EVAL_PHASE" ]] && EVAL_PHASE="IMPLEMENT"
 
     OUT="SKILL ACTIVATION (${TOTAL_COUNT} skills | ${PLABEL})
-${SKILL_LINES}${COMPOSITION_CHAIN}${COMPOSITION_LINES}
+${SKILL_LINES}${COMPOSITION_CHAIN}${DRIVER_PRECONDITION}${COMPOSITION_LINES}
 
 Evaluate: **Phase: [${EVAL_PHASE}]** | ${EVAL_SKILLS}${DOMAIN_HINT}${COMPOSITION_DIRECTIVE}"
   fi
@@ -1826,10 +2013,24 @@ _build_skill_lines
 # chain was started" is satisfied just as well by a crash as by a deliberate skip.
 COMPOSITION_CHAIN=""
 COMPOSITION_DIRECTIVE=""
+DRIVER_PRECONDITION=""
 _walk_composition_chain
+# CALL ORDER IS LOAD-BEARING: immediately after the walker and BEFORE the
+# consultation block. The fallback fires only when COMPOSITION_CHAIN is empty,
+# and the block below EMPTIES it — so the same call placed after the block would
+# see an emptied chain on a consultation prompt and hand "ask codex about this
+# schema" a DESIGN precondition it never asked for. Here it sees the chain the
+# walker actually resolved, and the block then clears the render alongside it.
+_render_driver_precondition
 if _prompt_is_consultation_only; then
   COMPOSITION_CHAIN=""
   COMPOSITION_DIRECTIVE=""
+  # Cleared for the same reason as the chain: a consultation is not a request to
+  # start development work, so it must not be handed the phase driver's
+  # precondition either. This covers the case the ordering above cannot — a
+  # consultation prompt whose only matches are domain skills never had a chain,
+  # so the fallback legitimately rendered and this is what suppresses it.
+  DRIVER_PRECONDITION=""
   [[ -n "${SKILL_EXPLAIN:-}" ]] && \
     printf '[skill-hook]   [consultation] chain DISPLAY suppressed; state NOT suppressed\n' >&2
 fi

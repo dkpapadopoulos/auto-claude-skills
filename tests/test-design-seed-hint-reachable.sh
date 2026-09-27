@@ -1023,4 +1023,65 @@ ${_bare}"
     fi
 done
 
+# ---------------------------------------------------------------------------
+# 7. Aesthetic authority sits with frontend-design, not the shipped seed.
+# ---------------------------------------------------------------------------
+# frontend-design's SKILL.md tells the model to make deliberate, brief-specific
+# choices about palette/typography/layout — explicitly not the default
+# families it would reach for on any other project. The design-seed hint used
+# to say "adopt the shipped styleguide seed rather than inventing tokens".
+# Read together in one context window, those were competing house-style
+# directives. Settled (openspec/changes/frontend-design-routing,
+# design-foundations spec, "The shipped seed is a taste floor, not a house
+# style"): the shipped look is a floor, not an obligation — the reader is
+# expected to replace it with brief-specific choices per frontend-design, what
+# the lint enforces is role INDIRECTION rather than any specific value, and
+# adopting the shipped values unchanged remains a supported outcome.
+#
+# Both cells read the ALREADY-RENDERED ${HINT_LINE} from section 2 above,
+# rather than re-rendering, so they cannot disagree with the reachability
+# cells about what the hint said.
+test_hint_frames_seed_as_a_floor() {
+    assert_contains "the hint names the shipped palette/type scale a starting floor" \
+        "starting floor" "${HINT_LINE}"
+    assert_not_contains "the hint no longer instructs adopting the shipped values in preference to brief-specific ones" \
+        "rather than inventing tokens" "${HINT_LINE}"
+    assert_contains "the hint credits frontend-design for brief-specific choices" \
+        'frontend-design' "${HINT_LINE}"
+}
+
+test_hint_does_not_forbid_unchanged_adoption() {
+    assert_contains "the hint states unchanged adoption remains supported" \
+        "both are supported" "${HINT_LINE}"
+    assert_contains "the hint names keeping the shipped values unchanged as an option" \
+        "keep them unchanged" "${HINT_LINE}"
+}
+
+# ---------------------------------------------------------------------------
+# 8. The method's comparison step is demand-driven, not routing-dependent.
+# ---------------------------------------------------------------------------
+# Earlier tasks in this change deliberately did NOT widen prototype-lab's
+# triggers to UI vocabulary (measured: +6 false dispatches on the 224-prompt
+# negative corpus, 0 correct human matches on 2451 real prompts). So the
+# method's step 3 must not depend on routing having already selected
+# prototype-lab — it must tell the reader to invoke it AT THAT STEP. The old
+# wording ("`prototype-lab` owns this comparison — it exists, use it rather
+# than inventing a second comparison format") presupposes the reader already
+# knows to reach for it; it names no invocation.
+test_method_comparison_step_is_demand_driven() {
+    local _method_txt
+    _method_txt="$(cat "${PROJECT_ROOT}/docs/design-seed-method.md" 2>/dev/null)"
+    assert_contains "the method instructs invoking prototype-lab at this step" \
+        'Invoke `prototype-lab` at this step' "${_method_txt}"
+    assert_not_contains "the method no longer presupposes prototype-lab was already routed or selected" \
+        "owns this comparison" "${_method_txt}"
+}
+
+# Every test_ function defined here must be invoked below (PR review).
+assert_test_functions_wired "$0"
+
+test_hint_frames_seed_as_a_floor
+test_hint_does_not_forbid_unchanged_adoption
+test_method_comparison_step_is_demand_driven
+
 print_summary

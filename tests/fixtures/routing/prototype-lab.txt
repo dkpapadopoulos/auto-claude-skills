@@ -10,3 +10,15 @@ MATCH: try both implementations side by side and tell me which is faster
 MATCH: compare options for the new caching layer and show the tradeoffs
 
 NO_MATCH: check if our dependency was typosquatted
+
+# Regression pin for the side.by.side proximity-narrowing fix (2026-09-27):
+# the MATCH line above ("try both implementations side by side") only
+# exercises the untouched `try.?both` alternative -- it would still match
+# with the entire side.by.side branch deleted, so it pins nothing about the
+# narrowing. These two lines do: the MATCH names a variant-shaped noun near
+# "side by side" and matches ONLY via that branch (no other alternative in
+# this trigger fires on it); the NO_MATCH is a measured false dispatch this
+# fix closed -- "side by side" with no variant noun nearby, and no other
+# alternative fires on it either.
+MATCH: show the alternatives side by side before we commit
+NO_MATCH: show the two diffs side by side in the review ui
