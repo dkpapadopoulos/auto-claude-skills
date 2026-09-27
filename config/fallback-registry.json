@@ -816,15 +816,14 @@
       "role": "domain",
       "phase": "DESIGN",
       "triggers": [
-        "(prototype|compare.?options|build.?variants|which.?approach|try.?both|try.?all|side.by.side)"
+        "(prototype|compare.?options|build.?variants|which.?approach|try.?both|try.?all|((variants?|options?|approach|approaches|alternatives?|designs?|versions?|mock-?ups?|layouts?|prototypes?)[^.!?]{0,40}side.?by.?side|side.?by.?side[^.!?]{0,40}(variants?|options?|approach|approaches|alternatives?|designs?|versions?|mock-?ups?|layouts?|prototypes?)))"
       ],
       "keywords": [
         "prototype",
         "compare options",
         "build variants",
         "which approach",
-        "try both",
-        "side by side"
+        "try both"
       ],
       "trigger_mode": "regex",
       "priority": 15,

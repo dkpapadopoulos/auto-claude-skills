@@ -7541,4 +7541,185 @@ REGISTRY
 }
 test_frontend_design_unavailable_emits_no_invocation
 
+# ---------------------------------------------------------------------------
+# test_side_by_side_requires_a_variant_noun
+# Regression: prototype-lab's bare "side.by.side" alternative fired on any
+# "side by side" prompt regardless of subject, causing measured false
+# dispatches on non-design comparisons (API responses, dose-response plots,
+# review-UI diffs, mobile layout bugs). The fix gates it on a variant-shaped
+# noun (variants/options/approach(es)/alternatives/designs/versions/
+# mock-ups/layouts/prototypes) within 40 non-terminal characters.
+#
+# The trigger is sourced LIVE from config/default-triggers.json (via jq),
+# never hardcoded here -- so this test genuinely fails against the unfixed
+# config and genuinely passes once triggers[0] is edited, with no second
+# edit to this file required. See task-2-brief.md Interfaces for the exact
+# trigger string this is meant to converge on.
+# ---------------------------------------------------------------------------
+test_side_by_side_requires_a_variant_noun() {
+    echo "-- test: side-by-side requires a variant noun --"
+    setup_test_env
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    mkdir -p "$(dirname "${cache_file}")"
+
+    local pl_trigger
+    pl_trigger="$(jq -r '.skills[] | select(.name=="prototype-lab") | .triggers[0]' "${PROJECT_ROOT}/config/default-triggers.json")"
+
+    jq -n --arg trig "${pl_trigger}" '{
+      "version": "test",
+      "skills": [
+        {
+          "name": "prototype-lab",
+          "role": "domain",
+          "phase": "DESIGN",
+          "triggers": [$trig],
+          "trigger_mode": "regex",
+          "priority": 15,
+          "invoke": "Skill(auto-claude-skills:prototype-lab)",
+          "available": true,
+          "enabled": true
+        }
+      ],
+      "methodology_hints": [],
+      "phase_compositions": {}
+    }' > "${cache_file}"
+
+    local output context
+
+    # Six measured false dispatches -- none carry a variant-shaped noun near
+    # "side by side" -- must NOT match.
+    output="$(run_hook "plot the dose response side by side with the control")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "dose response is not a variant noun" "prototype-lab" "${context}"
+
+    output="$(run_hook "put the two api responses side by side in the gemini_adapter test")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "api responses is not a variant noun" "prototype-lab" "${context}"
+
+    output="$(run_hook "show the analysts opinions side by side for the investment committee")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "opinions is not a variant noun" "prototype-lab" "${context}"
+
+    output="$(run_hook "show the recorded responses side-by-side for gemini_eval and codex_eval")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "recorded responses is not a variant noun (hyphenated form)" "prototype-lab" "${context}"
+
+    output="$(run_hook "show the two diffs side by side in the review ui")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "diffs is not a variant noun" "prototype-lab" "${context}"
+
+    output="$(run_hook "the admin panel breaks on mobile, the side by side comparison view needs to stack under 640px")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "comparison view is not a variant noun" "prototype-lab" "${context}"
+
+    # Five true positives -- a variant-shaped noun is present near
+    # "side by side" -- must MATCH.
+    output="$(run_hook "show me both dashboard designs side by side")"
+    context="$(extract_context "${output}")"
+    assert_contains "designs is a variant noun" "prototype-lab" "${context}"
+
+    output="$(run_hook "put the two layout options side by side so i can pick")"
+    context="$(extract_context "${output}")"
+    assert_contains "layout options is a variant noun" "prototype-lab" "${context}"
+
+    output="$(run_hook "i want the three variants side by side")"
+    context="$(extract_context "${output}")"
+    assert_contains "variants is a variant noun" "prototype-lab" "${context}"
+
+    output="$(run_hook "show the alternatives side by side before we commit")"
+    context="$(extract_context "${output}")"
+    assert_contains "alternatives is a variant noun" "prototype-lab" "${context}"
+
+    output="$(run_hook "render both approaches side by side")"
+    context="$(extract_context "${output}")"
+    assert_contains "approaches is a variant noun" "prototype-lab" "${context}"
+
+    teardown_test_env
+}
+test_side_by_side_requires_a_variant_noun
+
+# ---------------------------------------------------------------------------
+# test_side_by_side_pairs_differ_only_by_the_noun
+# Spec scenario "The variant noun is what decides, not the phrase": for each
+# pair below, the two prompts are identical but for the noun in the same
+# position -- only the variant-shaped one may match. Also covers the
+# proximity window (a variant noun more than 40 non-terminal characters from
+# "side by side" must not match) and the sentence boundary (a variant noun
+# separated from "side by side" by a ./!/? must not match, even within 40
+# characters).
+# ---------------------------------------------------------------------------
+test_side_by_side_pairs_differ_only_by_the_noun() {
+    echo "-- test: side-by-side pairs differ only by the noun --"
+    setup_test_env
+    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
+    mkdir -p "$(dirname "${cache_file}")"
+
+    local pl_trigger
+    pl_trigger="$(jq -r '.skills[] | select(.name=="prototype-lab") | .triggers[0]' "${PROJECT_ROOT}/config/default-triggers.json")"
+
+    jq -n --arg trig "${pl_trigger}" '{
+      "version": "test",
+      "skills": [
+        {
+          "name": "prototype-lab",
+          "role": "domain",
+          "phase": "DESIGN",
+          "triggers": [$trig],
+          "trigger_mode": "regex",
+          "priority": 15,
+          "invoke": "Skill(auto-claude-skills:prototype-lab)",
+          "available": true,
+          "enabled": true
+        }
+      ],
+      "methodology_hints": [],
+      "phase_compositions": {}
+    }' > "${cache_file}"
+
+    local output context
+
+    # Pair 1: "versions" (variant noun) vs "photos" (not).
+    output="$(run_hook "compare the two versions side by side")"
+    context="$(extract_context "${output}")"
+    assert_contains "pair1 variant noun matches" "prototype-lab" "${context}"
+
+    output="$(run_hook "compare the two photos side by side")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "pair1 non-variant noun does not match" "prototype-lab" "${context}"
+
+    # Pair 2: "layouts" (variant noun) vs "screenshots" (not).
+    output="$(run_hook "look at the layouts side by side")"
+    context="$(extract_context "${output}")"
+    assert_contains "pair2 variant noun matches" "prototype-lab" "${context}"
+
+    output="$(run_hook "look at the screenshots side by side")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "pair2 non-variant noun does not match" "prototype-lab" "${context}"
+
+    # Pair 3: "mockups" (variant noun) vs "screenshots" (not).
+    output="$(run_hook "put the mockups side by side for review")"
+    context="$(extract_context "${output}")"
+    assert_contains "pair3 variant noun matches" "prototype-lab" "${context}"
+
+    output="$(run_hook "put the screenshots side by side for review")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "pair3 non-variant noun does not match" "prototype-lab" "${context}"
+
+    # Proximity window: a variant noun ("options") is present, but more than
+    # 40 non-terminal characters away from "side by side" -- must not match.
+    output="$(run_hook "these two options have a lot of extra unrelated context words padded in between them so it grows past forty characters before side by side")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "variant noun beyond the proximity window does not match" "prototype-lab" "${context}"
+
+    # Sentence boundary: a variant noun ("options") is present within the
+    # raw character count, but a "." separates it from "side by side" in a
+    # different sentence -- must not match.
+    output="$(run_hook "we reviewed the design options. now show the render side by side")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "variant noun across a sentence boundary does not match" "prototype-lab" "${context}"
+
+    teardown_test_env
+}
+test_side_by_side_pairs_differ_only_by_the_noun
+
 print_summary

@@ -7,7 +7,7 @@ while IFS= read -r p; do
     | HOME="$H" CLAUDE_PLUGIN_ROOT="$ROOT" /bin/bash "$ROOT/hooks/skill-activation-hook.sh" 2>/dev/null \
     | jq -r '.hookSpecificOutput.additionalContext // empty')"
   got=""
-  for s in second-opinion panel design-debate synthesize; do
+  for s in second-opinion panel design-debate synthesize prototype-lab; do
     printf '%s' "$out" | grep -q "auto-claude-skills:${s})" && got="${got}${s},"
   done
   [ -n "$got" ] && printf '%s\t%s\n' "${got%,}" "$p"
