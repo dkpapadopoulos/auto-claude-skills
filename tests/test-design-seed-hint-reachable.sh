@@ -1023,4 +1023,44 @@ ${_bare}"
     fi
 done
 
+# ---------------------------------------------------------------------------
+# 7. Aesthetic authority sits with frontend-design, not the shipped seed.
+# ---------------------------------------------------------------------------
+# frontend-design's SKILL.md tells the model to make deliberate, brief-specific
+# choices about palette/typography/layout — explicitly not the default
+# families it would reach for on any other project. The design-seed hint used
+# to say "adopt the shipped styleguide seed rather than inventing tokens".
+# Read together in one context window, those were competing house-style
+# directives. Settled (openspec/changes/frontend-design-routing,
+# design-foundations spec, "The shipped seed is a taste floor, not a house
+# style"): the shipped look is a floor, not an obligation — the reader is
+# expected to replace it with brief-specific choices per frontend-design, what
+# the lint enforces is role INDIRECTION rather than any specific value, and
+# adopting the shipped values unchanged remains a supported outcome.
+#
+# Both cells read the ALREADY-RENDERED ${HINT_LINE} from section 2 above,
+# rather than re-rendering, so they cannot disagree with the reachability
+# cells about what the hint said.
+test_hint_frames_seed_as_a_floor() {
+    assert_contains "the hint names the shipped palette/type scale a starting floor" \
+        "starting floor" "${HINT_LINE}"
+    assert_not_contains "the hint no longer instructs adopting the shipped values in preference to brief-specific ones" \
+        "rather than inventing tokens" "${HINT_LINE}"
+    assert_contains "the hint credits frontend-design for brief-specific choices" \
+        'frontend-design' "${HINT_LINE}"
+}
+
+test_hint_does_not_forbid_unchanged_adoption() {
+    assert_contains "the hint states unchanged adoption remains supported" \
+        "both are supported" "${HINT_LINE}"
+    assert_contains "the hint names keeping the shipped values unchanged as an option" \
+        "keep them unchanged" "${HINT_LINE}"
+}
+
+# Every test_ function defined here must be invoked below (PR review).
+assert_test_functions_wired "$0"
+
+test_hint_frames_seed_as_a_floor
+test_hint_does_not_forbid_unchanged_adoption
+
 print_summary
