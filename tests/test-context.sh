@@ -2085,7 +2085,7 @@ test_driver_render_absent_without_jq() {
     teardown_test_env
 }
 
-# MUST-FAIL CELL (ordering). Excludes placing the call after the
+# MUST-FAIL CELL (ordering, see Arm 1b). Excludes placing the call after the
 # _prompt_is_consultation_only block: that block empties COMPOSITION_CHAIN, so
 # a render gated on "the chain is empty" would fire on a consultation prompt
 # and hand it a DESIGN precondition it never asked for.
@@ -2099,10 +2099,16 @@ test_driver_render_suppressed_on_consultation_prompt() {
     install_real_registry \
         '.skills = [.skills[] | if .name == "writing-plans" then .precondition = "PRECONDITION: PLAN-DRIVER-MARKER" else . end]'
 
-    # Arm 1: a consultation prompt that DOES anchor a chain (brainstorming
-    # matches "approach"), which the consultation block then clears. This is
-    # the ordering case: the chain is non-empty when the fallback runs and
-    # empty afterwards.
+    # Arm 1: a consultation prompt that anchors a chain via `brainstorming`
+    # ("approach" matches its trigger). CORRECTION: this is NOT the ordering
+    # case the comment previously claimed -- `brainstorming` is a `role:
+    # process` skill, so `_render_driver_precondition`'s PROCESS_SKILL guard
+    # (hooks/skill-activation-hook.sh, ahead of the COMPOSITION_CHAIN-ordering
+    # concern) already returns empty regardless of whether the consultation
+    # block runs before or after the render call. This arm is therefore inert
+    # to the ordering mutant it was written to catch -- it pins the
+    # PROCESS_SKILL guard on a consultation prompt instead, which is a real
+    # but different property. See Arm 1b for the actual ordering cell.
     local ctx1
     ctx1="$(_dp_ctx "ask codex to weigh in on this dashboard layout approach" cons1)"
     assert_not_contains "no chain is displayed on a consultation prompt" \
@@ -2111,6 +2117,24 @@ test_driver_render_suppressed_on_consultation_prompt() {
         "driver not invoked" "${ctx1}"
     assert_not_contains "no DESIGN precondition on a consultation prompt" \
         "TRIFECTA" "${ctx1}"
+
+    # Arm 1b: the genuine ordering case Arm 1 was meant to be. A WORKFLOW
+    # anchor (openspec-ship, matched via "as-built"/"openspec") is not a
+    # process skill, so it is not caught by the PROCESS_SKILL guard -- the
+    # only thing suppressing its render is the COMPOSITION_CHAIN-non-empty
+    # guard seeing the chain the walker resolved, before the consultation
+    # block clears it. Swapping the call to after the consultation block
+    # would leave COMPOSITION_CHAIN already emptied when the render runs, so
+    # the first guard would not fire and SHIP's driver would render on a
+    # prompt that only asked for an opinion. Verified against the real hook
+    # (SKILL_EXPLAIN=1) to be classified consultation-only ("[consultation]
+    # chain DISPLAY suppressed") with no process skill selected.
+    local ctx1b
+    ctx1b="$(_dp_ctx "ask codex what it thinks about documenting this as-built with openspec" cons1b)"
+    assert_not_contains "no chain is displayed on a workflow-anchored consultation" \
+        "Composition:" "${ctx1b}"
+    assert_not_contains "no driver attribution after a workflow-anchored chain is cleared" \
+        "driver not invoked" "${ctx1b}"
 
     # Arm 2: a consultation prompt that selects only domain skills, so no chain
     # ever existed and the in-block clear is what has to suppress the render.
@@ -2199,6 +2223,19 @@ SHIM
         "0" "$(_dp_count_driver_calls "${_DP_WORKFLOW_ANCHOR}" fork-wf)"
     assert_equals "no driver lookup when a chainless process skill was selected" \
         "0" "$(_dp_count_driver_calls "debug this crash in the auth module" fork-chainless)"
+
+    # The PRIMARY_PHASE guard (hooks/skill-activation-hook.sh's
+    # `[[ -z "${PRIMARY_PHASE:-}" ]] && return 0`) was unheld: no cell isolated
+    # it from the COMPOSITION_CHAIN and PROCESS_SKILL guards above it, so
+    # deleting it changed no test outcome. It is reachable only when BOTH of
+    # those are also empty, which needs a prompt selecting NO skill at all
+    # (every shipped domain skill carries a phase, per
+    # test_domain_only_match_renders_driver_precondition's own comment) --
+    # verified with SKILL_EXPLAIN=1 to select "0 skills | phase=" for this
+    # prompt. Without the guard, the function proceeds past this point and
+    # forks the driver-lookup jq call even though PRIMARY_PHASE is empty.
+    assert_equals "no driver lookup when no skill (and so no phase) was selected" \
+        "0" "$(_dp_count_driver_calls "hello there, just checking in" fork-nophase)"
 
     teardown_test_env
 }
