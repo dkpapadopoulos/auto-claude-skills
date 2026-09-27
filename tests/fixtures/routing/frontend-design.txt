@@ -22,7 +22,9 @@ MATCH: update the css styles
 
 NO_MATCH: was the npm package compromised in the latest attack
 
-# Regression guard for the false dispatch measured on commit 5e67f78's
-# `screens?` addition (removed): a bare singular "screen" with no other
-# frontend-design vocabulary must not match.
-NO_MATCH: the collapsible panel on the settings screen needs a scrollbar
+# `screens?` was restored to the trigger (owner decision, 2026-09-27): a
+# bare singular "screen" mention is in remit per frontend-design's own
+# description ("building new UI or reshaping an existing one"). This was
+# previously a NO_MATCH regression guard for a since-removed `screens?`
+# addition; it now legitimately matches.
+MATCH: the collapsible panel on the settings screen needs a scrollbar

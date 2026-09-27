@@ -7459,10 +7459,9 @@ test_frontend_design_matches_plural_ui_nouns() {
     context="$(extract_context "${output}")"
     assert_contains "matches plural components" "frontend-design" "${context}"
 
-    # "screens?" was removed from the trigger (issue: it matched the bare
-    # singular "screen" with no other frontend-design vocabulary, causing a
-    # new false dispatch on the negative corpus -- see the NO_MATCH
-    # assertion below). No plural assertion for "screens" remains here.
+    output="$(run_hook "polish the screens")"
+    context="$(extract_context "${output}")"
+    assert_contains "matches plural screens" "frontend-design" "${context}"
 
     # Singulars must still match (no regression from the pluralization).
     output="$(run_hook "polish the dashboard")"
@@ -7481,13 +7480,14 @@ test_frontend_design_matches_plural_ui_nouns() {
     context="$(extract_context "${output}")"
     assert_contains "still matches singular screen" "frontend-design" "${context}"
 
-    # Regression guard: the committed trigger's "screens?" addition matched
-    # this prompt via the bare singular "screen" -- no other frontend-design
-    # vocabulary present -- a false dispatch measured on the 224-prompt
-    # negative corpus. "screens?" is removed; this must never match again.
+    # "screens?" is restored (owner decision, 2026-09-27): frontend-design's
+    # own description covers "building new UI or reshaping an existing one",
+    # so a bare "screen" mention is in remit. This prompt -- previously a
+    # NO_MATCH regression guard for the removed "screens?" alternative --
+    # now legitimately matches via the bare singular noun.
     output="$(run_hook "the collapsible panel on the settings screen needs a scrollbar")"
     context="$(extract_context "${output}")"
-    assert_not_contains "bare singular screen no longer false-dispatches" "frontend-design" "${context}"
+    assert_contains "bare singular screen now legitimately matches" "frontend-design" "${context}"
 
     teardown_test_env
 }
@@ -7537,6 +7537,38 @@ REGISTRY
     context="$(extract_context "${output}")"
     assert_not_contains "unavailable frontend-design never invoked" "Skill(frontend-design:frontend-design)" "${context}"
 
+    # DISCRIMINATING TWIN. Without this, the assertion above is satisfied just
+    # as well by EMPTY output -- e.g. a broken trigger, a broken hook, or the
+    # availability gate rejecting every skill regardless of its flag -- as by
+    # the gate genuinely distinguishing available:true from available:false.
+    # Same registry, same prompt, only `available` flipped: this must render
+    # the invocation, proving the prior assertion's absence means what it
+    # claims.
+    cat > "${cache_file}" <<'REGISTRY'
+{
+  "version": "test",
+  "skills": [
+    {
+      "name": "frontend-design",
+      "role": "domain",
+      "phase": "DESIGN",
+      "triggers": ["(^|[^a-z])(ui|frontend|front.end|components?|layouts?|styles?|css|tailwind|responsive|dashboards?|landing.?pages?|mockups?|wireframes?)($|[^a-z])"],
+      "trigger_mode": "regex",
+      "priority": 15,
+      "invoke": "Skill(frontend-design:frontend-design)",
+      "available": true,
+      "enabled": true
+    }
+  ],
+  "methodology_hints": [],
+  "phase_compositions": {}
+}
+REGISTRY
+
+    output="$(run_hook "polish the dashboards")"
+    context="$(extract_context "${output}")"
+    assert_contains "available frontend-design twin IS invoked" "Skill(frontend-design:frontend-design)" "${context}"
+
     teardown_test_env
 }
 test_frontend_design_unavailable_emits_no_invocation
@@ -7555,6 +7587,15 @@ test_frontend_design_unavailable_emits_no_invocation
 # config and genuinely passes once triggers[0] is edited, with no second
 # edit to this file required. See task-2-brief.md Interfaces for the exact
 # trigger string this is meant to converge on.
+#
+# `keywords` is ALSO sourced live (not hardcoded/omitted): keyword_score
+# scores on an independent path (hooks/skill-activation-hook.sh:586-606)
+# that admits a skill even with zero trigger_score, so a registry fixture
+# that drops `keywords` cannot catch a shipped "side by side" keyword entry
+# bypassing the trigger's proximity narrowing entirely. See the load-bearing
+# half of this fix at config/default-triggers.json's prototype-lab entry:
+# the "side by side" keyword was removed from `keywords`, and this fixture
+# must reflect that removal, not silently omit the field.
 # ---------------------------------------------------------------------------
 test_side_by_side_requires_a_variant_noun() {
     echo "-- test: side-by-side requires a variant noun --"
@@ -7562,10 +7603,20 @@ test_side_by_side_requires_a_variant_noun() {
     local cache_file="${HOME}/.claude/.skill-registry-cache.json"
     mkdir -p "$(dirname "${cache_file}")"
 
-    local pl_trigger
+    local pl_trigger pl_keywords
     pl_trigger="$(jq -r '.skills[] | select(.name=="prototype-lab") | .triggers[0]' "${PROJECT_ROOT}/config/default-triggers.json")"
+    pl_keywords="$(jq -c '.skills[] | select(.name=="prototype-lab") | .keywords' "${PROJECT_ROOT}/config/default-triggers.json")"
 
-    jq -n --arg trig "${pl_trigger}" '{
+    # Assert the "side by side" keyword's absence in BOTH config files -- a
+    # shipped re-addition (to either) would silently defeat the trigger
+    # narrowing above via the independent keyword-scoring path.
+    local dt_kw_hit fb_kw_hit
+    dt_kw_hit="$(jq -r '[.skills[] | select(.name=="prototype-lab") | .keywords[] | select(ascii_downcase == "side by side")] | length' "${PROJECT_ROOT}/config/default-triggers.json")"
+    assert_equals "side by side absent from default-triggers.json keywords" "0" "${dt_kw_hit}"
+    fb_kw_hit="$(jq -r '[.skills[] | select(.name=="prototype-lab") | .keywords[] | select(ascii_downcase == "side by side")] | length' "${PROJECT_ROOT}/config/fallback-registry.json")"
+    assert_equals "side by side absent from fallback-registry.json keywords" "0" "${fb_kw_hit}"
+
+    jq -n --arg trig "${pl_trigger}" --argjson kw "${pl_keywords}" '{
       "version": "test",
       "skills": [
         {
@@ -7573,6 +7624,7 @@ test_side_by_side_requires_a_variant_noun() {
           "role": "domain",
           "phase": "DESIGN",
           "triggers": [$trig],
+          "keywords": $kw,
           "trigger_mode": "regex",
           "priority": 15,
           "invoke": "Skill(auto-claude-skills:prototype-lab)",
@@ -7654,10 +7706,14 @@ test_side_by_side_pairs_differ_only_by_the_noun() {
     local cache_file="${HOME}/.claude/.skill-registry-cache.json"
     mkdir -p "$(dirname "${cache_file}")"
 
-    local pl_trigger
+    local pl_trigger pl_keywords
     pl_trigger="$(jq -r '.skills[] | select(.name=="prototype-lab") | .triggers[0]' "${PROJECT_ROOT}/config/default-triggers.json")"
+    # `keywords` is sourced live too, not omitted -- see the sibling test
+    # function's comment for why an omitted `keywords` fixture cannot catch
+    # a shipped "side by side" keyword re-addition bypassing this trigger.
+    pl_keywords="$(jq -c '.skills[] | select(.name=="prototype-lab") | .keywords' "${PROJECT_ROOT}/config/default-triggers.json")"
 
-    jq -n --arg trig "${pl_trigger}" '{
+    jq -n --arg trig "${pl_trigger}" --argjson kw "${pl_keywords}" '{
       "version": "test",
       "skills": [
         {
@@ -7665,6 +7721,7 @@ test_side_by_side_pairs_differ_only_by_the_noun() {
           "role": "domain",
           "phase": "DESIGN",
           "triggers": [$trig],
+          "keywords": $kw,
           "trigger_mode": "regex",
           "priority": 15,
           "invoke": "Skill(auto-claude-skills:prototype-lab)",
