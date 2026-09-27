@@ -331,7 +331,7 @@
       "role": "domain",
       "phase": "DESIGN",
       "triggers": [
-        "(^|[^a-z])(ui|frontend|front.end|components?|layouts?|styles?|css|tailwind|responsive|dashboards?|screens?|landing.?pages?|mockups?|wireframes?)($|[^a-z])"
+        "(^|[^a-z])(ui|frontend|front.end|components?|layouts?|styles?|css|tailwind|responsive|dashboards?|landing.?pages?|mockups?|wireframes?)($|[^a-z])"
       ],
       "keywords": [],
       "trigger_mode": "regex",

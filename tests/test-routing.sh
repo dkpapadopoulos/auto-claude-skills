@@ -7459,9 +7459,10 @@ test_frontend_design_matches_plural_ui_nouns() {
     context="$(extract_context "${output}")"
     assert_contains "matches plural components" "frontend-design" "${context}"
 
-    output="$(run_hook "design the dashboard screens")"
-    context="$(extract_context "${output}")"
-    assert_contains "matches plural screens" "frontend-design" "${context}"
+    # "screens?" was removed from the trigger (issue: it matched the bare
+    # singular "screen" with no other frontend-design vocabulary, causing a
+    # new false dispatch on the negative corpus -- see the NO_MATCH
+    # assertion below). No plural assertion for "screens" remains here.
 
     # Singulars must still match (no regression from the pluralization).
     output="$(run_hook "polish the dashboard")"
@@ -7479,6 +7480,14 @@ test_frontend_design_matches_plural_ui_nouns() {
     output="$(run_hook "design the dashboard screen")"
     context="$(extract_context "${output}")"
     assert_contains "still matches singular screen" "frontend-design" "${context}"
+
+    # Regression guard: the committed trigger's "screens?" addition matched
+    # this prompt via the bare singular "screen" -- no other frontend-design
+    # vocabulary present -- a false dispatch measured on the 224-prompt
+    # negative corpus. "screens?" is removed; this must never match again.
+    output="$(run_hook "the collapsible panel on the settings screen needs a scrollbar")"
+    context="$(extract_context "${output}")"
+    assert_not_contains "bare singular screen no longer false-dispatches" "frontend-design" "${context}"
 
     teardown_test_env
 }
@@ -7510,7 +7519,7 @@ test_frontend_design_unavailable_emits_no_invocation() {
       "name": "frontend-design",
       "role": "domain",
       "phase": "DESIGN",
-      "triggers": ["(^|[^a-z])(ui|frontend|front.end|components?|layouts?|styles?|css|tailwind|responsive|dashboards?|screens?|landing.?pages?|mockups?|wireframes?)($|[^a-z])"],
+      "triggers": ["(^|[^a-z])(ui|frontend|front.end|components?|layouts?|styles?|css|tailwind|responsive|dashboards?|landing.?pages?|mockups?|wireframes?)($|[^a-z])"],
       "trigger_mode": "regex",
       "priority": 15,
       "invoke": "Skill(frontend-design:frontend-design)",

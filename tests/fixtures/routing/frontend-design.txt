@@ -5,15 +5,24 @@
 # Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
 # NO_MATCH line is verbatim-borrowed from supply-chain-investigation MATCH fixture.
 
-# Corpus-sourced (extracted verbatim from the real-prompt corpus during
-# planning of the plural-UI-noun trigger fix, task-1-brief.md).
-MATCH: publish the viewable page with the six screens
+# CONSTRUCTED, not corpus-sourced: the 2451-prompt real-prompt corpus
+# (714 human) contains ZERO plural-dependent frontend-design prompts
+# (measured) -- every real prompt matching the plural alternatives also
+# matched the pre-existing singular trigger independently. This line exists
+# only to exercise the plural morphology (dashboards?, wireframes?,
+# components?) directly; do not read it as evidence of real-world usage.
+MATCH: ship the new dashboards and wireframes for review
 
 MATCH: polish the dashboards
 MATCH: add wireframes
 MATCH: build the react components
-MATCH: design the dashboard screens
+MATCH: design the dashboard screen
 MATCH: fix the responsive layout
 MATCH: update the css styles
 
 NO_MATCH: was the npm package compromised in the latest attack
+
+# Regression guard for the false dispatch measured on commit 5e67f78's
+# `screens?` addition (removed): a bare singular "screen" with no other
+# frontend-design vocabulary must not match.
+NO_MATCH: the collapsible panel on the settings screen needs a scrollbar
