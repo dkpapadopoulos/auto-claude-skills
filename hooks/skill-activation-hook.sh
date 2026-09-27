@@ -1389,7 +1389,11 @@ _render_driver_precondition() {
   # step's precondition, so firing here as well would duplicate it — and this
   # predicate is also what keeps the fallback from displacing either anchor or
   # reordering the two.
-  [[ -n "$COMPOSITION_CHAIN" ]] && return 0
+  if [[ -n "$COMPOSITION_CHAIN" ]]; then
+    [[ -n "${SKILL_EXPLAIN:-}" ]] && \
+      printf '[skill-hook]   [driver-precondition] skipped: a chain already anchored\n' >&2
+    return 0
+  fi
   # "No chain" is NOT the same set as "no process skill was selected", and the
   # spec's condition is the latter. Three shipped process skills carry
   # `precedes: [] requires: []` — systematic-debugging, receiving-code-review,
@@ -1405,11 +1409,20 @@ _render_driver_precondition() {
   # rejected: it is a second predicate to maintain beside this one, and it
   # leaves the spec divergence standing. PROCESS_SKILL is set by
   # _determine_label_phase, which runs well before this function's call site.
-  [[ -n "${PROCESS_SKILL:-}" ]] && return 0
+  if [[ -n "${PROCESS_SKILL:-}" ]]; then
+    [[ -n "${SKILL_EXPLAIN:-}" ]] && \
+      printf '[skill-hook]   [driver-precondition] skipped: a process skill (%s) was selected\n' \
+        "$PROCESS_SKILL" >&2
+    return 0
+  fi
   # No phase, nothing to look up. _determine_label_phase falls back through
   # process -> workflow -> domain -> required, so a domain-only match still has
   # one; an empty value means no skill carried a phase at all.
-  [[ -z "${PRIMARY_PHASE:-}" ]] && return 0
+  if [[ -z "${PRIMARY_PHASE:-}" ]]; then
+    [[ -n "${SKILL_EXPLAIN:-}" ]] && \
+      printf '[skill-hook]   [driver-precondition] skipped: no skill (and so no phase) was selected\n' >&2
+    return 0
+  fi
 
   # ONE jq call for the driver name plus that skill's invoke and precondition.
   # It runs only on this path — where no anchor resolved — so the ~50ms
@@ -1501,6 +1514,9 @@ EOF
   DRIVER_PRECONDITION="
 ${PRIMARY_PHASE} driver not invoked: ${_dp_invoke}
   ${_cprecond}"
+  [[ -n "${SKILL_EXPLAIN:-}" ]] && \
+    printf '[skill-hook]   [driver-precondition] rendered %s driver %s\n' \
+      "$PRIMARY_PHASE" "$_dp_name" >&2
 }
 
 # --- _format_output -----------------------------------------------
