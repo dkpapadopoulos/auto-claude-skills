@@ -1379,6 +1379,19 @@ _dp_ctx() {
 # because the hook runs under `set -u` and the templates interpolate the
 # variable unconditionally -- deleting the call alone would kill the hook, and
 # a dead hook is not a control.
+#
+# SCOPE, and it is narrower than "before and after this change": the substitute
+# is DERIVED from the file under test, so it isolates the stripped CALL SITE and
+# nothing else. Any other edit to the hook is present in BOTH arms and cancels
+# out. Concretely, the cells using it CANNOT detect a change to anchor-resolution
+# ORDER, which is what the spec's "MUST NOT change the order in which those two
+# anchors are resolved" asks for -- measured: appending to COMPOSITION_CHAIN
+# right after the walker leaves both byte-identity comparisons IDENTICAL (what
+# fails under that mutant is the positive cells, because the render stops firing
+# at all -- a different observation, not a detection of the order change). The
+# SHIP marker precondition added for the workflow control does NOT change this;
+# that cell still passes under the order mutant. Order is covered by inspection,
+# not by these cells.
 _dp_make_feature_off_hook() {
     sed 's/^_render_driver_precondition$/DRIVER_PRECONDITION=""/' "${HOOK}" > "$1"
     # The strip MUST have changed something. Asserting only "the pattern is
@@ -1795,6 +1808,24 @@ test_driver_absent_degrades() {
 # not be reached through the same catch-all as an absent driver. The two arms
 # differ in exactly one variable — whether the registry parses — and the
 # repaired arm proves the omission in the broken arm was caused by the fault.
+#
+# WHAT THIS CELL ACTUALLY COVERS, corrected. With BOTH the cache and the
+# fallback registry unparseable the hook never enters
+# _render_driver_precondition at all: it has already taken its global
+# registry-absent exit at hooks/skill-activation-hook.sh:363 ("No registry
+# available — emit minimal phase checkpoint and exit"), which sits above the
+# call site. Measured with SKILL_EXPLAIN=1: ZERO [driver-precondition]
+# breadcrumbs. The `phase checkpoint only` string this cell keys on for
+# non-vacuity is itself the tell — that text is emitted by :363.
+#
+# So the fault is absorbed ABOVE the function, and the spec scenario is
+# satisfied end to end (this cell is red at e506f9b and green now) — but the
+# in-function infra-fault arm is NOT what it exercises. That arm has its own
+# cell below, test_driver_render_infra_fault_arm_fires, which reaches it with a
+# registry the batched extraction accepts and this one jq program rejects.
+# The two conditions the spec requires to be distinguishable from each other are
+# the ones at :1441 (no driver configured) and :1447 (driver not in registry);
+# the four SKILL_EXPLAIN breadcrumbs separate all four outcomes.
 test_driver_render_distinct_from_infra_failure() {
     echo "-- test: an infrastructure fault does not masquerade as an absent driver --"
     setup_test_env
@@ -1833,6 +1864,154 @@ test_driver_render_distinct_from_infra_failure() {
     assert_equals "the repaired arm also exits successfully" "0" "${_DP_RC}"
     assert_contains "the identical prompt renders once the registry parses" \
         "driver not invoked" "${ctx_ok}"
+
+    teardown_test_env
+}
+
+# The in-function infra-fault arm, reached for real.
+#
+# The cell above cannot reach it (the hook exits above the call site), so the arm
+# looked like defence-in-depth no input could exercise. It can be exercised: the
+# registry cache is a JSON DOCUMENT STREAM. _REG_PROGRAM reads `[inputs]` and
+# wraps each filter in try/catch PER DOCUMENT, so a valid registry followed by a
+# non-object document still yields skills and the hook routes normally; the
+# driver lookup runs the same text through a plain `jq -r`, which applies its
+# filter to EVERY document, so the second one raises and jq exits non-zero.
+#
+# Multi-document registries are an anticipated shape, not a contrivance — the
+# batched extraction's own comment explains that `[inputs]` exists to read them
+# the way the five separate calls did. The asymmetry is deliberate rather than a
+# defect to fix: a registry we know is malformed should not have a precondition
+# rendered out of it. The requirement is that the hook degrade, announce, and
+# exit 0, which is what is asserted here.
+test_driver_render_infra_fault_arm_fires() {
+    echo "-- test: the in-function infra-fault arm fires and is distinguishable --"
+    setup_test_env
+    install_real_registry
+    local cache="${HOME}/.claude/.skill-registry-cache.json"
+
+    # CONTROL FIRST, on the untouched single-document registry: the render works
+    # here, so the absence below is caused by the appended document and nothing
+    # else. Taken before the fault so the two arms differ in one variable.
+    local ctx_ok
+    ctx_ok="$(_dp_ctx "${_DP_DOMAIN_ONLY}" infra2-ok)"
+    assert_contains "control: the single-document registry renders" \
+        "driver not invoked" "${ctx_ok}"
+
+    # One variable: a second, non-object JSON document appended.
+    printf '[1,2]\n' >> "${cache}"
+
+    local tp="${TEST_TMPDIR}/infra2.jsonl" pay="${TEST_TMPDIR}/infra2.json"
+    : > "${tp}"
+    jq -n --arg p "${_DP_DOMAIN_ONLY}" --arg t "${tp}" \
+        '{"prompt":$p,"transcript_path":$t}' > "${pay}"
+    local out rc err ctx
+    err="${TEST_TMPDIR}/infra2.err"
+    out="$(SKILL_EXPLAIN=1 CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+            bash "${HOOK}" < "${pay}" 2>"${err}")"
+    rc=$?
+    ctx="$(extract_context "${out}")"
+
+    assert_equals "the hook exits successfully" "0" "${rc}"
+    assert_not_contains "no driver render under the in-function fault" \
+        "driver not invoked" "${ctx}"
+    # NON-VACUITY, and the thing the cell above could not show: the hook did NOT
+    # take its global registry-absent exit — it routed normally and only the
+    # driver render is missing.
+    assert_not_contains "the hook did NOT take its global registry-absent exit" \
+        "phase checkpoint only" "${ctx}"
+    assert_contains "the hook routed the prompt normally" \
+        "Skill(frontend-design:frontend-design)" "${ctx}"
+    assert_contains "the rest of the phase output still renders" \
+        "Phase: [DESIGN]" "${ctx}"
+    # DISTINGUISHABILITY, asserted directly rather than inferred: the breadcrumb
+    # names an infrastructure fault, not an absent driver. This is the spec
+    # requirement that the two must not be reached through one catch-all.
+    assert_contains "the breadcrumb names an infrastructure fault" \
+        "infrastructure fault, not an absent driver" "$(cat "${err}" 2>/dev/null)"
+    assert_not_contains "the breadcrumb does not claim the driver is absent" \
+        "has no driver configured" "$(cat "${err}" 2>/dev/null)"
+
+    teardown_test_env
+}
+
+# The four non-rendering outcomes are DISTINGUISHABLE in the SKILL_EXPLAIN trace.
+#
+# Added because a mutation said it was needed: deleting the `carries no
+# precondition` breadcrumb left the whole file GREEN, so that line — the
+# function's most common outcome, six of eight shipped drivers — was shipped
+# unheld. The other three are asserted here alongside it, because the property
+# that matters is not "each line exists" but "no two outcomes read the same": a
+# trace that says `has no driver configured` when the machinery failed is the
+# catch-all the spec forbids, and only a cell that checks each message against
+# the OTHERS' text can catch that.
+#
+# The infrastructure-fault breadcrumb is asserted in
+# test_driver_render_infra_fault_arm_fires, which is the only place that can
+# reach it; this cell covers the remaining three and pins their mutual exclusion.
+test_driver_non_render_outcomes_are_distinguishable() {
+    echo "-- test: the driver fallback's non-rendering outcomes are distinguishable --"
+    setup_test_env
+
+    # _dp_breadcrumbs <registry-filter> <tag> — the [driver-precondition] trace
+    # lines from one run of the anchorless prompt.
+    _dp_breadcrumbs() {
+        install_real_registry "$1"
+        local tp="${TEST_TMPDIR}/$2.jsonl" pay="${TEST_TMPDIR}/$2.json"
+        local err="${TEST_TMPDIR}/$2.err"
+        : > "${tp}"
+        jq -n --arg p "${_DP_DOMAIN_ONLY}" --arg t "${tp}" \
+            '{"prompt":$p,"transcript_path":$t}' > "${pay}"
+        SKILL_EXPLAIN=1 CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+            bash "${HOOK}" < "${pay}" > "${TEST_TMPDIR}/$2.out" 2>"${err}"
+        grep 'driver-precondition' "${err}" 2>/dev/null || true
+    }
+
+    # (a) The phase has no driver at all.
+    local b_nodriver
+    b_nodriver="$(_dp_breadcrumbs 'del(.phase_compositions.DESIGN)' bc-nodriver)"
+    assert_contains "no-driver outcome says so" "has no driver configured" "${b_nodriver}"
+
+    # (b) The driver is named but absent from the registry.
+    local b_missing
+    b_missing="$(_dp_breadcrumbs '.phase_compositions.DESIGN.driver = "no-such-skill-anywhere"' bc-missing)"
+    assert_contains "absent-driver outcome names the skill and the registry" \
+        "driver no-such-skill-anywhere is not in the registry" "${b_missing}"
+
+    # (c) The driver exists but carries no precondition — the common case, and
+    # the one that was silent. product-discovery is a real shipped skill with no
+    # `precondition`, so this needs no invented field.
+    local b_noprecond
+    b_noprecond="$(_dp_breadcrumbs '.phase_compositions.DESIGN.driver = "product-discovery"' bc-noprecond)"
+    assert_contains "no-precondition outcome says so" \
+        "driver product-discovery carries no precondition" "${b_noprecond}"
+    # NON-VACUITY for (c): this arm really did resolve a driver, so the line is
+    # the declining-to-render trace and not one of the failure traces above.
+    assert_not_contains "(c) is not reported as an absent driver" \
+        "is not in the registry" "${b_noprecond}"
+    assert_not_contains "(c) is not reported as an unconfigured phase" \
+        "has no driver configured" "${b_noprecond}"
+    assert_not_contains "(c) is not reported as an infrastructure fault" \
+        "infrastructure fault" "${b_noprecond}"
+
+    # MUTUAL EXCLUSION the other way: (a) and (b) must not borrow each other's
+    # wording either, or "distinguishable" is only true of the case tested last.
+    assert_not_contains "(a) is not reported as an absent-from-registry driver" \
+        "is not in the registry" "${b_nodriver}"
+    assert_not_contains "(b) is not reported as an unconfigured phase" \
+        "has no driver configured" "${b_missing}"
+
+    # And every arm must still emit SOMETHING: a silent decline is the state this
+    # cell exists to forbid.
+    local _arm
+    for _arm in "${b_nodriver}" "${b_missing}" "${b_noprecond}"; do
+        if [ -n "${_arm}" ]; then
+            _record_pass "the outcome left a trace"
+        else
+            _record_fail "the outcome left a trace" \
+                "no [driver-precondition] line — a declining path must say so"
+        fi
+    done
 
     teardown_test_env
 }
@@ -2086,6 +2265,8 @@ test_driver_render_inert_when_workflow_anchored
 test_driver_render_inert_when_a_chainless_process_skill_is_selected
 test_driver_absent_degrades
 test_driver_render_distinct_from_infra_failure
+test_driver_render_infra_fault_arm_fires
+test_driver_non_render_outcomes_are_distinguishable
 test_driver_render_absent_without_jq
 test_driver_render_suppressed_on_consultation_prompt
 

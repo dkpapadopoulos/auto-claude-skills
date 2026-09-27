@@ -109,6 +109,17 @@ N_EMPTY="$(tr '\036\n' '\n ' < "${JQLOG}" | grep -c '^empty ')"
 # case — exactly one driver lookup on an anchorless prompt — is pinned in
 # tests/test-context.sh::test_driver_fallback_forks_jq_once_and_only_when_needed,
 # which owns that property rather than bolting it onto the registry-load cell.
+#
+# HIDDEN DEPENDENCY, stated so a future failure is not hunted in the wrong file:
+# `N_DRIVER == 0` holds only while this cell's probe prompt keeps selecting a
+# `process` skill. It does today because `debug ...` matches systematic-debugging.
+# Change the prompt to something domain-only and the count becomes 1 — measured:
+# `zzmarker the layout needs a visual pass` gives N_DRIVER=1 (frontend-design
+# co-selects, so PRIMARY_PHASE resolves to DESIGN), while a bare `zzmarker` gives 0
+# again for a THIRD reason (zz-marker-skill is created with phase "", so
+# PRIMARY_PHASE is empty and the lookup returns before its jq call). Three prompts,
+# three different causes for the same number: if this assertion ever fails, read it
+# as "the probe prompt's routing changed", not as a registry-extraction regression.
 N_GROUPED="$(tr '\036\n' '\n ' < "${JQLOG}" \
     | grep 'methodology_hints' | grep 'phase_compositions' | grep -c 'required_when')"
 N_ANY="$(tr '\036\n' '\n ' < "${JQLOG}" | grep -c 'methodology_hints\|phase_compositions\|required_when')"

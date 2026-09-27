@@ -1474,6 +1474,16 @@ EOF
   if [[ -z "${_dp_precond:-}" ]]; then
     # Present, but has nothing conditional to say. Rendering a bare attribution
     # line would be noise, not guidance.
+    #
+    # This is the function's MOST COMMON outcome — six of the eight shipped
+    # drivers carry no `precondition` — and it was the only one of the four that
+    # left no trace, so "checked, nothing to say" could not be told apart from
+    # "never ran". That silence already cost real diagnostic effort: it is why
+    # establishing where the infra-fault arm actually fires needed a second
+    # probe. A path that declines to act must say so.
+    [[ -n "${SKILL_EXPLAIN:-}" ]] && \
+      printf '[skill-hook]   [driver-precondition] %s driver %s carries no precondition\n' \
+        "$PRIMARY_PHASE" "$_dp_name" >&2
     return 0
   fi
 
