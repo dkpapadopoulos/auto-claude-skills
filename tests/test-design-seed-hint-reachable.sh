@@ -1057,10 +1057,31 @@ test_hint_does_not_forbid_unchanged_adoption() {
         "keep them unchanged" "${HINT_LINE}"
 }
 
+# ---------------------------------------------------------------------------
+# 8. The method's comparison step is demand-driven, not routing-dependent.
+# ---------------------------------------------------------------------------
+# Earlier tasks in this change deliberately did NOT widen prototype-lab's
+# triggers to UI vocabulary (measured: +6 false dispatches on the 224-prompt
+# negative corpus, 0 correct human matches on 2451 real prompts). So the
+# method's step 3 must not depend on routing having already selected
+# prototype-lab — it must tell the reader to invoke it AT THAT STEP. The old
+# wording ("`prototype-lab` owns this comparison — it exists, use it rather
+# than inventing a second comparison format") presupposes the reader already
+# knows to reach for it; it names no invocation.
+test_method_comparison_step_is_demand_driven() {
+    local _method_txt
+    _method_txt="$(cat "${PROJECT_ROOT}/docs/design-seed-method.md" 2>/dev/null)"
+    assert_contains "the method instructs invoking prototype-lab at this step" \
+        'Invoke `prototype-lab` at this step' "${_method_txt}"
+    assert_not_contains "the method no longer presupposes prototype-lab was already routed or selected" \
+        "owns this comparison" "${_method_txt}"
+}
+
 # Every test_ function defined here must be invoked below (PR review).
 assert_test_functions_wired "$0"
 
 test_hint_frames_seed_as_a_floor
 test_hint_does_not_forbid_unchanged_adoption
+test_method_comparison_step_is_demand_driven
 
 print_summary
