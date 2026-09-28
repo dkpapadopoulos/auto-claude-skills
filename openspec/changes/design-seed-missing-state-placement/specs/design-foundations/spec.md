@@ -2,7 +2,7 @@
 
 ## ADDED Requirements
 
-### Requirement: A missing-state reason MUST be visible beside the value
+### Requirement: A missing-state reason MUST be visible in the unit that holds the value
 
 The shipped styleguide SHALL prescribe, as the treatment for a missing value, a
 reason stated in words and visible in the same row, card or field as the value.
@@ -19,8 +19,9 @@ such row SHALL carry words in that row.
 - **WHEN** the Missing row of its states table is read
 - **THEN** the treatment MUST say the reason is visible in the same row, card or
   field
-- **AND** it MUST NOT name a title, a tooltip, hover, a footnote or a legend
-- **AND** it MUST NOT say the reason is invisible or not visible
+- **AND** it MUST NOT name a title, a tooltip, hover, a note or footnote, or a
+  legend
+- **AND** it MUST NOT say the reason is invisible, not visible or never visible
 
 #### Scenario: The styleguide states where a treatment has to appear
 
@@ -40,7 +41,8 @@ such row SHALL carry words in that row.
 - **THEN** at least one such element MUST exist
 - **AND** no element in such a row MUST carry a `title` attribute, in either
   letter case and either quoting
-- **AND** the page MUST NOT contain the words hover, tooltip or mouseover
+- **AND** the file MUST NOT contain the words hover, tooltip or mouseover
+  anywhere, its stylesheet included
 
 #### Scenario: A row with a missing value says why in that row
 
@@ -75,21 +77,40 @@ labelled version 1, which is the label the superseded guidance shipped under.
 Adoption removes the adopter's copy of `ADOPT.md`, so a reader who regenerates
 `tokens.json` follows the plugin's current instructions against an older copy of
 the seed. Those instructions SHALL take the preset name and version from the
-adopter's `design/adopted.json` and MUST NOT state a version of their own. The
-command SHALL leave the existing `tokens.json` unchanged when it cannot read
-`adopted.json` or reads no tokens.
+adopter's `design/adopted.json` and MUST NOT state a preset name or a version of
+their own. The command SHALL exit non-zero and leave the existing `tokens.json`
+unchanged when `adopted.json` is absent, when it does not hold exactly one
+record carrying a preset name and a numeric version, and when it reads no tokens
+for one of the themes.
 
 #### Scenario: An earlier adopter is not restamped
 
 - **GIVEN** a project that adopted version 1 of the seed
 - **WHEN** the regenerate command in the current `ADOPT.md` is run in it, in
   either the hook shell or the model's shell
-- **THEN** `design/tokens.json` MUST record version 1
-- **AND** its token maps MUST equal those in `design/tokens.css`
+- **THEN** `design/tokens.json` MUST record version 1 and the preset name that
+  project adopted
+- **AND** its token maps MUST equal those in `design/tokens.css`, including a
+  value the project has edited there
 
 #### Scenario: A failed regeneration changes nothing
 
 - **GIVEN** a project whose `design/adopted.json` or `design/tokens.css` is absent
+- **WHEN** the regenerate command is run
+- **THEN** it MUST exit non-zero
+- **AND** `design/tokens.json` MUST be byte-identical to what it was before
+
+#### Scenario: A record that exists and cannot be used is refused
+
+- **GIVEN** a project whose `design/adopted.json` is empty, is not JSON, is not a
+  single object, or lacks a preset name or a numeric version
+- **WHEN** the regenerate command is run
+- **THEN** it MUST exit non-zero
+- **AND** `design/tokens.json` MUST be byte-identical to what it was before
+
+#### Scenario: One empty theme is refused
+
+- **GIVEN** a project whose `design/tokens.css` has tokens for one theme only
 - **WHEN** the regenerate command is run
 - **THEN** it MUST exit non-zero
 - **AND** `design/tokens.json` MUST be byte-identical to what it was before

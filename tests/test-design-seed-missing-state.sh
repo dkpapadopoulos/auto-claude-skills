@@ -50,6 +50,19 @@ _fail_if() {
     local _d="$1" _detail="$2"; shift 2
     if "$@"; then _record_fail "${_d}" "${_detail}"; else _record_pass "${_d}"; fi
 }
+# _replace <from> <to> <in> <out> [first] -- literal replace, every occurrence in the
+# file unless "first". Literal on purpose: the strings are HTML and JSON, full of
+# characters a sed pattern would read as syntax.
+_replace() {
+    awk -v from="$1" -v to="$2" -v only="${5:-all}" '
+        { out = ""; rest = $0
+          while (!(only == "first" && done) && (i = index(rest, from)) > 0) {
+              out = out substr(rest, 1, i - 1) to
+              rest = substr(rest, i + length(from))
+              done = 1
+          }
+          print out rest }' "$3" > "$4"
+}
 
 # A class attribute carrying the token, in any quoting: "missing", 'num missing', missing.
 _Q="[\"']"
@@ -67,7 +80,7 @@ _rows() {
 }
 _missing_rows() { _rows "$1" | grep -i -E "${_MISSING_TAG}"; }
 _missing_cells() {
-    _missing_rows "$1" | tr '<' '\n' | grep -i -E "^[a-z][a-z0-9]*[[:space:]][^>]*${_MISSING_TAG}"
+    _missing_rows "$1" | tr '<' '\n' | grep -i -E "^[a-z][a-z0-9-]*[[:space:]][^>]*${_MISSING_TAG}"
 }
 
 # --- the fixtures are the real v1 bytes ---------------------------------------------
@@ -87,16 +100,17 @@ done
 # =====================================================================================
 # LINT 1 -- no row that holds a missing value hides anything in a title attribute.
 # POPULATION: table rows containing a cell whose class carries the token `missing`.
-# SEES: a `title` attribute on ANY tag in such a row -- the row, the cell, a descendant
-#       -- in either case and either quoting.
+# SEES: a `title` attribute on ANY tag in such a row -- the row, the cell, a descendant,
+#       a custom element -- in either case and either quoting.
 # CANNOT TELL a reason from other detail, so a title on a shown value in that row is
 #       reported too. That is the safe direction for a page whose job is to be imitated.
 # DOES NOT SEE: aria-label, CSS generated content, a script-driven tooltip, a missing
-#       value outside a table, or a `>` inside an attribute value.
+#       value outside a table, or a tag with `<` or `>` inside an attribute value --
+#       the page is split on those two characters, not parsed.
 # =====================================================================================
 _hidden_reasons() {
     _missing_rows "$1" | tr '<' '\n' \
-        | grep -i -E "^[a-z][a-z0-9]*([[:space:]][^>]*)?[[:space:]\"']title[[:space:]]*="
+        | grep -i -E "^[a-z][a-z0-9-]*([[:space:]][^>]*)?[[:space:]\"']title[[:space:]]*="
 }
 
 # Floor: with no missing cell on the page the lint below holds vacuously.
@@ -116,10 +130,7 @@ _n_spellings=0
 while IFS='|' read -r _name _expect _replacement; do
     [ -n "${_name}" ] || continue
     _n_spellings=$((_n_spellings + 1))
-    awk -v from="${_cell}" -v to="${_replacement}" '
-        !done && index($0, from) { i = index($0, from)
-            $0 = substr($0, 1, i - 1) to substr($0, i + length(from)); done = 1 }
-        { print }' "${SEED}/reference.html" > "${SCRATCH}/spell.html"
+    _replace "${_cell}" "${_replacement}" "${SEED}/reference.html" "${SCRATCH}/spell.html" first
     if _changed "${SEED}/reference.html" "${SCRATCH}/spell.html"; then
         assert_equals "lint 1 sees: ${_name}" "${_expect}" \
             "$(_count "$(_hidden_reasons "${SCRATCH}/spell.html")")"
@@ -135,10 +146,37 @@ a single-quoted class|1|<td class='missing' title="no price">—</td>
 an unquoted class|1|<td class=missing title="no price">—</td>
 a second class token|1|<td class="num missing" title="no price">—</td>
 a title on a descendant|1|<td class="missing"><abbr title="no price">—</abbr></td>
+a title on a custom element|1|<td class="missing"><x-tip title="no price">—</x-tip></td>
 visible text that mentions a title|0|<td class="missing">— no title = unknown</td>
 a data-title attribute|0|<td class="missing" data-title="x">—</td>
 SPELLINGS
-assert_equals "lint 1: every spelling cell ran (floor)" "10" "${_n_spellings}"
+assert_equals "lint 1: every spelling cell ran (floor)" "11" "${_n_spellings}"
+
+# The three class cells above change ONE cell of three, so the other two keep the row in
+# the population and the quoting is never what decides it: reverting the class pattern to
+# double quotes only left all of them green. Here EVERY cell carries the quoting, so the
+# row is in the population only if that quoting is recognised.
+_n_quotings=0
+while IFS='|' read -r _name _plain _titled; do
+    [ -n "${_name}" ] || continue
+    _n_quotings=$((_n_quotings + 1))
+    _replace "${_cell}" "${_plain}" "${SEED}/reference.html" "${SCRATCH}/quote-all.html"
+    _replace "${_plain}" "${_titled}" "${SCRATCH}/quote-all.html" "${SCRATCH}/quote.html" first
+    if _changed "${SEED}/reference.html" "${SCRATCH}/quote-all.html" \
+        && _changed "${SCRATCH}/quote-all.html" "${SCRATCH}/quote.html"; then
+        assert_equals "lint 1 population holds: ${_name}" "3" \
+            "$(_count "$(_missing_cells "${SCRATCH}/quote.html")")"
+        assert_equals "lint 1 sees a title behind: ${_name}" "1" \
+            "$(_count "$(_hidden_reasons "${SCRATCH}/quote.html")")"
+    else
+        _record_fail "lint 1 population holds: ${_name}" "a mutation changed nothing; the cell is vacuous"
+    fi
+done <<'QUOTINGS'
+a single-quoted class on every cell|<td class='missing'>—</td>|<td class='missing' title="no price">—</td>
+an unquoted class on every cell|<td class=missing>—</td>|<td class=missing title="no price">—</td>
+a second class token on every cell|<td class="num missing">—</td>|<td class="num missing" title="no price">—</td>
+QUOTINGS
+assert_equals "lint 1: every quoting cell ran (floor)" "3" "${_n_quotings}"
 
 sed 's#<tr><td>Delta Health</td>#<tr title="no price"><td>Delta Health</td>#' \
     "${SEED}/reference.html" > "${SCRATCH}/rowtitle.html"
@@ -163,14 +201,35 @@ _fail_if "reference: the prose does not describe a hidden channel" \
     _ref_teaches_hidden "${SEED}/reference.html"
 _pass_if "control: the v1 reference prose does teach hover" "lint cannot see the v1 fault" \
     _ref_teaches_hidden "${V1}/reference.html"
+# v1 says only "hover", so it holds one word of three. Each word gets its own page.
+_n_words=0
+while IFS= read -r _word; do
+    [ -n "${_word}" ] || continue
+    _n_words=$((_n_words + 1))
+    _replace "the status says why" "a ${_word} says why" \
+        "${SEED}/reference.html" "${SCRATCH}/word.html" first
+    if _changed "${SEED}/reference.html" "${SCRATCH}/word.html"; then
+        _pass_if "lint 2 sees: ${_word}" "the page teaches ${_word} and the lint passed it" \
+            _ref_teaches_hidden "${SCRATCH}/word.html"
+    else
+        _record_fail "lint 2 sees: ${_word}" "the mutation changed nothing; the cell is vacuous"
+    fi
+done <<'WORDS'
+hover
+tooltip
+mouseover
+WORDS
+assert_equals "lint 2: every word cell ran (floor)" "3" "${_n_words}"
 
 # =====================================================================================
 # LINT 3 -- a row with a missing value says why, in words, in that row.
 # POPULATION: the same rows as lint 1.
 # SEES: two letters together in a status pill in the row, or inside the missing cell.
 #       Entities are removed first, so `&mdash;` is a glyph and not a word.
-# DOES NOT SEE: whether the words are a good reason (`NaN` counts), or a missing value
-#       in a card outside any table.
+# DOES NOT SEE: whether the words are a good reason (`NaN` counts); whether the element
+#       holding them is shown (a pill carrying `hidden` or display:none counts); a
+#       missing value in a card outside any table; or a `<` or `>` inside an attribute
+#       value, which makes attribute text read as element text.
 # v1 PASSES this lint (its row already had the pill), so the v1 fixture is no control
 # here; the controls are mutated copies of the live page.
 # =====================================================================================
@@ -208,14 +267,15 @@ _lint3_control "a glyph written as an entity is not words" "1" \
 # LINT 4 -- the styleguide prescribes a visible reason and states the placement rule.
 # POPULATION: the `| **Missing** |` row of the states table, and the rule paragraph
 #       (from its bold lead to the next blank line, flattened).
-# SEES: the row's positive phrase, guarded against "invisible"; hidden channels named
-#       in the row; and each clause of the rule, so the body cannot be deleted or
-#       inverted behind an intact lead sentence.
-# DOES NOT SEE: meaning. A rewording that keeps every pinned phrase passes.
+# SEES: the row's positive phrase; hidden or distant channels and negations named in
+#       the row (`note` also covers footnote); and each clause of the rule, so the body
+#       cannot be deleted or inverted behind an intact lead sentence.
+# DOES NOT SEE: meaning. A rewording that keeps every pinned phrase and names no listed
+#       word passes -- "once the cell has focus" does.
 # =====================================================================================
 _sg_missing_row() { grep -E '^\|[[:space:]]*\*\*Missing\*\*' "$1"; }
 _sg_row_names_hidden() {
-    _sg_missing_row "$1" | grep -q -i -E 'title|tooltip|hover|footnote|legend|invisible|not visible'
+    _sg_missing_row "$1" | grep -q -i -E 'title|tooltip|hover|note|legend|invisible|not visible|never'
 }
 _sg_row_says_visible_in_unit() {
     _sg_missing_row "$1" | grep -q -i -E '(^|[^a-z])visible in the same row, card or field'
@@ -238,30 +298,49 @@ _pass_if "control: the v1 styleguide names a hidden channel" "lint cannot see th
 _fail_if "control: the v1 styleguide does not say visible in the unit" "lint passes on v1" \
     _sg_row_says_visible_in_unit "${V1}/styleguide.md"
 
-# Rows that passed the first cut. Each replaces the live row's treatment in a copy.
+# Rows that must be rejected. Each replaces the live row's treatment in a copy.
+# `by` says which check has to do the rejecting. A row that also LACKS the positive
+# phrase is rejected for that alone, so it never consults the word list: the first cut
+# of these cells passed with the list cut to two words. Rows marked `words` therefore
+# KEEP the positive phrase, and only the word list can reject them.
 _n_rows=0
-while IFS='|' read -r _name _treatment; do
+while IFS='|' read -r _name _by _treatment; do
     [ -n "${_name}" ] || continue
     _n_rows=$((_n_rows + 1))
     awk -v t="${_treatment}" '/^\|[ \t]*\*\*Missing\*\*/ { n = split($0, c, "|")
             print "|" c[2] "|" c[3] "| " t " |"; next } { print }' \
         "${SEED}/styleguide.md" > "${SCRATCH}/row.md"
-    if _changed "${SEED}/styleguide.md" "${SCRATCH}/row.md"; then
-        if _sg_row_names_hidden "${SCRATCH}/row.md" || ! _sg_row_says_visible_in_unit "${SCRATCH}/row.md"; then
-            _record_pass "lint 4 rejects a row saying: ${_name}"
-        else
-            _record_fail "lint 4 rejects a row saying: ${_name}" "$(_sg_missing_row "${SCRATCH}/row.md")"
-        fi
-    else
+    if ! _changed "${SEED}/styleguide.md" "${SCRATCH}/row.md"; then
         _record_fail "lint 4 rejects a row saying: ${_name}" "the mutation changed nothing"
+        continue
     fi
+    case "${_by}" in
+        words)
+            _pass_if "lint 4 row still carries the positive phrase: ${_name}" \
+                "the row lost the phrase, so the word list is not what is tested" \
+                _sg_row_says_visible_in_unit "${SCRATCH}/row.md"
+            _pass_if "lint 4 rejects, by its word list, a row saying: ${_name}" \
+                "$(_sg_missing_row "${SCRATCH}/row.md")" _sg_row_names_hidden "${SCRATCH}/row.md"
+            ;;
+        phrase)
+            _fail_if "lint 4 rejects, by its positive phrase, a row saying: ${_name}" \
+                "$(_sg_missing_row "${SCRATCH}/row.md")" _sg_row_says_visible_in_unit "${SCRATCH}/row.md"
+            ;;
+        *)  _record_fail "lint 4 rejects a row saying: ${_name}" "unknown check '${_by}'" ;;
+    esac
 done <<'ROWS'
-invisible|the reason may stay invisible in the same row, card or field
-a bare title|with a `title` saying why, visible to a pointer
-a footnote|and the reason visible in a footnote under the table
-a legend|and the reason in words, visible in the same row, card or field, or in a legend
+invisible|phrase|the reason may stay invisible in the same row, card or field
+the v1 prescription|phrase|`—` in `--value-missing`, with a title attribute saying why
+a title|words|the reason in words, visible in the same row, card or field, or in a `title`
+a tooltip|words|the reason in words, visible in the same row, card or field, or in a tooltip
+hover|words|the reason in words, visible in the same row, card or field, or on hover
+a footnote|words|the reason in words, visible in the same row, card or field, or in a footnote
+a note below the table|words|the reason in words, visible in the same row, card or field, or in a note below the table
+a legend|words|the reason in words, visible in the same row, card or field, or in a legend
+not visible|words|the reason in words, visible in the same row, card or field when not visible elsewhere
+never visible|words|the reason in words, never visible in the same row, card or field
 ROWS
-assert_equals "lint 4: every row cell ran (floor)" "4" "${_n_rows}"
+assert_equals "lint 4: every row cell ran (floor)" "10" "${_n_rows}"
 
 _n_clauses=0
 while IFS= read -r _clause; do
@@ -339,33 +418,97 @@ _adopt_fence() {
                                    infence = 0; next }
         infence { body = body $0 "\n" }' "$1"
 }
-# _make_adopter <dir> <version> -- a project holding the seed at that version. The
-# adopted.json line is lifted from ADOPT.md, the file that writes it, not retyped.
+# _make_adopter <dir> <version> [preset] -- a project holding the seed at that version.
+# The adopted.json line is lifted from ADOPT.md, the file that writes it, not retyped.
+# The adopter has EDITED tokens.css and not yet tokens.json, which is the state the
+# fence exists for. When the two started out equal, a fence that wrote nothing passed
+# every positive cell: with its `mv` deleted, only the controls failed.
+_EDIT_FROM='--space-1: 4px;'
+_EDIT_TO='--space-1: 5px;'
 _make_adopter() {
     rm -rf "$1"; mkdir -p "$1/design"
-    cp "${SEED}/tokens.css" "$1/design/tokens.css"
+    _replace "${_EDIT_FROM}" "${_EDIT_TO}" "${SEED}/tokens.css" "$1/design/tokens.css" first
     sed -E "s/\"version\": [0-9]+/\"version\": $2/" "${SEED}/tokens.json" > "$1/design/tokens.json"
     grep -E '^\{"preset": ' "${SEED}/ADOPT.md" | head -1 \
         | sed -E "s/\"version\": [0-9]+/\"version\": $2/; s/\\\$\(date[^)]*\)/2026-09-20/" \
+        | sed -E "s/\"preset\": \"[^\"]*\"/\"preset\": \"${3:-quiet-dense}\"/" \
         > "$1/design/adopted.json"
 }
+# What tokens.json must hold after a regeneration: the shipped maps, with the edit.
+_expected_maps() { jq -S -c '{light, dark} | .light["--space-1"] = "5px"' "${SEED}/tokens.json"; }
+_maps() { jq -S -c '{light, dark}' "$1" 2>/dev/null; }
 # _regen <adopt.md> <adopter dir> <shell> -- run the fence; print the version it wrote.
 # The exit code goes to a FILE: callers read the version through $( ), which is a
-# subshell, so a variable set here would never reach them.
+# subshell, so a variable set here would never reach them. stdin is /dev/null because
+# some callers sit inside a heredoc-fed loop, and a child that read stdin would eat
+# the loop's remaining lines.
 _regen() {
-    _adopt_fence "$1" 'design/tokens.json' > "${SCRATCH}/regen.sh"
-    ( cd "$2" && "$3" "${SCRATCH}/regen.sh" ) > "${SCRATCH}/regen.out" 2>&1
+    # $4, when given, is one line run before the fence: the reader's own shell options.
+    printf '%s\n' "${4:-:}" > "${SCRATCH}/regen.sh"
+    _adopt_fence "$1" 'design/tokens.json' >> "${SCRATCH}/regen.sh"
+    ( cd "$2" && "$3" "${SCRATCH}/regen.sh" ) > "${SCRATCH}/regen.out" 2>&1 < /dev/null
     echo "$?" > "${SCRATCH}/regen.rc"
     jq -r '.version' "$2/design/tokens.json" 2>/dev/null
 }
 _regen_rc() { cat "${SCRATCH}/regen.rc" 2>/dev/null; }
-_maps() { jq -S -c '{light, dark}' "$1" 2>/dev/null; }
+# _assert_refuses <shell> <adopter dir> <what> -- the fence must exit non-zero AND leave
+# tokens.json byte-identical. Two cells, because each alone is satisfiable by a fault:
+# a fence that fails after writing, or one that writes nothing and reports success.
+_assert_refuses() {
+    cp "$2/design/tokens.json" "${SCRATCH}/before.json"
+    _regen "${SEED}/ADOPT.md" "$2" "$1" >/dev/null
+    _rc="$(_regen_rc)"
+    case "${_rc}" in
+        ''|*[!0-9]*) _record_fail "regen ($1): $3: the fence fails" "no exit code was recorded" ;;
+        0) _record_fail "regen ($1): $3: the fence fails" \
+               "rc=0, wrote $(jq -c '{preset, version}' "$2/design/tokens.json" 2>/dev/null)" ;;
+        *) _record_pass "regen ($1): $3: the fence fails" ;;
+    esac
+    _pass_if "regen ($1): $3: tokens.json is left byte-identical" "tokens.json was rewritten" \
+        cmp -s "${SCRATCH}/before.json" "$2/design/tokens.json"
+}
+# _bad_record_cells <shell> -- a record that EXISTS and cannot be used. `jq --slurpfile`
+# reads an empty file as zero documents, so the first cut exited 0 on every one of these
+# and wrote null into the two fields the fence exists to protect.
+_bad_record_cells() {
+    local _n=0 _name _content
+    while IFS='|' read -r _name _content; do
+        [ -n "${_name}" ] || continue
+        _n=$((_n + 1))
+        _make_adopter "${SCRATCH}/bad" 1
+        case "${_content}" in
+            @EMPTY)  : > "${SCRATCH}/bad/design/adopted.json" ;;
+            @SPACES) printf '  \n' > "${SCRATCH}/bad/design/adopted.json" ;;
+            *)       printf '%s\n' "${_content}" > "${SCRATCH}/bad/design/adopted.json" ;;
+        esac
+        _assert_refuses "$1" "${SCRATCH}/bad" "adopted.json is ${_name}"
+    done <<'RECORDS'
+empty|@EMPTY
+whitespace only|@SPACES
+an empty object|{}
+missing its version|{"preset":"loud-airy","notes":"mine"}
+missing its preset|{"version":1}
+carrying a null version|{"preset":"quiet-dense","version":null}
+carrying a string version|{"preset":"quiet-dense","version":"1"}
+an array|[{"preset":"quiet-dense","version":1}]
+two records|{"preset":"quiet-dense","version":1} {"preset":"quiet-dense","version":2}
+not JSON|preset: quiet-dense
+RECORDS
+    assert_equals "regen ($1): every bad-record cell ran (floor)" "10" "${_n}"
+}
 
 _regen_src="$(_adopt_fence "${SEED}/ADOPT.md" 'design/tokens.json')"
 assert_contains "regen: the fence extracted is the one that regenerates tokens.json" "jq -Rn" "${_regen_src}"
 assert_not_contains "regen: the fence extracted is not the adoption block" "cp -Rn" "${_regen_src}"
-assert_json_valid "regen: the simulated adopted.json is valid JSON" \
-    "$(_make_adopter "${SCRATCH}/probe" 1; printf '%s' "${SCRATCH}/probe/design/adopted.json")"
+_make_adopter "${SCRATCH}/probe" 1 loud-airy
+assert_json_valid "regen: the simulated adopted.json is valid JSON" "${SCRATCH}/probe/design/adopted.json"
+assert_equals "regen: the simulated adopted.json records what was asked for" \
+    '{"preset":"loud-airy","version":1}' \
+    "$(jq -c '{preset, version}' "${SCRATCH}/probe/design/adopted.json" 2>/dev/null)"
+_pass_if "regen: the simulated adopter has edited tokens.css" "the edit changed nothing" \
+    _changed "${SEED}/tokens.css" "${SCRATCH}/probe/design/tokens.css"
+_fail_if "regen: the simulated adopter's tokens.json is stale" "it already holds the edit" \
+    [ "$(_maps "${SCRATCH}/probe/design/tokens.json")" = "$(_expected_maps)" ]
 
 _n_shells=0
 for _sh in bash zsh; do
@@ -374,50 +517,58 @@ for _sh in bash zsh; do
         continue
     fi
     _n_shells=$((_n_shells + 1))
-    _make_adopter "${SCRATCH}/a1" 1
+
+    # The preset is NOT the shipped one, so a fence that states a preset of its own fails.
+    _make_adopter "${SCRATCH}/a1" 1 loud-airy
     _got="$(_regen "${SEED}/ADOPT.md" "${SCRATCH}/a1" "${_sh}")"
     assert_equals "regen (${_sh}): the fence exits 0" "0" "$(_regen_rc)"
     assert_equals "regen (${_sh}): a v1 adopter keeps version 1" "1" "${_got}"
-    assert_equals "regen (${_sh}): the preset name is kept" "quiet-dense" \
+    assert_equals "regen (${_sh}): the adopter's preset name is kept" "loud-airy" \
         "$(jq -r '.preset' "${SCRATCH}/a1/design/tokens.json" 2>/dev/null)"
     assert_not_empty "regen (${_sh}): the token maps were written" "$(_maps "${SCRATCH}/a1/design/tokens.json")"
-    assert_equals "regen (${_sh}): the token maps equal the shipped tokens.json" \
-        "$(_maps "${SEED}/tokens.json")" "$(_maps "${SCRATCH}/a1/design/tokens.json")"
+    assert_equals "regen (${_sh}): the token maps follow the edited tokens.css" \
+        "$(_expected_maps)" "$(_maps "${SCRATCH}/a1/design/tokens.json")"
+    _fail_if "regen (${_sh}): a successful run leaves no temporary file" "tokens.json.new remains" \
+        [ -e "${SCRATCH}/a1/design/tokens.json.new" ]
 
     _make_adopter "${SCRATCH}/a2" 2
     assert_equals "regen (${_sh}): a v2 adopter keeps version 2" "2" \
         "$(_regen "${SEED}/ADOPT.md" "${SCRATCH}/a2" "${_sh}")"
 
-    # No provenance record: the fence must fail and leave the file it was given alone.
+    # A refused run leaves tokens.json.new behind. Under noclobber a plain `>` then
+    # refuses to overwrite it, and every later run fails until the reader deletes it.
+    _make_adopter "${SCRATCH}/a7" 1
+    : > "${SCRATCH}/a7/design/tokens.json.new"
+    _got="$(_regen "${SEED}/ADOPT.md" "${SCRATCH}/a7" "${_sh}" 'set -o noclobber')"
+    assert_equals "regen (${_sh}): a leftover temporary file does not block a run under noclobber" \
+        "0" "$(_regen_rc)"
+    assert_equals "regen (${_sh}): that run wrote the edited tokens" \
+        "$(_expected_maps)" "$(_maps "${SCRATCH}/a7/design/tokens.json")"
+
     _make_adopter "${SCRATCH}/a3" 1
     rm -f "${SCRATCH}/a3/design/adopted.json"
-    cp "${SCRATCH}/a3/design/tokens.json" "${SCRATCH}/a3-before.json"
-    _regen "${SEED}/ADOPT.md" "${SCRATCH}/a3" "${_sh}" >/dev/null
-    _a3_rc="$(_regen_rc)"
-    case "${_a3_rc}" in
-        ''|*[!0-9]*) _record_fail "regen (${_sh}): without adopted.json the fence fails" "no exit code was recorded" ;;
-        0) _record_fail "regen (${_sh}): without adopted.json the fence fails" "rc=0" ;;
-        *) _record_pass "regen (${_sh}): without adopted.json the fence fails" ;;
-    esac
-    _pass_if "regen (${_sh}): without adopted.json tokens.json is left byte-identical" \
-        "tokens.json was rewritten or truncated" \
-        cmp -s "${SCRATCH}/a3-before.json" "${SCRATCH}/a3/design/tokens.json"
+    _assert_refuses "${_sh}" "${SCRATCH}/a3" "adopted.json is absent"
+
+    _bad_record_cells "${_sh}"
 
     # No tokens.css: awk fails, but a pipeline reports only its LAST command, so jq
     # must notice for itself that it read nothing.
     _make_adopter "${SCRATCH}/a5" 1
     rm -f "${SCRATCH}/a5/design/tokens.css"
-    cp "${SCRATCH}/a5/design/tokens.json" "${SCRATCH}/a5-before.json"
-    _regen "${SEED}/ADOPT.md" "${SCRATCH}/a5" "${_sh}" >/dev/null
-    _a5_rc="$(_regen_rc)"
-    case "${_a5_rc}" in
-        ''|*[!0-9]*) _record_fail "regen (${_sh}): without tokens.css the fence fails" "no exit code was recorded" ;;
-        0) _record_fail "regen (${_sh}): without tokens.css the fence fails" "rc=0" ;;
-        *) _record_pass "regen (${_sh}): without tokens.css the fence fails" ;;
-    esac
-    _pass_if "regen (${_sh}): without tokens.css tokens.json is left byte-identical" \
-        "tokens.json was rewritten with empty maps" \
-        cmp -s "${SCRATCH}/a5-before.json" "${SCRATCH}/a5/design/tokens.json"
+    _assert_refuses "${_sh}" "${SCRATCH}/a5" "tokens.css is absent"
+
+    # ONE theme empty. With both absent, a guard written `and` refuses just as well.
+    _make_adopter "${SCRATCH}/a6" 1
+    cp "${SCRATCH}/a6/design/tokens.css" "${SCRATCH}/a6-full.css"
+    awk '/^:root\[data-theme="dark"\] \{/ { skip = 1 }
+         !skip { print }
+         skip && /^\}/ { skip = 0 }' "${SCRATCH}/a6-full.css" > "${SCRATCH}/a6/design/tokens.css"
+    if _changed "${SCRATCH}/a6-full.css" "${SCRATCH}/a6/design/tokens.css"; then
+        _assert_refuses "${_sh}" "${SCRATCH}/a6" "tokens.css has no dark block"
+    else
+        _record_fail "regen (${_sh}): tokens.css has no dark block: the fence fails" \
+            "the dark block was not removed; the cell is vacuous"
+    fi
 
     # Red control, same function: restore the hardcoded version in a copy of ADOPT.md.
     sed -E 's/version:[^,]*,/version:2,/' "${SEED}/ADOPT.md" > "${SCRATCH}/ADOPT-hardcoded.md"

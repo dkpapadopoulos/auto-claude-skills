@@ -84,8 +84,22 @@ clone without that commit it prints a SKIP line instead of passing.
   used instead.
 - The reference page shows several values missing for one reason. It does not
   show a reason written inside a single cell.
-- An adopter with no `design/adopted.json` can no longer regenerate
-  `tokens.json`. The command fails and says which file it could not open.
+- An adopter with no usable `design/adopted.json` can no longer regenerate
+  `tokens.json`. The command fails and says why. That includes a project whose
+  own `adopted.json` has a different shape, such as one with no `version`.
+- The regenerate command replaces `tokens.json` with `mv`. A symlinked
+  `tokens.json` becomes an ordinary file, its permissions return to the default,
+  and a read-only one is replaced without a prompt. `ADOPT.md` says so.
+- The temporary file has a fixed name. A symlink planted at
+  `design/tokens.json.new` is written through. It needs write access to the
+  reader's own `design/`, so it is left as it is.
+- A reader who pastes every line of the command except the last gets exit 0 and
+  a stale `tokens.json`. That is inherent to a command of several lines.
+- The command sees an empty theme. It does not see a truncated one: a dark block
+  holding one token passes.
+- Lints 1 and 3 split the page on `<` and `>` and do not parse it. Either
+  character inside an attribute value hides a tag from lint 1 and makes attribute
+  text read as words to lint 3. A pill carrying `hidden` still counts as words.
 - The test ran on BSD tools under bash 3.2 and zsh. GNU `grep`, `sed` and `awk`
   are unverified: none is installed on the machine that ran it.
 
@@ -107,6 +121,14 @@ An independent review of the first cut found no fault in the direction of the
 guidance and six gaps, five of them in the test. The author's ten mutations had
 each reverted one of the author's own edits, so they held the lints against one
 spelling of each fault. The reviewer's inputs are now cells in the test.
+
+A second round found a fault in the fix for the sixth gap. The replacement
+command read `adopted.json` without checking it, and `jq --slurpfile` reads an
+empty file as zero documents, so an empty or version-less record made the
+command exit 0 and write `null` for the preset and version. It also found five
+branches whose named cells passed by another path: a cell that changes one of
+three missing cells never tests the class quoting, because the other two keep
+the row in the population.
 
 ## A consequence for issue #298
 
