@@ -1269,26 +1269,43 @@ if [ -f "${_CLAUDE_JSON}" ] && command -v jq >/dev/null 2>&1; then
 fi
 
 # Refine `serena_connected` by parsing `claude mcp list` output for the
-# "✓ Connected" marker on the serena entry. Gated on SERENA_CONNECTION_CHECK=1
+# "Connected" status word on the serena entry (never the glyph - see below). Gated on SERENA_CONNECTION_CHECK=1
 # (off by default — registration remains the routing gate). Fail-open: any
 # error leaves serena_connected=false.
 if [ "${SERENA_CONNECTION_CHECK:-0}" = "1" ] && command -v claude >/dev/null 2>&1; then
-    # Use grep -F for the literal Unicode ✓ to avoid locale-collation issues
-    # under C/POSIX locale (where multi-byte regex matching may silently fail).
-    # Filter to the serena entry first via a literal grep, then check the marker.
-    if claude mcp list 2>/dev/null | grep '^serena: ' | grep -qF '✓ Connected'; then
+    # Match on the ASCII word 'Connected' only, NEVER the status glyph. The shipped
+    # probe grepped U+2713 ✓ while the CLI emits U+2714 ✔ (e29c93 vs e29c94) - one
+    # byte apart, so it could never fire and this flag was dead code. A glyph is an
+    # enumeration of one and it was already wrong. The failure line reads
+    # '✘ Failed to connect ... Connection closed' - it contains 'Connection' but never
+    # 'Connected', so the ASCII word alone separates the states; 'Failed' is excluded as
+    # defence should a future message pair them. Staying grep -F preserves the original
+    # locale-safety property (no multi-byte regex under C/POSIX).
+    # Fixture from the real producer: tests/fixtures/mcp-list/real-output.txt
+    _mcp_serena="$(claude mcp list 2>/dev/null | grep '^serena: ' || true)"
+    if printf '%s' "${_mcp_serena}" | grep -qF 'Connected' \
+       && ! printf '%s' "${_mcp_serena}" | grep -qF 'Failed'; then
         CONTEXT_CAPS="$(printf '%s' "${CONTEXT_CAPS}" | jq '.serena_connected = true' 2>/dev/null || printf '%s' "${CONTEXT_CAPS}")"
     fi
 fi
 
 # Refine `forgetful_connected` by parsing `claude mcp list` output for the
-# "✓ Connected" marker on the forgetful entry. Gated on FORGETFUL_CONNECTION_CHECK=1
+# "Connected" status word on the forgetful entry (never the glyph - see below). Gated on FORGETFUL_CONNECTION_CHECK=1
 # (off by default — registration remains the routing gate). Fail-open: any
 # error leaves forgetful_connected=false.
 if [ "${FORGETFUL_CONNECTION_CHECK:-0}" = "1" ] && command -v claude >/dev/null 2>&1; then
-    # Use grep -F for the literal Unicode ✓ to avoid locale-collation issues
-    # under C/POSIX locale (where multi-byte regex matching may silently fail).
-    if claude mcp list 2>/dev/null | grep '^forgetful: ' | grep -qF '✓ Connected'; then
+    # Match on the ASCII word 'Connected' only, NEVER the status glyph. The shipped
+    # probe grepped U+2713 ✓ while the CLI emits U+2714 ✔ (e29c93 vs e29c94) - one
+    # byte apart, so it could never fire and this flag was dead code. A glyph is an
+    # enumeration of one and it was already wrong. The failure line reads
+    # '✘ Failed to connect ... Connection closed' - it contains 'Connection' but never
+    # 'Connected', so the ASCII word alone separates the states; 'Failed' is excluded as
+    # defence should a future message pair them. Staying grep -F preserves the original
+    # locale-safety property (no multi-byte regex under C/POSIX).
+    # Fixture from the real producer: tests/fixtures/mcp-list/real-output.txt
+    _mcp_forgetful="$(claude mcp list 2>/dev/null | grep '^forgetful: ' || true)"
+    if printf '%s' "${_mcp_forgetful}" | grep -qF 'Connected' \
+       && ! printf '%s' "${_mcp_forgetful}" | grep -qF 'Failed'; then
         CONTEXT_CAPS="$(printf '%s' "${CONTEXT_CAPS}" | jq '.forgetful_connected = true' 2>/dev/null || printf '%s' "${CONTEXT_CAPS}")"
     fi
 fi

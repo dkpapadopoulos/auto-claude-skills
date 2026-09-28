@@ -235,4 +235,62 @@ else
     _record_fail "CLAUDE.md line target" "${_lines} lines — Claude Code's own guidance is under 200; move a section to a path-scoped rule"
 fi
 
+# ---------------------------------------------------------------------------
+# LEG 8 — every "Obligations that no rule file can deliver" bullet CITES a rule
+# file, and that citation must resolve: the named file must actually contain a
+# symbol the bullet names. A cited proof that does not resolve is worse than an
+# uncited claim, and the first cut of that section shipped one wrong citation
+# (`_advisory_text_for_action` attributed to push-gate-telemetry.md; it lives in
+# push-gate-enforcement.md).
+#
+# The bullets WRAP across lines, so this UNWRAPS first. A line-oriented reader
+# finds zero citations and reports clean — the first cut of this cell did exactly
+# that, and only the count floor below revealed it.
+# ---------------------------------------------------------------------------
+_cit_n=0
+_cit_bad=0
+while IFS= read -r _bullet; do
+    [ -n "${_bullet}" ] || continue
+    case "${_bullet}" in *'.md`)') ;; *) continue ;; esac
+    _rf="$(printf '%s' "${_bullet}" | LC_ALL=C sed 's/.*(`\([a-z0-9-]*\.md\)`)$/\1/')"
+    [ -n "${_rf}" ] || continue
+    _cit_n=$((_cit_n+1))
+    if [ ! -f "${RULES_DIR}/${_rf}" ]; then
+        _cit_bad=$((_cit_bad+1)); echo "    cites a missing rule file: ${_rf}"; continue
+    fi
+    _hit=0
+    for _sym in $(printf '%s' "${_bullet}" | LC_ALL=C tr '`' '\n' | LC_ALL=C awk 'NR%2==0' \
+                  | LC_ALL=C grep -E '^[A-Za-z_][A-Za-z0-9_./-]{4,}$'); do
+        case "${_sym}" in *.md) continue ;; esac
+        if LC_ALL=C grep -qF "${_sym}" "${RULES_DIR}/${_rf}"; then _hit=1; break; fi
+    done
+    if [ "${_hit}" = "0" ]; then
+        _cit_bad=$((_cit_bad+1))
+        echo "    citation does not resolve: no symbol this bullet names is in ${_rf}"
+        printf '      %s\n' "$(printf '%s' "${_bullet}" | LC_ALL=C cut -c1-104)"
+    fi
+done <<EOF
+$(LC_ALL=C awk '
+  /^### Obligations/{s=1; next}
+  /^### Path-scoped/{s=0}
+  s && /^- /{ if (b != "") print b; b=$0; next }
+  s && /^  [^ ]/{ sub(/^  /,"",$0); b = b " " $0; next }
+  s && /^$/{ if (b != "") { print b; b="" } }
+  END{ if (b != "") print b }
+' "${CLAUDE_MD}")
+EOF
+assert_equals "every obligation citation resolves in the rule file it names" "0" "${_cit_bad}"
+# EVERY obligation bullet must carry a citation. Comparing the citation count to the
+# BULLET count is self-adjusting (adding an obligation does not need a test edit) and
+# catches a citation that fell off its bullet — which a fixed floor does not: with
+# `>= 5` against 6 obligations, breaking one continuation indent took the count to 5
+# and passed. A floor satisfiable by the degradation it guards pins nothing.
+_obl_n="$(LC_ALL=C awk '/^### Obligations/{s=1;next} /^### Path-scoped/{s=0} s&&/^- /{n++} END{print n+0}' "${CLAUDE_MD}")"
+assert_equals "every obligation bullet carries a citation (${_obl_n} bullets)" "${_obl_n}" "${_cit_n}"
+if [ "${_cit_n}" -ge 5 ]; then
+    _record_pass "obligation-citation floor (checked ${_cit_n}, >= 5 so neither count is vacuously 0)"
+else
+    _record_fail "obligation-citation floor" "only ${_cit_n} citations — the extractor stopped matching, so the cells above pinned nothing"
+fi
+
 print_summary
