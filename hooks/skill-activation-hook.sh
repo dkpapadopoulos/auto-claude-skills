@@ -1101,6 +1101,42 @@ _expand_precondition_plugin_root() {
   fi
 }
 
+# --- _expand_composition_hint_plugin_root -------------------------
+# `phase_compositions[*].hints[].text` is the SIXTH rendering surface that
+# reaches the model's prompt (#306). #248 wired `{{PLUGIN_ROOT}}` into
+# `precondition`, #305 into `methodology_hints[].hint`, and both missed this
+# field — so it rendered VERBATIM and shipped the #248 broken pair
+# (`${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)}`), which resolves to
+# the USER's repo root and gives rc=127 for every reader outside this repo.
+#
+# THE QUOTING ASYMMETRY IS PINNED AND MUST NOT BE "MADE CONSISTENT". A
+# precondition IS a shell command to paste, so it is single-quoted and escaped;
+# a hint NAMES a file to read, and shell quotes handed to a Read tool are
+# literal characters that make the path unopenable. This field carries BOTH
+# kinds, so the text declares its own context: a placeholder written
+# `'{{PLUGIN_ROOT}}/…'` is a pasted command and takes the escaping, and a bare
+# `{{PLUGIN_ROOT}}/…` is a file to read and takes none. A space survives the
+# bare form because backticks delimit the span.
+#
+# The escaped branch delegates to _expand_precondition_plugin_root through its
+# in/out global rather than repeating the escape, because hand-copying it is how
+# the four #248 renderings drifted apart in the first place.
+#
+# PRECISELY WHAT IS PINNED, since the looser claim is what this file keeps
+# getting wrong: tests/test-attest-remedy-reachable.sh asserts exactly one
+# `_pr_esc=` line WITHIN A SED-EXTRACTED RANGE of this hook — not repo-wide. A
+# second copy in another file would NOT fail it. So the pin stops this function
+# from growing a rival escape; it does not stop anyone else from writing one.
+#
+# In/out global: _cprecond. Input global: PLUGIN_ROOT.
+_expand_composition_hint_plugin_root() {
+  _cprecond="$1"
+  case "$_cprecond" in
+    *"'{{PLUGIN_ROOT}}"*) _expand_precondition_plugin_root ;;
+    *'{{PLUGIN_ROOT}}'*)  _cprecond="${_cprecond//\{\{PLUGIN_ROOT\}\}/${PLUGIN_ROOT}}" ;;
+  esac
+}
+
 # --- _walk_composition_chain --------------------------------------
 # Input globals: REGISTRY, PROCESS_SKILL, SELECTED
 # Output globals: COMPOSITION_CHAIN, COMPOSITION_DIRECTIVE, COMPOSITION_HINTS (unused here but declared)
@@ -1969,8 +2005,24 @@ ${_cline#LINE:}"
         # Track if TDD was emitted from jq composition
         case "${_cline}" in *test-driven-development*) _TDD_EMITTED=1 ;; esac
         ;;
-      HINT:*)  COMPOSITION_HINTS="${COMPOSITION_HINTS}
-- ${_cline#HINT:}" ;;
+      HINT:*)
+        # #306: this text reaches the prompt, so it gets the same
+        # {{PLUGIN_ROOT}} expansion the `precondition` and `hint` surfaces
+        # already get. `_cprecond` is the shared expander's in/out global.
+        #
+        # WHY REUSING IT IS SAFE, stated correctly because the obvious version
+        # is FALSE: this loop is not after the chain walk, it is BEFORE it —
+        # `_walk_composition_chain` and `_render_driver_precondition` are both
+        # called ~50 lines below, so this is the FIRST writer of `_cprecond`,
+        # not the last. The invariant that actually holds is that every later
+        # consumer ASSIGNS `_cprecond` before reading it
+        # (`_walk_composition_chain` at the jq capture, `_render_driver_-
+        # precondition` from `_dp_precond`, and its early returns exit before
+        # touching it). THAT is what a future edit must preserve: adding a
+        # read-before-write to either function makes this reuse unsafe.
+        _expand_composition_hint_plugin_root "${_cline#HINT:}"
+        COMPOSITION_HINTS="${COMPOSITION_HINTS}
+- ${_cprecond}" ;;
     esac
   done <<EOF
 ${_comp_output}
@@ -2356,11 +2408,27 @@ Brainstorming MUST build on this confirmed intent and out-of-scope boundary — 
     :
   else
     # Scenario 1: no intent, no brief (or no token) -> emit the directive.
+    # #306: this directive carried its own copy of the #248 broken pair. It is
+    # SKILL_LINES, not hints[].text, so no config lint reaches it — but it
+    # renders into the same prompt and failed the same way. It is a command to
+    # PASTE, so it takes the single-quoted, escaped form.
+    #
+    # It calls the PRECONDITION expander directly rather than the composition
+    # classifier, for two reasons. (1) The consumer here is KNOWN — this is a
+    # pasted command, always — so classifying it at runtime would make the
+    # escaping contingent on the literal below keeping its quotes; an edit that
+    # dropped them would silently fall to the unescaped branch, and the lint on
+    # that line only checks for the ABSENCE of the broken pair, which would
+    # stay true. Asking for the treatment directly cannot fail that way.
+    # (2) The classifier is named for composition hints; this is not one.
+    _cprecond='{{PLUGIN_ROOT}}/scripts/persist-state.sh'
+    _expand_precondition_plugin_root
+    _IE_PS="'${_cprecond}'"
     SKILL_LINES="${SKILL_LINES}
 INTENT EXTRACTION: If your ask is underspecified (missing one or more of who/why/success-criteria/constraints), do NOT propose approaches, designs, or options yet. First converge with the user on the real goal — the underlying need, not just the literal request. Then, as soon as the user has given you enough to act on, you MUST — BEFORE proposing ANY approach, design, or option — emit this convergence block verbatim and stop for confirmation:
   **Confirmed intent:** <one line capturing who/why/success>
   **Out-of-scope:** <what this is explicitly NOT>
-Only AFTER the user confirms that block may you propose approaches. Then persist it in ONE Bash call: \`bash \"\${CLAUDE_PLUGIN_ROOT:-\$(git rev-parse --show-toplevel 2>/dev/null)}/scripts/persist-state.sh\" set-intent \"<confirmed intent> :: out-of-scope: <...>\"\` — the script resolves the session token internally (issue #157), so you author only the intent text. SKIP this pass entirely if the ask is already fully specified, is mechanical (rename/typo/file-move), or an approved discovery brief already covers intent."
+Only AFTER the user confirms that block may you propose approaches. Then persist it in ONE Bash call: \`bash ${_IE_PS} set-intent \"<confirmed intent> :: out-of-scope: <...>\"\` — the script resolves the session token internally (issue #157), so you author only the intent text. SKIP this pass entirely if the ask is already fully specified, is mechanical (rename/typo/file-move), or an approved discovery brief already covers intent."
     [[ -n "${SKILL_EXPLAIN:-}" ]] && echo "[skill-hook]   [intent-extraction] emitted directive (no intent, no brief)" >&2
   fi
 fi
