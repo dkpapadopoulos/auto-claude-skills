@@ -31,7 +31,7 @@ When Step 1 landed on `.verify.yml` (`substrate: local`), do NOT perform
 Steps 2–3 by hand. Run:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)}/scripts/verify-and-record.sh"
+bash '<PLUGIN_ROOT>/scripts/verify-and-record.sh'
 ```
 
 It runs the declared commands (stdin nulled), runs the gate-gaming check, and
@@ -54,7 +54,7 @@ rung-3 disambiguation with the user — pass them to the same deterministic
 writer instead of hand-writing the verdict:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)}/scripts/verify-and-record.sh" \
+bash '<PLUGIN_ROOT>/scripts/verify-and-record.sh' \
   --name tests --run "npm test" --name lint --run "npm run lint"
 ```
 
@@ -102,7 +102,7 @@ Run each discovered command in the working tree. Capture each command's exit cod
 After running the gates, capture the diff under verification and classify gate-gaming deterministically:
 
 ```bash
-GGC="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}/skills/project-verification/scripts/gate-gaming-check.sh"
+GGC='<PLUGIN_ROOT>/skills/project-verification/scripts/gate-gaming-check.sh'
 # BASE: upstream merge-base → main merge-base → HEAD~1. The HEAD~1 last resort (no upstream and
 # no detectable main fork point) scopes the check to the most recent commit only, so it may miss
 # earlier changes on a long-lived branch — widen BASE manually if reviewing more than the last commit.
@@ -125,7 +125,7 @@ TOKEN="${SKILL_SESSION_TOKEN:-}"                       # explicit override wins 
 # its token from), trusting it only when that transcript exists — stale,
 # foreign, injected, and path-unsafe ids fall through to the singleton. Do NOT
 # re-derive `session-<id>` by hand here: session-token.sh owns that format.
-STL="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}/hooks/lib/session-token.sh"
+STL='<PLUGIN_ROOT>/hooks/lib/session-token.sh'
 if [ -z "$TOKEN" ] && [ -f "$STL" ]; then
     . "$STL" 2>/dev/null || true
     command -v resolve_own_session_token >/dev/null 2>&1 && TOKEN="$(resolve_own_session_token)"
@@ -170,7 +170,7 @@ If the pre- and post-gate shas **differ**, a commit landed while the gate ran: t
 `passed`/`failed` are the command *names*. A command that could not execute (missing tool, runner error — distinct from a test failure) goes in `could_not_verify`, never silently omitted. `gate_gaming_status` is one of `clean` | `suspect` | `unverified` (the check could not run); if `suspect`, the verdict is SUSPECT, not PASS; if `unverified`, the gate-gaming check is also added to `could_not_verify`. The field is always written — `deploy-gate` accepts local evidence only when it is exactly `clean`. Then print a short human summary table (name, command, PASS/FAIL, excerpt) so the result is visible in-session. This evidence is advisory; `deploy-gate` may read it as local verification of record when hosted CI is absent.
 
 **`coverage_adequacy_status`** — a second deterministic tripwire
-(`scripts/coverage-adequacy-check.sh`) complements gate-gaming: gate-gaming catches
+(`skills/project-verification/scripts/coverage-adequacy-check.sh`) complements gate-gaming: gate-gaming catches
 tests getting *weaker*; adequacy catches *new code shipping untested*. Pipe the review
 diff on stdin with `COVERAGE_ADEQUACY_LCOV` pointing at the runner's coverage artifact
 (`lcov.info` or `coverage.xml`); it prints `clean` | `suspect` (+ uncovered `path:line`) |

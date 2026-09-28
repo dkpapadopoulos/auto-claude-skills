@@ -35,7 +35,7 @@ the machine by accident.
 1. Write the Codex panelist's package to a file: the prompt, any expanded skill bodies,
    the anti-sycophancy block, and the line `Read-only: do not modify any file.` — and
    nothing else (least-data: never whole-session context).
-2. `bash "${CLAUDE_PLUGIN_ROOT}/scripts/consult-dispatch.sh" prepare codex <file>` —
+2. `bash '<PLUGIN_ROOT>/scripts/consult-dispatch.sh' prepare codex <file>` —
    it freezes the package and prints its digest and the exact question to ask.
 3. Ask with `AskUserQuestion`, exactly as `prepare` prints: ONE single-select question
    whose text names the destination provider (Codex / OpenAI) and ends with

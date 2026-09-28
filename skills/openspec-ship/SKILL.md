@@ -48,7 +48,7 @@ Every read and write of `~/.claude/.skill-openspec-state-<token>` in this skill 
 # `session-<id>` by hand — hooks/lib/session-token.sh owns that format. The
 # `|| cat` tail is the last resort: a missing lib degrades to the pre-#157
 # behaviour instead of failing.
-PR="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}"
+PR='<PLUGIN_ROOT>'
 TOKEN="$(. "$PR/hooks/lib/session-token.sh" 2>/dev/null && resolve_own_session_token || cat ~/.claude/.skill-session-token 2>/dev/null)"
 echo "session token: ${TOKEN:-<unresolved>}"   # a scatter is then visible in-session
 ```
@@ -230,7 +230,7 @@ Use RFC 2119 keywords in UPPERCASE: MUST, MUST NOT, SHALL, SHALL NOT, SHOULD, SH
 **Checkpoint stamping (issue #129):** while writing the completed-task lines, attribute commits from `git log --oneline --abbrev=7 <merge-base>..HEAD`. Append ` [checkpoint: <sha7>]` ONLY when exactly one in-range commit matches the task by task number or strong keyword — ambiguous or unattributable tasks stay bare (a missing stamp is honest; a guessed one is not). Then run the deterministic integrity floor:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT:-.}/scripts/checkpoint-validate.sh" openspec/changes/<feature-name>/tasks.md
+bash '<PLUGIN_ROOT>/scripts/checkpoint-validate.sh' openspec/changes/<feature-name>/tasks.md
 ```
 
 Do not stamp the no-plan placeholder variant of `tasks.md` — it has no per-task structure to attribute.
@@ -330,7 +330,7 @@ If `discovery_path` exists in session state AND the file at that path is readabl
 # Self-contained: re-resolve the token here (see "Resolving the session token")
 # — a $TOKEN set in an earlier Bash call is NOT in scope, and an empty token
 # makes both helpers below return silently, losing hypotheses and archived_at.
-PR="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}"
+PR='<PLUGIN_ROOT>'
 TOKEN="$(. "$PR/hooks/lib/session-token.sh" 2>/dev/null && resolve_own_session_token || cat ~/.claude/.skill-session-token 2>/dev/null)"
 . "$PR/hooks/lib/openspec-state.sh"
 

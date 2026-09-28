@@ -98,7 +98,7 @@ running it; mark the rest `untested (cutoff)`. State the recommendation
 conditionally: proceed / proceed-with-conditions naming a hard number / hold.
 
 Before presenting the brief, run the deterministic checker and fix every violation:
-`bash "${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)}/scripts/assumption-audit-check.sh" <discovery-doc>`
+`bash '<PLUGIN_ROOT>/scripts/assumption-audit-check.sh' <discovery-doc>`
 
 Proportionality: for declared small/obvious work, state "skipping Assumption
 Audit: <reason>" in chat and proceed — never skip silently.
@@ -141,7 +141,7 @@ After the user approves the brief — this is mandatory. The LEARN-phase `outcom
    # lib degrades to the old behaviour instead of failing.
    # persist-state.sh resolves the session token internally (issue #157) — you
    # author only the payload. No token line to retype, nothing to get wrong.
-   PS="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}/scripts/persist-state.sh"
+   PS='<PLUGIN_ROOT>/scripts/persist-state.sh'
 
    bash "$PS" set-discovery-path "<slug>" "docs/plans/YYYY-MM-DD-<slug>-discovery.md"
 

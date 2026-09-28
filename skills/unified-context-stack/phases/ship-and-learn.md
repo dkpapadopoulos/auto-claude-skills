@@ -23,7 +23,7 @@ If the session produced working code from a Superpowers plan, generate permanent
 **REQUIRED before completing session:** If you discovered any architectural rules, API quirks, or project conventions during this session, you MUST consolidate them using the highest available tier below before claiming the work is done. After consolidation, write the marker via the shared helper so the path stays in sync with `openspec-guard.sh` and `consolidation-stop.sh` (which look for it):
 
 ```bash
-. "$CLAUDE_PLUGIN_ROOT/hooks/lib/consol-marker.sh"
+. '<PLUGIN_ROOT>/hooks/lib/consol-marker.sh'
 touch "$(consol_marker_path)"
 ```
 

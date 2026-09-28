@@ -242,7 +242,7 @@ Create or adopt a Jira ticket before investigation begins. This stage is opt-in:
 Run the shared observability preflight to check environment readiness:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/obs-preflight.sh"
+bash '<PLUGIN_ROOT>/scripts/obs-preflight.sh'
 ```
 
 Parse the JSON output to select the execution tier:

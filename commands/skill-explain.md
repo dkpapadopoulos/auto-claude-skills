@@ -18,9 +18,9 @@ Execute the hook with the test prompt piped via stdin, capturing both stdout and
 
 ```bash
 output=$(jq -n --arg p "<THE_PROMPT>" '{"prompt":$p}' | \
-  CLAUDE_PLUGIN_ROOT="<PLUGIN_ROOT>" \
+  CLAUDE_PLUGIN_ROOT='<PLUGIN_ROOT>' \
   SKILL_EXPLAIN=1 \
-  bash "<PLUGIN_ROOT>/hooks/skill-activation-hook.sh" 2>&1)
+  bash '<PLUGIN_ROOT>/hooks/skill-activation-hook.sh' 2>&1)
 ```
 
 Where `<PLUGIN_ROOT>` is the auto-claude-skills plugin directory. Find it by searching for the hook:

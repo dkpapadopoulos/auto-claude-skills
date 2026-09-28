@@ -225,6 +225,26 @@ if ! command -v jq >/dev/null 2>&1; then
     fi
     # NOTE: jq unavailable on this path; MSG must remain a simple ASCII string (no quotes or backslashes)
     MSG="SessionStart: jq not found -- skill routing disabled, and the fail-closed push gate cannot establish evidence so it falls open (no push enforcement) until jq is installed. Install jq: brew install jq (macOS) or apt install jq (Linux)"
+    # #311: the skills/ and commands/ files still say <PLUGIN_ROOT>, and this
+    # path is the one place their value would otherwise go unstated — a no-jq
+    # user would get 36 sites naming a placeholder nothing defines.
+    #
+    # It is CONDITIONAL, not unconditional, and the condition is the reason:
+    # there is no jq here to escape with, and this JSON is built by hand with
+    # printf, so a root containing " or \ would emit malformed JSON and break
+    # the whole degraded-mode message. A path that cannot be embedded safely is
+    # therefore omitted rather than risked — this is the fail-open path, and
+    # adding a failure mode to it to carry a convenience would be the wrong
+    # trade. `case` keeps it fork-free.
+    # `[[:cntrl:]]` is not optional and was missing: a NEWLINE in the root is
+    # equally illegal in a JSON string, and measured, it made the emitted object
+    # unparseable -- which loses the WHOLE degraded message, including the
+    # "install jq" instruction this path exists to deliver. Guarding only the
+    # two characters I thought of reproduced the failure the guard was for.
+    case "${PLUGIN_ROOT}" in
+        *'"'*|*'\'*|*[[:cntrl:]]*) : ;;   # unrepresentable without an escaper; say nothing
+        *) MSG="${MSG} -- Plugin root: ${PLUGIN_ROOT} (substitute this for <PLUGIN_ROOT> in any plugin command)" ;;
+    esac
     printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "${MSG}"
     exit 0
 fi
@@ -1635,6 +1655,27 @@ STATUS="SessionStart: ${AVAILABLE_COUNT} skills active (${INSTALLED_COMPANIONS} 
 # Build model context: status + first-response instruction + any warnings
 CONTEXT="${STATUS}
 MANDATORY: Before any other output, report the skill system status to the user in one line (e.g. '24 skills active across 7 plugins — run /setup to complete installation'). Do not skip or defer this."
+
+# --- Plugin root, for the files the MODEL reads (#311) -------------------
+# `CLAUDE_PLUGIN_ROOT` is set for THIS hook process and UNSET in the model's
+# Bash turn (measured `<unset>`, zsh 5.9). So every `skills/` file that told the
+# model to re-derive it was broken outside this repo, in three shapes: a
+# `:-$(git rev-parse --show-toplevel)` fallback landing in the USER's repo root,
+# a `:-.` fallback landing in whatever directory the model was standing in, and
+# a bare `$CLAUDE_PLUGIN_ROOT` expanding to EMPTY, which makes the path
+# `/scripts/...` at the filesystem root.
+#
+# #306's `{{PLUGIN_ROOT}}` placeholder cannot reach those files: it works only
+# because a hook RENDERS the text and substitutes before emission, and nothing
+# renders a SKILL.md — the Skill tool hands it to the model verbatim. Stating
+# the value here once is the substitution those files cannot do for themselves.
+#
+# PLUGIN_ROOT is resolved absolute at the top of this file, so this needs no
+# guard of its own; it is emitted unconditionally so a reader never has to
+# decide whether its absence means "not a plugin install" or "line dropped".
+CONTEXT="${CONTEXT}
+Plugin root: ${PLUGIN_ROOT}
+  (Absolute path to the installed plugin. A skill that names one of the plugin's own scripts writes it as \`<PLUGIN_ROOT>/...\` — substitute the path above before you run the command, exactly as you would any other <angle-bracket> placeholder in that file. Do NOT re-derive it: CLAUDE_PLUGIN_ROOT is unset in your shell, \$(git rev-parse --show-toplevel) is the USER's repo rather than the plugin, and a bare \$CLAUDE_PLUGIN_ROOT expands to nothing, which makes the path start at /.)"
 
 # Append context capabilities summary for model consumption
 # CONTEXT_CAPS is always set on the jq-available path (jq-unavailable exits at step 2)

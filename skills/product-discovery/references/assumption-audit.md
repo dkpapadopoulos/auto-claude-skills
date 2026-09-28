@@ -2,7 +2,7 @@
 
 Reference for the `## Assumption Ledger` and `## Options` sections that
 `## Step 3b: Assumption Audit` adds to the discovery brief. The deterministic
-checker `scripts/assumption-audit-check.sh <discovery-doc>` parses these sections;
+checker `'<PLUGIN_ROOT>/scripts/assumption-audit-check.sh' <discovery-doc>` parses these sections;
 keep the column order and cell rules below exact or the checker false-FAILs.
 
 ## Ledger format

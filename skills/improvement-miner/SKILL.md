@@ -14,8 +14,7 @@ action is `gh issue create`, behind the human gate.
 ## Step 1: Collect evidence (deterministic)
 
 ```bash
-SCRIPT="${CLAUDE_PLUGIN_ROOT:-.}/skills/improvement-miner/scripts/mine-evidence.sh"
-[ -f "$SCRIPT" ] || SCRIPT="skills/improvement-miner/scripts/mine-evidence.sh"
+SCRIPT='<PLUGIN_ROOT>/skills/improvement-miner/scripts/mine-evidence.sh'
 /bin/bash "$SCRIPT" bundle > /tmp/mine-bundle.json
 jq '.kill' /tmp/mine-bundle.json
 jq '{repo_type, repo_type_reason}' /tmp/mine-bundle.json
