@@ -80,8 +80,9 @@ the seed. Those instructions SHALL take the preset name and version from the
 adopter's `design/adopted.json` and MUST NOT state a preset name or a version of
 their own. The command SHALL exit non-zero and leave the existing `tokens.json`
 unchanged when `adopted.json` is absent, when it does not hold exactly one
-record carrying a preset name and a numeric version, and when it reads no tokens
-for one of the themes.
+record carrying a preset name that is not blank and a version that is a whole
+number above zero, and when it reads no tokens for one of the themes. It SHALL
+accept a record that carries further keys.
 
 #### Scenario: An earlier adopter is not restamped
 
@@ -103,14 +104,24 @@ for one of the themes.
 #### Scenario: A record that exists and cannot be used is refused
 
 - **GIVEN** a project whose `design/adopted.json` is empty, is not JSON, is not a
-  single object, or lacks a preset name or a numeric version
+  single object, carries a blank or absent preset name, or carries a version that
+  is absent, not a number, not whole, or not above zero
 - **WHEN** the regenerate command is run
 - **THEN** it MUST exit non-zero
 - **AND** `design/tokens.json` MUST be byte-identical to what it was before
 
+#### Scenario: A usable record with further keys is accepted
+
+- **GIVEN** a project whose `design/adopted.json` holds a preset name, a whole
+  version above zero, and keys of the project's own
+- **WHEN** the regenerate command is run
+- **THEN** it MUST exit zero
+- **AND** `design/tokens.json` MUST record that preset name and that version
+
 #### Scenario: One empty theme is refused
 
-- **GIVEN** a project whose `design/tokens.css` has tokens for one theme only
+- **GIVEN** a project whose `design/tokens.css` has tokens for the light theme
+  only, or for the dark theme only
 - **WHEN** the regenerate command is run
 - **THEN** it MUST exit non-zero
 - **AND** `design/tokens.json` MUST be byte-identical to what it was before

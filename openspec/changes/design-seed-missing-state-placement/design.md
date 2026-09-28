@@ -130,6 +130,12 @@ branches whose named cells passed by another path: a cell that changes one of
 three missing cells never tests the class quoting, because the other two keep
 the row in the population.
 
+A third round confirmed those fixes and judged the change ready to merge. It
+found three small things: `jq` reads the non-standard literal `nan` as a number
+and prints it as `null`, a blank preset name passed, and one sentence in
+`ADOPT.md` was false for a refusal made by the shell. All three are fixed. That
+last commit was held by mutation and was not sent back for a fourth review.
+
 ## A consequence for issue #298
 
 The placement rule was written from the deductions the pilot's judges made, on

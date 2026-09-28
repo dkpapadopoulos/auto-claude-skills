@@ -490,11 +490,46 @@ missing its version|{"preset":"loud-airy","notes":"mine"}
 missing its preset|{"version":1}
 carrying a null version|{"preset":"quiet-dense","version":null}
 carrying a string version|{"preset":"quiet-dense","version":"1"}
+carrying a nan version|{"preset":"quiet-dense","version":nan}
+carrying a fractional version|{"preset":"quiet-dense","version":1.5}
+carrying a zero version|{"preset":"quiet-dense","version":0}
+carrying a negative version|{"preset":"quiet-dense","version":-1}
+carrying an empty preset|{"preset":"","version":1}
+carrying a blank preset|{"preset":" ","version":1}
 an array|[{"preset":"quiet-dense","version":1}]
 two records|{"preset":"quiet-dense","version":1} {"preset":"quiet-dense","version":2}
 not JSON|preset: quiet-dense
 RECORDS
-    assert_equals "regen ($1): every bad-record cell ran (floor)" "10" "${_n}"
+    assert_equals "regen ($1): every bad-record cell ran (floor)" "16" "${_n}"
+}
+# _good_record_cells <shell> -- records the guard must ACCEPT. Without these a guard
+# that refuses everything passes every cell above it.
+_good_record_cells() {
+    local _n=0 _name _content
+    while IFS='|' read -r _name _content; do
+        [ -n "${_name}" ] || continue
+        _n=$((_n + 1))
+        _make_adopter "${SCRATCH}/good" 1
+        printf '%s\n' "${_content}" > "${SCRATCH}/good/design/adopted.json"
+        _regen "${SEED}/ADOPT.md" "${SCRATCH}/good" "$1" >/dev/null
+        assert_equals "regen ($1): a record with ${_name} is accepted" "0" "$(_regen_rc)"
+        # Compared as VALUES: jq keeps a number's spelling, so 3.0 is written as 3.0.
+        assert_equals "regen ($1): a record with ${_name} is written as recorded" "true" \
+            "$(jq -r '.preset == "loud-airy" and .version == 3' "${SCRATCH}/good/design/tokens.json" 2>/dev/null)"
+    done <<'RECORDS'
+extra keys|{"preset":"loud-airy","version":3,"adopted":"2026-09-20","notes":"mine"}
+its keys reordered|{"version":3,"preset":"loud-airy"}
+a version spelled 3.0|{"preset":"loud-airy","version":3.0}
+RECORDS
+    assert_equals "regen ($1): every good-record cell ran (floor)" "3" "${_n}"
+}
+# _drop_block <opening-line regex> <in> <out> -- remove one `selector { ... }` block.
+# The regex travels through the ENVIRONMENT: `awk -v` processes backslash escapes, so
+# `\[` arrived as `[`, opened a bracket expression, and the block was never removed.
+_drop_block() {
+    _DROP_OPEN="$1" awk '$0 ~ ENVIRON["_DROP_OPEN"] { skip = 1 }
+         !skip { print }
+         skip && /^\}/ { skip = 0 }' "$2" > "$3"
 }
 
 _regen_src="$(_adopt_fence "${SEED}/ADOPT.md" 'design/tokens.json')"
@@ -550,6 +585,7 @@ for _sh in bash zsh; do
     _assert_refuses "${_sh}" "${SCRATCH}/a3" "adopted.json is absent"
 
     _bad_record_cells "${_sh}"
+    _good_record_cells "${_sh}"
 
     # No tokens.css: awk fails, but a pipeline reports only its LAST command, so jq
     # must notice for itself that it read nothing.
@@ -557,18 +593,24 @@ for _sh in bash zsh; do
     rm -f "${SCRATCH}/a5/design/tokens.css"
     _assert_refuses "${_sh}" "${SCRATCH}/a5" "tokens.css is absent"
 
-    # ONE theme empty. With both absent, a guard written `and` refuses just as well.
-    _make_adopter "${SCRATCH}/a6" 1
-    cp "${SCRATCH}/a6/design/tokens.css" "${SCRATCH}/a6-full.css"
-    awk '/^:root\[data-theme="dark"\] \{/ { skip = 1 }
-         !skip { print }
-         skip && /^\}/ { skip = 0 }' "${SCRATCH}/a6-full.css" > "${SCRATCH}/a6/design/tokens.css"
-    if _changed "${SCRATCH}/a6-full.css" "${SCRATCH}/a6/design/tokens.css"; then
-        _assert_refuses "${_sh}" "${SCRATCH}/a6" "tokens.css has no dark block"
-    else
-        _record_fail "regen (${_sh}): tokens.css has no dark block: the fence fails" \
-            "the dark block was not removed; the cell is vacuous"
-    fi
+    # ONE theme empty, each direction. With both absent, a guard written `and` refuses
+    # just as well; with only the dark one tested, a guard that forgot `light` would pass.
+    while IFS='|' read -r _theme _open; do
+        [ -n "${_theme}" ] || continue
+        _make_adopter "${SCRATCH}/a6" 1
+        cp "${SCRATCH}/a6/design/tokens.css" "${SCRATCH}/a6-full.css"
+        _drop_block "${_open}" "${SCRATCH}/a6-full.css" "${SCRATCH}/a6/design/tokens.css"
+        if _changed "${SCRATCH}/a6-full.css" "${SCRATCH}/a6/design/tokens.css" \
+            && ! grep -q -E "${_open}" "${SCRATCH}/a6/design/tokens.css"; then
+            _assert_refuses "${_sh}" "${SCRATCH}/a6" "tokens.css has no ${_theme} block"
+        else
+            _record_fail "regen (${_sh}): tokens.css has no ${_theme} block: the fence fails" \
+                "the ${_theme} block was not removed; the cell is vacuous"
+        fi
+    done <<'THEMES'
+dark|^:root\[data-theme="dark"\] \{
+light|^:root \{
+THEMES
 
     # Red control, same function: restore the hardcoded version in a copy of ADOPT.md.
     sed -E 's/version:[^,]*,/version:2,/' "${SEED}/ADOPT.md" > "${SCRATCH}/ADOPT-hardcoded.md"

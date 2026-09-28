@@ -84,10 +84,11 @@ the plugin, your copy of the seed does not.
 
 `tokens.json` is replaced only if `jq` exits zero. It refuses, and leaves the file as it
 was, when `adopted.json` is absent or does not hold exactly one record with a preset name
-and a numeric version, and when it read no tokens for one of the themes. The file is
-**replaced**, not written into: if your `tokens.json` is a symlink or has permissions of
-its own, it becomes an ordinary file with default ones. A refused run leaves an empty
-`design/tokens.json.new` behind, which the next run overwrites.
+that is not blank and a version that is a whole number above zero, and when it read no
+tokens for one of the themes. The file is **replaced**, not written into: if your
+`tokens.json` is a symlink or has permissions of its own, it becomes an ordinary file with
+default ones. A run that `jq` refuses leaves an empty `design/tokens.json.new` behind,
+which the next run overwrites.
 
 ```bash
 awk '/^:root \{/{b="light";next} /^:root\[data-theme="dark"\] \{/{b="dark";next} /^\}/{b="";next}
@@ -95,8 +96,9 @@ awk '/^:root \{/{b="light";next} /^:root\[data-theme="dark"\] \{/{b="dark";next}
      sub(/;[ \t]*$/,"",v); gsub(/^[ \t]+|[ \t]+$/,"",v); printf "%s\t%s\t%s\n", b, n, v}' design/tokens.css \
 | jq -Rn --slurpfile adopted design/adopted.json '
           if ($adopted|length) != 1 or ($adopted[0]|type) != "object"
-             or ($adopted[0].preset|type) != "string" or ($adopted[0].version|type) != "number"
-          then error("design/adopted.json does not hold one record with a preset name and a numeric version")
+             or ($adopted[0].preset|type) != "string" or ($adopted[0].preset|test("\\S")|not)
+             or ($adopted[0].version|type) != "number" or ($adopted[0].version|(. > 0 and . == floor)|not)
+          then error("design/adopted.json does not hold one record with a preset name and a whole-number version")
           else [inputs|split("\t")|{theme:.[0],name:.[1],value:.[2]}] end
           | {preset:$adopted[0].preset, version:$adopted[0].version,
              light:(map(select(.theme=="light"))|map({(.name):.value})|add),
