@@ -78,14 +78,19 @@ the eye catches faster than a test.
 ## Keeping `tokens.json` honest
 
 `tokens.css` is the source of truth; `tokens.json` mirrors it for tooling. If you edit one,
-edit both — or regenerate:
+edit both — or regenerate. The preset name and version are read from `design/adopted.json`,
+the record of what **you** adopted, and not written here: these instructions move on with
+the plugin, your copy of the seed does not. `tokens.json` is replaced only if `jq` exits
+zero, and it refuses when it read no tokens for either theme or found no `adopted.json`.
 
 ```bash
 awk '/^:root \{/{b="light";next} /^:root\[data-theme="dark"\] \{/{b="dark";next} /^\}/{b="";next}
      b!="" && /^[ \t]*--/ {l=$0; sub(/^[ \t]*/,"",l); i=index(l,":"); n=substr(l,1,i-1); v=substr(l,i+1);
      sub(/;[ \t]*$/,"",v); gsub(/^[ \t]+|[ \t]+$/,"",v); printf "%s\t%s\t%s\n", b, n, v}' design/tokens.css \
-| jq -Rn '[inputs|split("\t")|{theme:.[0],name:.[1],value:.[2]}]
-          | {preset:"quiet-dense", version:2,
+| jq -Rn --slurpfile adopted design/adopted.json '[inputs|split("\t")|{theme:.[0],name:.[1],value:.[2]}]
+          | {preset:$adopted[0].preset, version:$adopted[0].version,
              light:(map(select(.theme=="light"))|map({(.name):.value})|add),
-             dark:(map(select(.theme=="dark"))|map({(.name):.value})|add)}' > design/tokens.json
+             dark:(map(select(.theme=="dark"))|map({(.name):.value})|add)}
+          | if .light == null or .dark == null then error("no tokens read from design/tokens.css") else . end' > design/tokens.json.new \
+&& mv design/tokens.json.new design/tokens.json
 ```

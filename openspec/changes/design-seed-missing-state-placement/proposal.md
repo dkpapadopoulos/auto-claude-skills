@@ -22,14 +22,18 @@ three lines apart, with the reference page still demonstrating hover.
 
 ## What Changes
 
-- The styleguide's Missing treatment becomes a visible reason, in words, beside
-  the value.
+- The styleguide's Missing treatment becomes a reason in words, visible in the
+  same row, card or field as the value.
 - The styleguide states the placement rule in terms that are not table-specific:
-  the reason belongs in the same unit as the value (row, card, field). A `title`
-  attribute, a footnote or a legend may add detail and does not treat the state.
+  the reason belongs in the smallest unit that holds the value (row, card,
+  field). A `title` attribute, a footnote or a legend may add detail and does not
+  treat the state.
 - The reference page drops the three `title` attributes. Its row already carried
   a visible reason (the "Stale price" status), and the caption now points at it.
-- The preset version moves from 1 to 2 at all six sites that state it.
+- The preset version moves from 1 to 2 at the five sites that state it.
+- The command in `ADOPT.md` that regenerates `tokens.json` stops stating a
+  version. It reads the preset name and version from the adopter's
+  `design/adopted.json`, and replaces `tokens.json` only when it succeeded.
 
 ## Capabilities
 
@@ -39,12 +43,22 @@ three lines apart, with the reference page still demonstrating hover.
 
 - `assets/design-seed/styleguide.md`, `reference.html` — guidance and its
   demonstration.
-- `assets/design-seed/tokens.css`, `tokens.json`, `ADOPT.md` — version only.
+- `assets/design-seed/tokens.css`, `tokens.json` — version only.
+- `assets/design-seed/ADOPT.md` — version in the adoption block, and the
+  regenerate command.
 - `tests/test-design-seed-missing-state.sh` — new.
 - `tests/fixtures/design-seed/v1-missing-state/` — the v1 bytes, copied verbatim
   from `07cb5910`, used as red controls.
 
-Projects that already adopted the seed are unaffected. A copied seed belongs to
-the adopter and the plugin never rewrites it, so their `design/` keeps the v1
-guidance and their `adopted.json` keeps `"version": 1`. That is why the version
-changes: it is the only record that tells the two apart.
+A copied seed belongs to the adopter and the plugin never rewrites it, so an
+earlier adopter's `design/` keeps the v1 guidance and their `adopted.json` keeps
+`"version": 1`. That is why the version changes: it is the only record that
+tells the two apart.
+
+There is one path by which the plugin's current files still reach an earlier
+adopter. Adoption deletes their copy of `ADOPT.md`, so anyone regenerating
+`tokens.json` reads the plugin's current one. Before this change that command
+stated the version itself. Review measured the result of bumping it: a v1
+adopter's `tokens.json` came out stamped version 2 while their guidance and
+their `adopted.json` stayed at 1. The hardcoded version predates this change,
+but it could not mislabel anything until there was a second version.

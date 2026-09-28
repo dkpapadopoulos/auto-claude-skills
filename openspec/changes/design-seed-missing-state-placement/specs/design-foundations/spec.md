@@ -5,35 +5,42 @@
 ### Requirement: A missing-state reason MUST be visible beside the value
 
 The shipped styleguide SHALL prescribe, as the treatment for a missing value, a
-reason stated in words in the visible render. It SHALL state that the reason
-belongs in the same unit as the value it explains, and that a `title` attribute,
-a footnote or a legend does not treat the state. The styleguide MUST NOT
-prescribe a hidden channel as the treatment. The reference page SHALL demonstrate
-the same rule: no element it marks as missing SHALL carry its reason in a `title`
-attribute, and every table row holding a missing value SHALL carry words in that
-row.
+reason stated in words and visible in the same row, card or field as the value.
+It SHALL state that the reason belongs in the smallest unit that holds the value
+it explains, and that a `title` attribute, a footnote or a legend does not treat
+the state. The treatment it prescribes MUST NOT name a hidden or distant channel.
+The reference page SHALL demonstrate the same rule: no table row holding a
+missing value SHALL carry a `title` attribute on any of its elements, and every
+such row SHALL carry words in that row.
 
 #### Scenario: The styleguide prescribes a visible reason
 
 - **GIVEN** the shipped `assets/design-seed/styleguide.md`
 - **WHEN** the Missing row of its states table is read
-- **THEN** the treatment MUST say the reason is visible
-- **AND** it MUST NOT name a title attribute, a tooltip or hover as the treatment
+- **THEN** the treatment MUST say the reason is visible in the same row, card or
+  field
+- **AND** it MUST NOT name a title, a tooltip, hover, a footnote or a legend
+- **AND** it MUST NOT say the reason is invisible or not visible
 
 #### Scenario: The styleguide states where a treatment has to appear
 
 - **GIVEN** the shipped `assets/design-seed/styleguide.md`
-- **WHEN** it is searched for the placement rule
-- **THEN** it MUST state that a state is only treated where the reader meets the
-  value
+- **WHEN** the paragraph opening "A state is only treated where the reader meets
+  the value" is read
+- **THEN** it MUST name the smallest unit that holds the value, and give the row
+  of a table, the card and the field as examples
+- **AND** it MUST name a `title` attribute, a footnote and a legend
+- **AND** it MUST state that none of them treats the state
 
 #### Scenario: The reference page hides no reason in an attribute
 
 - **GIVEN** `assets/design-seed/reference.html`
-- **WHEN** every element carrying the class `missing` is inspected
+- **WHEN** every table row containing an element with the class `missing` is
+  inspected
 - **THEN** at least one such element MUST exist
-- **AND** none MUST carry a `title` attribute
-- **AND** the page's prose MUST NOT describe a reason shown on hover
+- **AND** no element in such a row MUST carry a `title` attribute, in either
+  letter case and either quoting
+- **AND** the page MUST NOT contain the words hover, tooltip or mouseover
 
 #### Scenario: A row with a missing value says why in that row
 
@@ -41,13 +48,14 @@ row.
 - **WHEN** each table row containing a missing value is inspected
 - **THEN** the row MUST contain words, in a status element or in the missing cell
   itself
+- **AND** the name of an HTML entity MUST NOT count as words
 
 ### Requirement: Every statement of the preset version MUST agree
 
 Every file in the shipped seed that states the preset version SHALL state the
 same number, and that number SHALL equal the `version` field of `tokens.json`.
-The seed whose guidance prescribes a visible missing-state reason SHALL be
-version 2.
+The seed whose guidance prescribes a visible missing-state reason MUST NOT be
+labelled version 1, which is the label the superseded guidance shipped under.
 
 #### Scenario: One drifted site is reported
 
@@ -59,5 +67,29 @@ version 2.
 
 - **GIVEN** the shipped `assets/design-seed/`
 - **WHEN** its version statements are read
-- **THEN** at least six sites MUST state a version
-- **AND** every one MUST state version 2
+- **THEN** at least five sites MUST state a version
+- **AND** every one MUST state the same version, which MUST NOT be 1
+
+### Requirement: Regenerating tokens.json MUST keep the version the adopter holds
+
+Adoption removes the adopter's copy of `ADOPT.md`, so a reader who regenerates
+`tokens.json` follows the plugin's current instructions against an older copy of
+the seed. Those instructions SHALL take the preset name and version from the
+adopter's `design/adopted.json` and MUST NOT state a version of their own. The
+command SHALL leave the existing `tokens.json` unchanged when it cannot read
+`adopted.json` or reads no tokens.
+
+#### Scenario: An earlier adopter is not restamped
+
+- **GIVEN** a project that adopted version 1 of the seed
+- **WHEN** the regenerate command in the current `ADOPT.md` is run in it, in
+  either the hook shell or the model's shell
+- **THEN** `design/tokens.json` MUST record version 1
+- **AND** its token maps MUST equal those in `design/tokens.css`
+
+#### Scenario: A failed regeneration changes nothing
+
+- **GIVEN** a project whose `design/adopted.json` or `design/tokens.css` is absent
+- **WHEN** the regenerate command is run
+- **THEN** it MUST exit non-zero
+- **AND** `design/tokens.json` MUST be byte-identical to what it was before

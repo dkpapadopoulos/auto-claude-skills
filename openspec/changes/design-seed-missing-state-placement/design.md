@@ -10,16 +10,17 @@ change is to what those files say and show:
    composition", so it has to agree with the styleguide.
 3. The preset version identifies which guidance a copy holds.
 
-The test has five lints, split by what each can see. Each states its population
+The test has six lints, split by what each can see. Each states its population
 in the test file.
 
 | Lint | Population | Red control |
 |---|---|---|
-| 1. No reason hidden in an attribute | tags with class `missing` in the reference page | v1 reference: exactly three |
-| 2. Prose does not teach hover | the reference page | v1 reference |
-| 3. A row with a missing value has words | table rows containing a `missing` cell | the live page with its status pill removed |
-| 4. Styleguide prescribes a visible reason and states the rule | the Missing row, and the file | v1 styleguide |
+| 1. No `title` attribute in a row holding a missing value | table rows containing a `missing` cell | v1 reference: exactly three |
+| 2. Prose does not teach a hidden channel | the reference page, flattened | v1 reference |
+| 3. A row with a missing value has words | the same rows as lint 1 | the live page with its status pill removed |
+| 4. Styleguide prescribes a visible reason and states the rule | the Missing row, and the rule paragraph | v1 styleguide |
 | 5. Every version statement agrees and is not 1 | every file in the seed, keyed on spelling | a copy with one site reverted |
+| 6. Regenerating `tokens.json` keeps the adopter's version | the regenerate fence in `ADOPT.md`, run whole in bash and zsh | a copy of `ADOPT.md` with the version hardcoded |
 
 Every control calls the same function as its lint.
 
@@ -27,7 +28,27 @@ Every control calls the same function as its lint.
 
 **The rule is worded for units, not rows.** The issue asked whether "in that
 row" is too strong for layouts that are not tables. It is. The rule names the
-unit that holds the value, and gives row, card and field as examples.
+smallest unit that holds the value, and gives row, card and field as examples.
+"Smallest" matters because units nest: the reference table sits inside a card,
+and without it a note under the table would be "in the card".
+
+**The Missing row and the rule paragraph say the same thing.** The first cut had
+the row say "beside it" and the paragraph say "same unit". The reference page's
+reason sits one to three columns from the dashes, so a reader following the row
+literally would have found the reference page non-compliant.
+
+**Lint 1 is keyed on rows, not on the missing cell's own tag.** Review fed the
+first cut ten spellings of a hidden reason and six passed, including a `title`
+on a child element and on the row. Each was a new spelling of the same fault, so
+the lint's key changed instead of its pattern list growing.
+
+**The regenerate command reads the version from `adopted.json`.** That file is
+the record of what the adopter copied. The alternative was to keep a version in
+the command and bump it, which is what restamped a v1 adopter as v2. The command
+also writes to a temporary file and moves it into place, and `jq` raises an
+error when it read no tokens, because a pipeline reports only its last command
+and `awk` failing on an absent `tokens.css` would otherwise replace
+`tokens.json` with empty maps.
 
 **One reason per unit is enough.** The reference row has three missing values
 with one cause. Repeating the reason in each cell would fight the density the
@@ -40,7 +61,8 @@ beside it.
 
 **The version lint is keyed on spelling, not on a file list.** The first count of
 version sites found five. There were six: `tokens.css` states it in a comment.
-A lint over named files would have passed with that site left at 1.
+A lint over named files would have passed with that site left at 1. There are
+five again now, because the regenerate command no longer states one.
 
 **The v1 fixtures are copies, and the test checks that.** Where git history is
 available the test compares each fixture with `07cb5910` byte for byte. In a
@@ -49,12 +71,23 @@ clone without that commit it prints a SKIP line instead of passing.
 ## Trade-offs
 
 - Lint 3 sees that a row has words. It cannot see whether the words are a good
-  reason.
+  reason: `NaN` in the cell counts.
 - Lint 1 sees a `title` attribute. It does not see `aria-label`, CSS generated
-  content or a scripted tooltip.
+  content or a scripted tooltip. It also cannot tell a reason from other detail,
+  so a `title` holding an unrounded value in such a row is reported too.
+- Lints 1 and 3 see table rows. A missing value in a card outside any table is
+  covered by the styleguide's rule and by no lint.
+- Lint 4 pins phrases. A rewording that keeps every pinned phrase and changes
+  the meaning passes.
 - v1 passes lint 3, because its row already had the status pill. The v1 fixture
   therefore cannot be that lint's control, and a mutated copy of the live page is
   used instead.
+- The reference page shows several values missing for one reason. It does not
+  show a reason written inside a single cell.
+- An adopter with no `design/adopted.json` can no longer regenerate
+  `tokens.json`. The command fails and says which file it could not open.
+- The test ran on BSD tools under bash 3.2 and zsh. GNU `grep`, `sed` and `awk`
+  are unverified: none is installed on the machine that ran it.
 
 ## Out of scope
 
@@ -67,8 +100,13 @@ clone without that commit it prints a SKIP line instead of passing.
 
 ## Dissenting views
 
-None recorded. The scope, the version bump and the #298 comment were each put to
-the owner as a choice, and the recommended option was taken in all three.
+The scope, the version bump and the #298 comment were each put to the owner as a
+choice, and the recommended option was taken in all three.
+
+An independent review of the first cut found no fault in the direction of the
+guidance and six gaps, five of them in the test. The author's ten mutations had
+each reverted one of the author's own edits, so they held the lints against one
+spelling of each fault. The reviewer's inputs are now cells in the test.
 
 ## A consequence for issue #298
 
