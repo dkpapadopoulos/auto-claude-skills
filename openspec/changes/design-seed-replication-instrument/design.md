@@ -161,21 +161,98 @@ Limits:
 - The deriver's package leaves the machine. The pilot accepted the same, behind
   a mechanical check that the package holds fixture data only.
 
-## Safety classification
+## Agent safety assessment
 
-| Leg | Present | Where |
+**Design:** the six-stage pipeline above. **Date:** 2026-09-29.
+
+### Risk fields
+
+| Field | Status | Evidence |
 |---|---|---|
-| Private data | yes | Dion's store; the fixture is derived from it |
-| Untrusted input | yes | arms' generated HTML, rendered in a browser |
-| Outbound action | yes | the deriver's package; judge calls, if any property is judged |
+| `private_data` | Present | Dion's store of real holdings is on the machine the stages run on |
+| `untrusted_input` | Present | arms' generated HTML is rendered in a browser and its output is read by the measures |
+| `outbound_action` | Present | the deriver's package leaves the machine; so does a judge's input, if any property is judged |
 
-All three legs are present, as they were in the pilot. The pilot's controls
-carry forward: arms have no outbound capability, captures block every request
-that is not `file:`, and an artifact is refused for transmission unless its
-embedded data hash-matches the fixture.
+### Classification
 
-An agent safety review of this design is required before it leaves DESIGN. It
-has not been done.
+**Risk level:** lethal trifecta, as the pilot was.
+**Autonomy:** execute-reversible. Each party writes files in its own worktree.
+**Oversight:** strong. A person launches each stage, arms have no outbound
+capability, and every freeze is a reviewed commit. No autonomy advisory.
+
+### Placement
+
+Four risks. The pilot's controls were written for the first. They are checked
+here against all four, by what each control reads.
+
+**1. An arm inlines real holdings into its page, and the page is sent out.**
+
+- Threat region: values in the page's visible text and embedded JSON.
+- Control region: the pilot's egress check reads visible text, embedded JSON,
+  identifiers and numbers, and compares them with the fixture and the store.
+- Overlap: the control reads the region the threat occupies.
+- Not looked at: anything the page loads at render time. See risk 2.
+- `unvalidated-against`: none recorded by the pilot.
+
+**2. A page pulls a local file into the capture at render time.**
+
+- Threat region: a `file:` subresource, such as an `iframe`, an `object` or an
+  image, whose contents appear in the screenshot and not in the page's source.
+- Control region: the capture script aborts requests that are not `file:` or
+  `data:`. The egress check reads the page's source.
+- Overlap: **none**. The capture allows every `file:` request, and the egress
+  check never reads what a subresource loads.
+- Measured on 2026-09-29, Chromium 129: a page opened from disk loaded another
+  local file through `iframe` and through `object`. The file's text appeared in
+  the screenshot and was absent from the main frame's text. A `fetch` of the
+  same file was blocked.
+- Also measured: none of the pilot's six preserved pages contains an embedding
+  tag or a `file:` reference. Nothing left the machine this way in the pilot.
+- **This risk is unmitigated.**
+
+**3. The picker writes private data into the brief, and the brief is sent to
+the deriver.**
+
+- Threat region: the brief's text.
+- Control region: enforcement B denies the picker any read outside a Dion
+  worktree that holds no store. The consent gate shows the package to a person.
+- Overlap: partial. The deny rule covers the threat only while the canary
+  passes. The pilot's own egress check notes that a person previewing a package
+  cannot tell real positions from fixture positions.
+- Not looked at: the brief is prose, and the egress check was written for HTML.
+- `unvalidated-against`: a picker that reached the store. The canary has not
+  been built.
+
+**4. The fixture is built from the real store.**
+
+- Threat region: the fixture's bytes.
+- Control region: the pilot asserts in a test that the builder is given a
+  throwaway database path.
+- Overlap: the control reads the path the builder uses.
+- Not looked at: where the throwaway database's own rows came from.
+
+### Mitigation
+
+| Risk | Required before any stage runs |
+|---|---|
+| 2 | The capture allows one `file:` URL, the artifact's own, and aborts every other request. A capture with any aborted `file:` request is refused, and the count is recorded |
+| 3 | The egress check's identifier and number legs are run over the brief before it is packaged. The canary is built and passes |
+| 4 | The record names the source of the throwaway database's rows |
+
+The control for risk 2 sits at the request layer on purpose. A list of
+embedding tags would have to be complete, and a request is a request whatever
+tag made it.
+
+**Trade-off:** a page that legitimately splits itself across local files can no
+longer be captured. The pilot's brief already required a single self-contained
+file.
+
+**Residual risk:** the measures and captures run a generated page's scripts in
+a browser. Blocking requests does not stop a script from computing on what the
+page already holds.
+
+Risk 2 applies to the pilot's harness as it stands today, in Dion. It is
+reported here and has not been fixed there.
 
 ## What the replication can claim
 
