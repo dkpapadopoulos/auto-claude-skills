@@ -40,7 +40,7 @@ cmp -s "${SEED_DIR:?set SEED_DIR to the directory holding this file}/ADOPT.md" d
 #    unguarded `>` on the next statement would then destroy it -- this file calls
 #    adopted.json the provenance record, so that loss is your preset and date.
 [ -e design/adopted.json ] || cat > design/adopted.json <<JSON
-{"preset": "quiet-dense", "version": 1, "adopted": "$(date +%Y-%m-%d)"}
+{"preset": "quiet-dense", "version": 2, "adopted": "$(date +%Y-%m-%d)"}
 JSON
 
 # 3. Check it runs
@@ -85,7 +85,7 @@ awk '/^:root \{/{b="light";next} /^:root\[data-theme="dark"\] \{/{b="dark";next}
      b!="" && /^[ \t]*--/ {l=$0; sub(/^[ \t]*/,"",l); i=index(l,":"); n=substr(l,1,i-1); v=substr(l,i+1);
      sub(/;[ \t]*$/,"",v); gsub(/^[ \t]+|[ \t]+$/,"",v); printf "%s\t%s\t%s\n", b, n, v}' design/tokens.css \
 | jq -Rn '[inputs|split("\t")|{theme:.[0],name:.[1],value:.[2]}]
-          | {preset:"quiet-dense", version:1,
+          | {preset:"quiet-dense", version:2,
              light:(map(select(.theme=="light"))|map({(.name):.value})|add),
              dark:(map(select(.theme=="dark"))|map({(.name):.value})|add)}' > design/tokens.json
 ```

@@ -1,4 +1,4 @@
-# Styleguide — quiet-dense (preset v2)
+# Styleguide — quiet-dense (preset v1)
 
 This file holds only what the lint **cannot** decide. Anything mechanically checkable
 lives in `checks/token-lint.sh`; restating it here would be prose pretending to be a rule.
@@ -36,19 +36,12 @@ Three different states, three treatments, no exceptions:
 | State | Means | Treatment |
 |---|---|---|
 | **Zero** | the value is known and it is 0 | the numeral `0`, normal text colour |
-| **Missing** | this row should have a value, we don't have it | `—` in `--value-missing`, and the reason in words, visible beside it |
+| **Missing** | this row should have a value, we don't have it | `—` in `--value-missing`, with a title attribute saying why |
 | **Empty** | there are no rows at all | one sentence saying what would appear here, and what to do |
 
 Collapsing missing into zero is the single most damaging thing a data UI can do: it turns
 "we don't know" into a confident claim. If the backend cannot distinguish them, fix the
 backend before the screen.
-
-**A state is only treated where the reader meets the value.** Put the reason in the
-visible render, inside the same unit as the value it explains: the row of a table, the
-card, the field. A `title` attribute, a footnote under the table, or a legend elsewhere on
-the page may add detail, but none of them treats the state. A reader scanning rows never
-hovers, a screenshot or a printout cannot, and a touch screen has no hover at all. When
-several values in one unit are missing for the same reason, say it once in that unit.
 
 ## Status
 
