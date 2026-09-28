@@ -1,0 +1,9 @@
+Checking MCP server health…
+
+claude.ai Claude Docs: https://api.anthropic.com/v1/pages/mcp - ✔ Connected
+plugin:context7:context7: https://mcp.context7.com/mcp?client=claude-code-plugin (HTTP) - ✔ Connected
+idea: http://127.0.0.1:64342/stream (HTTP) - ✔ Connected
+gcp-observability: npx -y @google-cloud/observability-mcp - ✘ Failed to connect — CONNECTION_CLOSED: Connection closed
+forgetful: uvx forgetful-ai - ✔ Connected
+github: https://example.invalid/mcp/ (HTTP) - ✔ Connected
+serena: /Users/USER/.local/bin/serena start-mcp-server --context claude-code --project /Users/USER/IdeaProjects/auto-claude-skills - ✔ Connected
