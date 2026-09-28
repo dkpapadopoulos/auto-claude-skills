@@ -75,9 +75,20 @@ printf -- '- [x] 1.1 x\n' > "$NOREPO/tasks.md"
 _o="$(cd "$NOREPO" && GIT_CEILING_DIRECTORIES=/private/tmp:/tmp /bin/bash "$VAL" tasks.md 2>/dev/null)"; _rc=$?
 assert_equals "outside git repo: exit 2" "2" "$_rc"
 
-# R1 (review fix): SKILL.md must invoke via plugin-root, not a bare repo path
-assert_contains "SKILL.md uses CLAUDE_PLUGIN_ROOT for the validator path" \
-    'CLAUDE_PLUGIN_ROOT:-.}/scripts/checkpoint-validate.sh' \
+# R1 (review fix): SKILL.md must invoke via plugin-root, not a bare repo path.
+#
+# The SPELLING this pinned was `${CLAUDE_PLUGIN_ROOT:-.}`, which #311 measured
+# as the very failure the assertion's own comment forbids: `CLAUDE_PLUGIN_ROOT`
+# is unset in the model's shell, so it fell through to `.` — the current working
+# directory, i.e. a bare relative path that resolves wherever the model happens
+# to be standing. The intent was right and the spelling was the defect.
+#
+# It now pins the plugin-root-qualified placeholder the session context tells
+# the reader to substitute. Keep this keyed on "a plugin-root-qualified path",
+# never on a bare `scripts/checkpoint-validate.sh`, which is what the intent
+# has always excluded.
+assert_contains "SKILL.md names the validator by a plugin-root-qualified path" \
+    '<PLUGIN_ROOT>/scripts/checkpoint-validate.sh' \
     "$(cat "${PROJECT_ROOT}/skills/openspec-ship/SKILL.md" 2>/dev/null)"
 
 # R2 (review fix): no-space stamp is validated, not silently ignored

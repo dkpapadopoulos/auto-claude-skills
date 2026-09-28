@@ -28,7 +28,7 @@ If a learning is private to you or your machine, it is auto-memory, not `.claude
 3. **Present the draft to the human for explicit approval.** No silent write.
 4. **On approval**: run the secret/PII scan (`Skill(auto-claude-skills:security-scanner)` or gitleaks) over the draft; BLOCK on hit.
 5. **Dedup against existing slugs**; if a near-duplicate exists, update it instead of creating a new file.
-6. **Write** `.claude/knowledge/<slug>.md`; run `scripts/knowledge-rebuild-index.sh .claude/knowledge`; run `scripts/knowledge-validate.sh .claude/knowledge`; `git add -f` the changed files (staged, NOT committed — the PR is the second gate).
+6. **Write** `.claude/knowledge/<slug>.md`; run `'<PLUGIN_ROOT>/scripts/knowledge-rebuild-index.sh' .claude/knowledge`; run `'<PLUGIN_ROOT>/scripts/knowledge-validate.sh' .claude/knowledge`; `git add -f` the changed files (staged, NOT committed — the PR is the second gate).
 7. **If local Forgetful is connected**, run the Forgetful sync (see Task 6 reconcile). Otherwise skip silently.
 
 ## Safety
@@ -45,7 +45,7 @@ Run this block only when explicitly requested by the human, never on session-sta
 
 1. Compute content hash:
    ```
-   bash scripts/knowledge-forgetful-map.sh hash .claude/knowledge/<slug>.md
+   bash '<PLUGIN_ROOT>/scripts/knowledge-forgetful-map.sh' hash .claude/knowledge/<slug>.md
    ```
    Store result as `<current_hash>`.
 
@@ -58,7 +58,7 @@ Run this block only when explicitly requested by the human, never on session-sta
 
 3. Look up existing memory_id:
    ```
-   memory_id=$(bash scripts/knowledge-forgetful-map.sh get "${MAPFILE}" <slug>)
+   memory_id=$(bash '<PLUGIN_ROOT>/scripts/knowledge-forgetful-map.sh' get "${MAPFILE}" <slug>)
    ```
 
 4. **If `memory_id` is empty** (fact not yet mirrored):
@@ -71,7 +71,7 @@ Run this block only when explicitly requested by the human, never on session-sta
      - `metadata.project_id`: Forgetful project id for this repo (create one if absent)
    - On success, persist the returned id:
      ```
-     bash scripts/knowledge-forgetful-map.sh put "${MAPFILE}" <slug> <returned_id> <current_hash>
+     bash '<PLUGIN_ROOT>/scripts/knowledge-forgetful-map.sh' put "${MAPFILE}" <slug> <returned_id> <current_hash>
      ```
 
 5. **If `memory_id` is present and `<current_hash>` differs from the stored hash**:
@@ -84,7 +84,7 @@ Run this block only when explicitly requested by the human, never on session-sta
    - Call `delete_memory` (or equivalent) via MCP with the stored `memory_id`.
    - Remove the slug entry from the local slug→memory_id map sidecar:
      ```
-     bash scripts/knowledge-forgetful-map.sh del "${MAPFILE}" <slug>
+     bash '<PLUGIN_ROOT>/scripts/knowledge-forgetful-map.sh' del "${MAPFILE}" <slug>
      ```
 
 **Error handling:** Any MCP call failure is logged to stderr and skipped — never abort the full reconcile. The map is only updated on confirmed MCP success.

@@ -213,7 +213,7 @@ serena init
 **2.5. Detect project languages and write them into `.serena/project.yml`.** A fresh `.serena/project.yml` has an empty `languages:` field — Serena will refuse to start its language servers, giving silent zero results from `find_symbol`/`find_declaration`. Run the bundled detector:
 
 ```bash
-LANGS="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-serena-languages.sh" "$(pwd)")"
+LANGS="$(bash '<PLUGIN_ROOT>/scripts/detect-serena-languages.sh' "$(pwd)")"
 ```
 
 **Before offering to write, check whether `languages:` is already populated.** If it is (a non-empty list), don't silently overwrite — that would erase the user's existing declaration. Detect via:
@@ -559,7 +559,7 @@ additional behavior.
 > `**Verdict:** ABORT`, or contains a `# INVALID:` banner, **skip the bare
 > invocation** and only offer the opt-in flags below. To run the race-test:
 > ```bash
-> bash "${CLAUDE_PLUGIN_ROOT}/tests/race-truncation-defaults.sh" \
+> bash '<PLUGIN_ROOT>/tests/race-truncation-defaults.sh' \
 >   --prompt "<a real noisy incident-analysis investigation>" \
 >   --out ./race-results/
 > ```
@@ -582,7 +582,7 @@ If the user agrees, run:
 
 ```bash
 # A — truncation defaults (always)
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/setup-managed-settings.sh"
+bash '<PLUGIN_ROOT>/scripts/setup-managed-settings.sh'
 ```
 
 **About `--force`:** the script preserves user-customized env-var values by
@@ -604,14 +604,14 @@ attribution? You supply the collector endpoint — the preset writes the env
 block. Required for Task D's probation contract."
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/setup-managed-settings.sh" --observability
+bash '<PLUGIN_ROOT>/scripts/setup-managed-settings.sh' --observability
 ```
 
 **C — Context-hygiene preset.** "Write a conservative `.claudeignore` in this
 repo and emit a hint when Claude is launched above a package subdirectory?"
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/setup-managed-settings.sh" --context-hygiene
+bash '<PLUGIN_ROOT>/scripts/setup-managed-settings.sh' --context-hygiene
 ```
 
 **D — Model-routing preset (default-OFF, probation-gated).** "Route ALL
@@ -621,7 +621,7 @@ until B has captured ≥2 weeks of telemetry showing no review-quality regressio
 (see `docs/observability.md` § Probation contract for Task D)."
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/setup-managed-settings.sh" --model-routing
+bash '<PLUGIN_ROOT>/scripts/setup-managed-settings.sh' --model-routing
 ```
 
 After the writes, remind the user that env-var changes take effect on the next
@@ -637,8 +637,8 @@ If yes:
 1. Ask for the local clone path. If no clone exists, ask the user to clone it first (the connector never fetches over the network).
 2. Explore the hub READ-ONLY: its README/CLAUDE.md/CONTRIBUTING, any manifest (e.g. `org-hub.json` at the hub root — use it as input if present), directory layout, frontmatter conventions, glossaries. Summarize to the user what you found: context roots, scope axes (org/tribes/domains), artifact types, spec roots.
 3. Propose a scope for THIS repo (which tribe(s)/domains apply). The user decides.
-4. Draft `.claude/org-hub.json` (schema_version 1 — see `scripts/org-hub-build-index.sh` header for fields) and show it to the user; you MUST confirm before committing anything.
-5. Run: `bash scripts/org-hub-build-index.sh --hub <clone> --descriptor .claude/org-hub.json` and show the resulting index to the user for review.
+4. Draft `.claude/org-hub.json` (schema_version 1 — the field list is in the header of the script step 5 runs) and show it to the user; you MUST confirm before committing anything.
+5. Run: `bash '<PLUGIN_ROOT>/scripts/org-hub-build-index.sh' --hub <clone> --descriptor .claude/org-hub.json` and show the resulting index to the user for review.
 6. Optionally pin REVIEW-lens bodies: ask whether any hub instruction files (review checklists, deploy rules) should be loaded verbatim during code review. For each file the user picks: show its full content, get explicit confirmation, compute the pin with `shasum -a 256 <clone>/<hub-relative-path>`, and add `{"path": "<hub-relative-path>", "sha256": "<hash>"}` to `review_lens_allowlist` in `.claude/org-hub.json`. State verbatim: "Pins are content hashes — any upstream edit to a pinned file stops it loading until you re-review and re-pin here." Skip silently if the user picks none.
 7. WARNING (always show verbatim): "The descriptor and index encode org structure (tribe/domain names). Do NOT commit them to public or wider-access repos. Confirm this repo's audience matches the hub content's audience."
 8. If the repo gitignores `.claude/` wholesale, add `!.claude/org-hub.json` and `!.claude/org-hub-index.md` to `.gitignore` (same pattern as `!.claude/knowledge/`).

@@ -123,7 +123,7 @@ Before the model-judged Plan Alignment below, run the owned deterministic
 check (advisory; never blocks):
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT:-.}/scripts/scope-conformance.sh" <plan-file>
+bash '<PLUGIN_ROOT>/scripts/scope-conformance.sh' <plan-file>
 ```
 
 Use the newest matching plan from the comparison material gathered in Step 1

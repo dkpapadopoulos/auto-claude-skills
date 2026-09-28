@@ -73,7 +73,7 @@ When all tasks are complete:
 2. Scope conformance (advisory): run the deterministic scope check against the plan:
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT:-.}/scripts/scope-conformance.sh" docs/plans/<plan-file>.md
+   bash '<PLUGIN_ROOT>/scripts/scope-conformance.sh' docs/plans/<plan-file>.md
    ```
 
    This is BRANCH-level conformance — it checks the team's combined diff against

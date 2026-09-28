@@ -41,7 +41,7 @@ When an inference has less than high confidence (e.g., inferring a nightly batch
 Run the shared observability preflight before data access:
 
 ```bash
-bash "$(dirname "$0")/../scripts/obs-preflight.sh"
+bash '<PLUGIN_ROOT>/scripts/obs-preflight.sh'
 ```
 
 If `gcloud` is `unauthenticated`, run `gcloud auth login` before proceeding. If `gcloud` is `missing`, fall to Tier 3.
@@ -52,7 +52,7 @@ Default path for all data pull. Uses `gcloud auth print-access-token` for auth, 
 
 ```bash
 WORK_DIR=$(mktemp -d /tmp/ah-XXXXXX)
-SCRIPTS_DIR="$(dirname "$0")/../skills/alert-hygiene/scripts"
+SCRIPTS_DIR='<PLUGIN_ROOT>/skills/alert-hygiene/scripts'
 
 python3 "$SCRIPTS_DIR/pull-policies.py" \
     --project "$MONITORING_PROJECT" \

@@ -208,7 +208,13 @@ test_sends_only_through_the_consent_dispatcher() {
     local f body
     for f in skills/second-opinion/SKILL.md skills/panel/SKILL.md; do
         body="$(cat "${PROJECT_ROOT}/${f}")"
-        assert_contains "${f}: prepares through the dispatcher" 'consult-dispatch.sh" prepare codex' "${body}"
+        # The closing quote is SINGLE, and that is load-bearing rather than
+        # incidental. #311 roots this path at the `<PLUGIN_ROOT>` placeholder the
+        # session context defines, and #248's read-vs-paste ruling requires a
+        # pasted path to be single-quoted: measured, a plugin root containing
+        # `$(...)` EXECUTES inside double quotes when the reader pastes the line.
+        # So this needle pins the dispatcher AND the safe quoting in one string.
+        assert_contains "${f}: prepares through the dispatcher" "consult-dispatch.sh' prepare codex" "${body}"
         assert_contains "${f}: sends through the dispatcher" 'consult-dispatch.sh send <digest>' "${body}"
         assert_contains "${f}: asks with the consent marker" '[egress-consent:<digest>]' "${body}"
         assert_contains "${f}: names the approve label" 'Approve and send' "${body}"

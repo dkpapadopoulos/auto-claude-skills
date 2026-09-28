@@ -31,7 +31,7 @@ The skill will ask for incident details interactively.
 1. Load the `incident-analysis` skill using the Skill tool.
 2. **Preflight:** Before entering Stage 1, run the observability preflight:
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/obs-preflight.sh"
+   bash '<PLUGIN_ROOT>/scripts/obs-preflight.sh'
    ```
    Report any issues from the `summary` field.
 3. **Determine mode:** If the prompt contains triage keywords ("quick triage", "live triage",

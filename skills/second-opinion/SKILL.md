@@ -58,7 +58,7 @@ that sends content off the machine by accident.
 1. Write the package to a file: the question, the source material, in **critique** mode
    the prior answer being critiqued, the anti-sycophancy block, and the line
    `Read-only: do not modify any file.` Least-data: never the whole session context.
-2. `bash "${CLAUDE_PLUGIN_ROOT}/scripts/consult-dispatch.sh" prepare codex <file>` —
+2. `bash '<PLUGIN_ROOT>/scripts/consult-dispatch.sh' prepare codex <file>` —
    it freezes the package and prints its digest and the exact question to ask.
 3. Ask with `AskUserQuestion`, exactly as `prepare` prints: ONE single-select question
    whose text names the destination provider (e.g. Codex / OpenAI), **states the MODE**,
