@@ -65,7 +65,7 @@ label-to-value distance, and each favours different pages.
 | Decision | Made by | Checked by |
 |---|---|---|
 | The statement of what is wanted, given to the picker | author | reviewer, before the picker runs; then frozen |
-| The snapshot of Dion the picker may see | a rule, stated below | a scan of the export, with its search terms recorded |
+| The snapshot of Dion the picker may see | a rule, stated below | sanitising by rule, then a scan of the result, with its search terms and everything removed recorded |
 | The task, the stored report, the fixture's states | picker | recorded |
 | How the fixture is transformed | picker specifies; author runs | reviewer audits the output against the specification |
 | Constructs, their direction, scope and grouping | deriver | reviewer, under v2-2 |
@@ -88,6 +88,29 @@ is scanned on the machine for the seed's name, its file names, its distinctive
 phrases and the pilot's documents. The search terms are recorded. A scan finds
 what it was told to look for, so this shows the named things are absent and
 nothing more.
+
+**That commit is not clean.** Revision 2 assumed it was, and the first plan had
+a cell asserting that its export scans clean. Measured on 2026-09-29, when the
+export was built: `972f4ea` holds recorded terms in ten files. One of them is
+Dion's own instruction file, which names the pilot's branch. So the export is
+sanitised by rule and not only scanned:
+
+- a file or directory whose path matches a term is omitted;
+- a line that matches a term is replaced by a marker, so the file keeps its
+  line count;
+- a file that is not text is still searched, as bytes, and omitted whole if it
+  holds a term;
+- a file that cannot be opened makes the verdict "cannot check";
+- everything removed is recorded, the result is scanned again, and an export
+  that still holds a term is refused and deleted.
+
+Only the registered commit may be exported. Sanitising cannot make a later
+commit safe: the harness there names the pilot in files the term list does not
+know.
+
+Two consequences for the reader. The picker sees a Dion with those lines
+missing, which is a Dion that never existed. And the record of what was removed
+names the terms, so it goes to the reviewer and never to the picker.
 
 ## Controlled exposure
 
