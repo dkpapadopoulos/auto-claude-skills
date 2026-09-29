@@ -251,8 +251,8 @@ file.
 a browser. Blocking requests does not stop a script from computing on what the
 page already holds.
 
-Risk 2 applies to the pilot's harness as it stands today, in Dion. It is
-reported here and has not been fixed there.
+Risk 2 applies to the pilot's harness as it stands today, in Dion. It is filed
+there as issue 250 and has not been fixed.
 
 ## What the replication can claim
 
