@@ -59,5 +59,5 @@ no arm.
 
 ## Depends on
 
-PR #315 (#299). The replication tests seed version 2, so that change has to
-merge before anything here is frozen.
+PR #315 (#299), merged on 2026-09-29 as `4a7bb0b6`. The replication tests seed
+version 2, which is the version on `main` from that commit.
