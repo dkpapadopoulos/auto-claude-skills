@@ -355,12 +355,17 @@ the second contains the first.
 **4. The fixture is built from the real store.**
 
 - Threat region: the fixture's bytes.
-- Control region: the pilot asserts in a test that the builder is given a
-  throwaway database path.
-- Overlap: **none that matters**. A path does not show where the rows came
-  from.
-- **Unmitigated** until the fixture is generated from inputs that were never
-  in the store.
+- Control region: the pilot's builder opens its database in memory and takes no
+  path argument. Its rows come from a random generator with a fixed seed and
+  from test configuration. Read from the builder's source on 2026-09-29.
+- Overlap: the control covers the threat for that builder. The store cannot be
+  reached from it.
+- Not looked at: a new builder written for a new task. Nothing stops one from
+  opening a file.
+- Revision 1 described this control as "a throwaway database path", taken from
+  the pilot's registration. Review rightly said a path shows nothing about
+  where rows come from. The first draft of this revision then marked the risk
+  unmitigated without reading the builder. Both descriptions were wrong.
 
 **5. A generated page runs code where it is captured or measured.**
 
@@ -382,7 +387,7 @@ The boundary is the environment. Request interception stays as a second layer.
 | The same environment and the same rules apply to capture runs and to measurement runs | 5 |
 | The capture allows one `file:` URL, the artifact's own, and refuses a capture with any other request | 2 |
 | The controls are tested with pages built to defeat them | 2, 5 |
-| The fixture is generated from synthetic inputs, and the record says how | 4 |
+| A test fails if the fixture builder opens any database other than one in memory | 4 |
 | Every outgoing package is checked whole, attachments included | 1, 3 |
 | The sandbox check is built and passes | 3 |
 
@@ -451,7 +456,7 @@ this change and a background section. It ran no command and read no file.
 | A model's report of its own context is not evidence | the launch payload is captured from outside |
 | The historical question about arm C cannot be answered by a probe today | recorded as unknown, with what was measured |
 | The egress boundary is incomplete | risk 5; the environment as the boundary |
-| A database path does not show provenance | risk 4 is now unmitigated |
+| A database path does not show provenance | risk 4 rewritten from the builder's source; a test is required for any new builder |
 | No embedding tags does not mean nothing was loaded | replaced by a request count |
 | Sending data out is not reversible | autonomy is now mixed |
 | Repeatability is not validity | validity tests; two thresholds |
