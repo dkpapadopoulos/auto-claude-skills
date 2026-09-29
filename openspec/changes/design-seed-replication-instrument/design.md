@@ -412,17 +412,19 @@ Five pairs is about ten arm runs. More runs reduce uncertainty from generation.
 They do not correct an instrument that is biased, and they say nothing about
 another task.
 
-### What review changes for the owner
+### What review changed for the owner
 
 The owner chose a blind, comparative test of whether the seed improves screens.
-Review found that this design cannot deliver that in full, and this revision
-does not pretend to. Two things follow that the owner has not yet been asked
-about:
+Review found that this design cannot deliver that in full.
 
-1. **The claim is narrower than the question chosen.** See "The claim".
-2. **There are more cross-family sends.** Revision 1 had one, to the deriver.
-   This revision adds the reviewer, which receives a package before stage 1
-   and at stages 4, 6 and 7. Each send needs its own consent.
+| Question put to the owner after review | Decision | What was not chosen |
+|---|---|---|
+| The claim is narrower than the question chosen | **accept the narrower claim** | strengthen independence further, with a separate adjudicator and a second party writing the measures; stop |
+
+There are also more cross-family sends than revision 1 had. It had one, to the
+deriver. This revision adds the reviewer, which receives a package before stage
+1 and at stages 4, 6 and 7. Each send needs its own consent, asked for when the
+package exists.
 
 ## Out of scope
 
