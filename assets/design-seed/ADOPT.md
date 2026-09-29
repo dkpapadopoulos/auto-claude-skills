@@ -40,7 +40,7 @@ cmp -s "${SEED_DIR:?set SEED_DIR to the directory holding this file}/ADOPT.md" d
 #    unguarded `>` on the next statement would then destroy it -- this file calls
 #    adopted.json the provenance record, so that loss is your preset and date.
 [ -e design/adopted.json ] || cat > design/adopted.json <<JSON
-{"preset": "quiet-dense", "version": 1, "adopted": "$(date +%Y-%m-%d)"}
+{"preset": "quiet-dense", "version": 2, "adopted": "$(date +%Y-%m-%d)"}
 JSON
 
 # 3. Check it runs
@@ -78,14 +78,31 @@ the eye catches faster than a test.
 ## Keeping `tokens.json` honest
 
 `tokens.css` is the source of truth; `tokens.json` mirrors it for tooling. If you edit one,
-edit both — or regenerate:
+edit both — or regenerate. The preset name and version are read from `design/adopted.json`,
+the record of what **you** adopted, and not written here: these instructions move on with
+the plugin, your copy of the seed does not.
+
+`tokens.json` is replaced only if `jq` exits zero. It refuses, and leaves the file as it
+was, when `adopted.json` is absent or does not hold exactly one record with a preset name
+that is not blank and a version that is a whole number above zero, and when it read no
+tokens for one of the themes. The file is **replaced**, not written into: if your
+`tokens.json` is a symlink or has permissions of its own, it becomes an ordinary file with
+default ones. A run that `jq` refuses leaves an empty `design/tokens.json.new` behind,
+which the next run overwrites.
 
 ```bash
 awk '/^:root \{/{b="light";next} /^:root\[data-theme="dark"\] \{/{b="dark";next} /^\}/{b="";next}
      b!="" && /^[ \t]*--/ {l=$0; sub(/^[ \t]*/,"",l); i=index(l,":"); n=substr(l,1,i-1); v=substr(l,i+1);
      sub(/;[ \t]*$/,"",v); gsub(/^[ \t]+|[ \t]+$/,"",v); printf "%s\t%s\t%s\n", b, n, v}' design/tokens.css \
-| jq -Rn '[inputs|split("\t")|{theme:.[0],name:.[1],value:.[2]}]
-          | {preset:"quiet-dense", version:1,
+| jq -Rn --slurpfile adopted design/adopted.json '
+          if ($adopted|length) != 1 or ($adopted[0]|type) != "object"
+             or ($adopted[0].preset|type) != "string" or ($adopted[0].preset|test("\\S")|not)
+             or ($adopted[0].version|type) != "number" or ($adopted[0].version|(. > 0 and . == floor)|not)
+          then error("design/adopted.json does not hold one record with a preset name and a whole-number version")
+          else [inputs|split("\t")|{theme:.[0],name:.[1],value:.[2]}] end
+          | {preset:$adopted[0].preset, version:$adopted[0].version,
              light:(map(select(.theme=="light"))|map({(.name):.value})|add),
-             dark:(map(select(.theme=="dark"))|map({(.name):.value})|add)}' > design/tokens.json
+             dark:(map(select(.theme=="dark"))|map({(.name):.value})|add)}
+          | if .light == null or .dark == null then error("design/tokens.css has no tokens for one of the themes") else . end' >| design/tokens.json.new \
+&& mv design/tokens.json.new design/tokens.json
 ```

@@ -78,7 +78,7 @@
 <body>
 <header>
   <h1>quiet-dense</h1>
-  <span class="sub">reference page — preset v2</span>
+  <span class="sub">reference page — preset v1</span>
   <button id="theme">Toggle light / dark</button>
 </header>
 
@@ -101,9 +101,9 @@
         <tr><td>Gamma Utilities</td><td class="num">5.00</td><td class="num">5.00</td>
             <td class="num">0.00</td><td class="num">0.00</td>
             <td><span class="pill hold">Hold</span></td></tr>
-        <tr><td>Delta Health</td><td class="num">3.20</td><td class="missing">—</td>
-            <td class="missing">—</td>
-            <td class="missing">—</td>
+        <tr><td>Delta Health</td><td class="num">3.20</td><td class="missing" title="no price within tolerance at export time">—</td>
+            <td class="missing" title="cannot be computed without a price">—</td>
+            <td class="missing" title="cannot be computed without a price">—</td>
             <td><span class="pill warn">Stale price</span></td></tr>
         <tr><td>Epsilon Energy</td><td class="num">2.10</td><td class="num">2.10</td>
             <td class="num">0.00</td><td class="num">0.00</td>
@@ -112,9 +112,8 @@
     </table>
   </div>
   <p class="sub">
-    Row 3 is a real zero. Row 4 is missing — a different glyph, a different token, and the
-    reason in words in the same row: the status says why, once, for all three values.
-    Row 5 is blocked, which is not the same outcome as held.
+    Row 3 is a real zero. Row 4 is missing — a different glyph, a different token, and a
+    reason on hover. Row 5 is blocked, which is not the same outcome as held.
   </p>
 </section>
 
