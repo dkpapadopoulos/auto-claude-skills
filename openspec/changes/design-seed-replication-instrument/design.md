@@ -265,14 +265,24 @@ The strongest claim a completed replication may license:
 It cannot license a claim about another task, another model, or the seed's
 effect on a reader.
 
-## Open, and for the owner to decide
+## Decided by the owner, 2026-09-29
 
-1. **How many pairs.** The pilot ran three on one task. It saw one dimension
-   scored 3/3, then 0/0, then split across them.
-2. **Whether the deriver is another model family**, as in the pilot, which
-   sends the fixture off the machine.
-3. **Whether the pilot's brief is retired or kept as a second task.** Kept, its
-   identification dimension has to be declared contaminated.
+| Question | Decision | What was not chosen |
+|---|---|---|
+| What the replication asks | whether the seed improves screens, blind and comparative | an adherence check; both, registered separately |
+| Who chooses the task and writes the brief | a blind agent | the owner naming a screen; a task outside Dion |
+| How many pairs | **five, on one task** | three on one task; three on each of two tasks |
+| Who derives the property list | **another model family, sent one text package** | the same family under denied reads |
+| The pilot's brief | **retired** | kept as a second task with one dimension declared contaminated |
+
+Five pairs is about ten arm runs. The pilot ran three pairs and saw one
+dimension scored 3/3, then 0/0, then split across them, so three was too few to
+tell a repeat from a coincidence. Five is more room, not proof: the limit the
+pilot recorded as v2-9 still holds, and no rule combining the pairs is
+registered.
+
+The deriver's package leaves the machine. It therefore passes the consent gate
+and the mechanical check named under risk 3 before it is sent.
 
 ## Out of scope
 
