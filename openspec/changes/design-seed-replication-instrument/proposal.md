@@ -7,7 +7,8 @@ the arm without the seed, one was inconclusive, none favoured the seeded arm.
 Issue #298 records why that is not a verdict: the instrument excluded what the
 seed supplies and scored what it does not address.
 
-The pilot's own record locates the cause more exactly than the issue does.
+The pilot's own record says where the instrument was narrow. It does not say
+why the seeded arm lost, and this change does not claim to know.
 
 | Fact | Where it is recorded |
 |---|---|
@@ -31,19 +32,23 @@ Two things have changed since the pilot.
 This change is a design and a registration of process. It adds no code and runs
 no arm.
 
-- The replication asks one question: does the seed improve screens? It is blind
-  and comparative. The owner chose this over an adherence check.
-- Presentation properties are **computed from the rendered page by a script**.
-  A judge scores a presentation property only when it carries an anchor for
-  each score.
-- The **property list is derived by a party that has not seen the seed**, from
-  the task alone.
-- The **task and its brief are chosen by a party that has not seen the seed**.
-  The owner chose this over naming a screen.
-- Blindness is **enforced by the launch configuration and checked by a canary**
-  before each blind party runs.
-- The pilot's fidelity dimensions, decision rule, fixture rule and arm setup
-  carry forward unchanged.
+- The owner asked for a blind, comparative test of whether the seed improves
+  screens. Review by another model family found the design cannot deliver that
+  in full. It delivers a **descriptive comparison** under an instrument whose
+  contents were specified by parties with controlled exposure to the seed.
+- What is measured is chosen for its **value to the task**. It is not chosen to
+  detect the seed.
+- Presentation is **computed from the rendered page by a script**, specified by
+  one party and approved by another. The author writes the code and neither
+  specifies nor approves it.
+- The **task, the fixture's contents and what is measured** are chosen by
+  parties whose exposure to the seed is controlled.
+- Exposure is **checked from outside** each party, by a check that fits how the
+  party is run.
+- A result has to pass an **interpretation gate** fixed in advance, or it is
+  reported as inconclusive.
+- The pilot's fidelity dimensions and fixture rule carry forward. Its decision
+  rule carries forward with one vote per construct.
 
 ## Capabilities
 
