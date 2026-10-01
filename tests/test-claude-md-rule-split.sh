@@ -276,17 +276,35 @@ assert_equals "no bullet appears in two places" "0" "${_dupes}"
 # reports BYTES under LC_ALL=C, and a constant pinned to an exact value must
 # not change meaning with the locale -- that would flip the ratchet between a
 # laptop and CI. Bytes >= chars for UTF-8, so a byte baseline is a
-# conservative stand-in (today: 170038 bytes vs 168992 chars, 0.6% apart)
+# conservative stand-in (today: 170156 bytes vs 169110 chars, 0.6% apart)
 # and the reported percentage is a slight OVER-estimate, deliberately.
 # ---------------------------------------------------------------------------
 # SESSION-START vs WORST-CASE. Getting this backwards is how the first two cuts
 # of this leg went wrong, in opposite directions.
 #
 # The 150,000 warning fires "at session start" (docs). A rule file WITH `paths:`
-# frontmatter loads on demand -- "when Claude reads files matching the pattern",
-# not at launch -- so it is NOT in the session-start total. Every rule file in
-# this repo is path-scoped, and there is no unscoped rule, no ~/.claude/rules/
-# and no user CLAUDE.md, so the session-start load is CLAUDE.md alone.
+# frontmatter loads on demand, not at launch, so it is NOT in the session-start
+# total. Every rule file in this repo is path-scoped, and there is no unscoped
+# rule, no ~/.claude/rules/ and no user CLAUDE.md.
+#
+# MEASURED, not inferred from the docs -- via an InstructionsLoaded hook on a
+# throwaway `claude -p` session in this repo (2026-10-01, CLI 2.1.277). The hook
+# reports a `load_reason` per file, and it distinguishes the two cases by name:
+#   CLAUDE.md                          load_reason=session_start
+#   .claude/rules/shell-portability.md load_reason=path_glob_match
+#   .claude/rules/test-suite.md        load_reason=path_glob_match
+# So the session-start load is CLAUDE.md alone, 25,140 bytes, 17%. Note the
+# other half of that measurement: reading ONE file (tests/test-helpers.sh)
+# pulled in TWO rules, which is the on-demand cost the ratchet below bounds.
+#
+# KNOWN LIMIT, stated rather than papered over: this proves the LOADING
+# mechanism, not what the warning's counter enumerates -- it could in principle
+# count rule files on disk. The warning cannot be observed here at all, because
+# it arrived in CLI 2.1.281 and this machine is on 2.1.277. If a session on
+# 2.1.281+ ever reports a total near 170k in this repo, the warning counts
+# unloaded path-scoped rules and the session-start cell below is measuring the
+# wrong set -- reopen this. Reproduce the probe with an InstructionsLoaded hook
+# passed via `--settings`, never by editing the user's settings.
 #
 # That REVERSES a claim an earlier cut of this leg made. The split WORKED for
 # the thing the warning measures:
@@ -305,7 +323,7 @@ assert_equals "no bullet appears in two places" "0" "${_dupes}"
 _LINE_TARGET=200                 # docs: "target under 200 lines per CLAUDE.md file"
 _HARD_SKIP=4194304               # docs: loads "up to 4 MiB in full", skips a LARGER file
 _COMBINED_REAL_LIMIT=150000      # the product's warning threshold (total, all files)
-_COMBINED_BASELINE=170038  # RATCHET: today's exact total. Not a ceiling.
+_COMBINED_BASELINE=170156  # RATCHET: today's exact total. Not a ceiling.
 _PERFILE_ADVISORY_BYTES=40000    # #22364 states 40.0k CHARS; compared in bytes, so
                                  # approximate by ~0.6% here. Reported, never asserted.
 
