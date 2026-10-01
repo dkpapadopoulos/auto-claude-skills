@@ -22,8 +22,8 @@ reported as evidence for the seed.
 
 ### Requirement: Exposure to the seed MUST be controlled and checked from outside
 
-Each party that chooses the task, specifies what is measured, or approves a
-measure SHALL receive a closed, listed set of inputs. The registration SHALL
+Each party that chooses the task, specifies what is measured, approves a
+measure, or scores a page SHALL receive a closed, listed set of inputs. The registration SHALL
 state, for each such party, what it was given and which capabilities it was
 denied. The check that this held SHALL be made from outside the party, and MUST
 NOT rest on an instruction to the party or on the party's own report.
@@ -52,6 +52,23 @@ It MAY describe the party's exposure as controlled.
   seed's name or its file names
 - **AND** the list of plugins, hooks and instruction files the session loaded
   MUST be captured
+
+#### Scenario: A party that scores pages
+
+- **GIVEN** a judging package and the launch configuration a judge will run
+  under
+- **WHEN** the judge is launched
+- **THEN** that configuration MUST have passed the check for a restricted
+  session
+- **AND** the package MUST be listed item by item, and a package holding
+  anything its listing does not name MUST NOT be launched
+- **AND** the judge's working directory MUST NOT name the pair, the arm or the
+  run
+- **AND** the question about which arm a page came from MUST NOT be asked until
+  the scores are kept
+- **AND** what the judge's own session loaded MUST be compared with the
+  configuration afterwards, and a session that differs MUST be recorded as not
+  valid
 
 #### Scenario: The configuration checked is the configuration launched
 

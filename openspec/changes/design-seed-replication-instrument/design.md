@@ -20,6 +20,16 @@ no claim is made that those decisions were specified before the observations.
 Revision 3 was critiqued by another model family before it was committed, and
 its rewrites are adopted where noted.
 
+Revision 4, 2026-10-02. The judge's launch configuration is registered: a
+manifest, a change to the sandbox check that lets a manifest with one tool be
+checked at all, and a launcher (Dion, branch `judge-launch`). The registered
+outcome measures and the decision rule are unchanged. The proposal was critiqued
+by another model family before it was built, and one of its points removed a
+defect from the proposal: see "Review". Like revision 3, this one was written
+after the build and after the live results it reports, and makes no claim that
+its wording preceded them. No arm has run, no judging package exists, and no
+judge has scored anything.
+
 Precedent for the form: the pilot's registration, archived at
 `openspec/changes/archive/2026-09-24-design-seed-capability/design.md`. Rule
 numbers such as v2-2 refer to that document.
@@ -143,7 +153,7 @@ Whether a dispatched subagent's own prompt carries that line was not measured.
 | | Package | Sandbox |
 |---|---|---|
 | What it is | one frozen text package sent to another model family | a headless session whose capabilities are restricted by its launch configuration |
-| Used by | deriver, reviewer | picker, arm S, arm C |
+| Used by | deriver, reviewer | picker, arm S, arm C, judge |
 | Sends Dion content to | a second vendor, behind the consent gate | the model provider the owner already uses in Dion |
 | Exposure is controlled by | what the package contains | what the session can read, run and reach |
 
@@ -192,6 +202,23 @@ they do not establish that every possible access is refused. In particular a
 call that spells its path with a wildcard in a directory name, or that starts
 above the planted file, is not recognised as a try.
 
+A probe is launched only for a tool the manifest declares (revision 4). Until
+then every manifest was given all eight sessions, and a session without Grep,
+asked to grep, never tries: "not attempted", which cannot check. So no manifest
+with fewer tools than an arm's could pass, and the judge would have been given
+Write, Grep and Glob only so that the check could refuse them. A probe whose
+tool is not declared is now reported "not applicable" and no session is launched
+for it. That the tool is absent is the `loaded` probe's claim, read from every
+session's inventory. It is a claim about the inventory. It is not a claim that
+anything was refused: only a call that was made and refused is. A manifest that
+declares no Read cannot be checked, because every outcome rests on a planted
+value read back through it.
+
+The first proposal for this had the undeclared-tool sessions launched and passed
+when no call by that tool appeared. The critique named what that is: a session
+that makes no call at all satisfies it, which is "not attempted" passing under
+another name. It was not built.
+
 The two write probes were added after a dry run under CLI 2.1.285 and the
 default permission mode in which every attempted write of both arms was refused:
 a session launched headless has nobody to approve a write. The arms and the
@@ -221,9 +248,11 @@ The arm launcher requires a passing report whose manifest hash equals the hash
 of the manifest as it is now. That binds the manifest's bytes: the argument
 vector, the tool list, the permission mode, the declared servers with their
 script names and arguments (the lint's digest among them), and the seeded flag.
-It does not bind the CLI version, which the report records and nothing
-compares, nor the harness's own code and sandbox profile, which are not
-digest-pinned. Those may change without invalidating a report.
+For the arm launcher it does not bind the CLI version, which the report records
+and that launcher does not compare, nor the harness's own code and sandbox
+profile. Those may change without invalidating an arm's report. The judge
+launcher binds both, as "The judge" below says; the arm launcher was not changed
+in revision 4, and bringing it to the same rule is open.
 
 What the check does **not** test, stated so it is not assumed: the network. A
 restricted session reaches its model provider, and nothing here measures what
@@ -321,6 +350,100 @@ set aside; the runner executing its verified bytes. This is an implementation
 observation from one pair on a toy task, not an estimate of the treatment
 effect.
 
+### The judge
+
+Registered in revision 4. The manifest is Dion's
+`tests/design_seed_pilot/exposure/launch/judge.json`; the launcher is
+`exposure/launch_judge.py`, with its cells in `test_launch_judge.py`.
+
+**The manifest.** `claude -p --restricted --safe-mode --strict-mcp-config
+--tools Read`, permission mode `default`, not seeded, no MCP server, no plugin.
+One tool. The judge's scores are its last message, which the launcher captures,
+so it needs nothing that writes; with nothing that writes, the default mode has
+nothing to approve. It has no MCP server, so it can run in safe mode, which an
+arm cannot.
+
+**What the check measured, live, on 2026-10-02, CLI 2.1.285, model
+`claude-opus-5-5`.** Status pass, four sessions:
+
+| Probe | Result |
+|---|---|
+| `inside` | read |
+| `outside_read_abs`, `outside_read_rel`, `symlink_out` | denied, each by the CLI's refusal of that call |
+| `outside_grep`, `outside_glob`, `outside_write`, `inside_write` | not applicable: the tool is not declared |
+| `outside_values` | absent: none of 11 values planted outside is in any record |
+| `payload_terms` | absent |
+| `loaded` | as declared: every session's tools were exactly `Read` |
+
+Measured beside it, in one session of two turns: a PNG read through `Read` was
+answered with an image, so a judge can be given screenshots; and a session
+resumed with `--resume` kept its one tool and its mode, and an outside read in
+the resumed turn was refused.
+
+**What the launcher refuses, before anything is launched.**
+
+- A check report that is not a pass of the manifest's bytes as they are now.
+- A report made by other harness code: the report carries one digest over the
+  check, the two scanners and the launcher, and it must equal that digest now.
+- A report made on another version of the CLI than the one installed.
+- A package holding a file its listing does not name; a listed file missing, or
+  not the bytes listed; anything that is not a plain file, a link included; a
+  name the CLI loads by itself (`AGENTS.md`, `CLAUDE.md`, any dot-name); no
+  `INSTRUCTIONS.md`; or a recorded term in a file, a file's name, or the
+  question for afterwards.
+- A run directory that already holds a launch.
+
+The rule about `AGENTS.md` comes from a measurement: the CLI's builtin plugin
+that reads that file is loaded under safe mode too. Such a file would reach the
+judge with no Read call, by a route the record of its calls does not show.
+
+**Where the judge runs.** The package is read once. Each file's bytes are
+hashed against the listing, and the judge's working directory is written from
+those same bytes, at a fresh path under `/private/tmp` that names nothing, with
+every file and directory read-only. It is scanned there, names and bytes, since
+the copy is what the judge is given. A session's working directory is in its
+context, so the run directory's own name, which says the pair and could say the
+arm, is never where a judge runs. The copy is removed afterwards.
+
+**Two turns.** The first prompt is fixed in the launcher: read
+`INSTRUCTIONS.md` and follow it. Its stream is written and its digest recorded
+before the second turn is launched. The second, in the same session, asks the
+question for afterwards, a file that is never inside the package and whose
+digest is recorded. A judge that gave no scores is not asked it.
+
+**The judge's own session is checked.** The check's probes are other sessions
+and show nothing about the one that scored. After both turns the launcher reads
+the judge's own streams with the check's own rule: each turn ran to a result,
+every line is an event, and every `init` shows the manifest's tools, servers,
+plugins and permission mode, no hook event, and the version the report was made
+on. The copy must hold what it held. If not, the evidence is kept, the launch
+record says it is not valid and why, and the launcher exits 6. Refusals in the
+judge's stream are counted and recorded; a judge that tried to read outside and
+was refused is a fact about that judge, not a fault of the run.
+
+**One live dry run**, on a toy package of two plain coloured squares that is
+neither a pilot nor a replication artifact: valid, two turns, three Read calls,
+all inside the copy and all answered, nothing left behind. It shows the launcher
+runs. It is not a judging result.
+
+**Cells and mutants.** As counted in the Dion pull request that carries this.
+
+**What this does not show.**
+
+- What reaches a judge beyond the package's files: the fixed prompt, which is
+  recorded; the CLI's own system prompt and tool description; and anything a
+  managed setting or policy on the machine adds. The launcher keeps the stream
+  and the transcript. That they are the whole of a model's input is assumed, not
+  shown. Zero hook events in a stream shows no hook reported firing in that
+  session. It does not show that none is configured.
+- Anything about the network. The judge has no web tool, which is an inventory
+  claim. What the session could otherwise reach is untested, as for the arms.
+- That the package is clean. A hash shows the bytes are the ones listed. The
+  term scan finds its terms and nothing else. Image metadata, a provenance-
+  bearing anchor, a revealing file name inside the package: these are the
+  package builder's to control, and that builder is not built.
+- Read spellings other than the three tested.
+
 ### What this does not establish
 
 - That a model has no knowledge of the seed from training or from public
@@ -328,12 +451,16 @@ effect.
 - That inputs the author shaped are neutral. The reviewer's audit reduces this
   and does not remove it.
 - **That the judge remains unaware of the treatment assignment.** The
-  restriction this design claims is on supplied inputs and reachable resources:
-  the judge receives the judging package, without the seed document, the arm
-  directories, the launch records or S/C labels, and its configured tools
-  cannot retrieve those. The judge's launch configuration is not yet registered;
-  that claim holds for it only once its manifest passes the same sandbox check,
-  and until then it is a design intent, not a measured property. The artifacts
+  restriction this design claims is on supplied inputs and tested access. As of
+  revision 4, measured: the only material of the experiment supplied to a judge
+  is the listed package, which holds no seed document, arm directory, launch
+  record or S/C label that the scan's terms name; the prompt is fixed and
+  recorded; the judge's one tool, Read, was refused at the three spellings of an
+  outside path the check tries; and it has no tool that searches, writes or
+  executes, which is a claim about its inventory. Revision 3 said the judge's
+  "configured tools cannot retrieve" the rest. That is stronger than what was
+  measured and is withdrawn: probes are evidence for the paths they tried, not
+  an enumeration of what can be reached, and the network is untested. The artifacts
   remain an information channel: arm S's page may quote or name the seed, show
   that a lint was run, or carry a recognisable style, and a judge may infer the
   assignment from it. The package check's term scan detects matches to its
@@ -400,7 +527,14 @@ are listed as not measured.
 A judge scores a construct only when no measure exists for it and the deriver
 wrote an anchor for each score. Judged scores are reported apart from measured
 ones. Judges are asked afterwards which arm they believed each page came from,
-and how sure they were.
+and how sure they were, in a second turn that starts only after the scores are
+kept.
+
+That answer is a report made afterwards. A judge can form the belief for the
+first time when asked, or explain a score it already gave. An answer better than
+chance does not show that anything leaked, and an answer at chance does not show
+that the judge scored without a belief. It is reported as a secondary
+observation, may be "cannot tell", and is never given to a later judge.
 
 ## Decision rule and claim
 
@@ -670,5 +804,26 @@ Revision 2 was reviewed only by the build that followed it. Revision 3 was
 critiqued by another model family (Codex, critique mode) before it was
 committed; its rewrites are adopted in the sandbox-check section, the runner
 description and the blinding bullet, and one of its points was a defect in the
-runner, fixed in Dion before any arm runs under it. The judge's launch
-configuration is not yet registered.
+runner, fixed in Dion before any arm runs under it.
+
+### The judge's configuration, 2026-10-02
+
+The proposal for the judge was sent to Codex in critique mode before it was
+built, as one package the owner approved. It saw the proposal and a summary of
+the check. It read no file and ran no command.
+
+| Finding | Response |
+|---|---|
+| An outcome that passes when an undeclared tool makes no call passes a session that makes no call at all | Adopted. The outcome was not built. An undeclared tool is not probed, and its absence is claimed from the inventory only |
+| "Only the package" leaves out the prompt, the system prompt and the runtime context | Adopted. The claim names them, and says the capture's completeness is assumed |
+| A passing report survives a change of the CLI or of the harness | Adopted for the judge launcher, which binds both. Open for the arm launcher |
+| Zero hook events in the probes says nothing of the judge's run | Adopted. The judge's own streams are read after the run, both turns |
+| A hash is identity, not cleanliness; a copy after a check is a race; links | Adopted. Plain files only, read once, copied from the verified bytes, scanned as copied, read-only |
+| The answer about the arm is a report made afterwards | Adopted. Worded as that under "Judges" |
+| "Its tools cannot reach anything else" needs enforcement independent of the model, such as a file broker or a boundary of the operating system | Not adopted. The owner accepted the narrower claim on 2026-09-29. The sentence is withdrawn instead, and the claim is what the probes tried |
+| Managed settings and policy hooks still apply under these flags | Recorded as a limit. Not measured |
+
+Open after revision 4: the arm launcher does not bind the CLI version or the
+harness; the package builder, which decides what a judge sees, is not built;
+how many judges score a pair, and in what order they are shown the pages, is
+for the freeze.
