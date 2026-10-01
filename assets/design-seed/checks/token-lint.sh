@@ -75,6 +75,15 @@ else
     fi
 fi
 
+# A work file that was written and cannot be read back is not an empty one. `done <
+# file` then fails to open, bash skips the loop, and the counters stay at zero, which
+# read as "clean" — measured under a sandbox that allowed the write and denied the
+# read. Opening the file for reading is the only probe that asks the question; `-s`
+# is answered from metadata and says nothing about reading.
+_can_read() { { : < "$1"; } 2>/dev/null; }
+_can_read "${_LIST}" || {
+    printf 'token-lint: cannot read back %s — scan NOT run\n' "${_LIST}" >&2; exit 3; }
+
 if [ ! -s "${_LIST}" ]; then
     printf 'token-lint: no CSS files to scan\n'
     exit 0
@@ -217,6 +226,12 @@ while IFS= read -r -d '' _file; do
     if ! _emit_decls "${_file}" > "${_LINES}" 2>"${_WORK}/awkerr"; then
         printf 'token-lint: failed to read %s — scan INCOMPLETE\n' "${_file}" >&2
         sed 's/^/token-lint:   /' "${_WORK}/awkerr" >&2
+        _unscannable=$((_unscannable + 1))
+        continue
+    fi
+
+    if ! _can_read "${_LINES}"; then
+        printf 'token-lint: cannot read back the declarations of %s — scan INCOMPLETE\n' "${_file}" >&2
         _unscannable=$((_unscannable + 1))
         continue
     fi

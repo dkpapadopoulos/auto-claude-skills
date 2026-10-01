@@ -26,6 +26,35 @@ assert_file_exists "method doc exists" "${PROJECT_ROOT}/docs/design-seed-method.
 assert_file_exists "lint fixture: clean" "${FIX}/clean.css"
 assert_file_exists "lint fixture: violation" "${FIX}/violation.css"
 
+# --- Scenario: the lint never reports clean when it could not read its own work files --
+# Found 2026-10-01 running the lint under a sandbox profile that let it WRITE its work
+# directory but not READ it: `done < "${_LIST}"` failed to open, the loop ran zero
+# times, and the lint printed "clean" and exited 0 over a file holding a literal. The
+# header promises the opposite. Reproduced here with the same mechanism; skipped where
+# there is no sandbox-exec, with a reason, never passed.
+if [ -x /usr/bin/sandbox-exec ]; then
+    _wd="$(mktemp -d "${TMPDIR:-/tmp}/tl-unreadable.XXXXXX")"
+    _wd="$(cd "${_wd}" && pwd -P)"
+    _work="${_wd}/work"; mkdir -p "${_work}"
+    _deny="(version 1)(allow default)(deny file-read-data (subpath \"${_work}\"))"
+    _out="$(cd "${FIX}" && TMPDIR="${_work}" /usr/bin/sandbox-exec -p "${_deny}" /bin/bash "${LINT}" violation.css 2>&1)"; _rc=$?
+    assert_equals "lint exits 3 when its work files cannot be read back" "3" "${_rc}"
+    assert_not_contains "lint does not say clean when it could not look" "token-lint: clean" "${_out}"
+    assert_contains "lint says the scan was not run" "NOT run" "${_out}"
+    _out="$(cd "${FIX}" && TMPDIR="${_work}" /usr/bin/sandbox-exec -p "(version 1)(allow default)" /bin/bash "${LINT}" violation.css 2>&1)"; _rc=$?
+    assert_equals "control: the same run with reads allowed finds the violation" "1" "${_rc}"
+    # The per-file declarations list is read back too, behind the first guard: deny
+    # that file alone, and the scan must say INCOMPLETE rather than clean.
+    _deny_lines="(version 1)(allow default)(deny file-read-data (regex #\"/lines$\"))"
+    _out="$(cd "${FIX}" && TMPDIR="${_work}" /usr/bin/sandbox-exec -p "${_deny_lines}" /bin/bash "${LINT}" violation.css 2>&1)"; _rc=$?
+    assert_equals "lint exits 3 when a file's declarations cannot be read back" "3" "${_rc}"
+    assert_contains "lint says that scan was incomplete" "INCOMPLETE" "${_out}"
+    assert_not_contains "lint does not say clean over unread declarations" "token-lint: clean" "${_out}"
+    rm -rf "${_wd}"
+else
+    echo "SKIP: no /usr/bin/sandbox-exec; the unreadable work directory was not exercised"
+fi
+
 # --- Scenario: token definitions cannot drift between formats ----------------------
 # Derive the CSS side the same way ADOPT.md documents, then compare to the JSON side.
 _css_tokens() {
