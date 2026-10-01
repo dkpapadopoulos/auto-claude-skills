@@ -1,0 +1,21 @@
+# Prompt corpus for the injection-size budget (tests/test-injection-budget.sh).
+#
+# Format: <MODE>|<prompt>
+#   MEASURE — contributes to the ratcheted total.
+#   SILENT  — must inject ZERO bytes. These are the load-bearing behavioural
+#             cells: a question about code and a mechanical edit are not SDLC
+#             phases, and injecting routing guidance for them is pure context
+#             cost. Measured 2026-10-01: both are correctly silent today.
+#
+# Shapes are chosen to span the phases that inject most (DESIGN, REVIEW, SHIP)
+# plus the two silent classes. Add a shape when a new phase or role starts
+# injecting; do NOT add near-duplicates, they inflate the total without
+# covering anything new.
+SILENT|what does this function do?
+SILENT|rename this variable
+MEASURE|fix the login bug
+MEASURE|let's build a new caching layer for the API
+MEASURE|review this PR before I merge it
+MEASURE|run the tests
+MEASURE|ship it
+MEASURE|investigate why pods are crashing in production
