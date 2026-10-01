@@ -8,6 +8,7 @@ Claude Code plugin for automatic skill routing based on prompt intent and SDLC p
 |---------|-------------|
 | `bash tests/run-tests.sh` | Run all test suites |
 | `bash scripts/assert-suite-complete.sh [--min-files N] <log>` | Decide whether a suite LOG represents a run that finished (0 complete+pass, 1 not-a-pass, 2 complete+failed, 3 cannot-check) |
+| `bash scripts/verify-shadow-adjudicate.sh` | Read the VERIFY measured-verdict shadow corpus against its pre-registered decision rule (#301; owner reviews fortnightly from 2026-10-12) |
 | `bash tests/test-routing.sh < /dev/null` | Test skill routing engine |
 | `bash tests/test-registry.sh < /dev/null` | Test registry building and merging |
 | `bash tests/test-context.sh < /dev/null` | Test context formatting and phase composition |
@@ -124,7 +125,7 @@ read.
 |---|---|---|
 | `push-gate-enforcement.md` | `openspec-guard.sh`, `skill-gate.sh`, `publish-guard.sh`, the gate libs (`verdict`, `git-command`, `branch-ledger`, `phase-*`), `gate-status.sh` | touching any deny leg, subject resolution, command parsing, deny text, or fail-open announcement |
 | `remedy-reachability.md` | the `config/*.json` preconditions, `skill-activation-hook.sh` rendering, `phase-attest.sh`, `assets/design-seed/` | changing any text that tells an agent how to fix a block, or any path a rendered hint names |
-| `push-gate-telemetry.md` | `implement-shadow.sh`, `review-shadow.sh`, `shadow-corpus.sh`, `pr-diff.sh`, `shadow-adjudicate.sh`, `push-gate-capture.sh` | touching a shadow corpus, a `predicate_version`/`schema_version`, or any pre-registered rate |
+| `push-gate-telemetry.md` | `implement-shadow.sh`, `review-shadow.sh`, `verify-shadow.sh`, `shadow-corpus.sh`, `pr-diff.sh`, `shadow-adjudicate.sh`, `push-gate-capture.sh` | touching a shadow corpus, a `predicate_version`/`schema_version`, or any pre-registered rate |
 | `outbound-guards.md` | `publish-guard.sh`, the egress-consent hooks, `consult-dispatch.sh`, `reviewer-evidence-hook.sh` | changing what may leave the machine, or how reviewer dispatch is credited |
 | `test-suite.md` | `tests/**`, `.github/workflows/**`, `.verify.yml`, `improvement-miner/` | adding or changing a test, a fixture gate, or a CI workflow |
 | `shell-portability.md` | every `*.sh` under `hooks/`, `scripts/`, `tests/`, `skills/` | writing shell that a hook or a test will run under bash 3.2 |

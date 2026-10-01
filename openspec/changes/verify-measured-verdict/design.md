@@ -123,6 +123,63 @@ decision-rule clauses are unmet. #239's REVIEW corpus reached its floor on 2026-
 and nobody could see it for three weeks because no reader existed; that is the specific
 failure this clause prevents.
 
+### Implementation readings — fixed 2026-10-02, at zero records
+
+Each of these was underdetermined by the text above. They are written down
+before the corpus holds a single record, so none was chosen after seeing data.
+None changes a registered number.
+
+1. **`n` counts every recorded episode, `cannot_check` included.** Clause 3 is
+   only non-redundant under that reading: if `n` counted would-blocks alone,
+   `n >= 5` with zero `unexplained` would already imply five `explained_ladder`.
+   `cannot_check` still never counts as `unexplained`.
+2. **No verdict at all is `unexplained`** (reason `absent`), per "the leg would
+   block for any other reason". Consequence, stated rather than hidden: the
+   case the leg exists to catch — invoke the skill, execute nothing — is itself
+   an `unexplained` episode and holds the flip. The rule as registered therefore
+   flips only on a corpus where every would-block was a hand-authored rung. That
+   is the registered rule; changing it is the owner's call and needs a
+   `predicate_version` bump.
+3. **`explained_ladder` rungs** are `claude-md-commands`, `contributing-md` and
+   `heuristic:<manifest>` — the third is a rung `discovery-ladder.md` names and
+   the baseline table happened not to contain. Any other value the writer does
+   not emit is `unexplained` (reason `unrecognised-source`).
+4. **Readability is decided before coverage.** An artifact that omits
+   `discovery_source` is `cannot_check` whatever its `sha` says.
+5. **Population (predicate_version 1):** the composition-chain VERIFY leg only,
+   milestone in the chain and already credited, `git push` only (the spec's
+   scenarios say push; a merge's subject is the PR, not a branch-local commit),
+   content-bearing (a pure ref deletion ships nothing). `material_source` is
+   RECORDED on each record and is not a fire condition. The global no-chain
+   gate is not instrumented.
+6. **An episode's class is worst-wins:** any `unexplained` record, else any
+   `explained_ladder`, else `cannot_check`. Arrival order never decides.
+7. **The backstop counts episodes whose first record is on or before
+   2026-12-31**, so later episodes cannot reopen a closed window.
+8. `would_block` is `false` on a `cannot_check` record: the leg is fail-open and
+   would not block on a verdict it could not read even after a flip.
+
+### Prerequisite settled by driving the producer (2026-10-02)
+
+`scripts/verify-and-record.sh` was RUN, not read, in a scratch repo with an
+isolated `HOME`:
+
+| Repo state | Arguments | Result |
+|---|---|---|
+| no `.verify.yml` | `--name tests --run true` | verdict written, `discovery_source: explicit` |
+| no `.verify.yml` | none | exit 1, no verdict |
+| no `.verify.yml` | `--run false` / missing command | recorded as `failed` / `could_not_verify` |
+| `.verify.yml`, `substrate: local` | none | verdict written, `discovery_source: verify-yml` |
+| `.verify.yml`, any substrate | `--name/--run` | exit 1, refused (declared gate wins) |
+| `.verify.yml`, `substrate: ci` | none | exit 1, unsupported substrate |
+
+So a repo with no declared gate CAN reach a measured verdict, which is what
+accepting `explicit` assumed. **One population cannot:** a repo whose
+`.verify.yml` declares a non-local substrate is refused on both routes, so its
+only verdict is hand-authored and it would be an `explained_ladder` would-block
+on every push. No such repo is known on the measured install. It is a predicted
+cost to weigh at the flip, not a reason to widen the predicate.
+
 ### What is NOT open
 
 The classification vocabulary, the `unexplained`-only rule, the n>=5 floor, the

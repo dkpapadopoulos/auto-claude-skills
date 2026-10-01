@@ -3,8 +3,10 @@
 # across legs: the exact Clopper-Pearson band rule, ISO-8601 -> epoch in awk,
 # and independent-episode grouping.
 #
-# DIAGNOSTIC ONLY. Sourced by scripts/shadow-adjudicate.sh (IMPLEMENT leg) and
-# scripts/review-shadow-adjudicate.sh (REVIEW leg). Never sourced by a hook,
+# DIAGNOSTIC ONLY. Sourced by scripts/shadow-adjudicate.sh (IMPLEMENT leg),
+# scripts/review-shadow-adjudicate.sh (REVIEW leg) and
+# scripts/verify-shadow-adjudicate.sh (VERIFY leg, which uses the episode
+# grouping and the ISO prelude but computes no band). Never sourced by a hook,
 # never consulted by hooks/openspec-guard.sh, and deliberately EXCLUDED from
 # _GATE_ENFORCE_LIBS — same posture as implement-shadow.sh and review-shadow.sh.
 #

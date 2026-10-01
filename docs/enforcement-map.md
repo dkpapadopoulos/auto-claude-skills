@@ -50,6 +50,14 @@ with `ACSM_SKIP_PUSH_GATE=1` in its environment. The agent cannot set either.
   None of `dispatch_attempted`, `dispatch_succeeded`, or `dispatch_evidence`
   may act as a deny predicate, alone or collapsed (#197's spec). Regression:
   `tests/test-review-verdict.sh`, `tests/test-reviewer-evidence-hook.sh`.
+- VERIFY measured verdict (#301) — `verification-before-completion` is
+  credited, but no verdict MEASURED by `scripts/verify-and-record.sh`
+  (`discovery_source` `verify-yml` or `explicit`) covers the pushed commit.
+  Push only, chain leg only. Each event is recorded to
+  `~/.claude/.push-verify-shadow.jsonl`; `scripts/verify-shadow-adjudicate.sh`
+  reads it against the decision rule pre-registered in
+  `openspec/changes/verify-measured-verdict/design.md`. The deny-flip is a
+  separate change. Regression: `tests/test-verify-measured-verdict.sh`.
 - SHIP-phase guards: openspec-ship not run, memory consolidation missing,
   archived delta specs unsynced, REVIEW-in-chain-not-completed.
 - Verdict states `could_not_verify` / gate-gaming `suspect` (never hard-block).
