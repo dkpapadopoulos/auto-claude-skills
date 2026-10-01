@@ -10,6 +10,16 @@ Revision 2, 2026-09-29. Revision 1 was reviewed by another model family and
 changed substantially as a result. What changed and what was not adopted is in
 "Review" at the end.
 
+Revision 3, 2026-10-01. The sandbox check and the arms are built (Dion pull
+requests 251, 252, 253 and a fourth that follows them). The registered outcome
+measures and the decision rule are unchanged. This revision records changes to
+the execution configuration, made after the build was observed, and narrows the
+stated assurance about judge blinding to the absence of direct access. It was
+written after implementation and after the dry-run observations reported below;
+no claim is made that those decisions were specified before the observations.
+Revision 3 was critiqued by another model family before it was committed, and
+its rewrites are adopted where noted.
+
 Precedent for the form: the pilot's registration, archived at
 `openspec/changes/archive/2026-09-24-design-seed-capability/design.md`. Rule
 numbers such as v2-2 refer to that document.
@@ -150,23 +160,166 @@ would be invented. Each mechanism has its own check.
 4. A person reads the manifest before consenting to the send.
 
 **Sandbox check.** Done from outside the session, against the launch
-configuration the real run will use:
+configuration the real run will use. As built (Dion, `tests/design_seed_pilot/
+exposure/sandbox_check.py`), it launches one session per probe under the
+manifest and reads what the launcher captured; the model is not asked what is
+in its context. Each probe has more than two outcomes, and "cannot check" is
+never a pass: a probe the session never attempted, or whose record cannot be
+read, stops the run. A run that cannot check is repeated; a run with findings
+does not proceed until the configuration changes, and is not repeated as it is.
 
-1. The complete launch payload is captured by the launcher and searched. The
-   model is not asked what is in its context.
-2. A read inside the permitted directory succeeds. This is the positive
-   control.
-3. Reads outside it fail through every mechanism the session has: each file
-   tool, each shell route, a symlink inside the directory pointing out, and a
-   copy of the seed at a second path.
-4. Network, connectors and sub-processes not needed for the stage are denied,
-   and each denial is tested.
-5. No plugin, hook, skill, memory or instruction file from outside the
-   permitted directory is loaded. The list of what was loaded is captured.
-6. The configuration checked and the configuration launched are bound to one
-   manifest by hash.
+The probe matrix, as built:
+
+| Probe | Tool | Path as the session is asked for it | Passes when |
+|---|---|---|---|
+| `inside` | Read | a name in the working directory | the planted value is in the record |
+| `inside_write` | Write | a name in the working directory | the file exists with the content asked for |
+| `outside_read_abs` | Read | absolute, outside | refused |
+| `outside_read_rel` | Read | `../outside/...` | refused |
+| `symlink_out` | Read | a link inside the directory that leads out | refused |
+| `outside_grep` | Grep | an absolute directory, outside | refused |
+| `outside_glob` | Glob | an absolute pattern, outside | refused |
+| `outside_write` | Write | absolute, outside | refused, and no file exists at the target |
+| `outside_values` | the whole run | | no value planted outside is in any session's record |
+| `payload_terms` | the whole run | | no term of the list is in any session's record; not applicable to a seeded manifest |
+| `loaded` | every session's `init` | | the inventory is as declared |
+
+"Refused" is read from the CLI's own refusal event for the very call that asked,
+never inferred from a value's absence, and a call that was refused and also
+answered, or answered by another tool at a path outside, makes the probe
+"unclear". These results establish refusal for the tested tools and spellings;
+they do not establish that every possible access is refused. In particular a
+call that spells its path with a wildcard in a directory name, or that starts
+above the planted file, is not recognised as a try.
+
+The two write probes were added after a dry run under CLI 2.1.285 and the
+default permission mode in which every attempted write of both arms was refused:
+a session launched headless has nobody to approve a write. The arms and the
+picker now run with edits accepted; the restricted mode still confines them to
+the working directory, which the outside write probe is what tests.
+
+What the `loaded` probe compares, in every session of the run: the tools, which
+must equal the manifest's list; the MCP servers, which must be the declared
+ones, loaded and connected, and which the check launches itself from the
+declaration so that a launched server is a script of the harness; the
+permission mode; and hook events, which must be zero. Plugins the CLI reports
+with `path: builtin` are recorded in the report and exempted from the
+declaration: two sessions under the same manifest on CLI 2.1.285 reported
+different sets of them, two and three, and the cause was not established. A
+passing result therefore does not establish identical builtin-plugin exposure
+across sessions. Any other plugin must be declared, and none is.
+
+The term scan reads the captured stream and the transcript the CLI wrote, every
+line decoded as JSON and every string inside decoded again where it is JSON,
+with written line breaks read as breaks, against the recorded term list
+(`exposure/terms.json`). A match makes the probe "present", the run "findings",
+and the stage does not run. It does not inspect context the launcher did not
+capture, and it does not detect paraphrase, encoding or style. It is not
+applied to arm S's manifest, which is given the seed on purpose and says so.
+
+The arm launcher requires a passing report whose manifest hash equals the hash
+of the manifest as it is now. That binds the manifest's bytes: the argument
+vector, the tool list, the permission mode, the declared servers with their
+script names and arguments (the lint's digest among them), and the seeded flag.
+It does not bind the CLI version, which the report records and nothing
+compares, nor the harness's own code and sandbox profile, which are not
+digest-pinned. Those may change without invalidating a report.
+
+What the check does **not** test, stated so it is not assumed: the network. A
+restricted session reaches its model provider, and nothing here measures what
+else it could reach; the restricted mode removes the web tools, which the
+inventory probe confirms absent, and that is the whole of it. The inventory
+probe does not establish subprocess confinement either: the lint runner starts
+a subprocess and the harness launches the MCP server, and their restrictions
+are assessed by the runner's own cells, below, not by the check.
 
 If a check cannot be made to pass, the stage does not run.
+
+**No general-purpose shell, and the lint runner.** No arm or picker session is
+configured with a general-purpose shell or command-execution tool. Arm S alone
+receives `run_lint`, which executes a pinned shell script through a fixed
+runner. The check compares the reported tool inventory against the manifest's
+exact list and fails on any unexpected tool; that verifies the reported
+interface, and does not by itself establish that the allowed tools cannot be
+used to execute something else. The remaining execution boundary is the runner.
+
+Why: arm S must run the seed's lint, and the plan had taken that to mean arm S
+needs a shell. Three ways were weighed on 2026-10-01: rely on the CLI's own
+shell sandbox (probed on 2026-09-29 with inconsistent results); run arm S
+without its lint, which weakens the treatment; or one macOS account per arm. A
+critique from another model family (Codex) made the point that decided it:
+needing the lint is not needing a shell, and a per-account shell keeps the
+shared temporary directory, localhost and the network as channels between arms.
+If a general shell ever becomes necessary, this confinement design is revised
+and tested again; separate virtual machines are the candidate mechanism, and
+shared storage, networking and artifact transfer would still need explicit
+controls.
+
+The runner, stated so that it can be checked against the code
+(`exposure/lint_server.py`, `lint.sb`, cells in `test_lint_server.py`):
+
+- One tool, `run_lint`, with one optional argument, `files`: a list of paths
+  relative to the working directory. Any other tool name is a protocol error
+  and runs nothing.
+- It reads the bytes of `design/checks/token-lint.sh` under the working
+  directory once, requires their SHA-256 to equal the digest pinned in the
+  manifest, writes those bytes to a scratch directory made for the call, and
+  executes that copy. A file changed between the check and the run is not what
+  runs; the arm can write its copy, and a changed copy is refused, not run.
+- The argument vector is `/usr/bin/sandbox-exec -D ROOT_DIR=<directory> -D
+  SCRATCH_DIR=<scratch> -f lint.sb /bin/bash <scratch>/token-lint.sh
+  [files...]`, with the working directory as the current directory and an
+  environment of `HOME` and `TMPDIR` set to the scratch and `PATH` set to
+  `/usr/bin:/bin:/usr/sbin:/sbin`. The script sources nothing and calls `find`,
+  `sed`, `awk`, `tr`, `mktemp`, `basename`, `dirname` and `rm` through that path.
+- The profile permits reads of `/`, `/System`, `/usr`, `/bin`, `/sbin`,
+  `/Library`, `/opt`, `/dev`, `/private/etc`, `/private/var/db`,
+  `/private/var/select`, `/var`, `/etc`, the working directory and the scratch;
+  writes to the scratch, `/dev/null`, `/dev/dtracehelper` and `/dev/fd`; and
+  denies the network, loopback included.
+- A named file is resolved, links followed, before the run, and must lie under
+  the working directory. A file replaced by a link to the outside between that
+  check and the run is read by the lint under the profile, which refuses the
+  read; the lint then reports the file unscannable and exits 3.
+
+The cells, each with a stand-in lint pinned by its own digest where the shipped
+one would not exercise the boundary: the verdict and exit code come back; a
+tree with a literal is rejected through the runner (exit 1), so an exit 0
+through the runner is the lint's verdict and not its failure mode; a changed or
+missing lint is refused; a path outside the directory and a link out of it are
+refused before anything runs; the lint cannot read outside the directory, with
+the control that it can read inside; cannot write into the directory; cannot
+reach a loopback listener, with the control that the same stand-in does when
+run bare; is given none of the caller's environment; runs from the scratch
+copy; and a file named like an option is passed as a file. Twelve mutants of
+the runner and its profile are killed by these cells. Not tested: a `bash`,
+`sandbox-exec` or utility on the system that lies. The profile and the runner
+are files of the harness, which is not digest-pinned; the lint cannot read the
+harness directory, which the profile does not name.
+
+The pinned seed's lint has a failure mode found while building the runner: it
+reported clean, exit 0, when it could not read back its own work files (fixed
+in this repository by PR #319; the replication keeps the seed at the commit it
+pins, so the pinned copy still has it). Under the final profile the lint's work
+directory is readable, so the condition does not arise there, and the cell above
+shows a literal rejected through the runner. Exit 0 through the runner is
+therefore the lint's verdict within its declared scope, not that failure mode.
+Re-pinning the seed is a registration decision.
+
+**What had been observed before this revision was written.** The sandbox
+check's results for every manifest; one dry-run pair on a smoke task, not the
+registered brief, run twice: once under the default permission mode, in which
+every write of both arms was refused, and once with edits accepted, in which
+both arms wrote their files, arm S invoked `run_lint` once after reading the
+styleguide's own sentence about the lint, and its stylesheet held sixteen
+`var(--` references and no `#` colour literal while arm C's held four literals
+and no reference (counted by pattern; the pinned lint run bare over the same
+files reported clean for S and five violations for C). No judge scores. That
+pair does not enter the registered analysis. The configuration changes made
+after those observations: edits accepted; the two write probes; builtin plugins
+set aside; the runner executing its verified bytes. This is an implementation
+observation from one pair on a toy task, not an estimate of the treatment
+effect.
 
 ### What this does not establish
 
@@ -174,6 +327,20 @@ If a check cannot be made to pass, the stage does not run.
   sources. This repository is public.
 - That inputs the author shaped are neutral. The reviewer's audit reduces this
   and does not remove it.
+- **That the judge remains unaware of the treatment assignment.** The
+  restriction this design claims is on supplied inputs and reachable resources:
+  the judge receives the judging package, without the seed document, the arm
+  directories, the launch records or S/C labels, and its configured tools
+  cannot retrieve those. The judge's launch configuration is not yet registered;
+  that claim holds for it only once its manifest passes the same sandbox check,
+  and until then it is a design intent, not a measured property. The artifacts
+  remain an information channel: arm S's page may quote or name the seed, show
+  that a lint was run, or carry a recognisable style, and a judge may infer the
+  assignment from it. The package check's term scan detects matches to its
+  configured terms and nothing else; it does not establish blinding. Three
+  claims are kept apart here: labels withheld and resources unreachable are
+  claimed; assignment unknowable is not. Named in the Codex critique of
+  2026-10-01 and accepted, not closed.
 
 ### Arm C, and the pilot
 
@@ -499,4 +666,9 @@ this change and a background section. It ran no command and read no file.
 
 ### Open
 
-Revision 2 has not been reviewed.
+Revision 2 was reviewed only by the build that followed it. Revision 3 was
+critiqued by another model family (Codex, critique mode) before it was
+committed; its rewrites are adopted in the sandbox-check section, the runner
+description and the blinding bullet, and one of its points was a defect in the
+runner, fixed in Dion before any arm runs under it. The judge's launch
+configuration is not yet registered.
