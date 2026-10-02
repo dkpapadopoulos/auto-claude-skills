@@ -58,7 +58,11 @@ ignore_all_files_in_gitignore: true
 # list of additional paths to ignore in this project.
 # Same syntax as gitignore, so you can use * and **.
 # Note: global ignored_paths from serena_config.yml are also applied additively.
-ignored_paths: []
+ignored_paths:
+# Git worktrees live under the main checkout and are full copies of the repo, so
+# without this every symbol hit is reported once per worktree (measured
+# 2026-10-02: one caller search returned each site three times).
+- ".claude/worktrees/**"
 
 # whether the project is in read-only mode
 # If set to true, all editing tools will be disabled and attempts to use them will result in an error
