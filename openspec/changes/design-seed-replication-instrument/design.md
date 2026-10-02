@@ -725,11 +725,21 @@ them.
 owner on 2026-10-02. The launcher makes its own export, so a dry run of it would
 put the real export before a session. It is exercised by its cells, by their
 mutants, and by the live check of its manifest. Its first live run is the
-registered one. "Failures and reruns" allows one rerun for a fault in the
-harness, declared and recorded, and says so of a pair; whether the picker's run
-has an allowance of its own, and what follows a run that is not valid for a
-reason that is no fault of the harness (a heading missing, a call answered
-outside), is not registered. It is the owner's to rule before the picker runs.
+registered one.
+
+**Reruns of the picker.** Ruled by the owner, 2026-10-02. The picker's run has an
+allowance of its own, apart from the pairs': one rerun for a fault of the
+harness, declared and recorded, with the evidence of both runs kept. A fault of
+the harness is one the picker did not make: the launcher or the CLI failing, the
+time limit, a name appearing above the copy, the copy that cannot be removed,
+the kept stream changing, a skill a builtin plugin brought that the check's
+session did not have. A run that is not valid through the picker's own doing (a
+heading missing, a preamble, a call answered outside the copy, a recorded term)
+is not rerun: its record is kept and reported, the stage stops, and the owner
+decides what follows. If the statement is found to be at fault, a changed
+statement is a new one, reviewed and frozen again, and recorded as a restart and
+never as a rerun. Nothing is rerun for what a brief says, and the author does not
+read a brief's merits to decide whether it stands.
 
 **Cells and mutants.** As counted in the Dion pull request that carries this.
 The module was written before its cells, which then passed at once; what shows
@@ -764,6 +774,10 @@ for the check, the judge's launcher and the export were each killed in full.
   The launcher shows the script gives that record now.
 - Anything about the network, or about what a managed setting added that no
   event reports, as for the judge.
+- That every hook the snapshot defines stays silent. The probe plants five
+  events; Dion's settings also define hooks for compacting a session, which no
+  probe session reaches. A hook that ran in the picker's own session would be an
+  event in its stream or transcript, and those are read.
 
 ### What this does not establish
 
@@ -1235,7 +1249,84 @@ not that session: it has a server and accepts edits. Whether an arm loads such a
 file, and so how the seeded arm is told where the seed is, belongs to the plan
 under which arms run and must be measured there.
 
+### Frozen: the picker's statement, 2026-10-03
+
+The prompt the picker is given, and nothing else is. Dion
+`tests/design_seed_pilot/exposure/picker/statement.txt`, SHA-256
+`0a5d36ad6c0a21280be1947cbb19f2fea20f5a5d1730c4ec0b10c1a99b71b4be`, 2788 bytes.
+A cell in `test_launch_picker.py` pins the digest. The launcher takes the digest
+on its command line and refuses any other bytes.
+
+```text
+The current directory holds a copy of a software project. Explore it with the tools you have.
+
+Choose one screen implemented in this project that displays a stored report. If the project has no such screen, say so and choose nothing else.
+
+A builder without access to this project will implement that screen as a single self-contained web page that displays one report from a data file. Reply with a brief for that builder. Your reply is the brief: write nothing before or after it. Use these six headings, each on its own line, exactly as written and in this order.
+
+## Task
+The screen, and what a person comes to it to do.
+
+## Content
+Every item the screen shows a reader, in the project's names; where the files leave open which items appear, say so. Say what a reader uses the screen to do (find, compare, check) only where the files show it; otherwise write "none evidenced". Say which items belong together because of what they mean, and give an order only where the order carries meaning (by time, by rank, parts before their total), each with its reason. Leave out order and grouping that is only how the files happen to arrange things, and where you cannot tell which it is, leave it out and say that you did. Every sentence here must stay true if the screen were completely redrawn: do not describe position, layout, spacing, colour or typography.
+
+## Data
+The report type, and for each item its field, type and meaning, with the files that define them; for an item with no field of its own, say that it is fixed text or which fields it is derived from. The form of each value where the files establish one: precision, units, sign convention, dates as stored and as shown, and what is shown for an absent value; otherwise write "not established". Specify the format of the data file the builder will receive: the project's own where it has one, otherwise one you propose, saying which it is.
+
+## States
+Each state the screen can be in as the files establish it (for example empty, partial, failed, and any a reader brings about, such as a filter), what causes it, and what the reader is shown or can do in it. Describe behaviour, not appearance.
+
+## Fixture
+Reproducible steps for a person with access to this project to create the data file. Say how to select or construct one report. Include no values from individual report records; include schema constants where they are needed to interpret the data.
+
+## Why this screen
+What in the project led you to it.
+
+Support claims about the project with file paths, and put the relevant details in the brief, since the builder cannot open those files. Keep project-defined facts apart from your proposed data-file and fixture instructions. Where the files do not settle something, state the gap and do not invent project behaviour.
+```
+
+**How it was reached.** The author wrote a first text, kept to what is wanted
+and silent on how a page looks. It went to the reviewer (Codex, critique mode,
+one package the owner approved, told nothing about the comparison). The reviewer
+found no phrase that favours a look, and proposed rewordings, all adopted but
+one: that the brief carry the existing screen's "structure, presentation rules,
+order, grouping, layout and formatting as established by the files".
+
+The author is not blind and would not adopt that, and the owner asked for a
+design debate on it (three same-family agents, two rounds; seed-aware, so
+advice and not a check). All three rejected the reviewer's wording, the
+author's "content and behaviour only", and a middle "order and grouping only",
+and converged on a rule: the brief binds only what stays true if the screen
+were completely redrawn. Order and grouping are given only where the data
+carries them, with a reason; the form of values is data; what a reader uses the
+screen for is asked where the files show it. Against the reviewer's wording:
+the existing presentation, given to both arms, is a rival seed, and the deriver,
+who sees only the brief, would derive "matches the described layout", which is
+the adherence check the owner declined. Against the author's: a seed-aware
+author would be drawing the line around what the seed governs, fidelity would
+have no anchor, and five pairs cannot absorb arrangement noise. Taken by the
+owner on 2026-10-02.
+
+The three changed paragraphs went back to the reviewer once (one package, the
+owner approved). It answered that the text describes more than the report but
+does not carry the screen's presentation hierarchy, which it called a coherent
+choice if the builder is to redesign the presentation; found no preference for
+a kind of screen or look, a preference for separating meaning from
+presentation, and a mild lean towards analytical tasks in "find, compare,
+check"; and named six places where a session that can only read files could not
+comply or could read two ways. Those six are adopted as clarifications: items
+the files leave open, a grouping whose reason cannot be told, an item with no
+field of its own, states a reader brings about, a data file's format the project
+does not define, and dates as stored and as shown. The changed text was not sent
+a third time.
+
+**Dissent recorded.** The reviewer holds that the brief should carry the
+existing screen's presentation hierarchy. The statement does not, by the owner's
+ruling, for the reasons above. A brief written under it describes what a page
+must show and do; how it is arranged is the builder's, and that is what the arms
+are compared on.
+
 Open after revision 5: the arm launcher binds neither the CLI version, the
 harness nor the term list; the package builder is not built; the cost of
-composing the brief in one message is not measured; the deriver's and the
+composing the brief in one message is not measured; the picker has not run; the deriver's and the
 reviewer's packages, the freeze and the arms each have their own plan.
