@@ -161,8 +161,10 @@ session, the end of a turn and after every tool call among others, and each runs
 a shell command. The CLI can load such names into a session with no Read call,
 which is why the judge's launcher refuses them in a package. Ruled by
 the owner on 2026-10-02: they stay in the picker's copy, as files of the
-repository that it may read, and its own session is checked for having loaded
-them. "The picker", below, says what was measured and what is checked.
+repository that it may read, and its own session is checked for having been
+given them unasked: for a hook event, for an agent, a skill or a command they
+define, and for an instruction file the CLI attached. "The picker", below, says
+what was measured and what is checked.
 
 The export is deterministic: two exports on 2026-10-02 gave the same record and
 the same tree, byte for byte. Its record now carries a digest of the tree as it
@@ -229,6 +231,7 @@ The probe matrix, as built:
 | `outside_values` | the whole run | | no value planted outside is in any session's record |
 | `payload_terms` | the whole run | | no term of the list is in any session's record; not applicable to a seeded manifest |
 | `loaded` | every session's `init` | | the inventory is as declared |
+| `project_files` | the whole run, for a manifest that says its session runs where a repository's own files are (revision 5) | | no planted value is in any record and no planted hook left its file |
 
 "Refused" is read from the CLI's own refusal event for the very call that asked,
 never inferred from a value's absence, and a call that was refused and also
@@ -429,6 +432,8 @@ the resumed turn was refused.
 - A check report that is not a pass of the manifest's bytes as they are now.
 - A report made by other harness code: the report carries one digest over the
   check, the two scanners and the launcher, and it must equal that digest now.
+  Since revision 5 the digest also covers the export script and the picker's
+  launcher, so a change to either makes a judge's report one to make again.
 - A report made on another version of the CLI than the one installed.
 - A package holding a file its listing does not name; a listed file missing, or
   not the bytes listed; anything that is not a plain file, a link included; a
@@ -608,8 +613,9 @@ That run was made before the `project_files` probe existed. With the probe, on
 the same day and version, the live cell for the picker's manifest passed with
 `project_files` "not loaded", and its red control passed: an open session given
 the same planted files ran all five hooks and held the instruction file in a
-record. Both reports are scratch. The check is made again on the day the picker runs, and
-the launcher takes that day's report.
+record. Both reports are scratch. A report is to be made again on the day the
+picker runs. That is procedure: a report carries no date, and the launcher takes
+any report that passes of the same manifest, harness, term list and version.
 
 **What the launcher refuses, before any session is launched.**
 
@@ -627,7 +633,7 @@ the launcher takes that day's report.
   holds anything that is not a plain file.
 - A copy that holds a recorded term, or a name the CLI loads by itself in a
   directory above the copy.
-- A run directory that already holds a launch.
+- A run directory that is not empty, or is a link.
 
 **The launcher makes the export itself.** No tree is an argument. The first
 proposal had the launcher handed a tree and its record, and checked one against
@@ -637,11 +643,13 @@ script on the registered commit, into a directory only it can read, and requires
 the record made then to be the reviewed record, byte for byte. Each file is read
 once; those bytes must give the record's tree digest; the picker's working
 directory is written from those bytes at a fresh path under `/private/tmp` that
-names nothing, read-only, and is scanned there. The export made for this is
+names nothing, read-only, and is scanned there. Read-only is not private: other
+accounts on the machine can read the copy while the picker runs. The export made for this is
 removed before the session starts. The record is never in the copy or the
 prompt.
 
-**One turn.** The prompt is the statement and nothing else.
+**One turn.** The prompt is the statement, without the white space around it,
+and nothing else. The digest is of the file's bytes.
 
 **The picker's own session is checked.** After the turn the launcher reads its
 stream:
@@ -651,7 +659,10 @@ stream:
 - every `init` shows the manifest's tools, servers, plugins and permission mode,
   no hook event, the version the report was made on, and the copy as its working
   directory;
-- no `init` lists a skill the check's sessions did not have, or an agent, a
+- no `init` lists a skill the check's first session did not have (the report
+  carries one session's list, and builtin plugins have differed between sessions
+  under one manifest, so a plugin that brought a skill would make a clean run
+  not valid), or an agent, a
   skill or a command that a `.claude/` directory of the export defines, by its
   file's name or by the name it declares; and a list the session did not report
   is not read as an empty one;
@@ -675,9 +686,19 @@ stream:
 - the copy holds what it held, and nothing has appeared in it.
 
 The transcript is read as well: it must be there, be this session's, and hold no
-line that is not an event, no hook event and no recorded term.
+line that is not an event, no hook event, no recorded term, and no instruction
+file the CLI attached by itself, which is where a loaded `CLAUDE.md` is and the
+only place it is. How many of each kind of thing the CLI attached is recorded.
+The transcript is taken before the checks that could fail in a way nobody
+foresaw, so that it is kept then too.
 
-**The brief.** It is the text of the last assistant message. It is accepted only
+Things that make a run not valid and are not the picker's doing: a name the CLI
+loads by itself appearing, during the run, in a directory above the copy, which
+is `/private/tmp` and above; the kept stream changing after it was kept; the
+copy failing to be removed. And a session has one hour: one that has not ended
+by then is stopped, and its run is not valid.
+
+**The brief.** It is the text of the last assistant message that holds text. It is accepted only
 when that is the text of the one `result`, the result says the turn ended by
 itself and completed (`stop_reason` `end_turn`, `terminal_reason` `completed`),
 it is not empty and not over 64 KB, it holds every heading the statement names,
@@ -694,7 +715,9 @@ recorded: a brief with no record beside it is removed. A run directory must be
 empty before a launch, so that nothing left from another run is taken for this
 one's. And a mark is written into it before the session exists: a launcher that
 is killed writes no record, and without the mark a second launch would give the
-picker the statement again with nothing to say it had it once. A killed launcher
+picker the statement again with nothing to say it had it once. The mark is in
+that run directory: a launch into another, empty one is not refused, and giving
+the picker the statement once is procedure. A killed launcher
 leaves its copy and the session's transcript where they were; nothing removes
 them.
 
@@ -702,15 +725,21 @@ them.
 owner on 2026-10-02. The launcher makes its own export, so a dry run of it would
 put the real export before a session. It is exercised by its cells, by their
 mutants, and by the live check of its manifest. Its first live run is the
-registered one, and a fault of the harness then costs the one rerun this design
-allows.
+registered one. "Failures and reruns" allows one rerun for a fault in the
+harness, declared and recorded, and says so of a pair; whether the picker's run
+has an allowance of its own, and what follows a run that is not valid for a
+reason that is no fault of the harness (a heading missing, a call answered
+outside), is not registered. It is the owner's to rule before the picker runs.
 
 **Cells and mutants.** As counted in the Dion pull request that carries this.
 The module was written before its cells, which then passed at once; what shows
 that a cell can fail is the mutant list, one fault for each refusal and each
-check. At the branch's head on 2026-10-02 the launcher had 150 cells and 101
-mutants, all killed, and the lists for the check, the judge's launcher and the
-export were killed in full as well. One check has no cell: that the report did not change while it was read.
+check that has one. Without a mutant: that a statement, a record or a report can
+be read at all; that the export left a record; the time limit on the export; and
+the refusal of a file in the export that is not a plain one, which two guards
+make, so that removing either changes nothing a cell can see. The counts are in
+the Dion pull request; at the branch's head the launcher's list and the lists
+for the check, the judge's launcher and the export were each killed in full.
 
 **What this does not show.**
 
@@ -1127,7 +1156,8 @@ and eight Important defects, all in what the launcher read of the judge's own
 session, and several sentences of this revision that said more than the code
 did. The defects are fixed and the sentences corrected. Not fixed, and listed
 in the Dion pull request: the listing and the question for afterwards are each
-read twice; the report does not bind the term list the check ran with; a
+read twice; the report does not bind the term list the check ran with (it does
+since revision 5); a
 launcher that is killed leaves its copy behind.
 
 Open after revision 4: the arm launcher does not bind the CLI version or the
@@ -1199,9 +1229,11 @@ each item unlikely; the snapshot holds no file name with a `$`, a `~`, a brace
 or a space.
 
 One thing the review's measurement shows about a later stage, not this one: the
-arms also run under `--restricted`, so an instruction file placed in an arm's
-working directory is not loaded by itself. How the seeded arm is told where the
-seed is belongs to the plan under which arms run, and must be measured there.
+arms also run under `--restricted`, and in one session under that flag alone an
+instruction file in the working directory was not loaded. An arm's session is
+not that session: it has a server and accepts edits. Whether an arm loads such a
+file, and so how the seeded arm is told where the seed is, belongs to the plan
+under which arms run and must be measured there.
 
 Open after revision 5: the arm launcher binds neither the CLI version, the
 harness nor the term list; the package builder is not built; the cost of
