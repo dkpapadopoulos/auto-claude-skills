@@ -53,9 +53,11 @@ with `ACSM_SKIP_PUSH_GATE=1` in its environment. The agent cannot set either.
 - VERIFY measured verdict (#301) — `verification-before-completion` is
   credited, but no verdict MEASURED by `scripts/verify-and-record.sh`
   (`discovery_source` `verify-yml` or `explicit`) covers the pushed commit.
-  Push only, chain leg only. Each event is recorded to
+  Push only, chain leg only, and not in a repo whose `.verify.yml` declares a
+  non-local substrate. Each event is recorded to
   `~/.claude/.push-verify-shadow.jsonl`; `scripts/verify-shadow-adjudicate.sh`
-  reads it against the decision rule pre-registered in
+  (`--status`, `--next`, `--adjudicate`) takes a human label per would-block
+  episode and reads the corpus against the decision rule registered in
   `openspec/changes/verify-measured-verdict/design.md`. The deny-flip is a
   separate change. Regression: `tests/test-verify-measured-verdict.sh`.
 - SHIP-phase guards: openspec-ship not run, memory consolidation missing,

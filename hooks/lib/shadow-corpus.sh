@@ -5,8 +5,7 @@
 #
 # DIAGNOSTIC ONLY. Sourced by scripts/shadow-adjudicate.sh (IMPLEMENT leg),
 # scripts/review-shadow-adjudicate.sh (REVIEW leg) and
-# scripts/verify-shadow-adjudicate.sh (VERIFY leg, which uses the episode
-# grouping and the ISO prelude but computes no band). Never sourced by a hook,
+# scripts/verify-shadow-adjudicate.sh (VERIFY leg). Never sourced by a hook,
 # never consulted by hooks/openspec-guard.sh, and deliberately EXCLUDED from
 # _GATE_ENFORCE_LIBS — same posture as implement-shadow.sh and review-shadow.sh.
 #
@@ -145,7 +144,10 @@ shadow_group_episodes() {
         # episodes and shrinking the denominator. Field-wise comparison has no
         # such class of bug and is simpler.
         {
-          if (NR == 1 || $1 != p1 || $2 != p2 || $3 != p3 || ($4 - anchor) > w) {
+          # Compared as STRINGS. awk compares two numeric-looking fields as
+          # numbers, so tokens such as "100" and "1e2", or "0x10" and "16",
+          # were one key and their episodes merged.
+          if (NR == 1 || ($1 "") != (p1 "") || ($2 "") != (p2 "") || ($3 "") != (p3 "") || ($4 - anchor) > w) {
             if (NR > 1) print eid "\t" erepo "\t" ebranch "\t" etok "\t" ids
             eid = $5; erepo = $1; ebranch = $2; etok = $3; ids = $5
             anchor = $4; p1 = $1; p2 = $2; p3 = $3

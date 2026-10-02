@@ -33,6 +33,11 @@ was refused on measurement. Requiring **both** weakens nothing.
 The leg ships **advisory-only** with a shadow corpus AND its reader, and flips to deny
 only if the pre-registered rule in `design.md` is met.
 
+**Re-registered 2026-10-02, at zero records** (`predicate_version` 2): the rule is now
+decided on human-labelled false blocks among would-block episodes — 29 episodes, zero
+false blocks, zero unresolved, two repositories — and a repo declaring a non-local
+substrate is out of scope. See "Re-registration 2026-10-02" in `design.md`.
+
 ## Capabilities
 
 **Modified**

@@ -1286,7 +1286,7 @@ EOF
             # on the pre-registered rule in
             # openspec/changes/verify-measured-verdict/design.md.
             #
-            # Population (predicate_version 1): the milestone is in the chain,
+            # Population (predicate_version 2): the milestone is in the chain,
             # STATUS is already satisfied (a session that never got past STATUS
             # is the deny above, a different failure), the command is a push,
             # and it ships content. A merge is excluded because the verdict
@@ -1305,8 +1305,20 @@ EOF
             # deny above exits first. It is kept because that is what makes it
             # true, and this leg must not start firing on unsatisfied STATUS if
             # that deny is ever restructured. No cell can fail on its removal.
+            #
+            # OUT OF SCOPE (predicate_version 2): a repo whose `.verify.yml`
+            # declares a non-local substrate. The deterministic writer refuses
+            # to run there by ANY route, so no measured verdict can exist and
+            # the remedy this leg names could not be executed. A check that can
+            # only ever fire and never be satisfied measures the repo's
+            # configuration, not the agent's behaviour, so it does not fire.
+            _vm_gate="unknown"
+            if [ "${_VERDICT_OK}" = "true" ] && command -v verdict_gate_declaration >/dev/null 2>&1; then
+                _vm_gate="$(verdict_gate_declaration "${_SUBJ_ROOT}" "${_SUBJ_REV}" 2>/dev/null)" || _vm_gate="unknown"
+            fi
             if [ "${_verif_in_chain}" = "true" ] && [ "${_verif_completed}" = "true" ] && \
-               [ "${_gc_is_push}" = "true" ] && [ "${_SUBJ_DELETION_ONLY:-false}" != "true" ]; then
+               [ "${_gc_is_push}" = "true" ] && [ "${_SUBJ_DELETION_ONLY:-false}" != "true" ] && \
+               [ "${_vm_gate}" != "non-local" ]; then
                 _vm_class="cannot_check"; _vm_reason="lib-unavailable"; _vm_src=""
                 # verdict.sh loaded but predates this reader: no degradation
                 # note covers that, so it must not take the silent arm below.
@@ -1362,7 +1374,7 @@ EOF
                     # event twice.
                     if [ "${PUSH_GATE_CAPTURE_REPLAY:-}" != "1" ] && command -v verify_shadow_record >/dev/null 2>&1; then
                         verify_shadow_record "${_SESSION_TOKEN}" "${_SUBJ_ROOT}" "${_vm_class}" "${_vm_reason}" \
-                            "push" "${_SUBJ_REV}" "${_TRANSCRIPT:-}" "${_vm_material}" "${_vm_src}" 2>/dev/null || true
+                            "push" "${_SUBJ_REV}" "${_TRANSCRIPT:-}" "${_vm_material}" "${_vm_src}" "${_vm_gate}" 2>/dev/null || true
                     fi
                 fi
             fi
