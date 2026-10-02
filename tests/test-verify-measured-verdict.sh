@@ -245,6 +245,7 @@ assert_equals       "S1 classification"   "unexplained" "$(_lastf .classificatio
 assert_equals       "S1 reason"           "absent"      "$(_lastf .reason)"
 assert_equals       "S1 would_block"      "true"        "$(_lastf .would_block)"
 assert_contains     "S1 advisory names the leg"           "VERIFY VERDICT" "${out:-<empty>}"
+assert_contains     "S1 advisory is the ABSENT text"      "no verification verdict covers" "${out:-<empty>}"
 assert_not_contains "S1 advisory never denies"            '"deny"'         "${out:-}"
 assert_not_contains "S1 emits no permissionDecision"      'permissionDecision' "${out:-}"
 
@@ -287,12 +288,13 @@ _guard "${PROJECT_ROOT}" "${RA}" "git push origin HEAD" >/dev/null
 assert_equals "record: schema_version"    "1" "$(_lastf .schema_version)"
 assert_equals "record: predicate_version" "1" "$(_lastf .predicate_version)"
 assert_equals "record: repo is the toplevel" "${RA}" "$(_lastf .repo)"
-assert_equals "record: repo_id is the ORIGIN, not the path" "https://example.invalid/org/a.git" "$(_lastf .repo_id)"
+assert_equals "record: repo_id is the ORIGIN (normalised), not the path" "example.invalid/org/a" "$(_lastf .repo_id)"
 assert_equals "record: branch"   "feat" "$(_lastf .branch)"
 assert_equals "record: head_sha" "$(_head "${RA}")" "$(_lastf .head_sha)"
 assert_equals "record: session_token" "${_TOK}" "$(_lastf .session_token)"
 assert_equals "record: transcript pointer" "${_TPATH}" "$(_lastf .transcript_path)"
-assert_equals "record: material_source is a boolean" "boolean" "$(_lastf '.material_source|type')"
+assert_equals "record: material_source is TRUE for a source change" "true" "$(_lastf .material_source)"
+assert_equals "record: log is 0600" "-rw-------" "$(ls -l "${_VLOG}" | cut -c1-10)"
 _rid="$(_lastf .record_id)"
 case "${_rid}" in
     ''|null) _record_fail "record: record_id present" "got '${_rid}'" ;;
@@ -305,7 +307,7 @@ git -C "${RB}" remote set-url origin "https://user:s3cr3t@example.invalid/org/b.
 rm -f "${_VLOG}" "${_ART}"; _seed_status "${_BOTH}"
 _guard "${PROJECT_ROOT}" "${RB}" "git push origin HEAD" >/dev/null
 assert_not_contains "record: URL userinfo is stripped" "s3cr3t" "$(cat "${_VLOG}" 2>/dev/null)"
-assert_equals       "record: repo_id survives the strip" "https://example.invalid/org/b.git" "$(_lastf .repo_id)"
+assert_equals       "record: repo_id survives the strip" "example.invalid/org/b" "$(_lastf .repo_id)"
 git -C "${RB}" remote set-url origin "https://example.invalid/org/b.git"
 
 # --- The record names the SUBJECT, not the session checkout (#219) ---------
@@ -415,6 +417,196 @@ mv "${PLUG}/hooks/lib/verdict.sh.orig" "${PLUG}/hooks/lib/verdict.sh"
 rm -f "${_VLOG}"
 _guard "${PLUG}" "${RA}" "git push origin HEAD" >/dev/null
 assert_equals "restored predicate records it again" "1" "$(_nrec)"
+
+# ---------------------------------------------------------------------------
+# 4b. Cells added after independent review (2026-10-02). Every one of these
+#     corresponds to a single-fault mutation that left the file green.
+# ---------------------------------------------------------------------------
+
+# --- each advisory arm says its own thing -----------------------------------
+rm -f "${_VLOG}" "${_ART}"; _produce "${RA}"; _seed_status "${_BOTH}"
+jq -c '.sha = "0000000000000000000000000000000000000000"' "${_ART}" > "${_ART}.t" && mv "${_ART}.t" "${_ART}"
+out="$(_guard "${PROJECT_ROOT}" "${RA}" "git push origin HEAD")"
+assert_equals       "unbound arm: reason" "unbound" "$(_lastf .reason)"
+assert_contains     "unbound arm: says the verdict does not cover the commit" "does not cover this commit" "${out:-<empty>}"
+assert_not_contains "unbound arm: does not claim no verdict exists" "no verification verdict covers" "${out:-}"
+
+# A gate that could not run is could_not_verify: not clean, but not a failure,
+# so verify-hardening does not deny and this leg's advisory is visible.
+rm -f "${_VLOG}" "${_ART}"; _produce "${RB}" --name tests --run no-such-command-vmv; _seed_status "${_BOTH}"
+out="$(_guard "${PROJECT_ROOT}" "${RB}" "git push origin HEAD")"
+assert_equals       "not-clean arm: reason" "not-clean" "$(_lastf .reason)"
+assert_contains     "not-clean arm: says the verdict is not clean" "is not clean" "${out:-<empty>}"
+assert_not_contains "not-clean arm: never denies" '"deny"' "${out:-}"
+
+# --- the artifact must be exactly ONE document ------------------------------
+_handwrite "${RA}" "claude-md-commands"
+{ printf '{}\n'; cat "${_ART}"; } > "${_ART}.t" && mv "${_ART}.t" "${_ART}"
+assert_equals "two-document artifact => cannot_check, not explained_ladder" \
+    "cannot_check unparseable" "$(verdict_measured_class "${_TOK}" "${RA}")"
+
+# --- a capitalised manifest name survives the sanitiser ---------------------
+rm -f "${_VLOG}"; _handwrite "${RA}" "heuristic:Makefile"; _seed_status "${_BOTH}"
+_guard "${PROJECT_ROOT}" "${RA}" "git push origin HEAD" >/dev/null
+assert_equals "discovery_source 'heuristic:Makefile' is recorded verbatim" "heuristic:Makefile" "$(_lastf .discovery_source)"
+rm -f "${_VLOG}"; _handwrite "${RA}" 'x"; rm -rf / #'; _seed_status "${_BOTH}"
+_guard "${PROJECT_ROOT}" "${RA}" "git push origin HEAD" >/dev/null
+assert_equals "free-text discovery_source is reduced to a marker" "other" "$(_lastf .discovery_source)"
+
+# --- SUBJECT REV: the commit asked about is the one the command pushes ------
+# cwd has `feat` checked out and a MEASURED verdict at feat's HEAD. The command
+# pushes `other` (= main's commit), which that verdict does not cover. Reading
+# HEAD instead of the subject rev would find the verdict and stay silent.
+rm -f "${_VLOG}" "${_ART}"; _produce "${RA}"; _seed_status "${_BOTH}"
+_guard "${PROJECT_ROOT}" "${RA}" "git push origin other" >/dev/null
+assert_equals "subject rev: pushing an uncovered ref records" "1" "$(_nrec)"
+assert_equals "subject rev: classified against the pushed ref" "unbound" "$(_lastf .reason)"
+assert_equals "subject rev: head_sha is the PUSHED commit" "$(git -C "${RA}" rev-parse other)" "$(_lastf .head_sha)"
+assert_equals "subject rev: branch is the PUSHED branch" "other" "$(_lastf .branch)"
+
+# --- SUBJECT ROOT at the classifier: the session sits in another worktree ----
+# Same measured verdict at RA's HEAD. From RA_WT (HEAD = main's commit), a
+# `git -C RA push` must be judged against RA's HEAD and stay silent.
+# RA then gains a commit, so the verdict covers its HEAD only as an own-token
+# ANCESTOR: the exact-commit sibling scan cannot rescue a classifier handed the
+# wrong root, which is what would otherwise make this cell pass regardless.
+( cd "${RA}" && echo "# c2" >> run.sh && git commit -qam c2 ) >/dev/null 2>&1
+rm -f "${_VLOG}"; _seed_status "${_BOTH}"
+out="$(_guard "${PROJECT_ROOT}" "${RA_WT}" "git -C ${RA} push origin HEAD")"
+assert_equals       "subject root: verdict judged against the pushed tree => no record" "0" "$(_nrec)"
+assert_not_contains "subject root: no advisory" "VERIFY VERDICT" "${out:-}"
+
+# --- a MEASURED verdict under another token at the same commit --------------
+# verdict_resolve_token does not rank by provenance, so an own hand-authored
+# verdict used to shadow a sibling's measurement of the very same commit.
+rm -f "${_VLOG}"; _handwrite "${RA}" "claude-md-commands"; _seed_status "${_BOTH}"
+( cd "${RA}" && SKILL_SESSION_TOKEN="session-sib" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+    /bin/bash "${PRODUCER}" < /dev/null ) >/dev/null 2>&1
+_SIB="${HOME}/.claude/.skill-project-verified-session-sib"
+assert_file_exists "sibling measured verdict produced by the REAL writer" "${_SIB}"
+out="$(_guard "${PROJECT_ROOT}" "${RA}" "git push origin HEAD")"
+assert_equals       "sibling measured at the same commit => no record" "0" "$(_nrec)"
+assert_not_contains "sibling measured at the same commit => no advisory" "VERIFY VERDICT" "${out:-}"
+# Control: the sibling bound to a DIFFERENT commit must not rescue it — even
+# when this commit's sha appears elsewhere in the file. The scan prefilters
+# with `grep -lF <sha>`, which matches ANY field, so only the jq-confirmed
+# `.sha` comparison stands between a mention and a binding.
+jq -c --arg h "$(_head "${RA}")" '.sha = "0000000000000000000000000000000000000000" | .output_excerpt = ("ran at " + $h)' \
+    "${_SIB}" > "${_SIB}.t" && mv "${_SIB}.t" "${_SIB}"
+_guard "${PROJECT_ROOT}" "${RA}" "git push origin HEAD" >/dev/null
+assert_equals "control: sibling at another commit does not rescue" "explained_ladder" "$(_lastf .classification)"
+rm -f "${_SIB}"
+
+# --- verdict.sh ABSENT: recorded as cannot_check, announced once, not twice --
+mv "${PLUG}/hooks/lib/verdict.sh" "${PLUG}/hooks/lib/verdict.sh.hidden"
+rm -f "${_VLOG}" "${_ART}"; _seed_status "${_BOTH}"
+out="$(_guard "${PLUG}" "${RA}" "git push origin HEAD")"
+assert_equals       "verdict.sh absent => recorded" "1" "$(_nrec)"
+assert_equals       "verdict.sh absent => cannot_check" "cannot_check" "$(_lastf .classification)"
+assert_equals       "verdict.sh absent => reason lib-unavailable" "lib-unavailable" "$(_lastf .reason)"
+assert_equals       "verdict.sh absent => material_source is null, not false" "null" "$(_lastf .material_source)"
+assert_not_contains "verdict.sh absent => no second advisory from this leg" "VERIFY VERDICT" "${out:-}"
+assert_contains     "verdict.sh absent => the degradation note carries it" "verdict.sh did not load" "${out:-<empty>}"
+assert_not_contains "verdict.sh absent => never denies" '"deny"' "${out:-}"
+mv "${PLUG}/hooks/lib/verdict.sh.hidden" "${PLUG}/hooks/lib/verdict.sh"
+
+# --- verdict.sh present but PREDATING this reader ---------------------------
+cp "${PLUG}/hooks/lib/verdict.sh" "${PLUG}/hooks/lib/verdict.sh.orig"
+awk '/^# --- Measured provenance \(#301\)/ { skip = 1 } /^# verdict_test_delta / { skip = 0 } !skip' \
+    "${PLUG}/hooks/lib/verdict.sh.orig" > "${PLUG}/hooks/lib/verdict.sh"
+if grep -q 'verdict_measured_class()' "${PLUG}/hooks/lib/verdict.sh"; then
+    _record_fail "older verdict.sh fixture lacks the new reader" "the strip matched nothing — the cells below would be vacuous"
+else
+    _record_pass "older verdict.sh fixture lacks the new reader"
+fi
+rm -f "${_VLOG}"
+out="$(_guard "${PLUG}" "${RA}" "git push origin HEAD")"
+assert_equals   "older verdict.sh => reason reader-unavailable" "reader-unavailable" "$(_lastf .reason)"
+assert_contains "older verdict.sh => says it could not check" "could not check" "${out:-<empty>}"
+mv "${PLUG}/hooks/lib/verdict.sh.orig" "${PLUG}/hooks/lib/verdict.sh"
+
+# --- NON-INTERFERENCE with a deny BELOW the leg ------------------------------
+# The earlier "deny text is untouched" cell used the STATUS deny, which exits
+# before this leg is reached, so it pinned nothing. These two drive denies that
+# fire AFTER the leg has run and compare against a copy with the leg disabled:
+# an early exit, a changed deny text, or a swallowed deny all show as a diff.
+PLUG_OFF="${TMP}/plug-off"; cp -R "${PLUG}" "${PLUG_OFF}"
+sed 's/^               \[ "\${_gc_is_push}" = "true" \] && \[ "\${_SUBJ_DELETION_ONLY:-false}" != "true" \]; then$/               false; then/' \
+    "${PLUG}/hooks/openspec-guard.sh" > "${PLUG_OFF}/hooks/openspec-guard.sh"
+if cmp -s "${PLUG}/hooks/openspec-guard.sh" "${PLUG_OFF}/hooks/openspec-guard.sh"; then
+    _record_fail "leg disabled in the control copy" "sed changed nothing — the comparisons below would be vacuous"
+else
+    _record_pass "leg disabled in the control copy"
+fi
+
+# (a) verify-hardening: a MEASURED, FAILING verdict at HEAD.
+rm -f "${_VLOG}" "${_ART}"; _produce "${RB}" --name tests --run false; _seed_status "${_BOTH}"
+_on="$(_guard "${PLUG}" "${RB}" "git push origin HEAD")"
+_n_on="$(_nrec)"; _r_on="$(_lastf .reason)"
+rm -f "${_VLOG}"
+_off="$(_guard "${PLUG_OFF}" "${RB}" "git push origin HEAD")"
+assert_contains "deny below (verify-hardening): still denies" '"deny"' "${_on:-<empty>}"
+assert_equals   "deny below (verify-hardening): output identical with the leg off" "${_off}" "${_on}"
+assert_equals   "deny below (verify-hardening): the leg DID fire" "not-clean" "${_r_on}"
+assert_equals   "deny below (verify-hardening): recorded ONCE, not again by the capture replay" "1" "${_n_on}"
+assert_equals   "control: the disabled copy records nothing" "0" "$(_nrec)"
+
+# (b) routing-governance: a routing repo, no verdict at all.
+RR="${TMP}/rr"; mkdir -p "${RR}"
+(
+  cd "${RR}" || exit 1
+  git -c init.defaultBranch=main init -q
+  git config user.email t@t; git config user.name t
+  git remote add origin "https://example.invalid/org/r.git"
+  mkdir -p config hooks
+  echo '{}' > config/default-triggers.json
+  printf '#!/bin/bash\n' > hooks/x.sh
+  git add -A; git commit -qm base
+  git checkout -qb feat
+  echo "# c1" >> hooks/x.sh; git commit -qam c1
+) >/dev/null 2>&1
+rm -f "${_VLOG}" "${_ART}"; _seed_status "${_BOTH}"
+_on="$(_guard "${PLUG}" "${RR}" "git push origin HEAD")"
+_n_on="$(_nrec)"; _r_on="$(_lastf .reason)"
+rm -f "${_VLOG}"
+_off="$(_guard "${PLUG_OFF}" "${RR}" "git push origin HEAD")"
+assert_contains "deny below (routing-governance): still denies" '"deny"' "${_on:-<empty>}"
+assert_equals   "deny below (routing-governance): output identical with the leg off" "${_off}" "${_on}"
+assert_equals   "deny below (routing-governance): the leg DID fire" "absent" "${_r_on}"
+assert_equals   "deny below (routing-governance): recorded once" "1" "${_n_on}"
+
+# --- repository identity -----------------------------------------------------
+# One repository reached through three URL spellings, and two credential shapes.
+_RIDLOG="${TMP}/rid.jsonl"
+while IFS= read -r _url; do
+    [ -n "${_url}" ] || continue
+    git -C "${RA}" remote set-url origin "${_url}"
+    rm -f "${_RIDLOG}"
+    VERIFY_SHADOW_LOG="${_RIDLOG}" verify_shadow_record tok "${RA}" unexplained absent push HEAD "" false ""
+    assert_equals "repo_id of '${_url%%SEKRET*}' normalises to host/path" \
+        "example.invalid/org/a" "$(jq -r .repo_id "${_RIDLOG}" 2>/dev/null)"
+    assert_not_contains "repo_id of that URL carries no credential" "SEKRET" "$(cat "${_RIDLOG}" 2>/dev/null)"
+done <<EOF
+https://example.invalid/org/a.git
+git@example.invalid:org/a.git
+https://example.invalid/org/a
+ssh://git@example.invalid/org/a.git/
+https://user:SEKRET@example.invalid/org/a.git
+https://user:SEKRET@x@example.invalid/org/a.git
+https://example.invalid/org/a.git?private_token=SEKRET
+EOF
+git -C "${RA}" remote set-url origin "https://example.invalid/org/a.git"
+
+# No origin at all: a repo and its worktree still share ONE identity.
+RN="${TMP}/rn"; mkdir -p "${RN}"
+( cd "${RN}" && git -c init.defaultBranch=main init -q && git config user.email t@t && git config user.name t \
+    && echo a > a && git add -A && git commit -qm base && git worktree add -q -b w2 "${TMP}/rn-wt" main ) >/dev/null 2>&1
+rm -f "${_RIDLOG}"
+VERIFY_SHADOW_LOG="${_RIDLOG}" verify_shadow_record tok "${RN}" unexplained absent push HEAD "" false ""
+VERIFY_SHADOW_LOG="${_RIDLOG}" verify_shadow_record tok "${TMP}/rn-wt" unexplained absent push HEAD "" false ""
+_ids="$(jq -r .repo_id "${_RIDLOG}" 2>/dev/null | LC_ALL=C sort -u | grep -c . | tr -d '[:space:]')"
+assert_equals    "no origin: repo and its worktree share one repo_id" "1" "${_ids}"
+assert_not_empty "no origin: repo_id is not empty" "$(jq -r .repo_id "${_RIDLOG}" 2>/dev/null | head -1)"
 
 # ---------------------------------------------------------------------------
 # 5. Static posture
@@ -635,6 +827,83 @@ rm -f "${RD}/hooks/lib/shadow-corpus.sh"
 VERIFY_SHADOW_LOG="${_CORP}" /bin/bash "${RD}/scripts/verify-shadow-adjudicate.sh" --status >/dev/null 2>&1
 assert_equals "reader refuses to run without shadow-corpus.sh" "2" "$?"
 assert_contains "reader groups episodes via the shared lib" "shadow_group_episodes" "$(cat "${READER}")"
+
+# --- anything the reader could not place BLOCKS the rule (review finding) ----
+# Five clean explained_ladder episodes across two repos satisfy all four
+# clauses. A sixth, UNEXPLAINED, record made uncountable must not leave the
+# rule reading MET: the excluded record may be the one that matters.
+_six() { # <jq-edit applied to the sixth, unexplained record>
+    _five "${RB}" explained_ladder hand-authored
+    _emit "${RA}" unexplained absent t6 "2026-10-10T10:00:00Z"
+    tail -1 "${_CORP}" | jq -c "$1" > "${_CORP}.x"
+    sed '$d' "${_CORP}" > "${_CORP}.t"; cat "${_CORP}.x" >> "${_CORP}.t"; mv "${_CORP}.t" "${_CORP}"; rm -f "${_CORP}.x"
+}
+_five "${RB}" explained_ladder hand-authored
+_emit "${RA}" unexplained absent t6 "2026-10-10T10:00:00Z"
+out="$(_status)"
+assert_contains "control: the sixth record, intact, is counted unexplained" "unexplained=1" "${out}"
+
+while IFS='|' read -r _what _edit _needle; do
+    [ -n "${_what}" ] || continue
+    _six "${_edit}"
+    out="$(_status)"
+    assert_contains     "uncountable (${_what}): the five valid episodes read met" "[MET] 2." "${out}"
+    assert_contains     "uncountable (${_what}): reported" "${_needle}" "${out}"
+    assert_contains     "uncountable (${_what}): rule NOT MET" "DECISION RULE NOT MET" "${out}"
+    assert_not_contains "uncountable (${_what}): never MET" "DECISION RULE MET" "${out}"
+done <<EOF
+empty ts|.ts = ""|unparseable ts : 1
+no record_id|.record_id = ""|no record_id : 1
+string predicate_version|.predicate_version = "1"|malformed predicate_version : 1
+absent predicate_version|del(.predicate_version)|malformed predicate_version : 1
+EOF
+
+# A TRUNCATED line (the sixth record cut short).
+_five "${RB}" explained_ladder hand-authored
+_emit "${RA}" unexplained absent t6 "2026-10-10T10:00:00Z"
+_l="$(tail -1 "${_CORP}")"; sed '$d' "${_CORP}" > "${_CORP}.t"
+printf '%s\n' "${_l%??????????}" >> "${_CORP}.t"; mv "${_CORP}.t" "${_CORP}"
+out="$(_status)"
+assert_contains     "uncountable (truncated line): reported" "1 unparseable" "${out}"
+assert_not_contains "uncountable (truncated line): never MET" "DECISION RULE MET" "${out}"
+
+# A DUPLICATE record_id: an unexplained record sharing an id with an explained
+# one in the same episode, placed EARLIER in the file so last-wins would hide it.
+_five "${RB}" explained_ladder hand-authored
+_dupid="$(sed -n '1p' "${_CORP}" | jq -r .record_id)"
+{ sed -n '1p' "${_CORP}" | jq -c '.classification = "unexplained" | .reason = "absent"'; cat "${_CORP}"; } > "${_CORP}.t"
+mv "${_CORP}.t" "${_CORP}"
+assert_not_empty "duplicate-id fixture has an id to duplicate" "${_dupid}"
+out="$(_status)"
+assert_contains     "duplicate record_id: worst-wins, so the episode is unexplained" "unexplained=1" "${out}"
+assert_contains     "duplicate record_id: reported" "DUPLICATE record_id : 1" "${out}"
+assert_not_contains "duplicate record_id: never MET" "DECISION RULE MET" "${out}"
+
+# A NUMERIC other version is a legitimate older band: reported, NOT a blocker.
+# Pinned deliberately, or a future predicate bump would block the rule forever.
+_five "${RB}" explained_ladder hand-authored
+tail -1 "${_CORP}" | jq -c '.predicate_version = 99 | .record_id = "0123456789abcdef" | .classification = "unexplained"' >> "${_CORP}"
+out="$(_status)"
+assert_contains "numeric other-version record: reported" "other-predicate : 1" "${out}"
+assert_contains "numeric other-version record: does not block" "DECISION RULE MET" "${out}"
+
+# One repository under three URL spellings is ONE repo for clause 4.
+rm -f "${_CORP}"
+_i=0
+while IFS= read -r _url; do
+    [ -n "${_url}" ] || continue
+    _i=$(( _i + 1 ))
+    git -C "${RA}" remote set-url origin "${_url}"
+    _emit "${RA}" explained_ladder hand-authored "u${_i}" "2026-10-0${_i}T10:00:00Z"
+done <<EOF
+https://example.invalid/org/a.git
+git@example.invalid:org/a.git
+https://example.invalid/org/a
+EOF
+git -C "${RA}" remote set-url origin "https://example.invalid/org/a.git"
+out="$(_status)"
+assert_contains "three URL spellings of one repo => repos=1" "repos=1" "${out}"
+assert_contains "three URL spellings: three episodes" "n=3" "${out}"
 
 # --- pre-registered constants: reader vs design.md vs literals here ---------
 _matched=0

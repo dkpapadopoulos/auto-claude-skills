@@ -24,7 +24,7 @@
 # `would_block` is false for cannot_check: the leg is fail-open, so a verdict it
 # could not read is one it would not block on even after a deny-flip.
 #
-# `repo_id` is the origin URL (userinfo stripped), falling back to the common
+# `repo_id` is the origin URL normalised to host/path, falling back to the common
 # git dir and then the path. It is recorded at WRITE time because the
 # pre-registered diversity clause counts REPOSITORIES, and a worktree path
 # resolved at read time may no longer exist — and two worktrees of one
@@ -71,9 +71,20 @@ verify_shadow_record() {
     repo="$(git -C "${proot:-.}" rev-parse --show-toplevel 2>/dev/null)" || repo=""
     repo_id="$(git -C "${proot:-.}" remote get-url origin 2>/dev/null)" || repo_id=""
     if [ -n "${repo_id}" ]; then
-        # A remote URL can embed a credential (https://user:token@host/...).
-        # Strip the userinfo; scp-style git@host:path has no "://" and is kept.
-        repo_id="$(printf '%s' "${repo_id}" | sed 's#^\([A-Za-z][A-Za-z0-9+.-]*://\)[^/@]*@#\1#')" || repo_id=""
+        # NORMALISED to host/path, for two reasons that share one transform.
+        # (1) Identity: the diversity clause counts repositories, and
+        #     https://h/o/r.git, git@h:o/r.git and https://h/o/r are ONE repo.
+        # (2) Secrets: a URL can carry a credential in the userinfo — which may
+        #     itself contain "@", so everything up to the LAST "@" of the
+        #     authority goes — or in a query string.
+        # Order matters: query/fragment first, then scheme, then userinfo, then
+        # the scp-style "host:path" separator, then the cosmetic suffixes.
+        repo_id="$(printf '%s' "${repo_id}" | sed \
+            -e 's/[?#].*$//' \
+            -e 's#^[A-Za-z][A-Za-z0-9+.-]*://##' \
+            -e 's#^[^/]*@##' \
+            -e 's#^\([^/:]*\):\([^0-9/]\)#\1/\2#' \
+            -e 's#/*$##' -e 's#\.git$##' -e 's#/*$##')" || repo_id=""
     fi
     if [ -z "${repo_id}" ]; then
         repo_id="$(git -C "${proot:-.}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || repo_id=""
@@ -85,7 +96,7 @@ verify_shadow_record() {
     # a rung name; anything else is reduced to a marker, never copied.
     case "${src}" in
         '') : ;;
-        *[!a-z0-9:._-]*) src="other" ;;
+        *[!A-Za-z0-9:._-]*) src="other" ;;
     esac
     [ "${#src}" -le 64 ] || src="other"
 
@@ -116,7 +127,9 @@ verify_shadow_record() {
     # No rotation, deliberately: it would drop records the decision rule has not
     # yet been read against. At the measured rate this log grows a few lines a
     # month.
-    printf '%s\n' "$rec" >> "$log" 2>/dev/null || return 0
+    # umask in a subshell so a NEW log is 0600 from its first byte; the chmod
+    # covers a log that already existed with a wider mode.
+    ( umask 077; printf '%s\n' "$rec" >> "$log" ) 2>/dev/null || return 0
     chmod 600 "$log" 2>/dev/null || true
     return 0
 }

@@ -355,13 +355,6 @@ fi
 [ -f "${_GC_ROOT}/hooks/lib/review-shadow.sh" ] && \
     _guard_load "${_GC_ROOT}/hooks/lib/review-shadow.sh" || true
 
-# verify-shadow.sh (#301) — diagnostic corpus for the VERIFY measured-verdict
-# leg. Diagnostic-only, so deliberately NOT in _GATE_ENFORCE_LIBS. The call
-# site is `command -v`-guarded, so an absent lib records nothing and the gate's
-# output is byte-identical.
-[ -f "${_GC_ROOT}/hooks/lib/verify-shadow.sh" ] && \
-    _guard_load "${_GC_ROOT}/hooks/lib/verify-shadow.sh" || true
-
 # review-verdict.sh (#197) — the VERDICT half of the REVIEW split. Advisory
 # only, so it is deliberately NOT in _GATE_ENFORCE_LIBS, exactly like
 # implement-shadow.sh and pr-diff.sh above. PAIRED: adding a deny that reads
@@ -422,6 +415,15 @@ fi
 # Resolve session token payload-first (issue #51): the singleton is shared
 # across concurrent sessions (last-writer-wins) and may name ANOTHER session.
 _PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+
+# verify-shadow.sh (#301) — diagnostic corpus for the VERIFY measured-verdict
+# leg. Diagnostic-only, so deliberately NOT in _GATE_ENFORCE_LIBS. The call
+# site is `command -v`-guarded, so an absent lib records nothing and the gate's
+# output is byte-identical. Loaded HERE rather than beside review-shadow.sh
+# because a committed knowledge fact cites the _PLUGIN_ROOT line above by
+# number, and tests/test-knowledge.sh fails when that line moves.
+[ -f "${_GC_ROOT}/hooks/lib/verify-shadow.sh" ] && \
+    _guard_load "${_GC_ROOT}/hooks/lib/verify-shadow.sh" || true
 
 # _attest_remedy <step> — a COPY-PASTEABLE attestation command (#248).
 #
@@ -1316,7 +1318,22 @@ EOF
                         *)     _vm_class="cannot_check"; _vm_reason="no-result" ;;
                     esac
                     _vm_src="$(verdict_discovery_source "${_VERDICT_TOKEN}" 2>/dev/null)" || _vm_src=""
+                    # verdict_resolve_token picks ONE artifact, and it does not
+                    # rank by provenance: an own hand-authored verdict at HEAD
+                    # wins over a sibling session's MEASURED one at the same
+                    # commit. The question here is whether a measured verdict
+                    # covers this commit at all, so ask that before recording a
+                    # would-block that a measurement on disk contradicts.
+                    if [ "${_vm_class}" != "measured" ] && command -v verdict_any_measured_at_head >/dev/null 2>&1; then
+                        if verdict_any_measured_at_head "${_SUBJ_ROOT}" "${_SUBJ_REV}" 2>/dev/null; then
+                            _vm_class="measured"; _vm_reason="ok"
+                        fi
+                    fi
                 fi
+                # "Could not measure" is not "false": with verdict.sh absent
+                # the material-source predicate has nothing to diff with.
+                _vm_material="${_rv_material:-}"
+                if [ "${_VERDICT_OK}" != "true" ]; then _vm_material=""; fi
                 if [ "${_vm_class}" != "measured" ]; then
                     case "${_vm_class}:${_vm_reason}" in
                         cannot_check:lib-unavailable)
@@ -1334,9 +1351,12 @@ EOF
                         *)
                             _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }VERIFY VERDICT: verification-before-completion was credited, but no verification verdict covers this commit — a Skill return is not evidence that any gate ran (#301). Run Skill(auto-claude-skills:project-verification), which executes the gate and records measured exit codes. Advisory only." ;;
                     esac
-                    if command -v verify_shadow_record >/dev/null 2>&1; then
+                    # Not under the capture replay: the EXIT trap re-runs this
+                    # guard on a deny, and recording there writes every denied
+                    # event twice.
+                    if [ "${PUSH_GATE_CAPTURE_REPLAY:-}" != "1" ] && command -v verify_shadow_record >/dev/null 2>&1; then
                         verify_shadow_record "${_SESSION_TOKEN}" "${_SUBJ_ROOT}" "${_vm_class}" "${_vm_reason}" \
-                            "push" "${_SUBJ_REV}" "${_TRANSCRIPT:-}" "${_rv_material:-}" "${_vm_src}" 2>/dev/null || true
+                            "push" "${_SUBJ_REV}" "${_TRANSCRIPT:-}" "${_vm_material}" "${_vm_src}" 2>/dev/null || true
                     fi
                 fi
             fi

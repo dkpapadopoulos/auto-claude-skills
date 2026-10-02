@@ -89,6 +89,7 @@ _count() { grep -c . | tr -d '[:space:]'; }
 cmd_status() {
     local _now _lines=0 _lines_rc=0 _parsed=0 _unparsed=0 _other=0 _unknown=0 _badts=0 _norid=0
     local _n=0 _unx=0 _exp=0 _cc=0 _repos=0 _first=-1 _nby=0 _tmp _sum
+    local _badver=0 _dup=0 _uncounted=0
     local _c1=UNMET _c2=UNMET _c3=UNMET _c4=UNMET _null=false _have=false
 
     _now="${VERIFY_SHADOW_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)}"
@@ -131,8 +132,15 @@ cmd_status() {
     if [ "${_have}" = "true" ]; then
         _parsed="$(jq -R -r 'fromjson? // empty | objects | 1' "${SHADOW_LOG}" 2>/dev/null | _count)"
         _unparsed=$(( ${_lines:-0} - ${_parsed:-0} ))
+        # A NUMERIC other version is a legitimate band written under a
+        # different fire condition: reported, not pooled, and not a blocker.
+        # A NON-numeric one ("1" as a string, null, absent) is a malformed
+        # record of unknown provenance and is treated like any other record
+        # this reader could not place.
         _other="$(jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
-            'fromjson? // empty | objects | select(.predicate_version != $pv) | 1' "${SHADOW_LOG}" 2>/dev/null | _count)"
+            'fromjson? // empty | objects | select((.predicate_version | type) == "number" and .predicate_version != $pv) | 1' "${SHADOW_LOG}" 2>/dev/null | _count)"
+        _badver="$(jq -R -r \
+            'fromjson? // empty | objects | select((.predicate_version | type) != "number") | 1' "${SHADOW_LOG}" 2>/dev/null | _count)"
         _unknown="$(jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" '
             fromjson? // empty | objects | select(.predicate_version == $pv)
             | select((.classification == "explained_ladder" or .classification == "unexplained"
@@ -151,7 +159,17 @@ cmd_status() {
         # cannot_check. An arrival-order rule would let a later explained
         # record launder an unexplained one.
         _sum="$(awk -F'\t' -v dl="${BACKSTOP_DATE}T23:59:59Z" "${SHADOW_AWK_EPOCH}"'
-            FILENAME == ARGV[1] { cls[$5] = $6; ts[$5] = $4; next }
+            FILENAME == ARGV[1] {
+                # A repeated record_id is WORST-WINS and COUNTED. Last-wins let
+                # an explained record sharing an id overwrite an unexplained
+                # one with no exclusion line at all.
+                if ($5 in cls) {
+                    dup++
+                    if ($6 == "unexplained" || cls[$5] == "unexplained") cls[$5] = "unexplained"
+                    else if ($6 == "explained_ladder" || cls[$5] == "explained_ladder") cls[$5] = "explained_ladder"
+                } else { cls[$5] = $6; ts[$5] = $4 }
+                next
+            }
             {
                 n++
                 k = split($5, ids, ",")
@@ -168,16 +186,16 @@ cmd_status() {
             }
             BEGIN { first = -1 }
             END {
-                printf "%d %d %d %d %d %d %d\n", n + 0, cnt["unexplained"] + 0,
+                printf "%d %d %d %d %d %d %d %d\n", n + 0, cnt["unexplained"] + 0,
                     cnt["explained_ladder"] + 0, cnt["cannot_check"] + 0,
-                    nrepos + 0, first, nby + 0
+                    nrepos + 0, first, nby + 0, dup + 0
             }' "${_tmp}/rec.tsv" "${_tmp}/eps.tsv")"
-        # All seven fields are numeric and never empty, so a space-split read
+        # All eight fields are numeric and never empty, so a space-split read
         # cannot shift columns.
-        read -r _n _unx _exp _cc _repos _first _nby <<EOF
+        read -r _n _unx _exp _cc _repos _first _nby _dup <<EOF
 ${_sum}
 EOF
-        case "${_n}${_unx}${_exp}${_cc}${_repos}${_nby}" in
+        case "${_n}${_unx}${_exp}${_cc}${_repos}${_nby}${_dup}" in
             ''|*[!0-9]*) echo "ERROR: the episode summary could not be computed. No claim is made."; return 3 ;;
         esac
 
@@ -188,8 +206,7 @@ EOF
         fi
         if [ "${_unknown:-0}" -gt 0 ]; then
             echo "EXCLUDED — unknown classification : ${_unknown} record(s)"
-            echo "  Outside the pre-registered vocabulary, so they cannot be counted in any"
-            echo "  class. While any exist the decision rule is reported NOT MET."
+            echo "  Outside the pre-registered vocabulary, so they cannot be counted in any class."
         fi
         if [ "${_badts:-0}" -gt 0 ]; then
             echo "EXCLUDED — unparseable ts : ${_badts} record(s)"
@@ -197,6 +214,20 @@ EOF
         fi
         if [ "${_norid:-0}" -gt 0 ]; then
             echo "EXCLUDED — no record_id : ${_norid} record(s)"
+        fi
+        if [ "${_badver:-0}" -gt 0 ]; then
+            echo "EXCLUDED — malformed predicate_version : ${_badver} record(s)"
+        fi
+        if [ "${_dup:-0}" -gt 0 ]; then
+            echo "DUPLICATE record_id : ${_dup} record(s) share an id with another; counted worst-wins"
+        fi
+        # Every record this reader could not place might be the unexplained one.
+        # While any exist, "zero unexplained" is not a measurement.
+        _uncounted=$(( ${_unparsed:-0} + ${_unknown:-0} + ${_badts:-0} + ${_norid:-0} + ${_badver:-0} + ${_dup:-0} ))
+        if [ "${_uncounted}" -gt 0 ]; then
+            echo "UNCOUNTABLE : ${_uncounted} line(s)/record(s) above could not be placed in any class."
+            echo "  Any of them may be an unexplained event, so the decision rule is reported"
+            echo "  NOT MET until each is accounted for by hand."
         fi
     fi
 
@@ -241,11 +272,14 @@ EOF
     if [ "${_null}" = "true" ]; then
         echo "verdict  : WINDOW CLOSED — NULL RESULT. The leg stays advisory by decision, not"
         echo "           by inertia. No re-dating; a successor window is a separate registration."
-    elif [ "${_c1}${_c2}${_c3}${_c4}" = "METMETMETMET" ] && [ "${_unknown:-0}" -eq 0 ]; then
+    elif [ "${_c1}${_c2}${_c3}${_c4}" = "METMETMETMET" ] && [ "${_uncounted:-0}" -eq 0 ]; then
         echo "verdict  : DECISION RULE MET. Flipping the leg to deny is a separate change made"
         echo "           by the repo owner; this reader authorises nothing by itself."
     else
         echo "verdict  : DECISION RULE NOT MET — the leg stays advisory."
+        if [ "${_c1}${_c2}${_c3}${_c4}" = "METMETMETMET" ]; then
+            echo "           All four clauses read met, but ${_uncounted} uncountable record(s) block the rule."
+        fi
     fi
     return 0
 }

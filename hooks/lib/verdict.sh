@@ -198,7 +198,10 @@ verdict_measured_class() {
     command -v jq >/dev/null 2>&1 || { printf '%s' "cannot_check no-jq"; return 0; }
     # `jq -e` on an EMPTY file prints nothing and exits non-zero: zero documents
     # is not a verdict, and must not fall through to a field read.
-    jq -e 'type == "object"' "$f" >/dev/null 2>&1 || { printf '%s' "cannot_check unparseable"; return 0; }
+    # Slurped, so a file holding TWO documents is not a verdict either: without
+    # -s, `jq -e` reports on the last value and every field reader downstream
+    # would see a stream.
+    jq -es 'length == 1 and (.[0] | type == "object")' "$f" >/dev/null 2>&1 || { printf '%s' "cannot_check unparseable"; return 0; }
     src="$(verdict_discovery_source "$token")" || src=""
     [ -n "$src" ] || { printf '%s' "cannot_check no-discovery-source"; return 0; }
     verdict_covers_head "$token" "$proot" "$rev" || { printf '%s' "unexplained unbound"; return 0; }
@@ -209,6 +212,30 @@ verdict_measured_class() {
         *) printf '%s' "unexplained unrecognised-source" ;;
     esac
     return 0
+}
+
+# verdict_any_measured_at_head <proj_root> [commit] — 0 iff SOME artifact, under
+# any token, is clean, measured, and bound to the EXACT commit.
+#
+# Exists because verdict_resolve_token returns one token and does not rank by
+# provenance. Exact-commit only, the same binding its cross-token bridge uses:
+# ancestor acceptance stays scoped to the own token. Same `grep -lF` prefilter,
+# so the jq forks are bounded to the files naming the commit.
+verdict_any_measured_at_head() {
+    local proot="${1:-}" rev="${2:-HEAD}" head f tok
+    head="$(git -C "${proot:-.}" rev-parse "$rev" 2>/dev/null)" || return 1
+    [ -n "$head" ] || return 1
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        tok="${f##*/}"; tok="${tok#.skill-project-verified-}"
+        [ -n "$tok" ] || continue
+        verdict_sha_is_head "$tok" "$proot" "$rev" || continue
+        verdict_is_clean "$tok" || continue
+        verdict_is_measured "$tok" && return 0
+    done <<EOF
+$(grep -lF "$head" "${HOME}/.claude/.skill-project-verified-"* 2>/dev/null)
+EOF
+    return 1
 }
 
 # verdict_test_delta <token> — echo the recorded test_delta (covered|missing|n/a|"").

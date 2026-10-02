@@ -159,6 +159,46 @@ None changes a registered number.
 8. `would_block` is `false` on a `cannot_check` record: the leg is fail-open and
    would not block on a verdict it could not read even after a flip.
 
+9. **A measured verdict under ANY token at the exact commit satisfies the leg.**
+   `verdict_resolve_token` returns one artifact and does not rank by
+   provenance, so an own hand-authored verdict shadowed a sibling session's
+   measurement of the same commit (found in review, reproduced). Exact-commit
+   only; ancestor acceptance stays scoped to the own token.
+10. **A measured verdict that is not clean is `unexplained`** (reason
+    `not-clean`), because the proposal requires a *clean* measured verdict. A
+    measured FAILING verdict is also denied by verify-hardening, so "ran the
+    gate, it failed, tried to push" is recorded here even though the push never
+    proceeded — the leg records at evaluation, before the legs below it decide.
+11. **The reader reports NOT MET while any record is uncountable** — an
+    unparseable line, an unusable `ts`, a missing `record_id`, a non-numeric
+    `predicate_version`, an unknown classification, or a duplicated
+    `record_id`. Any of them may be the `unexplained` event, so "zero
+    unexplained" is not a measurement until each is accounted for. A record
+    carrying a NUMERIC other `predicate_version` is a legitimate older band and
+    does not block.
+12. **`repo_id` is the origin URL normalised to `host/path`** (scheme, userinfo,
+    query string, scp-style separator, trailing `.git` and slashes removed), so
+    one repository reached through three URL spellings is one repo for clause
+    4, and no credential embedded in a URL reaches the corpus. Limit: two
+    clones with NO origin are two identities.
+
+### Open for the owner — raised by review, deliberately not decided here
+
+These change what the registered rule accepts, so they are not implementation
+readings. Each is stated with what the code does today.
+
+- **The flip is hard to reach by construction.** Under readings 2 and 10 the
+  leg's own true catches (no verdict; a failing verdict) are `unexplained` and
+  each one holds clause 2. As registered, the rule flips only on a corpus whose
+  every would-block was a hand-authored rung.
+- **`cannot_check` counts toward `n` and toward repo diversity** (reading 1,
+  forced by clause 3's wording). Reproduced in review: four `cannot_check`
+  episodes in one repo plus one `explained_ladder` in a second read
+  DECISION RULE MET. A broken install writes `cannot_check` on every qualifying
+  push, so it can manufacture `n` and the second repo by itself. The alternative
+  is to count only `would_block == true` episodes in both — which makes clause 3
+  redundant and so needs the rule restated, not just re-read.
+
 ### Prerequisite settled by driving the producer (2026-10-02)
 
 `scripts/verify-and-record.sh` was RUN, not read, in a scratch repo with an
