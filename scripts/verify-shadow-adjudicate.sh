@@ -29,6 +29,14 @@
 # Bash 3.2. Never `set -e`. Never reads stdin.
 set -u
 
+# The C locale, for every tool this script runs. Under a UTF-8 locale macOS awk
+# compares strings with strcoll, which IGNORES a no-break space, a zero-width
+# space, a byte-order mark and more — so `"human<U+00A0>" == "human"` was true
+# in awk while jq, comparing bytes, said false. A false_block row with an
+# invisible character in its claimant was counted as applied by one and
+# dropped by the other. Bytes are the only equality this reader means.
+export LC_ALL=C
+
 # --- pre-registered constants (openspec/changes/verify-measured-verdict/design.md) ---
 FLOOR_EPISODES=29
 FLOOR_REPOS=2
@@ -83,12 +91,23 @@ _NOW=""
 # typo in its month was ignored. Every ts this reader ACTS on must be a real
 # instant. (No apostrophes below: this is spliced into single-quoted awk.)
 _AWK_T="${SHADOW_AWK_EPOCH}"'
-    function real_instant(s,   mo, d, hh, mi, ss) {
+    function real_instant(s,   y, mo, d, hh, mi, ss, dim) {
         if (iso_epoch(s) < 0) return 0
-        mo = substr(s,6,2)+0; d = substr(s,9,2)+0; hh = substr(s,12,2)+0
-        mi = substr(s,15,2)+0; ss = substr(s,18,2)+0
-        return (mo >= 1 && mo <= 12 && d >= 1 && d <= 31 && hh <= 23 && mi <= 59 && ss <= 59)
-    }'
+        y = substr(s,1,4)+0; mo = substr(s,6,2)+0; d = substr(s,9,2)+0
+        hh = substr(s,12,2)+0; mi = substr(s,15,2)+0; ss = substr(s,18,2)+0
+        if (mo < 1 || mo > 12 || d < 1 || hh > 23 || mi > 59 || ss > 59) return 0
+        # Days in THIS month. "Day <= 31" accepted November 31, which converts
+        # to the same epoch as December 1 — so an impossible date read as a
+        # valid, later label and superseded a real false_block.
+        dim = 31
+        if (mo == 4 || mo == 6 || mo == 9 || mo == 11) dim = 30
+        if (mo == 2) dim = (((y % 4 == 0) && (y % 100 != 0)) || (y % 400 == 0)) ? 29 : 28
+        return (d <= dim)
+    }
+    # Identity is a STRING. awk compares two numeric-looking strings as numbers,
+    # so "01" == "1", and two hex ids that both read as exponents ("1e5", "10e4")
+    # are equal. Every id comparison goes through this.
+    function same_id(x, y) { return ((x "") == (y "")) }'
 
 _count() { grep -c . | tr -d '[:space:]'; }
 
@@ -115,9 +134,9 @@ _set_now() {
         [0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]T[0-2][0-9]:[0-5][0-9]:[0-5][0-9]Z) : ;;
         *) echo "error: could not determine the current time as ISO-8601 UTC." >&2; return 3 ;;
     esac
-    if [ "$(( 10#${_NOW:5:2} ))" -lt 1 ] || [ "$(( 10#${_NOW:5:2} ))" -gt 12 ] \
-       || [ "$(( 10#${_NOW:8:2} ))" -lt 1 ] || [ "$(( 10#${_NOW:8:2} ))" -gt 31 ] \
-       || [ "$(( 10#${_NOW:11:2} ))" -gt 23 ]; then
+    # The same calendar check every ts in the corpus gets, so --adjudicate
+    # cannot write a date --status would then refuse to read.
+    if ! awk -v s="${_NOW}" "${_AWK_T}"'BEGIN { exit !real_instant(s) }' </dev/null; then
         echo "error: '${_NOW}' is not a real instant." >&2; return 3
     fi
     # A reading taken with the clock moved must say so wherever it is quoted:
@@ -147,82 +166,175 @@ _corpus_state() {
     echo ok
 }
 
+# _strict <in> <out> — copy the lines that are STRICTLY one JSON object.
+#
+# jq is lenient where JSON is not, and every lenient form it accepts made a row
+# look like something it was not: a line starting with a byte-order mark, a
+# `predicate_version` written 01, +1, 1., .5, nan or Infinity (all parse as
+# numbers, so a false_block row filed itself under "another version"), and a
+# key given twice (jq keeps the last, so `"claimant":"human","claimant":"agent"`
+# read as an agent row). None of those is a line this reader should act on, so
+# none reaches jq. A dropped line is counted as unparseable, which blocks.
+#
+# One trailing CR is tolerated (a CRLF file is still JSON lines).
+_strict() {
+    awk '
+        {
+            line = $0
+            sub(/\r$/, "", line)
+            if (line !~ /^\{.*\}$/) next
+            n = split("predicate_version record_id ts verdict claimant classification repo_id repo branch session_token", keys, " ")
+            for (i = 1; i <= n; i++) {
+                t = line
+                if (gsub("\"" keys[i] "\"[ \t]*:", "&", t) > 1) next
+            }
+            if (match(line, /"predicate_version"[ \t]*:[ \t]*/)) {
+                rest = substr(line, RSTART + RLENGTH)
+                if (rest ~ /^(0[0-9]|\+|\.|-?[0-9]+\.[^0-9]|[nN][aA][nN]|-?[iI]nf)/) next
+            }
+            print line
+        }' "$1" > "$2" 2>/dev/null
+}
+
 # _build — derive, into ${_T}:
+#   log.strict / adj.strict   the strict lines of each file
 #   rec.tsv    <repo-key> <branch> <token> <ts> <record_id> <classification>
 #              (adjudicable version, known classification only)
 #   eps.tsv    shared grouper output: <eid> <repo> <branch> <token> <ids_csv>
-#   lab.tsv    <record_id> <verdict>   LATEST in-window HUMAN label per record
-#   state.tsv  <eid> <repo> <branch> <token> <ids_csv> <state> <anchor_ts> <class>
+#   lab.tsv    <record_id> <verdict>   the label APPLIED to each record
+#   labcounts  one line of counters: where every sidecar row went
+#   state.tsv  <eid> <repo> <branch> <token> <ids_csv> <state> <first_wb_ts> <class>
 #              state: true_catch | false_block | unresolved | cannot_check
 #
-# Every jq reader is `-R` + `fromjson?`, so one malformed line is skipped and
-# counted rather than aborting the read.
-#
-# The repo key is repo_id (normalised origin), falling back to the recorded
-# path: the diversity clause counts repositories, and two worktrees of one
-# repository are one.
+# ONE pass decides what happens to each label row and that same pass counts it.
+# Before this there were two readers of the sidecar — one applying labels, one
+# accounting for them — and every false "MET" four reviews found was a row the
+# two treated differently.
 _build() {
     _T="$(mktemp -d "${TMPDIR:-/tmp}/verify-shadow.XXXXXX")" || return 1
-    # shellcheck disable=SC2064
-    trap "rm -rf '${_T}'" EXIT
+    # Single-quoted: expanded when the trap FIRES. Interpolating the path into
+    # the trap string broke on a TMPDIR containing a quote.
+    trap 'rm -rf "${_T}"' EXIT
     : > "${_T}/rec.tsv"; : > "${_T}/eps.tsv"; : > "${_T}/lab.tsv"; : > "${_T}/state.tsv"
+    : > "${_T}/log.strict"; : > "${_T}/adj.strict"; : > "${_T}/labrows.tsv"
+    printf '0 0 0 0 0 0 0 0 0 0 0 0\n' > "${_T}/labcounts"
     [ "$(_corpus_state)" = "ok" ] || return 0
 
+    _strict "${SHADOW_LOG}" "${_T}/log.strict"
+
+    # Every field this reader keys on must be a STRING. `tostring` on a number
+    # let a record with "record_id":100 be matched by a label for "100".
     jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" '
+        def str: if type == "string" then . else "" end;
         fromjson? // empty | objects | select(.predicate_version == $pv)
         | select(.classification == "explained_ladder"
               or .classification == "unexplained"
               or .classification == "cannot_check")
-        | [ (if ((.repo_id // "") | tostring) != "" then (.repo_id | tostring)
-             else ((.repo // "") | tostring) end),
-            ((.branch // "") | tostring), ((.session_token // "") | tostring),
-            ((.ts // "") | tostring), ((.record_id // "") | tostring),
-            .classification ] | @tsv' "${SHADOW_LOG}" 2>/dev/null > "${_T}/rec.tsv"
+        | [ (if (.repo_id | str) != "" then (.repo_id | str) else (.repo | str) end),
+            (.branch | str), (.session_token | str), (.ts | str), (.record_id | str),
+            .classification ] | @tsv' "${_T}/log.strict" 2>/dev/null > "${_T}/rec.tsv"
+
+    # The repository key is normalised HERE as well as by the writer, with the
+    # writer's own function. A record written before normalisation existed, or
+    # edited by hand, otherwise counts one repository twice.
+    if command -v _verify_shadow_repo_id >/dev/null 2>&1 && [ -s "${_T}/rec.tsv" ]; then
+        cut -f1 "${_T}/rec.tsv" | sort -u | while IFS= read -r _k; do
+            printf '%s\t%s\n' "${_k}" "$(_verify_shadow_repo_id "${_k}")"
+        done > "${_T}/repomap.tsv"
+        awk -F'\t' 'BEGIN { OFS = "\t" }
+            FILENAME == ARGV[1] { m[$1 ""] = $2; next }
+            { k = $1 ""; if (k in m) $1 = m[k]; print }' "${_T}/repomap.tsv" "${_T}/rec.tsv" > "${_T}/rec.norm" \
+            && mv "${_T}/rec.norm" "${_T}/rec.tsv"
+    fi
 
     # Only records with a real ts are grouped; the rest are counted as
-    # unparseable-ts and block. Handing the grouper a month-99 record would
-    # date its episode after the deadline and file it under "began late".
+    # unparseable-ts and block.
     awk -F'\t' "${_AWK_T}"'real_instant($4)' "${_T}/rec.tsv" | cut -f1-5 \
         | shadow_group_episodes "${EPISODE_WINDOW_SEC}" > "${_T}/eps.tsv"
 
-    # LATEST HUMAN label per record. The sidecar is append-only, so the last
-    # matching row is the most recent and a correction supersedes what it
-    # corrects. Agent-claimed rows are not read at all: resolving over every row
-    # would let an agent row displace a human false_block.
-    #
-    # The final deadline is ASYMMETRIC, on purpose. A true_catch or unknown made
-    # after it is ignored: the window closed, and ignoring it can only keep the
-    # rule unmet. A FALSE_BLOCK made after it is still applied: the owner who
-    # finds a false block in April and records it must not be told the rule is
-    # met. Ignoring it would be the one direction that clears on missing data.
     if [ -f "${ADJ_LOG}" ] && [ -r "${ADJ_LOG}" ]; then
+        _strict "${ADJ_LOG}" "${_T}/adj.strict"
         jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" '
-                  fromjson? // empty | objects | select(.claimant == "human" and .predicate_version == $pv)
-                  | [((.record_id // "") | tostring), ((.verdict // "") | tostring), ((.ts // "") | tostring)] | @tsv' \
-            "${ADJ_LOG}" 2>/dev/null \
-        | awk -F'\t' -v fin="${FINAL_DATE}T23:59:59Z" "${_AWK_T}"'
-            { if (!real_instant($3)) next
-              if (iso_epoch($3) > iso_epoch(fin) && $2 != "false_block") next
-              if (!($1 in v)) order[++n] = $1
-              v[$1] = $2 }
-            END { for (i = 1; i <= n; i++) print order[i] "\t" v[order[i]] }' > "${_T}/lab.tsv"
+            def str: if type == "string" then . else "" end;
+            fromjson? // empty | objects
+            | [ (if ((.predicate_version | type) == "number" and (.predicate_version == (.predicate_version | floor))
+                     and .predicate_version >= 0 and .predicate_version < 1000000)
+                 then (if .predicate_version == $pv then "cur" else "other" end) else "bad" end),
+                (.claimant | str), (.verdict | str), (.ts | str), (.record_id | str),
+                (if (((.provenance | objects | .clock_overridden) // false) == true) then "1" else "0" end) ] | @tsv' \
+            "${_T}/adj.strict" 2>/dev/null > "${_T}/labrows.tsv"
+
+        # The ladder. Each row stops at the FIRST rung it fails, top to bottom.
+        # Three rungs are benign and say why; every other rung is a row whose
+        # verdict is not being applied, which may be a false_block, so it blocks.
+        #
+        #   malformed version                                  BLOCKS
+        #   another whole-number version, naming a record
+        #     this corpus does not hold                        benign: an older band
+        #   another version, naming a record of THIS corpus    BLOCKS (mis-filed)
+        #   claimant exactly "agent"                           benign
+        #   claimant not exactly "human"                       BLOCKS
+        #   verdict outside the vocabulary                     BLOCKS
+        #   ts not a real calendar instant                     BLOCKS
+        #   names no would-block record of this corpus         BLOCKS (orphan)
+        #   dated before the record it labels                  BLOCKS
+        #   true_catch / unknown made after the final deadline benign: window closed
+        #   otherwise                                          APPLIED, latest wins
+        #
+        # A false_block is applied whenever it was made. Ignoring a late
+        # true_catch can only keep the rule unmet; ignoring a late false_block
+        # would report the rule met to the owner who just recorded why it is not.
+        awk -F'\t' -v fin="${FINAL_DATE}T23:59:59Z" -v now="${_NOW}" -v labfile="${_T}/lab.tsv" "${_AWK_T}"'
+            FILENAME == ARGV[1] {
+                if (($6 == "unexplained" || $6 == "explained_ladder") && real_instant($4)) {
+                    k = $5 ""
+                    if (!(k in wb) || $4 < rts[k]) rts[k] = $4
+                    wb[k] = 1
+                }
+                next
+            }
+            {
+                id = $5 ""
+                if ($1 == "bad")   { badver++; next }
+                if ($1 == "other") { if (id in wb) mismatch++; else other++; next }
+                if ($2 == "agent") { agent++; next }
+                if ($2 != "human") { badclaim++; next }
+                if ($3 != "true_catch" && $3 != "false_block" && $3 != "unknown") { badverdict++; next }
+                if (!real_instant($4)) { badts++; next }
+                if (!(id in wb)) { orphan++; next }
+                e = iso_epoch($4)
+                if (e < iso_epoch(rts[id])) { predate++; next }
+                if (e > iso_epoch(fin) && $3 != "false_block") { late++; next }
+                if (!(id in lab)) order[++n] = id
+                lab[id] = $3
+                if (e > iso_epoch(now)) lfut[id] = 1; else delete lfut[id]
+                if ($6 == "1") lclk[id] = 1; else delete lclk[id]
+            }
+            END {
+                for (i = 1; i <= n; i++) print order[i] "\t" lab[order[i]] > labfile
+                for (k in lfut) nf++
+                for (k in lclk) nc++
+                printf "%d %d %d %d %d %d %d %d %d %d %d %d\n", other + 0, badver + 0, agent + 0, badclaim + 0,
+                    badverdict + 0, badts + 0, late + 0, orphan + 0, nf + 0, nc + 0, mismatch + 0, predate + 0
+            }' "${_T}/rec.tsv" "${_T}/labrows.tsv" > "${_T}/labcounts" 2>/dev/null
     fi
 
     # Episode state. An episode COUNTS iff it holds a would-block record
     # (explained_ladder or unexplained); cannot_check records neither qualify nor
     # clear one. Within a counted episode, over its would-block records only:
-    #   any human false_block             -> false_block
-    #   else any record without a human
+    #   any applied false_block            -> false_block
+    #   else any record without an applied
     #        true_catch (none, or unknown) -> unresolved
     #   else                               -> true_catch
     # Order never decides. A repeated record_id is worst-wins on class.
     awk -F'\t' '
-        FILENAME == ARGV[1] { lab[$1] = $2; next }
+        FILENAME == ARGV[1] { lab[$1 ""] = $2; next }
         FILENAME == ARGV[2] {
-            if ($5 in cls) {
-                if ($6 == "unexplained" || cls[$5] == "unexplained") cls[$5] = "unexplained"
-                else if ($6 == "explained_ladder" || cls[$5] == "explained_ladder") cls[$5] = "explained_ladder"
-            } else { cls[$5] = $6; ts[$5] = $4 }
+            k = $5 ""
+            if (k in cls) {
+                if ($6 == "unexplained" || cls[k] == "unexplained") cls[k] = "unexplained"
+                else if ($6 == "explained_ladder" || cls[k] == "explained_ladder") cls[k] = "explained_ladder"
+            } else { cls[k] = $6; ts[k] = $4 }
             next
         }
         {
@@ -242,93 +354,52 @@ _build() {
             }
             st = "cannot_check"
             if (wb) st = (fb ? "false_block" : (unres ? "unresolved" : "true_catch"))
-            if (a == "") a = ts[$1]
+            if (a == "") a = ts[$1 ""]
             print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" st "\t" a "\t" c
         }' "${_T}/lab.tsv" "${_T}/rec.tsv" "${_T}/eps.tsv" > "${_T}/state.tsv"
     return 0
 }
 
-# _uncountable — prints the blocking total and, on stdout before it, one line
-# per kind. Anything this reader could not place may be the false block, so
-# while any exists "zero false blocks" is not a measurement.
+# _report_uncountable — one line per kind of thing this reader could not place,
+# then the blocking total in _UNCOUNTED. Anything unplaced may be the false
+# block, so while any exists "zero false blocks" is not a measurement.
 _report_uncountable() {
-    local _lines _parsed _unparsed _other _badver _unknown _badts _norid _dup _adjbad=0 _agentrows=0 _late=0 _tot
-    local _lother=0 _lbadver=0 _lbadclaim=0 _lbadverdict=0 _lbadts=0 _lorphan=0 _lsum _lfut=0 _lclk=0
+    local _lines _parsed _unparsed _other _badver _unknown _badts _norid _dup _adjbad=0 _tot
+    local _lother=0 _lbadver=0 _agentrows=0 _lbadclaim=0 _lbadverdict=0 _lbadts=0 _late=0 _lorphan=0
+    local _lfut=0 _lclk=0 _lmis=0 _lpre=0
     _lines="$(grep -c . "${SHADOW_LOG}" 2>/dev/null | tr -d '[:space:]')"
-    _parsed="$(jq -R -r 'fromjson? // empty | objects | 1' "${SHADOW_LOG}" 2>/dev/null | _count)"
+    _parsed="$(jq -R -r 'fromjson? // empty | objects | 1' "${_T}/log.strict" 2>/dev/null | _count)"
     _unparsed=$(( ${_lines:-0} - ${_parsed:-0} ))
-    # A WHOLE-NUMBER other version is a legitimate band written under a
-    # different fire condition: reported, not pooled, not a blocker. Anything
-    # else in that field ("2" as a string, null, absent, nan, 1.5) is a record
-    # of unknown provenance and blocks like any other this reader cannot place.
+    # A small non-negative WHOLE-NUMBER other version is a legitimate band
+    # written under a different fire condition: reported, not pooled, not a
+    # blocker. Anything else in that field ("2" as a string, null, absent, 1.5,
+    # 1e999) is a record of unknown provenance and blocks.
     _other="$(jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
-        'fromjson? // empty | objects | select((.predicate_version | type) == "number" and (.predicate_version == (.predicate_version | floor)) and .predicate_version >= 0 and .predicate_version < 1000000 and .predicate_version != $pv) | 1' "${SHADOW_LOG}" 2>/dev/null | _count)"
+        'fromjson? // empty | objects | select((.predicate_version | type) == "number" and (.predicate_version == (.predicate_version | floor)) and .predicate_version >= 0 and .predicate_version < 1000000 and .predicate_version != $pv) | 1' "${_T}/log.strict" 2>/dev/null | _count)"
     _badver="$(jq -R -r \
-        'fromjson? // empty | objects | select(((.predicate_version | type) == "number" and (.predicate_version == (.predicate_version | floor)) and .predicate_version >= 0 and .predicate_version < 1000000) | not) | 1' "${SHADOW_LOG}" 2>/dev/null | _count)"
+        'fromjson? // empty | objects | select(((.predicate_version | type) == "number" and (.predicate_version == (.predicate_version | floor)) and .predicate_version >= 0 and .predicate_version < 1000000) | not) | 1' "${_T}/log.strict" 2>/dev/null | _count)"
     _unknown="$(jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" '
         fromjson? // empty | objects | select(.predicate_version == $pv)
         | select((.classification == "explained_ladder" or .classification == "unexplained"
-                  or .classification == "cannot_check") | not) | 1' "${SHADOW_LOG}" 2>/dev/null | _count)"
-    # The SAME test the shared grouper applies (iso_epoch < 0 is dropped), not a
-    # shape check: a pre-1970 ts is well formed and still leaves the count.
+                  or .classification == "cannot_check") | not) | 1' "${_T}/log.strict" 2>/dev/null | _count)"
+    # A real calendar instant, not a shape: a pre-1970 ts and November 31 are
+    # both well formed and neither can be placed.
     _badts="$(awk -F'\t' "${_AWK_T}"'!real_instant($4) { n++ } END { print n+0 }' "${_T}/rec.tsv")"
     # An id must be a plain token: the episode list is comma-joined by the
     # grouper and re-split here, so an id holding "," resolves to no record.
     _norid="$(awk -F'\t' '$5 !~ /^[A-Za-z0-9_-]+$/ { n++ } END { print n+0 }' "${_T}/rec.tsv")"
-    _dup="$(awk -F'\t' '{ if ($5 in s) n++; s[$5] = 1 } END { print n+0 }' "${_T}/rec.tsv")"
-    if [ -f "${ADJ_LOG}" ]; then
-        if [ ! -r "${ADJ_LOG}" ]; then
+    _dup="$(awk -F'\t' '{ k = $5 ""; if (k in s) n++; s[k] = 1 } END { print n+0 }' "${_T}/rec.tsv")"
+    if [ -f "${ADJ_LOG}" ] || [ -e "${ADJ_LOG}" ]; then
+        if [ ! -f "${ADJ_LOG}" ] || [ ! -r "${ADJ_LOG}" ]; then
             _adjbad=1
             echo "ERROR: the label sidecar ${ADJ_LOG} exists but is NOT READABLE."
         else
-            _adjbad=$(( $(grep -c . "${ADJ_LOG}" 2>/dev/null | tr -d '[:space:]') - $(jq -R -r 'fromjson? // empty | objects | 1' "${ADJ_LOG}" 2>/dev/null | _count) ))
-            # EVERY parseable row is placed in exactly one bucket. Three are
-            # benign and say why: a whole-number other version (an older band),
-            # claimant exactly "agent", and a well-formed human label made
-            # after the final deadline. Everything else is a row whose verdict
-            # this reader is NOT applying — and it may be a false_block — so it
-            # blocks: a malformed version, a claimant that is neither "human"
-            # nor "agent", a verdict outside the vocabulary, a ts that cannot
-            # be read, and an ORPHAN naming no would-block record of this
-            # corpus (the log lost a record, or the sidecar is another corpus's).
-            jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" '
-                fromjson? // empty | objects
-                | [ (if ((.predicate_version | type) == "number" and (.predicate_version == (.predicate_version | floor)) and .predicate_version >= 0 and .predicate_version < 1000000)
-                     then (if .predicate_version == $pv then "cur" else "other" end) else "bad" end),
-                    (if (.claimant | type) == "string" then .claimant else "" end),
-                    (if (.verdict | type) == "string" then .verdict else "" end),
-                    ((.ts // "") | tostring), ((.record_id // "") | tostring),
-                    (if (((.provenance | objects | .clock_overridden) // false) == true) then "1" else "0" end) ] | @tsv' \
-                "${ADJ_LOG}" 2>/dev/null > "${_T}/labrows.tsv"
-            _lsum="$(awk -F'\t' -v fin="${FINAL_DATE}T23:59:59Z" -v now="${_NOW}" "${_AWK_T}"'
-                FILENAME == ARGV[1] { if ($6 == "unexplained" || $6 == "explained_ladder") wb[$5] = 1; next }
-                {
-                    if ($1 == "other") { other++; next }
-                    if ($1 == "bad")   { badver++; next }
-                    if ($2 == "agent") { agent++; next }
-                    if ($2 != "human") { badclaim++; next }
-                    if ($3 != "true_catch" && $3 != "false_block" && $3 != "unknown") { badverdict++; next }
-                    if (!real_instant($4)) { badts++; next }
-                    e = iso_epoch($4)
-                    # Late and NOT a false_block: benign. A late false_block is
-                    # applied, so it falls through like any in-window label.
-                    if (e > iso_epoch(fin) && $3 != "false_block") { late++; next }
-                    if (!($5 in wb)) { orphan++; next }
-                    # From here the row is APPLIED. A label dated after the
-                    # reading cannot support it; one written under an
-                    # overridden clock is counted so the verdict can say so.
-                    if (e > iso_epoch(now)) lfut++
-                    if ($6 == "1") lclk++
-                }
-                END { printf "%d %d %d %d %d %d %d %d %d %d\n", other + 0, badver + 0, agent + 0, badclaim + 0,
-                          badverdict + 0, badts + 0, late + 0, orphan + 0, lfut + 0, lclk + 0 }' "${_T}/rec.tsv" "${_T}/labrows.tsv")"
-            read -r _lother _lbadver _agentrows _lbadclaim _lbadverdict _lbadts _late _lorphan _lfut _lclk <<EOF
-${_lsum}
-EOF
-            case "${_lother}${_lbadver}${_agentrows}${_lbadclaim}${_lbadverdict}${_lbadts}${_late}${_lorphan}${_lfut}${_lclk}" in
+            _adjbad=$(( $(grep -c . "${ADJ_LOG}" 2>/dev/null | tr -d '[:space:]') - $(jq -R -r 'fromjson? // empty | objects | 1' "${_T}/adj.strict" 2>/dev/null | _count) ))
+            read -r _lother _lbadver _agentrows _lbadclaim _lbadverdict _lbadts _late _lorphan _lfut _lclk _lmis _lpre < "${_T}/labcounts"
+            case "${_lother}${_lbadver}${_agentrows}${_lbadclaim}${_lbadverdict}${_lbadts}${_late}${_lorphan}${_lfut}${_lclk}${_lmis}${_lpre}" in
                 ''|*[!0-9]*) _adjbad=$(( _adjbad + 1 ))
-                             _lfut=0; _lclk=0
-                             _lother=0; _lbadver=0; _agentrows=0; _lbadclaim=0; _lbadverdict=0; _lbadts=0; _late=0; _lorphan=0
+                             _lother=0; _lbadver=0; _agentrows=0; _lbadclaim=0; _lbadverdict=0; _lbadts=0
+                             _late=0; _lorphan=0; _lfut=0; _lclk=0; _lmis=0; _lpre=0
                              echo "ERROR: the label sidecar could not be summarised." ;;
             esac
         fi
@@ -347,20 +418,22 @@ EOF
     [ "${_adjbad:-0}" -gt 0 ]  && echo "SIDECAR — unparseable label line(s) : ${_adjbad}"
     [ "${_agentrows:-0}" -gt 0 ] && echo "labels  : ${_agentrows} agent-claimed row(s) ignored — only a human label resolves an episode"
     [ "${_late:-0}" -gt 0 ]    && echo "labels  : ${_late} human row(s) ignored — made after ${FINAL_DATE} (a late false_block is NOT ignored)"
+    [ "${_lother:-0}" -gt 0 ]  && echo "labels  : ${_lother} row(s) of another predicate version ignored"
     [ "${_lfut:-0}" -gt 0 ]    && echo "FUTURE-DATED : ${_lfut} applied label(s) are dated after 'as of'"
     if [ "${_lclk:-0}" -gt 0 ]; then
         echo "labels  : ${_lclk} applied label(s) were dated by an overridden clock, not the real one"
         _LCLOCK="  [rests on ${_lclk} label(s) dated by an overridden clock]"
     fi
-    [ "${_lother:-0}" -gt 0 ]  && echo "labels  : ${_lother} row(s) of another predicate version ignored"
     [ "${_lorphan:-0}" -gt 0 ] && echo "SIDECAR — orphan label(s) : ${_lorphan}  (name no would-block record of this corpus)"
+    [ "${_lmis:-0}" -gt 0 ]    && echo "SIDECAR — label(s) filed under another predicate_version but naming a record of this corpus : ${_lmis}"
+    [ "${_lpre:-0}" -gt 0 ]    && echo "SIDECAR — label(s) dated before the record they label : ${_lpre}"
     [ "${_lbadclaim:-0}" -gt 0 ]   && echo "SIDECAR — label(s) with no usable claimant : ${_lbadclaim}"
     [ "${_lbadverdict:-0}" -gt 0 ] && echo "SIDECAR — label(s) with no usable verdict : ${_lbadverdict}"
     [ "${_lbadts:-0}" -gt 0 ]      && echo "SIDECAR — label(s) with no usable ts : ${_lbadts}"
     [ "${_lbadver:-0}" -gt 0 ]     && echo "SIDECAR — label(s) with a malformed predicate_version : ${_lbadver}"
     _tot=$(( ${_unparsed:-0} + ${_unknown:-0} + ${_badts:-0} + ${_norid:-0} + ${_badver:-0} + ${_dup:-0} + ${_adjbad:-0} \
              + ${_lorphan:-0} + ${_lbadclaim:-0} + ${_lbadverdict:-0} + ${_lbadts:-0} + ${_lbadver:-0} \
-             + ${_lfut:-0} ))
+             + ${_lfut:-0} + ${_lmis:-0} + ${_lpre:-0} ))
     if [ "${_tot}" -gt 0 ]; then
         echo "UNCOUNTABLE : ${_tot} line(s)/record(s) above could not be placed."
         echo "  Any of them may be a false block or hide one, so the decision rule is"
@@ -417,10 +490,10 @@ cmd_status() {
             # human false_block on it is still a false block. Dropping it with
             # the episode made the label vanish without a line.
             if (e > iso_epoch(fin)) { late++; if ($6 == "false_block") st["false_block"]++; next }
-            # Evidence dated after "as of" cannot support a reading taken then.
-            if (e > iso_epoch(now)) fut++
             n++; st[$6]++; cl[$8]++
-            if ($6 == "true_catch" && !($2 in seen)) { seen[$2] = 1; nrepos++ }
+            # An EMPTY repository identity is not a repository: it is a record
+            # whose every git lookup failed, and it must not supply diversity.
+            if ($6 == "true_catch" && $2 != "" && !($2 in seen)) { seen[$2] = 1; nrepos++ }
             if (first < 0 || e < first) first = e
             if (e <= iso_epoch(dl)) nby++
         }
@@ -434,6 +507,16 @@ EOF
     case "${_n}${_fb}${_unres}${_tc}${_cc}${_repos}${_nby}${_late}${_unx}${_exp}${_fut}" in
         ''|*[!0-9]*) echo "ERROR: the episode summary could not be computed. No claim is made."; return 3 ;;
     esac
+    # Evidence dated after "as of" cannot support a reading taken then. Counted
+    # per would-block RECORD inside the window. Dating it by the episode let a
+    # later record in the same episode ride in behind an earlier one.
+    _fut="$(awk -F'\t' -v now="${_NOW}" -v fin="${FINAL_DATE}T23:59:59Z" "${_AWK_T}"'
+        ($6 == "unexplained" || $6 == "explained_ladder") && real_instant($4) \
+            && iso_epoch($4) > iso_epoch(now) && iso_epoch($4) <= iso_epoch(fin) { n++ }
+        END { print n + 0 }' "${_T}/rec.tsv")"
+    case "${_fut}" in
+        ''|*[!0-9]*) echo "ERROR: future-dated evidence could not be counted. No claim is made."; return 3 ;;
+    esac
 
     echo
     echo "would-block episodes : n=${_n}   (30-minute anchored window over repo, branch, session_token)"
@@ -443,7 +526,7 @@ EOF
     echo "not counted : cannot_check=${_cc} episode(s) — the leg could not look; never evidence either way"
     [ "${_late}" -gt 0 ] && echo "not counted : ${_late} episode(s) began after ${FINAL_DATE}"
     if [ "${_fut}" -gt 0 ]; then
-        echo "FUTURE-DATED : ${_fut} counted episode(s) are dated after 'as of'. A reading cannot"
+        echo "FUTURE-DATED : ${_fut} counted record(s) are dated after 'as of'. A reading cannot"
         echo "  rest on evidence from its own future, so the rule is reported NOT MET."
     fi
     if [ "${_n}" -gt 0 ] && [ "${_first}" -ge 0 ]; then
@@ -558,10 +641,10 @@ cmd_next() {
     echo "first seen : $(printf '%s' "${_row}" | cut -f7)"
     echo "records    :"
     for _id in $(printf '%s' "${_ids}" | tr ',' ' '); do
-        jq -R -r --arg id "${_id}" '
-            fromjson? // empty | objects | select(.record_id == $id)
+        jq -R -r --arg id "${_id}" --argjson pv "${REQUIRED_PREDICATE_VERSION}" '
+            fromjson? // empty | objects | select(.record_id == $id and .predicate_version == $pv)
             | "  \(.record_id)  \(.ts)  \(.classification)/\(.reason)  source=\(.discovery_source // "")  gate=\(.gate_declaration // "not recorded")  material=\(.material_source)  head=\((.head_sha // "")[0:12])\n    transcript: \(.transcript_path // "")"' \
-            "${SHADOW_LOG}" 2>/dev/null | head -2
+            "${_T}/log.strict" 2>/dev/null | head -2
     done
     echo
     _definition
@@ -593,7 +676,7 @@ cmd_adjudicate() {
     fi
     [ "$(_corpus_state)" = "ok" ] || { echo "error: no readable shadow log at ${SHADOW_LOG}" >&2; return 1; }
     _build || return 3
-    _row="$(awk -F'\t' -v id="${_rid}" '{ k = split($5, a, ","); for (i = 1; i <= k; i++) if (a[i] == id) { print; exit } }' "${_T}/state.tsv")"
+    _row="$(awk -F'\t' -v id="${_rid}" "${_AWK_T}"'{ k = split($5, a, ","); for (i = 1; i <= k; i++) if (same_id(a[i], id)) { print; exit } }' "${_T}/state.tsv")"
     if [ -z "${_row}" ]; then
         echo "error: no adjudicable record '${_rid}' in ${SHADOW_LOG}." >&2
         echo "       Only predicate_version ${REQUIRED_PREDICATE_VERSION} records can be labelled; others were" >&2
@@ -611,13 +694,19 @@ cmd_adjudicate() {
         ( umask 077; : > "${ADJ_LOG}" ) 2>/dev/null || { echo "error: cannot write ${ADJ_LOG}" >&2; return 1; }
     fi
     chmod 600 "${ADJ_LOG}" 2>/dev/null
+    # A sidecar whose last line has no newline would have the new row JOINED to
+    # it: both become one unparseable line, and a standing false_block on that
+    # line stops being applied.
+    if [ -s "${ADJ_LOG}" ] && [ "$(tail -c 1 "${ADJ_LOG}" | wc -l | tr -d '[:space:]')" = "0" ]; then
+        printf '\n' >> "${ADJ_LOG}" 2>/dev/null || { echo "error: append to ${ADJ_LOG} failed" >&2; return 1; }
+    fi
     _claim="$(_claimant)"
     # `tty` prints "not a tty" to STDOUT and ALSO exits 1; branch on the status.
     if _tty="$(tty 2>/dev/null)"; then :; else _tty="not-a-tty"; fi
     for _id in $(printf '%s' "${_ids}" | tr ',' ' '); do
         # Would-block records only: a cannot_check record in the same episode
         # is not evidence and gets no label.
-        awk -F'\t' -v id="${_id}" '$5 == id && ($6 == "unexplained" || $6 == "explained_ladder") { f = 1 } END { exit !f }' \
+        awk -F'\t' -v id="${_id}" "${_AWK_T}"'same_id($5, id) && ($6 == "unexplained" || $6 == "explained_ladder") { f = 1 } END { exit !f }' \
             "${_T}/rec.tsv" || continue
         jq -cn --arg rid "${_id}" --arg eid "${_eid}" --arg ts "${_NOW}" --arg v "${_verdict}" \
                --arg r "${_reason}" --arg c "${_claim}" --arg u "${USER:-unknown}" --arg tty "${_tty}" \

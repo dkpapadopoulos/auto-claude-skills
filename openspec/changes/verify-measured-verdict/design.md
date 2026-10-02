@@ -318,20 +318,56 @@ Flip to deny when **all** hold:
 4. The true catches span **>= 2 distinct repositories**, keyed on the
    normalised origin (reading 12).
 
-And nothing uncountable is present. Reading 11 covers the shadow log. For the
-label sidecar, **every row is either applied, benign for a stated reason, or
-blocking**. Benign: claimant exactly `agent`; a whole-number other
-`predicate_version`; a well-formed human `true_catch` or `unknown` made after
-the final deadline.
-Blocking: an unparseable line, a claimant that is neither `human` nor `agent`,
-a verdict outside the vocabulary, a `ts` that is not a real instant (the right
-shape with month 99 is not one), a malformed `predicate_version`, a label
-dated after the reading, and an **orphan** — a label naming no would-block record
-of this corpus. Any of those may be a `false_block` the reader is not applying.
-A reading whose "as of" precedes its own evidence is also not met, and a
-reading taken with the clock overridden says so on its verdict line — as does
-one that rests on a label whose own date came from an overridden clock, which
-the label records at the moment it is written.
+And nothing uncountable is present. Reading 11 covers the shadow log.
+
+**How the reader reads, and why.** Four review rounds each found inputs where
+the reader said MET with a human `false_block` in the sidecar. Every one was a
+row that two parts of the reader treated differently, or that a lenient tool
+made look like something else. The rules below are structural answers to that
+class, not a list of the cases found:
+
+- **Bytes, not collation.** The reader pins the C locale. Under a UTF-8 locale
+  macOS awk treats `human` followed by a no-break space as equal to `human`.
+- **Strict lines only.** A line is read only if it is exactly one JSON object
+  with each field it keys on given once and `predicate_version` written as a
+  plain integer. jq accepts a byte-order mark, `01`, `+1`, `1.`, `nan` and a
+  repeated key; each of those filed a row somewhere harmless. A line that is
+  not strict is unparseable, which blocks.
+- **Strings are strings.** `record_id`, `ts`, `claimant`, `verdict` and the
+  episode key fields must be JSON strings; a number is not coerced. Identity
+  comparisons are string comparisons (`01` is not `1`).
+- **One pass over the sidecar.** The same pass that applies a label counts it,
+  so the two cannot disagree. Each row stops at the first rung it fails:
+
+  | Rung | Outcome |
+  |---|---|
+  | malformed `predicate_version` | blocks |
+  | another whole-number version, naming a record this corpus does not hold | benign: an older band |
+  | another version, naming a record of THIS corpus | blocks: mis-filed |
+  | claimant exactly `agent` | benign |
+  | claimant not exactly `human` | blocks |
+  | verdict outside the vocabulary | blocks |
+  | `ts` not a real calendar instant (month 99, November 31) | blocks |
+  | names no would-block record of this corpus (orphan) | blocks |
+  | dated before the record it labels | blocks |
+  | `true_catch` / `unknown` made after the final deadline | benign: the window closed |
+  | otherwise | applied; the latest applied label per record wins |
+
+  An applied label dated after the reading also blocks, and a reading taken
+  with the clock overridden says so on its verdict line — as does one that
+  rests on a label whose own date came from an overridden clock, which the
+  label records when it is written.
+- **Evidence after the reading.** A reading whose "as of" precedes ANY counted
+  would-block record is not met (per record, not per episode).
+- **Repositories.** The reader normalises the repository key with the writer's
+  own function, so a record written before normalisation, or edited, does not
+  count one repository twice; and an EMPTY identity is not a repository.
+
+**Limit, stated:** this defends against corruption, drift and accident. It is
+not a defence against a deliberate edit of an agent-writable file, and a fifth
+review may still find a sixth shape. The fuzzer that found the last ones
+(197,000 cases against an oracle written from this document) is the method to
+repeat before any flip, not a result to cite.
 
 `cannot_check` episodes are reported and never counted, in `n` or in
 diversity. There is no "unhealthy share" threshold: with successes silent, the
@@ -368,7 +404,10 @@ result at the deadline — not a lower bar.
 ### Episodes
 
 Collapse `(repo, branch, session_token)` within 30 minutes, anchored at the
-episode's first record (unchanged). Within an episode, over its would-block
+episode's first record (unchanged). **For both deadlines an episode is dated by
+its first WOULD-BLOCK record, not by that anchor**: the anchor can be a
+`cannot_check` record, and "would-block episodes by 2026-12-31" asks when
+something blockable first existed. Within an episode, over its would-block
 records only:
 
 - any human `false_block` → the episode is a false block;

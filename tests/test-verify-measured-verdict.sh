@@ -779,8 +779,18 @@ _rd() { # <now> <args...>  — the reader as a HUMAN would run it
         /bin/bash "${READER}" "$@" 2>&1
 }
 _status() { _rd "${1:-2026-10-20T00:00:00Z}" --status; }
+# Default clock for a label: the latest in-window instant in the corpus. A label
+# dated before the record it labels is refused by the reader, so a fixed date
+# would silently leave later records unlabelled.
+_latest() {
+    local _m
+    _m="$(jq -r '.ts // empty' "${_CORP}" 2>/dev/null \
+          | grep -E '^20(26|27)-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' \
+          | awk '$0 <= "2027-03-31T23:59:59Z"' | LC_ALL=C sort | tail -1)"
+    printf '%s' "${_m:-2026-10-19T00:00:00Z}"
+}
 _label()  { # <record_id> <verdict> [now]
-    _rd "${3:-2026-10-19T00:00:00Z}" --adjudicate "$1" --verdict "$2" --reason test >/dev/null
+    _rd "${3:-$(_latest)}" --adjudicate "$1" --verdict "$2" --reason test >/dev/null
 }
 _label_agent() { # <record_id> <verdict>
     CLAUDECODE=1 VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" \
@@ -1156,13 +1166,19 @@ EOF
 # by "a label made after the deadline is ignored" above.
 _base
 printf '{"record_id":"%s","verdict":"false_block","claimant":"agent","ts":"2026-10-19T00:00:00Z","predicate_version":2}\n' "${_R2}" >> "${_ADJ}"
-# The other-version row names a REAL record of this corpus: it must be ignored
-# for its version, not merely fail to match an id.
-printf '{"record_id":"%s","verdict":"false_block","claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":1}\n' "${_R2}" >> "${_ADJ}"
+# An other-version row is an older band's label ONLY when it names a record
+# this corpus does not hold.
+printf '{"record_id":"oldband000000001","verdict":"false_block","claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":1}\n' >> "${_ADJ}"
 out="$(_status)"
 assert_contains "benign: an agent row is reported" "agent-claimed row(s) ignored" "${out}"
 assert_contains "benign: an other-version label row is reported" "another predicate version ignored" "${out}"
 assert_contains "benign rows do not block" "DECISION RULE MET" "${out}"
+# The SAME row naming a record of THIS corpus is a mis-filed label, and blocks.
+_base
+printf '{"record_id":"%s","verdict":"false_block","claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":1}\n' "${_R2}" >> "${_ADJ}"
+out="$(_status)"
+assert_contains     "other-version label naming a record of this corpus: reported" "naming a record of this corpus : 1" "${out}"
+assert_not_contains "other-version label naming a record of this corpus: never MET" "DECISION RULE MET" "${out}"
 
 # --- episode time is its first WOULD-BLOCK record -------------------------------
 # cannot_check before the starvation date, the would-block after it: nothing
@@ -1191,6 +1207,7 @@ assert_contains "later episodes cannot reopen a closed starvation window" "starv
 # repos, every one of them after the starvation date.
 _base
 jq -c '.ts |= sub("2026-10-05"; "2027-01-05")' "${_CORP}" > "${_CORP}.t" && mv "${_CORP}.t" "${_CORP}"
+rm -f "${_ADJ}"; _label_all true_catch      # relabel: a label may not predate its record
 out="$(_status "2027-02-15T00:00:00Z")"
 assert_contains     "starved corpus: all four clauses read met" "[MET] 4." "${out}"
 assert_contains     "starved corpus: clause 1 too" "[MET] 1." "${out}"
@@ -1285,7 +1302,7 @@ assert_not_contains "a false_block with a far-future ts: never MET" "DECISION RU
 # counted; the false block still is.
 _base
 _emit "${RA}" unexplained absent s30 "2027-04-01T00:00:01Z"
-printf '{"record_id":"%s","verdict":"false_block","claimant":"human","ts":"2027-03-31T12:00:00Z","predicate_version":2}\n' "$(_rid 30)" >> "${_ADJ}"
+printf '{"record_id":"%s","verdict":"false_block","claimant":"human","ts":"2027-04-02T00:00:00Z","predicate_version":2}\n' "$(_rid 30)" >> "${_ADJ}"
 out="$(_status "2027-04-05T00:00:00Z")"
 assert_contains     "false_block on a late episode: the episode is not counted" "n=29" "${out}"
 assert_contains     "false_block on a late episode: the false block is" "false_block=1" "${out}"
@@ -1359,6 +1376,208 @@ EOF
 _base
 out="$(VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_CORP}" VERIFY_SHADOW_NOW="2026-10-20T00:00:00Z" /bin/bash "${READER}" --next 2>&1)"
 assert_contains "--next refuses a sidecar that is the shadow log" "SAME FILE" "${out}"
+
+# --- found by an independent Codex review of 36c80566 ----------------------------
+# (1) An impossible CALENDAR date is not an instant. November 31 converts to the
+# same epoch as December 1, so a "correction" carrying it read as a valid later
+# label and replaced a real false_block.
+while IFS= read -r _badday; do
+    [ -n "${_badday}" ] || continue
+    _base
+    printf '{"record_id":"%s","verdict":"false_block","claimant":"human","ts":"2026-10-18T00:00:00Z","predicate_version":2}\n' "${_R2}" >> "${_ADJ}"
+    printf '{"record_id":"%s","verdict":"true_catch","claimant":"human","ts":"%s","predicate_version":2}\n' "${_R2}" "${_badday}" >> "${_ADJ}"
+    out="$(_status)"
+    assert_contains     "correction dated ${_badday}: the false_block stands" "false_block=1" "${out}"
+    assert_contains     "correction dated ${_badday}: reported as unusable" "no usable ts : 1" "${out}"
+    assert_not_contains "correction dated ${_badday}: never MET" "DECISION RULE MET" "${out}"
+done <<EOF
+2026-09-31T00:00:00Z
+2026-02-29T00:00:00Z
+2026-04-31T00:00:00Z
+EOF
+# Control: a correction with a REAL date does supersede, so the cells above are
+# the calendar check and not a correction path that never works.
+_base
+printf '{"record_id":"%s","verdict":"false_block","claimant":"human","ts":"2026-10-18T00:00:00Z","predicate_version":2}\n' "${_R2}" >> "${_ADJ}"
+printf '{"record_id":"%s","verdict":"true_catch","claimant":"human","ts":"2026-10-18T12:00:00Z","predicate_version":2}\n' "${_R2}" >> "${_ADJ}"
+assert_contains "control: a correction with a real date supersedes" "DECISION RULE MET" "$(_status)"
+# The clock gets the same calendar: an impossible day is refused, a leap day is not.
+VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" VERIFY_SHADOW_NOW="2026-11-31T00:00:00Z" \
+    /bin/bash "${READER}" --status >/dev/null 2>&1
+assert_equals "clock value 2026-11-31 is refused" "3" "$?"
+VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" VERIFY_SHADOW_NOW="2026-02-29T00:00:00Z" \
+    /bin/bash "${READER}" --status >/dev/null 2>&1
+assert_equals "clock value 2026-02-29 (not a leap year) is refused" "3" "$?"
+VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" VERIFY_SHADOW_NOW="2028-02-29T00:00:00Z" \
+    /bin/bash "${READER}" --status >/dev/null 2>&1
+assert_equals "clock value 2028-02-29 (a leap year) is accepted" "0" "$?"
+
+# (2) Evidence after the reading is counted per RECORD. Dated by the episode, a
+# later record rode in behind the earlier one that anchors it.
+_reset
+_emit "${RA}" unexplained absent t1 "2026-10-05T10:00:00Z"
+_emit "${RA}" unexplained absent t1 "2026-10-05T10:10:00Z"
+_label "$(_rid 1)" true_catch "2026-10-05T10:04:00Z"
+out="$(_status "2026-10-05T10:05:00Z")"
+assert_contains "a record dated after the reading, inside an earlier episode, is counted" "FUTURE-DATED : 1 counted record(s)" "${out}"
+assert_not_contains "control: read after both records, nothing is future-dated" "FUTURE-DATED" "$(_status "2026-10-05T10:20:00Z")"
+
+# (3) Record ids are STRINGS. awk compares numeric-looking strings as numbers,
+# so `--adjudicate 1` selected the episode of record "01".
+while IFS='|' read -r _ida _idb; do
+    [ -n "${_ida}" ] || continue
+    _reset
+    _emit "${RA}" unexplained absent ta "2026-10-05T10:00:00Z"
+    _emit "${RB}" unexplained absent tb "2026-10-05T10:00:00Z"
+    { sed -n 1p "${_CORP}" | jq -c --arg i "${_ida}" '.record_id = $i'
+      sed -n 2p "${_CORP}" | jq -c --arg i "${_idb}" '.record_id = $i'; } > "${_CORP}.t" && mv "${_CORP}.t" "${_CORP}"
+    _label "${_idb}" false_block
+    assert_equals   "--adjudicate ${_idb} labels record ${_idb}, not ${_ida}" "${_idb}" "$(jq -r .record_id "${_ADJ}" | tr '\n' ' ' | sed 's/ $//')"
+    out="$(_status)"
+    assert_contains "…so ${_idb} is the false block" "false_block=1" "${out}"
+    assert_contains "…and ${_ida} is still unresolved" "unresolved=1" "${out}"
+done <<EOF
+01|1
+1e5|10e4
+0x10|16
+EOF
+
+# (4) An orphan blocks whenever it was made. A late true_catch naming no record
+# used to be filed as merely late.
+_base
+printf '{"record_id":"missing","verdict":"true_catch","claimant":"human","ts":"2027-04-01T00:00:00Z","predicate_version":2}\n' >> "${_ADJ}"
+out="$(_status "2027-04-05T00:00:00Z")"
+assert_contains     "a late orphan is an orphan" "orphan label(s) : 1" "${out}"
+assert_not_contains "a late orphan: never MET" "DECISION RULE MET" "${out}"
+
+# --- found by a 197,000-case fuzz against an independent oracle ------------------
+# (a) LOCALE. Under a UTF-8 locale macOS awk compares with strcoll, which ignores
+# a no-break space, a zero-width space and more, so "human<NBSP>" equalled
+# "human" in awk while jq said it did not. The reader pins the C locale; these
+# cells run it under a UTF-8 one to prove the pin, not the caller, decides.
+_utf8() { # <now> — --status with a UTF-8 locale in the environment
+    env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_ENTRYPOINT -u LC_ALL \
+        LANG=en_US.UTF-8 LC_COLLATE=en_US.UTF-8 LC_CTYPE=en_US.UTF-8 \
+        VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" VERIFY_SHADOW_NOW="${1:-2026-10-20T00:00:00Z}" \
+        /bin/bash "${READER}" --status 2>&1
+}
+_NBSP="$(printf '\302\240')"; _ZWSP="$(printf '\342\200\213')"; _EMOJI="$(printf '\360\237\230\200')"
+_base
+printf '{"record_id":"%s","verdict":"false_block","claimant":"human%s","ts":"2026-10-19T00:00:00Z","predicate_version":2}\n' "${_R2}" "${_NBSP}" >> "${_ADJ}"
+out="$(_utf8)"
+assert_contains     "UTF-8 locale: claimant 'human<NBSP>' is not human" "no usable claimant : 1" "${out}"
+assert_not_contains "UTF-8 locale: claimant 'human<NBSP>': never MET" "DECISION RULE MET" "${out}"
+_base
+printf '{"record_id":"%s","verdict":"false_block","claimant":"agent%s","ts":"2026-10-19T00:00:00Z","predicate_version":2}\n' "${_R2}" "${_EMOJI}" >> "${_ADJ}"
+out="$(_utf8)"
+assert_contains     "UTF-8 locale: claimant 'agent<emoji>' is not agent" "no usable claimant : 1" "${out}"
+assert_not_contains "UTF-8 locale: claimant 'agent<emoji>': never MET" "DECISION RULE MET" "${out}"
+_base
+printf '{"record_id":"%s","verdict":"false_block","claimant":"human","ts":"2026-10-18T00:00:00Z","predicate_version":2}\n' "${_R2}" >> "${_ADJ}"
+printf '{"record_id":"%s","verdict":"true_catch%s","claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":2}\n' "${_R2}" "${_ZWSP}" >> "${_ADJ}"
+out="$(_utf8)"
+assert_contains     "UTF-8 locale: verdict 'true_catch<ZWSP>' corrects nothing" "false_block=1" "${out}"
+assert_not_contains "UTF-8 locale: verdict 'true_catch<ZWSP>': never MET" "DECISION RULE MET" "${out}"
+
+# (b) STRICT LINES. jq accepts what JSON does not, and each lenient form filed a
+# false_block somewhere harmless.
+while IFS='|' read -r _what _row; do
+    [ -n "${_what}" ] || continue
+    _base
+    printf '%s\n' "${_row}" | sed "s/@R2@/${_R2}/" >> "${_ADJ}"
+    out="$(_status)"
+    assert_contains     "strict line (${_what}): counted unparseable" "unparseable label line(s) : 1" "${out}"
+    assert_not_contains "strict line (${_what}): never MET" "DECISION RULE MET" "${out}"
+done <<EOF
+version written 01|{"predicate_version":01,"record_id":"@R2@","ts":"2026-10-19T00:00:00Z","verdict":"false_block","claimant":"human"}
+version written +2|{"predicate_version":+2,"record_id":"@R2@","ts":"2026-10-19T00:00:00Z","verdict":"false_block","claimant":"human"}
+version written 2.|{"predicate_version":2.,"record_id":"@R2@","ts":"2026-10-19T00:00:00Z","verdict":"false_block","claimant":"human"}
+version written nan|{"predicate_version":nan,"record_id":"@R2@","ts":"2026-10-19T00:00:00Z","verdict":"false_block","claimant":"human"}
+claimant given twice|{"predicate_version":2,"record_id":"@R2@","ts":"2026-10-19T00:00:00Z","verdict":"false_block","claimant":"human","claimant":"agent"}
+verdict given twice|{"predicate_version":2,"record_id":"@R2@","ts":"2026-10-19T00:00:00Z","verdict":"false_block","verdict":"true_catch","claimant":"human"}
+EOF
+# A byte-order mark in front of a true_catch must not let it supersede.
+_base
+printf '{"record_id":"%s","verdict":"false_block","claimant":"human","ts":"2026-10-18T00:00:00Z","predicate_version":2}\n' "${_R2}" >> "${_ADJ}"
+printf '\357\273\277{"record_id":"%s","verdict":"true_catch","claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":2}\n' "${_R2}" >> "${_ADJ}"
+out="$(_status)"
+assert_contains     "a BOM-prefixed correction corrects nothing" "false_block=1" "${out}"
+assert_not_contains "a BOM-prefixed correction: never MET" "DECISION RULE MET" "${out}"
+# The strict filter must not eat ordinary lines: a CRLF sidecar still applies.
+_base
+sed 's/$/\r/' "${_ADJ}" > "${_ADJ}.t" && mv "${_ADJ}.t" "${_ADJ}"
+assert_contains "control: a CRLF sidecar is still read" "DECISION RULE MET" "$(_status)"
+
+# (c) A label is dated at or after the record it labels.
+_base
+jq -c '.ts = "2026-10-01T00:00:00Z"' "${_ADJ}" > "${_ADJ}.t" && mv "${_ADJ}.t" "${_ADJ}"
+out="$(_status)"
+assert_contains     "labels dated before their records are reported" "dated before the record they label : 29" "${out}"
+assert_not_contains "labels dated before their records: never MET" "DECISION RULE MET" "${out}"
+_base
+printf '{"record_id":"%s","verdict":"false_block","claimant":"human","ts":"2026-10-18T00:00:00Z","predicate_version":2}\n' "${_R2}" >> "${_ADJ}"
+printf '{"record_id":"%s","verdict":"true_catch","claimant":"human","ts":"1999-01-01T00:00:00Z","predicate_version":2}\n' "${_R2}" >> "${_ADJ}"
+out="$(_status)"
+assert_contains     "a 1999 true_catch does not supersede a false_block" "false_block=1" "${out}"
+
+# (d) Identity fields are strings.
+_extra '.record_id = 100'
+assert_contains "a numeric record_id is not a usable id" "no usable record_id : 1" "$(_status)"
+
+# (e) Repository diversity: the reader normalises too, and an empty identity is
+# not a repository.
+_base
+jq -c 'if .repo_id == "example.invalid/org/b" then .repo_id = "git@example.invalid:org/a.git" else . end' \
+    "${_CORP}" > "${_CORP}.t" && mv "${_CORP}.t" "${_CORP}"
+assert_equals "fixture: the second repo is now a second SPELLING of the first" "15" \
+    "$(grep -c 'git@example.invalid:org/a.git' "${_CORP}" | tr -d '[:space:]')"
+out="$(_status)"
+assert_contains     "an un-normalised spelling in the log is still one repository" "repos=1" "${out}"
+assert_not_contains "one repository under two spellings: never MET" "DECISION RULE MET" "${out}"
+_base
+jq -c 'if .repo_id == "example.invalid/org/b" then (.repo_id = "" | .repo = "") else . end' \
+    "${_CORP}" > "${_CORP}.t" && mv "${_CORP}.t" "${_CORP}"
+out="$(_status)"
+assert_contains     "an empty repository identity is not a repository" "repos=1" "${out}"
+assert_not_contains "empty repository identity: never MET" "DECISION RULE MET" "${out}"
+
+# (f) --adjudicate onto a sidecar whose last line has no newline.
+_reset
+_emit "${RA}" unexplained absent t1 "2026-10-05T10:00:00Z"
+_emit "${RB}" unexplained absent t2 "2026-10-05T10:00:00Z"
+_label "$(_rid 1)" false_block
+printf '%s' "$(cat "${_ADJ}")" > "${_ADJ}.t" && mv "${_ADJ}.t" "${_ADJ}"
+assert_equals "fixture: the sidecar now ends without a newline" "0" "$(tail -c 1 "${_ADJ}" | wc -l | tr -d '[:space:]')"
+_label "$(_rid 2)" true_catch
+out="$(_status)"
+assert_contains     "the earlier false_block is still applied" "false_block=1" "${out}"
+assert_contains     "the new label is applied too" "true_catch=1" "${out}"
+assert_not_contains "nothing was joined into an unparseable line" "unparseable label line" "${out}"
+
+# (g) --next shows the evidence of the adjudicable record, not an older-version
+# record that happens to share its id.
+_reset
+_emit "${RA}" unexplained absent t1 "2026-10-05T10:00:00Z"
+{ sed -n 1p "${_CORP}" | jq -c '.predicate_version = 1 | .reason = "OLD-BAND-REASON"'; cat "${_CORP}"; } > "${_CORP}.t" && mv "${_CORP}.t" "${_CORP}"
+out="$(_rd 2026-10-20T00:00:00Z --next)"
+assert_contains     "--next shows the current-version record" "unexplained/absent" "${out}"
+assert_not_contains "--next does not show an older-version record with the same id" "OLD-BAND-REASON" "${out}"
+
+# (h) A TMPDIR containing a quote does not break the cleanup trap.
+_base
+mkdir -p "${TMP}/od'd"
+out="$(env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_ENTRYPOINT TMPDIR="${TMP}/od'd" \
+    VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" VERIFY_SHADOW_NOW="2026-10-20T00:00:00Z" \
+    /bin/bash "${READER}" --status 2>&1)"
+assert_not_contains "quote in TMPDIR: no shell error" "unexpected EOF" "${out}"
+assert_contains     "quote in TMPDIR: the reading is unaffected" "DECISION RULE MET" "${out}"
+assert_equals       "quote in TMPDIR: the scratch dir is cleaned up" "0" "$(ls "${TMP}/od'd" | grep -c . | tr -d '[:space:]')"
+
+# (i) Shared grouper: numeric-looking keys are distinct strings.
+_reset
+_emit "${RA}" unexplained absent "100" "2026-10-05T10:00:00Z"
+_emit "${RA}" unexplained absent "1e2" "2026-10-05T10:05:00Z"
+assert_contains "session tokens 100 and 1e2 are two episodes, not one" "n=2" "$(_status)"
 
 # --- argument validation --------------------------------------------------------
 _base
