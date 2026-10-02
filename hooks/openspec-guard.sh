@@ -416,6 +416,15 @@ fi
 # across concurrent sessions (last-writer-wins) and may name ANOTHER session.
 _PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 
+# verify-shadow.sh (#301) — diagnostic corpus for the VERIFY measured-verdict
+# leg. Diagnostic-only, so deliberately NOT in _GATE_ENFORCE_LIBS. The call
+# site is `command -v`-guarded, so an absent lib records nothing and the gate's
+# output is byte-identical. Loaded HERE rather than beside review-shadow.sh
+# because a committed knowledge fact cites the _PLUGIN_ROOT line above by
+# number, and tests/test-knowledge.sh fails when that line moves.
+[ -f "${_GC_ROOT}/hooks/lib/verify-shadow.sh" ] && \
+    _guard_load "${_GC_ROOT}/hooks/lib/verify-shadow.sh" || true
+
 # _attest_remedy <step> — a COPY-PASTEABLE attestation command (#248).
 #
 # Messages used to name `phase_attest` either with no source line at all, or
@@ -1264,6 +1273,98 @@ EOF
                 _emit_deny "${_MSG}"
                 _DECISION="deny:chain-verify"
                 exit 0
+            fi
+
+            # Check 2b (VERIFY MEASURED VERDICT, WARN-FIRST) — issue #301.
+            # STATUS above answers "did verification-before-completion return";
+            # it cannot answer "did anything run", because Skill(...) returns
+            # the instruction body. This leg asks whether a verdict MEASURED by
+            # scripts/verify-and-record.sh covers the pushed commit. ADVISORY
+            # ONLY: appends to _STALE_MSG, sets no permissionDecision and no
+            # _DECISION, and never exits — so it cannot bypass or weaken any
+            # deny above or below it. The deny-flip is a separate change gated
+            # on the pre-registered rule in
+            # openspec/changes/verify-measured-verdict/design.md.
+            #
+            # Population (predicate_version 1): the milestone is in the chain,
+            # STATUS is already satisfied (a session that never got past STATUS
+            # is the deny above, a different failure), the command is a push,
+            # and it ships content. A merge is excluded because the verdict
+            # binds a branch-local commit and a merge's subject is the PR; a
+            # pure ref deletion is excluded because there is nothing to have
+            # verified. material_source is RECORDED, not a fire condition: the
+            # STATUS gate above demands the milestone for a docs-only push too,
+            # so this leg asks the same question of the same population.
+            #
+            # Without verdict.sh there is nothing to read with, and that state
+            # is already announced by the degradation note above. It is still
+            # recorded, as cannot_check: "could not look" must be visible in the
+            # corpus and must never be counted as unexplained.
+            #
+            # `_verif_completed = true` is unreachable-as-false here today: the
+            # deny above exits first. It is kept because that is what makes it
+            # true, and this leg must not start firing on unsatisfied STATUS if
+            # that deny is ever restructured. No cell can fail on its removal.
+            if [ "${_verif_in_chain}" = "true" ] && [ "${_verif_completed}" = "true" ] && \
+               [ "${_gc_is_push}" = "true" ] && [ "${_SUBJ_DELETION_ONLY:-false}" != "true" ]; then
+                _vm_class="cannot_check"; _vm_reason="lib-unavailable"; _vm_src=""
+                # verdict.sh loaded but predates this reader: no degradation
+                # note covers that, so it must not take the silent arm below.
+                if [ "${_VERDICT_OK}" = "true" ]; then _vm_reason="reader-unavailable"; fi
+                if [ "${_VERDICT_OK}" = "true" ] && command -v verdict_measured_class >/dev/null 2>&1; then
+                    _vm_out="$(verdict_measured_class "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}" 2>/dev/null)" || _vm_out=""
+                    case "${_vm_out}" in
+                        *" "*) _vm_class="${_vm_out%% *}"; _vm_reason="${_vm_out#* }" ;;
+                        *)     _vm_class="cannot_check"; _vm_reason="no-result" ;;
+                    esac
+                    _vm_src="$(verdict_discovery_source "${_VERDICT_TOKEN}" 2>/dev/null)" || _vm_src=""
+                    # verdict_resolve_token picks ONE artifact, and it does not
+                    # rank by provenance: an own hand-authored verdict at HEAD
+                    # wins over a sibling session's MEASURED one at the same
+                    # commit. The question here is whether a measured verdict
+                    # covers this commit at all, so ask that before recording a
+                    # would-block that a measurement on disk contradicts.
+                    #
+                    # NOT when the resolved verdict is not-clean. That resolver
+                    # is deny-biased — a failure at the commit outranks a clean
+                    # verdict elsewhere — and this leg follows it rather than
+                    # letting a sibling's clean run erase a recorded failure.
+                    if [ "${_vm_class}" != "measured" ] && [ "${_vm_reason}" != "not-clean" ] \
+                       && command -v verdict_any_measured_at_head >/dev/null 2>&1; then
+                        if verdict_any_measured_at_head "${_SUBJ_ROOT}" "${_SUBJ_REV}" 2>/dev/null; then
+                            _vm_class="measured"; _vm_reason="ok"
+                        fi
+                    fi
+                fi
+                # "Could not measure" is not "false": with verdict.sh absent
+                # the material-source predicate has nothing to diff with.
+                _vm_material="${_rv_material:-}"
+                if [ "${_VERDICT_OK}" != "true" ]; then _vm_material=""; fi
+                if [ "${_vm_class}" != "measured" ]; then
+                    case "${_vm_class}:${_vm_reason}" in
+                        cannot_check:lib-unavailable)
+                            : ;;  # the verdict.sh degradation note already says the reader did not load
+                        cannot_check:*)
+                            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }VERIFY VERDICT: could not check whether a measured verification verdict covers this commit (${_vm_reason}), so no claim is made about whether the gate ran." ;;
+                        explained_ladder:*)
+                            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }VERIFY VERDICT: the clean verdict covering this commit was hand-authored, not measured — its exit codes are what the model wrote down, not what a run returned (#301). Re-run Skill(auto-claude-skills:project-verification), which hands the same commands to the deterministic writer. Advisory only." ;;
+                        unexplained:unbound)
+                            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }VERIFY VERDICT: verification-before-completion was credited, but the recorded verification verdict does not cover this commit (#301). Re-run Skill(auto-claude-skills:project-verification) at this HEAD. Advisory only." ;;
+                        unexplained:not-clean)
+                            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }VERIFY VERDICT: verification-before-completion was credited, but the verification verdict covering this commit is not clean (#301). Fix what it reports and re-run Skill(auto-claude-skills:project-verification). Advisory only." ;;
+                        unexplained:unrecognised-source)
+                            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }VERIFY VERDICT: the verdict covering this commit names a discovery source the deterministic writer does not emit, so it was not measured (#301). Re-run Skill(auto-claude-skills:project-verification). Advisory only." ;;
+                        *)
+                            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }VERIFY VERDICT: verification-before-completion was credited, but no verification verdict covers this commit — a Skill return is not evidence that any gate ran (#301). Run Skill(auto-claude-skills:project-verification), which executes the gate and records measured exit codes. Advisory only." ;;
+                    esac
+                    # Not under the capture replay: the EXIT trap re-runs this
+                    # guard on a deny, and recording there writes every denied
+                    # event twice.
+                    if [ "${PUSH_GATE_CAPTURE_REPLAY:-}" != "1" ] && command -v verify_shadow_record >/dev/null 2>&1; then
+                        verify_shadow_record "${_SESSION_TOKEN}" "${_SUBJ_ROOT}" "${_vm_class}" "${_vm_reason}" \
+                            "push" "${_SUBJ_REV}" "${_TRANSCRIPT:-}" "${_vm_material}" "${_vm_src}" 2>/dev/null || true
+                    fi
+                fi
             fi
 
             # Check 0 (IMPLEMENT, WARN-FIRST): an implementation-slot skill is in

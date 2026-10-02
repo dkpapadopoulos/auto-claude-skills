@@ -311,6 +311,13 @@ _C2_REPO="$(mktemp -d /tmp/psg-repo-XXXXXX)"
 ( cd "$_C2_REPO" && git init -q && git config user.email t@t && git config user.name t && git commit -q --allow-empty -m init )
 printf '{"chain":["brainstorming","writing-plans","requesting-code-review","verification-before-completion"],"completed":["requesting-code-review","verification-before-completion"],"current_index":0}\n' > "$COMP_FILE"
 : > "$HOME/.claude/.phase-gate-events.log"
+# #301: with VERIFY credited and no MEASURED verdict the guard now emits a
+# VERIFY VERDICT advisory, which is a different leg from the one under test.
+# Seed a measured verdict through the REAL writer so "empty stdout" keeps
+# meaning "the DESIGN/PLAN warn emitted nothing" rather than being loosened.
+( cd "$_C2_REPO" && SKILL_SESSION_TOKEN="${COMP_FILE##*.skill-composition-state-}" \
+    CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "${PROJECT_ROOT}/scripts/verify-and-record.sh" \
+    --name tests --run true < /dev/null >/dev/null 2>&1 )
 _out="$(cd "$_C2_REPO" && _push)"
 assert_not_contains "C2 default: no deny for missing DESIGN/PLAN" '"permissionDecision": "deny"' "$_out"
 assert_equals "C2 default: warn emits empty stdout" "" "$_out"

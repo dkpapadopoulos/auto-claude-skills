@@ -142,6 +142,106 @@ verdict_is_clean() {
        and ((.gate_gaming_status // "") == "clean")' "$f" >/dev/null 2>&1
 }
 
+# --- Measured provenance (#301) ---------------------------------------------
+# `discovery_source` says who decided what happened. scripts/verify-and-record.sh
+# stamps exactly two values (`verify-yml`, `explicit`) and in both cases the exit
+# codes in the record are ones it measured. Every other value comes from the
+# hand-authored last resort in project-verification, where the model writes the
+# JSON itself. These three are READERS over a field already present on every
+# artifact; nothing here changes the schema or the producer.
+#
+# ADVISORY inputs only. The VERIFY measured-verdict leg is warn-first and its
+# deny-flip is a separate change gated on the pre-registration in
+# openspec/changes/verify-measured-verdict/design.md.
+#
+# NOT a trust boundary, and it must not be described as one: `--name x --run
+# true` is a measured verdict that checked nothing. What this separates is the
+# ACCIDENTAL path (invoke the skill, execute nothing) from the deliberate ones.
+
+# verdict_discovery_source <token> — echo .discovery_source when it is a
+# non-empty string. Non-zero when the artifact is absent, does not parse, is not
+# an object, or carries no usable value.
+verdict_discovery_source() {
+    local token="${1:-}" f
+    f="$(verdict_artifact_path "$token")" || return 1
+    [ -f "$f" ] || return 1
+    command -v jq >/dev/null 2>&1 || return 1
+    jq -er 'objects | .discovery_source | strings | select(. != "")' "$f" 2>/dev/null
+}
+
+# verdict_is_measured <token> — 0 iff discovery_source is a value the
+# deterministic writer emits. EXACT match: a prefix or substring test would
+# accept `explicit-ish`.
+verdict_is_measured() {
+    case "$(verdict_discovery_source "${1:-}")" in
+        verify-yml|explicit) return 0 ;;
+    esac
+    return 1
+}
+
+# verdict_measured_class <token> <proj_root> [commit] — prints "<class> <reason>"
+# and always returns 0. Classes are the pre-registered vocabulary plus the one
+# silent state:
+#   measured         ok                    clean, covers the commit, measured
+#   explained_ladder hand-authored         clean, covers the commit, a ladder rung
+#   unexplained      absent | unbound | not-clean | unrecognised-source
+#   cannot_check     unparseable | no-discovery-source | no-token | no-jq
+#
+# ORDER IS LOAD-BEARING. "Could we read it" is decided BEFORE "does it cover the
+# commit", so an artifact that omits discovery_source is cannot_check whatever
+# its sha says — counting it `unexplained` would move the pre-registered count
+# on a record nobody could classify.
+verdict_measured_class() {
+    local token="${1:-}" proot="${2:-}" rev="${3:-HEAD}" f src
+    f="$(verdict_artifact_path "$token")" || { printf '%s' "cannot_check no-token"; return 0; }
+    [ -f "$f" ] || { printf '%s' "unexplained absent"; return 0; }
+    command -v jq >/dev/null 2>&1 || { printf '%s' "cannot_check no-jq"; return 0; }
+    # `jq -e` on an EMPTY file prints nothing and exits non-zero: zero documents
+    # is not a verdict, and must not fall through to a field read.
+    # Slurped, so a file holding TWO documents is not a verdict either: without
+    # -s, `jq -e` reports on the last value and every field reader downstream
+    # would see a stream.
+    jq -es 'length == 1 and (.[0] | type == "object")' "$f" >/dev/null 2>&1 || { printf '%s' "cannot_check unparseable"; return 0; }
+    src="$(verdict_discovery_source "$token")" || src=""
+    [ -n "$src" ] || { printf '%s' "cannot_check no-discovery-source"; return 0; }
+    verdict_covers_head "$token" "$proot" "$rev" || { printf '%s' "unexplained unbound"; return 0; }
+    verdict_is_clean "$token" || { printf '%s' "unexplained not-clean"; return 0; }
+    case "$src" in
+        verify-yml|explicit) printf '%s' "measured ok" ;;
+        claude-md-commands|contributing-md|heuristic:*) printf '%s' "explained_ladder hand-authored" ;;
+        *) printf '%s' "unexplained unrecognised-source" ;;
+    esac
+    return 0
+}
+
+# verdict_any_measured_at_head <proj_root> [commit] — 0 iff SOME artifact, under
+# any token, is clean, measured, and bound to the EXACT commit.
+#
+# Exists because verdict_resolve_token returns one token and does not rank by
+# provenance. Exact-commit only, the same binding its cross-token bridge uses:
+# ancestor acceptance stays scoped to the own token. Same `grep -lF` prefilter,
+# so the jq forks are bounded to the files naming the commit.
+verdict_any_measured_at_head() {
+    local proot="${1:-}" rev="${2:-HEAD}" head f tok
+    head="$(git -C "${proot:-.}" rev-parse "$rev" 2>/dev/null)" || return 1
+    [ -n "$head" ] || return 1
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        tok="${f##*/}"; tok="${tok#.skill-project-verified-}"
+        [ -n "$tok" ] || continue
+        # Exactly one document. The helpers below read UNSLURPED, where
+        # `jq -e` reports on the last value, so a failing verdict followed by
+        # `{"gate_gaming_status":"clean"}` would read as clean and measured.
+        jq -es 'length == 1 and (.[0] | type == "object")' "$f" >/dev/null 2>&1 || continue
+        verdict_sha_is_head "$tok" "$proot" "$rev" || continue
+        verdict_is_clean "$tok" || continue
+        verdict_is_measured "$tok" && return 0
+    done <<EOF
+$(grep -lF "$head" "${HOME}/.claude/.skill-project-verified-"* 2>/dev/null)
+EOF
+    return 1
+}
+
 # verdict_test_delta <token> — echo the recorded test_delta (covered|missing|n/a|"").
 verdict_test_delta() {
     local token="${1:-}" f
