@@ -1709,9 +1709,16 @@ ${_ADJ_HINT}"
 fi
 
 # Emit Serena usage hint when available
+# The hint names a MOMENT (before changing something other code relies on), not
+# a tool preference. The old "prefer Serena to grep" wording shipped for months and
+# measured 2026-10-02 at 7 Serena calls in 441 transcripts, none a reference
+# query. The text search is part of the hint because the one backend measured
+# (bash-language-server) was not complete on its own: it saw no markdown and
+# missed an ordinary call. Other backends are unmeasured, so the hint asks for
+# a cross-check everywhere rather than claiming what any of them cannot see.
 if printf '%s' "${CONTEXT_CAPS}" | jq -e '.serena == true' >/dev/null 2>&1; then
     CONTEXT="${CONTEXT}
-Serena: When navigating code, prefer mcp__serena__ tools (find_symbol, find_declaration, find_implementations, find_referencing_symbols, get_symbols_overview) over Grep/Read for symbol lookups and dependency mapping."
+Serena: before changing a function, class or type that other code relies on, list its consumers with mcp__serena__ tools (find_referencing_symbols, find_symbol, find_declaration, find_implementations, get_symbols_overview), then cross-check with a repository-wide text search across source, tests, docs and config. An empty result is not proof of no callers."
 fi
 
 # Emit LSP usage hint when available (complementary to Serena — LSP for diagnostics, Serena for symbol nav)

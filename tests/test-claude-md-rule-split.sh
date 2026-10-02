@@ -323,7 +323,7 @@ assert_equals "no bullet appears in two places" "0" "${_dupes}"
 _LINE_TARGET=200                 # docs: "target under 200 lines per CLAUDE.md file"
 _HARD_SKIP=4194304               # docs: loads "up to 4 MiB in full", skips a LARGER file
 _COMBINED_REAL_LIMIT=150000      # the product's warning threshold (total, all files)
-_COMBINED_BASELINE=170532  # RATCHET: today's exact total. Not a ceiling.
+_COMBINED_BASELINE=171781  # RATCHET: today's exact total. Not a ceiling.
 _PERFILE_ADVISORY_BYTES=40000    # #22364 states 40.0k CHARS; compared in bytes, so
                                  # approximate by ~0.6% here. Reported, never asserted.
 

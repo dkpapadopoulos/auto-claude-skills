@@ -128,7 +128,7 @@ read.
 | `push-gate-telemetry.md` | `implement-shadow.sh`, `review-shadow.sh`, `verify-shadow.sh`, `shadow-corpus.sh`, `pr-diff.sh`, `shadow-adjudicate.sh`, `push-gate-capture.sh` | touching a shadow corpus, a `predicate_version`/`schema_version`, or any pre-registered rate |
 | `outbound-guards.md` | `publish-guard.sh`, the egress-consent hooks, `consult-dispatch.sh`, `reviewer-evidence-hook.sh` | changing what may leave the machine, or how reviewer dispatch is credited |
 | `test-suite.md` | `tests/**`, `.github/workflows/**`, `.verify.yml`, `improvement-miner/` | adding or changing a test, a fixture gate, or a CI workflow |
-| `shell-portability.md` | every `*.sh` under `hooks/`, `scripts/`, `tests/`, `skills/` | writing shell that a hook or a test will run under bash 3.2 |
+| `shell-portability.md` | every `*.sh` under `hooks/`, `scripts/`, `tests/`, `skills/` | writing shell that a hook or a test will run under bash 3.2, or changing what a shared shell function promises |
 | `routing-state.md` | `skill-activation-hook.sh`, `session-start-hook.sh`, `config/*.json`, `persist-state.sh` | changing routing, scoring, session tokens, or composition state |
 
 `docs/enforcement-map.md` is the one-page map of everything that can block, in

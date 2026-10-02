@@ -36,6 +36,11 @@ assert_contains "Serena banner mentions mcp__serena__ tools" "mcp__serena__" "${
 assert_not_contains "Serena banner does NOT mention serena_connected (separate capability flag, not in banner)" "serena_connected" "${BANNER_SLICE}"
 assert_contains "Serena banner names find_declaration (v1.3.0)" "find_declaration" "${SRC}"
 assert_contains "Serena banner names find_implementations (v1.3.0)" "find_implementations" "${SRC}"
+# The three names above also appeared in the OLD wording ("prefer ... over
+# Grep/Read"), so they cannot tell the two apart: reverting stayed green.
+assert_contains "Serena banner asks for a text-search cross-check" "cross-check with a repository-wide text search" "${BANNER_SLICE}"
+assert_contains "Serena banner says an empty result proves nothing" "An empty result is not proof of no callers" "${BANNER_SLICE}"
+assert_not_contains "Serena banner does NOT rank Serena above text search" "over Grep/Read" "${BANNER_SLICE}"
 assert_not_contains "Serena banner does NOT propagate to subagents (Serena MCP often unavailable in subagents)" "Task tool" "${SRC}"
 assert_not_contains "Serena banner does NOT use 'Serena available' propagation phrase" "Serena available" "${SRC}"
 assert_contains "LSP banner still names mcp__ide__getDiagnostics" "mcp__ide__getDiagnostics" "${SRC}"
