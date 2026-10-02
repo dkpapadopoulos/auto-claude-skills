@@ -495,6 +495,32 @@ jq -c --arg h "$(_head "${RA}")" '.sha = "00000000000000000000000000000000000000
     "${_SIB}" > "${_SIB}.t" && mv "${_SIB}.t" "${_SIB}"
 _guard "${PROJECT_ROOT}" "${RA}" "git push origin HEAD" >/dev/null
 assert_equals "control: sibling at another commit does not rescue" "explained_ladder" "$(_lastf .classification)"
+# A two-document sibling: a measured FAILING verdict followed by a stray clean
+# object. Read unslurped, jq reports on the LAST value and it looks clean.
+( cd "${RA}" && SKILL_SESSION_TOKEN="session-sib" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+    /bin/bash "${PRODUCER}" < /dev/null ) >/dev/null 2>&1
+jq -c '.failed = ["tests"] | .passed = []' "${_SIB}" > "${_SIB}.t"
+printf '{"gate_gaming_status":"clean"}\n' >> "${_SIB}.t"; mv "${_SIB}.t" "${_SIB}"
+rm -f "${_VLOG}"; _handwrite "${RA}" "claude-md-commands"; _seed_status "${_BOTH}"
+assert_equals "two-document sibling is not a measured verdict" "1" \
+    "$(_bool verdict_any_measured_at_head "${RA}")"
+_guard "${PROJECT_ROOT}" "${RA}" "git push origin HEAD" >/dev/null
+assert_equals "two-document sibling does not silence the leg" "explained_ladder" "$(_lastf .classification)"
+rm -f "${_SIB}"
+
+# Own verdict NOT CLEAN at this commit, sibling measured and clean at the same
+# commit: the recorded failure is not erased (the resolver is deny-biased, and
+# this leg follows it).
+rm -f "${_VLOG}" "${_ART}"; _produce "${RA}"
+jq -c '.could_not_verify = ["types"]' "${_ART}" > "${_ART}.t" && mv "${_ART}.t" "${_ART}"
+( cd "${RA}" && SKILL_SESSION_TOKEN="session-sib" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+    /bin/bash "${PRODUCER}" < /dev/null ) >/dev/null 2>&1
+_seed_status "${_BOTH}"
+assert_equals "control: the sibling alone WOULD satisfy the scan" "0" \
+    "$(_bool verdict_any_measured_at_head "${RA}")"
+_guard "${PROJECT_ROOT}" "${RA}" "git push origin HEAD" >/dev/null
+assert_equals "own not-clean + sibling clean: still recorded" "1" "$(_nrec)"
+assert_equals "own not-clean + sibling clean: reason not-clean" "not-clean" "$(_lastf .reason)"
 rm -f "${_SIB}"
 
 # --- verdict.sh ABSENT: recorded as cannot_check, announced once, not twice --
@@ -594,8 +620,23 @@ ssh://git@example.invalid/org/a.git/
 https://user:SEKRET@example.invalid/org/a.git
 https://user:SEKRET@x@example.invalid/org/a.git
 https://example.invalid/org/a.git?private_token=SEKRET
+https://user:pa/SEKRET@example.invalid/org/a.git
+https://user:SEK#SEKRET@example.invalid/org/a.git
+ssh://git@example.invalid:2222/org/a.git
+https://EXAMPLE.Invalid/org/a.git
+git@example.invalid:/org/a.git
 EOF
 git -C "${RA}" remote set-url origin "https://example.invalid/org/a.git"
+
+# An owner whose name starts with a DIGIT. scp syntax has no port, so the ":"
+# is always the path separator; sparing "digits after the colon" as a port
+# split this one repository in two, in the direction that makes clause 4 easier.
+assert_equals "digit-leading owner: https form" "github.invalid/11ty/eleventy" \
+    "$(_verify_shadow_repo_id "https://github.invalid/11ty/eleventy.git")"
+assert_equals "digit-leading owner: scp form is the SAME identity" "github.invalid/11ty/eleventy" \
+    "$(_verify_shadow_repo_id "git@github.invalid:11ty/eleventy.git")"
+assert_equals "a local path is left as a path" "/srv/git/r" "$(_verify_shadow_repo_id "/srv/git/r.git")"
+assert_equals "file:// and the bare path agree" "/srv/git/r" "$(_verify_shadow_repo_id "file:///srv/git/r.git")"
 
 # No origin at all: a repo and its worktree still share ONE identity.
 RN="${TMP}/rn"; mkdir -p "${RN}"
@@ -853,10 +894,45 @@ while IFS='|' read -r _what _edit _needle; do
     assert_not_contains "uncountable (${_what}): never MET" "DECISION RULE MET" "${out}"
 done <<EOF
 empty ts|.ts = ""|unparseable ts : 1
-no record_id|.record_id = ""|no record_id : 1
+pre-1970 ts|.ts = "1969-12-31T23:59:59Z"|unparseable ts : 1
+no record_id|.record_id = ""|no usable record_id : 1
+comma in record_id|.record_id = "aa,bb"|no usable record_id : 1
 string predicate_version|.predicate_version = "1"|malformed predicate_version : 1
 absent predicate_version|del(.predicate_version)|malformed predicate_version : 1
+fractional predicate_version|.predicate_version = 1.5|malformed predicate_version : 1
 EOF
+
+# `nan` parses as a JSON number in jq, so a type check alone files it under
+# the non-blocking "other version" band. Written as raw text: jq prints nan as
+# null, so it cannot be produced by a jq edit.
+_five "${RB}" explained_ladder hand-authored
+_emit "${RA}" unexplained absent t6 "2026-10-10T10:00:00Z"
+_l="$(tail -1 "${_CORP}")"; sed '$d' "${_CORP}" > "${_CORP}.t"
+printf '%s\n' "${_l}" | sed 's/"predicate_version":1,/"predicate_version":nan,/' >> "${_CORP}.t"
+if grep -q '"predicate_version":nan' "${_CORP}.t"; then _record_pass "nan fixture written"
+else _record_fail "nan fixture written" "the substitution matched nothing — the cells below would be vacuous"; fi
+mv "${_CORP}.t" "${_CORP}"
+out="$(_status)"
+assert_not_contains "uncountable (nan predicate_version): never MET" "DECISION RULE MET" "${out}"
+
+# Two ids that EXIST, joined by a comma: without the id check this resolves to
+# two explained records and the unexplained one vanishes into them.
+_five "${RB}" explained_ladder hand-authored
+_id1="$(sed -n '1p' "${_CORP}" | jq -r .record_id)"; _id2="$(sed -n '2p' "${_CORP}" | jq -r .record_id)"
+_emit "${RA}" unexplained absent t6 "2026-10-10T10:00:00Z"
+tail -1 "${_CORP}" | jq -c --arg i "${_id1},${_id2}" '.record_id = $i' > "${_CORP}.x"
+sed '$d' "${_CORP}" > "${_CORP}.t"; cat "${_CORP}.x" >> "${_CORP}.t"; mv "${_CORP}.t" "${_CORP}"; rm -f "${_CORP}.x"
+out="$(_status)"
+assert_not_contains "uncountable (id naming two real records): never MET" "DECISION RULE MET" "${out}"
+
+# A duplicate of two EXPLAINED records. Worst-wins cannot decide this one — no
+# class changes — so only the duplicate count stands between it and MET.
+_five "${RB}" explained_ladder hand-authored
+{ sed -n '1p' "${_CORP}"; cat "${_CORP}"; } > "${_CORP}.t"; mv "${_CORP}.t" "${_CORP}"
+out="$(_status)"
+assert_contains     "duplicate of two explained records: no class changes" "unexplained=0" "${out}"
+assert_contains     "duplicate of two explained records: reported" "DUPLICATE record_id : 1" "${out}"
+assert_not_contains "duplicate of two explained records: never MET" "DECISION RULE MET" "${out}"
 
 # A TRUNCATED line (the sixth record cut short).
 _five "${RB}" explained_ladder hand-authored

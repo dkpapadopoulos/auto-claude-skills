@@ -229,6 +229,10 @@ verdict_any_measured_at_head() {
         [ -n "$f" ] || continue
         tok="${f##*/}"; tok="${tok#.skill-project-verified-}"
         [ -n "$tok" ] || continue
+        # Exactly one document. The helpers below read UNSLURPED, where
+        # `jq -e` reports on the last value, so a failing verdict followed by
+        # `{"gate_gaming_status":"clean"}` would read as clean and measured.
+        jq -es 'length == 1 and (.[0] | type == "object")' "$f" >/dev/null 2>&1 || continue
         verdict_sha_is_head "$tok" "$proot" "$rev" || continue
         verdict_is_clean "$tok" || continue
         verdict_is_measured "$tok" && return 0

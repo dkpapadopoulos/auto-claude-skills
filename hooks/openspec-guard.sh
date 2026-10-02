@@ -1324,7 +1324,13 @@ EOF
                     # commit. The question here is whether a measured verdict
                     # covers this commit at all, so ask that before recording a
                     # would-block that a measurement on disk contradicts.
-                    if [ "${_vm_class}" != "measured" ] && command -v verdict_any_measured_at_head >/dev/null 2>&1; then
+                    #
+                    # NOT when the resolved verdict is not-clean. That resolver
+                    # is deny-biased — a failure at the commit outranks a clean
+                    # verdict elsewhere — and this leg follows it rather than
+                    # letting a sibling's clean run erase a recorded failure.
+                    if [ "${_vm_class}" != "measured" ] && [ "${_vm_reason}" != "not-clean" ] \
+                       && command -v verdict_any_measured_at_head >/dev/null 2>&1; then
                         if verdict_any_measured_at_head "${_SUBJ_ROOT}" "${_SUBJ_REV}" 2>/dev/null; then
                             _vm_class="measured"; _vm_reason="ok"
                         fi

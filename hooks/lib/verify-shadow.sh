@@ -39,6 +39,56 @@
 VERIFY_SHADOW_SCHEMA_VERSION=1
 VERIFY_SHADOW_PREDICATE_VERSION=1
 
+# _verify_shadow_repo_id <remote-url> -> host/path
+#
+# NORMALISED for two reasons that share one transform.
+# (1) Identity: the diversity clause counts repositories, and
+#     https://h/o/r.git, git@h:o/r.git, ssh://git@h:22/o/r and https://H/o/r
+#     are ONE repo. A split here makes ">= 2 distinct repos" EASIER to meet,
+#     which is the direction that must not be guessed.
+# (2) Secrets: a URL can carry a credential in the userinfo or a query string.
+#
+# Decisions that are easy to get wrong, each found by review:
+# - Userinfo is stripped through the LAST "@" in the whole string, before the
+#   query/fragment strip. A credential may contain "@", "/", "#" or "?", so
+#   any rule that stops at the first "/" or strips "#..." first leaves part of
+#   it behind. Cost, accepted: a PATH containing "@" loses what precedes it —
+#   still one deterministic identity per repository, and never a leak.
+# - scp-style (no scheme) has NO port, so its first ":" is always the path
+#   separator, even when the path starts with a digit (github.com:11ty/...).
+# - URL-style may carry a port, which is not part of repository identity.
+# - Hosts are case-insensitive; paths are left alone.
+# Limits, not handled: IPv6 literals in scp form, and two clones with no
+# origin at all (the caller falls back to the git common dir).
+_verify_shadow_repo_id() {
+    local u="${1:-}" scheme=false host rest
+    case "${u}" in
+        [A-Za-z]*://*) scheme=true; u="${u#*://}" ;;
+    esac
+    case "${u}" in *@*) u="${u##*@}" ;; esac
+    u="${u%%[?#]*}"
+    if [ "${scheme}" = "true" ]; then
+        # Two expressions, not `\(/\|$\)`: BSD sed's BRE has no alternation,
+        # and the single-expression form silently matched nothing on macOS.
+        u="$(printf '%s' "${u}" | sed -e 's#^\([^/:]*\):[0-9][0-9]*/#\1/#' -e 's#^\([^/:]*\):[0-9][0-9]*$#\1#')"
+    else
+        case "${u}" in
+            /*|.*|'') : ;;                       # a local path, not host:path
+            *:*) case "${u%%:*}" in
+                     */*) : ;;                   # the ":" is inside a path
+                     *)   u="${u%%:*}/${u#*:}" ;;
+                 esac ;;
+        esac
+    fi
+    case "${u}" in
+        /*|.*) : ;;
+        *) host="${u%%/*}"; rest="${u#"${host}"}"
+           host="$(printf '%s' "${host}" | tr 'A-Z' 'a-z')"
+           u="${host}${rest}" ;;
+    esac
+    printf '%s' "${u}" | sed -e 's#//*#/#g' -e 's#/$##' -e 's#\.git$##' -e 's#/$##'
+}
+
 verify_shadow_record() {
     # <session_token> <subj_root> <classification> <reason> <action>
     #   [<subj_rev>] [<transcript_path>] [<material_source:true|false>] [<discovery_source>]
@@ -71,20 +121,7 @@ verify_shadow_record() {
     repo="$(git -C "${proot:-.}" rev-parse --show-toplevel 2>/dev/null)" || repo=""
     repo_id="$(git -C "${proot:-.}" remote get-url origin 2>/dev/null)" || repo_id=""
     if [ -n "${repo_id}" ]; then
-        # NORMALISED to host/path, for two reasons that share one transform.
-        # (1) Identity: the diversity clause counts repositories, and
-        #     https://h/o/r.git, git@h:o/r.git and https://h/o/r are ONE repo.
-        # (2) Secrets: a URL can carry a credential in the userinfo — which may
-        #     itself contain "@", so everything up to the LAST "@" of the
-        #     authority goes — or in a query string.
-        # Order matters: query/fragment first, then scheme, then userinfo, then
-        # the scp-style "host:path" separator, then the cosmetic suffixes.
-        repo_id="$(printf '%s' "${repo_id}" | sed \
-            -e 's/[?#].*$//' \
-            -e 's#^[A-Za-z][A-Za-z0-9+.-]*://##' \
-            -e 's#^[^/]*@##' \
-            -e 's#^\([^/:]*\):\([^0-9/]\)#\1/\2#' \
-            -e 's#/*$##' -e 's#\.git$##' -e 's#/*$##')" || repo_id=""
+        repo_id="$(_verify_shadow_repo_id "${repo_id}")" || repo_id=""
     fi
     if [ -z "${repo_id}" ]; then
         repo_id="$(git -C "${proot:-.}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || repo_id=""

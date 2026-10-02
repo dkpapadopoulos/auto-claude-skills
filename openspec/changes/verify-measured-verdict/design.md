@@ -163,24 +163,36 @@ None changes a registered number.
    `verdict_resolve_token` returns one artifact and does not rank by
    provenance, so an own hand-authored verdict shadowed a sibling session's
    measurement of the same commit (found in review, reproduced). Exact-commit
-   only; ancestor acceptance stays scoped to the own token.
+   only; ancestor acceptance stays scoped to the own token. **Not when the
+   resolved verdict is not-clean:** `verdict_resolve_token` is deny-biased (a
+   failure at the commit outranks a clean verdict elsewhere), and reading 10
+   follows it rather than letting a sibling's clean run erase a recorded
+   failure.
 10. **A measured verdict that is not clean is `unexplained`** (reason
     `not-clean`), because the proposal requires a *clean* measured verdict. A
     measured FAILING verdict is also denied by verify-hardening, so "ran the
     gate, it failed, tried to push" is recorded here even though the push never
     proceeded — the leg records at evaluation, before the legs below it decide.
 11. **The reader reports NOT MET while any record is uncountable** — an
-    unparseable line, an unusable `ts`, a missing `record_id`, a non-numeric
-    `predicate_version`, an unknown classification, or a duplicated
-    `record_id`. Any of them may be the `unexplained` event, so "zero
+    unparseable line, a `ts` the shared grouper cannot place (malformed or
+    before 1970), a `record_id` that is empty or not a plain token, a
+    `predicate_version` that is not a whole number, an unknown classification,
+    or a duplicated `record_id`. Any of them may be the `unexplained` event, so "zero
     unexplained" is not a measurement until each is accounted for. A record
-    carrying a NUMERIC other `predicate_version` is a legitimate older band and
-    does not block.
+    carrying a whole-number other `predicate_version` is a legitimate older
+    band and does not block. **Limit, stated:** that band is not inspected, so
+    a record relabelled to another version leaves the count. The corpus is an
+    agent-writable file and this reader defends against corruption and drift,
+    not against a deliberate edit.
 12. **`repo_id` is the origin URL normalised to `host/path`** (scheme, userinfo,
-    query string, scp-style separator, trailing `.git` and slashes removed), so
-    one repository reached through three URL spellings is one repo for clause
-    4, and no credential embedded in a URL reaches the corpus. Limit: two
-    clones with NO origin are two identities.
+    port, query string and fragment removed; scp-style separator converted;
+    host lowercased; trailing `.git` and slashes removed), so one repository
+    reached through different URL spellings is one repo for clause 4.
+    Userinfo is cut through the LAST `@` in the string, so a credential
+    containing `@`, `/`, `#` or `?` does not survive. Limits: two clones with
+    NO origin are two identities; an IPv6 literal in scp form is not
+    normalised; a path containing `@` loses what precedes it (one stable
+    identity per repository, never a leak).
 
 ### Open for the owner — raised by review, deliberately not decided here
 

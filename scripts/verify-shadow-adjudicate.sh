@@ -134,13 +134,16 @@ cmd_status() {
         _unparsed=$(( ${_lines:-0} - ${_parsed:-0} ))
         # A NUMERIC other version is a legitimate band written under a
         # different fire condition: reported, not pooled, and not a blocker.
+        # "Numeric" means a whole number: `nan` parses as a JSON number in jq
+        # and 1.5 is nobody's version, and both would otherwise hide a record
+        # in the non-blocking band.
         # A NON-numeric one ("1" as a string, null, absent) is a malformed
         # record of unknown provenance and is treated like any other record
         # this reader could not place.
         _other="$(jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
-            'fromjson? // empty | objects | select((.predicate_version | type) == "number" and .predicate_version != $pv) | 1' "${SHADOW_LOG}" 2>/dev/null | _count)"
+            'fromjson? // empty | objects | select((.predicate_version | type) == "number" and (.predicate_version == (.predicate_version | floor)) and .predicate_version != $pv) | 1' "${SHADOW_LOG}" 2>/dev/null | _count)"
         _badver="$(jq -R -r \
-            'fromjson? // empty | objects | select((.predicate_version | type) != "number") | 1' "${SHADOW_LOG}" 2>/dev/null | _count)"
+            'fromjson? // empty | objects | select(((.predicate_version | type) == "number" and (.predicate_version == (.predicate_version | floor))) | not) | 1' "${SHADOW_LOG}" 2>/dev/null | _count)"
         _unknown="$(jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" '
             fromjson? // empty | objects | select(.predicate_version == $pv)
             | select((.classification == "explained_ladder" or .classification == "unexplained"
@@ -150,8 +153,16 @@ cmd_status() {
         # shellcheck disable=SC2064
         trap "rm -rf '${_tmp}'" EXIT
         _records > "${_tmp}/rec.tsv"
-        _badts="$(awk -F'\t' -v re="${_ISO_RE}" '$4 !~ re { n++ } END { print n+0 }' "${_tmp}/rec.tsv")"
-        _norid="$(awk -F'\t' '$5 == "" { n++ } END { print n+0 }' "${_tmp}/rec.tsv")"
+        # The SAME test the shared grouper applies (`iso_epoch(...) < 0` is
+        # dropped). A shape-only check called "1969-12-31T23:59:59Z" well
+        # formed while the grouper discarded it, so the record left the count
+        # with no line saying so.
+        _badts="$(awk -F'\t' "${SHADOW_AWK_EPOCH}"'iso_epoch($4) < 0 { n++ } END { print n+0 }' "${_tmp}/rec.tsv")"
+        # An id must be a plain token. The episode list is comma-joined by the
+        # shared grouper and re-split here, so an id containing "," (or one
+        # that is empty) resolves to no record and its episode would default to
+        # cannot_check — an unexplained event read as "could not look".
+        _norid="$(awk -F'\t' '$5 !~ /^[A-Za-z0-9_-]+$/ { n++ } END { print n+0 }' "${_tmp}/rec.tsv")"
         cut -f1-5 "${_tmp}/rec.tsv" | shadow_group_episodes "${EPISODE_WINDOW_SEC}" > "${_tmp}/eps.tsv"
 
         # Episode class is WORST-WINS and order-free: any unexplained record
@@ -213,7 +224,7 @@ EOF
             echo "  They parse as JSON but cannot be placed in an episode."
         fi
         if [ "${_norid:-0}" -gt 0 ]; then
-            echo "EXCLUDED — no record_id : ${_norid} record(s)"
+            echo "EXCLUDED — no usable record_id : ${_norid} record(s)"
         fi
         if [ "${_badver:-0}" -gt 0 ]; then
             echo "EXCLUDED — malformed predicate_version : ${_badver} record(s)"
