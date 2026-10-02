@@ -30,6 +30,17 @@ after the build and after the live results it reports, and makes no claim that
 its wording preceded them. No arm has run, no judging package exists, and no
 judge has scored anything.
 
+Revision 5, 2026-10-02. The picker's launch is registered: its manifest gives up
+the tool that writes, and it has a launcher (Dion, branch `picker-launch`). The
+registered outcome measures and the decision rule are unchanged. Four things
+this document said are corrected: that the picker runs with edits accepted; what
+the snapshot holds; what the reviewer is sent of the record of what was removed;
+and which launchers bind a check report to the version and the harness. The
+proposal was critiqued by another model family before it was built, the choice
+of tools was argued with it a second time at the owner's request, and both are
+in "Review". Like revisions 3 and 4, this one was written after the build and
+makes no claim that its wording preceded it.
+
 Precedent for the form: the pilot's registration, archived at
 `openspec/changes/archive/2026-09-24-design-seed-capability/design.md`. Rule
 numbers such as v2-2 refer to that document.
@@ -130,7 +141,34 @@ know.
 
 Two consequences for the reader. The picker sees a Dion with those lines
 missing, which is a Dion that never existed. And the record of what was removed
-names the terms, so it goes to the reviewer and never to the picker.
+names the terms, so it never goes to the picker.
+
+Revision 2 also said the record "goes to the reviewer". It names the terms, so
+it would fail the reviewer's own package check and would expose the reviewer to
+them. Ruled by the owner on 2026-10-02: the reviewer is sent a summary made from
+the record, of paths, line counts and kinds of term and never a term, and the
+record stays on the machine. What that loses, named in the critique: from a
+summary the reviewer can judge whether what was removed leaves a misleading
+tree, and cannot judge whether the sanitising removed the right things. That
+audit is the author's and the owner's, who know the treatment, and it is not
+blind.
+
+**What the snapshot holds that revision 4 did not mention.** Measured on
+2026-10-02: `972f4ea` holds 1272 files and no link. Among them are Dion's own
+`CLAUDE.md` and a `.claude/` directory with a settings file, four agent
+definitions and six skills. The settings file defines hooks, for the start of a
+session, the end of a turn and after every tool call among others, and each runs
+a shell command. The CLI can load such names into a session with no Read call,
+which is why the judge's launcher refuses them in a package. Ruled by
+the owner on 2026-10-02: they stay in the picker's copy, as files of the
+repository that it may read, and its own session is checked for having been
+given them unasked: for a hook event, for an agent, a skill or a command they
+define, and for an instruction file the CLI attached. "The picker", below, says
+what was measured and what is checked.
+
+The export is deterministic: two exports on 2026-10-02 gave the same record and
+the same tree, byte for byte. Its record now carries a digest of the tree as it
+was left, so that a tree and a record can be told to belong together.
 
 ## Controlled exposure
 
@@ -193,6 +231,7 @@ The probe matrix, as built:
 | `outside_values` | the whole run | | no value planted outside is in any session's record |
 | `payload_terms` | the whole run | | no term of the list is in any session's record; not applicable to a seeded manifest |
 | `loaded` | every session's `init` | | the inventory is as declared |
+| `project_files` | the whole run, for a manifest that says its session runs where a repository's own files are (revision 5) | | no planted value is in any record and no planted hook left its file |
 
 "Refused" is read from the CLI's own refusal event for the very call that asked,
 never inferred from a value's absence, and a call that was refused and also
@@ -221,9 +260,10 @@ another name. It was not built.
 
 The two write probes were added after a dry run under CLI 2.1.285 and the
 default permission mode in which every attempted write of both arms was refused:
-a session launched headless has nobody to approve a write. The arms and the
-picker now run with edits accepted; the restricted mode still confines them to
-the working directory, which the outside write probe is what tests.
+a session launched headless has nobody to approve a write. The arms run with
+edits accepted; the restricted mode still confines them to the working
+directory, which the outside write probe is what tests. The picker ran so too
+until revision 5, in which it gave up the tool: see "The picker".
 
 What the `loaded` probe compares, in every session of the run: the tools, which
 must equal the manifest's list; the MCP servers, which must be the declared
@@ -252,7 +292,11 @@ For the arm launcher it does not bind the CLI version, which the report records
 and that launcher does not compare, nor the harness's own code and sandbox
 profile. Those may change without invalidating an arm's report. The judge
 launcher binds both, as "The judge" below says; the arm launcher was not changed
-in revision 4, and bringing it to the same rule is open.
+in revision 4, and bringing it to the same rule is open. Since revision 5 a
+report also carries the digest of the term list its term probe looked for, and
+the judge's and the picker's launchers refuse a report made with another list.
+The arm launcher binds none of the three: no arm runs in the picker's stage, and
+it is left for the plan under which arms run.
 
 What the check does **not** test, stated so it is not assumed: the network. A
 restricted session reaches its model provider, and nothing here measures what
@@ -323,8 +367,9 @@ run bare; is given none of the caller's environment; runs from the scratch
 copy; and a file named like an option is passed as a file. Twelve mutants of
 the runner and its profile are killed by these cells. Not tested: a `bash`,
 `sandbox-exec` or utility on the system that lies. The profile and the runner
-are files of the harness and are not among the four whose digest a check
-report carries (revision 4); the lint cannot read the harness directory, which
+are files of the harness and are not among the six whose digest a check
+report carries (four in revision 4; revision 5 added the export script and the
+picker's launcher); the lint cannot read the harness directory, which
 the profile does not name.
 
 The pinned seed's lint has a failure mode found while building the runner: it
@@ -387,6 +432,8 @@ the resumed turn was refused.
 - A check report that is not a pass of the manifest's bytes as they are now.
 - A report made by other harness code: the report carries one digest over the
   check, the two scanners and the launcher, and it must equal that digest now.
+  Since revision 5 the digest also covers the export script and the picker's
+  launcher, so a change to either makes a judge's report one to make again.
 - A report made on another version of the CLI than the one installed.
 - A package holding a file its listing does not name; a listed file missing, or
   not the bytes listed; anything that is not a plain file, a link included; a
@@ -475,6 +522,262 @@ judging result.
   bearing anchor, a revealing file name inside the package: these are the
   package builder's to control, and that builder is not built.
 - Read spellings other than the three tested.
+
+### The picker
+
+Registered in revision 5. The manifest is Dion's
+`tests/design_seed_pilot/exposure/launch/picker.json`; the launcher is
+`exposure/launch_picker.py`, with its cells in `test_launch_picker.py`.
+
+**The manifest.** `claude -p --restricted --safe-mode --strict-mcp-config
+--tools Read,Grep,Glob`, permission mode `default`, not seeded, no MCP server.
+Three tools, none that writes. Until this revision the picker had Write and
+accepted edits, and was to write its brief as a file. Its brief is now its last
+message, which the launcher keeps.
+
+Why. With a tool that writes, a picker could change a file, read it and put it
+back, and a comparison of the copy afterwards would pass: the comparison is of
+what was left, not of what happened. The copy is now read-only, and that no tool
+writes is what the manifest declares and every `init` is compared with. What it
+costs was named in the second critique and is not measured: a model that drafts
+to a file, reads the draft and revises may write a better brief than one that
+composes it in one message. A tool confined to one brief outside the copy would
+give that back; it needs an MCP server, which cannot run in safe mode, and the
+owner did not choose it. It is the next step if the brief is unusable. Write is
+not.
+
+**Measured on 2026-10-02, CLI 2.1.285, model `claude-opus-5-5`.**
+
+- With these three tools and the default mode, a final message of 5386 bytes
+  arrived whole in the `result` event and was the text of the last assistant
+  message. One session. It shows a brief of that size can arrive, not that every
+  brief will.
+- Two sessions under the picker's flags, in a directory holding `CLAUDE.md`,
+  `AGENTS.md`, a `.claude/settings.json` with an environment value and a
+  `SessionStart` hook, a skill and an agent, each carrying a random value, and
+  neither session calling a tool. No value was in either stream or transcript;
+  the transcript holds the system prompt, so that was looked at too. `init`
+  listed neither the skill nor the agent, no hook event was reported, and the
+  file the hook would have made was not made. Asked for the planted words, the
+  session replied "unknown", which is its own account and counts only as not
+  contradicting the rest. The builtin plugin that reads `AGENTS.md` was loaded
+  in both. This shows no loading was observed in two sessions on one version. It
+  does not show those files are inert, and it says nothing of a picker that
+  reads them, which it may.
+- With a control that goes red, after the review asked for it. One directory
+  holding a `CLAUDE.md` with a random word and a settings file with a hook for
+  each of five events, each hook making a file; one session each, asked to read
+  a plain file. With neither restricting flag: all five hooks ran, and asked for
+  the word the session replied with it. With `--restricted` alone, and with
+  `--restricted --safe-mode` as the picker has: no hook ran, no hook event was
+  reported, and the word was in neither stream nor transcript. So it is
+  `--restricted` that keeps a repository's own settings and instruction file out
+  of a session, on this version. The earlier two sessions had no such control
+  and planted a hook for the start of a session only, in sessions that called no
+  tool.
+- In the recorded sessions Glob and Grep were called with no `path`, and Read
+  with an absolute path.
+
+**The check covers the directory the picker runs in.** A measurement made once
+is not what a launch should rest on, and the report the launcher requires was
+made in a directory that held no such files. So the picker's manifest says its
+session runs where a repository's own files are, and for such a manifest the
+check plants them in the probe directory: a `CLAUDE.md`, a settings file with an
+environment value and a hook for each of five events, a skill and an agent, each
+with a value of its own. No probe asks for them. The probe `project_files` is
+"not loaded" when no such value is in any session's record and no hook left its
+file; otherwise it is "loaded", and the run has findings. Measured beside it: a
+session that loaded a `CLAUDE.md` holds it in its transcript as an attachment,
+whether or not it speaks of it, and not in its stream; the check reads both. The
+environment value has no way into a record of a session with no tool that
+executes, and is not counted. The probe's red control is a live cell: the open
+configuration, given the same files, must show both that all five hooks ran and
+that the instruction file is in a record. The first form of that cell asked only
+for "loaded", which the hooks satisfy alone; a second review named that. The
+launcher refuses a report without this probe, or with it "loaded".
+
+**What the check measured, live, on 2026-10-02, CLI 2.1.285.** Status pass, six
+sessions, under the manifest as revision 5 has it:
+
+| Probe | Result |
+|---|---|
+| `inside` | read |
+| `outside_read_abs`, `outside_read_rel`, `symlink_out` | denied, each by the CLI's refusal of that call |
+| `outside_grep`, `outside_glob` | denied, likewise |
+| `outside_write`, `inside_write` | not applicable: the tool is not declared |
+| `outside_values` | absent: none of 11 values planted outside is in any record |
+| `payload_terms` | absent |
+| `loaded` | as declared: every session's tools were exactly `Glob`, `Grep`, `Read` |
+
+That run was made before the `project_files` probe existed. With the probe, on
+the same day and version, the live cell for the picker's manifest passed with
+`project_files` "not loaded", and its red control passed: an open session given
+the same planted files ran all five hooks and held the instruction file in a
+record. Both reports are scratch. A report is to be made again on the day the
+picker runs. That is procedure: a report carries no date, and the launcher takes
+any report that passes of the same manifest, harness, term list and version.
+
+**What the launcher refuses, before any session is launched.**
+
+- A check report that is not a pass of the manifest's bytes as they are now, by
+  the harness as it is now, on the installed version of the CLI, with the term
+  list as it is now; or one that does not list the skills its sessions had.
+- A statement that is not the bytes whose digest is given on the command line,
+  is empty, holds a recorded term, names no heading, or begins like an option.
+- A reviewed record that is not of the registered snapshot, was made with
+  another term list, does not say that its last scan found nothing, or names no
+  tree. The last scan is the scan of what was left; what was removed is in other
+  fields of the record.
+- An export that could not be made, or whose record is not the reviewed record,
+  byte for byte, or whose bytes are not the tree that record names, or that
+  holds anything that is not a plain file.
+- A copy that holds a recorded term, or a name the CLI loads by itself in a
+  directory above the copy.
+- A run directory that is not empty, or is a link.
+
+**The launcher makes the export itself.** No tree is an argument. The first
+proposal had the launcher handed a tree and its record, and checked one against
+the other. The critique named what that leaves open: a record that names a
+commit does not show that the tree came from it. So the launcher runs the export
+script on the registered commit, into a directory only it can read, and requires
+the record made then to be the reviewed record, byte for byte. Each file is read
+once; those bytes must give the record's tree digest; the picker's working
+directory is written from those bytes at a fresh path under `/private/tmp` that
+names nothing, read-only, and is scanned there. Read-only is not private: other
+accounts on the machine can read the copy while the picker runs. The export made for this is
+removed before the session starts. The record is never in the copy or the
+prompt.
+
+**One turn.** The prompt is the statement, without the white space around it,
+and nothing else. The digest is of the file's bytes.
+
+**The picker's own session is checked.** After the turn the launcher reads its
+stream:
+
+- it ran to a result, the result is not an error, and the CLI exited 0;
+- every line is an event;
+- every `init` shows the manifest's tools, servers, plugins and permission mode,
+  no hook event, the version the report was made on, and the copy as its working
+  directory;
+- no `init` lists a skill the check's first session did not have (the report
+  carries one session's list, and builtin plugins have differed between sessions
+  under one manifest, so a plugin that brought a skill would make a clean run
+  not valid), or an agent, a
+  skill or a command that a `.claude/` directory of the export defines, by its
+  file's name or by the name it declares; and a list the session did not report
+  is not read as an empty one;
+- every call is inside the copy, by its own tool's fields, or was refused and
+  never answered. Read: its file. Grep: its `path` and its `glob`, when given;
+  its `pattern` is a regular expression over what files hold and is no path, a
+  confusion the first proposal made and the critique named. Glob: its pattern,
+  and its `path` when given. A call with no `path` is inside because the working
+  directory is the copy. Inside means the resolved path is the copy or under it:
+  a path that only begins as the copy's does is not, and neither is one that
+  climbs out, or one that begins with `~`, holds a `$`, a quote or a backslash,
+  has white space at either end, or begins like `file:`, since the launcher
+  does not know what would be made of it. A pattern over file names is
+  written out, brace groups first, and every pattern it stands for must be
+  inside: `{,}/etc/*` is `/etc/*`. A Grep `glob` is read as a list as well,
+  split at commas and white space. A field nobody knows is read as a path,
+  however deep its text is nested, and is not ignored. What the CLI recorded as
+  sent to the tool is read by the same rule as what the model asked for, and a
+  call with no such record is not inside;
+- no recorded term is in it;
+- the copy holds what it held, and nothing has appeared in it.
+
+The transcript is read as well: it must be there, be this session's, and hold no
+line that is not an event, no hook event, no recorded term, and no instruction
+file the CLI attached by itself, which is where a loaded `CLAUDE.md` is and the
+only place it is. How many of each kind of thing the CLI attached is recorded.
+The transcript is taken before the checks that could fail in a way nobody
+foresaw, so that it is kept then too.
+
+Things that make a run not valid and are not the picker's doing: a name the CLI
+loads by itself appearing, during the run, in a directory above the copy, which
+is `/private/tmp` and above; the kept stream changing after it was kept; the
+copy failing to be removed. And a session has one hour: one that has not ended
+by then is stopped, and its run is not valid.
+
+**The brief.** It is the text of the last assistant message that holds text. It is accepted only
+when that is the text of the one `result`, the result says the turn ended by
+itself and completed (`stop_reason` `end_turn`, `terminal_reason` `completed`),
+it is not empty and not over 64 KB, it holds every heading the statement names,
+each on its own line and in the statement's order, and nothing but blank lines
+comes before the first. The headings are read from the statement, so the
+launcher holds no second copy of it. Nothing is trimmed or repaired: the file
+kept is those bytes. A file gives none of this for free either: an interrupted
+run leaves a partial file, and a file can hold a preamble.
+
+If any of this fails, the stream and the transcript are kept, the launch record
+says the run is not valid and why, no file that could be taken for a brief is
+written, and the launcher exits 6. The same holds when the launch cannot be
+recorded: a brief with no record beside it is removed. A run directory must be
+empty before a launch, so that nothing left from another run is taken for this
+one's. And a mark is written into it before the session exists: a launcher that
+is killed writes no record, and without the mark a second launch would give the
+picker the statement again with nothing to say it had it once. The mark is in
+that run directory: a launch into another, empty one is not refused, and giving
+the picker the statement once is procedure. A killed launcher
+leaves its copy and the session's transcript where they were; nothing removes
+them.
+
+**No session has run on the export before the registered run.** Ruled by the
+owner on 2026-10-02. The launcher makes its own export, so a dry run of it would
+put the real export before a session. It is exercised by its cells, by their
+mutants, and by the live check of its manifest. Its first live run is the
+registered one.
+
+**Reruns of the picker.** Ruled by the owner, 2026-10-02. The picker's run has an
+allowance of its own, apart from the pairs': one rerun for a fault of the
+harness, declared and recorded, with the evidence of both runs kept. A fault of
+the harness is one the picker did not make: the launcher or the CLI failing, the
+time limit, a name appearing above the copy, the copy that cannot be removed,
+the kept stream changing, a skill a builtin plugin brought that the check's
+session did not have. A run that is not valid through the picker's own doing (a
+heading missing, a preamble, a call answered outside the copy, a recorded term)
+is not rerun: its record is kept and reported, the stage stops, and the owner
+decides what follows. If the statement is found to be at fault, a changed
+statement is a new one, reviewed and frozen again, and recorded as a restart and
+never as a rerun. Nothing is rerun for what a brief says, and the author does not
+read a brief's merits to decide whether it stands.
+
+**Cells and mutants.** As counted in the Dion pull request that carries this.
+The module was written before its cells, which then passed at once; what shows
+that a cell can fail is the mutant list, one fault for each refusal and each
+check that has one. Without a mutant: that a statement, a record or a report can
+be read at all; that the export left a record; the time limit on the export; and
+the refusal of a file in the export that is not a plain one, which two guards
+make, so that removing either changes nothing a cell can see. The counts are in
+the Dion pull request; at the branch's head the launcher's list and the lists
+for the check, the judge's launcher and the export were each killed in full.
+
+**What this does not show.**
+
+- That the picker learned nothing of what the terms name. A run that is fully
+  logged and holds no term can still have been steered by a synonym, a file
+  name, or the pattern of what is missing.
+- That Dion's own instruction files did not steer it. It may read them; that is
+  a read inside the copy. What is shown is that they were not loaded unasked, by
+  a check made in a directory that held planted ones.
+- That the calls the launcher read are the calls that ran. It reads what the
+  stream says the model asked for and what it says was sent to the tool. It does
+  not read the transcript for calls, and it counts the stream's own record of
+  transformed inputs without judging them.
+- How the CLI reads `~`, a brace group or a list of globs. The launcher treats
+  each as the wider reading and marks the run not valid if such a call was
+  answered. None was measured.
+- That a file was not changed and put back. Nothing compares the copy during the
+  run. What stands against it is that no tool writes.
+- What a refusal's wording gave away. A refused call is counted, and what the
+  CLI said in refusing it is not examined.
+- That the export script made the reviewed record on the day it was reviewed.
+  The launcher shows the script gives that record now.
+- Anything about the network, or about what a managed setting added that no
+  event reports, as for the judge.
+- That every hook the snapshot defines stays silent. The probe plants five
+  events; Dion's settings also define hooks for compacting a session, which no
+  probe session reaches. A hook that ran in the picker's own session would be an
+  event in its stream or transcript, and those are read.
 
 ### What this does not establish
 
@@ -709,8 +1012,10 @@ the second contains the first.
 - Control region: the sandbox check denies the picker any read outside an
   export that holds no store.
 - Overlap: partial, and only while the sandbox check passes.
-- `unvalidated-against`: a picker that reached the store. The check has not
-  been built.
+- `unvalidated-against`: a picker that reached the store. The check is built
+  and the picker's own calls are read after its run ("The picker"); whether the
+  brief holds anything of the store is looked at when the package that carries
+  the brief is built, which is a later stage.
 
 **4. The fixture is built from the real store.**
 
@@ -865,10 +1170,163 @@ and eight Important defects, all in what the launcher read of the judge's own
 session, and several sentences of this revision that said more than the code
 did. The defects are fixed and the sentences corrected. Not fixed, and listed
 in the Dion pull request: the listing and the question for afterwards are each
-read twice; the report does not bind the term list the check ran with; a
+read twice; the report does not bind the term list the check ran with (it does
+since revision 5); a
 launcher that is killed leaves its copy behind.
 
 Open after revision 4: the arm launcher does not bind the CLI version or the
 harness; the package builder, which decides what a judge sees, is not built;
 how many judges score a pair, and in what order they are shown the pages, is
 for the freeze.
+
+### The picker's launch, 2026-10-02
+
+Two packages went to Codex in critique mode, each one text the owner approved,
+each scanned for the recorded terms first. It read no file and ran no command.
+
+The first was the proposal, before anything was built.
+
+| Finding | Response |
+|---|---|
+| A Grep `pattern` is a regular expression, not a path; the proposal applied path rules to it | Adopted. Each tool is read by its own fields |
+| A string prefix is not containment, and a path can climb out after it is joined | Adopted. Resolved paths, and a cell for each |
+| A call with no path is safe only if the search root is known | Adopted. Every `init` must show the copy as the working directory |
+| A record that names a commit does not show the tree came from it | Adopted. The launcher makes the export and requires the reviewed record again |
+| "The record says nothing matched" confuses what was removed with what was left | Adopted. The two are named apart |
+| A result that is not an error is weaker than complete evidence | Adopted. An empty brief, a transcript that is missing or another session's, a line that is not an event: not valid |
+| Two sessions do not establish that `CLAUDE.md` and `.claude/` are inert, and a picker can read them | Adopted as wording. Whether they stay was the owner's ruling: they stay |
+| A summary lets the reviewer check consistency and not the sanitising, and paths can themselves reveal | Adopted as wording. What the reviewer is sent was the owner's ruling: the summary |
+| A run with no listed term can still carry what the terms name | Recorded as a limit. Not closed |
+| What a refusal says can give something away | Recorded as a limit. Not measured |
+| Enforce the boundary by isolating the filesystem, and treat the transcript as support | Not adopted, as for the judge. The owner accepted the narrower claim on 2026-09-29 |
+
+The second argued the tools, at the owner's request, with the author's position
+stated and Codex asked to argue the other side.
+
+| Finding | Response |
+|---|---|
+| Three tools, for a reason stronger than the author's: with Write a file can be changed, read and restored, and the comparison passes | Adopted. It is the reason given under "The picker" |
+| Two of the author's reasons are weak: the extra probes are a cost worth paying if drafting helps, and which of two briefs counts is settled by saying so | Accepted. Neither is relied on |
+| The strongest case for Write: a draft that is re-read and revised may be part of how a good brief is made; one whole message says nothing of quality | Recorded as an unmeasured cost |
+| A third option: an unchangeable copy and one narrowly writable output | Not chosen by the owner. It needs an MCP server, which cannot run in safe mode. It is the next step if the brief is unusable |
+| With three tools the launcher needs a rule for accepting the last message | Adopted: "The brief" |
+
+The owner's rulings of 2026-10-02 on this stage: three tools; Dion's
+`CLAUDE.md` and `.claude/` stay in the copy and the session is checked; the
+reviewer is sent a summary of the record; no dry run on the export.
+
+The build was then reviewed by a fresh reviewer of the same family as the
+author, reading the branch and running nothing. Two Critical and ten Important.
+The Critical ones: the rule for calls took several spellings of an outside path
+for an inside one (a leading `~`, a brace group that writes out to a path from
+the root, a list of globs, a field it did not know), with no cell for any; and
+the claim that Dion's own files are not loaded rested on a measurement nobody
+could find in the branch, made without a control, while the report the launcher
+required came from a directory holding no such files. Both are fixed as "The
+picker" now says, the second by a probe and not by a sentence. The Important
+ones were paths on which a run could end with a brief and no record, a run
+directory that could already hold a brief, an export asked to go and not seen to
+have gone, lists a session did not report read as empty, and eight guards no
+cell could fail. Each has a cell and a mutant now. Not fixed, and listed in the
+Dion pull request: the term list is read twice; a clean harness tree is recorded
+and not required; the launcher's `prepare` and the judge's are two copies of one
+rule; a killed export can leave its archive in the temporary directory.
+
+The fix pass was itself read by a second fresh reviewer, the commit alone. No
+Critical, seven Important: the control named above; the killed launcher; text
+nested in an unknown field, and spellings the sibling check already treats as
+real, taken for inside; a report read three times where the docstring said once;
+and cells and mutants that did not test what they were named for, three of them
+killed in the run by a neighbour's cell. Fixed, with a cell and a mutant each.
+Its list of what a well-behaved picker might do and be refused for was short and
+each item unlikely; the snapshot holds no file name with a `$`, a `~`, a brace
+or a space.
+
+One thing the review's measurement shows about a later stage, not this one: the
+arms also run under `--restricted`, and in one session under that flag alone an
+instruction file in the working directory was not loaded. An arm's session is
+not that session: it has a server and accepts edits. Whether an arm loads such a
+file, and so how the seeded arm is told where the seed is, belongs to the plan
+under which arms run and must be measured there.
+
+### Frozen: the picker's statement, 2026-10-03
+
+The prompt the picker is given, and nothing else is. Dion
+`tests/design_seed_pilot/exposure/picker/statement.txt`, SHA-256
+`0a5d36ad6c0a21280be1947cbb19f2fea20f5a5d1730c4ec0b10c1a99b71b4be`, 2788 bytes.
+A cell in `test_launch_picker.py` pins the digest. The launcher takes the digest
+on its command line and refuses any other bytes.
+
+```text
+The current directory holds a copy of a software project. Explore it with the tools you have.
+
+Choose one screen implemented in this project that displays a stored report. If the project has no such screen, say so and choose nothing else.
+
+A builder without access to this project will implement that screen as a single self-contained web page that displays one report from a data file. Reply with a brief for that builder. Your reply is the brief: write nothing before or after it. Use these six headings, each on its own line, exactly as written and in this order.
+
+## Task
+The screen, and what a person comes to it to do.
+
+## Content
+Every item the screen shows a reader, in the project's names; where the files leave open which items appear, say so. Say what a reader uses the screen to do (find, compare, check) only where the files show it; otherwise write "none evidenced". Say which items belong together because of what they mean, and give an order only where the order carries meaning (by time, by rank, parts before their total), each with its reason. Leave out order and grouping that is only how the files happen to arrange things, and where you cannot tell which it is, leave it out and say that you did. Every sentence here must stay true if the screen were completely redrawn: do not describe position, layout, spacing, colour or typography.
+
+## Data
+The report type, and for each item its field, type and meaning, with the files that define them; for an item with no field of its own, say that it is fixed text or which fields it is derived from. The form of each value where the files establish one: precision, units, sign convention, dates as stored and as shown, and what is shown for an absent value; otherwise write "not established". Specify the format of the data file the builder will receive: the project's own where it has one, otherwise one you propose, saying which it is.
+
+## States
+Each state the screen can be in as the files establish it (for example empty, partial, failed, and any a reader brings about, such as a filter), what causes it, and what the reader is shown or can do in it. Describe behaviour, not appearance.
+
+## Fixture
+Reproducible steps for a person with access to this project to create the data file. Say how to select or construct one report. Include no values from individual report records; include schema constants where they are needed to interpret the data.
+
+## Why this screen
+What in the project led you to it.
+
+Support claims about the project with file paths, and put the relevant details in the brief, since the builder cannot open those files. Keep project-defined facts apart from your proposed data-file and fixture instructions. Where the files do not settle something, state the gap and do not invent project behaviour.
+```
+
+**How it was reached.** The author wrote a first text, kept to what is wanted
+and silent on how a page looks. It went to the reviewer (Codex, critique mode,
+one package the owner approved, told nothing about the comparison). The reviewer
+found no phrase that favours a look, and proposed rewordings, all adopted but
+one: that the brief carry the existing screen's "structure, presentation rules,
+order, grouping, layout and formatting as established by the files".
+
+The author is not blind and would not adopt that, and the owner asked for a
+design debate on it (three same-family agents, two rounds; seed-aware, so
+advice and not a check). All three rejected the reviewer's wording, the
+author's "content and behaviour only", and a middle "order and grouping only",
+and converged on a rule: the brief binds only what stays true if the screen
+were completely redrawn. Order and grouping are given only where the data
+carries them, with a reason; the form of values is data; what a reader uses the
+screen for is asked where the files show it. Against the reviewer's wording:
+the existing presentation, given to both arms, is a rival seed, and the deriver,
+who sees only the brief, would derive "matches the described layout", which is
+the adherence check the owner declined. Against the author's: a seed-aware
+author would be drawing the line around what the seed governs, fidelity would
+have no anchor, and five pairs cannot absorb arrangement noise. Taken by the
+owner on 2026-10-02.
+
+The three changed paragraphs went back to the reviewer once (one package, the
+owner approved). It answered that the text describes more than the report but
+does not carry the screen's presentation hierarchy, which it called a coherent
+choice if the builder is to redesign the presentation; found no preference for
+a kind of screen or look, a preference for separating meaning from
+presentation, and a mild lean towards analytical tasks in "find, compare,
+check"; and named six places where a session that can only read files could not
+comply or could read two ways. Those six are adopted as clarifications: items
+the files leave open, a grouping whose reason cannot be told, an item with no
+field of its own, states a reader brings about, a data file's format the project
+does not define, and dates as stored and as shown. The changed text was not sent
+a third time.
+
+**Dissent recorded.** The reviewer holds that the brief should carry the
+existing screen's presentation hierarchy. The statement does not, by the owner's
+ruling, for the reasons above. A brief written under it describes what a page
+must show and do; how it is arranged is the builder's, and that is what the arms
+are compared on.
+
+Open after revision 5: the arm launcher binds neither the CLI version, the
+harness nor the term list; the package builder is not built; the cost of
+composing the brief in one message is not measured; the picker has not run; the deriver's and the
+reviewer's packages, the freeze and the arms each have their own plan.
