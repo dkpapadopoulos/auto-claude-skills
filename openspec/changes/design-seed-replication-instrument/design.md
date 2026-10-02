@@ -604,8 +604,11 @@ sessions, under the manifest as revision 5 has it:
 | `payload_terms` | absent |
 | `loaded` | as declared: every session's tools were exactly `Glob`, `Grep`, `Read` |
 
-That run was made before the `project_files` probe existed. The report is
-scratch. The check is made again on the day the picker runs, and
+That run was made before the `project_files` probe existed. With the probe, on
+the same day and version, the live cell for the picker's manifest passed with
+`project_files` "not loaded", and its red control passed: an open session given
+the same planted files ran all five hooks and held the instruction file in a
+record. Both reports are scratch. The check is made again on the day the picker runs, and
 the launcher takes that day's report.
 
 **What the launcher refuses, before any session is launched.**
@@ -705,7 +708,9 @@ allows.
 **Cells and mutants.** As counted in the Dion pull request that carries this.
 The module was written before its cells, which then passed at once; what shows
 that a cell can fail is the mutant list, one fault for each refusal and each
-check. One check has no cell: that the report did not change while it was read.
+check. At the branch's head on 2026-10-02 the launcher had 150 cells and 101
+mutants, all killed, and the lists for the check, the judge's launcher and the
+export were killed in full as well. One check has no cell: that the report did not change while it was read.
 
 **What this does not show.**
 
