@@ -60,15 +60,15 @@ It MAY describe the party's exposure as controlled.
 - **WHEN** the judge is launched
 - **THEN** that configuration MUST have passed the check for a restricted
   session
-- **AND** the package MUST be listed item by item, and a package holding
-  anything its listing does not name MUST NOT be launched
+- **AND** the package MUST be listed file by file, and a package holding a file
+  or a link its listing does not name MUST NOT be launched
 - **AND** the judge's working directory MUST NOT name the pair, the arm or the
   run
 - **AND** the question about which arm a page came from MUST NOT be asked until
   the scores are kept
-- **AND** what the judge's own session loaded MUST be compared with the
-  configuration afterwards, and a session that differs MUST be recorded as not
-  valid
+- **AND** what the judge's own session loaded and what it read MUST be
+  compared afterwards with the configuration and the package, and a session
+  that differs MUST be recorded as not valid
 
 #### Scenario: The configuration checked is the configuration launched
 
