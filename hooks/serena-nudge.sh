@@ -166,7 +166,9 @@ fi
 
 [ -n "${_CLASS}" ] || exit 0
 
-_MSG="Serena is available. Consider find_symbol or get_symbols_overview for symbol lookups instead of Grep."
+# Says "also", never "instead of": the session banner asks for a text search as
+# the cross-check, and a nudge that discouraged that search contradicted it.
+_MSG="Serena is available. For a symbol lookup, find_symbol or find_referencing_symbols also reports the enclosing symbol; keep the text search as the cross-check."
 if command -v jq >/dev/null 2>&1; then
     jq -n --arg msg "${_MSG}" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":$msg}}'
 else
