@@ -46,7 +46,9 @@ the risk is a false block, and the affected population is measured on ONE instal
 
 1. Accept `verify-yml` and `explicit`; reject hand-authored rungs.
 2. Advisory-first with a shadow corpus, and **the reader ships in the same change**.
-3. Gate the flip on **unexplained** would-blocks, not on the total rate — see below.
+3. ~~Gate the flip on **unexplained** would-blocks, not on the total rate.~~
+   SUPERSEDED 2026-10-02: the flip is gated on human-labelled false blocks —
+   see "Re-registration 2026-10-02".
 4. No change to the artifact schema, the producer, or any existing deny leg.
 
 ## Pre-registration (decision rule for the deny-flip)
@@ -152,7 +154,8 @@ None changes a registered number.
    not emit is `unexplained` (reason `unrecognised-source`).
 4. **Readability is decided before coverage.** An artifact that omits
    `discovery_source` is `cannot_check` whatever its `sha` says.
-5. **Population (predicate_version 1):** the composition-chain VERIFY leg only,
+5. **Population (written for predicate_version 1; version 2 keeps it and adds
+   one exclusion, see "Scope" in the re-registration):** the composition-chain VERIFY leg only,
    milestone in the chain and already credited, `git push` only (the spec's
    scenarios say push; a merge's subject is the PR, not a branch-local commit),
    content-bearing (a pure ref deletion ships nothing). `material_source` is
@@ -284,7 +287,14 @@ Unchanged from reading 5, with one exclusion: **a repo whose `.verify.yml`
 declares a non-local substrate is out of scope.** The writer refuses to run
 there by any route, so no measured verdict can exist. A check that can only
 fire and never be satisfied measures the repo's configuration, not the agent.
-The declaration is read from the pushed commit. Any future deny-flip inherits
+The declaration is read from the pushed commit, with the writer's own parse.
+**Limit, measured in review on 24 repo states:** the writer reads the working
+tree when it runs, so the two disagree when the tree differs from the commit
+(an uncommitted edit to the declaration, a checkout filter, `core.autocrlf`)
+and for a declaration with no commands. In those states the leg is in scope
+with a remedy that may not be reachable; that is exactly what a human
+`false_block` label is for, and one of them ends the window. A symlinked
+`.verify.yml` reads as `unknown` and stays in scope. Any future deny-flip inherits
 this scope: it must not deny in a repo the shadow never measured.
 
 A repo declaring nothing stays in scope, because the explicit route is
@@ -297,16 +307,27 @@ decides, and each record carries `gate_declaration` (`local` | `absent` |
 Flip to deny when **all** hold:
 
 1. **n >= 29** would-block episodes.
-2. **Zero** false-block episodes, across the whole corpus. One confirmed false
-   block means the rule cannot be met under this `predicate_version`: fix the
-   leg, bump the version, start again.
+2. **Zero** false-block episodes, across the whole corpus. A confirmed false
+   block means the rule cannot be met under this `predicate_version` while that
+   label stands: fix the leg, bump the version, start again. The one way a
+   false block stops standing is a human correcting a label recorded in error
+   (the latest human label per record wins); that is a correction of the
+   record, not a second opinion on the block.
 3. **Zero** unresolved episodes: every would-block episode carries a human
    `true_catch`. Silence never clears anything.
 4. The true catches span **>= 2 distinct repositories**, keyed on the
    normalised origin (reading 12).
 
-And nothing uncountable is present (reading 11, extended to the label sidecar:
-a corrupt label line may be hiding a `false_block`).
+And nothing uncountable is present. Reading 11 covers the shadow log. For the
+label sidecar, **every row is either applied, benign for a stated reason, or
+blocking**. Benign: claimant exactly `agent`; a whole-number other
+`predicate_version`; a well-formed human label made after the final deadline.
+Blocking: an unparseable line, a claimant that is neither `human` nor `agent`,
+a verdict outside the vocabulary, a `ts` that cannot be read, a malformed
+`predicate_version`, and an **orphan** — a label naming no would-block record
+of this corpus. Any of those may be a `false_block` the reader is not applying.
+A reading whose "as of" precedes its own evidence is also not met, and a
+reading taken with the clock overridden says so on its verdict line.
 
 `cannot_check` episodes are reported and never counted, in `n` or in
 diversity. There is no "unhealthy share" threshold: with successes silent, the
@@ -373,7 +394,18 @@ Unchanged: the **repo owner**, **fortnightly** from 2026-10-12.
 `scripts/verify-shadow-adjudicate.sh --next` shows the oldest unresolved episode
 with its evidence and the definitions above; `--adjudicate <record_id>
 --verdict ...` labels it into a sidecar; `--status` reports every clause. The
-shadow log is never mutated.
+shadow log is never mutated, and the reader refuses a sidecar path that
+resolves to it.
+
+**Limits of the label, stated:** the sidecar is an agent-writable file. "Human"
+is decided by the absence of three session environment variables, so an agent
+running in a foreign environment (an IDE terminal, a scheduler) or deliberately
+clearing them produces a human-claimed row. A label covers every would-block
+record in the episode at the moment it is written, including one that arrived
+after `--next` was read. "Latest" is file order. And a rule that is unmet at
+the deadline only because of an uncountable row can read met after that row is
+accounted for by hand. None of this is a security boundary; it is a record
+that takes a deliberate act to falsify.
 
 ### Sparring record
 

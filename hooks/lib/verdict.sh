@@ -248,10 +248,18 @@ EOF
 # This is reachability evidence, not a verdict. scripts/verify-and-record.sh
 # refuses any `.verify.yml` whose substrate is not exactly `local`, and refuses
 # explicit commands whenever a `.verify.yml` exists — so in a `non-local` repo
-# NO route produces a measured verdict, and a leg that asks for one would name a
-# remedy that cannot be executed. Same parse as the writer, so the two cannot
-# disagree about what "local" means. Read from the COMMIT, not the working
-# tree: the question is about what is being pushed.
+# no route produces a measured verdict for that tree, and a leg that asks for
+# one would name a remedy that cannot be executed.
+#
+# The awk is the writer's own. The INPUT is not: the writer reads the working
+# tree when it runs, this reads the COMMIT being pushed. They agree whenever the
+# tree is clean at that commit, and can disagree otherwise (an uncommitted edit
+# to the declaration; a checkout filter or autocrlf rewriting the file). That
+# is deliberate — the question here is about what is pushed — and it is a
+# limit, not a guarantee of agreement. Measured in review on 24 repo states.
+#
+# A SYMLINKED `.verify.yml` is `unknown`: its blob holds the link target, not
+# the declaration, and parsing that as YAML called a local gate non-local.
 verdict_gate_declaration() {
     local proot="${1:-}" rev="${2:-HEAD}" body sub
     git -C "${proot:-.}" rev-parse --verify --quiet "${rev}^{commit}" >/dev/null 2>&1 \
@@ -259,6 +267,10 @@ verdict_gate_declaration() {
     if ! git -C "${proot:-.}" cat-file -e "${rev}:.verify.yml" 2>/dev/null; then
         printf '%s' "absent"; return 0
     fi
+    case "$(git -C "${proot:-.}" ls-tree "${rev}" -- .verify.yml 2>/dev/null)" in
+        100644*|100755*) : ;;
+        *) printf '%s' "unknown"; return 0 ;;   # symlink, submodule, tree
+    esac
     body="$(git -C "${proot:-.}" show "${rev}:.verify.yml" 2>/dev/null)" || { printf '%s' "unknown"; return 0; }
     sub="$(printf '%s\n' "${body}" | awk -F': *' '$1=="substrate"{print $2; exit}')"
     if [ "${sub}" = "local" ]; then printf '%s' "local"; else printf '%s' "non-local"; fi

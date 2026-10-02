@@ -695,6 +695,40 @@ rm -f "${_VLOG}" "${_ART}"; _seed_status "${_BOTH}"
 _guard "${PROJECT_ROOT}" "${RB}" "git push origin HEAD" >/dev/null
 assert_equals "no declaration: in scope, recorded as absent" "absent" "$(_lastf .gate_declaration)"
 
+# --- the declaration parser, against the REAL writer's behaviour ----------------
+# Each state is built in a scratch repo, classified, and then the real writer
+# is run there: `non-local` must mean the writer produces nothing, and
+# `unknown` must not be used to exclude a repo where it does.
+_declrepo() { # <name> — creates ${TMP}/<name> with one commit; caller adds .verify.yml
+    mkdir -p "${TMP}/$1"
+    ( cd "${TMP}/$1" && git -c init.defaultBranch=main init -q && git config user.email t@t \
+        && git config user.name t && echo a > a.txt && git add -A && git commit -qm base ) >/dev/null 2>&1
+}
+_writer_produces() { # <repo> -> yes | no
+    rm -f "${_ART}"; _produce "$1"
+    if [ -f "${_ART}" ]; then echo yes; else echo no; fi
+}
+_declrepo d-nokey
+( cd "${TMP}/d-nokey" && printf 'commands:\n  - name: tests\n    run: true\n' > .verify.yml && git add -A && git commit -qm d ) >/dev/null 2>&1
+assert_equals "declaration with no substrate key => non-local" "non-local" "$(verdict_gate_declaration "${TMP}/d-nokey")"
+assert_equals "…and the writer agrees (produces nothing)" "no" "$(_writer_produces "${TMP}/d-nokey")"
+_declrepo d-remote
+( cd "${TMP}/d-remote" && printf 'substrate: remote\ncommands:\n  - name: tests\n    run: true\n' > .verify.yml && git add -A && git commit -qm d ) >/dev/null 2>&1
+assert_equals "a substrate other than the literal ci => non-local" "non-local" "$(verdict_gate_declaration "${TMP}/d-remote")"
+assert_equals "…and the writer agrees" "no" "$(_writer_produces "${TMP}/d-remote")"
+_declrepo d-crlf
+( cd "${TMP}/d-crlf" && printf 'substrate: local\r\ncommands:\r\n  - name: tests\r\n    run: true\r\n' > .verify.yml && git add -A && git commit -qm d ) >/dev/null 2>&1
+assert_equals "a CRLF declaration is read the way the writer reads it" "non-local" "$(verdict_gate_declaration "${TMP}/d-crlf")"
+assert_equals "…and the writer agrees" "no" "$(_writer_produces "${TMP}/d-crlf")"
+# A SYMLINKED declaration: the blob is the link target, not YAML. Calling that
+# non-local excluded a repo where the writer runs fine.
+_declrepo d-link
+( cd "${TMP}/d-link" && printf 'substrate: local\ncommands:\n  - name: tests\n    run: true\n' > real.yml \
+    && ln -s real.yml .verify.yml && git add -A && git commit -qm d ) >/dev/null 2>&1
+assert_equals "a symlinked declaration => unknown, which stays IN scope" "unknown" "$(verdict_gate_declaration "${TMP}/d-link")"
+assert_equals "…because the writer does produce a verdict there" "yes" "$(_writer_produces "${TMP}/d-link")"
+rm -f "${_ART}"
+
 # ---------------------------------------------------------------------------
 # 5. Static posture
 # ---------------------------------------------------------------------------
@@ -730,7 +764,7 @@ _emit() { # <repo> <class> <reason> <token> <ts>
 }
 _rd() { # <now> <args...>  — the reader as a HUMAN would run it
     local _now="$1"; shift
-    env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID \
+    env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_ENTRYPOINT \
         VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" VERIFY_SHADOW_NOW="${_now}" \
         /bin/bash "${READER}" "$@" 2>&1
 }
@@ -803,6 +837,22 @@ _label_agent "$(_rid 1)" true_catch
 out="$(_status)"
 assert_contains "agent label: episode stays unresolved" "unresolved=1" "${out}"
 assert_contains "agent label: reported as ignored" "agent-claimed row(s) ignored" "${out}"
+# EACH session marker alone is enough to be an agent. The helper above sets only
+# one, so dropping either of the others from the check left every cell green.
+while IFS= read -r _var; do
+    [ -n "${_var}" ] || continue
+    _reset
+    _emit "${RA}" unexplained absent t1 "2026-10-05T10:00:00Z"
+    env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_ENTRYPOINT "${_var}=x" \
+        VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" VERIFY_SHADOW_NOW="2026-10-19T00:00:00Z" \
+        /bin/bash "${READER}" --adjudicate "$(_rid 1)" --verdict true_catch >/dev/null 2>&1
+    assert_equals "label made with only ${_var} set is agent-claimed" "agent" "$(jq -r .claimant "${_ADJ}" 2>/dev/null | tail -1)"
+    assert_contains "label made with only ${_var} set resolves nothing" "unresolved=1" "$(_status)"
+done <<EOF
+CLAUDECODE
+CLAUDE_CODE_SESSION_ID
+CLAUDE_CODE_ENTRYPOINT
+EOF
 
 # --- episode grouping: anchored 30 minutes, same (repo, branch, token) -------
 _reset
@@ -1064,6 +1114,143 @@ assert_contains "other-version record: not counted" "n=29" "${out}"
 assert_contains "other-version record: does not block" "DECISION RULE MET" "${out}"
 _rd 2026-10-20T00:00:00Z --adjudicate 0123456789abcdef --verdict true_catch >/dev/null 2>&1
 assert_equals   "a record of another version cannot be labelled" "1" "$?"
+
+# --- every LABEL row is placed, or it blocks (second review) ---------------------
+# From the corpus that reads MET, append one sidecar row the reader does not
+# apply. If it could be a false_block, the rule must not read MET.
+_R2="$(sed -n 2p "${TMP}/base29.jsonl" | jq -r .record_id)"
+while IFS='|' read -r _what _row _needle; do
+    [ -n "${_what}" ] || continue
+    _base
+    printf '%s\n' "${_row}" | sed "s/@R2@/${_R2}/" >> "${_ADJ}"
+    out="$(_status)"
+    assert_contains     "label row (${_what}): reported" "${_needle}" "${out}"
+    assert_not_contains "label row (${_what}): never MET" "DECISION RULE MET" "${out}"
+done <<EOF
+orphan false_block|{"record_id":"gone0001","verdict":"false_block","claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":2}|orphan label(s) : 1
+fractional-second ts|{"record_id":"@R2@","verdict":"false_block","claimant":"human","ts":"2026-10-19T00:00:00.123Z","predicate_version":2}|no usable ts : 1
+no ts|{"record_id":"@R2@","verdict":"false_block","claimant":"human","predicate_version":2}|no usable ts : 1
+no claimant|{"record_id":"@R2@","verdict":"false_block","ts":"2026-10-19T00:00:00Z","predicate_version":2}|no usable claimant : 1
+claimant null|{"record_id":"@R2@","verdict":"false_block","claimant":null,"ts":"2026-10-19T00:00:00Z","predicate_version":2}|no usable claimant : 1
+verdict not a string|{"record_id":"@R2@","verdict":true,"claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":2}|no usable verdict : 1
+verdict outside vocabulary|{"record_id":"@R2@","verdict":"fine","claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":2}|no usable verdict : 1
+unusable verdict on an unknown record|{"record_id":"gone0002","verdict":"fine","claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":2}|no usable verdict : 1
+version as a string|{"record_id":"@R2@","verdict":"false_block","claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":"2"}|malformed predicate_version : 1
+no version|{"record_id":"@R2@","verdict":"false_block","claimant":"human","ts":"2026-10-19T00:00:00Z"}|malformed predicate_version : 1
+EOF
+# The three BENIGN buckets, pinned so a tightening cannot make them block:
+_base
+printf '{"record_id":"%s","verdict":"false_block","claimant":"agent","ts":"2026-10-19T00:00:00Z","predicate_version":2}\n' "${_R2}" >> "${_ADJ}"
+# The other-version row names a REAL record of this corpus: it must be ignored
+# for its version, not merely fail to match an id.
+printf '{"record_id":"%s","verdict":"false_block","claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":1}\n' "${_R2}" >> "${_ADJ}"
+out="$(_status)"
+assert_contains "benign: an agent row is reported" "agent-claimed row(s) ignored" "${out}"
+assert_contains "benign: an other-version label row is reported" "another predicate version ignored" "${out}"
+assert_contains "benign rows do not block" "DECISION RULE MET" "${out}"
+
+# --- episode time is its first WOULD-BLOCK record -------------------------------
+# cannot_check before the starvation date, the would-block after it: nothing
+# blockable existed by the date, so the check must not read cleared.
+_reset
+for _t in a b c; do
+    _emit "${RA}" cannot_check unparseable "x${_t}" "2026-12-31T23:50:00Z"
+    _emit "${RA}" unexplained absent       "x${_t}" "2027-01-01T00:05:00Z"
+done
+_label_all true_catch
+out="$(_status "2027-01-10T00:00:00Z")"
+assert_contains     "three mixed episodes are three would-block episodes" "n=3" "${out}"
+assert_contains     "a would-block made after the date does not clear starvation" "starvation check : CLOSED" "${out}"
+
+# Episodes arriving after the starvation date cannot reopen it.
+_reset
+_emit "${RA}" explained_ladder hand-authored t1 "2026-10-05T10:00:00Z"
+_emit "${RB}" explained_ladder hand-authored t2 "2026-10-06T10:00:00Z"
+_emit "${RA}" explained_ladder hand-authored t3 "2027-01-02T10:00:00Z"
+_emit "${RB}" explained_ladder hand-authored t4 "2027-01-03T10:00:00Z"
+_emit "${RB}" explained_ladder hand-authored t5 "2027-01-04T10:00:00Z"
+_label_all true_catch
+assert_contains "later episodes cannot reopen a closed starvation window" "starvation check : CLOSED" "$(_status "2027-02-01T00:00:00Z")"
+
+# ALL FOUR clauses met, and still a null result: 29 labelled true catches in two
+# repos, every one of them after the starvation date.
+_base
+jq -c '.ts |= sub("2026-10-05"; "2027-01-05")' "${_CORP}" > "${_CORP}.t" && mv "${_CORP}.t" "${_CORP}"
+out="$(_status "2027-02-15T00:00:00Z")"
+assert_contains     "starved corpus: all four clauses read met" "[MET] 4." "${out}"
+assert_contains     "starved corpus: clause 1 too" "[MET] 1." "${out}"
+assert_contains     "starved corpus: closed as a null result" "NULL RESULT" "${out}"
+assert_not_contains "starved corpus: never MET" "DECISION RULE MET" "${out}"
+
+# The final deadline to the second.
+_reset
+_emit "${RA}" unexplained absent t1 "2027-03-31T23:59:59Z"
+_emit "${RA}" unexplained absent t2 "2027-04-01T00:00:00Z"
+out="$(_status "2027-04-02T00:00:00Z")"
+assert_contains "an episode at the last second of the window counts" "n=1" "${out}"
+assert_contains "an episode one second later does not" "1 episode(s) began after" "${out}"
+
+# --- false_block outranks unresolved inside one episode --------------------------
+_reset
+_emit "${RA}" unexplained absent t1 "2026-10-05T10:00:00Z"
+_label "$(_rid 1)" false_block
+_emit "${RA}" unexplained absent t1 "2026-10-05T10:10:00Z"     # joins, unlabelled
+out="$(_status)"
+assert_contains "false_block + an unlabelled record => the episode is a false block" "false_block=1" "${out}"
+assert_contains "…and is not downgraded to unresolved" "unresolved=0" "${out}"
+
+# --- a label is written for would-block records only -----------------------------
+_reset
+_emit "${RA}" cannot_check unparseable t1 "2026-10-05T10:00:00Z"
+_emit "${RA}" unexplained absent       t1 "2026-10-05T10:05:00Z"
+_label "$(_rid 2)" true_catch
+assert_equals "one would-block record => one label row" "1" "$(grep -c . "${_ADJ}" | tr -d '[:space:]')"
+assert_equals "the cannot_check record got no label" "0" "$(grep -c "\"record_id\":\"$(_rid 1)\"" "${_ADJ}" | tr -d '[:space:]')"
+
+# --- the clock -------------------------------------------------------------------
+_base
+out="$(_status)"
+assert_contains "an overridden clock is announced in the header and on the verdict" "DECISION RULE MET.  [CLOCK OVERRIDDEN" "${out}"
+out="$(env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_ENTRYPOINT -u VERIFY_SHADOW_NOW \
+        VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" /bin/bash "${READER}" --status 2>&1)"
+assert_not_contains "the live clock carries no override marker" "CLOCK OVERRIDDEN" "${out}"
+# Evidence from the reading's own future cannot support it.
+out="$(_status "2026-10-01T00:00:00Z")"
+assert_contains     "future-dated evidence is reported" "FUTURE-DATED : 29" "${out}"
+assert_not_contains "future-dated evidence: never MET" "DECISION RULE MET" "${out}"
+# The value is validated as a WHOLE string and as a real instant.
+VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" \
+    VERIFY_SHADOW_NOW="$(printf 'garbage\n2026-12-15T00:00:00Z')" /bin/bash "${READER}" --status >/dev/null 2>&1
+assert_equals "a two-line clock value is refused" "3" "$?"
+VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" \
+    VERIFY_SHADOW_NOW="2026-13-05T10:00:00Z" /bin/bash "${READER}" --status >/dev/null 2>&1
+assert_equals "an impossible instant (month 13) is refused — well-shaped, so only the range check sees it" "3" "$?"
+VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" \
+    VERIFY_SHADOW_NOW="2026-12-15T24:00:00Z" /bin/bash "${READER}" --status >/dev/null 2>&1
+assert_equals "an impossible instant (hour 24) is refused" "3" "$?"
+
+# --- the sidecar must never BE the shadow log ------------------------------------
+_base
+_before="$(cksum < "${_CORP}")"
+env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_ENTRYPOINT \
+    VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_CORP}" VERIFY_SHADOW_NOW="2026-10-19T00:00:00Z" \
+    /bin/bash "${READER}" --adjudicate "$(_rid 1)" --verdict true_catch >/dev/null 2>&1
+assert_equals "labelling into the shadow log is refused" "1" "$?"
+assert_equals "…and the shadow log is untouched" "${_before}" "$(cksum < "${_CORP}")"
+ln -s "${_CORP}" "${TMP}/alias.jsonl"
+env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_ENTRYPOINT \
+    VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${TMP}/alias.jsonl" VERIFY_SHADOW_NOW="2026-10-19T00:00:00Z" \
+    /bin/bash "${READER}" --adjudicate "$(_rid 1)" --verdict true_catch >/dev/null 2>&1
+assert_equals "…also through a symlink" "${_before}" "$(cksum < "${_CORP}")"
+out="$(VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${TMP}/alias.jsonl" VERIFY_SHADOW_NOW="2026-10-20T00:00:00Z" /bin/bash "${READER}" --status 2>&1)"
+assert_contains     "--status refuses a sidecar that is the shadow log" "SAME FILE" "${out}"
+assert_not_contains "…and makes no claim" "DECISION RULE" "${out}"
+rm -f "${TMP}/alias.jsonl"
+
+# --- a label made after the window says so ---------------------------------------
+_base
+out="$(_rd 2027-04-05T00:00:00Z --adjudicate "$(_rid 1)" --verdict true_catch)"
+assert_contains "a label made after the final deadline is announced as ignored" "made after the final deadline" "${out}"
 
 # --- argument validation --------------------------------------------------------
 _base

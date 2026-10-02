@@ -5,8 +5,7 @@
 #
 # DIAGNOSTIC ONLY. Sourced by scripts/shadow-adjudicate.sh (IMPLEMENT leg),
 # scripts/review-shadow-adjudicate.sh (REVIEW leg) and
-# scripts/verify-shadow-adjudicate.sh (VERIFY leg, which uses the episode
-# grouping and the ISO prelude but computes no band). Never sourced by a hook,
+# scripts/verify-shadow-adjudicate.sh (VERIFY leg). Never sourced by a hook,
 # never consulted by hooks/openspec-guard.sh, and deliberately EXCLUDED from
 # _GATE_ENFORCE_LIBS — same posture as implement-shadow.sh and review-shadow.sh.
 #
