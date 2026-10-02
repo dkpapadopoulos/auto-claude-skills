@@ -285,8 +285,9 @@ assert_equals       "S4 omitted discovery_source => cannot_check" "cannot_check"
 # --- Record shape: every field the reader keys on is present ---------------
 rm -f "${_VLOG}" "${_ART}"; _seed_status "${_BOTH}"
 _guard "${PROJECT_ROOT}" "${RA}" "git push origin HEAD" >/dev/null
-assert_equals "record: schema_version"    "1" "$(_lastf .schema_version)"
-assert_equals "record: predicate_version" "1" "$(_lastf .predicate_version)"
+assert_equals "record: schema_version"    "2" "$(_lastf .schema_version)"
+assert_equals "record: predicate_version" "2" "$(_lastf .predicate_version)"
+assert_equals "record: gate_declaration is recorded (declared, local)" "local" "$(_lastf .gate_declaration)"
 assert_equals "record: repo is the toplevel" "${RA}" "$(_lastf .repo)"
 assert_equals "record: repo_id is the ORIGIN (normalised), not the path" "example.invalid/org/a" "$(_lastf .repo_id)"
 assert_equals "record: branch"   "feat" "$(_lastf .branch)"
@@ -557,7 +558,7 @@ mv "${PLUG}/hooks/lib/verdict.sh.orig" "${PLUG}/hooks/lib/verdict.sh"
 # fire AFTER the leg has run and compare against a copy with the leg disabled:
 # an early exit, a changed deny text, or a swallowed deny all show as a diff.
 PLUG_OFF="${TMP}/plug-off"; cp -R "${PLUG}" "${PLUG_OFF}"
-sed 's/^               \[ "\${_gc_is_push}" = "true" \] && \[ "\${_SUBJ_DELETION_ONLY:-false}" != "true" \]; then$/               false; then/' \
+sed 's/^               \[ "\${_vm_gate}" != "non-local" \]; then$/               false; then/' \
     "${PLUG}/hooks/openspec-guard.sh" > "${PLUG_OFF}/hooks/openspec-guard.sh"
 if cmp -s "${PLUG}/hooks/openspec-guard.sh" "${PLUG_OFF}/hooks/openspec-guard.sh"; then
     _record_fail "leg disabled in the control copy" "sed changed nothing — the comparisons below would be vacuous"
@@ -650,6 +651,51 @@ assert_equals    "no origin: repo and its worktree share one repo_id" "1" "${_id
 assert_not_empty "no origin: repo_id is not empty" "$(jq -r .repo_id "${_RIDLOG}" 2>/dev/null | head -1)"
 
 # ---------------------------------------------------------------------------
+# 4c. Scope (predicate_version 2): a repo that DECLARES a non-local substrate
+#     is out of the leg. The writer refuses to run there by any route, so no
+#     measured verdict can exist and the remedy this leg names could not be
+#     executed.
+# ---------------------------------------------------------------------------
+assert_equals "gate declaration: declared local"  "local"  "$(verdict_gate_declaration "${RA}")"
+assert_equals "gate declaration: nothing declared" "absent" "$(verdict_gate_declaration "${RB}")"
+assert_equals "gate declaration: unresolvable commit" "unknown" "$(verdict_gate_declaration "${RA}" "no-such-ref")"
+RNL="${TMP}/rnl"; mkdir -p "${RNL}"
+(
+  cd "${RNL}" || exit 1
+  git -c init.defaultBranch=main init -q
+  git config user.email t@t; git config user.name t
+  git remote add origin "https://example.invalid/org/nl.git"
+  printf 'substrate: ci\ncommands:\n  - name: tests\n    run: true\n' > .verify.yml
+  printf '#!/bin/bash\n' > run.sh
+  git add -A; git commit -qm base
+  git checkout -qb feat
+  echo "# c1" >> run.sh; git commit -qam c1
+) >/dev/null 2>&1
+assert_equals "gate declaration: declared non-local" "non-local" "$(verdict_gate_declaration "${RNL}")"
+# The REAL writer agrees that nothing can be measured there — the premise.
+rm -f "${_ART}"; _produce "${RNL}"; _produce "${RNL}" --name tests --run true
+if [ -f "${_ART}" ]; then _record_fail "premise: the writer produces no verdict in a non-local repo" "it wrote one — the scope exclusion is unjustified"
+else _record_pass "premise: the writer produces no verdict in a non-local repo, by either route"; fi
+rm -f "${_VLOG}"; _seed_status "${_BOTH}"
+out="$(_guard "${PROJECT_ROOT}" "${RNL}" "git push origin HEAD")"
+assert_equals       "non-local substrate => no shadow record" "0" "$(_nrec)"
+assert_not_contains "non-local substrate => no VERIFY VERDICT advisory" "VERIFY VERDICT" "${out:-}"
+# Control: the SAME repo declared local, same state, DOES record — so the cell
+# above is the scope rule and not a leg that failed to fire.
+( cd "${RNL}" && printf 'substrate: local\ncommands:\n  - name: tests\n    run: true\n' > .verify.yml && git commit -qam local ) >/dev/null 2>&1
+_guard "${PROJECT_ROOT}" "${RNL}" "git push origin HEAD" >/dev/null
+assert_equals "control: the same repo declared local records" "1" "$(_nrec)"
+# The declaration is read from the PUSHED commit, not the working tree.
+( cd "${RNL}" && printf 'substrate: ci\n' > .verify.yml ) >/dev/null 2>&1
+rm -f "${_VLOG}"
+_guard "${PROJECT_ROOT}" "${RNL}" "git push origin HEAD" >/dev/null
+assert_equals "an UNCOMMITTED edit to the declaration does not change scope" "1" "$(_nrec)"
+# A repo declaring nothing is IN scope and says so in the record.
+rm -f "${_VLOG}" "${_ART}"; _seed_status "${_BOTH}"
+_guard "${PROJECT_ROOT}" "${RB}" "git push origin HEAD" >/dev/null
+assert_equals "no declaration: in scope, recorded as absent" "absent" "$(_lastf .gate_declaration)"
+
+# ---------------------------------------------------------------------------
 # 5. Static posture
 # ---------------------------------------------------------------------------
 _enf="$(grep '^_GATE_ENFORCE_LIBS=' "${PROJECT_ROOT}/hooks/session-start-hook.sh" 2>/dev/null)"
@@ -668,303 +714,233 @@ assert_equals "guard passes _SUBJ_ROOT as the recorder's root argument" \
     'verify_shadow_record "${_SESSION_TOKEN}" "${_SUBJ_ROOT}"' "${_site}"
 
 # ---------------------------------------------------------------------------
-# 6. The reader. Corpora come from the REAL recorder; only ts is patched.
+# 6. The reader, under the 2026-10-02 re-registration (predicate_version 2).
+#    Corpora come from the REAL recorder; only ts is patched. Labels come from
+#    the REAL --adjudicate, never a hand-written sidecar row, except where a
+#    cell is about a corrupt sidecar.
 # ---------------------------------------------------------------------------
 _CORP="${TMP}/corpus.jsonl"
+_ADJ="${TMP}/adjudication.jsonl"
 _emit() { # <repo> <class> <reason> <token> <ts>
-    VERIFY_SHADOW_LOG="${_CORP}" verify_shadow_record "$4" "$1" "$2" "$3" push HEAD "" false ""
+    VERIFY_SHADOW_LOG="${_CORP}" verify_shadow_record "$4" "$1" "$2" "$3" push HEAD "" false "" local
     local _l; _l="$(tail -1 "${_CORP}")"
     sed '$d' "${_CORP}" > "${_CORP}.t"
     printf '%s\n' "${_l}" | jq -c --arg ts "$5" '.ts = $ts' >> "${_CORP}.t"
     mv "${_CORP}.t" "${_CORP}"
 }
-_status() { # [now-iso]
-    VERIFY_SHADOW_LOG="${_CORP}" VERIFY_SHADOW_NOW="${1:-2026-10-20T00:00:00Z}" \
-        /bin/bash "${READER}" --status 2>&1
+_rd() { # <now> <args...>  — the reader as a HUMAN would run it
+    local _now="$1"; shift
+    env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID \
+        VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" VERIFY_SHADOW_NOW="${_now}" \
+        /bin/bash "${READER}" "$@" 2>&1
 }
+_status() { _rd "${1:-2026-10-20T00:00:00Z}" --status; }
+_label()  { # <record_id> <verdict> [now]
+    _rd "${3:-2026-10-19T00:00:00Z}" --adjudicate "$1" --verdict "$2" --reason test >/dev/null
+}
+_label_agent() { # <record_id> <verdict>
+    CLAUDECODE=1 VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" \
+        VERIFY_SHADOW_NOW="2026-10-19T00:00:00Z" /bin/bash "${READER}" --adjudicate "$1" --verdict "$2" >/dev/null 2>&1
+}
+_label_all() { # <verdict>  — one human label per would-block record
+    local _id
+    while IFS= read -r _id; do
+        [ -n "${_id}" ] || continue
+        _label "${_id}" "$1"
+    done <<EOF
+$(jq -r 'select(.would_block == true) | .record_id' "${_CORP}" 2>/dev/null)
+EOF
+}
+_rid() { sed -n "${1}p" "${_CORP}" | jq -r .record_id; }   # record id on line N
+_reset() { rm -f "${_CORP}" "${_ADJ}"; }
 
-# --- no corpus, and an unreadable one, are different statements -------------
-rm -f "${_CORP}"
+# --- the floor comes from the SHARED band rule, not from a number typed here --
+# shellcheck disable=SC1090
+. "${PROJECT_ROOT}/hooks/lib/shadow-corpus.sh"
+assert_equals "shared rule: zero false blocks of 29 is DENY (<10% at 95%)" "DENY" \
+    "$(ALPHA=0.05 DENY_P=0.10 ADVISORY_P=0.20 shadow_band 0 29)"
+if [ "$(ALPHA=0.05 DENY_P=0.10 ADVISORY_P=0.20 shadow_band 0 28)" != "DENY" ]; then
+    _record_pass "shared rule: zero false blocks of 28 is NOT yet DENY (so the floor is 29, not lower)"
+else
+    _record_fail "shared rule: zero false blocks of 28 is NOT yet DENY" "the floor would be lower than registered"
+fi
+assert_contains "reader takes its band from the shared lib" "shadow_band" "$(cat "${READER}")"
+
+# --- no corpus is reported as no corpus --------------------------------------
+_reset
 out="$(_status)"
 assert_contains "no corpus is reported as no corpus" "no corpus yet" "${out}"
 assert_contains "no corpus => decision rule not met" "DECISION RULE NOT MET" "${out}"
+assert_contains "no corpus => --next has nothing outstanding" "nothing outstanding" "$(_rd 2026-10-20T00:00:00Z --next)"
 
-# --- round trip: a record written by the REAL GUARD is counted --------------
-rm -f "${_VLOG}" "${_ART}"; _seed_status "${_BOTH}"
+# --- round trip: REAL guard -> REAL reader -> REAL label ----------------------
+# ts is patched to a fixed in-window instant: a record stamped with the real
+# clock would start failing this cell the day the registered deadline passes.
+rm -f "${_VLOG}" "${_ART}" "${_ADJ}"; _seed_status "${_BOTH}"
 _guard "${PROJECT_ROOT}" "${RA}" "git push origin HEAD" >/dev/null
-out="$(VERIFY_SHADOW_LOG="${_VLOG}" /bin/bash "${READER}" --status 2>&1)"
-assert_contains "round trip: guard-written record is one episode" "n=1" "${out}"
-assert_contains "round trip: classified unexplained" "unexplained=1" "${out}"
+jq -c '.ts = "2026-10-05T10:00:00Z"' "${_VLOG}" > "${_CORP}"
+out="$(_status)"
+assert_contains "round trip: guard-written record is one would-block episode" "n=1" "${out}"
+assert_contains "round trip: it starts unresolved" "unresolved=1" "${out}"
+out="$(_rd 2026-10-20T00:00:00Z --next)"
+assert_contains "round trip: --next offers that episode" "$(_rid 1)" "${out}"
+assert_contains "round trip: --next shows the recorded gate declaration" "gate=local" "${out}"
+assert_contains "round trip: --next states what a false block is" "FALSE BLOCK" "${out}"
+_before="$(cksum < "${_CORP}")"
+_label "$(_rid 1)" true_catch
+assert_equals   "labelling never mutates the shadow log" "${_before}" "$(cksum < "${_CORP}")"
+assert_equals   "sidecar is 0600" "-rw-------" "$(ls -l "${_ADJ}" | cut -c1-10)"
+out="$(_status)"
+assert_contains "round trip: a human label resolves it" "true_catch=1" "${out}"
+assert_contains "round trip: nothing unresolved" "unresolved=0" "${out}"
+assert_contains "round trip: --next says everything is labelled" "carries a human label" \
+    "$(_rd 2026-10-20T00:00:00Z --next)"
 
-# --- episode grouping: anchored 30 minutes, same (repo, branch, token) ------
-rm -f "${_CORP}"
+# --- an AGENT's label resolves nothing ---------------------------------------
+_reset
+_emit "${RA}" unexplained absent t1 "2026-10-05T10:00:00Z"
+_label_agent "$(_rid 1)" true_catch
+out="$(_status)"
+assert_contains "agent label: episode stays unresolved" "unresolved=1" "${out}"
+assert_contains "agent label: reported as ignored" "agent-claimed row(s) ignored" "${out}"
+
+# --- episode grouping: anchored 30 minutes, same (repo, branch, token) -------
+_reset
 _emit "${RA}" unexplained absent tok1 "2026-10-05T10:00:00Z"
 _emit "${RA}" unexplained absent tok1 "2026-10-05T10:20:00Z"   # +20m: same episode
 _emit "${RA}" unexplained absent tok1 "2026-10-05T10:40:00Z"   # +40m from ANCHOR: new episode
 out="$(_status)"
 assert_contains "three records, anchored window => two episodes" "n=2" "${out}"
 assert_contains "record count is reported separately from n" "3 line(s)" "${out}"
-
-# --- two worktrees of ONE repository are one repo ---------------------------
-rm -f "${_CORP}"
-_emit "${RA}"    explained_ladder hand-authored tokA "2026-10-05T10:00:00Z"
-_emit "${RA_WT}" explained_ladder hand-authored tokB "2026-10-06T10:00:00Z"
+# One label covers the whole episode, and only that episode.
+_label "$(_rid 2)" true_catch
 out="$(_status)"
-assert_contains "two worktrees, one origin => 1 distinct repo" "repos=1" "${out}"
+assert_contains "one label covers both records of its episode" "true_catch=1" "${out}"
+assert_contains "the other episode is still unresolved" "unresolved=1" "${out}"
 
-# --- the decision rule, clause by clause ------------------------------------
-_five() { # <repo-for-5th> <class-for-5th> <reason>
-    rm -f "${_CORP}"
-    _emit "${RA}" explained_ladder hand-authored t1 "2026-10-05T10:00:00Z"
-    _emit "${RA}" explained_ladder hand-authored t2 "2026-10-06T10:00:00Z"
-    _emit "${RA}" cannot_check unparseable       t3 "2026-10-07T10:00:00Z"
-    _emit "${RA}" explained_ladder hand-authored t4 "2026-10-08T10:00:00Z"
-    _emit "$1" "$2" "$3"                         t5 "2026-10-09T10:00:00Z"
-}
-_five "${RB}" explained_ladder hand-authored
+# --- a record joining a labelled episode UNRESOLVES it -----------------------
+_reset
+_emit "${RA}" unexplained absent tok1 "2026-10-05T10:00:00Z"
+_label "$(_rid 1)" true_catch
+_emit "${RA}" unexplained not-clean tok1 "2026-10-05T10:10:00Z"
 out="$(_status)"
-assert_contains "all four clauses met: clause 1" "[MET] 1." "${out}"
-assert_contains "all four clauses met: clause 2" "[MET] 2." "${out}"
-assert_contains "all four clauses met: clause 3" "[MET] 3." "${out}"
-assert_contains "all four clauses met: clause 4" "[MET] 4." "${out}"
-assert_contains "all four clauses met => rule met" "DECISION RULE MET" "${out}"
-assert_contains "the reader authorises nothing by itself" "separate change" "${out}"
+assert_contains "new evidence in a labelled episode => unresolved again" "unresolved=1" "${out}"
 
-_five "${RA}" explained_ladder hand-authored
-out="$(_status)"
-assert_contains "one repository => clause 4 unmet" "[UNMET] 4." "${out}"
-assert_contains "one repository => rule not met" "DECISION RULE NOT MET" "${out}"
-
-_five "${RB}" unexplained absent
-out="$(_status)"
-assert_contains "one unexplained => clause 2 unmet" "[UNMET] 2." "${out}"
-assert_contains "one unexplained => rule not met" "DECISION RULE NOT MET" "${out}"
-
-# Positive-control clause: five episodes, zero unexplained, NONE explained.
-rm -f "${_CORP}"
+# --- cannot_check is reported and NEVER counted (owner ruling 2) --------------
+# The reviewer's reproduction: four cannot_check episodes in one repo plus one
+# would-block in a second used to read "rule met".
+_reset
 _emit "${RA}" cannot_check unparseable t1 "2026-10-05T10:00:00Z"
 _emit "${RA}" cannot_check unparseable t2 "2026-10-06T10:00:00Z"
 _emit "${RA}" cannot_check unparseable t3 "2026-10-07T10:00:00Z"
-_emit "${RB}" cannot_check unparseable t4 "2026-10-08T10:00:00Z"
-_emit "${RB}" cannot_check unparseable t5 "2026-10-09T10:00:00Z"
+_emit "${RA}" cannot_check unparseable t4 "2026-10-08T10:00:00Z"
+_emit "${RB}" explained_ladder hand-authored t5 "2026-10-09T10:00:00Z"
+_label "$(_rid 5)" true_catch
 out="$(_status)"
-assert_contains "no explained_ladder => clause 1 still met" "[MET] 1." "${out}"
-assert_contains "no explained_ladder => clause 3 UNMET" "[UNMET] 3." "${out}"
-assert_contains "no explained_ladder => rule not met (positive-control failure)" "DECISION RULE NOT MET" "${out}"
-
-# Four episodes is below the floor.
-rm -f "${_CORP}"
-_emit "${RA}" explained_ladder hand-authored t1 "2026-10-05T10:00:00Z"
-_emit "${RA}" explained_ladder hand-authored t2 "2026-10-06T10:00:00Z"
-_emit "${RB}" explained_ladder hand-authored t3 "2026-10-07T10:00:00Z"
-_emit "${RB}" explained_ladder hand-authored t4 "2026-10-08T10:00:00Z"
+assert_contains "cannot_check episodes do not count toward n" "n=1" "${out}"
+assert_contains "cannot_check episodes are still reported" "cannot_check=4" "${out}"
+assert_contains "a cannot_check-only repo adds no diversity" "repos=1" "${out}"
+# A cannot_check-only episode cannot be labelled into the count.
+_rd 2026-10-20T00:00:00Z --adjudicate "$(_rid 1)" --verdict true_catch >/dev/null 2>&1
+assert_equals "labelling a cannot_check-only episode is refused" "1" "$?"
+# In a MIXED episode the cannot_check record neither qualifies nor blocks.
+_reset
+_emit "${RA}" cannot_check unparseable t1 "2026-10-05T10:00:00Z"
+_emit "${RA}" unexplained absent       t1 "2026-10-05T10:05:00Z"
+_label "$(_rid 2)" true_catch
 out="$(_status)"
-assert_contains "n=4 => clause 1 unmet" "[UNMET] 1." "${out}"
+assert_contains "mixed episode counts once" "n=1" "${out}"
+assert_contains "mixed episode resolves on its would-block record alone" "true_catch=1" "${out}"
 
-# Within one episode, unexplained WINS regardless of arrival order.
-rm -f "${_CORP}"
-_emit "${RA}" explained_ladder hand-authored t1 "2026-10-05T10:00:00Z"
-_emit "${RA}" unexplained absent             t1 "2026-10-05T10:05:00Z"
+# --- the rule: 29 would-block episodes, all human true catches, two repos -----
+# Built once and copied. HALF are `unexplained` — the leg's own true catches —
+# which under the superseded rule each held the flip (owner ruling 1).
+_reset
+_i=0
+while [ "${_i}" -lt 29 ]; do
+    _i=$(( _i + 1 ))
+    _mm="$(printf '%02d' "${_i}")"
+    if [ $(( _i % 2 )) -eq 0 ]; then _r="${RA}"; _c="unexplained"; _why="absent"
+    else _r="${RB}"; _c="explained_ladder"; _why="hand-authored"; fi
+    _emit "${_r}" "${_c}" "${_why}" "s${_i}" "2026-10-05T10:${_mm}:00Z"
+done
+cp "${_CORP}" "${TMP}/base29.jsonl"
+_base() { cp "${TMP}/base29.jsonl" "${_CORP}"; rm -f "${_ADJ}"; [ -f "${TMP}/base29.adj" ] && cp "${TMP}/base29.adj" "${_ADJ}"; }
+
 out="$(_status)"
-assert_contains "mixed episode (explained first) => unexplained" "unexplained=1" "${out}"
-rm -f "${_CORP}"
-_emit "${RA}" unexplained absent             t1 "2026-10-05T10:00:00Z"
-_emit "${RA}" explained_ladder hand-authored t1 "2026-10-05T10:05:00Z"
+assert_contains "29 unlabelled episodes: clause 1 met" "[MET] 1." "${out}"
+assert_contains "29 unlabelled episodes: clause 3 UNMET" "[UNMET] 3." "${out}"
+assert_contains "29 unlabelled episodes: rule not met — silence clears nothing" "DECISION RULE NOT MET" "${out}"
+
+_label_all true_catch
+cp "${_ADJ}" "${TMP}/base29.adj"
 out="$(_status)"
-assert_contains "mixed episode (unexplained first) => unexplained" "unexplained=1" "${out}"
-assert_contains "mixed episode is ONE episode" "n=1" "${out}"
+assert_contains "all labelled: clause 1" "[MET] 1." "${out}"
+assert_contains "all labelled: clause 2" "[MET] 2." "${out}"
+assert_contains "all labelled: clause 3" "[MET] 3." "${out}"
+assert_contains "all labelled: clause 4" "[MET] 4." "${out}"
+assert_contains "all labelled: true catches of BOTH classes count" "true_catch=29" "${out}"
+assert_contains "all labelled => rule met" "DECISION RULE MET" "${out}"
+assert_contains "the reader authorises nothing by itself" "separate change" "${out}"
+assert_contains "band agrees with the floor" "DENY" "${out}"
 
-# --- starvation backstop ----------------------------------------------------
-rm -f "${_CORP}"
-_emit "${RA}" explained_ladder hand-authored t1 "2026-10-05T10:00:00Z"
-_emit "${RB}" explained_ladder hand-authored t2 "2026-10-06T10:00:00Z"
-out="$(_status "2026-11-01T00:00:00Z")"
-assert_contains "before the deadline the window is open" "backstop : OPEN" "${out}"
-out="$(_status "2027-01-05T00:00:00Z")"
-assert_contains "n<3 at the deadline => closed as a null result" "NULL RESULT" "${out}"
-# Episodes arriving AFTER the deadline cannot reopen a closed window.
-_emit "${RA}" explained_ladder hand-authored t3 "2027-01-02T10:00:00Z"
-_emit "${RA}" explained_ladder hand-authored t4 "2027-01-03T10:00:00Z"
-_emit "${RB}" explained_ladder hand-authored t5 "2027-01-04T10:00:00Z"
-out="$(_status "2027-01-05T00:00:00Z")"
-assert_contains "late episodes: all four clauses read met" "[MET] 1." "${out}"
-assert_contains "late episodes do not reopen the window" "NULL RESULT" "${out}"
-assert_not_contains "a closed window never reports the rule met" "DECISION RULE MET" "${out}"
-# Three by the deadline clears the backstop.
-rm -f "${_CORP}"
-_emit "${RA}" explained_ladder hand-authored t1 "2026-10-05T10:00:00Z"
-_emit "${RB}" explained_ladder hand-authored t2 "2026-10-06T10:00:00Z"
-_emit "${RB}" explained_ladder hand-authored t3 "2026-12-31T23:00:00Z"
-out="$(_status "2027-01-05T00:00:00Z")"
-assert_contains "n>=3 by the deadline => backstop cleared" "backstop : CLEARED" "${out}"
-
-# --- corrupt, foreign and unusable records are REPORTED, never silent -------
-_five "${RB}" explained_ladder hand-authored
-_base="$(_status)"
-# A malformed line in the MIDDLE must not truncate the corpus behind it.
-{ sed -n '1,2p' "${_CORP}"; printf '{"truncated": \n'; sed -n '3,5p' "${_CORP}"; } > "${_CORP}.t"
-mv "${_CORP}.t" "${_CORP}"
+# 28 is below the floor.
+_base; sed '$d' "${_CORP}" > "${_CORP}.t"; mv "${_CORP}.t" "${_CORP}"
 out="$(_status)"
-assert_contains "malformed mid-corpus line: all five episodes still counted" "n=5" "${out}"
-assert_contains "malformed line is reported" "1 unparseable" "${out}"
+assert_contains "28 episodes => clause 1 unmet" "[UNMET] 1." "${out}"
+assert_not_contains "28 episodes => never MET" "DECISION RULE MET" "${out}"
 
-_five "${RB}" explained_ladder hand-authored
-tail -1 "${_CORP}" | jq -c '.predicate_version = 99' > "${_CORP}.x"
-sed '$d' "${_CORP}" > "${_CORP}.t"; cat "${_CORP}.x" >> "${_CORP}.t"; mv "${_CORP}.t" "${_CORP}"; rm -f "${_CORP}.x"
+# One EXPLAINED episode left unlabelled: it is not a true catch "by construction".
+_base; grep -v "\"record_id\":\"$(_rid 1)\"" "${_ADJ}" > "${_ADJ}.t"; mv "${_ADJ}.t" "${_ADJ}"
+assert_equals "fixture: line 1 is an explained_ladder record" "explained_ladder" "$(sed -n 1p "${_CORP}" | jq -r .classification)"
 out="$(_status)"
-assert_contains "other-predicate record is excluded from n" "n=4" "${out}"
-assert_contains "other-predicate record is REPORTED" "other-predicate : 1" "${out}"
+assert_contains "unlabelled explained_ladder episode => unresolved" "unresolved=1" "${out}"
+assert_not_contains "unlabelled explained_ladder episode => never MET" "DECISION RULE MET" "${out}"
 
-_five "${RB}" explained_ladder hand-authored
-tail -1 "${_CORP}" | jq -c '.ts = ""' > "${_CORP}.x"
-sed '$d' "${_CORP}" > "${_CORP}.t"; cat "${_CORP}.x" >> "${_CORP}.t"; mv "${_CORP}.t" "${_CORP}"; rm -f "${_CORP}.x"
+# `unknown` keeps an episode unresolved.
+_base; _label "$(_rid 2)" unknown
 out="$(_status)"
-assert_contains "unusable-ts record is excluded from n" "n=4" "${out}"
-assert_contains "unusable-ts record is REPORTED" "unparseable ts : 1" "${out}"
+assert_contains "label unknown => unresolved" "unresolved=1" "${out}"
+assert_not_contains "label unknown => never MET" "DECISION RULE MET" "${out}"
 
-_five "${RB}" explained_ladder hand-authored
-# APPENDED as a sixth record, not swapped in for the fifth: with only four valid
-# episodes left the floor fails by itself and the cell passes with the
-# unknown-classification check deleted (mutation-verified). Here all four
-# clauses hold over the five valid episodes, so only that check can say NOT MET.
-tail -1 "${_CORP}" | jq -c '.classification = "looks-fine" | .record_id = "feedfacefeedface" | .session_token = "t6"' >> "${_CORP}"
+# One confirmed false block ends it for this predicate version.
+_base; _label "$(_rid 2)" false_block
 out="$(_status)"
-assert_contains "unknown classification: the five valid episodes still count" "n=5" "${out}"
-assert_contains "unknown classification: all four clauses read met" "[MET] 4." "${out}"
-assert_contains "unknown classification is REPORTED" "unknown classification : 1" "${out}"
-assert_contains "unknown classification never clears the rule" "DECISION RULE NOT MET" "${out}"
-
-if [ "$(id -u)" != "0" ]; then
-    _five "${RB}" explained_ladder hand-authored
-    chmod 000 "${_CORP}"
-    out="$(_status)"
-    chmod 600 "${_CORP}"
-    assert_contains     "unreadable corpus is an ERROR" "NOT READABLE" "${out}"
-    assert_not_contains "unreadable corpus is not reported as empty" "n=0" "${out}"
-else
-    _record_pass "unreadable-corpus cells skipped (running as root; chmod 000 does not bind)"
-fi
-
-# --- the reader's version comes from the PRODUCER, proven by moving it ------
-RD="${TMP}/reader-tree"; mkdir -p "${RD}/hooks/lib" "${RD}/scripts"
-cp "${PROJECT_ROOT}/hooks/lib/shadow-corpus.sh" "${RD}/hooks/lib/"
-cp "${READER}" "${RD}/scripts/"
-sed 's/^VERIFY_SHADOW_PREDICATE_VERSION=.*/VERIFY_SHADOW_PREDICATE_VERSION=7/' "${SHADOW_LIB}" > "${RD}/hooks/lib/verify-shadow.sh"
-if cmp -s "${SHADOW_LIB}" "${RD}/hooks/lib/verify-shadow.sh"; then
-    _record_fail "producer version moved in the copy" "sed changed nothing — the cell below would be vacuous"
-else
-    _record_pass "producer version moved in the copy"
-fi
-rm -f "${_CORP}"
-_emit "${RA}" explained_ladder hand-authored t1 "2026-10-05T10:00:00Z"
-jq -c '.predicate_version = 7' "${_CORP}" > "${_CORP}.t" && mv "${_CORP}.t" "${_CORP}"
-out="$(VERIFY_SHADOW_LOG="${_CORP}" VERIFY_SHADOW_NOW="2026-10-20T00:00:00Z" /bin/bash "${RD}/scripts/verify-shadow-adjudicate.sh" --status 2>&1)"
-assert_contains "reader follows a MOVED producer version" "n=1" "${out}"
+assert_contains "false block: clause 2 unmet" "[UNMET] 2." "${out}"
+assert_contains "false block: named as terminal" "FALSE BLOCK CONFIRMED" "${out}"
+assert_not_contains "false block: never MET" "DECISION RULE MET" "${out}"
+# An agent cannot displace a human's false_block.
+_label_agent "$(_rid 2)" true_catch
 out="$(_status)"
-assert_contains "the unmoved reader excludes that record" "n=0" "${out}"
-
-# --- shared corpus lib is required, never re-derived ------------------------
-rm -f "${RD}/hooks/lib/shadow-corpus.sh"
-VERIFY_SHADOW_LOG="${_CORP}" /bin/bash "${RD}/scripts/verify-shadow-adjudicate.sh" --status >/dev/null 2>&1
-assert_equals "reader refuses to run without shadow-corpus.sh" "2" "$?"
-assert_contains "reader groups episodes via the shared lib" "shadow_group_episodes" "$(cat "${READER}")"
-
-# --- anything the reader could not place BLOCKS the rule (review finding) ----
-# Five clean explained_ladder episodes across two repos satisfy all four
-# clauses. A sixth, UNEXPLAINED, record made uncountable must not leave the
-# rule reading MET: the excluded record may be the one that matters.
-_six() { # <jq-edit applied to the sixth, unexplained record>
-    _five "${RB}" explained_ladder hand-authored
-    _emit "${RA}" unexplained absent t6 "2026-10-10T10:00:00Z"
-    tail -1 "${_CORP}" | jq -c "$1" > "${_CORP}.x"
-    sed '$d' "${_CORP}" > "${_CORP}.t"; cat "${_CORP}.x" >> "${_CORP}.t"; mv "${_CORP}.t" "${_CORP}"; rm -f "${_CORP}.x"
-}
-_five "${RB}" explained_ladder hand-authored
-_emit "${RA}" unexplained absent t6 "2026-10-10T10:00:00Z"
+assert_contains "agent true_catch after human false_block: still a false block" "FALSE BLOCK CONFIRMED" "${out}"
+# A human CORRECTION supersedes: the latest human label wins.
+_label "$(_rid 2)" true_catch
 out="$(_status)"
-assert_contains "control: the sixth record, intact, is counted unexplained" "unexplained=1" "${out}"
+assert_contains "a human correction supersedes the earlier label" "DECISION RULE MET" "${out}"
 
-while IFS='|' read -r _what _edit _needle; do
-    [ -n "${_what}" ] || continue
-    _six "${_edit}"
-    out="$(_status)"
-    assert_contains     "uncountable (${_what}): the five valid episodes read met" "[MET] 2." "${out}"
-    assert_contains     "uncountable (${_what}): reported" "${_needle}" "${out}"
-    assert_contains     "uncountable (${_what}): rule NOT MET" "DECISION RULE NOT MET" "${out}"
-    assert_not_contains "uncountable (${_what}): never MET" "DECISION RULE MET" "${out}"
-done <<EOF
-empty ts|.ts = ""|unparseable ts : 1
-pre-1970 ts|.ts = "1969-12-31T23:59:59Z"|unparseable ts : 1
-no record_id|.record_id = ""|no usable record_id : 1
-comma in record_id|.record_id = "aa,bb"|no usable record_id : 1
-string predicate_version|.predicate_version = "1"|malformed predicate_version : 1
-absent predicate_version|del(.predicate_version)|malformed predicate_version : 1
-fractional predicate_version|.predicate_version = 1.5|malformed predicate_version : 1
-EOF
-
-# `nan` parses as a JSON number in jq, so a type check alone files it under
-# the non-blocking "other version" band. Written as raw text: jq prints nan as
-# null, so it cannot be produced by a jq edit.
-_five "${RB}" explained_ladder hand-authored
-_emit "${RA}" unexplained absent t6 "2026-10-10T10:00:00Z"
-_l="$(tail -1 "${_CORP}")"; sed '$d' "${_CORP}" > "${_CORP}.t"
-printf '%s\n' "${_l}" | sed 's/"predicate_version":1,/"predicate_version":nan,/' >> "${_CORP}.t"
-if grep -q '"predicate_version":nan' "${_CORP}.t"; then _record_pass "nan fixture written"
-else _record_fail "nan fixture written" "the substitution matched nothing — the cells below would be vacuous"; fi
-mv "${_CORP}.t" "${_CORP}"
+# All 29 in ONE repository.
+_reset
+_i=0
+while [ "${_i}" -lt 29 ]; do
+    _i=$(( _i + 1 ))
+    _emit "${RA}" unexplained absent "s${_i}" "2026-10-05T10:$(printf '%02d' "${_i}"):00Z"
+done
+_label_all true_catch
 out="$(_status)"
-assert_not_contains "uncountable (nan predicate_version): never MET" "DECISION RULE MET" "${out}"
-
-# Two ids that EXIST, joined by a comma: without the id check this resolves to
-# two explained records and the unexplained one vanishes into them.
-_five "${RB}" explained_ladder hand-authored
-_id1="$(sed -n '1p' "${_CORP}" | jq -r .record_id)"; _id2="$(sed -n '2p' "${_CORP}" | jq -r .record_id)"
-_emit "${RA}" unexplained absent t6 "2026-10-10T10:00:00Z"
-tail -1 "${_CORP}" | jq -c --arg i "${_id1},${_id2}" '.record_id = $i' > "${_CORP}.x"
-sed '$d' "${_CORP}" > "${_CORP}.t"; cat "${_CORP}.x" >> "${_CORP}.t"; mv "${_CORP}.t" "${_CORP}"; rm -f "${_CORP}.x"
+assert_contains "one repository => clause 4 unmet" "[UNMET] 4." "${out}"
+assert_not_contains "one repository => never MET" "DECISION RULE MET" "${out}"
+# ...and a second repo present only as an UNLABELLED episode adds no diversity.
+_emit "${RB}" unexplained absent sx "2026-10-06T10:00:00Z"
 out="$(_status)"
-assert_not_contains "uncountable (id naming two real records): never MET" "DECISION RULE MET" "${out}"
+assert_contains "an unlabelled episode in a second repo is not diversity" "repos=1" "${out}"
 
-# A duplicate of two EXPLAINED records. Worst-wins cannot decide this one — no
-# class changes — so only the duplicate count stands between it and MET.
-_five "${RB}" explained_ladder hand-authored
-{ sed -n '1p' "${_CORP}"; cat "${_CORP}"; } > "${_CORP}.t"; mv "${_CORP}.t" "${_CORP}"
-out="$(_status)"
-assert_contains     "duplicate of two explained records: no class changes" "unexplained=0" "${out}"
-assert_contains     "duplicate of two explained records: reported" "DUPLICATE record_id : 1" "${out}"
-assert_not_contains "duplicate of two explained records: never MET" "DECISION RULE MET" "${out}"
-
-# A TRUNCATED line (the sixth record cut short).
-_five "${RB}" explained_ladder hand-authored
-_emit "${RA}" unexplained absent t6 "2026-10-10T10:00:00Z"
-_l="$(tail -1 "${_CORP}")"; sed '$d' "${_CORP}" > "${_CORP}.t"
-printf '%s\n' "${_l%??????????}" >> "${_CORP}.t"; mv "${_CORP}.t" "${_CORP}"
-out="$(_status)"
-assert_contains     "uncountable (truncated line): reported" "1 unparseable" "${out}"
-assert_not_contains "uncountable (truncated line): never MET" "DECISION RULE MET" "${out}"
-
-# A DUPLICATE record_id: an unexplained record sharing an id with an explained
-# one in the same episode, placed EARLIER in the file so last-wins would hide it.
-_five "${RB}" explained_ladder hand-authored
-_dupid="$(sed -n '1p' "${_CORP}" | jq -r .record_id)"
-{ sed -n '1p' "${_CORP}" | jq -c '.classification = "unexplained" | .reason = "absent"'; cat "${_CORP}"; } > "${_CORP}.t"
-mv "${_CORP}.t" "${_CORP}"
-assert_not_empty "duplicate-id fixture has an id to duplicate" "${_dupid}"
-out="$(_status)"
-assert_contains     "duplicate record_id: worst-wins, so the episode is unexplained" "unexplained=1" "${out}"
-assert_contains     "duplicate record_id: reported" "DUPLICATE record_id : 1" "${out}"
-assert_not_contains "duplicate record_id: never MET" "DECISION RULE MET" "${out}"
-
-# A NUMERIC other version is a legitimate older band: reported, NOT a blocker.
-# Pinned deliberately, or a future predicate bump would block the rule forever.
-_five "${RB}" explained_ladder hand-authored
-tail -1 "${_CORP}" | jq -c '.predicate_version = 99 | .record_id = "0123456789abcdef" | .classification = "unexplained"' >> "${_CORP}"
-out="$(_status)"
-assert_contains "numeric other-version record: reported" "other-predicate : 1" "${out}"
-assert_contains "numeric other-version record: does not block" "DECISION RULE MET" "${out}"
-
-# One repository under three URL spellings is ONE repo for clause 4.
-rm -f "${_CORP}"
+# Two worktrees of one repository, and three URL spellings of it, are one repo.
+_reset
+_emit "${RA}"    explained_ladder hand-authored tokA "2026-10-05T10:00:00Z"
+_emit "${RA_WT}" explained_ladder hand-authored tokB "2026-10-06T10:00:00Z"
+_label_all true_catch
+assert_contains "two worktrees, one origin => 1 distinct repo" "repos=1" "$(_status)"
+_reset
 _i=0
 while IFS= read -r _url; do
     [ -n "${_url}" ] || continue
@@ -977,11 +953,165 @@ git@example.invalid:org/a.git
 https://example.invalid/org/a
 EOF
 git -C "${RA}" remote set-url origin "https://example.invalid/org/a.git"
+_label_all true_catch
 out="$(_status)"
 assert_contains "three URL spellings of one repo => repos=1" "repos=1" "${out}"
 assert_contains "three URL spellings: three episodes" "n=3" "${out}"
 
-# --- pre-registered constants: reader vs design.md vs literals here ---------
+# --- deadlines ----------------------------------------------------------------
+_reset
+_emit "${RA}" explained_ladder hand-authored t1 "2026-10-05T10:00:00Z"
+_emit "${RB}" explained_ladder hand-authored t2 "2026-10-06T10:00:00Z"
+_label_all true_catch
+out="$(_status "2026-11-01T00:00:00Z")"
+assert_contains "before 2026-12-31 the starvation check is open" "starvation check : OPEN" "${out}"
+out="$(_status "2027-01-05T00:00:00Z")"
+assert_contains "fewer than 3 by 2026-12-31 => null result" "NULL RESULT" "${out}"
+_emit "${RB}" explained_ladder hand-authored t3 "2026-12-31T23:00:00Z"
+_label "$(_rid 3)" true_catch
+out="$(_status "2027-01-05T00:00:00Z")"
+assert_contains "three by 2026-12-31 => starvation check cleared" "starvation check : CLEARED" "${out}"
+assert_not_contains "cleared starvation check is not a null result" "NULL RESULT" "${out}"
+# The FINAL deadline closes a window that 3..28 episodes would otherwise leave
+# open for ever.
+out="$(_status "2027-04-02T00:00:00Z")"
+assert_contains "unmet at the final deadline => null result" "NULL RESULT" "${out}"
+assert_contains "the final deadline is named" "2027-03-31" "${out}"
+# A rule already MET stays met after the deadline: it was earned inside the window.
+_base
+out="$(_status "2027-04-02T00:00:00Z")"
+assert_contains "met inside the window stays met after it" "DECISION RULE MET" "${out}"
+# Episodes that BEGIN after the final deadline are never counted.
+_base
+sed -n '1,24p' "${_CORP}" > "${_CORP}.t"
+sed -n '25,29p' "${_CORP}" | jq -c '.ts = "2027-04-01T10:00:00Z"' >> "${_CORP}.t"; mv "${_CORP}.t" "${_CORP}"
+out="$(_status "2027-04-02T00:00:00Z")"
+assert_contains "late episodes are not counted" "n=24" "${out}"
+assert_contains "late episodes are reported" "5 episode(s) began after" "${out}"
+assert_not_contains "late episodes cannot complete the floor" "DECISION RULE MET" "${out}"
+# A label made AFTER the final deadline is ignored.
+_base; grep -v "\"record_id\":\"$(_rid 3)\"" "${_ADJ}" > "${_ADJ}.t"; mv "${_ADJ}.t" "${_ADJ}"
+_label "$(_rid 3)" true_catch "2027-04-05T00:00:00Z"
+out="$(_status "2027-04-06T00:00:00Z")"
+assert_contains "a label made after the deadline is ignored" "unresolved=1" "${out}"
+assert_contains "the ignored label is reported" "made after 2027-03-31" "${out}"
+
+# --- anything the reader cannot place BLOCKS the rule --------------------------
+# Start from the corpus that reads MET and add a 30th record that cannot be
+# placed. It may be a false block, so the rule must not read MET.
+_extra() { # <jq-edit>
+    _base
+    _emit "${RA}" unexplained absent s30 "2026-10-10T10:00:00Z"
+    tail -1 "${_CORP}" | jq -c "$1" > "${_CORP}.x"
+    sed '$d' "${_CORP}" > "${_CORP}.t"; cat "${_CORP}.x" >> "${_CORP}.t"; mv "${_CORP}.t" "${_CORP}"; rm -f "${_CORP}.x"
+}
+while IFS='|' read -r _what _edit _needle; do
+    [ -n "${_what}" ] || continue
+    _extra "${_edit}"
+    out="$(_status)"
+    assert_contains     "uncountable (${_what}): the 29 valid episodes still read met" "[MET] 3." "${out}"
+    assert_contains     "uncountable (${_what}): reported" "${_needle}" "${out}"
+    assert_not_contains "uncountable (${_what}): never MET" "DECISION RULE MET" "${out}"
+done <<EOF
+empty ts|.ts = ""|unparseable ts : 1
+pre-1970 ts|.ts = "1969-12-31T23:59:59Z"|unparseable ts : 1
+no record_id|.record_id = ""|no usable record_id : 1
+comma in record_id|.record_id = "aa,bb"|no usable record_id : 1
+string predicate_version|.predicate_version = "2"|malformed predicate_version : 1
+absent predicate_version|del(.predicate_version)|malformed predicate_version : 1
+fractional predicate_version|.predicate_version = 2.5|malformed predicate_version : 1
+unknown classification|.classification = "looks-fine"|unknown classification : 1
+EOF
+
+# nan parses as a JSON number in jq; written raw because jq prints it as null.
+_base
+_emit "${RA}" unexplained absent s30 "2026-10-10T10:00:00Z"
+_l="$(tail -1 "${_CORP}")"; sed '$d' "${_CORP}" > "${_CORP}.t"
+printf '%s\n' "${_l}" | sed 's/"predicate_version":2,/"predicate_version":nan,/' >> "${_CORP}.t"
+if grep -q '"predicate_version":nan' "${_CORP}.t"; then _record_pass "nan fixture written"
+else _record_fail "nan fixture written" "the substitution matched nothing — the cell below would be vacuous"; fi
+mv "${_CORP}.t" "${_CORP}"
+assert_not_contains "uncountable (nan predicate_version): never MET" "DECISION RULE MET" "$(_status)"
+
+# A truncated line in the MIDDLE must not cut the corpus behind it.
+_base
+{ sed -n '1,10p' "${_CORP}"; printf '{"truncated": \n'; sed -n '11,29p' "${_CORP}"; } > "${_CORP}.t"; mv "${_CORP}.t" "${_CORP}"
+out="$(_status)"
+assert_contains     "malformed mid-corpus line: all 29 episodes still counted" "n=29" "${out}"
+assert_contains     "malformed line is reported" "1 unparseable" "${out}"
+assert_not_contains "malformed line: never MET" "DECISION RULE MET" "${out}"
+
+# A duplicated record_id.
+_base
+{ sed -n '1p' "${_CORP}"; cat "${_CORP}"; } > "${_CORP}.t"; mv "${_CORP}.t" "${_CORP}"
+out="$(_status)"
+assert_contains     "duplicate record_id: reported" "DUPLICATE record_id : 1" "${out}"
+assert_not_contains "duplicate record_id: never MET" "DECISION RULE MET" "${out}"
+
+# A corrupt SIDECAR line could be hiding a false_block label.
+_base; printf '{"record_id": \n' >> "${_ADJ}"
+out="$(_status)"
+assert_contains     "corrupt sidecar line: reported" "unparseable label line(s) : 1" "${out}"
+assert_not_contains "corrupt sidecar line: never MET" "DECISION RULE MET" "${out}"
+
+# A WHOLE-NUMBER other version is a legitimate older band: reported, not a
+# blocker. Pinned, or the version bump in this very change would block for ever.
+_base
+tail -1 "${_CORP}" | jq -c '.predicate_version = 1 | .record_id = "0123456789abcdef" | .session_token = "old"' >> "${_CORP}"
+out="$(_status)"
+assert_contains "other-version record: reported" "other-predicate : 1" "${out}"
+assert_contains "other-version record: not counted" "n=29" "${out}"
+assert_contains "other-version record: does not block" "DECISION RULE MET" "${out}"
+_rd 2026-10-20T00:00:00Z --adjudicate 0123456789abcdef --verdict true_catch >/dev/null 2>&1
+assert_equals   "a record of another version cannot be labelled" "1" "$?"
+
+# --- argument validation --------------------------------------------------------
+_base
+_rd 2026-10-20T00:00:00Z --adjudicate "$(_rid 1)" --verdict maybe >/dev/null 2>&1
+assert_equals "an unknown verdict is refused" "1" "$?"
+_rd 2026-10-20T00:00:00Z --adjudicate nosuchrecord --verdict true_catch >/dev/null 2>&1
+assert_equals "an unknown record id is refused" "1" "$?"
+_rd 2026-10-20T00:00:00Z --frobnicate >/dev/null 2>&1
+assert_equals "an unknown argument is refused" "1" "$?"
+
+# --- unreadable inputs are errors, never empty ----------------------------------
+if [ "$(id -u)" != "0" ]; then
+    _base; chmod 000 "${_CORP}"
+    out="$(_status)"; chmod 600 "${_CORP}"
+    assert_contains     "unreadable corpus is an ERROR" "NOT READABLE" "${out}"
+    assert_not_contains "unreadable corpus is not reported as empty" "n=0" "${out}"
+    _base; chmod 000 "${_ADJ}"
+    out="$(_status)"; chmod 600 "${_ADJ}"
+    assert_contains     "unreadable sidecar is an ERROR" "NOT READABLE" "${out}"
+    assert_not_contains "unreadable sidecar: never MET" "DECISION RULE MET" "${out}"
+else
+    _record_pass "unreadable-input cells skipped (running as root; chmod 000 does not bind)"
+fi
+
+# --- the reader's version comes from the PRODUCER, proven by moving it ----------
+RD="${TMP}/reader-tree"; mkdir -p "${RD}/hooks/lib" "${RD}/scripts"
+cp "${PROJECT_ROOT}/hooks/lib/shadow-corpus.sh" "${RD}/hooks/lib/"
+cp "${READER}" "${RD}/scripts/"
+sed 's/^VERIFY_SHADOW_PREDICATE_VERSION=.*/VERIFY_SHADOW_PREDICATE_VERSION=7/' "${SHADOW_LIB}" > "${RD}/hooks/lib/verify-shadow.sh"
+if cmp -s "${SHADOW_LIB}" "${RD}/hooks/lib/verify-shadow.sh"; then
+    _record_fail "producer version moved in the copy" "sed changed nothing — the cell below would be vacuous"
+else
+    _record_pass "producer version moved in the copy"
+fi
+_reset
+_emit "${RA}" explained_ladder hand-authored t1 "2026-10-05T10:00:00Z"
+jq -c '.predicate_version = 7' "${_CORP}" > "${_CORP}.t" && mv "${_CORP}.t" "${_CORP}"
+out="$(VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" VERIFY_SHADOW_NOW="2026-10-20T00:00:00Z" /bin/bash "${RD}/scripts/verify-shadow-adjudicate.sh" --status 2>&1)"
+assert_contains "reader follows a MOVED producer version" "n=1" "${out}"
+assert_contains "the unmoved reader excludes that record" "n=0" "$(_status)"
+
+# --- the shared corpus lib is required, never re-derived -------------------------
+rm -f "${RD}/hooks/lib/shadow-corpus.sh"
+VERIFY_SHADOW_LOG="${_CORP}" /bin/bash "${RD}/scripts/verify-shadow-adjudicate.sh" --status >/dev/null 2>&1
+assert_equals "reader refuses to run without shadow-corpus.sh" "2" "$?"
+assert_contains "reader groups episodes via the shared lib" "shadow_group_episodes" "$(cat "${READER}")"
+
+# --- registered constants: reader vs design.md vs literals here ------------------
 _matched=0
 while IFS='|' read -r _const _val _needle; do
     [ -n "${_const}" ] || continue
@@ -993,16 +1123,19 @@ while IFS='|' read -r _const _val _needle; do
     if grep -qF -- "${_needle}" "${DESIGN}"; then
         _record_pass "design.md states: ${_needle}"; _matched=$(( _matched + 1 ))
     else
-        _record_fail "design.md states: ${_needle}" "the pre-registration no longer says this"
+        _record_fail "design.md states: ${_needle}" "the registration no longer says this"
     fi
 done <<EOF
-FLOOR_EPISODES|5|**n >= 5** shadow episodes
-FLOOR_REPOS|2|**>= 2 distinct repos**
-BACKSTOP_MIN|3|**n < 3** by **2026-12-31**
-BACKSTOP_DATE|2026-12-31|**n < 3** by **2026-12-31**
+FLOOR_EPISODES|29|**n >= 29** would-block episodes
+FLOOR_REPOS|2|**>= 2 distinct repositories**
+BACKSTOP_MIN|3|fewer than **3** would-block episodes by **2026-12-31**
+BACKSTOP_DATE|2026-12-31|fewer than **3** would-block episodes by **2026-12-31**
+FINAL_DATE|2027-03-31|final deadline of **2027-03-31**
 EPISODE_WINDOW_SEC|1800|within 30 minutes
+ALPHA|0.05|one-sided 95%
+DENY_P|0.10|below 10%
 EOF
-if [ "${_matched}" -ge 5 ]; then _record_pass "constant cross-check matched ${_matched} design clauses (floor 5)"
-else _record_fail "constant cross-check matched ${_matched} design clauses" "floor is 5 — a reworded doc made the greps match nothing"; fi
+if [ "${_matched}" -ge 8 ]; then _record_pass "constant cross-check matched ${_matched} design clauses (floor 8)"
+else _record_fail "constant cross-check matched ${_matched} design clauses" "floor is 8 — a reworded doc made the greps match nothing"; fi
 
 print_summary

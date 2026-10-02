@@ -22,7 +22,11 @@
 # bare count, and it is not part of the decision rule.
 #
 # `would_block` is false for cannot_check: the leg is fail-open, so a verdict it
-# could not read is one it would not block on even after a deny-flip.
+# could not read is one it would not block on even after a deny-flip. Only
+# would-block records count toward the decision rule; cannot_check is reported.
+#
+# Every would-block episode is labelled by a HUMAN (true_catch | false_block |
+# unknown) through the reader, into a sidecar. This file never writes a label.
 #
 # `repo_id` is the origin URL normalised to host/path, falling back to the common
 # git dir and then the path. It is recorded at WRITE time because the
@@ -36,8 +40,17 @@
 # predicate_version: bump when the leg's FIRE CONDITION changes, or when a
 # change alters what a pooled episode key or classification MEANS, and never
 # pool across versions. schema_version: bump for purely descriptive additions.
-VERIFY_SHADOW_SCHEMA_VERSION=1
-VERIFY_SHADOW_PREDICATE_VERSION=1
+#
+# predicate_version 2 (2026-10-02, at zero records). Two grounds, either of
+# which is sufficient: the FIRE CONDITION narrowed (a repo declaring a non-local
+# substrate is out of scope), and what a pooled count MEANS changed (n and repo
+# diversity are counted over would-block episodes only, each human-labelled).
+# Version 1 shipped in 3.92.0 for less than a day; any record carrying it is a
+# different population and is never pooled.
+# schema_version 2: adds `gate_declaration`, the contemporaneous evidence a
+# human needs to judge whether the remedy was reachable.
+VERIFY_SHADOW_SCHEMA_VERSION=2
+VERIFY_SHADOW_PREDICATE_VERSION=2
 
 # _verify_shadow_repo_id <remote-url> -> host/path
 #
@@ -92,8 +105,9 @@ _verify_shadow_repo_id() {
 verify_shadow_record() {
     # <session_token> <subj_root> <classification> <reason> <action>
     #   [<subj_rev>] [<transcript_path>] [<material_source:true|false>] [<discovery_source>]
+    #   [<gate_declaration:local|non-local|absent|unknown>]
     local token="${1:-}" proot="${2:-}" class="${3:-}" reason="${4:-}" action="${5:-push}"
-    local rev="${6:-HEAD}" tp="${7:-}" material="${8:-}" src="${9:-}"
+    local rev="${6:-HEAD}" tp="${7:-}" material="${8:-}" src="${9:-}" gate="${10:-}"
     local log branch head repo repo_id ts rec rid nonce wb
     command -v jq >/dev/null 2>&1 || return 0
 
@@ -138,6 +152,8 @@ verify_shadow_record() {
     [ "${#src}" -le 64 ] || src="other"
 
     case "${material}" in true|false) : ;; *) material="null" ;; esac
+    # Closed vocabulary; anything else is "unknown", never copied.
+    case "${gate}" in local|non-local|absent) : ;; *) gate="unknown" ;; esac
 
     nonce="$(od -An -N4 -tx1 /dev/urandom 2>/dev/null | tr -dc 'a-f0-9')"
     [ -n "${nonce}" ] || nonce="$(date +%N 2>/dev/null | tr -dc '0-9')"
@@ -152,12 +168,12 @@ verify_shadow_record() {
         --arg rid "$rid" --arg ts "$ts" --arg repo "$repo" --arg repo_id "$repo_id" \
         --arg branch "$branch" --arg head "$head" --arg token "$token" \
         --arg action "$action" --arg class "$class" --arg reason "$reason" \
-        --arg src "$src" --arg tp "$tp" \
+        --arg src "$src" --arg tp "$tp" --arg gate "$gate" \
         '{schema_version:$sv, predicate_version:$pv, record_id:$rid,
           ts:$ts, repo:$repo, repo_id:$repo_id, branch:$branch, head_sha:$head,
           session_token:$token, action:$action,
           would_block:$wb, classification:$class, reason:$reason,
-          discovery_source:$src, material_source:$mat,
+          discovery_source:$src, gate_declaration:$gate, material_source:$mat,
           transcript_path:$tp}' 2>/dev/null)" || return 0
     [ -n "$rec" ] || return 0
 

@@ -242,6 +242,29 @@ EOF
     return 1
 }
 
+# verdict_gate_declaration <proj_root> [commit] — what the repo DECLARES as its
+# gate at that commit: local | non-local | absent | unknown.
+#
+# This is reachability evidence, not a verdict. scripts/verify-and-record.sh
+# refuses any `.verify.yml` whose substrate is not exactly `local`, and refuses
+# explicit commands whenever a `.verify.yml` exists — so in a `non-local` repo
+# NO route produces a measured verdict, and a leg that asks for one would name a
+# remedy that cannot be executed. Same parse as the writer, so the two cannot
+# disagree about what "local" means. Read from the COMMIT, not the working
+# tree: the question is about what is being pushed.
+verdict_gate_declaration() {
+    local proot="${1:-}" rev="${2:-HEAD}" body sub
+    git -C "${proot:-.}" rev-parse --verify --quiet "${rev}^{commit}" >/dev/null 2>&1 \
+        || { printf '%s' "unknown"; return 0; }
+    if ! git -C "${proot:-.}" cat-file -e "${rev}:.verify.yml" 2>/dev/null; then
+        printf '%s' "absent"; return 0
+    fi
+    body="$(git -C "${proot:-.}" show "${rev}:.verify.yml" 2>/dev/null)" || { printf '%s' "unknown"; return 0; }
+    sub="$(printf '%s\n' "${body}" | awk -F': *' '$1=="substrate"{print $2; exit}')"
+    if [ "${sub}" = "local" ]; then printf '%s' "local"; else printf '%s' "non-local"; fi
+    return 0
+}
+
 # verdict_test_delta <token> — echo the recorded test_delta (covered|missing|n/a|"").
 verdict_test_delta() {
     local token="${1:-}" f

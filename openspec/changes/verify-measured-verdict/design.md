@@ -53,6 +53,12 @@ the risk is a false block, and the affected population is measured on ONE instal
 
 Registered 2026-09-28. `predicate_version: 1`, `schema_version: 1`.
 
+> **The decision rule in this section is SUPERSEDED** by "Re-registration
+> 2026-10-02" at the end of this file. It is kept because the baseline and the
+> reasoning are still the record of what was measured and why; the rule itself
+> (n >= 5, zero `unexplained`, positive control) no longer decides anything.
+> Implementation readings 1 and 2 are superseded with it.
+
 ### Measured baseline (state the scope, it is not universal)
 
 47 verdict artifacts spanning 2026-08-02 → 2026-09-28 (57 days) on **one install**:
@@ -194,22 +200,16 @@ None changes a registered number.
     normalised; a path containing `@` loses what precedes it (one stable
     identity per repository, never a leak).
 
-### Open for the owner — raised by review, deliberately not decided here
+### Owner rulings on the two open questions — 2026-10-02
 
-These change what the registered rule accepts, so they are not implementation
-readings. Each is stated with what the code does today.
+Review raised two questions that change what the rule accepts. The owner
+delegated both ("apply best practice") and they are settled in
+"Re-registration 2026-10-02" below:
 
-- **The flip is hard to reach by construction.** Under readings 2 and 10 the
-  leg's own true catches (no verdict; a failing verdict) are `unexplained` and
-  each one holds clause 2. As registered, the rule flips only on a corpus whose
-  every would-block was a hand-authored rung.
-- **`cannot_check` counts toward `n` and toward repo diversity** (reading 1,
-  forced by clause 3's wording). Reproduced in review: four `cannot_check`
-  episodes in one repo plus one `explained_ladder` in a second read
-  DECISION RULE MET. A broken install writes `cannot_check` on every qualifying
-  push, so it can manufacture `n` and the second repo by itself. The alternative
-  is to count only `would_block == true` episodes in both — which makes clause 3
-  redundant and so needs the rule restated, not just re-read.
+- *The leg's own true catches held the flip.* Settled: a would-block is judged
+  by a human as a true catch or a false block; a true catch counts FOR the rule.
+- *`cannot_check` counted toward `n` and repo diversity.* Settled: it is
+  reported and never counted.
 
 ### Prerequisite settled by driving the producer (2026-10-02)
 
@@ -229,10 +229,173 @@ So a repo with no declared gate CAN reach a measured verdict, which is what
 accepting `explicit` assumed. **One population cannot:** a repo whose
 `.verify.yml` declares a non-local substrate is refused on both routes, so its
 only verdict is hand-authored and it would be an `explained_ladder` would-block
-on every push. No such repo is known on the measured install. It is a predicted
-cost to weigh at the flip, not a reason to widen the predicate.
+on every push. No such repo is known on the measured install. Under
+predicate_version 1 this was left as a cost to weigh at the flip; the
+re-registration below takes that population out of scope instead.
+
+## Re-registration 2026-10-02 (`predicate_version: 2`, `schema_version: 2`)
+
+Registered at **zero records**: version 1 shipped in 3.92.0 hours earlier and
+no install had recorded anything. Nothing below was chosen after seeing data.
+A record carrying `predicate_version: 1` is a different population and is never
+pooled.
+
+### What was wrong with the registered rule
+
+1. **It counted the leg's successes against it.** "Invoked the skill, ran
+   nothing" and "ran the gate, it failed, pushed anyway" were `unexplained`, and
+   one `unexplained` episode held the flip. The rule could only be met by a
+   corpus in which every would-block was a hand-authored verdict: the more the
+   leg was needed, the less it could ever be enabled.
+2. **It counted "could not look" as evidence.** `cannot_check` episodes counted
+   toward `n` and toward repo diversity, so a broken install could supply both.
+3. **It treated `explained_ladder` as acceptable by construction.** A
+   hand-authored verdict in a repo where the writer refuses to run has no
+   reachable remedy. "Predicted and enumerable" describes a cause; it does not
+   establish that blocking it is acceptable.
+
+The classification vocabulary is unchanged and still recorded on every event.
+What changes is that a classification no longer decides anything by itself.
+
+### The quantity
+
+**False blocks among would-block episodes.** Not false blocks per push, and not
+missed catches: neither is measured here. A would-block episode is one holding
+at least one `explained_ladder` or `unexplained` record.
+
+Every would-block episode is labelled by a **human**:
+
+- `true_catch` — the remedy the advisory named (re-run the gate through
+  `project-verification`, which records measured exit codes) was reachable in
+  that repo at that time and was the right thing to ask for. "The gate failed
+  and has to be fixed first" is a true catch.
+- `false_block` — the agent could not have proceeded by that remedy (the writer
+  refuses this repo, or there is no gate to run), or the advisory named the
+  wrong remedy. **The existence of the human bypass does not make a block a true
+  catch**; that would empty the term.
+- `unknown` — it cannot be told from the evidence. The episode stays unresolved.
+
+A label claimed from inside an agent session is ignored. This leg governs agent
+pushes, so the subject has a live incentive to grade its own gate.
+
+### Scope (the fire condition; this is the `predicate_version` bump)
+
+Unchanged from reading 5, with one exclusion: **a repo whose `.verify.yml`
+declares a non-local substrate is out of scope.** The writer refuses to run
+there by any route, so no measured verdict can exist. A check that can only
+fire and never be satisfied measures the repo's configuration, not the agent.
+The declaration is read from the pushed commit. Any future deny-flip inherits
+this scope: it must not deny in a repo the shadow never measured.
+
+A repo declaring nothing stays in scope, because the explicit route is
+reachable whenever a gate exists. Whether one existed is what the label
+decides, and each record carries `gate_declaration` (`local` | `absent` |
+`unknown`) as contemporaneous evidence for that judgement.
+
+### Decision rule
+
+Flip to deny when **all** hold:
+
+1. **n >= 29** would-block episodes.
+2. **Zero** false-block episodes, across the whole corpus. One confirmed false
+   block means the rule cannot be met under this `predicate_version`: fix the
+   leg, bump the version, start again.
+3. **Zero** unresolved episodes: every would-block episode carries a human
+   `true_catch`. Silence never clears anything.
+4. The true catches span **>= 2 distinct repositories**, keyed on the
+   normalised origin (reading 12).
+
+And nothing uncountable is present (reading 11, extended to the label sidecar:
+a corrupt label line may be hiding a `false_block`).
+
+`cannot_check` episodes are reported and never counted, in `n` or in
+diversity. There is no "unhealthy share" threshold: with successes silent, the
+share of `cannot_check` among recorded episodes is not a failure rate, and a
+threshold nobody can define is not a registered rule. An installation smoke
+test of the leg is a precondition of the flip change instead.
+
+The positive-control clause is deleted. Once every counted episode is a
+human-confirmed true catch, "at least one true catch" adds nothing.
+
+### Why 29
+
+It is the bar the REVIEW and IMPLEMENT legs use, computed by the same shared
+code (`hooks/lib/shadow-corpus.sh::shadow_band`): a one-sided 95%
+Clopper-Pearson upper bound below 10%. At zero false blocks that first holds at
+n = 29; the upper bound at n = 5 is 45%.
+
+The arguments for keeping five do not survive: inspecting each episode improves
+the label, not the sample size; the leg is fail-open only on `cannot_check`,
+while the events being studied become hard denies; and a bypass lowers the cost
+of a false block, not its incidence.
+
+What the bound is **not**: it is a binomial-model bound, and thirty-minute
+separation does not make episodes independent — one configuration repeated can
+dominate, and two repositories is minimal diversity. It is the same model-based
+statement the sibling legs make, no stronger.
+
+The original objection to a rate floor was that hand-authored verdicts accrue
+at 0.07/day. That measured a different population: the would-block population
+now includes every push with the milestone credited and no measured verdict,
+and its rate is unknown. If it turns out to be too slow, the result is a null
+result at the deadline — not a lower bar.
+
+### Episodes
+
+Collapse `(repo, branch, session_token)` within 30 minutes, anchored at the
+episode's first record (unchanged). Within an episode, over its would-block
+records only:
+
+- any human `false_block` → the episode is a false block;
+- otherwise any record without a human `true_catch` → unresolved;
+- otherwise → a true catch.
+
+A `cannot_check` record neither qualifies an episode nor clears one. A record
+joining an episode after it was labelled is unlabelled, so the episode reads
+unresolved again: a label never covers evidence the labeller did not see. The
+latest human label per record wins, so a correction supersedes what it corrects.
+
+### Deadlines
+
+- **Starvation:** fewer than **3** would-block episodes by **2026-12-31** closes
+  the window as a permanent null result.
+- **Final:** a final deadline of **2027-03-31**. Any clause unmet then closes the
+  window as a null result, and the leg stays advisory by decision. An episode
+  that begins after that date is not counted, and a label made after it is
+  ignored. The version-1 rule had no final deadline: three to twenty-eight
+  episodes, or unlabelled ones, could leave it open for ever.
+
+No re-dating off the observed rate.
+
+### Adjudicator and cadence
+
+Unchanged: the **repo owner**, **fortnightly** from 2026-10-12.
+`scripts/verify-shadow-adjudicate.sh --next` shows the oldest unresolved episode
+with its evidence and the definitions above; `--adjudicate <record_id>
+--verdict ...` labels it into a sidecar; `--status` reports every clause. The
+shadow log is never mutated.
+
+### Sparring record
+
+The first draft of this re-registration was critiqued by a second model
+(Codex, read-only, 2026-10-02) before it was written down. Five points changed
+the draft: `explained_ladder` is labelled like everything else; the
+`cannot_check` share threshold was dropped; 29 replaced 5; the positive control
+was deleted; and a final deadline was added. One point was adopted in a
+narrower form: non-local substrates are excluded from scope outright, while
+"no gate at all" is left to the label, because nothing recorded can establish
+it automatically.
 
 ### What is NOT open
+
+The definition of a false block, the n >= 29 floor, zero false blocks, zero
+unresolved, the 2-repository requirement, the scope, the episode rules and both
+deadline dates. A change to the leg's fire condition, or to what a pooled count
+or label means, requires a `predicate_version` bump and makes earlier records
+unpoolable.
+
+## Superseded: what was not open under predicate_version 1
+
 
 The classification vocabulary, the `unexplained`-only rule, the n>=5 floor, the
 positive-control clause, the 2-repo diversity requirement, and the backstop date. A
