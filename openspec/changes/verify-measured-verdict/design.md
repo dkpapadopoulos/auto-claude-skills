@@ -321,13 +321,17 @@ Flip to deny when **all** hold:
 And nothing uncountable is present. Reading 11 covers the shadow log. For the
 label sidecar, **every row is either applied, benign for a stated reason, or
 blocking**. Benign: claimant exactly `agent`; a whole-number other
-`predicate_version`; a well-formed human label made after the final deadline.
+`predicate_version`; a well-formed human `true_catch` or `unknown` made after
+the final deadline.
 Blocking: an unparseable line, a claimant that is neither `human` nor `agent`,
-a verdict outside the vocabulary, a `ts` that cannot be read, a malformed
-`predicate_version`, and an **orphan** — a label naming no would-block record
+a verdict outside the vocabulary, a `ts` that is not a real instant (the right
+shape with month 99 is not one), a malformed `predicate_version`, a label
+dated after the reading, and an **orphan** — a label naming no would-block record
 of this corpus. Any of those may be a `false_block` the reader is not applying.
 A reading whose "as of" precedes its own evidence is also not met, and a
-reading taken with the clock overridden says so on its verdict line.
+reading taken with the clock overridden says so on its verdict line — as does
+one that rests on a label whose own date came from an overridden clock, which
+the label records at the moment it is written.
 
 `cannot_check` episodes are reported and never counted, in `n` or in
 diversity. There is no "unhealthy share" threshold: with successes silent, the
@@ -382,8 +386,12 @@ latest human label per record wins, so a correction supersedes what it corrects.
   the window as a permanent null result.
 - **Final:** a final deadline of **2027-03-31**. Any clause unmet then closes the
   window as a null result, and the leg stays advisory by decision. An episode
-  that begins after that date is not counted, and a label made after it is
-  ignored. The version-1 rule had no final deadline: three to twenty-eight
+  that begins after that date is not counted. A `true_catch` or `unknown` label
+  made after it is ignored. **A `false_block` made after it is NOT ignored**,
+  and neither is one on an episode that began after it: ignoring a late
+  `true_catch` can only keep the rule unmet, while ignoring a late
+  `false_block` would report the rule met to the owner who just recorded the
+  reason it is not. (Amended 2026-10-02, at zero records, after review.) The version-1 rule had no final deadline: three to twenty-eight
   episodes, or unlabelled ones, could leave it open for ever.
 
 No re-dating off the observed rate.

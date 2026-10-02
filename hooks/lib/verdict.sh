@@ -267,7 +267,10 @@ verdict_gate_declaration() {
     if ! git -C "${proot:-.}" cat-file -e "${rev}:.verify.yml" 2>/dev/null; then
         printf '%s' "absent"; return 0
     fi
-    case "$(git -C "${proot:-.}" ls-tree "${rev}" -- .verify.yml 2>/dev/null)" in
+    # --full-tree: without it the pathspec is relative to the working directory
+    # while `<rev>:.verify.yml` above is relative to the repo root, so a call
+    # from a subdirectory found the file one way and not the other.
+    case "$(git -C "${proot:-.}" ls-tree --full-tree "${rev}" -- .verify.yml 2>/dev/null)" in
         100644*|100755*) : ;;
         *) printf '%s' "unknown"; return 0 ;;   # symlink, submodule, tree
     esac

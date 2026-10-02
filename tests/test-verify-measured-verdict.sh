@@ -729,6 +729,16 @@ assert_equals "a symlinked declaration => unknown, which stays IN scope" "unknow
 assert_equals "…because the writer does produce a verdict there" "yes" "$(_writer_produces "${TMP}/d-link")"
 rm -f "${_ART}"
 
+# An EXECUTABLE declaration is an ordinary file, and a call from a SUBDIRECTORY
+# of the repo reads the same root declaration.
+_declrepo d-exec
+( cd "${TMP}/d-exec" && printf 'substrate: local\ncommands:\n  - name: tests\n    run: true\n' > .verify.yml \
+    && chmod +x .verify.yml && mkdir sub && echo x > sub/x && git add -A && git commit -qm d ) >/dev/null 2>&1
+assert_equals "fixture: the declaration is committed executable" "100755" \
+    "$(git -C "${TMP}/d-exec" ls-tree HEAD -- .verify.yml | cut -c1-6)"
+assert_equals "an executable declaration => local" "local" "$(verdict_gate_declaration "${TMP}/d-exec")"
+assert_equals "called from a subdirectory => the same answer" "local" "$(verdict_gate_declaration "${TMP}/d-exec/sub")"
+
 # ---------------------------------------------------------------------------
 # 5. Static posture
 # ---------------------------------------------------------------------------
@@ -1137,8 +1147,13 @@ verdict outside vocabulary|{"record_id":"@R2@","verdict":"fine","claimant":"huma
 unusable verdict on an unknown record|{"record_id":"gone0002","verdict":"fine","claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":2}|no usable verdict : 1
 version as a string|{"record_id":"@R2@","verdict":"false_block","claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":"2"}|malformed predicate_version : 1
 no version|{"record_id":"@R2@","verdict":"false_block","claimant":"human","ts":"2026-10-19T00:00:00Z"}|malformed predicate_version : 1
+month 99 is the right shape and not an instant|{"record_id":"@R2@","verdict":"false_block","claimant":"human","ts":"2026-99-19T01:00:00Z","predicate_version":2}|no usable ts : 1
+version 1e999 is not a version|{"record_id":"@R2@","verdict":"false_block","claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":1e999}|malformed predicate_version : 1
+an AGENT row with a malformed version is still malformed|{"record_id":"@R2@","verdict":"false_block","claimant":"agent","ts":"2026-10-19T00:00:00Z","predicate_version":"2"}|malformed predicate_version : 1
 EOF
-# The three BENIGN buckets, pinned so a tightening cannot make them block:
+# Two of the BENIGN buckets (agent-claimed, other version), pinned so a
+# tightening cannot make them block. The third — a late true_catch — is pinned
+# by "a label made after the deadline is ignored" above.
 _base
 printf '{"record_id":"%s","verdict":"false_block","claimant":"agent","ts":"2026-10-19T00:00:00Z","predicate_version":2}\n' "${_R2}" >> "${_ADJ}"
 # The other-version row names a REAL record of this corpus: it must be ignored
@@ -1251,6 +1266,99 @@ rm -f "${TMP}/alias.jsonl"
 _base
 out="$(_rd 2027-04-05T00:00:00Z --adjudicate "$(_rid 1)" --verdict true_catch)"
 assert_contains "a label made after the final deadline is announced as ignored" "made after the final deadline" "${out}"
+
+# --- a FALSE BLOCK is never lost to a deadline (third review) ---------------------
+# Ignoring a late true_catch can only keep the rule unmet. Ignoring a late
+# false_block would tell the owner who just recorded it that the rule is met.
+_base
+_label "$(_rid 2)" false_block "2027-04-02T01:00:00Z"
+out="$(_status "2027-04-05T00:00:00Z")"
+assert_contains     "a false_block recorded after the deadline is applied" "false_block=1" "${out}"
+assert_not_contains "a false_block recorded after the deadline: never MET" "DECISION RULE MET" "${out}"
+# A year typo makes a real, far-future instant: it is "late", and a late
+# false_block is applied all the same.
+_base
+printf '{"record_id":"%s","verdict":"false_block","claimant":"human","ts":"2927-10-19T01:00:00Z","predicate_version":2}\n' "${_R2}" >> "${_ADJ}"
+out="$(_status)"
+assert_not_contains "a false_block with a far-future ts: never MET" "DECISION RULE MET" "${out}"
+# ...on an episode that began AFTER the window, too. The episode is not
+# counted; the false block still is.
+_base
+_emit "${RA}" unexplained absent s30 "2027-04-01T00:00:01Z"
+printf '{"record_id":"%s","verdict":"false_block","claimant":"human","ts":"2027-03-31T12:00:00Z","predicate_version":2}\n' "$(_rid 30)" >> "${_ADJ}"
+out="$(_status "2027-04-05T00:00:00Z")"
+assert_contains     "false_block on a late episode: the episode is not counted" "n=29" "${out}"
+assert_contains     "false_block on a late episode: the false block is" "false_block=1" "${out}"
+assert_not_contains "false_block on a late episode: never MET" "DECISION RULE MET" "${out}"
+# A RECORD whose ts is the right shape and not an instant is unparseable, not "late".
+_extra '.ts = "2026-99-01T00:00:00Z"'
+printf '{"record_id":"%s","verdict":"false_block","claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":2}\n' "$(_rid 30)" >> "${_ADJ}"
+out="$(_status)"
+assert_contains     "record with month 99: counted as unparseable ts" "unparseable ts : 1" "${out}"
+assert_not_contains "record with month 99: not filed as a late episode" "began after" "${out}"
+assert_not_contains "record with month 99 + false_block: never MET" "DECISION RULE MET" "${out}"
+
+# --- a label on a record that is not a would-block is an orphan --------------------
+_base
+_emit "${RA}" cannot_check unparseable s30 "2026-10-10T10:00:00Z"
+printf '{"record_id":"%s","verdict":"false_block","claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":2}\n' "$(_rid 30)" >> "${_ADJ}"
+out="$(_status)"
+assert_contains     "label on a cannot_check record is an orphan" "orphan label(s) : 1" "${out}"
+assert_not_contains "label on a cannot_check record: never MET" "DECISION RULE MET" "${out}"
+
+# --- an episode is dated by its FIRST would-block, not its last --------------------
+_reset
+for _t in a b c; do
+    _emit "${RA}" unexplained absent "y${_t}" "2026-12-31T23:50:00Z"
+    _emit "${RA}" unexplained absent "y${_t}" "2027-01-01T00:05:00Z"
+done
+_label_all true_catch
+assert_contains "two would-blocks straddling the date: dated by the first" "starvation check : CLEARED" "$(_status "2027-01-10T00:00:00Z")"
+
+# --- a label knows how it was dated -------------------------------------------------
+_reset
+_emit "${RA}" unexplained absent t1 "2026-10-05T10:00:00Z"
+out="$(_rd 2026-10-19T00:00:00Z --adjudicate "$(_rid 1)" --verdict true_catch)"
+assert_contains "labelling under an overridden clock says so" "not the real clock" "${out}"
+assert_equals   "…and the label records it" "true" "$(jq -r '.provenance.clock_overridden' "${_ADJ}" | tail -1)"
+assert_contains "…and a reading that rests on it says so" "dated by an overridden clock" "$(_status)"
+# On the VERDICT line itself, where it is quoted from — not only in the notes
+# above it. The base corpus is labelled by this file under an overridden clock.
+_base
+assert_contains "a MET verdict resting on such labels carries the marker" \
+    "[rests on 29 label(s) dated by an overridden clock]" "$(_status | grep 'DECISION RULE MET')"
+_reset
+_emit "${RA}" unexplained absent t1 "2026-10-05T10:00:00Z"
+rm -f "${_ADJ}"
+env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_ENTRYPOINT -u VERIFY_SHADOW_NOW \
+    VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" \
+    /bin/bash "${READER}" --adjudicate "$(_rid 1)" --verdict true_catch >/dev/null 2>&1
+assert_equals   "a label made on the live clock records that too" "false" "$(jq -r '.provenance.clock_overridden' "${_ADJ}" | tail -1)"
+# Labels dated after the reading cannot support it.
+_base
+jq -c '.ts = "2027-03-01T00:00:00Z"' "${_ADJ}" > "${_ADJ}.t" && mv "${_ADJ}.t" "${_ADJ}"
+out="$(_status)"
+assert_contains     "labels dated after 'as of' are reported" "applied label(s) are dated after" "${out}"
+assert_not_contains "labels dated after 'as of': never MET" "DECISION RULE MET" "${out}"
+
+# --- the clock's range checks, one per bound ----------------------------------------
+while IFS= read -r _bad; do
+    [ -n "${_bad}" ] || continue
+    VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" VERIFY_SHADOW_NOW="${_bad}" \
+        /bin/bash "${READER}" --status >/dev/null 2>&1
+    assert_equals "clock value ${_bad} is refused" "3" "$?"
+done <<EOF
+2026-00-15T10:00:00Z
+2026-13-15T10:00:00Z
+2026-10-00T10:00:00Z
+2026-10-32T10:00:00Z
+2026-10-15T24:00:00Z
+EOF
+
+# --next refuses a sidecar that is the shadow log, like the other two commands.
+_base
+out="$(VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_CORP}" VERIFY_SHADOW_NOW="2026-10-20T00:00:00Z" /bin/bash "${READER}" --next 2>&1)"
+assert_contains "--next refuses a sidecar that is the shadow log" "SAME FILE" "${out}"
 
 # --- argument validation --------------------------------------------------------
 _base

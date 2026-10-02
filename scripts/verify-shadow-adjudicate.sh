@@ -77,6 +77,19 @@ _ISO_RE='^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9]
 _T=""    # per-invocation scratch dir, set by _build
 _NOW=""
 
+# The shared iso_epoch checks SHAPE only: "2026-99-19T01:00:00Z" has the right
+# shape and converts to an epoch far in the future. Compared against a deadline
+# that reads as "made late", which is a benign bucket — so a false_block with a
+# typo in its month was ignored. Every ts this reader ACTS on must be a real
+# instant. (No apostrophes below: this is spliced into single-quoted awk.)
+_AWK_T="${SHADOW_AWK_EPOCH}"'
+    function real_instant(s,   mo, d, hh, mi, ss) {
+        if (iso_epoch(s) < 0) return 0
+        mo = substr(s,6,2)+0; d = substr(s,9,2)+0; hh = substr(s,12,2)+0
+        mi = substr(s,15,2)+0; ss = substr(s,18,2)+0
+        return (mo >= 1 && mo <= 12 && d >= 1 && d <= 31 && hh <= 23 && mi <= 59 && ss <= 59)
+    }'
+
 _count() { grep -c . | tr -d '[:space:]'; }
 
 # _claimant -> human | agent. Biased toward "agent": this leg governs AGENT
@@ -166,20 +179,30 @@ _build() {
             ((.ts // "") | tostring), ((.record_id // "") | tostring),
             .classification ] | @tsv' "${SHADOW_LOG}" 2>/dev/null > "${_T}/rec.tsv"
 
-    cut -f1-5 "${_T}/rec.tsv" | shadow_group_episodes "${EPISODE_WINDOW_SEC}" > "${_T}/eps.tsv"
+    # Only records with a real ts are grouped; the rest are counted as
+    # unparseable-ts and block. Handing the grouper a month-99 record would
+    # date its episode after the deadline and file it under "began late".
+    awk -F'\t' "${_AWK_T}"'real_instant($4)' "${_T}/rec.tsv" | cut -f1-5 \
+        | shadow_group_episodes "${EPISODE_WINDOW_SEC}" > "${_T}/eps.tsv"
 
-    # LATEST HUMAN label per record, and only one made inside the window. The
-    # sidecar is append-only, so the last matching row is the most recent and a
-    # correction supersedes what it corrects. Agent-claimed rows are not read at
-    # all: resolving over every row would let an agent row displace a human
-    # false_block.
+    # LATEST HUMAN label per record. The sidecar is append-only, so the last
+    # matching row is the most recent and a correction supersedes what it
+    # corrects. Agent-claimed rows are not read at all: resolving over every row
+    # would let an agent row displace a human false_block.
+    #
+    # The final deadline is ASYMMETRIC, on purpose. A true_catch or unknown made
+    # after it is ignored: the window closed, and ignoring it can only keep the
+    # rule unmet. A FALSE_BLOCK made after it is still applied: the owner who
+    # finds a false block in April and records it must not be told the rule is
+    # met. Ignoring it would be the one direction that clears on missing data.
     if [ -f "${ADJ_LOG}" ] && [ -r "${ADJ_LOG}" ]; then
         jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" '
                   fromjson? // empty | objects | select(.claimant == "human" and .predicate_version == $pv)
                   | [((.record_id // "") | tostring), ((.verdict // "") | tostring), ((.ts // "") | tostring)] | @tsv' \
             "${ADJ_LOG}" 2>/dev/null \
-        | awk -F'\t' -v fin="${FINAL_DATE}T23:59:59Z" "${SHADOW_AWK_EPOCH}"'
-            { e = iso_epoch($3); if (e < 0 || e > iso_epoch(fin)) next
+        | awk -F'\t' -v fin="${FINAL_DATE}T23:59:59Z" "${_AWK_T}"'
+            { if (!real_instant($3)) next
+              if (iso_epoch($3) > iso_epoch(fin) && $2 != "false_block") next
               if (!($1 in v)) order[++n] = $1
               v[$1] = $2 }
             END { for (i = 1; i <= n; i++) print order[i] "\t" v[order[i]] }' > "${_T}/lab.tsv"
@@ -230,7 +253,7 @@ _build() {
 # while any exists "zero false blocks" is not a measurement.
 _report_uncountable() {
     local _lines _parsed _unparsed _other _badver _unknown _badts _norid _dup _adjbad=0 _agentrows=0 _late=0 _tot
-    local _lother=0 _lbadver=0 _lbadclaim=0 _lbadverdict=0 _lbadts=0 _lorphan=0 _lsum
+    local _lother=0 _lbadver=0 _lbadclaim=0 _lbadverdict=0 _lbadts=0 _lorphan=0 _lsum _lfut=0 _lclk=0
     _lines="$(grep -c . "${SHADOW_LOG}" 2>/dev/null | tr -d '[:space:]')"
     _parsed="$(jq -R -r 'fromjson? // empty | objects | 1' "${SHADOW_LOG}" 2>/dev/null | _count)"
     _unparsed=$(( ${_lines:-0} - ${_parsed:-0} ))
@@ -239,16 +262,16 @@ _report_uncountable() {
     # else in that field ("2" as a string, null, absent, nan, 1.5) is a record
     # of unknown provenance and blocks like any other this reader cannot place.
     _other="$(jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
-        'fromjson? // empty | objects | select((.predicate_version | type) == "number" and (.predicate_version == (.predicate_version | floor)) and .predicate_version != $pv) | 1' "${SHADOW_LOG}" 2>/dev/null | _count)"
+        'fromjson? // empty | objects | select((.predicate_version | type) == "number" and (.predicate_version == (.predicate_version | floor)) and .predicate_version >= 0 and .predicate_version < 1000000 and .predicate_version != $pv) | 1' "${SHADOW_LOG}" 2>/dev/null | _count)"
     _badver="$(jq -R -r \
-        'fromjson? // empty | objects | select(((.predicate_version | type) == "number" and (.predicate_version == (.predicate_version | floor))) | not) | 1' "${SHADOW_LOG}" 2>/dev/null | _count)"
+        'fromjson? // empty | objects | select(((.predicate_version | type) == "number" and (.predicate_version == (.predicate_version | floor)) and .predicate_version >= 0 and .predicate_version < 1000000) | not) | 1' "${SHADOW_LOG}" 2>/dev/null | _count)"
     _unknown="$(jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" '
         fromjson? // empty | objects | select(.predicate_version == $pv)
         | select((.classification == "explained_ladder" or .classification == "unexplained"
                   or .classification == "cannot_check") | not) | 1' "${SHADOW_LOG}" 2>/dev/null | _count)"
     # The SAME test the shared grouper applies (iso_epoch < 0 is dropped), not a
     # shape check: a pre-1970 ts is well formed and still leaves the count.
-    _badts="$(awk -F'\t' "${SHADOW_AWK_EPOCH}"'iso_epoch($4) < 0 { n++ } END { print n+0 }' "${_T}/rec.tsv")"
+    _badts="$(awk -F'\t' "${_AWK_T}"'!real_instant($4) { n++ } END { print n+0 }' "${_T}/rec.tsv")"
     # An id must be a plain token: the episode list is comma-joined by the
     # grouper and re-split here, so an id holding "," resolves to no record.
     _norid="$(awk -F'\t' '$5 !~ /^[A-Za-z0-9_-]+$/ { n++ } END { print n+0 }' "${_T}/rec.tsv")"
@@ -270,13 +293,14 @@ _report_uncountable() {
             # corpus (the log lost a record, or the sidecar is another corpus's).
             jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" '
                 fromjson? // empty | objects
-                | [ (if ((.predicate_version | type) == "number" and (.predicate_version == (.predicate_version | floor)))
+                | [ (if ((.predicate_version | type) == "number" and (.predicate_version == (.predicate_version | floor)) and .predicate_version >= 0 and .predicate_version < 1000000)
                      then (if .predicate_version == $pv then "cur" else "other" end) else "bad" end),
                     (if (.claimant | type) == "string" then .claimant else "" end),
                     (if (.verdict | type) == "string" then .verdict else "" end),
-                    ((.ts // "") | tostring), ((.record_id // "") | tostring) ] | @tsv' \
+                    ((.ts // "") | tostring), ((.record_id // "") | tostring),
+                    (if (((.provenance | objects | .clock_overridden) // false) == true) then "1" else "0" end) ] | @tsv' \
                 "${ADJ_LOG}" 2>/dev/null > "${_T}/labrows.tsv"
-            _lsum="$(awk -F'\t' -v fin="${FINAL_DATE}T23:59:59Z" "${SHADOW_AWK_EPOCH}"'
+            _lsum="$(awk -F'\t' -v fin="${FINAL_DATE}T23:59:59Z" -v now="${_NOW}" "${_AWK_T}"'
                 FILENAME == ARGV[1] { if ($6 == "unexplained" || $6 == "explained_ladder") wb[$5] = 1; next }
                 {
                     if ($1 == "other") { other++; next }
@@ -284,18 +308,26 @@ _report_uncountable() {
                     if ($2 == "agent") { agent++; next }
                     if ($2 != "human") { badclaim++; next }
                     if ($3 != "true_catch" && $3 != "false_block" && $3 != "unknown") { badverdict++; next }
+                    if (!real_instant($4)) { badts++; next }
                     e = iso_epoch($4)
-                    if (e < 0) { badts++; next }
-                    if (e > iso_epoch(fin)) { late++; next }
+                    # Late and NOT a false_block: benign. A late false_block is
+                    # applied, so it falls through like any in-window label.
+                    if (e > iso_epoch(fin) && $3 != "false_block") { late++; next }
                     if (!($5 in wb)) { orphan++; next }
+                    # From here the row is APPLIED. A label dated after the
+                    # reading cannot support it; one written under an
+                    # overridden clock is counted so the verdict can say so.
+                    if (e > iso_epoch(now)) lfut++
+                    if ($6 == "1") lclk++
                 }
-                END { printf "%d %d %d %d %d %d %d %d\n", other + 0, badver + 0, agent + 0, badclaim + 0,
-                          badverdict + 0, badts + 0, late + 0, orphan + 0 }' "${_T}/rec.tsv" "${_T}/labrows.tsv")"
-            read -r _lother _lbadver _agentrows _lbadclaim _lbadverdict _lbadts _late _lorphan <<EOF
+                END { printf "%d %d %d %d %d %d %d %d %d %d\n", other + 0, badver + 0, agent + 0, badclaim + 0,
+                          badverdict + 0, badts + 0, late + 0, orphan + 0, lfut + 0, lclk + 0 }' "${_T}/rec.tsv" "${_T}/labrows.tsv")"
+            read -r _lother _lbadver _agentrows _lbadclaim _lbadverdict _lbadts _late _lorphan _lfut _lclk <<EOF
 ${_lsum}
 EOF
-            case "${_lother}${_lbadver}${_agentrows}${_lbadclaim}${_lbadverdict}${_lbadts}${_late}${_lorphan}" in
+            case "${_lother}${_lbadver}${_agentrows}${_lbadclaim}${_lbadverdict}${_lbadts}${_late}${_lorphan}${_lfut}${_lclk}" in
                 ''|*[!0-9]*) _adjbad=$(( _adjbad + 1 ))
+                             _lfut=0; _lclk=0
                              _lother=0; _lbadver=0; _agentrows=0; _lbadclaim=0; _lbadverdict=0; _lbadts=0; _late=0; _lorphan=0
                              echo "ERROR: the label sidecar could not be summarised." ;;
             esac
@@ -314,7 +346,12 @@ EOF
     [ "${_dup:-0}" -gt 0 ]     && echo "DUPLICATE record_id : ${_dup} record(s) share an id with another; counted worst-wins"
     [ "${_adjbad:-0}" -gt 0 ]  && echo "SIDECAR — unparseable label line(s) : ${_adjbad}"
     [ "${_agentrows:-0}" -gt 0 ] && echo "labels  : ${_agentrows} agent-claimed row(s) ignored — only a human label resolves an episode"
-    [ "${_late:-0}" -gt 0 ]    && echo "labels  : ${_late} human row(s) ignored — made after ${FINAL_DATE}"
+    [ "${_late:-0}" -gt 0 ]    && echo "labels  : ${_late} human row(s) ignored — made after ${FINAL_DATE} (a late false_block is NOT ignored)"
+    [ "${_lfut:-0}" -gt 0 ]    && echo "FUTURE-DATED : ${_lfut} applied label(s) are dated after 'as of'"
+    if [ "${_lclk:-0}" -gt 0 ]; then
+        echo "labels  : ${_lclk} applied label(s) were dated by an overridden clock, not the real one"
+        _LCLOCK="  [rests on ${_lclk} label(s) dated by an overridden clock]"
+    fi
     [ "${_lother:-0}" -gt 0 ]  && echo "labels  : ${_lother} row(s) of another predicate version ignored"
     [ "${_lorphan:-0}" -gt 0 ] && echo "SIDECAR — orphan label(s) : ${_lorphan}  (name no would-block record of this corpus)"
     [ "${_lbadclaim:-0}" -gt 0 ]   && echo "SIDECAR — label(s) with no usable claimant : ${_lbadclaim}"
@@ -322,7 +359,8 @@ EOF
     [ "${_lbadts:-0}" -gt 0 ]      && echo "SIDECAR — label(s) with no usable ts : ${_lbadts}"
     [ "${_lbadver:-0}" -gt 0 ]     && echo "SIDECAR — label(s) with a malformed predicate_version : ${_lbadver}"
     _tot=$(( ${_unparsed:-0} + ${_unknown:-0} + ${_badts:-0} + ${_norid:-0} + ${_badver:-0} + ${_dup:-0} + ${_adjbad:-0} \
-             + ${_lorphan:-0} + ${_lbadclaim:-0} + ${_lbadverdict:-0} + ${_lbadts:-0} + ${_lbadver:-0} ))
+             + ${_lorphan:-0} + ${_lbadclaim:-0} + ${_lbadverdict:-0} + ${_lbadts:-0} + ${_lbadver:-0} \
+             + ${_lfut:-0} ))
     if [ "${_tot}" -gt 0 ]; then
         echo "UNCOUNTABLE : ${_tot} line(s)/record(s) above could not be placed."
         echo "  Any of them may be a false block or hide one, so the decision rule is"
@@ -335,7 +373,7 @@ EOF
 cmd_status() {
     local _cs _sum _n=0 _fb=0 _unres=0 _tc=0 _cc=0 _repos=0 _first=-1 _nby=0 _late=0 _unx=0 _exp=0 _fut=0
     local _c1=UNMET _c2=UNMET _c3=UNMET _c4=UNMET _null="" _band=""
-    _UNCOUNTED=0
+    _UNCOUNTED=0; _LCLOCK=""
     _set_now || return 3
 
     echo "=== VERIFY measured-verdict shadow corpus (leg: push, #301) ==="
@@ -375,7 +413,10 @@ cmd_status() {
         {
             e = iso_epoch($7)
             if ($6 == "cannot_check") { cc++; next }
-            if (e > iso_epoch(fin)) { late++; next }
+            # An episode that began after the window is not counted — but a
+            # human false_block on it is still a false block. Dropping it with
+            # the episode made the label vanish without a line.
+            if (e > iso_epoch(fin)) { late++; if ($6 == "false_block") st["false_block"]++; next }
             # Evidence dated after "as of" cannot support a reading taken then.
             if (e > iso_epoch(now)) fut++
             n++; st[$6]++; cl[$8]++
@@ -448,7 +489,7 @@ EOF
     echo
     if [ "${_c1}${_c2}${_c3}${_c4}" = "METMETMETMET" ] && [ "${_UNCOUNTED:-0}" -eq 0 ] && [ -z "${_null}" ] \
        && [ "${_fut}" -eq 0 ]; then
-        echo "verdict  : DECISION RULE MET.${_CLOCK}"
+        echo "verdict  : DECISION RULE MET.${_CLOCK}${_LCLOCK}"
         echo "           Flipping the leg to deny is a separate change made"
         echo "           by the repo owner; this reader authorises nothing by itself. That"
         echo "           change must first pass an installation smoke test of the leg."
@@ -583,9 +624,10 @@ cmd_adjudicate() {
                --arg corpus "${SHADOW_LOG}" --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
                --arg par "$(ps -o comm= -p "$PPID" 2>/dev/null || echo unknown)" \
                --arg agentenv "$([ -n "${CLAUDECODE:-}" ] && echo present || echo absent)" \
+               --argjson co "$([ -n "${VERIFY_SHADOW_NOW:-}" ] && echo true || echo false)" \
            '{schema_version:1, leg:"verify", predicate_version:$pv, record_id:$rid, episode_id:$eid,
              ts:$ts, verdict:$v, reason:$r, claimant:$c, corpus:$corpus,
-             provenance:{user:$u, tty:$tty, parent:$par, agent_env:$agentenv}}' \
+             provenance:{user:$u, tty:$tty, parent:$par, agent_env:$agentenv, clock_overridden:$co}}' \
            >> "${ADJ_LOG}" 2>/dev/null || { echo "error: append to ${ADJ_LOG} failed" >&2; return 1; }
         _wrote=$(( _wrote + 1 ))
     done
@@ -593,7 +635,11 @@ cmd_adjudicate() {
     if [ "${_claim}" = "agent" ]; then
         echo "note: AGENT-CLAIMED — ignored by --status until a human re-labels the episode."
     fi
-    if [ "${_NOW%%T*}" \> "${FINAL_DATE}" ]; then
+    if [ -n "${VERIFY_SHADOW_NOW:-}" ]; then
+        echo "note: dated ${_NOW} by VERIFY_SHADOW_NOW, not the real clock. The label records that,"
+        echo "      and --status says so on any verdict that rests on it."
+    fi
+    if [ "${_NOW%%T*}" \> "${FINAL_DATE}" ] && [ "${_verdict}" != "false_block" ]; then
         echo "note: made after the final deadline (${FINAL_DATE}) — --status ignores it. The window is closed."
     fi
     return 0
