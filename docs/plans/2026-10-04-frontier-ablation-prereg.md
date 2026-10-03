@@ -167,4 +167,30 @@ and are reported separately from it.
 
 ## Amendment log
 
-(empty)
+All entries below were written **before the first outcome run**.
+
+- **A1 — fixture authorship is mixed, not Codex-only.** Codex reached its usage limit after nine
+  fixtures that pass the gate (a1, a2, a3, b1, b2, b3, d1, d2, d3). The other seven (a4, b4, c1, c2, c3,
+  c4, d4) were authored by Claude subagents from the same frozen brief (SHA-256 prefix
+  `1e0c3334bbe617ca`), each confined to its own directory and told nothing about the experiment, its
+  arms or its hypotheses. Rule fixed before any Claude fixture was read: a Codex fixture that passes the
+  gate is used in preference to a Claude fixture with the same id. Consequences stated now: category c
+  is entirely Claude-authored, so category and author are confounded there; results are reported for
+  all 16 and for the Codex-authored and Claude-authored subsets separately. Same-family authorship can
+  make tasks easier for every arm (ceiling), not easier for one arm over another.
+- **A2 — authoring procedure.** The single serial Codex session was replaced by one session per
+  category with a launch line fixing category and domains. Three of the four sessions stopped at a
+  design-approval checkpoint without writing files and were relaunched with an explicit statement that
+  approval was given; the brief itself was not changed.
+- **A3 — gate leg 6 was performed by four reviewer subagents**, each given only the fixtures and the
+  rule, and reporting ACCEPT/REJECT per fixture. All 16 were accepted. Their notes, recorded here
+  because they bear on threat 2 (ceiling): in several fixtures `TASK.md` states the trapped requirement
+  outright, and a1, a3, c3, c4 and c5 are satisfiable by a one- or two-line change. Spares c5, d5 and a
+  second d3 were authored and not used.
+- **A4 — frozen artefacts.** `manifest.json` SHA-256
+  `f74f70882d98bfd328bf16868571db34245a8e8abb4c0c1653c8dc71201f6898` (16 task trees, vault trees,
+  runner/grader/analysis scripts, both plugin trees, the A2 registry, CLI version); `gate.json` SHA-256
+  `87cabbc75dbc21ed45744952e70db6ac04fd2dcf699493e8ba9b25d6985eac65`. Grader interpreter: Python 3.14.7.
+- **A5 — the push of this file was refused by the plugin's own push gate** (no code-review or
+  verification record on the branch), so the pre-data freeze is evidenced by the local commit
+  timestamps and the hashes above rather than by a remote timestamp.

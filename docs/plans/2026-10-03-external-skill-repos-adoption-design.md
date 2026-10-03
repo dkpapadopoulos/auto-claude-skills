@@ -10,6 +10,11 @@ re-checked against our own tree before it entered this document (see "Verificati
 (F1) was reproduced by an analyst subagent running our real `session-start-hook.sh` against copied third-party
 frontmatter in a throwaway HOME; the code lines it implicates were then re-read directly.
 
+**CORRECTED 2026-10-04** after a cross-family review and re-verification: F1's scope is narrower than
+stated, F3 is a missing route rather than a defect, portfolio items G5 and T2 and T1's acceptance rule are
+dropped, T3 is reshaped, and PR-A is no longer a prerequisite bundle. See
+`2026-10-04-frontier-value-results.md` §2–§3; where the two disagree, that document wins.
+
 | # | Repo | Commit read | License |
 |---|---|---|---|
 | 1 | garrytan/gstack | `74512c2` (2026-10-03) | MIT |

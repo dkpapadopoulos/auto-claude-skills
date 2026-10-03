@@ -3,6 +3,10 @@
 **Date:** 2026-10-03
 **Status:** DESIGN persisted; recommends a measurement programme + a small set of low-risk demotions.
 No implementation started.
+**CORRECTED 2026-10-04:** the "Demote-now set" below is superseded — all four items were found void,
+incomplete or mis-targeted when checked against the tree and against five weeks of field data. See
+`2026-10-04-frontier-value-results.md` §3. The component triage table stands as a list of hypotheses;
+the measured results are in that document.
 **Question (owner):** have Opus 5.x / Fable 5 overshadowed obra/superpowers-style skills and flows so that
 they are now net negative; should auto-claude-skills shed skills or rethink its approach?
 **Method:** (a) internal evidence audit of every measurement this repo holds (subagent sweep of
