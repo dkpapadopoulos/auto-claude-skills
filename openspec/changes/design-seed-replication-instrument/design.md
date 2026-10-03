@@ -1326,7 +1326,42 @@ ruling, for the reasons above. A brief written under it describes what a page
 must show and do; how it is arranged is the builder's, and that is what the arms
 are compared on.
 
+### The picker ran, 2026-10-03
+
+One run, the registered one, and the launcher's first live run. It was valid.
+
+| | |
+|---|---|
+| Dion commit | `22c372282a4193b01174ec61651277b5c1fb3815`, pushed, tree clean |
+| CLI, model | 2.1.285, `claude-opus-5-5` |
+| started | 2026-10-03T19:49:35Z; 23 turns, about 97 seconds |
+| statement | `0a5d36ad6c0a21280be1947cbb19f2fea20f5a5d1730c4ec0b10c1a99b71b4be` |
+| export | `972f4ea`, 1271 files, tree `047d9771…1341`, record `8c1d9753…d762` |
+| check report | `78b0a47a…9e86`: pass, `project_files` not loaded, made that day |
+| manifest, harness, term list | `87c156b1…942a`, `d9f5608d…1952`, `c7065fb3…180e` |
+| calls | Glob 3, Grep 9, Read 10; every one inside the copy; none refused |
+| attachments | the CLI's own (environment, model, date, session context, prompt snapshot and the like); no instruction file |
+| stream, brief | `a898ce16…d970`; brief `72d201cf…935a`, 15,228 bytes, the six headings |
+
+The brief, the stream and the transcript are kept on the owner's machine, outside
+any repository, because the transcript holds the account's address. The brief's
+text is not reproduced here. Freezing it is the next stage's, and nobody has
+judged it: whether it stands is not decided by what it says.
+
+What the reviewer was sent of the removal record, and what it said. A summary of
+paths, line counts and kinds of term, with Dion's file paths in it (one package,
+the owner approved). It answered that from a summary it could not tell whether
+the removals mislead a party choosing a screen, and named what it would need:
+what the removed lines and the omitted file said, and whether anything left
+refers to them. That audit was then made on the machine, by the author, who knows
+the treatment, so it is not blind: eight of the nine removed lines are workflow
+steps in plan documents naming the development plugin's skills, the ninth is a
+note in Dion's instruction file naming the pilot's branch, and the omitted file
+is feedback to that plugin's maintainers, which nothing left in the tree refers
+to. None concerns a screen of the application, a stored report or its data.
+
 Open after revision 5: the arm launcher binds neither the CLI version, the
 harness nor the term list; the package builder is not built; the cost of
-composing the brief in one message is not measured; the picker has not run; the deriver's and the
+composing the brief in one message is not measured; the picker's brief is kept and
+not frozen; the deriver's and the
 reviewer's packages, the freeze and the arms each have their own plan.
