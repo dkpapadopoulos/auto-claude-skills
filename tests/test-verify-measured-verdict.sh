@@ -1089,7 +1089,7 @@ no record_id|.record_id = ""|no usable record_id : 1
 comma in record_id|.record_id = "aa,bb"|no usable record_id : 1
 string predicate_version|.predicate_version = "2"|malformed predicate_version : 1
 absent predicate_version|del(.predicate_version)|malformed predicate_version : 1
-fractional predicate_version|.predicate_version = 2.5|malformed predicate_version : 1
+fractional predicate_version|.predicate_version = 2.5|1 unparseable
 unknown classification|.classification = "looks-fine"|unknown classification : 1
 EOF
 
@@ -1158,7 +1158,7 @@ unusable verdict on an unknown record|{"record_id":"gone0002","verdict":"fine","
 version as a string|{"record_id":"@R2@","verdict":"false_block","claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":"2"}|malformed predicate_version : 1
 no version|{"record_id":"@R2@","verdict":"false_block","claimant":"human","ts":"2026-10-19T00:00:00Z"}|malformed predicate_version : 1
 month 99 is the right shape and not an instant|{"record_id":"@R2@","verdict":"false_block","claimant":"human","ts":"2026-99-19T01:00:00Z","predicate_version":2}|no usable ts : 1
-version 1e999 is not a version|{"record_id":"@R2@","verdict":"false_block","claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":1e999}|malformed predicate_version : 1
+version 1e999 is not a version|{"record_id":"@R2@","verdict":"false_block","claimant":"human","ts":"2026-10-19T00:00:00Z","predicate_version":1e999}|unparseable label line(s) : 1
 an AGENT row with a malformed version is still malformed|{"record_id":"@R2@","verdict":"false_block","claimant":"agent","ts":"2026-10-19T00:00:00Z","predicate_version":"2"}|malformed predicate_version : 1
 EOF
 # Two of the BENIGN buckets (agent-claimed, other version), pinned so a
@@ -1578,6 +1578,65 @@ _reset
 _emit "${RA}" unexplained absent "100" "2026-10-05T10:00:00Z"
 _emit "${RA}" unexplained absent "1e2" "2026-10-05T10:05:00Z"
 assert_contains "session tokens 100 and 1e2 are two episodes, not one" "n=2" "$(_status)"
+
+# --- found by re-fuzzing 7353579c (174,436 cases, both locales) -------------------
+# Each is a sidecar line the strict filter passed and jq read differently.
+_R2B="$(sed -n 2p "${TMP}/base29.jsonl" | jq -r .record_id)"
+_hide() { # <label> <raw-line-printf-format>  — appended after the base, must keep the rule unmet
+    _base
+    printf "$2" "${_R2B}" >> "${_ADJ}"
+    out="$(_status)"
+    assert_not_contains "hidden false_block (${1}): never MET" "DECISION RULE MET" "${out}"
+}
+# R1 a duplicate claimant spelled with a \u escape (jq decodes it; the last wins)
+_hide "escaped duplicate key" '{"predicate_version":2,"record_id":"%s","ts":"2026-10-19T00:00:00Z","verdict":"false_block","claimant":"human","\\u0063laimant":"agent"}\n'
+# R2 a duplicate claimant with a CR between key and colon
+_hide "CR before the colon" '{"predicate_version":2,"record_id":"%s","ts":"2026-10-19T00:00:00Z","verdict":"false_block","claimant":"human","claimant"\r:"agent"}\n'
+# R3 a false_block after a NUL on the same line
+_base
+printf '{"predicate_version":2,"record_id":"%s","ts":"2026-10-19T00:00:00Z","verdict":"true_catch","claimant":"human"}\000{"predicate_version":2,"record_id":"%s","ts":"2026-10-19T00:00:00Z","verdict":"false_block","claimant":"human"}\n' "${_R2B}" "${_R2B}" >> "${_ADJ}"
+out="$(_status)"
+assert_contains     "a line holding a NUL is unparseable" "unparseable label line(s) : 1" "${out}"
+assert_not_contains "a false_block after a NUL: never MET" "DECISION RULE MET" "${out}"
+# R4/R5 a correction that is not strict JSON must not supersede a false_block
+while IFS='|' read -r _what _fmt; do
+    [ -n "${_what}" ] || continue
+    _base
+    printf '{"predicate_version":2,"record_id":"%s","ts":"2026-10-18T00:00:00Z","verdict":"false_block","claimant":"human"}\n' "${_R2B}" >> "${_ADJ}"
+    printf "${_fmt}" "${_R2B}" >> "${_ADJ}"
+    out="$(_status)"
+    assert_contains     "correction with ${_what}: the false_block stands" "false_block=1" "${out}"
+    assert_not_contains "correction with ${_what}: never MET" "DECISION RULE MET" "${out}"
+done <<EOF
+a lenient number in another field|{"predicate_version":2,"record_id":"%s","ts":"2026-10-19T00:00:00Z","verdict":"true_catch","claimant":"human","x":01}\n
+version written 2.0|{"predicate_version":2.0,"record_id":"%s","ts":"2026-10-19T00:00:00Z","verdict":"true_catch","claimant":"human"}\n
+version written 2e0|{"predicate_version":2e0,"record_id":"%s","ts":"2026-10-19T00:00:00Z","verdict":"true_catch","claimant":"human"}\n
+EOF
+# Control: the filter still passes ordinary lines whose ts holds colons and
+# digits — the first cut of the any-field check matched every timestamp.
+_base
+assert_contains "control: ordinary label lines still pass the strict filter" "DECISION RULE MET" "$(_status)"
+
+# A1 a label dated after the reading blocks even when a later row supersedes it
+_base
+printf '{"predicate_version":2,"record_id":"%s","ts":"2027-02-01T00:00:00Z","verdict":"false_block","claimant":"human"}\n' "${_R2B}" >> "${_ADJ}"
+printf '{"predicate_version":2,"record_id":"%s","ts":"2026-10-19T00:00:00Z","verdict":"true_catch","claimant":"human"}\n' "${_R2B}" >> "${_ADJ}"
+out="$(_status)"
+assert_contains     "a superseded future-dated label still counts as future-dated" "applied label(s) are dated after" "${out}"
+assert_not_contains "a superseded future-dated label: never MET" "DECISION RULE MET" "${out}"
+# A2 a repo_id that is present but not a string is no identity
+_base
+jq -c 'if .repo_id == "example.invalid/org/b" then .repo_id = 5 else . end' "${_CORP}" > "${_CORP}.t" && mv "${_CORP}.t" "${_CORP}"
+out="$(_status)"
+assert_contains     "a non-string repo_id does not fall back to the path" "repos=1" "${out}"
+assert_not_contains "a non-string repo_id: never MET" "DECISION RULE MET" "${out}"
+# A3 another-version label naming a cannot_check record of THIS corpus is mis-filed
+_base
+_emit "${RA}" cannot_check unparseable s30 "2026-10-10T10:00:00Z"
+printf '{"predicate_version":1,"record_id":"%s","ts":"2026-10-19T00:00:00Z","verdict":"false_block","claimant":"human"}\n' "$(_rid 30)" >> "${_ADJ}"
+out="$(_status)"
+assert_contains     "an other-version label on a cannot_check record of this corpus is mis-filed" "naming a record of this corpus : 1" "${out}"
+assert_not_contains "…and never MET" "DECISION RULE MET" "${out}"
 
 # --- argument validation --------------------------------------------------------
 _base

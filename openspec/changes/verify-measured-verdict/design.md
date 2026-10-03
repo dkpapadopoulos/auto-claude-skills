@@ -329,10 +329,14 @@ class, not a list of the cases found:
 - **Bytes, not collation.** The reader pins the C locale. Under a UTF-8 locale
   macOS awk treats `human` followed by a no-break space as equal to `human`.
 - **Strict lines only.** A line is read only if it is exactly one JSON object
-  with each field it keys on given once and `predicate_version` written as a
-  plain integer. jq accepts a byte-order mark, `01`, `+1`, `1.`, `nan` and a
-  repeated key; each of those filed a row somewhere harmless. A line that is
-  not strict is unparseable, which blocks.
+  with each field it keys on given once (no key spelled with a `\u` escape, and
+  CR counted as the whitespace it is), no NUL byte, `predicate_version` written
+  as a plain integer (not `2.0` or `2e0`), and no jq-lenient number anywhere
+  (`01`, `+1`, `.5`, `1.`, `nan`, `inf`). jq accepts all of those; each filed a
+  row somewhere harmless. A line that is not strict is unparseable, which
+  blocks. This filter is regexes over raw bytes in front of a real parser, and
+  every gap between the two has been a way to hide a row; it is built against
+  corruption and accident, not against a line crafted to differ between them.
 - **Strings are strings.** `record_id`, `ts`, `claimant`, `verdict` and the
   episode key fields must be JSON strings; a number is not coerced. Identity
   comparisons are string comparisons (`01` is not `1`).
@@ -343,7 +347,7 @@ class, not a list of the cases found:
   |---|---|
   | malformed `predicate_version` | blocks |
   | another whole-number version, naming a record this corpus does not hold | benign: an older band |
-  | another version, naming a record of THIS corpus | blocks: mis-filed |
+  | another version, naming any record of THIS corpus (any classification) | blocks: mis-filed |
   | claimant exactly `agent` | benign |
   | claimant not exactly `human` | blocks |
   | verdict outside the vocabulary | blocks |
@@ -353,7 +357,8 @@ class, not a list of the cases found:
   | `true_catch` / `unknown` made after the final deadline | benign: the window closed |
   | otherwise | applied; the latest applied label per record wins |
 
-  An applied label dated after the reading also blocks, and a reading taken
+  An applied label dated after the reading also blocks, even if a later row
+  supersedes it, and a reading taken
   with the clock overridden says so on its verdict line — as does one that
   rests on a label whose own date came from an overridden clock, which the
   label records when it is written.
@@ -361,7 +366,9 @@ class, not a list of the cases found:
   would-block record is not met (per record, not per episode).
 - **Repositories.** The reader normalises the repository key with the writer's
   own function, so a record written before normalisation, or edited, does not
-  count one repository twice; and an EMPTY identity is not a repository.
+  count one repository twice; an EMPTY identity is not a repository; and a
+  `repo_id` that is present but not a string is no identity, not a reason to
+  fall back to the path.
 
 **Limit, stated:** this defends against corruption, drift and accident. It is
 not a defence against a deliberate edit of an agent-writable file, and a fifth
