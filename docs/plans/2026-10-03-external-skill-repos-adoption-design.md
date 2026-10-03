@@ -24,6 +24,12 @@ frontmatter in a throwaway HOME; the code lines it implicates were then re-read 
 | 10 | anthropics/claude-for-legal | `4a6c651` (2026-07-23) | Apache-2.0 |
 | 11 | JuliusBrussee/caveman | `aeb45e2` (2026-10-03) | Apache-2.0 (since 3.0.0) |
 | 12 | ComposioHQ/awesome-claude-skills | `be2a406` (2026-07-24) | Apache-2.0 |
+| 13 | emilkowalski/skills (added later, read directly) | `e8a175d` (2026-10-02) | MIT |
+
+Repo 13 was added after the first pass; see "Addendum: emilkowalski/skills". The companion question
+of whether frontier models make this whole process layer net negative is answered in
+`docs/plans/2026-10-03-frontier-model-value-audit-design.md`. Its findings re-rank PR-C below: any new
+per-prompt directive now also has to beat a no-plugin control.
 
 Star counts in the source screenshot were not verified and play no part in any ranking below.
 
@@ -247,6 +253,35 @@ negation count; add it).
   diff on provenance mismatch.
 - GIVEN a prompt from the off-mission hard-negative set (e.g. a marketing or slide-deck request) WHEN
   routed THEN no owned skill is selected.
+
+## Addendum: emilkowalski/skills (`e8a175d`, MIT)
+
+**What it is.** 14 frontend design-engineering skills by Emil Kowalski (Sonner/Vaul author): motion
+(`animate`, `animate-expo`, `review-animations`, `improve-animations`, `find-animation-opportunities`,
+`animation-vocabulary`), design (`emil-design-eng`, `apple-design`, `mobile-native`, `pick-ui-library`,
+`prototype`), `break-ui`, `write-swift`, `ask-sonner`. About 42k words, with no hooks and no scripts, so it
+makes no network calls of its own. Installed via `npx skills add`. **No tests or evals.**
+
+**Overlap.** Domain content overlaps the external `frontend-design` and our `frontend-quality-rules`
+hint. `prototype` (variants behind a live picker) overlaps our `prototype-lab`.
+
+**Worth taking**
+
+| ID | Mechanic | Source | Into | Value |
+|---|---|---|---|---|
+| E1 | **Schema-backed adversarial data.** Worst-case values must be plausible or equal to the actual limit from the schema, DB column or API contract ("unbounded" is itself a finding). Inject at the data boundary, never by editing the component. Report every break before fixing. Cover empty / exactly-one (pluralisation) / huge (1,000+ rows) as separate states. The method transfers to backend boundary testing, not only UI. | `skills/break-ui/SKILL.md` Hard Rules 1-5, Phases 1-2; `CATALOG.md` | M1 → `runtime-validation` (UI path) and a boundary-value paragraph in `project-verification`; optional M2 route to `break-ui` for "stress-test / worst case" UI prompts (narrow trigger, REVIEW) | **M** |
+| E2 | **Audit-then-plan for a cheaper executor.** The capable model judges and specifies. Each plan is self-contained so that a "less capable model with zero context" can execute it: commit SHA, verbatim current code with `path:line`, the exact target values, one repo exemplar to imitate. | `skills/improve-animations/SKILL.md:16-22`, `PLAN-TEMPLATE.md` | Evidence for the frontier-model audit's profile idea; a candidate check in `writing-plans` handoff ("could a cheaper model execute this task brief as written?") | **M** |
+| E3 | **Explicit-only skills** via `disable-model-invocation: true` (3 of 14). Our discovery parser ignores this hyphenated key (F1 regex), so a discovered skill marked explicit-only could still be routed with a "MUST invoke" line the model cannot act on. | frontmatter of `pick-ui-library`, `prototype`, `review-animations` | **Fold into F1:** skip routing for discovered skills with `disable-model-invocation: true` (our own `synthesize` uses the same flag) | **M** (correctness) |
+| E4 | **Disambiguation in every description** ("For critiquing existing motion use review-animations; for auditing a whole codebase use improve-animations"). | most `description:` fields | T4 static guard: owned skills with overlapping triggers must name their sibling in the description | L |
+
+**Skip.** Routing to the motion/design skills (off-mission, and a collision with `frontend-design` for
+the domain slot). The "Initial Response: respond only with…" gate, which would stall an auto-routed
+invocation. `write-swift` and `ask-sonner` (narrow library guides; users can co-install them).
+
+**Test for E1/E3.** E3 joins the F1 fixture: a verbatim `review-animations` frontmatter must produce a
+registry entry that is never selected. E1 gets a red-first runtime-validation scenario: a component whose
+demo data passes, with a schema limit of 255 and an unbounded email. It passes when the report names the
+schema-backed breaks without hand-editing markup. n=10, keep if ≥3/10 better than the current skill.
 
 ## Security observations (for `/setup` guidance and our egress hooks)
 - gstack: every skill start runs an update check against raw.githubusercontent and, unless telemetry is
