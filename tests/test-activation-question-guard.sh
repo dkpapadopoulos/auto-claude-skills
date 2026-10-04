@@ -2,18 +2,25 @@
 # test-activation-question-guard.sh — a question is not a work order.
 #
 # The activation hook used to tell the model a process skill "MUST INVOKE" whenever a trigger
-# word appeared, including in a question: "what's the next step here?" mandated
-# executing-plans, "is the review done?" mandated requesting-code-review, and
-# tests/test-routing.sh has carried "what does this error message mean" as a KNOWN FALSE
-# POSITIVE for systematic-debugging since it was written.
+# word appeared, including in a plain question: "what's the next step?" mandated
+# executing-plans and "is the review done?" mandated requesting-code-review.
 #
-# THE RULE. A prompt is question-shaped when it ENDS with "?" and no statement precedes that
-# question, or when it STARTS with a question word and is one clause on one line. It is not
-# question-shaped when it contains a polite request (can/could/would/will + you/we/i,
-# "please", "would it be possible"). On a question-shaped prompt, if the selected process
-# skill got there on trigger words alone — no skill name, no keyword phrase, no trigger
-# alternative that is itself written as a question, phase not LEARN — and no domain or
-# workflow skill was selected alongside it, the hook DISPLAYS NOTHING.
+# THE RULE, deliberately tight. A prompt is question-shaped only when ALL of these hold:
+#   - it OPENS with an interrogative (what why how is are does did who which where when should)
+#   - it ENDS with "?"
+#   - it is ONE clause on ONE line (no ". ! ? : ; ," followed by more text, no " - " dash)
+#   - it contains no request phrase (can/could/would/will + you/we/i, "is it possible",
+#     "are you able", "any chance", "please", "how about", "what about", "why don't", "why not")
+# On such a prompt, if the selected process skill got there on trigger words alone — the user
+# did not name it, no keyword phrase matched, no trigger alternative written as a question
+# matched, its phase is not LEARN or DEBUG, and it is not already a step of this session's
+# chain — and no domain or workflow skill was selected with it, the hook DISPLAYS NOTHING.
+#
+# Two earlier, looser rules were reviewed and withdrawn: one also took any prompt ending in
+# "?" and one-clause prompts with no "?" at all, and each review found more families of
+# ordinary work orders read as questions ("fix the failing test, ok?", "is still broken
+# after your change - debug it", "how about we implement the cache layer now"). This rule
+# trades reach for precision on purpose; what it gives up is pinned in G16.
 #
 # DISPLAY-ONLY, and this file exists as much for that as for the rule. The first cut dropped
 # the skill in the scorer, which also stopped the composition-state write; the push gate runs
@@ -21,36 +28,35 @@
 # for bugs done?" went from DENY to allow (measured; the gate's decision is pinned in
 # tests/test-push-gate-display-suppression.sh). Every suppressed prompt below is therefore
 # also run with ACS_QUESTION_GUARD=off, and the routing state the two runs write must be
-# identical. The guard does not look at whether a chain is active: it changes no state, so
-# there is nothing for an active chain to be protected from.
+# identical.
 #
 #   G1  control: an instruction mandates the process skill and starts a chain
-#   G2  the same words as a question: nothing displayed, state as with the guard off
-#       (including the armed chain)
-#   G3  a one-clause question with no question mark: the same
-#   G4  the suite's long-standing known false positive: the same
-#   G5  a polite request keeps its mandate, wherever the polite words sit (four phrasings)
-#   G6  an imperative that starts with "do" keeps its mandate
+#   G2  each opening interrogative, as a one-clause question ending in "?": nothing is
+#       displayed, the guard-off run mandates, and the state written is identical
+#   G3  the chain is still ARMED after a suppressed question
+#   G5  a request phrase keeps the mandate — one prompt per phrase in the list
+#   G6  an imperative keeps its mandate, with or without a trailing "?"
 #   G7  naming the skill in a question keeps it
 #   G8  a keyword phrase in a question keeps it
-#   G9  a LEARN-phase question still routes outcome-review
-#   G10 a question followed by an instruction keeps its mandate (same line, and next line)
-#   G11 with a chain ACTIVE, a question displays nothing and moves state as with the guard off
+#   G9  a LEARN-phase and a DEBUG-phase question keep their mandate
+#   G10 more than one clause keeps the mandate — one prompt per separator
+#   G11 with a chain ACTIVE: a question about a step OF that chain is displayed unchanged;
+#       a question that would start an unrelated process skill is still suppressed; and a
+#       bare follow-up that matches nothing keeps its sticky display
 #   G12 SKILL_EXPLAIN=1 says what was suppressed and that state is still written
-#   G13 a question that ALSO selects a domain or workflow skill is displayed unchanged
-#   G14 a work order that merely ENDS with a question keeps its mandate (next line, same
-#       line, "!", ":", CRLF), while a prompt made only of questions is still suppressed
-#   (G15 is retired. It asserted that a suppressed question records neither gating milestone
-#   as completed, which mattered when the first cut moved the chain's anchor. State is now
-#   identical to the guard-off run by the cells inside `suppressed`, and removing the
-#   walker's exclusion no longer changed G15's outcome — a cell that cannot fail. The
-#   exclusion keeps its own regression in tests/test-routing.sh.)
+#   G13 a question that also selects a domain skill, or a workflow skill, is displayed
+#       unchanged
 #   G16 KNOWN LIMITS, pinned so nobody reads them as coverage
-#   G17 a trigger alternative that is itself a question ("how would", "which issue") keeps
-#       its mandate
-#   G18 an imperative behind a subordinate clause keeps its mandate — by the comma rule
-#       ("how about this, do Y") and, separately, because when/where are not question words
-#       ("when you get a moment do Y"); one prompt per defence, so neither hides the other
+#   G17 a trigger alternative that is itself a question keeps its mandate (how / what /
+#       which / where — one prompt each, none of them containing a request phrase)
+#
+# MUTATION SWEEP, 2026-10-05: 59 single-change mutants of the hook (every opening word, every
+# request phrase, every separator, every exemption, both first-cut behaviours); each is caught
+# by a named cell here or in the two sibling files, with ONE named exception. The scorer's
+# `trigger_score -gt 0` condition is NOT held by any cell: a process skill with no trigger hit
+# reaches selection only through sticky emission, and a sticky skill is always a step of the
+# active chain, which the chain-member rule already exempts (G11). It is kept as a second
+# line of defence and listed here so nobody reads this file as covering it.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -124,99 +130,136 @@ new_home; OUT="$(ask 'review the PR diff for bugs')"
 mandates "G1 control: an instruction mandates requesting-code-review" "requesting-code-review" "${OUT}"
 assert_equals "G1 control: and starts a composition chain" "1" "$(state_files)"
 
-# G2
-suppressed "G2: the same words as a question" 'is the review of the PR diff for bugs done?' "requesting-code-review"
-new_home; ask 'is the review of the PR diff for bugs done?' >/dev/null
-assert_equals "G2: and the chain is still ARMED (the push gate's chain checks depend on it)" "1" "$(state_files)"
+# G2 one prompt per opening interrogative. Removing a word from the list fails its row.
+suppressed "G2 what"   'what is the status of the code review?' "requesting-code-review"
+suppressed "G2 why"    'why is the code review of the PR diff taking so long?' "requesting-code-review"
+suppressed "G2 how"    'how is the code review of the PR diff going?' "requesting-code-review"
+suppressed "G2 is"     'is the review of the PR diff for bugs done?' "requesting-code-review"
+suppressed "G2 are"    'are the PR diff bugs worth a code review?' "requesting-code-review"
+suppressed "G2 does"   'does the PR diff need a code review?' "requesting-code-review"
+suppressed "G2 did"    'did the code review of the PR diff find anything?' "requesting-code-review"
+suppressed "G2 who"    'who should review the PR diff for bugs?' "requesting-code-review"
+suppressed "G2 which"  'which reviewer looked at the PR diff?' "requesting-code-review"
+suppressed "G2 where"  'where is the code review of the PR diff?' "requesting-code-review"
+suppressed "G2 when"   'when is the code review of the PR diff due?' "requesting-code-review"
+suppressed "G2 should" 'should the PR diff get a code review?' "requesting-code-review"
+suppressed "G2 another skill" "what's the next step?" "executing-plans"
 
 # G3
-suppressed "G3: a one-clause question without a question mark" "what's the best next step here" "executing-plans"
+new_home; ask 'is the review of the PR diff for bugs done?' >/dev/null
+assert_equals "G3: the chain is still ARMED after a suppressed question (the push gate's chain checks depend on it)" "1" "$(state_files)"
 
-# G4
-suppressed "G4: the known false positive" 'what does this error message mean' "systematic-debugging"
+# G5 one prompt per request phrase. Each opens with an interrogative, ends in "?" and is one
+# clause, so the request phrase is the only thing holding its mandate.
+kept "G5 can you"        'when can you review the PR diff for bugs?' "requesting-code-review"
+kept "G5 could you"      'what could you review in the PR diff?' "requesting-code-review"
+kept "G5 would you"      'when would you review the PR diff for bugs?' "requesting-code-review"
+kept "G5 will you"       'when will you review the PR diff for bugs?' "requesting-code-review"
+kept "G5 can we"         'when can we review the PR diff for bugs?' "requesting-code-review"
+kept "G5 can i"          'where can i review the PR diff for bugs?' "requesting-code-review"
+kept "G5 can u"          'when can u review the PR diff for bugs?' "requesting-code-review"
+kept "G5 is it possible" 'is it possible to review the PR diff for bugs?' "requesting-code-review"
+kept "G5 are you able"   'are you able to review the PR diff for bugs?' "requesting-code-review"
+kept "G5 any chance"     'is there any chance of a code review of the PR diff?' "requesting-code-review"
+kept "G5 please"         'should we review the PR diff for bugs please?' "requesting-code-review"
+kept "G5 how about"      'how about we review the PR diff for bugs?' "requesting-code-review"
+kept "G5 what about"     'what about a code review of the PR diff?' "requesting-code-review"
+kept "G5 why don't"      "why don't you review the PR diff for bugs?" "requesting-code-review"
+kept "G5 why not"        'why not review the PR diff for bugs?' "requesting-code-review"
 
-# G5 polite requests, at the start and elsewhere
-kept "G5: 'can you ...?' keeps its mandate" 'can you review the PR diff for bugs?' "requesting-code-review"
-kept "G5: 'could you ...?' keeps its mandate" 'could you debug this failing test?' "systematic-debugging"
-kept "G5: 'please can you ...?' keeps its mandate" 'please can you review the PR diff for bugs?' "requesting-code-review"
-kept "G5: 'ok, can you ...?' keeps its mandate" 'ok, can you debug the failing test?' "systematic-debugging"
-
-# G6 imperative starting with "do"
+# G6 imperatives
 kept "G6: an imperative starting with 'do' keeps its mandate" 'do a code review of the PR diff' "requesting-code-review"
+kept "G6: an imperative with a trailing '?' keeps its mandate" 'review the PR diff for bugs?' "requesting-code-review"
+kept "G6: 'can you ...?' keeps its mandate" 'can you review the PR diff for bugs?' "requesting-code-review"
 
 # G7 named skill
-kept "G7: naming the skill in a question keeps it" 'should we run systematic-debugging on this?' "systematic-debugging"
+# (A non-DEBUG skill on purpose: a debugging skill would be held by the DEBUG exemption and
+# this cell would pass with the name rule deleted — which is what a mutation sweep found.)
+kept "G7: naming the skill in a question keeps it" 'should we run requesting-code-review on this?' "requesting-code-review"
 
-# G8 keyword phrase
-# ("best way to" is a keyword and not a question-form trigger match, so this prompt is held
-# by the keyword exemption alone; "how should we ..." would also pass through G17's rule.)
+# G8 keyword phrase ("best way to" is a keyword and not a question-form trigger match)
 kept "G8: a keyword phrase in a question keeps brainstorming" 'is there a best way to design the cache layer?' "brainstorming"
 
-# G9 LEARN
-new_home; OUT="$(ask 'how did the auth feature perform')"
-assert_contains "G9: a LEARN-phase question still routes outcome-review" "outcome-review" "${OUT}"
-# ("how did ..." is also a question-form match; this one is held by the LEARN exemption alone.)
-kept "G9: a LEARN-phase question with no question-form trigger still routes outcome-review" 'is the adoption funnel healthy' "outcome-review"
+# G9 LEARN and DEBUG: a question is how an outcome review, or a debugging session, is asked for
+kept "G9: a LEARN-phase question keeps outcome-review" 'is the adoption funnel healthy?' "outcome-review"
+kept "G9: a DEBUG-phase question keeps systematic-debugging" 'why is the test failing?' "systematic-debugging"
 
-# G10 question followed by an instruction
-kept "G10: a question, then an instruction on the same line, keeps its mandate" 'is it ready? review the PR diff for bugs.' "requesting-code-review"
-kept "G10: a question, then an instruction on the next line, keeps its mandate" "$(printf 'what is the status\nreview the PR diff for bugs')" "requesting-code-review"
+# G10 more than one clause — one prompt per separator
+kept "G10 dash"      'what is the status - is the review of the PR diff done?' "requesting-code-review"
+kept "G10 comma"     'what is the status, and is the review of the PR diff done?' "requesting-code-review"
+kept "G10 semicolon" 'what is the status; is the review of the PR diff done?' "requesting-code-review"
+kept "G10 colon"     'what is the status: is the review of the PR diff done?' "requesting-code-review"
+kept "G10 period"    'what is the status. is the review of the PR diff done?' "requesting-code-review"
+kept "G10 question mark" 'what is the status? is the review of the PR diff done?' "requesting-code-review"
+kept "G10 exclamation" 'what is the status! is the review of the PR diff done?' "requesting-code-review"
+kept "G10 em dash"   'what is the status — is the review of the PR diff done?' "requesting-code-review"
+kept "G10 en dash"   'what is the status – is the review of the PR diff done?' "requesting-code-review"
+kept "G10 newline"   "$(printf 'what is the status\nis the review of the PR diff done?')" "requesting-code-review"
 
-# G11 active chain. Two homes, the same two prompts; the second is the question.
+# G11 active chain. Homes come in pairs (guard on / guard off) fed the same prompts.
 new_home; HOME_ON="${LAST_HOME}";  ask 'review the PR diff for bugs' >/dev/null
 new_home; HOME_OFF="${LAST_HOME}"; ask 'review the PR diff for bugs' ACS_QUESTION_GUARD=off >/dev/null
 LAST_HOME="${HOME_ON}"
 if [ "$(state_files)" = "1" ]; then
-    _record_pass "G11 setup: a chain is active before the question"
+    _record_pass "G11 setup: a chain is active before the questions"
 else
-    _record_fail "G11 setup: a chain is active before the question" "no composition state — the cells below would prove nothing"
+    _record_fail "G11 setup: a chain is active before the questions" "no composition state — the cells below would prove nothing"
 fi
+# (a) a question about a step of THIS chain: displayed, exactly as with the guard off
 OUT_ON="$(ask "what's the next step?")"; SNAP_ON="$(snap)"
 LAST_HOME="${HOME_OFF}"; OUT_OFF="$(ask "what's the next step?" ACS_QUESTION_GUARD=off)"; SNAP_OFF="$(snap)"
-mandates "G11 control: with the guard off, the in-chain question carries a mandate" "executing-plans" "${OUT_OFF}"
-assert_equals "G11: with a chain active, the question displays nothing" "0" "${#OUT_ON}"
-assert_equals "G11: and moves the chain's state exactly as with the guard off" "${SNAP_OFF}" "${SNAP_ON}"
+mandates "G11 control: the guard-off run mandates executing-plans for the in-chain question" "executing-plans" "${OUT_OFF}"
+assert_equals "G11: a question about a step of the active chain is displayed unchanged" "${OUT_OFF//${HOME_OFF}/H}" "${OUT_ON//${HOME_ON}/H}"
+assert_equals "G11: and the chain's state moves exactly as with the guard off" "${SNAP_OFF}" "${SNAP_ON}"
+# (b) a bare follow-up that matches no trigger keeps its sticky display
+LAST_HOME="${HOME_ON}";  OUT_ON="$(ask "is it done?")"
+LAST_HOME="${HOME_OFF}"; OUT_OFF="$(ask "is it done?" ACS_QUESTION_GUARD=off)"
+assert_contains "G11 control: the guard-off run displays the chain for a bare follow-up" "SKILL ACTIVATION" "${OUT_OFF}"
+assert_equals "G11: a bare follow-up question keeps its sticky display" "${OUT_OFF//${HOME_OFF}/H}" "${OUT_ON//${HOME_ON}/H}"
+# (c) a question that would start a process skill NOT in the chain is still suppressed.
+# product-discovery belongs to a different chain than the one armed above.
+new_home; HOME_ON="${LAST_HOME}";  ask 'review the PR diff for bugs' >/dev/null
+new_home; HOME_OFF="${LAST_HOME}"; ask 'review the PR diff for bugs' ACS_QUESTION_GUARD=off >/dev/null
+LAST_HOME="${HOME_ON}";  OUT_ON="$(ask 'is the backlog prioritised for this quarter?')"; SNAP_ON="$(snap)"
+LAST_HOME="${HOME_OFF}"; OUT_OFF="$(ask 'is the backlog prioritised for this quarter?' ACS_QUESTION_GUARD=off)"; SNAP_OFF="$(snap)"
+mandates "G11 control: the guard-off run mandates a skill outside the chain" "product-discovery" "${OUT_OFF}"
+assert_equals "G11: a question that would start an unrelated process skill displays nothing" "0" "${#OUT_ON}"
+assert_equals "G11: and state moves exactly as with the guard off" "${SNAP_OFF}" "${SNAP_ON}"
 
 # G12 explain
 new_home; OUT="$(ask 'is the review of the PR diff for bugs done?' SKILL_EXPLAIN=1)"
 assert_contains "G12: SKILL_EXPLAIN reports the suppression" "[display-suppressed] question: requesting-code-review" "${OUT}"
 assert_contains "G12: and says state is still written" "routing state is written as usual" "${OUT}"
 
-# G13 a domain or workflow skill selected alongside: displayed unchanged
-G13_P='we deployed v3.2.1 thirty minutes ago and error rates jumped from 0.1% to 15%, should we rollback?'
-new_home; OUT_ON="$(ask "${G13_P}")"; _h_on="${LAST_HOME}"
-new_home; OUT_OFF="$(ask "${G13_P}" ACS_QUESTION_GUARD=off)"; _h_off="${LAST_HOME}"
-assert_contains "G13 setup: the prompt selects a domain skill next to the process skill" "+ Domain" "${OUT_OFF}"
-assert_equals "G13: a question that also selects a domain skill is displayed unchanged" "${OUT_OFF//${_h_off}/H}" "${OUT_ON//${_h_on}/H}"
-
-# G14 a statement before the trailing question
-kept "G14: an instruction, then a question on the next line, keeps its mandate" "$(printf 'Review the PR diff for bugs.\nAnything unclear?')" "requesting-code-review"
-kept "G14: an instruction, then a question on the same line, keeps its mandate" 'review the PR diff for bugs. anything unclear?' "requesting-code-review"
-kept "G14: an instruction ending in '!', then a question, keeps its mandate" 'review the PR diff for bugs! ok?' "requesting-code-review"
-kept "G14: an unpunctuated instruction line, then a question line, keeps its mandate" "$(printf 'review the PR diff for bugs\nanything unclear?')" "requesting-code-review"
-kept "G14: the same with CRLF line endings keeps its mandate" "$(printf 'review the PR diff for bugs\r\nanything unclear?')" "requesting-code-review"
-kept "G14: an instruction, a colon, then a question keeps its mandate" 'debug this: why does the parser crash?' "systematic-debugging"
-suppressed "G14 control: a prompt made only of questions (two lines)" "$(printf 'is the review of the PR diff for bugs done?\nis it any good?')" "requesting-code-review"
-suppressed "G14 control: two questions on one line" 'is the review of the PR diff for bugs done? is it any good?' "requesting-code-review"
+# G13 a domain or workflow skill selected alongside: displayed unchanged. Both prompts are
+# question-shaped (the G2 shape), so only the co-selection holds their display.
+for _row in "Domain|is the frontend design of the login page done?" "Workflow|is the PR diff ready to merge?"; do
+    _kind="${_row%%|*}"; _p="${_row#*|}"
+    new_home; OUT_ON="$(ask "${_p}")"; _h_on="${LAST_HOME}"
+    new_home; OUT_OFF="$(ask "${_p}" ACS_QUESTION_GUARD=off)"; _h_off="${LAST_HOME}"
+    assert_contains "G13 setup: the prompt selects a ${_kind} skill next to the process skill" "+ ${_kind}" "${OUT_OFF}"
+    assert_contains "G13 setup: and a process mandate" "MUST INVOKE" "${OUT_OFF}"
+    assert_equals "G13: a question that also selects a ${_kind} skill is displayed unchanged" "${OUT_OFF//${_h_off}/H}" "${OUT_ON//${_h_on}/H}"
+done
 
 # G16 KNOWN LIMITS. These assert the CURRENT, imperfect behaviour. If one starts failing
-# because the rule got better, update the cell and the hook comment together. The first two
-# are work orders the rule misreads as questions: they lose their DISPLAY for that one
-# prompt, and nothing else — the state cells inside `suppressed` hold for them too.
-suppressed "G16 KNOWN LIMIT: a suggestion opening with 'how about'" 'how about we implement the cache layer now' "brainstorming"
-suppressed "G16 KNOWN LIMIT: a statement opening with 'what we need'" 'what we need now is to debug the crash in the parser' "systematic-debugging"
-kept "G16 KNOWN LIMIT: a polite-form question keeps a mandate it should not have" 'can you explain why the review matters?' "requesting-code-review"
+# because the rule got better, update the cell and the hook comment together.
+# Plain questions that still carry a mandate:
+kept "G16 KNOWN LIMIT: a question with no question mark keeps its mandate" 'is the review of the PR diff for bugs done' "requesting-code-review"
+kept "G16 KNOWN LIMIT: so does the suite's old false positive (and DEBUG is exempt anyway)" 'what does this error message mean' "systematic-debugging"
+kept "G16 KNOWN LIMIT: a two-clause question keeps its mandate" 'is the review of the PR diff for bugs done? is it any good?' "requesting-code-review"
+kept "G16 KNOWN LIMIT: a question containing a request phrase keeps its mandate" 'can you explain why the review matters?' "requesting-code-review"
 kept "G16 KNOWN LIMIT: a question that only mentions a skill name keeps a mandate" 'what does systematic-debugging mean?' "systematic-debugging"
+# A work order the rule still reads as a question (it loses its DISPLAY for that one prompt;
+# the state cells inside `suppressed` hold for it too):
+suppressed "G16 KNOWN LIMIT: 'should we <do the work>?' is read as a question" 'should we review the PR diff for bugs now?' "requesting-code-review"
 
-# G17 question-form trigger alternatives
-kept "G17: 'how would you ...?' keeps brainstorming (the trigger is written as a question)" 'how would you scope this?' "brainstorming"
-kept "G17: 'which issue should we ...?' keeps product-discovery" 'which issue should we tackle next?' "product-discovery"
-
-# G18 subordinate-clause openers
-kept "G18: 'when X, do Y' keeps its mandate" 'when the build finishes, review the PR diff for bugs' "requesting-code-review"
-kept "G18: 'where possible, do Y' keeps its mandate" 'where possible, fix the crash and add tests' "systematic-debugging"
-kept "G18: a question word, a comma, then an instruction keeps its mandate (comma rule)" 'how about this, review the PR diff for bugs' "requesting-code-review"
-kept "G18: 'when ... do Y' with no comma keeps its mandate (when is not a question word)" 'when you get a moment review the PR diff for bugs' "requesting-code-review"
+# G17 question-form trigger alternatives, one per word the hook checks that a shipped trigger
+# uses. None contains a request phrase, so the question-form rule is what holds each.
+kept "G17 how: 'how would ...?' keeps brainstorming" 'how would the cache layer work?' "brainstorming"
+kept "G17 what: 'what should we ...?' keeps product-discovery" 'what should we look at first?' "product-discovery"
+kept "G17 which: 'which issue ...?' keeps product-discovery" 'which issue is next?' "product-discovery"
+kept "G17 where: 'where were we?' keeps executing-plans" 'where were we?' "executing-plans"
 
 teardown_test_env
 print_summary

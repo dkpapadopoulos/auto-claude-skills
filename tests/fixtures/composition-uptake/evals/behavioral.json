@@ -42,7 +42,7 @@
     "assertions": [
       {
         "kind": "judge",
-        "criteria": "Every earlier step including review and verification is marked DONE and their completion is stated as recorded; finishing-a-development-branch is the CURRENT step. PASS if the stated FIRST action is to invoke finishing-a-development-branch (presenting the merge/PR/keep/discard options). FAIL if it insists on re-running requesting-code-review or verification-before-completion from scratch despite the recorded completions (over-fire), or refuses to proceed.",
+        "criteria": "Every earlier step including review and verification is marked DONE and their completion is stated as recorded; finishing-a-development-branch is the CURRENT step. PASS if the stated FIRST action is to invoke finishing-a-development-branch (presenting the merge/PR/keep options). FAIL if it insists on re-running requesting-code-review or verification-before-completion from scratch despite the recorded completions (over-fire), or refuses to proceed.",
         "description": "control: completed chain does not trigger redundant re-runs of gating steps"
       }
     ]

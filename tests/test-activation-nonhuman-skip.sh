@@ -12,8 +12,9 @@
 # Measured 2026-10-04 over the owner's transcripts (745 distinct non-human inputs): 80 of
 # 84 peer messages and 29 of 29 notices-with-reminder received a routing block carrying a
 # `MUST INVOKE` line — a report that says "the test fails" was told to start
-# systematic-debugging; a goal check-in was told to brainstorm, and one such mis-route
-# started a composition chain that later made the skill gate refuse a real review.
+# systematic-debugging; a goal check-in was told to brainstorm. (One such mis-route also
+# started a composition chain that later made the skill gate refuse a real review. This
+# change does NOT stop that: the chain is still armed, on purpose — see DISPLAY-ONLY below.)
 # Pure task-notification prompts were already skipped (tests/test-activation-notification-skip.sh).
 #
 # DISPLAY-ONLY, and that is the property this file exists to hold. The first cut exited
@@ -66,9 +67,13 @@
 #       classify as the user within 3 s in total (the first cut was quadratic: 50k spaces
 #       before a reminder tag took 4.6 s)
 #   D1  SKILL_DEBUG=1 explains each suppression
+#   N1  with NO registry available, a peer message does not get the phase-checkpoint block
+#       either (a user prompt does)
 #   F1  if the hook's OWN classifier definition does not compile, a user prompt is still
 #       routed (found in review: the retry covered only the shared lib's definition, so a
 #       broken definition here emptied the output for every prompt)
+#   F2  ... and a pure task notification is still recognised through the shared lib
+#   F3  ... and with the shared lib's definition broken as well, a user prompt still routes
 #   L1  without the shared lib: a peer message is still skipped (the peer check is the
 #       hook's own), a notice-with-reminder routes as before (it reuses the lib's notion
 #       of a notification, so without the lib it cannot be recognised)
@@ -320,7 +325,56 @@ else
     OUT_F1="$("${REAL_JQ}" -n --arg p 'review the PR diff for bugs' --arg t "${LAST_HOME}/.claude/abc123.jsonl" '{prompt:$p,transcript_path:$t}' \
         | env HOME="${LAST_HOME}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" SKILL_PROJECT_ROOT="${TEST_TMPDIR}" /bin/bash "${BROKEN_HOOK}" 2>/dev/null)"
     assert_contains "F1: with an uncompilable classifier a user prompt is still routed" "SKILL ACTIVATION" "${OUT_F1}"
+
+    # F2: the retry that gives up ONLY the hook's own definition keeps the shared lib's. A
+    # pure task notification must therefore still be recognised: no output, and — unlike a
+    # prompt — no prompt counter. (Found in review: the first retry order threw the lib's
+    # definition away too, so a notification was routed and counted.)
+    PURE_NOTE="${TEST_TMPDIR}/pure-note.txt"
+    sed -n '/<task-notification>/,/<\/task-notification>/p' "${FIX}/notice-with-reminder.txt" > "${PURE_NOTE}"
+    new_home; cp "${FULL}" "${LAST_HOME}/.claude/.skill-registry-cache.json"
+    OUT_F2="$("${REAL_JQ}" -n --rawfile p "${PURE_NOTE}" --arg t "${LAST_HOME}/.claude/abc123.jsonl" '{prompt:$p,transcript_path:$t}' \
+        | env HOME="${LAST_HOME}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" SKILL_PROJECT_ROOT="${TEST_TMPDIR}" /bin/bash "${BROKEN_HOOK}" 2>/dev/null)"
+    assert_equals "F2: with an uncompilable classifier a pure notification still emits nothing" "0" "${#OUT_F2}"
+    assert_equals "F2: and is still not counted as a prompt" "0" "$(ls "${LAST_HOME}"/.claude/.skill-prompt-count-* 2>/dev/null | wc -l | tr -d ' ')"
+    new_home; run_hook "${BODY}" >/dev/null
+    assert_equals "F2 control: an ordinary prompt IS counted (so the cell above can fail)" "1" "$(ls "${LAST_HOME}"/.claude/.skill-prompt-count-* 2>/dev/null | wc -l | tr -d ' ')"
+
+    # F3: BOTH definitions uncompilable — the hook's own and the shared lib's. The last
+    # retry swaps in a null classifier for each, and a user prompt is still routed.
+    BROKEN_ROOT="${TEST_TMPDIR}/broken-root"
+    mkdir -p "${BROKEN_ROOT}/hooks/lib" "${BROKEN_ROOT}/config"
+    cp "${PROJECT_ROOT}/hooks/lib/"*.sh "${BROKEN_ROOT}/hooks/lib/" 2>/dev/null
+    cp "${PROJECT_ROOT}/config/"*.json "${BROKEN_ROOT}/config/" 2>/dev/null
+    sed "s/^TASK_NOTIFICATION_JQ_DEF='def notification_kind:\$/TASK_NOTIFICATION_JQ_DEF='def notification_kind: (((/" \
+        "${PROJECT_ROOT}/hooks/lib/task-notification.sh" > "${BROKEN_ROOT}/hooks/lib/task-notification.sh"
+    if cmp -s "${PROJECT_ROOT}/hooks/lib/task-notification.sh" "${BROKEN_ROOT}/hooks/lib/task-notification.sh"; then
+        _record_fail "F3 setup: the shared lib's definition was broken in the copy" "sed changed nothing"
+    else
+        _record_pass "F3 setup: the shared lib's definition was broken in the copy"
+        new_home; cp "${FULL}" "${LAST_HOME}/.claude/.skill-registry-cache.json"
+        OUT_F3="$("${REAL_JQ}" -n --arg p 'review the PR diff for bugs' --arg t "${LAST_HOME}/.claude/abc123.jsonl" '{prompt:$p,transcript_path:$t}' \
+            | env HOME="${LAST_HOME}" CLAUDE_PLUGIN_ROOT="${BROKEN_ROOT}" SKILL_PROJECT_ROOT="${TEST_TMPDIR}" /bin/bash "${BROKEN_HOOK}" 2>/dev/null)"
+        assert_contains "F3: with both definitions uncompilable a user prompt is still routed" "SKILL ACTIVATION" "${OUT_F3}"
+    fi
 fi
+
+# N1: the "no registry" early path prints a phase checkpoint; a peer message must not get it.
+NOREG_HOOK_DIR="${TEST_TMPDIR}/noreg/hooks"
+mkdir -p "${NOREG_HOOK_DIR}/lib"
+cp "${HOOK}" "${NOREG_HOOK_DIR}/skill-activation-hook.sh"
+cp "${PROJECT_ROOT}/hooks/lib/"*.sh "${NOREG_HOOK_DIR}/lib/" 2>/dev/null
+# CLAUDE_PLUGIN_ROOT points at a tree with the libs but NO config/, and HOME has no cache.
+noreg() {
+    new_home
+    "${REAL_JQ}" -n --rawfile p "$1" --arg t "${LAST_HOME}/.claude/abc123.jsonl" '{prompt:$p,transcript_path:$t}' \
+      | env HOME="${LAST_HOME}" CLAUDE_PLUGIN_ROOT="${TEST_TMPDIR}/noreg" SKILL_PROJECT_ROOT="${TEST_TMPDIR}" \
+            /bin/bash "${NOREG_HOOK_DIR}/skill-activation-hook.sh" 2>/dev/null
+}
+OUT_N1U="$(noreg "${BODY}")"
+assert_contains "N1 control: with no registry a user prompt gets the phase checkpoint" "phase checkpoint only" "${OUT_N1U}"
+OUT_N1P="$(noreg "${FIX}/peer-subagent-handback.txt")"
+assert_equals "N1: with no registry a peer message gets nothing (output length)" "0" "${#OUT_N1P}"
 
 # D1: the suppression is explained, and says that state is still written.
 new_home; OUT_D1="$(run_hook "${FIX}/peer-subagent-handback.txt" SKILL_DEBUG=1)"

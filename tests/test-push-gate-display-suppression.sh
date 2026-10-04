@@ -13,6 +13,8 @@
 #   ... after a subagent hand-back, a bare block, a notice+reminder DENY -> allow
 #   ... after "is the review of the PR diff for bugs done?"         DENY -> allow
 #   ... after "what's the best next step here"                      DENY -> allow
+# (That last prompt has no question mark and is no longer suppressed by the tighter rule
+# that shipped; the cells below use prompts the shipped rule does suppress.)
 # The whole suite was green and two cross-family reviews had said KEEP. A dispatched
 # reviewer pointed at the comment in the hook that describes this exact bypass for
 # consultation prompts; the flipping pair above confirmed it before anything was published.
@@ -42,6 +44,9 @@ FIX="${PROJECT_ROOT}/tests/fixtures/routing-input"
 if ! command -v jq >/dev/null 2>&1; then
     echo "SKIP: jq not available — display-suppression gate check NOT run"; exit 0
 fi
+# The guard reads the repository it is run in. From any other directory C0 fails and the
+# chain cells can pass on the global check instead, so pin the directory.
+cd "${PROJECT_ROOT}" || { _record_fail "cd to the project root" "cannot cd"; print_summary; exit 1; }
 
 _OLDHOME="$HOME"
 _H=""
@@ -93,7 +98,7 @@ shown="$(_turn "review the PR diff for bugs")"
 assert_contains "C1 control: a work order displays a routing block" "SKILL ACTIVATION" "${shown:-<empty>}"
 assert_equals "C1 control: and arms a chain" "true" "$(_armed)"
 out="$(_push)"
-assert_contains "C1 control: and the push denies on the chain's verify check" "verification-before-completion" "${out:-<empty>}"
+assert_contains "C1 control: and the push denies on the chain's verify check" "on this active chain" "${out:-<empty>}"
 _cleanup
 
 # --- S*: each suppressed input ----------------------------------------------------------
@@ -111,8 +116,12 @@ _suppressed_then_push() {
     out="$(_push)"
     assert_contains "S ${label}: the push still denies" '"deny"' "${out:-<empty>}"
     # The setup satisfies the REVIEW leg, so it is the chain's VERIFY check that must fire.
-    # A bare '"deny"' is also produced by other checks and by an unconditional-deny bug.
-    assert_contains "S ${label}: and the denial is the chain's" "verification-before-completion" "${out:-<empty>}"
+    # A bare '"deny"' is also produced by other checks and by an unconditional-deny bug, and
+    # so is the skill's NAME: the global fail-closed deny says "requires
+    # verification-before-completion to have run" with no chain armed at all (found in
+    # review: run from outside the repo against the early-exit mutant, a needle of the
+    # skill name passed). "on this active chain" is said only by the chain's own check.
+    assert_contains "S ${label}: and the denial is the chain's" "on this active chain" "${out:-<empty>}"
     _cleanup
 }
 
@@ -124,8 +133,8 @@ for _f in peer-teammate.txt peer-subagent-handback.txt peer-bare-block.txt notic
     _suppressed_then_push "non-human ${_f%.txt}" "$(cat "${FIX}/${_f}")"
 done
 _suppressed_then_push "question (ends with ?)" "is the review of the PR diff for bugs done?"
-_suppressed_then_push "question (no question mark)" "what's the best next step here"
-_suppressed_then_push "misread suggestion (known limit)" "how about we implement the cache layer now"
+_suppressed_then_push "question (another skill)" "what's the next step?"
+_suppressed_then_push "work order read as a question (known limit)" "should we review the PR diff for bugs now?"
 
 # --- R1: the OTHER chain check, exercised independently ---------------------------------
 _new_session

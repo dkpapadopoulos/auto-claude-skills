@@ -19,8 +19,8 @@
 #
 #   D1  none of the stale claims is present in default-triggers.json, the fallback registry
 #       or README.md; and no eval in the composition-uptake fixture EXPECTS "4 options" (its
-#       recorded prompts are frozen hook output and keep the old text — only the
-#       expected_behavior a judge grades against is checked)
+#       recorded prompts are frozen hook output and keep the old text — only what a judge
+#       grades against is checked: expected_behavior and each assertion's criteria)
 #   D2  the three descriptions state the current behaviour (positive needles, so D1 cannot be
 #       satisfied by deleting the descriptions). They are deliberately no longer than the text
 #       they replace: tests/test-injection-budget.sh ratchets what these cost every prompt.
@@ -45,8 +45,8 @@ README="${PROJECT_ROOT}/README.md"
 EVAL="${PROJECT_ROOT}/tests/fixtures/composition-uptake/evals/behavioral.json"
 # An unreadable file makes `grep -q` exit 2, which reads as "absent" — a pass on nothing.
 for _f in "${CFG}" "${FB}" "${README}" "${EVAL}"; do
-    if [ ! -r "${_f}" ]; then
-        _record_fail "readable: ${_f##*/}" "missing or unreadable; every 'is absent' cell on it would pass vacuously"
+    if [ ! -r "${_f}" ] || [ ! -s "${_f}" ]; then
+        _record_fail "readable and non-empty: ${_f##*/}" "missing, unreadable or empty; every 'is absent' cell on it would pass vacuously"
         print_summary; exit 1
     fi
 done
@@ -76,11 +76,13 @@ do
     done
 done
 assert_equals "D1 floor: every stale claim was checked in every file (5 x 3)" "15" "${_d1_cells}"
-_eval_expect="$(jq -r '[.. | objects | .expected_behavior? // empty] | join("\n")' "${EVAL}" 2>/dev/null)"
+# What the judge is given: expected_behavior AND each assertion's criteria (its rubric).
+_eval_expect="$(jq -r '[.. | objects | (.expected_behavior?, .criteria?) // empty | strings] | join("\n")' "${EVAL}" 2>/dev/null)"
 if [ -n "${_eval_expect}" ]; then
-    assert_not_contains "D1: no eval expectation in composition-uptake asks for '4 options'" "4 options" "${_eval_expect}"
+    assert_not_contains "D1: no judged text in composition-uptake asks for '4 options'" "4 options" "${_eval_expect}"
+    assert_not_contains "D1: no judged text in composition-uptake lists discard as an option" "keep/discard" "${_eval_expect}"
 else
-    _record_fail "D1: no eval expectation in composition-uptake asks for '4 options'" "no expected_behavior field could be read from the fixture"
+    _record_fail "D1: no judged text in composition-uptake asks for '4 options'" "no expected_behavior or criteria could be read from the fixture"
 fi
 
 desc() { jq -r --arg n "$2" '[.skills[] | select(.name == $n)][0].description // ""' "$1"; }
