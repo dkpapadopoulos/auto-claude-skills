@@ -338,8 +338,15 @@ invariants) is on hold until routing precision is measured and fixed.
 
 ## 6. Open items the owner should know about
 
-- **Nothing is pushed.** The plugin's push gate refused the pre-registration push (no code-review or
-  verification record on the branch) and was not bypassed. Commits are local on `ccr-72351171-l8ph21`.
+- **Published through the gate, not around it.** The gate refused the first attempt (no code-review or
+  verification record), so the pre-registration could not get a remote timestamp before the runs; its
+  pre-data freeze rests on local commit times and hashes. The branch `ccr-72351171-l8ph21` went to the
+  remote at `a54b7127` only after a dispatched code review and a full-suite verification (181 of 181
+  files, completion sentinel present). Two advisories stand and are accurate: the review was recorded two
+  commits earlier (the later commits are the fixes it asked for plus the tarball change), and the
+  verification verdict reads "not clean" because the gate-gaming check flags the string
+  `@unittest.skip` — which appears in the grader's own test as the input proving a skipped test is not
+  counted as a pass. No test in the suite is skipped.
 - **The harness is not a sandbox.** The 96 runs were headless sessions with unrestricted Bash as the
   owner's user, confined only by a throwaway HOME and a scratch working copy. See the bundle README.
 - Codex's usage limit cut fixture authoring short; seven of sixteen fixtures are Claude-authored, and
