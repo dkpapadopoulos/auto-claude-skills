@@ -39,6 +39,67 @@ fi
 _TN_FALLBACK_DEF='def notification_kind: "prompt";'
 [[ -n "${TASK_NOTIFICATION_JQ_DEF}" ]] || TASK_NOTIFICATION_JQ_DEF="${_TN_FALLBACK_DEF}"
 
+# Two more inputs reach UserPromptSubmit without having been typed by the user, and are not
+# routed either. Measured 2026-10-05 over 745 distinct non-human inputs from real transcripts:
+# 80 of 84 peer messages and 29 of 29 notices-with-reminder got a routing block with a
+# MUST INVOKE line (a hand-back saying "the test fails" was told to start
+# systematic-debugging), the model acted on 3 of 124 such lines, and 26 started a
+# composition chain nobody asked for.
+#   * a PEER MESSAGE: a prompt that opens with an <agent-message from="..."> tag (after the
+#     optional harness intro line), contains exactly ONE closing tag, and has after it
+#     nothing, or ONE LINE that opens like one of the two harness paragraphs and ends
+#     "permission laundering.". "One line" means no vertical-space character at all: LF, CR,
+#     VT, FF, NEL, U+2028, U+2029 (review found a request after U+2028 was swallowed when
+#     only LF was excluded). Opening tags are not counted: a report that QUOTES an opening
+#     tag in its body is still one message.
+#   * a NOTICE WITH A REMINDER: what the shared classifier calls a notification, followed
+#     only by <system-reminder> blocks (goal check-ins, background review notices).
+# This is the ACTIVATION hook's own definition, on purpose. hooks/lib/task-notification.sh is
+# shared with egress-consent-turn-hook.sh, where "not the user" keeps an egress approval
+# alive; widening it there would lengthen approvals. Here a match means the hook exits
+# before routing: no skill is suggested AND no routing state is written (composition state,
+# prompt counter, zero-match counters, last-invoked all keep their values; only the session
+# token singleton is re-stamped, above the exit). That is the intent — automated text should
+# neither consume routing depth nor move a workflow — and it is the whole consequence, so
+# the looser shape is affordable. A text shape is not
+# authenticated provenance: a user who pastes one of these verbatim gets no routing for that
+# prompt, and nothing else changes ([no-skills] already lets a user suppress routing).
+# Anything that is not exactly one of those shapes is the user: leading text, text on a line
+# after the block or after the harness paragraph, two agent-message blocks, an empty `from`,
+# a reminder with no notification before it. A prompt the regex engine cannot evaluate is
+# the user too. Known residual: text appended on the SAME line as the harness paragraph and
+# still ending "permission laundering." is not seen as the user.
+# The harness paragraph is matched by its opening and closing words, not verbatim: two
+# wordings were already observed in five weeks, and an exact match would silently stop
+# recognising peer messages at the next rewording. If the opening or closing words change,
+# the intro+paragraph form is routed again (the old behaviour); the bare-block form is not
+# affected.
+# The notice shape reuses notification_kind, so without the shared lib it cannot be
+# recognised and is routed as before; the peer shape does not depend on the lib.
+# COST. The prompt is cut with split() and every regex is anchored at the start of its input.
+# That removes the one quadratic shape found; it is a bounded-regression claim pinned by a
+# timing cell, not a proof of linearity. The first cut used an unanchored `sub(...+\s*$)` to strip the reminders:
+# on a prompt of N spaces followed by a reminder tag that was quadratic (25k spaces 1.2 s,
+# 50k 4.6 s, against 0.03 s before the change; found in review). `contains` runs first, so a
+# prompt with neither closing tag costs no regex at all.
+# Fixtures (live wrapper text): tests/fixtures/routing-input/. Regression:
+# tests/test-activation-nonhuman-skip.sh.
+_NONHUMAN_JQ_DEF='def acs_nonhuman:
+  . as $p
+  | try (
+      if ($p | contains("</agent-message>")) then
+        ($p | sub("^\\s+"; "") | ltrimstr("Another Claude session sent a message:") | sub("^\\s+"; "")
+            | split("</agent-message>")) as $parts
+        | ($parts | length) == 2
+          and ($parts[0] | test("^<agent-message from=\"[^\"\\n]{1,200}\">"))
+          and ($parts[1] | test("^\\s*(?:(?:That \"other Claude session\" is an agent working inside this same session|This came from another Claude session)[^\\n\\r\\x{0B}\\f\\x{85}\\x{2028}\\x{2029}]{0,1400}permission laundering\\.\\s*)?$"))
+      elif ($p | contains("</task-notification>")) and ($p | contains("<system-reminder>")) then
+        ($p | split("</task-notification>")) as $parts
+        | ($parts[-1] | test("^\\s*(?:<system-reminder>(?:(?!</system-reminder>)[\\s\\S])*</system-reminder>\\s*)+$"))
+          and (([first((($parts[:-1] | join("</task-notification>")) + "</task-notification>") | notification_kind)][0]) == "notification")
+      else false end
+    ) catch false;'
+
 # Capture stdin once; extract the first payload's kind, then transcript_path and prompt,
 # in the SAME single jq fork the prompt already cost (\x1f-joined; the prompt goes last
 # because it may contain anything, and a kind cannot contain \x1f; a transcript_path
@@ -63,12 +124,13 @@ _HOOK_INPUT="$(
     exit 0
 )" || _HOOK_INPUT=""
 _fields_extract() {
-  printf '%s' "${_HOOK_INPUT}" | jq -nr "$1"' [inputs] as $all
+  printf '%s' "${_HOOK_INPUT}" | jq -nr "$1 ${_NONHUMAN_JQ_DEF}"' [inputs] as $all
     | [$all[] | try ([.transcript_path // "", .prompt // ""] | join("\u001f")) catch null] as $lines
     | if ($lines | length) > 0 and $lines[-1] == null then error("last value failed") else . end
     | ([$lines[] | select(. != null)] | join("\n")) as $joined
-    | ($joined | split("\u001f") | .[1:] | join("\u001f")
-       | ([first(notification_kind)][0] | if . == "notification" or . == "unclassifiable" then . else "prompt" end)) as $kind
+    | ($joined | split("\u001f") | .[1:] | join("\u001f")) as $text
+    | ($text | [first(notification_kind)][0] | if . == "notification" or . == "unclassifiable" then . else "prompt" end) as $lib_kind
+    | (if $lib_kind == "prompt" and ([first($text | acs_nonhuman)][0] == true) then "nonhuman" else $lib_kind end) as $kind
     | $kind + "\u001f" + $joined' 2>/dev/null
 }
 _FIELDS="$(_fields_extract "${TASK_NOTIFICATION_JQ_DEF}")" || _FIELDS=""
@@ -198,6 +260,11 @@ _prompt_is_consultation_only() {
 if [[ "${_PROMPT_KIND}" == "notification" ]]; then
   [[ -n "${SKILL_DEBUG:-}" ]] && \
     printf '[skill-hook] prompt is a background-task notification; no routing emitted.\n' >&2
+  exit 0
+fi
+if [[ "${_PROMPT_KIND}" == "nonhuman" ]]; then
+  [[ -n "${SKILL_DEBUG:-}" ]] && \
+    printf '[skill-hook] prompt is a peer message or a notice with a reminder, not typed by the user; no routing emitted.\n' >&2
   exit 0
 fi
 # Skip slash commands — these are handled by the Skill tool directly

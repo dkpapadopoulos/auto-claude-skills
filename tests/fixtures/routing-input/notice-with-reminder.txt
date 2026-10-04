@@ -1,0 +1,7 @@
+<task-notification>
+<summary>Goal check-in: background work still running</summary>
+</task-notification>
+<system-reminder>
+Goal check-in: «review the PR diff for bugs before merging» is still active, and evaluation has been deferred for 30 min because background work is still running.
+Check on their progress. If they are progressing, say so briefly and keep waiting.
+</system-reminder>
