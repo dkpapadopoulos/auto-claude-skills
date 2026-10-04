@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # test-activation-nonhuman-skip.sh — two more kinds of input reach UserPromptSubmit hooks
-# without having been typed by the user, and the activation hook must not route either:
+# without having been typed by the user, and the activation hook must DISPLAY nothing for
+# either — while writing exactly the routing state it would have written had it displayed:
 #
 #   * a PEER MESSAGE — a subagent hand-back or a teammate's message, delivered as an
 #     `<agent-message from="…">` block, optionally wrapped in a fixed intro line and one of
@@ -15,6 +16,14 @@
 # started a composition chain that later made the skill gate refuse a real review.
 # Pure task-notification prompts were already skipped (tests/test-activation-notification-skip.sh).
 #
+# DISPLAY-ONLY, and that is the property this file exists to hold. The first cut exited
+# before routing, which also skipped the composition-state write; the push gate runs its
+# chain checks only when that file exists, so a peer's work order followed by a push went
+# from DENY to allow (measured; tests/test-push-gate-display-suppression.sh pins the gate's
+# decision). Every "silent" cell below therefore compares the state the hook wrote against
+# a REFERENCE hook — this same file with the one suppressing assignment replaced by a no-op
+# — and requires them to be identical. The reference is lifted with sed, never hand-copied.
+#
 # SCOPE, and it is deliberate: the classification lives in the ACTIVATION hook only. The
 # shared classifier hooks/lib/task-notification.sh is unchanged, so egress-consent-turn-hook.sh
 # still treats these inputs as the user and still withdraws approvals over them — the safe
@@ -22,9 +31,13 @@
 #
 #   H1  control: the peer body's text alone routes and starts a chain
 #   H2  control: the reminder's text alone routes
-#   P1  subagent hand-back (intro + block + harness paragraph) routes nothing, writes no state
-#   P2  teammate variant of the paragraph routes nothing
-#   P3  a bare agent-message block routes nothing
+#   R0  the reference hook differs from the real one by exactly the suppression, parses,
+#       and DOES display for a peer message (so "identical state" is compared against a
+#       hook that really routed)
+#   P1  subagent hand-back (intro + block + harness paragraph) displays nothing, and writes
+#       the state the reference writes — including an armed composition chain
+#   P2  teammate variant of the paragraph: the same
+#   P3  a bare agent-message block: the same
 #   P4  an agent-message block followed by USER text still routes
 #   P5  USER text followed by an agent-message block still routes
 #   P6  a prompt that merely quotes the tag mid-line still routes
@@ -39,19 +52,23 @@
 #       was excluded from the paragraph, so a request on the next line was swallowed)
 #   P11 a block, a second stray closing tag, then USER text still routes (the "exactly one
 #       closing tag" rule; without it the text after the second tag is never looked at)
-#   T1  notification + system-reminder routes nothing, writes no state
+#   T1  notification + system-reminder displays nothing, state as the reference
 #   T2  notification + system-reminder + USER text still routes
 #   T3  a system-reminder block with no notification before it still routes
-#   T4  notification + two system-reminder blocks routes nothing
+#   T4  notification + two system-reminder blocks displays nothing, state as the reference
 #   T5  USER text before a notice-with-reminder still routes (the part before the reminders
 #       must itself be a notification, not merely end with a closing tag)
-#   S1  a non-human input leaves an ACTIVE session's state byte-identical — composition
-#       state, prompt counter, last-invoked — while the session-token singleton is still
-#       re-stamped (a control shows a user prompt does move that state)
+#   S1  in an ACTIVE session a non-human input moves composition state, prompt counter and
+#       last-invoked exactly as the reference hook moves them, and the session-token
+#       singleton is re-stamped (a control shows the state did move, so "identical" is not
+#       "nothing happened")
 #   X1  a bounded-time regression cell, not a proof of linearity: three 200 KB near-misses
 #       classify as the user within 3 s in total (the first cut was quadratic: 50k spaces
 #       before a reminder tag took 4.6 s)
-#   D1  SKILL_DEBUG=1 explains each skip
+#   D1  SKILL_DEBUG=1 explains each suppression
+#   F1  if the hook's OWN classifier definition does not compile, a user prompt is still
+#       routed (found in review: the retry covered only the shared lib's definition, so a
+#       broken definition here emptied the output for every prompt)
 #   L1  without the shared lib: a peer message is still skipped (the peer check is the
 #       hook's own), a notice-with-reminder routes as before (it reuses the lib's notion
 #       of a notification, so without the lib it cannot be recognised)
@@ -97,12 +114,48 @@ run_hook() {
 }
 state_files() { ls "${LAST_HOME}"/.claude/.skill-composition-state-* 2>/dev/null | wc -l | tr -d ' '; }
 
-# silent <label> <prompt-file> : the prompt routes nothing and writes no composition state.
+# The REFERENCE hook: the real file with the one assignment that suppresses display for
+# non-human input replaced by a no-op. It sits next to nothing it needs — CLAUDE_PLUGIN_ROOT
+# still points at the project, so it sources the same libs and reads the same config.
+REF_HOOK="${TEST_TMPDIR}/ref-activation-hook.sh"
+sed 's/^  _DISPLAY_SUPPRESS="non-human input"$/  :/' "${HOOK}" > "${REF_HOOK}"
+_ref_delta="$(diff "${HOOK}" "${REF_HOOK}" | grep -c '^[<>]')"
+assert_equals "R0: the reference differs from the real hook by exactly one line" "2" "${_ref_delta}"
+if /bin/bash -n "${REF_HOOK}" 2>/dev/null; then
+    _record_pass "R0: the reference hook parses"
+else
+    _record_fail "R0: the reference hook parses" "bash -n failed; every state comparison below would compare against a crash"
+fi
+# run_ref <prompt-file> [env...] : like run_hook, through the reference.
+run_ref() {
+    local pf="$1"; shift
+    cp "${FULL}" "${LAST_HOME}/.claude/.skill-registry-cache.json"
+    "${REAL_JQ}" -n --rawfile p "${pf}" --arg t "${LAST_HOME}/.claude/abc123.jsonl" \
+        '{prompt:$p,transcript_path:$t}' \
+      | env HOME="${LAST_HOME}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+            SKILL_PROJECT_ROOT="${TEST_TMPDIR}" "$@" /bin/bash "${REF_HOOK}" 2>&1
+}
+# snap : every routing state file in LAST_HOME, name and checksum, with the one timestamp
+# field removed and the throwaway home path normalised. The registry cache is an input.
+snap() {
+    ( cd "${LAST_HOME}/.claude" && ls -A | grep -E '^\.skill-' | grep -v '^\.skill-registry-cache\.json$' | LC_ALL=C sort \
+        | while IFS= read -r _sf; do
+            printf '%s %s\n' "${_sf}" "$(sed -e 's/"updated_at": *"[^"]*"/"updated_at":"T"/' -e "s|${LAST_HOME}|HOME|g" "${_sf}" | cksum)"
+          done )
+}
+
+# silent <label> <prompt-file> : nothing is displayed, and the state written is the state
+# the reference writes for the same input.
 silent() {
-    local out
-    new_home; out="$(run_hook "$2")"
-    assert_equals "$1 routes nothing (output length)" "0" "${#out}"
-    assert_equals "$1 writes no composition state" "0" "$(state_files)"
+    local out real_snap ref_snap
+    new_home; out="$(run_hook "$2")"; real_snap="$(snap)"
+    assert_equals "$1 displays nothing (output length)" "0" "${#out}"
+    new_home; run_ref "$2" >/dev/null; ref_snap="$(snap)"
+    if [ -n "${ref_snap}" ]; then
+        assert_equals "$1 writes the state the reference writes" "${ref_snap}" "${real_snap}"
+    else
+        _record_fail "$1 writes the state the reference writes" "the reference wrote no state at all, so there is nothing to compare"
+    fi
 }
 # routed <label> <prompt-file>
 routed() {
@@ -134,9 +187,17 @@ new_home; OUT_H2="$(run_hook "${REM}")"
 assert_contains "H2 control: the reminder's text alone routes" "SKILL ACTIVATION" "${OUT_H2}"
 
 # P1-P3: the three observed peer shapes.
+new_home; OUT_R0="$(run_ref "${FIX}/peer-subagent-handback.txt")"
+assert_contains "R0: the reference hook DOES display for the live hand-back fixture" "SKILL ACTIVATION" "${OUT_R0}"
 silent "P1: a subagent hand-back" "${FIX}/peer-subagent-handback.txt"
 silent "P2: a teammate message" "${FIX}/peer-teammate.txt"
 silent "P3: a bare agent-message block" "${FIX}/peer-bare-block.txt"
+# The state those three wrote includes an ARMED CHAIN. This is the cell the first cut would
+# have failed, and "identical to the reference" alone would not say so in plain words.
+for _f in peer-subagent-handback.txt peer-teammate.txt peer-bare-block.txt notice-with-reminder.txt; do
+    new_home; run_hook "${FIX}/${_f}" >/dev/null
+    assert_equals "P1-P3/T1: ${_f} still arms a composition chain" "1" "$(state_files)"
+done
 
 # P4-P8: anything that is not exactly one of those shapes is the user, or is treated as such.
 P4="${TEST_TMPDIR}/p4.txt"
@@ -193,29 +254,29 @@ T5="${TEST_TMPDIR}/t5.txt"
 { printf 'please review the PR diff for bugs, context below\n'; cat "${FIX}/notice-with-reminder.txt"; } > "${T5}"
 routed "T5: user text before a notice-with-reminder" "${T5}"
 
-# S1: an ACTIVE session's state survives a non-human input untouched. First a user prompt
-# builds real state under the token the hook derives from the transcript path; then the
-# non-human input runs in the SAME home and every state file must be byte-identical.
-snap() { ( cd "${LAST_HOME}/.claude" && ls -A | grep -E '^\.skill-(composition-state|prompt-count|last-invoked)-' | LC_ALL=C sort | while IFS= read -r _sf; do printf '%s %s\n' "${_sf}" "$(cksum < "${_sf}")"; done ); }
-new_home; run_hook "${BODY}" >/dev/null
-SNAP_A="$(snap)"
+# S1: in an ACTIVE session, a non-human input moves state exactly as the reference moves it.
+# The same three inputs run in two homes, one per hook; the snapshots must agree after each.
+new_home; HOME_REAL="${LAST_HOME}"; run_hook "${BODY}" >/dev/null; SNAP_A="$(snap)"
+new_home; HOME_REF="${LAST_HOME}";  run_ref  "${BODY}" >/dev/null
 if [ "$(printf '%s\n' "${SNAP_A}" | grep -c 'composition-state')" = "1" ] && [ "$(printf '%s\n' "${SNAP_A}" | grep -c 'prompt-count')" = "1" ]; then
     _record_pass "S1 setup: a user prompt left composition state and a prompt counter"
 else
     _record_fail "S1 setup: a user prompt left composition state and a prompt counter" "got: ${SNAP_A}"
 fi
-printf 'session-someone-else' > "${LAST_HOME}/.claude/.skill-session-token"
-run_hook "${FIX}/peer-subagent-handback.txt" >/dev/null
-assert_equals "S1: a peer message leaves composition state, prompt counter and last-invoked byte-identical" "${SNAP_A}" "$(snap)"
-assert_equals "S1: and the session-token singleton is still re-stamped" "session-abc123" "$(cat "${LAST_HOME}/.claude/.skill-session-token")"
-run_hook "${FIX}/notice-with-reminder.txt" >/dev/null
-assert_equals "S1: a notice-with-reminder leaves that state byte-identical too" "${SNAP_A}" "$(snap)"
-run_hook "${BODY}" >/dev/null
-if [ "${SNAP_A}" != "$(snap)" ]; then
-    _record_pass "S1 control: a second user prompt does move that state"
+LAST_HOME="${HOME_REAL}"; printf 'session-someone-else' > "${LAST_HOME}/.claude/.skill-session-token"
+OUT_S1="$(run_hook "${FIX}/peer-subagent-handback.txt")"; SNAP_B="$(snap)"
+LAST_HOME="${HOME_REF}";  run_ref "${FIX}/peer-subagent-handback.txt" >/dev/null; SNAP_B_REF="$(snap)"
+assert_equals "S1: a peer message in an active session displays nothing" "0" "${#OUT_S1}"
+assert_equals "S1: and moves composition state, prompt counter and last-invoked as the reference does" "${SNAP_B_REF}" "${SNAP_B}"
+if [ "${SNAP_A}" != "${SNAP_B}" ]; then
+    _record_pass "S1 control: the state DID move (so 'as the reference' is not 'nothing happened')"
 else
-    _record_fail "S1 control: a second user prompt does move that state" "state did not change, so the cells above prove nothing"
+    _record_fail "S1 control: the state DID move (so 'as the reference' is not 'nothing happened')" "snapshot unchanged by the peer message"
 fi
+assert_equals "S1: and the session-token singleton is still re-stamped" "session-abc123" "$(cat "${HOME_REAL}/.claude/.skill-session-token")"
+LAST_HOME="${HOME_REAL}"; run_hook "${FIX}/notice-with-reminder.txt" >/dev/null; SNAP_C="$(snap)"
+LAST_HOME="${HOME_REF}";  run_ref  "${FIX}/notice-with-reminder.txt" >/dev/null; SNAP_C_REF="$(snap)"
+assert_equals "S1: a notice-with-reminder moves that state as the reference does too" "${SNAP_C_REF}" "${SNAP_C}"
 
 # X1: a bounded-time regression cell. The classifier is lifted out of the hook with sed (a hand copy
 # would test the copy) and run directly: the hook itself is slow on 200 KB for unrelated
@@ -247,11 +308,27 @@ else
     fi
 fi
 
-# D1: the skip is explained.
+# F1: fail open on the hook's own definition. A copy of the hook with that definition made
+# uncompilable must still route an ordinary prompt.
+BROKEN_HOOK="${TEST_TMPDIR}/broken-def-hook.sh"
+sed "s/^_NONHUMAN_JQ_DEF='def acs_nonhuman:\$/_NONHUMAN_JQ_DEF='def acs_nonhuman: (((/" "${HOOK}" > "${BROKEN_HOOK}"
+if cmp -s "${HOOK}" "${BROKEN_HOOK}"; then
+    _record_fail "F1 setup: the definition was broken in the copy" "sed changed nothing, so the cell below would test the real hook"
+else
+    _record_pass "F1 setup: the definition was broken in the copy"
+    new_home; cp "${FULL}" "${LAST_HOME}/.claude/.skill-registry-cache.json"
+    OUT_F1="$("${REAL_JQ}" -n --arg p 'review the PR diff for bugs' --arg t "${LAST_HOME}/.claude/abc123.jsonl" '{prompt:$p,transcript_path:$t}' \
+        | env HOME="${LAST_HOME}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" SKILL_PROJECT_ROOT="${TEST_TMPDIR}" /bin/bash "${BROKEN_HOOK}" 2>/dev/null)"
+    assert_contains "F1: with an uncompilable classifier a user prompt is still routed" "SKILL ACTIVATION" "${OUT_F1}"
+fi
+
+# D1: the suppression is explained, and says that state is still written.
 new_home; OUT_D1="$(run_hook "${FIX}/peer-subagent-handback.txt" SKILL_DEBUG=1)"
-assert_contains "D1: SKILL_DEBUG explains a peer-message skip" "not typed by the user" "${OUT_D1}"
+assert_contains "D1: SKILL_DEBUG explains a peer-message suppression" "[display-suppressed] non-human input" "${OUT_D1}"
+assert_contains "D1: and says state is still written" "routing state is written as usual" "${OUT_D1}"
+assert_not_contains "D1: and still emits no routing block" "SKILL ACTIVATION" "${OUT_D1}"
 new_home; OUT_D1B="$(run_hook "${FIX}/notice-with-reminder.txt" SKILL_DEBUG=1)"
-assert_contains "D1: SKILL_DEBUG explains a notice skip" "not typed by the user" "${OUT_D1B}"
+assert_contains "D1: SKILL_DEBUG explains a notice suppression" "[display-suppressed] non-human input" "${OUT_D1B}"
 
 # L1: without the shared lib. mkroot builds this checkout minus task-notification.sh.
 mkroot() {
