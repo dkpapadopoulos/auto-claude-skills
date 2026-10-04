@@ -13,7 +13,7 @@ Pre-registration: `../2026-10-04-frontier-ablation-prereg.md` (frozen at R2 + am
 | `harness/analyze.py` | The pre-registered analysis (exact paired sign-flip test, exact McNemar, exact sign test on cost). |
 | `harness/AUTHORING_PROMPT.md` | The frozen fixture-authoring brief. |
 | `data/manifest.json`, `data/gate.json` | Hashes frozen before the first run; per-fixture gate results. |
-| `data/fixtures.tar.gz` | The 16 fixtures (repo, hidden tests, reference solution, wrong fix, mapping). Spent: they hit the ceiling. |
+| `data/fixtures.tar.gz.b64` | The 16 fixtures (repo, hidden tests, reference solution, wrong fix, mapping), as base64 text: `base64 -d -i fixtures.tar.gz.b64 > fixtures.tar.gz` (SHA-256 of the archive `134943d4be1b2b45fd320485d2dd7a40d1443eea6fee7599ae466535a504421d`). Text, not a binary, on purpose — see the results document §2: one tracked binary file disables this repo's publish guard. Spent: they hit the ceiling. |
 | `data/runs-<model>.jsonl` | One scored run per line (96 runs). |
 | `data/analysis-<model>.txt` | `analyze.py` output as produced. |
 | `data/labels.json` | Labeller confusion matrix, kappa, consensus-by-outcome, per-skill counts, and the replay counts (transcribed). No prompt text. |

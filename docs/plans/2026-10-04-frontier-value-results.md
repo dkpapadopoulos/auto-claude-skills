@@ -103,6 +103,20 @@ replay counts in `data/labels.json` are transcribed from script output.
   were left behind by four plumbing runs.
 - **New:** the session-start hook's "MANDATORY: Before any other output, report the skill system
   status" line made Haiku 4.5 answer a one-word prompt with the banner instead (n=1, observed).
+- **New, and the most serious defect found: one tracked binary file disables the publish guard.**
+  `scripts/memory-leak-check.sh:147-159` builds its public-content exemption with
+  `git ls-files -z | xargs -0 awk …` over every tracked file. On macOS, awk aborts on bytes that are
+  not valid in the locale (`awk: towc: multibyte conversion failure`, exit 2); the engine then exits 3
+  ("cannot classify") and `publish-guard.sh` fails open and announces instead of denying. Found because
+  this branch briefly tracked a `.tar.gz` and the suite's own control cell went red
+  (`tests/test-publish-guard-hardening.sh`: "a confirmed leak denies (control)"). Isolated with a
+  flipping pair in a detached worktree at the base commit, everything else fixed: no added file 7/7;
+  one added tracked *text* file 7/7; one added tracked *gzip* file 4/7. This repo tracks no binaries,
+  which is why it never showed; an installer repo that tracks an image or an archive gets a publish
+  guard that can never deny a confirmed leak. Not fixed here: pinning `LC_ALL=C` on that awk alone
+  would make the exemption normalise non-ASCII text differently from the body and memory shingling and
+  could turn public text into false LEAK denials, so the fix has to change all three together and be
+  tested in both directions. The pair above is the red test.
 - **New, a false block caused by a mis-route:** an automated security-review notice was routed to
   `brainstorming MUST INVOKE`, which started a DESIGN→…→SHIP composition chain for this session. When a
   code review was then requested, the skill gate refused it twice — "Step 'brainstorming' has no
@@ -334,6 +348,8 @@ invariants) is on hold until routing precision is measured and fixed.
 - The labelled prompt sample and the per-run working copies live in the session scratchpad and are not
   kept; the bundle holds counts and per-run scores only. The bundled `run.py` differs from the one that
   ran by path rewrites and a comment.
+- **The first verification run of this branch failed, correctly** (180 of 181 test files; the publish-guard
+  control above). The cause was the tracked tarball; it is now a base64 text file and the suite was re-run.
 - **A code review of the harness found the grader's stated guarantees were false** — a skipped test
   counted as a pass, an unimportable test module did not score zero, and failing sub-tests could push a
   score below zero. None of this touched the reported results: all 96 runs were re-graded with the fixed
