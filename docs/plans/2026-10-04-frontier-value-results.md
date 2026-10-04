@@ -377,12 +377,25 @@ invariants) is on hold until routing precision is measured and fixed.
   several conclusions overstated; sections 4 and 5 were rewritten in response, and its list of what the
   bundle cannot verify is reflected in the limits stated above.
 
-## 7. The change set made on this recommendation (2026-10-04)
+## 7. The change set made on this recommendation (2026-10-04 and 05)
 
 Section 5's recommendation was "fix routing precision before anything else". This section records
-what was changed, what each change was measured to do, and what was dropped because its benefit
-could not be shown. Each change was written test-first and sent to a cross-family reviewer (Codex)
-for a KEEP / REVERT verdict; a REVERT was acted on before the commit.
+what was changed, what each change was measured to do, what went wrong on the way, and what was
+dropped because its benefit could not be shown. Each change was written test-first and sent to a
+cross-family reviewer (Codex) for a KEEP / REVERT verdict.
+
+### The short version
+
+- Input nobody typed (peer messages, subagent hand-backs, notices carrying a reminder) no longer
+  gets a routing block: 111 blocks across 745 real inputs, to 0. This is the clear win.
+- A plain question whose only process match is a trigger word no longer gets one either. On
+  the held-out half that removes 2 of 83 wrong mandates and no right one. That is a marginal
+  effect; whether it earns its code is the owner's call (see "Read this honestly").
+- Routing STATE is unchanged by both: every state file is byte-identical to the baseline on all
+  1,397 replayed inputs. That property was not true of the first cut, which disarmed the push
+  gate; see "What went wrong" below.
+- After the change the hook still issues 81 wrong process mandates for 11 right ones on the
+  held-out half. Routing precision is still the open defect.
 
 ### Instrument
 
@@ -391,65 +404,135 @@ for a KEEP / REVERT verdict; a REVERT was acted on before the commit.
   or CONTEXT_DEPENDENT). Agreement kappa 0.79. Split in half before any change was written:
   326 development rows, 326 held-out rows. Right / wrong are counted on rows where both labellers
   agree; a mandate on a CONTEXT_DEPENDENT row is "undecidable" and is in neither count.
-- **Non-human corpus.** 745 distinct inputs that reached the hook but were not typed by the user
-  (peer-session messages, subagent hand-backs, task notifications carrying a reminder block).
-- **Replay.** Each prompt is run through a checkout's own activation hook with a registry built by
+- **Non-human corpus.** 745 distinct inputs that reached the hook but were not typed by the user.
+- **Replay.** Each input is run through a checkout's own activation hook with a registry built by
   that checkout's session-start hook over the real installed plugins (49 skills available in both
-  arms). Paths are normalised. A baseline-versus-baseline control differs on 0 of 326 rows.
-- **Held-out discipline.** The held-out half was scored once, after the last commit, under a keep
-  rule written down beforehand: wrong mandates must fall and right mandates may fall by at most one.
+  arms). Paths are normalised. **Each input runs in a fresh HOME**, so the figures describe a
+  prompt arriving with no chain active; nothing here measures mid-session behaviour.
+- **State identity.** After each input, every `~/.claude/.skill-*` file the hook wrote is hashed
+  (names and contents, the one timestamp field normalised). Baseline against baseline: 0
+  differences. Positive control, the first cut: 136 differences.
 - The prompt text is private and is not in this repository; only counts are.
 
 ### What changed, and what it measured
 
-| Commit | Change | Measured |
-|---|---|---|
-| `5d786ee7` | The hook no longer routes peer-session messages, subagent hand-backs, or notifications that carry a reminder block | Non-human corpus: 111 routing blocks and 109 `MUST INVOKE` mandates, to 0. All 652 human prompts byte-identical before and after |
-| `4df4c8fc` | The frontmatter parser treats a hyphenated key as a key boundary | A list key followed by a hyphenated key no longer swallows it (reproduced on two real third-party skills). Registry built from the real installation is identical before and after |
-| `f519dc19` | A question does not start a process workflow | See the table below |
-| `12735ff0` | Three superpowers descriptions aligned with what those skills do in 6.4.2 | Injected bytes over the six ratcheted prompt shapes 24,918 to 24,855; no routing change |
+Baseline `3a903316`; final `7bdd2de2`.
 
-Process mandates on human prompts, baseline `3a903316` against final `12735ff0`:
+| Commits | Change | Measured |
+|---|---|---|
+| `5d786ee7`, reworked in `924046cb` | No routing DISPLAY for peer-session messages, subagent hand-backs, or notifications that carry a reminder block | 745 non-human inputs: routing blocks 111 to 0, injected bytes 579,568 to 0. State identical on all 745; chains armed 70 before and 70 after |
+| `4df4c8fc` | The frontmatter parser treats a hyphenated key as a key boundary | A list key followed by a hyphenated key no longer swallows it (reproduced on two real third-party skills). Registry built from the real installation identical before and after |
+| `f519dc19`, reworked in `924046cb`, tightened in `7bdd2de2` | A plain question does not get a process mandate from a trigger word alone | See the table below. State identical on all 652 human prompts |
+| `12735ff0`, `b8ade2e8` | Three superpowers descriptions aligned with what those skills do in 6.4.2 | Injected bytes over the six ratcheted prompt shapes 24,918 to 24,855; no routing change |
+
+Process mandates on human prompts:
 
 | Half | Right | Wrong | Undecidable | Precision |
 |---|---|---|---|---|
 | Development (326 rows), baseline | 9 | 90 | 21 | 0.091 |
-| Development, final | 9 | 75 | 21 | 0.107 |
-| Held-out (326 rows, scored once), baseline | 11 | 83 | 20 | 0.117 |
-| Held-out, final | 11 | 75 | 20 | 0.128 |
+| Development, final | 9 | 82 | 21 | 0.099 |
+| Held-out (326 rows), baseline | 11 | 83 | 20 | 0.117 |
+| Held-out, final | 11 | 81 | 20 | 0.120 |
 
-Held-out paired transitions: 8 rows changed, all from a wrong mandate on a gold-NONE row to no
-mandate (requesting-code-review 3, brainstorming 3, executing-plans 2); none in the other
-direction. The keep rule is met. Recall is unchanged at 11 of 19.
+Held-out paired transitions, final rule: 2 rows changed, both from a wrong mandate on a gold-NONE
+row to no display (brainstorming 1, executing-plans 1); none in the other direction. Recall is
+unchanged at 11 of 19. Human prompts with any output: 419 to 409 of 652.
 
-**Read this honestly.** The held-out effect (-8) is about half the development effect (-15), which
-is what selecting a rule on the development half should be expected to produce. After the change
-the hook still issues 75 wrong mandates for 11 right ones on the held-out half. The question guard
-removes roughly a tenth of the wrong mandates; it does not fix routing precision. The larger win
-in this change set is the non-human one, which removed every mandate issued to input nobody typed.
+**Read this honestly.** Two held-out rows is a marginal effect: it meets the keep rule written
+beforehand (wrong mandates must fall, right ones may fall by at most one) and nothing more. Ten
+changed rows across both halves all go the same way, no right mandate is lost in either half, and
+no state changes anywhere — so it is not harmful — but its measured benefit is about one prompt in
+sixty-five. The guard costs roughly seventy lines of hook logic and one pinned misread. It ships
+because it passed the rule set for it; removing it (`git revert` of the guard, or
+`ACS_QUESTION_GUARD=off`) would be a defensible reading of the same numbers. It does not fix
+routing precision, and the three successive versions below show why a shape rule cannot: every
+loosening that removed more wrong mandates also caught more real work orders.
 
-### Costs that came with the question guard
+**The held-out half was scored three times, and why.** A keep rule was written before each
+scoring, and the reason for each re-scoring was written before it ran.
 
-- On the rows that change, the phase-attached lines go with the mandate (TDD parallel,
-  verification, security-scanner, runtime-validation). For an informational question that is the
-  intent. For a work order mis-read as a question it compounds the miss.
-- Three shapes are known to be handled wrongly and are pinned as test cells so they are not read
-  as coverage: a one-sentence imperative ending in "?" loses its mandate; "can you explain why
-  ...?" keeps one through the polite-request exception; a question that only mentions a skill name
-  keeps one through the name exception.
-- A guarded question can still anchor a chain through a workflow skill. The persisted state then
-  records neither review nor verification as completed, so the push gate is not weakened (pinned,
-  and checked by removing the walker's exclusion).
-- `ACS_QUESTION_GUARD=off` restores the previous behaviour.
+| Scoring | Rule scored | Held-out wrong | Why it was re-scored |
+|---|---|---|---|
+| 1 | First cut: any prompt ending in "?" or opening with a question word; skill dropped in the scorer | 83 to 75 | It disarmed the push gate |
+| 2 | Display-only rework, same shape, shown unchanged when a domain or workflow skill is co-selected | 83 to 79 | A second review found many ordinary work orders read as questions |
+| 3 | Tightened: opening interrogative AND closing "?" AND one clause AND no request phrase | 83 to 81 | This is what ships |
+
+No held-out row was read at any point, and no held-out count chose a rule: scoring 2's rule was
+chosen on gate safety, scoring 3's on the review's examples and a development-half threshold
+written in advance (at least 5 wrong mandates removed with none of the right ones lost, or the
+guard is removed; measured 8 and 0). Each later rule suppresses a subset of the one before, which
+is why the figure can only shrink. Three looks at one held-out half is still three looks; the
+honest summary is the trend, not any single cell.
+
+### What went wrong: the first cut disarmed the push gate
+
+The first implementations stopped early. The non-human skip was an `exit 0` before routing; the
+question guard dropped the process skill in the scorer. Both also stopped the composition-state
+file from being written, and the push gate runs its chain checks (review, verification) only when
+that file exists.
+
+Measured with a flipping pair — same gate, same session setup with a clean verdict and review
+evidence in place, only the activation hook differing — a push of the branch went from DENY to
+allow after each of the four non-human fixtures and after four question-shaped prompts.
+
+How it got that far, in order:
+
+1. The hook already carried a comment describing this exact bypass for consultation prompts, and
+   the rule it gives: suppress what is displayed, never what is written. It was read past.
+2. The new tests asserted "writes no composition state" as a pass. That is the bypass's
+   precondition.
+3. Cross-family review said KEEP on both features. On the question guard it looked specifically at
+   the push-gate milestones and found no bypass, reasoning from the global evidence check.
+4. The full suite was green at that commit.
+5. A dispatched same-family reviewer, whose brief included "anything in the diff that contradicts
+   a comment next to it", cited the passage (and said it had not reproduced the effect at the
+   gate). The flipping pair then confirmed it. Neither commit had been published.
+
+The rework makes both features display-only: scoring, the chain walk and every state write run as
+before, and only the final print is skipped. Three tests now hold it, at three levels:
+
+- `tests/test-push-gate-display-suppression.sh` asserts the GATE'S decision after each suppressed
+  input (34 cells; restoring the early exit fails 12, restoring the scorer drop fails 11).
+- `tests/test-activation-nonhuman-skip.sh` compares the state written against a reference hook
+  lifted from the real one with `sed` (72 cells).
+- `tests/test-activation-question-guard.sh` compares the state written against the same prompt
+  with the guard switched off (103 cells).
+- A mutation sweep of 59 single-change mutants of the hook — every opening word, request phrase,
+  separator and exemption, and both first-cut behaviours — has 58 caught by a named cell. The one
+  that is not is a condition redundant with the chain-member rule, kept as a second line of
+  defence and named as unpinned in the test header.
+
+### Costs and limits of the question guard
+
+- **The rule is deliberately tight.** A prompt is question-shaped only if it opens with an
+  interrogative, ends with "?", is one clause on one line, and contains no request phrase. A
+  DEBUG- or LEARN-phase skill is exempt (a question is how debugging and outcome reviews are
+  asked for), as is a skill that is already a step of the session's chain ("what's the next
+  step?" during a workflow asks for the chain render).
+- **It stands down when another skill was selected.** If a domain or workflow skill was selected
+  with the process skill, the block is shown unchanged, mandate included; suppressing it lost
+  real routing (an incident question must still reach incident-analysis).
+- **Plain questions that still carry a mandate**, pinned as test cells so they are not taken for
+  coverage: any question typed without a question mark (including the suite's old false positive,
+  "what does this error message mean"); a question of two clauses; one containing a request
+  phrase; one that mentions a skill's name.
+- **A work order still read as a question**, also pinned: "should we review the PR diff for bugs
+  now?" loses its display for that one prompt. Its state is still written.
+- **The replay is stateless.** Inside an active chain the guard does less than these figures
+  suggest, because it stands down for the chain's own steps.
+- `ACS_QUESTION_GUARD=off` restores the previous display.
 
 ### Reviewer verdicts
 
 | Change | Verdicts | What the review changed |
 |---|---|---|
-| Non-human skip | REVERT, REVERT, KEEP | A quadratic regex (50k spaces took 4.6 s) and a rule that swallowed human text after a harness paragraph; then line separators other than LF |
-| Frontmatter parser | REVERT, KEEP | Emitting hyphenated scalars with a literal tab produced invalid JSON and reset the whole map; now boundary-only |
-| Question guard | KEEP | Named the "instruction, then a trailing question" miss. Measured: closing it costs 3 of the 18 development wins, and was adopted. Asked for persisted-state assertions rather than output checks |
-| Descriptions | KEEP | The test's here-document loop ran zero times in a read-only sandbox while the file reported green; and its upstream-text cell could turn the push gate red for a reason outside the repo. Both fixed. "clean up worktree" was misleading and is dropped |
+| Non-human skip, first cut | Codex: REVERT, REVERT, KEEP | A quadratic regex (50k spaces took 4.6 s); a rule that swallowed human text after a harness paragraph; line separators other than LF. The KEEP did not catch the gate bypass |
+| Frontmatter parser | Codex: REVERT, KEEP | Emitting hyphenated scalars with a literal tab produced invalid JSON and reset the whole map; now boundary-only |
+| Question guard, first cut | Codex: KEEP | Named the "instruction, then a trailing question" miss, which was fixed. The KEEP did not catch the gate bypass |
+| Descriptions | Codex: KEEP | A here-document loop in the new test ran zero times in a read-only sandbox while the file reported green; an upstream-text cell could turn the push gate red for a reason outside the repo. Both fixed |
+| Whole range | Dispatched reviewer: ready after fixes | The gate bypass (rated Important; measured here as a DENY to allow flip); five families of work orders misread as questions; a mandate-free test that still shipped a phase block; the guard switching itself off after the first chain. All addressed in the rework |
+| Display-only rework | Dispatched reviewer: ready after fixes, no bypass | Confirmed display-only independently (37 multi-turn steps on against off; 53 turns baseline against head; its positive control diverged on 11 of 11). Found the question rule too loose in five more families, continuation prompts going silent inside a chain, eight surviving mutants, two cells passing for the wrong reason (one of them the gate test's "the denial is the chain's"), and a retry order that let a notification be routed. All addressed in `7bdd2de2` |
+| Display-only rework and final rule | Codex | See section 8 |
 
 ### Dropped or deferred, and why
 
@@ -463,15 +546,21 @@ in this change set is the non-human one, which removed every mandate issued to i
   A/B in real sessions, not a replay.
 - **Any-question-word rule** — rejected on the development half: 7 more wrong mandates removed, one
   right one lost.
+- **Whether automated text should arm a chain at all** — not decided here. 70 of the 745
+  non-human inputs arm one, as they did before. Stopping that removes a gate precondition and
+  needs its own design.
 - **Not addressed, still open from section 6:** the publish guard failing open on a tracked binary
   file; discovered skills defaulting to priority 200; `disable-model-invocation` not consulted by
-  discovery; `openspec/specs/hypothesis-loop/spec.md` still naming "Option 4 (discard)".
+  discovery; `openspec/specs/hypothesis-loop/spec.md` still naming "Option 4 (discard)". Found in
+  review and also left: the frontmatter key pattern still misses quoted keys and keys with a
+  digit first or a dot; an invalid UTF-8 byte in one frontmatter still empties the whole batch
+  under a UTF-8 locale. Both predate this range.
 
 ### What would move precision further
 
-The wrong mandates that remain are, by construction, not question-shaped under this rule. On the
-held-out half they are brainstorming 34, requesting-code-review 22, executing-plans 7,
-systematic-debugging 6, product-discovery 6. What kinds of prompt they are was not classified
-here, and the held-out prompts were deliberately not read. The mechanism is known: one trigger
-word is enough to mandate. A candidate next experiment is a two-signal requirement for a mandate,
-measured against this gold set with a fresh held-out half, since this one is now spent.
+The wrong mandates that remain are, by construction, not suppressed by this rule. On the held-out
+half they are brainstorming 36, requesting-code-review 25, executing-plans 8, systematic-debugging
+6, product-discovery 6. What kinds of prompt they are was not classified here, and the held-out
+prompts were deliberately not read. The mechanism is known: one trigger word is enough to mandate.
+A candidate next experiment is a two-signal requirement for a mandate, as a DISPLAY rule so that
+state is untouched, measured against a freshly labelled set. Both halves of this one are spent.
