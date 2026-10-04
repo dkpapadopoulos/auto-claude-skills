@@ -5,7 +5,7 @@ import sys, os, json, glob, re, random, collections
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "tests", "probes", "real-prompt-replay"))
 from routed import input_kind
-from extract import prompt_of, open_private
+from extract import prompt_of, open_private, refuse_repo_path
 MUST = re.compile(r"\| ([a-z0-9][a-z0-9-]*) MUST INVOKE")
 short = lambda n: n.split(":")[-1].strip()
 def fam(m):
@@ -57,6 +57,10 @@ for f in glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl")):
         rows.append({"prompt": txt[:1500], "prompt_chars": len(txt), "skill": s, "outcome": out, "model": model,
                      "human_turn_index": nprev, "project": os.path.basename(os.path.dirname(f))[-24:]})
 random.Random(20261004).shuffle(rows)
+# The output holds prompt text: refuse to write inside (or where git cannot rule out) a repository.
+for _name in ("label_sample.jsonl", "label_key.jsonl"):
+    if refuse_repo_path(os.path.abspath(_name)):
+        sys.exit(2)
 with open_private("label_sample.jsonl") as a, open_private("label_key.jsonl") as b:
     for n, r in enumerate(rows):
         rid = f"r{n:03d}"

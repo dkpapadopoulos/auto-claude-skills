@@ -6,7 +6,8 @@ Pre-registration: `../2026-10-04-frontier-ablation-prereg.md` (frozen at R2 + am
 | Path | What it is |
 |---|---|
 | `harness/run.py` | Runs one task in three arms concurrently, each in a fresh isolated `HOME`; locks the vault while subjects run; grades afterwards. |
-| `harness/hidden_runner.py` | Grader: runs a unittest directory against a repo copy, prints one JSON line. A load error or zero tests is never a pass. |
+| `harness/hidden_runner.py` | Grader: runs a unittest directory against a repo copy in a child process, prints one JSON line. Only a test that ran and passed counts; skips, import failures, zero tests and count mismatches score 0. |
+| `harness/test_hidden_runner.py` | Ten tests pinning those guarantees (mutation-checked). |
 | `harness/validate_tasks.py` | Fixture validity gate, legs 1–5. |
 | `harness/install_tasks.py` | Splits fixtures into subject repo + vault and writes the frozen manifest. |
 | `harness/analyze.py` | The pre-registered analysis (exact paired sign-flip test, exact McNemar, exact sign test on cost). |
@@ -22,13 +23,24 @@ Pre-registration: `../2026-10-04-frontier-ablation-prereg.md` (frozen at R2 + am
 | `codex/*.txt` | Codex's two reviews and the prompts that produced them (absolute path prefixes stripped from one). |
 
 To re-run: copy `harness/` to a scratch directory outside any repository, unpack the fixtures into
-`selected/`, create `homes/A0|A1|A2` as the pre-registration describes (A2 needs the plugin caches and a
-pre-built registry), then `install_tasks.py`, then `run.py <model> <task>` per task, then `analyze.py <model>`.
+`selected/`, run `validate_tasks.py selected` (it writes the `gate.json` that `run.py` reads for expected
+test counts), create `homes/A0|A1|A2` as the pre-registration describes (A2 needs the plugin caches and a
+pre-built registry), then `install_tasks.py <ids>`, then `run.py <model> <task>` one task at a time, then
+`analyze.py <model>`. Run `python3 test_hidden_runner.py` first.
 The labelled prompt sample is deliberately not included: it is private text.
 
-The scripts here differ from the ones that ran in one respect only: absolute home-directory paths were
-rewritten to `~`-relative ones after the runs. The script hashes in `data/manifest.json` are of the
-versions that ran.
+**The scripts here are not byte-identical to the ones that ran.** `data/manifest.json` holds the hashes of
+the versions that ran. After the runs: absolute home paths were rewritten to `~`-relative ones; and a code
+review led to fixes in `hidden_runner.py` (skips, import failures and sub-test failures were mis-scored;
+pinned by `harness/test_hidden_runner.py`), `run.py` (grader timeout, kill escalation, a stricter
+manipulation check, a single-invocation lock), `analyze.py` (Holm output, usage-less runs excluded from
+cost, unrounded p-values) and `census/sample.py` (refuses to write prompt text inside a repository).
+All 96 runs were re-graded with the fixed grader: 96 of 96 hidden verdicts and 96 of 96 visible verdicts
+are identical, and all 16 untouched starting repos fail with scores inside 0–1.
+
+Known and not fixed: the grader runs subject code in the owner's account, so a subject that set out to
+attack the grader could still forge a verdict; sibling arms' working copies are readable from a subject's
+working directory; the manifest is not re-verified at grade time.
 
 ## Security note — read before re-running
 

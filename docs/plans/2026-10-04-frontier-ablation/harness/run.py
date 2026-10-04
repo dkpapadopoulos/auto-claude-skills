@@ -31,12 +31,27 @@ def sh(cmd, cwd=None, timeout=120):
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
 
 
-def grade(repo, tests):
-    p = sh([sys.executable, os.path.join(ROOT, "hidden_runner.py"), repo, tests], timeout=300)
+def grade(repo, tests, expected=None):
+    """Grade a working copy. Any grader failure, a timeout included, is a scored zero — never an
+    exception, which would leave no score.json and let the next invocation silently re-run the subject."""
+    cmd = [sys.executable, os.path.join(ROOT, "hidden_runner.py"), repo, tests] + ([str(expected)] if expected is not None else [])
+    zero = {"all_pass": False, "q": 0.0, "run": 0, "failures": 0, "errors": 0}
     try:
+        p = sh(cmd, timeout=300)
         return json.loads(p.stdout.strip().splitlines()[-1])
+    except subprocess.TimeoutExpired:
+        return dict(zero, load_error="grader timeout")
+    except Exception as e:
+        return dict(zero, load_error="runner: " + repr(e)[:200])
+
+
+def expected_counts(task):
+    """Hidden and visible test counts recorded by the fixture gate; a run with a different count scores 0."""
+    try:
+        g = json.load(open(os.path.join(ROOT, "gate.json")))[task]
+        return g["hidden_tests"], g["visible_tests"]
     except Exception:
-        return {"all_pass": False, "run": 0, "failures": 0, "errors": 0, "load_error": "runner: " + (p.stderr or p.stdout)[-200:]}
+        return None, None
 
 
 def parse_log(path):
@@ -147,10 +162,16 @@ def run_arm(model, task, arm, state):
             rc = proc.wait(timeout=WALL_CAP)
         except subprocess.TimeoutExpired:
             timed_out = True
-            try:
-                os.killpg(proc.pid, signal.SIGTERM)
-            except Exception:
-                pass
+            for sig in (signal.SIGTERM, signal.SIGKILL):
+                try:
+                    os.killpg(proc.pid, sig)
+                except Exception:
+                    pass
+                try:
+                    proc.wait(timeout=15)
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
             rc = -15
     wall = time.time() - t0
     for pid in sh(["pgrep", "-f", "cozempic.cli guard --cwd " + repo]).stdout.split():
@@ -166,6 +187,8 @@ def finish(model, task, arm, st):
     d["acs_routing_blocks"], d["ups_hook_bytes"] = transcript_routing(os.path.join(os.path.dirname(st["repo"]), "home"))
     res = d["res"] or {}
     ok, why = manipulation_ok(arm, d)
+    if ok and EXPECT[arm][1] and d["acs_routing_blocks"] == 0:
+        ok, why = False, "ACS arm with no routing block in its transcript"
     repo = st["repo"]
     sh(["git", "add", "-A", "-N"], cwd=repo)
     added = removed = files = 0
@@ -173,8 +196,9 @@ def finish(model, task, arm, st):
         parts = ln.split("\t")
         if len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit():
             added += int(parts[0]); removed += int(parts[1]); files += 1
-    hidden = grade(repo, os.path.join(VAULT, task, "hidden_tests"))
-    visible = grade(repo, os.path.join(ROOT, "tasks", task, "repo", "tests"))  # ORIGINAL visible tests
+    n_hidden, n_visible = expected_counts(task)
+    hidden = grade(repo, os.path.join(VAULT, task, "hidden_tests"), n_hidden)
+    visible = grade(repo, os.path.join(ROOT, "tasks", task, "repo", "tests"), n_visible)  # ORIGINAL visible tests
     mu = res.get("modelUsage") or {}
     tok = {"input": 0, "cache_create": 0, "cache_read": 0, "output": 0}
     for m in mu.values():
@@ -182,7 +206,7 @@ def finish(model, task, arm, st):
         tok["cache_create"] += m.get("cacheCreationInputTokens", 0) or 0
         tok["cache_read"] += m.get("cacheReadInputTokens", 0) or 0
         tok["output"] += m.get("outputTokens", 0) or 0
-    q = (hidden.get("run", 0) - hidden.get("failures", 0) - hidden.get("errors", 0)) / hidden["run"] if hidden.get("run") and not hidden.get("load_error") else 0.0
+    q = float(hidden.get("q", 0.0))  # computed by the grader: passed/run, 0 on any non-run, always in [0, 1]
     score = {
         "model_asked": model, "task": task, "arm": arm, "rc": st["rc"], "timed_out": st["timed_out"], "wall_s": round(st["wall"], 1),
         "retried": st["retried"], "init": d["init"], "manipulation_ok": ok, "manipulation_note": why,
@@ -202,6 +226,12 @@ def finish(model, task, arm, st):
 def main():
     model, task = sys.argv[1], sys.argv[2]
     arms = sys.argv[3:] or list(ARMS)
+    import fcntl
+    lock = open(os.path.join(ROOT, ".run.lock"), "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit("another run.py invocation holds the lock; concurrent invocations would unlock the vault under each other's subjects")
     os.chmod(VAULT, 0o000)  # locked while any subject runs
     state, th = {}, []
     for a in arms:

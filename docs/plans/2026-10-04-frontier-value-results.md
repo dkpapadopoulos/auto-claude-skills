@@ -103,6 +103,11 @@ replay counts in `data/labels.json` are transcribed from script output.
   were left behind by four plumbing runs.
 - **New:** the session-start hook's "MANDATORY: Before any other output, report the skill system
   status" line made Haiku 4.5 answer a one-word prompt with the banner instead (n=1, observed).
+- **New, a false block caused by a mis-route:** an automated security-review notice was routed to
+  `brainstorming MUST INVOKE`, which started a DESIGN→…→SHIP composition chain for this session. When a
+  code review was then requested, the skill gate refused it twice — "Step 'brainstorming' has no
+  invocation evidence", then the same for `executing-plans` — until each was recorded as an explicit skip
+  with `phase_attest`. The gate worked as designed; the chain it enforced was never requested by anyone.
 - **New:** `~/.claude/.skill-registry-cache.json` is machine-global but holds per-session facts
   (`serena_connected`, cwd-dependent warnings). A session started in another directory rewrote it
   while this one was live (checksum changed; `serena_connected` flipped to false).
@@ -329,6 +334,12 @@ invariants) is on hold until routing precision is measured and fixed.
 - The labelled prompt sample and the per-run working copies live in the session scratchpad and are not
   kept; the bundle holds counts and per-run scores only. The bundled `run.py` differs from the one that
   ran by path rewrites and a comment.
+- **A code review of the harness found the grader's stated guarantees were false** — a skipped test
+  counted as a pass, an unimportable test module did not score zero, and failing sub-tests could push a
+  score below zero. None of this touched the reported results: all 96 runs were re-graded with the fixed
+  grader and every hidden and visible verdict is identical, and the 16 untouched starting repos all
+  fail. The fix is pinned by ten mutation-checked tests in the bundle. The harness as it ran must not
+  be reused on a task set that does not hit the ceiling; the bundled version carries the fixes.
 - An independent fact-check of this document against the bundle found the result tables exact and
   several conclusions overstated; sections 4 and 5 were rewritten in response, and its list of what the
   bundle cannot verify is reflected in the limits stated above.

@@ -6,13 +6,28 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 
 
 def load(model):
+    """Scores from a live runs/ tree, or — when there is none — from the bundle's data/runs-<model>.jsonl."""
     runs = {}
-    for f in glob.glob(os.path.join(ROOT, "runs", model, "*", "*", "score.json")):
-        s = json.load(open(f))
+    files = glob.glob(os.path.join(ROOT, "runs", model, "*", "*", "score.json"))
+    if files:
+        scores = [json.load(open(f)) for f in files]
+    else:
+        scores = [json.loads(l) for l in open(os.path.join(ROOT, "..", "data", f"runs-{model}.jsonl"))]
+    for s in scores:
         if s["task"].startswith("zz-"):
             continue
         runs[(s["task"], s["arm"])] = s
     return runs
+
+
+def holm(pvals):
+    """Holm step-down adjusted p-values, in the input order."""
+    order = sorted(range(len(pvals)), key=lambda i: pvals[i])
+    adj, running = [0.0] * len(pvals), 0.0
+    for rank, i in enumerate(order):
+        running = max(running, min(1.0, (len(pvals) - rank) * pvals[i]))
+        adj[i] = running
+    return adj
 
 
 def signflip_p(diffs):
@@ -42,19 +57,20 @@ def compare(runs, x, y, tasks):
     dq = [runs[(t, x)]["Q"] - runs[(t, y)]["Q"] for t in pairs]
     xw = sum(1 for t in pairs if runs[(t, x)]["Qbin"] and not runs[(t, y)]["Qbin"])
     yw = sum(1 for t in pairs if runs[(t, y)]["Qbin"] and not runs[(t, x)]["Qbin"])
-    ratios = [runs[(t, x)]["tokens_total"] / runs[(t, y)]["tokens_total"] for t in pairs if runs[(t, y)]["tokens_total"]]
+    costed = [t for t in pairs if runs[(t, x)]["tokens_total"] > 0 and runs[(t, y)]["tokens_total"] > 0]
+    ratios = [runs[(t, x)]["tokens_total"] / runs[(t, y)]["tokens_total"] for t in costed]
     usd = [runs[(t, x)]["cost_usd"] / runs[(t, y)]["cost_usd"] for t in pairs if runs[(t, y)].get("cost_usd") and runs[(t, x)].get("cost_usd")]
     wall = [runs[(t, x)]["wall_s"] / runs[(t, y)]["wall_s"] for t in pairs if runs[(t, y)]["wall_s"]]
     more = sum(1 for r in ratios if r > 1); less = sum(1 for r in ratios if r < 1)
     return {
-        "pairs": len(pairs),
+        "pairs": len(pairs), "pairs_without_usage_excluded_from_cost": len(pairs) - len(costed),
         "Q_mean_diff": round(sum(dq) / len(dq), 4) if dq else None,
-        "Q_p_signflip": round(signflip_p(dq), 4),
+        "Q_p_signflip": float(f"{signflip_p(dq):.3g}"),
         "Qbin_pass": {x: sum(1 for t in pairs if runs[(t, x)]["Qbin"]), y: sum(1 for t in pairs if runs[(t, y)]["Qbin"])},
-        "Qbin_discordant": {f"{x}_only": xw, f"{y}_only": yw}, "Qbin_p_mcnemar": round(binom_two_sided(xw, xw + yw), 4),
+        "Qbin_discordant": {f"{x}_only": xw, f"{y}_only": yw}, "Qbin_p_mcnemar": float(f"{binom_two_sided(xw, xw + yw):.3g}"),
         "tokens_ratio_median": round(statistics.median(ratios), 3) if ratios else None,
         "tokens_ratio_range": [round(min(ratios), 2), round(max(ratios), 2)] if ratios else None,
-        "tokens_more_less": [more, less], "tokens_p_sign": round(binom_two_sided(more, more + less), 4),
+        "tokens_more_less": [more, less], "tokens_p_sign": float(f"{binom_two_sided(more, more + less):.3g}"),
         "usd_ratio_median": round(statistics.median(usd), 3) if usd else None,
         "wall_ratio_median": round(statistics.median(wall), 3) if wall else None,
     }
@@ -93,8 +109,15 @@ def main():
            for a in arms}
     print("totals:", json.dumps({a: {k: (round(v, 2) if isinstance(v, float) else v) for k, v in d.items()} for a, d in tot.items()}))
     print()
+    res = {}
     for x, y, label in (("A2", "A0", "PRIMARY"), ("A1", "A0", "secondary"), ("A2", "A1", "secondary")):
-        print(f"{label} {x} vs {y}:", json.dumps(compare(runs, x, y, tasks)))
+        res[(x, y)] = compare(runs, x, y, tasks)
+        print(f"{label} {x} vs {y}:", json.dumps(res[(x, y)]))
+    sec = [("A1", "A0"), ("A2", "A1")]
+    for name in ("Q_p_signflip", "tokens_p_sign"):
+        adj = holm([res[k][name] for k in sec])
+        print(f"Holm-adjusted {name} across the two secondary comparisons:",
+              json.dumps({f"{x} vs {y}": float(f"{a:.3g}") for (x, y), a in zip(sec, adj)}))
     sk = {}
     for (t, a), s in runs.items():
         for k in s["skills"]:

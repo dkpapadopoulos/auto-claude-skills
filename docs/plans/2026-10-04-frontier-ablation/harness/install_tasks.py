@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Install the selected fixtures: repo/ -> tasks/<id>/repo, everything else -> vault/<id>/, then write
-the frozen manifest. usage: install_tasks.py <id> [<id> ...]   (ids are directory names found under auth-*/tasks)"""
+the frozen manifest. usage: install_tasks.py <id> [<id> ...]   (ids are directory names found under selected/).
+Run validate_tasks.py on selected/ first; this script copies gate.json's verdicts on trust and does not re-check them."""
 import sys, os, json, shutil, hashlib, glob, subprocess
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
