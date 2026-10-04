@@ -177,23 +177,52 @@ _corpus_state() {
 # none reaches jq. A dropped line is counted as unparseable, which blocks.
 #
 # One trailing CR is tolerated (a CRLF file is still JSON lines).
+#
+# LIMIT, stated: this filter recognises JSON with regexes over raw bytes, while
+# jq does the real parse, and every gap between the two has been a way to hide
+# a row. Each rule below closes one gap a fuzzer found against an oracle; none
+# is a proof. What it is built to catch is corruption and accident. A line
+# crafted to differ between a regex and a JSON parser is a deliberate edit of
+# an agent-writable file, which design.md places outside what this defends.
 _strict() {
-    awk '
+    # A NUL ends the line for awk, which then saw only the text before it and
+    # passed that prefix on: a row after the NUL vanished with no count. As SOH
+    # it is a raw control character inside the line, which jq rejects, so the
+    # whole line becomes unparseable — and blocks.
+    tr '\000' '\001' < "$1" | awk '
         {
             line = $0
             sub(/\r$/, "", line)
             if (line !~ /^\{.*\}$/) next
+            # A KEY spelled with an escape. jq decodes it, so the duplicate
+            # count below — which matches raw spellings — could not see that
+            # "\u0063laimant" is a second claimant. The producer never escapes
+            # a key, so no legitimate line is lost.
+            if (line ~ /"[^"]*\\u[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][^"]*"[ \t\r]*:/) next
+            # Each keyed field at most once. CR is JSON whitespace too.
             n = split("predicate_version record_id ts verdict claimant classification repo_id repo branch session_token", keys, " ")
             for (i = 1; i <= n; i++) {
                 t = line
-                if (gsub("\"" keys[i] "\"[ \t]*:", "&", t) > 1) next
+                if (gsub("\"" keys[i] "\"[ \t\r]*:", "&", t) > 1) next
             }
-            if (match(line, /"predicate_version"[ \t]*:[ \t]*/)) {
+            # predicate_version, when written as a number, is a PLAIN integer.
+            # 2.0, 2e0 and 2.00 are valid JSON that jq compares equal to 2, so a
+            # correction filed under them was applied as version 2.
+            if (match(line, /"predicate_version"[ \t\r]*:[ \t\r]*/)) {
                 rest = substr(line, RSTART + RLENGTH)
-                if (rest ~ /^(0[0-9]|\+|\.|-?[0-9]+\.[^0-9]|[nN][aA][nN]|-?[iI]nf)/) next
+                if (rest ~ /^[-+.0-9nNiI]/ && rest !~ /^(0|[1-9][0-9]*)[ \t\r]*[,}]/) next
             }
+            # jq-lenient number literals in ANY value position, not only the
+            # version: 01, +1, .5, 1., nan, inf. A correction carrying one was
+            # applied over a false_block although the line is not JSON. Cost,
+            # accepted: a string VALUE containing a colon followed by such text
+            # also drops its line if that text follows a quote, which blocks —
+            # the safe direction.
+            # The colon must FOLLOW A KEY (a closing quote, then whitespace):
+            # every ts holds "10:00:00", and a bare colon matched it.
+            if (line ~ /"[ \t\r]*:[ \t\r]*(0[0-9]|\+|\.[0-9]|-?[0-9]+\.([^0-9]|$)|-?[nN][aA][nN]|-?[iI][nN][fF])/) next
             print line
-        }' "$1" > "$2" 2>/dev/null
+        }' > "$2" 2>/dev/null
 }
 
 # _build — derive, into ${_T}:
@@ -230,7 +259,10 @@ _build() {
         | select(.classification == "explained_ladder"
               or .classification == "unexplained"
               or .classification == "cannot_check")
-        | [ (if (.repo_id | str) != "" then (.repo_id | str) else (.repo | str) end),
+        # repo_id present but not a string is NO identity — falling back to
+        # the path let a corrupt record supply a second repository.
+        | [ (if (.repo_id | str) != "" then (.repo_id | str)
+             elif has("repo_id") then "" else (.repo | str) end),
             (.branch | str), (.session_token | str), (.ts | str), (.record_id | str),
             .classification ] | @tsv' "${_T}/log.strict" 2>/dev/null > "${_T}/rec.tsv"
 
@@ -286,6 +318,7 @@ _build() {
         # would report the rule met to the owner who just recorded why it is not.
         awk -F'\t' -v fin="${FINAL_DATE}T23:59:59Z" -v now="${_NOW}" -v labfile="${_T}/lab.tsv" "${_AWK_T}"'
             FILENAME == ARGV[1] {
+                anyrec[$5 ""] = 1
                 if (($6 == "unexplained" || $6 == "explained_ladder") && real_instant($4)) {
                     k = $5 ""
                     if (!(k in wb) || $4 < rts[k]) rts[k] = $4
@@ -296,7 +329,7 @@ _build() {
             {
                 id = $5 ""
                 if ($1 == "bad")   { badver++; next }
-                if ($1 == "other") { if (id in wb) mismatch++; else other++; next }
+                if ($1 == "other") { if (id in anyrec) mismatch++; else other++; next }
                 if ($2 == "agent") { agent++; next }
                 if ($2 != "human") { badclaim++; next }
                 if ($3 != "true_catch" && $3 != "false_block" && $3 != "unknown") { badverdict++; next }
@@ -307,12 +340,13 @@ _build() {
                 if (e > iso_epoch(fin) && $3 != "false_block") { late++; next }
                 if (!(id in lab)) order[++n] = id
                 lab[id] = $3
-                if (e > iso_epoch(now)) lfut[id] = 1; else delete lfut[id]
+                # Sticky: a label dated after the reading blocks it even when a
+                # later row supersedes it. The reading cannot have seen it.
+                if (e > iso_epoch(now)) nf++
                 if ($6 == "1") lclk[id] = 1; else delete lclk[id]
             }
             END {
                 for (i = 1; i <= n; i++) print order[i] "\t" lab[order[i]] > labfile
-                for (k in lfut) nf++
                 for (k in lclk) nc++
                 printf "%d %d %d %d %d %d %d %d %d %d %d %d\n", other + 0, badver + 0, agent + 0, badclaim + 0,
                     badverdict + 0, badts + 0, late + 0, orphan + 0, nf + 0, nc + 0, mismatch + 0, predate + 0
