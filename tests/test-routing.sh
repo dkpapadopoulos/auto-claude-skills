@@ -619,6 +619,7 @@ install_registry_v4() {
       "role": "process",
       "phase": "DESIGN",
       "triggers": ["(build|create|implement|develop|scaffold|init|bootstrap|brainstorm|design|architect|strateg|scope|outline|approach|generate|set.?up|wire.up|connect|integrate|extend|new|start|introduce|enable|support|how.(should|would|could))"],
+      "keywords": ["how should", "what approach", "best way to", "ideas for", "options for"],
       "trigger_mode": "regex",
       "priority": 30,
       "precedes": ["writing-plans"],
@@ -4273,13 +4274,19 @@ test_false_positive_defense() {
     ctx="$(extract_context "${output}")"
     assert_equals "FP04: show recent changes -> zero match" "" "${ctx}"
 
-    # 5. "what does this error message mean" — may match debugging (acceptable)
-    # KNOWN FALSE POSITIVE: "error" is a word-boundary match for systematic-debugging
-    # assert_equals "FP05: error message meaning -> zero match" "" "${ctx}"
+    # 5. "what does this error message mean" — should NOT match anything
+    # Was a KNOWN FALSE POSITIVE: "error" is a word-boundary match for systematic-debugging,
+    # so the intended assertion below was commented out and replaced by one asserting the
+    # false positive. It now holds: the prompt is a question, and a question does not admit
+    # a process skill from its triggers alone (tests/test-activation-question-guard.sh).
     output="$(run_hook "what does this error message mean")"
     ctx="$(extract_context "${output}")"
-    assert_contains "FP05: 'error' triggers systematic-debugging" "systematic-debugging" "${ctx}"
-    assert_not_contains "FP05: should not trigger brainstorming" "brainstorming" "${ctx}"
+    assert_equals "FP05: error message meaning -> zero match" "" "${ctx}"
+    # Control: the same vocabulary as a report still routes to debugging, so the zero match
+    # above is the guard and not a lost trigger.
+    output="$(run_hook "this error message appears when the parser runs")"
+    ctx="$(extract_context "${output}")"
+    assert_contains "FP05 control: an error REPORT still triggers systematic-debugging" "systematic-debugging" "${ctx}"
 
     # 6. "format this code block properly" — should NOT match anything
     output="$(run_hook "format this code block properly")"

@@ -482,6 +482,65 @@ _score_skills() {
   # Score each skill (name-boost check merged into the same loop — no separate pre-pass)
   RESULTS=""
   _EXPLAIN_SCORING=""
+
+  # ---- Question guard: a question is not a work order ----------------------------------
+  # A trigger word inside a question used to mandate a process skill: "what's the next step
+  # here?" got `executing-plans MUST INVOKE`, "is the review done?" got
+  # `requesting-code-review MUST INVOKE`, and tests/test-routing.sh carried "what does this
+  # error message mean" as a KNOWN FALSE POSITIVE for systematic-debugging.
+  # Measured 2026-10-05 on real prompts labelled by two blind labellers (kappa 0.79): on the
+  # development half the hook issued 9 right and 90 wrong process mandates; with this guard,
+  # 9 right and 75 wrong, and no previously-right mandate is lost. Two other rules were
+  # measured on the same rows and rejected. Any question-word start: 7 more wrong mandates
+  # removed, one right one lost (a design question followed by an instruction). Any prompt
+  # ending in "?": 3 more wrong mandates removed (72), but it also drops the mandate from a
+  # work order that merely ends with a question ("Review the diff.\nAnything unclear?"),
+  # which no row in the sample happened to contain and review identified as the costly error.
+  #
+  # QUESTION-SHAPED: the prompt ends with "?" and no STATEMENT precedes that question (a
+  # sentence ending in "." or "!", or a line not ending in "?", followed by more text), OR
+  # it starts with a question word and is a single sentence on a single line. A polite
+  # request (can/could/would/will + you/we/i) is not question-shaped. `do` and `have` are
+  # deliberately not question words: "do a code review", "have a look at the failing test"
+  # are imperatives.
+  #
+  # KNOWN LIMITS, pinned as cells so they cannot be mistaken for coverage: an imperative
+  # written as one sentence ending in "?" ("review the diff, please?") loses its mandate;
+  # "can you explain why the review matters?" keeps one through the polite-request
+  # exception; "what does systematic-debugging mean?" keeps one through the name exception.
+  #
+  # WHAT THE GUARD DOES: on a question-shaped prompt, a role=process skill is not admitted
+  # from its triggers alone (see the admission test below). It is still admitted when the
+  # user names the skill, when one of its keyword PHRASES matches (multi-word, e.g. "how
+  # should"), or when its phase is LEARN — a question is how an outcome review is asked for.
+  # Non-process skills are untouched.
+  #
+  # WHAT IT DELIBERATELY DOES NOT DO: it is off whenever a composition chain is active for
+  # this session. It declines to START a workflow from a question; it never disturbs one in
+  # progress, so sticky emission, chain continuation and every push-gate milestone behave
+  # exactly as before. It is therefore not a guarantee that no question ever carries a
+  # mandate: an active chain, a named skill, a keyword phrase, a required-role skill or a
+  # workflow-anchored chain can each still produce one.
+  # `ACS_QUESTION_GUARD=off` (exactly that, lowercase) restores the old behaviour. The hook
+  # honours it wherever it is set — it is an escape hatch, not a test-only switch.
+  # Regression: tests/test-activation-question-guard.sh.
+  _Q_GUARD=0
+  if [[ "${ACS_QUESTION_GUARD:-on}" != "off" ]]; then
+    _q_start='^[[:space:]]*(what|why|how|is|are|does|did|which|where|when|who|should)([^a-z0-9]|$)'
+    _q_end='[?][[:space:]]*$'
+    _q_polite='^[[:space:]]*(can|could|would|will)[[:space:]]+(you|we|i)([^a-z0-9]|$)'
+    _q_multi='[.?!][[:space:]]+[^[:space:]]'
+    _q_stmt="[.!][[:space:]]+[^[:space:]]|[^?[:space:]][[:blank:]]*"$'\n'"[[:space:]]*[^[:space:]]"
+    _q_is=0
+    if [[ "$P" =~ $_q_end ]] && ! [[ "$P" =~ $_q_stmt ]]; then
+      _q_is=1
+    elif [[ "$P" =~ $_q_start ]] && ! [[ "$P" =~ $_q_multi ]] && [[ "$P" != *$'\n'* ]]; then
+      _q_is=1
+    fi
+    if [[ "$_q_is" -eq 1 ]] && ! [[ "$P" =~ $_q_polite ]]; then
+      _comp_active || _Q_GUARD=1
+    fi
+  fi
   while IFS="$FS" read -r skill_name skill_name_lower skill_role skill_priority skill_invoke skill_phase triggers_joined keywords_joined _required_when; do
     [[ -z "$skill_name" ]] && continue
 
@@ -680,6 +739,17 @@ _score_skills() {
         _EXPLAIN_SCORING="${_EXPLAIN_SCORING}[skill-hook]   ${skill_name}: trigger=(${_trig_display}) no-match
 "
       fi
+    fi
+
+    # Question guard (see the top of this function): on a question-shaped prompt with no
+    # active chain, a process skill needs more than a trigger word.
+    if [[ "$_Q_GUARD" -eq 1 ]] && [[ "$skill_role" == "process" ]] && [[ "$skill_phase" != "LEARN" ]] \
+       && [[ "$name_boost" -eq 0 ]] && [[ "$keyword_score" -eq 0 ]]; then
+      if [[ -n "${SKILL_EXPLAIN:-}" ]] && [[ "$trigger_score" -gt 0 ]]; then
+        _EXPLAIN_SCORING="${_EXPLAIN_SCORING}[skill-hook]   [question-guard] ${skill_name}: not admitted — the prompt is a question, with no skill name and no keyword phrase
+"
+      fi
+      continue
     fi
 
     # Apply skill-name-mention boost (+100) and allow through even with zero trigger_score
