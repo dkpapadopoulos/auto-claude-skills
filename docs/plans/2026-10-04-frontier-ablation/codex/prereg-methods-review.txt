@@ -1,0 +1,58 @@
+The decision rule is the largest problem: it can produce confident-looking verdicts from ordinary sampling noise. Ranked findings:
+
+1. ±3/16 is an effect-size threshold, not a calibrated statistical test.
+Bias: noise; whichever arm happens to win.
+
+Three passes means 18.75 percentage points. Exact enumeration assuming independent Bernoulli(0.8) outcomes gives a 13.25% probability of falsely declaring benefit for one comparison, 26.49% for benefit OR harm. Across all three pairwise comparisons, the probability of at least one false quality declaration is 50.17% per model.
+
+Those are illustrative, not the actual paired-design error rates: marginal success probability alone cannot determine them. Pairwise discordance and dependence between repetitions matter. Calling this rule “deliberately conservative” is unjustified.
+
+Smallest fix: report paired effect estimates and uncertainty; replace threshold verdicts with a preregistered paired test. Exact McNemar uses discordant pairs: three wins versus zero losses gives two-sided p=0.25, despite satisfying your “benefit” rule. Because repetitions share tasks, prefer a task-level permutation test swapping each task’s two-repetition arm vectors together, with randomized execution-slot assignment supporting exchangeability. There are only eight task clusters. Preselect one primary comparison or correct the six model-by-comparison tests, for example with Holm.
+
+2. “No detectable difference” is treated as quality equivalence.
+Bias: favours cheaper arms, likely A0; conversely, any noisy quality gain excuses unlimited overhead.
+
+An underpowered quality result plus 25% overhead becomes “net negative,” even when substantial quality improvement remains plausible. “Net positive whatever the cost” is an unstated utility function.
+
+Smallest fix: report quality and cost separately; use “inconclusive” when intervals span meaningful benefit and harm. Retain ±18.75 points only as a declared practical margin, not evidence of equivalence.
+
+3. The fixture gate does not establish valid scoring.
+Bias: favours solutions matching the author’s assumptions; potentially penalizes legitimate alternatives.
+
+Red/green proves the reference passes and the baseline fails. It does not prove tests implement the specification, cover every planted defect, or reject plausible wrong fixes. “Not derivable” is backwards: expected behaviour should be derivable from the specification. Outside the repo also does not mean inaccessible to Bash.
+
+Smallest fix: independently review requirement-to-test mappings, test representative wrong fixes and alternative correct implementations, and distinguish secrecy from specification completeness. Keep hidden tests filesystem-inaccessible during runs. Grade exported patches in a trusted harness using original visible tests; otherwise test modification can masquerade as success.
+
+4. Treatment construction needs a manipulation check.
+Bias: either plugin arm if loading fails; A2 if prewarming or inherited state gives it extra capabilities.
+
+Pinned versions and equal tool permissions are good. But fresh HOME and project-only settings do not demonstrate identical effective instructions, hooks, permissions, model effort, or filesystem access. A2 versus A1 estimates the entire ACS package conditional on superpowers—not routing alone.
+
+Smallest fix: freeze artifact hashes, registry contents, effective configuration and exact commands; perform disposable smoke checks showing each intended hook and skill is available. Reset mutable state per run, pin subagent models, and state the package-level estimand. An ACS-only arm is unnecessary for that narrow estimand.
+
+5. Task selection and the headless sentence interact with treatment.
+Bias: likely A0 against approval-seeking workflows; potentially plugin arms on planted-debugging tasks.
+
+Codex authorship does not remove experimenter control over prompts, regeneration, selection or interpretation. “Make reasonable assumptions” does not explicitly authorize bypassing mandatory approval checkpoints. Stalling may measure instruction conflict rather than coding ability.
+
+Smallest fix: freeze generation prompts, seeds where available, acceptance criteria, candidate sequence and rejection logs. Specify routine implementation authorization identically in all arms and score unresolved approval waits explicitly. Keep the estimand limited to autonomous, fully specified work.
+
+6. Concurrent execution does not neutralize cache effects.
+Bias: whichever arm receives reusable prefixes; direction may vary.
+
+Server-side cache sharing is not isolated by HOME. Shared-prefix timing can affect both measured cost and how much work fits under $4. Different plugin prefixes can also prevent sharing. Anthropic documents prefix matching and cache availability after response generation begins; OAuth behaviour should be measured, not assumed. [Caching documentation](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
+
+Smallest fix: verify cache isolation or enforce a reproducible cold-start policy while preserving within-run reuse. Record uncached input, cache writes, reads and output separately; freeze prices and verify subagent inclusion without double counting. Report observed and standardized notional costs. Neither equals subscription expenditure or quota consumption.
+
+7. Operational discretion remains after outcomes start.
+Bias: potentially any preferred arm; cost-based stopping favours completion of cheaper workloads.
+
+The turn cap is unnamed; timeouts, second infrastructure failures, missing costs, zero denominators and failure adjudication are unspecified. The first four tasks determine continuation, but their ordering is unspecified.
+
+Smallest fix: freeze scheduling, limits, retry/exclusion rules, scoring scripts and stopping calculations; adjudicate infrastructure failures blind to arm and score. Publish stopped pilots as incomplete, without full-study verdicts.
+
+The manifest, amendment history, per-task publication and retiring tasks after plugin tuning are sound.
+
+Even perfectly run, this cannot establish equivalence, general frontier-model benefits, production ROI, interactive-workflow value, or routing’s mechanism. A null means insufficient evidence, not “no large effect.”
+
+Single most valuable addition: more independent tasks. Use 16 tasks × 3 arms × 2 models × 1 repetition = 96 runs, replacing repetitions with task diversity.

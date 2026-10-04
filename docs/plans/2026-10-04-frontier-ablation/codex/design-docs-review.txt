@@ -1,0 +1,41 @@
+1. **Tier 0 verification**
+
+- **F1 — CONFIRMED, with narrower conditions.** The key regex rejects hyphens. An unrecognized `allowed-tools:` line leaves `cur_key` untouched; subsequent lines matching exactly `^  - ` append to its array. This happens after an empty-valued key such as `triggers:`, until another recognized key resets it. A preceding scalar clears `cur_key`, so **not every hyphenated key causes mis-attachment**. I executed the extracted, unchanged parser: list-before-hyphen produced `{"triggers":["safety mode","Bash","Read"]}`; scalar-before-hyphen did not. See [parser:290–327](hooks/session-start-hook.sh:290).
+  
+  Priority **200** is confirmed for discoveries absent from defaults ([736](hooks/session-start-hook.sh:736)). But priority alone cannot activate them: scoring requires a trigger, keyword, or name match ([619](hooks/skill-activation-hook.sh:619)); process skills also have a reserved slot ([819](hooks/skill-activation-hook.sh:819)). “Hijacking” therefore overstates the demonstrated scope. Nearby omission: accepting hyphenated keys alone will **not enforce** `disable-model-invocation`; discovery explicitly constructs enabled entries without consulting it ([731](hooks/session-start-hook.sh:731)). Lowering priority to 5 is a policy change, not a proven correctness fix.
+
+- **F2 — CONFIRMED for our side only.** The claimed descriptions exist: [executing-plans:108](config/default-triggers.json:108), [two-stage review:122](config/default-triggers.json:122), [four options:190](config/default-triggers.json:190). Save-path instructions appear at [1418](config/default-triggers.json:1418), [1422](config/default-triggers.json:1422), [1447](config/default-triggers.json:1447); drift-check calls upstream paths [legacy:20](skills/implementation-drift-check/SKILL.md:20). Upstream disagreement remains unverified here. Nearby missed maintenance surface: [fallback-registry.json:118](config/fallback-registry.json:118) duplicates stale text.
+
+- **F3 — PARTLY.** Defaults contain fourteen superpowers entries and omit `diagnosing-superpowers`. That establishes a missing curated route, **not a verified defect**, nor “the only upstream omission” without upstream inventory. Discovery can admit absent names ([708](hooks/session-start-hook.sh:708)), and explicit hyphenated names receive a boost ([438](hooks/skill-activation-hook.sh:438)). “Why didn’t the skill fire?” also plausibly concerns ACS itself; forcing upstream diagnosis could misdirect it.
+
+2. **Portfolio: ranked objections**
+
+1. **G5, automatic fixes versus ASK:** actively harmful scope expansion for a reviewer. Requiring permission whenever a regression test is needed penalizes precisely the fixes with useful verification.
+2. **T2, premature-action scoring:** rewards ritual ordering. Reading relevant code before invoking a skill can be correct; treating it as failure confuses compliance with engineering quality.
+3. **T3, blanket abstention on off-mission prompts:** wrong target. A marketing or legal task can legitimately need authorial judgment, discovery, or consultation. Label intended skills per case.
+4. **T4b/E4 and G8:** ratchets, mandatory sibling descriptions, and generated eval stubs can become expensive bookkeeping. A stub’s existence does not make the done-gate behavioral.
+5. **T1’s acceptance rule:** requiring removal of a hint to reduce uptake assumes the hint works. Equal arms can mean a correct instrument measuring redundancy; demanding a gap invites harness tuning until the desired result appears.
+
+**Best value/risk: F1’s parser correction**, separately from reprioritization. It repairs deterministic data corruption with a small regression surface.
+
+“Instruments before interventions” is right for new per-prompt mandates. Bundling T1–T5 before useful decisions is procrastination. Build the smallest real-hook outcome comparison; fix parser corruption and stale descriptions independently.
+
+3. **Component triage contradictions**
+
+- **`using-superpowers` demotion promises little.** Its triggers and keywords are empty, with no graph edges ([563](config/default-triggers.json:563)). Ordinary prompts do not score it; literal mentions can. Its “composition-activated” description is misleading. Removing this entry does not remove upstream’s bootstrap instructions.
+
+- **Worktree demotion neither breaks a default gate nor achieves the advertised relaxation.** `required` means routing emphasis, explicitly **not merge-blocking** ([enforcement-map:106](docs/enforcement-map.md:106)). Consumers include cap bypass ([807](hooks/skill-activation-hook.sh:807)), invocation wording ([1012](hooks/skill-activation-hook.sh:1012)), iteration caps and phase selection. Graph walking follows `precedes/requires` ([1144](hooks/skill-activation-hook.sh:1144)); worktrees has neither. Yet IMPLEMENT separately emits **“REQUIRED before implementation”** ([1484](config/default-triggers.json:1484)). A role-only edit leaves that instruction intact.
+
+- **Manual-only team execution is incomplete:** the IMPLEMENT directive still says to offer it ([865](config/default-triggers.json:865)). Preserve its implementation-evidence alias even if routing changes ([phase-evidence:15](hooks/lib/phase-evidence.sh:15)).
+
+- **Verification replacement is not merely prose cleanup.** The push gate deliberately rejects a clean verdict as a substitute for invocation ([1270](hooks/openspec-guard.sh:1270)); measured verdict enforcement remains advisory ([1278](hooks/openspec-guard.sh:1278)). “Already covers accountability” conflates available recording machinery with enforced evidence.
+
+4. **Strongest arguments**
+
+**Against shedding:** the owner chose superpowers as the backbone; ACS’s sequencing and evidence consumers encode that choice. Zero observed invocation can mean broken routing or an unobserved population, not useless procedure. I would change my mind after matched multi-turn ablations preserve outcomes, artifact handoffs, and legitimate gate passage while reducing cost.
+
+**For shedding:** ACS can duplicate—and fossilize—the backbone’s instructions. Confirmed stale descriptions justify removing contradictory overlays now. I would retain broader mandates only if they prevent concrete failures beyond superpowers alone; skill uptake is insufficient evidence.
+
+5. **One measurement**
+
+Run a paired, randomized-order, multi-turn **routing-block ablation**: identical pinned model, effort, superpowers bootstrap, available skills, context, and gates; only ACS’s per-prompt injected block varies. Use isolated historical tasks with hidden checks, including ambiguous prompts and legitimate pushes; score success, regressions, false blocks, tokens, and time. Keep reference answers inaccessible. I would disable the block if removal saves ≥15% cost with a confidence interval excluding more than a predeclared 5-point success loss and no material safety regression. A reproducible outcome advantage exceeding that margin would justify retention; twenty tasks without sufficient precision would remain inconclusive.

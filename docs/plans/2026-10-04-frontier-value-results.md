@@ -22,8 +22,10 @@ notifications — none since 2026-09-25, the PR #258 fix holds; 275 were SDK run
 the block averaged 4.9 KB (median 4.9 KB, p90 7.2 KB). Accumulated per session: median ≈ 0.45k
 tokens, p90 ≈ 17k tokens, maximum ≈ 98k tokens of routing blocks in one session.
 
-**Uptake of `MUST INVOKE`.** Unit: the first time a session's routing told the model it MUST INVOKE a
-given skill, on a human prompt (183 cases; 157 on Opus 5, 13 on Fable 5, 12 on Opus 5.5).
+**Uptake of `MUST INVOKE`.** Unit: a *case* = the first time, in one session, that routing told the
+model it MUST INVOKE a given skill on a human prompt. There are 183 such session-and-skill cases (157 on
+Opus 5, 13 on a Fable model, 12 on Opus 5.5, 1 on Opus 4), drawn from 399 `MUST INVOKE` routings in all.
+Every percentage below is of the 183 cases, not of all routings.
 
 | Outcome | n | share |
 |---|---|---|
@@ -32,12 +34,12 @@ given skill, on a human prompt (183 cases; 157 on Opus 5, 13 on Fable 5, 12 on O
 | already loaded earlier in the session | 8 | 4% |
 | **never invoked** | **125** | **68%** |
 
-96 of the 125 "never" sessions had four or more further human turns, so early termination does not
+96 of the 125 "never" cases were followed by four or more further human turns in the session, so early termination does not
 explain it. This contradicts the lab figure of 16/16 uptake (`tests/baselines/composition-uptake.baseline.json`),
 which was measured with the block pasted into a prompt written to call for the skill.
 
-**Was the routing right?** Two blind LLM labellers (Opus 5.5 and Sonnet 5.5, shown only the prompt and
-the routed skill, never the outcome) judged whether the prompt, on its face, called for that skill.
+**Was the routing right?** Two blind LLM labellers (one subagent on the session's default model, one on the
+Sonnet alias; each shown only the prompt and the routed skill, never the outcome) judged whether the prompt, on its face, called for that skill.
 Agreement 0.87, Cohen's kappa 0.76.
 
 | Consensus label | n | model invoked it (same turn or later) | already loaded | never |
@@ -46,8 +48,8 @@ Agreement 0.87, Cohen's kappa 0.76.
 | not appropriate (both) | 100 | 20 | 2 | 78 |
 | context-dependent or disagreement | 69 | 22 | 4 | 43 |
 
-- **Routing precision is the problem, not model obedience.** By consensus, 8% of `MUST INVOKE`
-  routings were clearly right and 55% clearly wrong. Counting every undecidable case as right gives an
+- **Routing precision is the problem, not model obedience.** By consensus, 8% of the 183 cases
+  were clearly right and 55% clearly wrong. Counting every undecidable case as right gives an
   upper bound of 45%.
 - **The model is already acting as the filter.** It declined 78 of 100 wrong routings. It still obeyed
   20 of them — twenty skill invocations a correct router would not have asked for.
@@ -61,9 +63,21 @@ control. The same `MUST INVOKE` recurred for 70 of the 100 clearly-wrong prompts
 clearly-right ones. (Fresh state per prompt; the field prompts were mid-session, so this is a lower
 bound on fidelity, not an exact replay.)
 
-**Limits.** One owner, mostly this repo (64 of the never cases) and one other (47): meta-work about
-routing is over-represented. Labels are LLM judgements on prompt text alone. The sample is conditional
-on having been routed, so it measures precision, not recall.
+**Live instance, this session (observed, not in the evidence bundle).** Ten consecutive subagent hand-back messages (fixture authors and
+reviewers reporting PASS/ACCEPT results) each received a routing block with `systematic-debugging MUST
+INVOKE`, plus assorted domain suggestions (`incident-analysis`, `deploy-gate`, `design-debate`, a GKE
+hint). None was a debugging request; the words "fails" and "wrong fix" in a report were enough. The
+census shows the same `peer` source still routing after 2026-09-25 (18 events). Two automated notices
+(a goal check-in and a security-review notice) were also routed, to `brainstorming MUST INVOKE` with the
+full seven-step chain — so the 2026-09-25 fix covers task notifications as the census labels them, not
+every automated message.
+
+**Limits.** One owner, mostly this repo (64 of the never cases) and one other project (47): meta-work
+about routing is over-represented. 157 of the 183 cases ran on Opus 5, which is not one of the pilot's
+models. Labels are LLM judgements on prompt text alone. The sample is conditional on having been routed,
+so it measures precision, not recall. The per-session accumulation figures, the date split, the
+further-turns count and the project split were computed in the session and are not in the bundle; the
+replay counts in `data/labels.json` are transcribed from script output.
 
 ## 2. Tier-0 defects, re-verified
 
@@ -110,10 +124,11 @@ on having been routed, so it measures precision, not recall.
    (`hooks/openspec-guard.sh:1264-1275`, issue #254); the measured-verdict leg is still advisory (#301).
    Any change here goes through that pre-registered corpus, first read due 2026-10-12.
 
-The census also shows these four were the wrong targets on volume alone: the skills in the old
-demote-now set were routed 7, 3 and 1 times in five weeks. The volume is in `requesting-code-review`
-(231 routing events), `brainstorming` (144), `verification-before-completion` (122) and
-`executing-plans` (99).
+The census also shows three of the four were the wrong targets on volume alone: `using-git-worktrees`,
+`dispatching-parallel-agents` and `agent-team-execution` were routed 7, 3 and 1 times in five weeks. The
+volume is in `requesting-code-review` (231 routing events), `brainstorming` (144),
+`verification-before-completion` (122 — the fourth target, high-volume but not removable by a prose
+change, per item 4) and `executing-plans` (99).
 
 **CORRECTIONS to `2026-10-03-external-skill-repos-adoption-design.md` (portfolio):**
 - **G5 (Fix-First: anything needing a regression test → ASK)** — dropped; it penalises exactly the
@@ -139,12 +154,181 @@ your autonomous-execution request yet. No files have been created." Codex has su
 installed, and its brainstorming skill's approval gate overrode the instruction. The sessions ran only
 after the prompt stated that approval was already given. This is a different model family, n=3, and
 not part of any pre-registered measure — but it is a clean instance of a process skill costing a whole
-run on a fully specified task.
+run on a fully specified task. (Codex on this machine also loads this plugin: its sessions printed the
+"49 skills active across 12 plugins" banner, and one wrote an `openspec/changes/…/plan.md` for a
+fixture-authoring job.)
 
-## 4. Outcome ablation pilot
 
-PENDING
+## 4. Outcome ablation pilot (pre-registered)
+
+Design as frozen in `2026-10-04-frontier-ablation-prereg.md`: 16 fixtures with hidden tests, three arms
+(A0 bare, A1 superpowers 6.4.2, A2 superpowers + auto-claude-skills 3.93.1), one run per task-arm, real
+headless sessions in isolated HOMEs, two models. 96 runs; all ran after the freeze commit (`a3c45b35`,
+01:54:59; first run log 01:55:41). 0 harness failures, 0 timeouts, 0 retries; the most expensive run cost
+USD 1.77 against the USD 4 cap. Notional cost of the pilot: USD 63.
+Evidence bundle: `2026-10-04-frontier-ablation/` (per-task table in `data/analysis-<model>.txt`).
+
+**Manipulation check — one disclosed deviation.** The pre-registration says each session's `init` lists
+"exactly the intended plugins". Every run, the bare arm included, also lists Claude Code's built-in
+`cc-plugin-*` entries, so the check as implemented tests only the presence or absence of the two plugins
+under test and of the superpowers bootstrap. On that test all 96 runs pass, and the data show each arm
+carried the hook output it should: A0 none, A1 3.6 KB at session start, A2 6.0 KB at session start plus a
+routing block on every first prompt (16 of 16 per model).
+
+### Result
+
+| | Opus 5.5 | Fable 5.1 |
+|---|---|---|
+| Hidden suite fully passed, A0 / A1 / A2 | 16 / 16 / 16 | 16 / 16 / 16 |
+| **Quality, primary (A2 vs A0)** — mean ΔQ, exact p | 0.0, p = 1.0 → **inconclusive** | 0.0, p = 1.0 → **inconclusive** |
+| Quality, A1 vs A0 and A2 vs A1 | inconclusive | inconclusive |
+| Qbin discordant pairs, any comparison (McNemar p) | 0 / 0 (p = 1.0) | 0 / 0 (p = 1.0) |
+| **Cost, primary (A2 vs A0)** — median token ratio [range], more/less, exact sign p | 1.39× [0.76–2.34], 12/4, p = 0.077 → **inconclusive** | 1.71× [0.89–3.07], 15/1, p = 0.0005 → **overhead shown** |
+| Cost, A1 vs A0 | 1.37× [1.06–2.18], 16/0, p < 0.0001 → **overhead shown** | 1.60× [1.13–3.08], 16/0, p < 0.0001 → **overhead shown** |
+| Cost, A2 vs A1 | 0.86× [0.55–1.60], 6/10, p = 0.45 → inconclusive | 1.04× [0.67–1.55], 10/6, p = 0.45 → inconclusive |
+| Notional USD, A0 / A1 / A2 | 3.85 / 5.02 / 5.34 | 13.36 / 16.90 / 18.67 |
+| Wall minutes, A0 / A1 / A2 | 12.2 / 14.5 / 14.2 | 25.2 / 29.4 / 31.3 |
+| Turns, A0 / A1 / A2 | 64 / 100 / 73 | 181 / 258 / 250 |
+| Subagents dispatched; runs that edited a file; original visible tests passing | 0; 48/48; 48/48 | 0; 48/48; 48/48 |
+
+The A1-vs-A0 overhead survives a Holm adjustment across the two secondary comparisons; A2 vs A1 is
+inconclusive on both models.
+
+**By fixture author** (promised in amendment A1). Every run passes in both subsets. Median token ratios,
+with tasks costing more/less:
+
+| | Codex-authored (n = 9) | Claude-authored (n = 7) |
+|---|---|---|
+| Opus 5.5, A1 vs A0 | 1.48× | 1.18× |
+| Opus 5.5, A2 vs A0 | 1.39×, 8/1 | 1.00×, 4/3 |
+| Opus 5.5, A2 vs A1 | 0.87×, 3/6 | 0.86×, 3/4 |
+| Fable 5.1, A1 vs A0 | 1.91× | 1.42× |
+| Fable 5.1, A2 vs A0 | 1.71×, 8/1 | 1.71×, 7/0 |
+| Fable 5.1, A2 vs A1 | 0.90×, 4/5 | 1.05×, 6/1 |
+
+The subsets agree on quality and on the direction of the superpowers overhead. They do **not** agree on
+the primary cost comparison for Opus 5.5: the overhead of A2 over A0 appears on the Codex-authored
+fixtures and not on the Claude-authored ones.
+
+**Reading it, within the pre-registered vocabulary.** Threat 2 happened: every arm solved every task, so
+quality is *inconclusive* — uninformative in either direction, not evidence of equivalence. On cost:
+superpowers alone shows overhead on both models (median 37% and 60% more tokens, every task). The
+primary comparison — superpowers plus this plugin against bare — shows overhead on Fable 5.1 and is
+inconclusive on the primary model, Opus 5.5. Adding this plugin to superpowers is inconclusive on both.
+No composite verdict is computed.
+
+### What the plugin arms did (descriptive, not pre-registered; `data/run-observations.json`)
+
+- **Superpowers alone (A1):** the model invoked a process skill in 10 of 16 runs on Opus 5.5 and 13 of 16
+  on Fable 5.1 — `systematic-debugging` (7, 10) and `test-driven-development` (3, 3).
+- **With this plugin added (A2):** the first-prompt routing block was 3.3–9.7 KB, mean 7.8 KB (125 KB over
+  16 prompts). It said `systematic-debugging MUST INVOKE` on 3 tasks (a4, c2, d2) and `brainstorming MUST
+  INVOKE`, under the header "Build New", on the other 13: the 4 feature tasks, where that is the right
+  phase, and 9 of the 12 bug-fix, debugging and release-review tasks, where it is not. Neither model
+  invoked brainstorming in any run. Opus 5.5 invoked `systematic-debugging` on exactly the 3 routed tasks;
+  Fable 5.1 on those 3 plus 3 debugging tasks where the block had said brainstorming (c1, c3, c4). Runs
+  with any skill invoked: 10 → 3 on Opus 5.5 and 13 → 6 on Fable 5.1, comparing A1 with A2. Whether
+  invoking a skill was *better* is not something this pilot can say — every run passed. The prompt's
+  "no design or plan approval is needed" line is part of why brainstorming was skipped; the phase
+  classification is independent of it.
+- **Unrequested writes:** in all 32 A2 runs the session-start guard wrote `.claude/settings.json`
+  (77 lines of hook configuration) and a lock file into the project directory; none of the 64 A0 and A1
+  runs has a `.claude` directory.
+- **Lines added** A0 / A1 / A2, excluding those guard files: 1,058 / 1,703 / 1,268 on Opus 5.5 and
+  2,193 / 2,563 / 2,645 on Fable 5.1 (raw A2 figures 2,500 and 3,877). Lines removed are flat (92–116).
 
 ## 5. What this adds up to
 
-PENDING
+Two kinds of statement follow, kept apart: what was **measured**, and the **policy reading** I would
+draw from it. The policy reading is a recommendation, not a finding.
+
+### Measured
+
+1. *Pre-registered pilot, 16 small stdlib-Python fixtures, autonomous and pre-authorised.* Quality:
+   inconclusive (ceiling). Cost of superpowers over bare: overhead shown on Opus 5.5 and Fable 5.1.
+   Cost of superpowers plus this plugin over bare: overhead shown on Fable 5.1, inconclusive on Opus 5.5.
+   This plugin over superpowers: inconclusive.
+2. *Exploratory field census, one owner, five weeks, mostly Opus 5.* Of 183 first `MUST INVOKE` cases,
+   the skill was never invoked in 125. Two blind labellers judged 14 cases clearly appropriate and 100
+   clearly not; the model declined 78 of those 100 and obeyed 20. The installed build repeats the same
+   `MUST INVOKE` for 70 of the 100. On these cases the router was wrong more often than right (55%
+   clearly wrong against at most 45% right).
+3. *Descriptive, from the pilot.* The routing block said `brainstorming MUST INVOKE` on 9 of 12
+   bug/debug/release-review tasks; no model followed it. The block is 4.9 KB on average in the field
+   (p90 7.2 KB) and 7.8 KB on the pilot's first prompts.
+4. *Side effects observed.* Guard files written into every project; a guard daemon left per headless
+   session; a machine-global registry holding per-session facts; routing blocks on subagent hand-backs
+   and on two automated notices in this session.
+
+### What the measurements cannot say
+
+- Whether process skills help on **hard, long, ambiguous or interactive** work. The pilot hit the
+  ceiling and removed the human — the conditions under which those skills claim their value.
+- Whether anything has **changed** with frontier models. No older-model arm was run, so this is a
+  statement about Opus 5.5 and Fable 5.1 today, not about a trend.
+- Whether the plugin's routing costs or helps in outcome terms. The pre-registered A2-vs-A1 comparison
+  is inconclusive; the case against the routing rests on the exploratory census and the descriptive
+  observations above, with their limits.
+- Anything about the gates. They were not exercised.
+
+### Policy reading (the owner's call)
+
+- **On "net negative".** The honest form of the answer is narrower than yes or no: on the one class of
+  work measured, superpowers showed cost and no observable benefit, and benefit *could not* have been
+  observed because nothing failed. Under the inverted burden of proof proposed in the audit — a
+  per-prompt mandate must show benefit to stay mandatory — that is enough to stop *mandating* process
+  skills on routine work. It is not enough to remove them, and it does not overturn the standing
+  decision that superpowers is the phasing backbone.
+- **On shedding.** Do not delete skills. Change what the plugin does with them:
+  1. **Routing precision first.** It is the best-evidenced defect and it is ours. Each change needs its
+     own red-first test: no `MUST INVOKE` on continuations, approvals, subagent or peer hand-backs, or
+     automated notices; reported bugs and failing tests classified as DEBUG, not "Build New"; the process
+     skill offered as a suggestion unless the match is strong; a smaller first-prompt block.
+     Acceptance instrument: a freshly drawn and freshly labelled sample (the census scripts regenerate
+     one; this session's labelled sample is not kept and its labels have been read in aggregate, so it
+     could only ever be development data), scored on the share of `MUST INVOKE` cases labelled
+     appropriate, plus the 16 task prompts as a small fixed check.
+  2. **A `frontier-lean` preset** — routing as suggestion, gates and context kept — measured with the same
+     harness against A1 and A2 before any default changes.
+  3. **Fix the side effects** in item 4 above, the F1 parser bug, the stale superpowers descriptions,
+     and, once reproduced on Linux, the `stat` crash.
+  4. **Leave the gates alone for now.** The verification leg has its own pre-registered corpus, first
+     read 2026-10-12.
+- **On rethinking the approach.** The plugin assumes the model must be told which process to follow.
+  The evidence here does not prove the opposite, but it does show the telling is frequently wrong and
+  frequently ignored, and that models choose a debugging or TDD skill unprompted when the skills are
+  merely available. That is a reason to shift weight toward what a model cannot supply for itself —
+  deterministic gates, evidence records, project and organisation context — and to make routing earn its
+  place by measured precision.
+
+### The experiment that would settle the open half
+
+Quality on tasks hard enough that a bare session fails some of them. The next task set must keep the
+trapped requirement out of the task text and in the repo's own documentation, be large enough that
+reading before changing matters, include multi-turn tasks with a scripted user so approval and
+elicitation skills can show their value, and add an older-model arm if "has this changed" is still the
+question. It needs a new pre-registration; these 16 fixtures are spent.
+
+### Adoption portfolio, re-ranked
+
+Routing precision first; then the F1 parser fix and the stale-description fixes; then the
+zero-per-prompt-cost grafts that survived review (provenance tags only with a tool result, the review
+coverage line, quote-or-demote, the `authorial-judgment` additions, schema-backed adversarial data from
+`break-ui`). Every proposed *new per-prompt directive* (Review Focus, debug scope lock, redesign
+invariants) is on hold until routing precision is measured and fixed.
+
+## 6. Open items the owner should know about
+
+- **Nothing is pushed.** The plugin's push gate refused the pre-registration push (no code-review or
+  verification record on the branch) and was not bypassed. Commits are local on `ccr-72351171-l8ph21`.
+- **The harness is not a sandbox.** The 96 runs were headless sessions with unrestricted Bash as the
+  owner's user, confined only by a throwaway HOME and a scratch working copy. See the bundle README.
+- Codex's usage limit cut fixture authoring short; seven of sixteen fixtures are Claude-authored, and
+  category c entirely so.
+- The Linux `stat` crash is diagnosed by reading, not reproduced.
+- The labelled prompt sample and the per-run working copies live in the session scratchpad and are not
+  kept; the bundle holds counts and per-run scores only. The bundled `run.py` differs from the one that
+  ran by path rewrites and a comment.
+- An independent fact-check of this document against the bundle found the result tables exact and
+  several conclusions overstated; sections 4 and 5 were rewritten in response, and its list of what the
+  bundle cannot verify is reflected in the limits stated above.

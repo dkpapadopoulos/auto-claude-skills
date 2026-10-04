@@ -1,0 +1,537 @@
+{
+  "window": {
+    "since": "2026-08-01",
+    "first_routing": "2026-08-26T11:49:06.568Z",
+    "last_routing": "2026-10-03T23:03:52.916Z",
+    "session_files_with_assistant_turns": 1206,
+    "routing_events": 1530,
+    "duplicate_attachments_dropped": 0
+  },
+  "sessions_by_dominant_model": {
+    "opus-4": 709,
+    "sonnet-5": 284,
+    "opus-5": 192,
+    "opus-5-5": 12,
+    "fable": 9
+  },
+  "routing_events_by_source": {
+    "human": 784,
+    "task-notification": 429,
+    "sdk": 275,
+    "peer": 37,
+    "auto-continuation": 3,
+    "unlabelled": 2
+  },
+  "routing_events_by_model": {
+    "opus-5": 1107,
+    "sonnet-5": 244,
+    "fable": 61,
+    "no-assistant-turn": 58,
+    "opus-5-5": 42,
+    "opus-4": 18
+  },
+  "human_events": 784,
+  "uptake_human_all_models": {
+    "totals": {
+      "routed": 711,
+      "invoked": 43,
+      "must": 399,
+      "must_invoked": 31,
+      "events": 784,
+      "events_with_any_skill_call": 123,
+      "events_with_any_routed_skill_call": 43
+    },
+    "rows": [
+      {
+        "skill": "requesting-code-review",
+        "routed": 231,
+        "invoked_in_window": 14,
+        "must_invoke": 114,
+        "must_invoked": 7
+      },
+      {
+        "skill": "brainstorming",
+        "routed": 144,
+        "invoked_in_window": 16,
+        "must_invoke": 125,
+        "must_invoked": 13
+      },
+      {
+        "skill": "verification-before-completion",
+        "routed": 122,
+        "invoked_in_window": 1,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "executing-plans",
+        "routed": 99,
+        "invoked_in_window": 6,
+        "must_invoke": 99,
+        "must_invoked": 6
+      },
+      {
+        "skill": "systematic-debugging",
+        "routed": 24,
+        "invoked_in_window": 3,
+        "must_invoke": 24,
+        "must_invoked": 3
+      },
+      {
+        "skill": "product-discovery",
+        "routed": 22,
+        "invoked_in_window": 0,
+        "must_invoke": 22,
+        "must_invoked": 0
+      },
+      {
+        "skill": "writing-skills",
+        "routed": 22,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "writing-plans",
+        "routed": 11,
+        "invoked_in_window": 1,
+        "must_invoke": 11,
+        "must_invoked": 1
+      },
+      {
+        "skill": "batch-scripting",
+        "routed": 8,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "using-git-worktrees",
+        "routed": 7,
+        "invoked_in_window": 1,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "finishing-a-development-branch",
+        "routed": 5,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "openspec-ship",
+        "routed": 5,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "dispatching-parallel-agents",
+        "routed": 3,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "outcome-review",
+        "routed": 3,
+        "invoked_in_window": 0,
+        "must_invoke": 3,
+        "must_invoked": 0
+      },
+      {
+        "skill": "agent-team-review",
+        "routed": 2,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "subagent-driven-development",
+        "routed": 1,
+        "invoked_in_window": 1,
+        "must_invoke": 1,
+        "must_invoked": 1
+      },
+      {
+        "skill": "improvement-miner",
+        "routed": 1,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "agent-team-execution",
+        "routed": 1,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      }
+    ]
+  },
+  "uptake_human_fable": {
+    "totals": {
+      "routed": 51,
+      "invoked": 4,
+      "must": 20,
+      "must_invoked": 3,
+      "events": 49,
+      "events_with_any_skill_call": 10,
+      "events_with_any_routed_skill_call": 4
+    },
+    "rows": [
+      {
+        "skill": "requesting-code-review",
+        "routed": 18,
+        "invoked_in_window": 0,
+        "must_invoke": 3,
+        "must_invoked": 0
+      },
+      {
+        "skill": "brainstorming",
+        "routed": 10,
+        "invoked_in_window": 3,
+        "must_invoke": 6,
+        "must_invoked": 2
+      },
+      {
+        "skill": "verification-before-completion",
+        "routed": 6,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "writing-skills",
+        "routed": 5,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "executing-plans",
+        "routed": 5,
+        "invoked_in_window": 1,
+        "must_invoke": 5,
+        "must_invoked": 1
+      },
+      {
+        "skill": "writing-plans",
+        "routed": 3,
+        "invoked_in_window": 0,
+        "must_invoke": 3,
+        "must_invoked": 0
+      },
+      {
+        "skill": "product-discovery",
+        "routed": 2,
+        "invoked_in_window": 0,
+        "must_invoke": 2,
+        "must_invoked": 0
+      },
+      {
+        "skill": "systematic-debugging",
+        "routed": 1,
+        "invoked_in_window": 0,
+        "must_invoke": 1,
+        "must_invoked": 0
+      },
+      {
+        "skill": "openspec-ship",
+        "routed": 1,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      }
+    ]
+  },
+  "uptake_human_opus-5-5": {
+    "totals": {
+      "routed": 28,
+      "invoked": 0,
+      "must": 17,
+      "must_invoked": 0,
+      "events": 30,
+      "events_with_any_skill_call": 7,
+      "events_with_any_routed_skill_call": 0
+    },
+    "rows": [
+      {
+        "skill": "brainstorming",
+        "routed": 12,
+        "invoked_in_window": 0,
+        "must_invoke": 11,
+        "must_invoked": 0
+      },
+      {
+        "skill": "verification-before-completion",
+        "routed": 6,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "requesting-code-review",
+        "routed": 5,
+        "invoked_in_window": 0,
+        "must_invoke": 2,
+        "must_invoked": 0
+      },
+      {
+        "skill": "systematic-debugging",
+        "routed": 2,
+        "invoked_in_window": 0,
+        "must_invoke": 2,
+        "must_invoked": 0
+      },
+      {
+        "skill": "writing-skills",
+        "routed": 1,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "writing-plans",
+        "routed": 1,
+        "invoked_in_window": 0,
+        "must_invoke": 1,
+        "must_invoked": 0
+      },
+      {
+        "skill": "executing-plans",
+        "routed": 1,
+        "invoked_in_window": 0,
+        "must_invoke": 1,
+        "must_invoked": 0
+      }
+    ]
+  },
+  "uptake_human_opus-5": {
+    "totals": {
+      "routed": 600,
+      "invoked": 39,
+      "must": 348,
+      "must_invoked": 28,
+      "events": 669,
+      "events_with_any_skill_call": 106,
+      "events_with_any_routed_skill_call": 39
+    },
+    "rows": [
+      {
+        "skill": "requesting-code-review",
+        "routed": 200,
+        "invoked_in_window": 14,
+        "must_invoke": 106,
+        "must_invoked": 7
+      },
+      {
+        "skill": "brainstorming",
+        "routed": 115,
+        "invoked_in_window": 13,
+        "must_invoke": 103,
+        "must_invoked": 11
+      },
+      {
+        "skill": "verification-before-completion",
+        "routed": 103,
+        "invoked_in_window": 1,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "executing-plans",
+        "routed": 90,
+        "invoked_in_window": 5,
+        "must_invoke": 90,
+        "must_invoked": 5
+      },
+      {
+        "skill": "systematic-debugging",
+        "routed": 20,
+        "invoked_in_window": 3,
+        "must_invoke": 20,
+        "must_invoked": 3
+      },
+      {
+        "skill": "product-discovery",
+        "routed": 18,
+        "invoked_in_window": 0,
+        "must_invoke": 18,
+        "must_invoked": 0
+      },
+      {
+        "skill": "writing-skills",
+        "routed": 14,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "batch-scripting",
+        "routed": 8,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "writing-plans",
+        "routed": 7,
+        "invoked_in_window": 1,
+        "must_invoke": 7,
+        "must_invoked": 1
+      },
+      {
+        "skill": "using-git-worktrees",
+        "routed": 7,
+        "invoked_in_window": 1,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "finishing-a-development-branch",
+        "routed": 4,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "dispatching-parallel-agents",
+        "routed": 3,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "openspec-ship",
+        "routed": 3,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "outcome-review",
+        "routed": 3,
+        "invoked_in_window": 0,
+        "must_invoke": 3,
+        "must_invoked": 0
+      },
+      {
+        "skill": "agent-team-review",
+        "routed": 2,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "subagent-driven-development",
+        "routed": 1,
+        "invoked_in_window": 1,
+        "must_invoke": 1,
+        "must_invoked": 1
+      },
+      {
+        "skill": "improvement-miner",
+        "routed": 1,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "agent-team-execution",
+        "routed": 1,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      }
+    ]
+  },
+  "uptake_human_opus-4": {
+    "totals": {
+      "routed": 7,
+      "invoked": 0,
+      "must": 4,
+      "must_invoked": 0,
+      "events": 13,
+      "events_with_any_skill_call": 0,
+      "events_with_any_routed_skill_call": 0
+    },
+    "rows": [
+      {
+        "skill": "brainstorming",
+        "routed": 2,
+        "invoked_in_window": 0,
+        "must_invoke": 2,
+        "must_invoked": 0
+      },
+      {
+        "skill": "executing-plans",
+        "routed": 1,
+        "invoked_in_window": 0,
+        "must_invoke": 1,
+        "must_invoked": 0
+      },
+      {
+        "skill": "requesting-code-review",
+        "routed": 1,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "verification-before-completion",
+        "routed": 1,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      },
+      {
+        "skill": "systematic-debugging",
+        "routed": 1,
+        "invoked_in_window": 0,
+        "must_invoke": 1,
+        "must_invoked": 0
+      },
+      {
+        "skill": "openspec-ship",
+        "routed": 1,
+        "invoked_in_window": 0,
+        "must_invoke": 0,
+        "must_invoked": 0
+      }
+    ]
+  },
+  "injected_bytes_human": {
+    "n": 784,
+    "sum": 3873331,
+    "median": 4864.0,
+    "p90": 7176,
+    "max": 9948,
+    "mean": 4940
+  },
+  "hint_labels_human": {
+    "CAPTURE KNOWLEDGE": 252,
+    "ADVERSARIAL REVIEW": 231,
+    "LEARN REMINDER": 221,
+    "GITHUB": 211,
+    "EVAL STRATEGY": 153,
+    "AUTONOMY CHECK": 153,
+    "OPENSPEC": 139,
+    "PHASE ENFORCEMENT": 37,
+    "RALPH LOOP": 33,
+    "CONTEXT STACK": 30,
+    "ATLASSIAN ROVO": 28,
+    "DEBUG ESCALATION": 25,
+    "PERSIST DISCOVERY": 22,
+    "PR REVIEW": 22,
+    "PLAYWRIGHT TESTING": 17,
+    "VERTICAL SLICES": 11,
+    "SCOPE MANIFEST": 11,
+    "DESIGN SEED": 3,
+    "INCIDENT ANALYSIS": 2,
+    "CLOUD RUN": 2,
+    "FRONTEND QUALITY": 1,
+    "PLAYWRIGHT": 1
+  }
+}

@@ -1,0 +1,527 @@
+{
+ "a2_first_prompt_routing": {
+  "claude-opus-5-5": {
+   "a1-invoice-rounding": {
+    "block_bytes": 8647,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "implementation-drift-check",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "a2-line-diff": {
+    "block_bytes": 8865,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "implementation-drift-check",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "a3-token-bucket": {
+    "block_bytes": 8708,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "implementation-drift-check",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "a4-interval-negative-scale": {
+    "block_bytes": 3268,
+    "header": "SKILL ACTIVATION (3 skills | Fix / Debug + Domain + Workflow)",
+    "must_invoke": [
+     "systematic-debugging"
+    ],
+    "routed": [
+     "systematic-debugging",
+     "runtime-validation",
+     "verification-before-completion",
+     "test-driven-development"
+    ],
+    "invoked": [
+     "systematic-debugging"
+    ]
+   },
+   "b1-config-editor": {
+    "block_bytes": 8237,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "runtime-validation",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "b2-room-availability": {
+    "block_bytes": 9072,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "runtime-validation",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "b3-cursor-pagination": {
+    "block_bytes": 9676,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "runtime-validation",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "b4-lru-ttl-expiry": {
+    "block_bytes": 8684,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "runtime-validation",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "c1-depgraph-install-order": {
+    "block_bytes": 8803,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "deploy-gate",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "c2-retry-scheduler-sleeps": {
+    "block_bytes": 3825,
+    "header": "SKILL ACTIVATION (3 skills | Fix / Debug + Domain + Workflow)",
+    "must_invoke": [
+     "systematic-debugging"
+    ],
+    "routed": [
+     "systematic-debugging",
+     "project-verification",
+     "verification-before-completion",
+     "test-driven-development"
+    ],
+    "invoked": [
+     "systematic-debugging"
+    ]
+   },
+   "c3-ledger-csv-import": {
+    "block_bytes": 8444,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "project-verification",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "c4-order-fulfilment-fsm": {
+    "block_bytes": 8417,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "deploy-gate",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "d1-inventory-reservation": {
+    "block_bytes": 8859,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "deploy-gate",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "d2-text-template-rendering": {
+    "block_bytes": 3422,
+    "header": "SKILL ACTIVATION (3 skills | Fix / Debug + Domain + Workflow)",
+    "must_invoke": [
+     "systematic-debugging"
+    ],
+    "routed": [
+     "systematic-debugging",
+     "deploy-gate",
+     "verification-before-completion",
+     "test-driven-development"
+    ],
+    "invoked": [
+     "systematic-debugging"
+    ]
+   },
+   "d3-date-recurrence-expansion": {
+    "block_bytes": 8859,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "deploy-gate",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "d4-query-string-parsing": {
+    "block_bytes": 8859,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "deploy-gate",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   }
+  },
+  "claude-fable-5-1": {
+   "a1-invoice-rounding": {
+    "block_bytes": 8647,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "implementation-drift-check",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "a2-line-diff": {
+    "block_bytes": 8865,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "implementation-drift-check",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "a3-token-bucket": {
+    "block_bytes": 8708,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "implementation-drift-check",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "a4-interval-negative-scale": {
+    "block_bytes": 3268,
+    "header": "SKILL ACTIVATION (3 skills | Fix / Debug + Domain + Workflow)",
+    "must_invoke": [
+     "systematic-debugging"
+    ],
+    "routed": [
+     "systematic-debugging",
+     "runtime-validation",
+     "verification-before-completion",
+     "test-driven-development"
+    ],
+    "invoked": [
+     "systematic-debugging"
+    ]
+   },
+   "b1-config-editor": {
+    "block_bytes": 8237,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "runtime-validation",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "b2-room-availability": {
+    "block_bytes": 9072,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "runtime-validation",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "b3-cursor-pagination": {
+    "block_bytes": 9676,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "runtime-validation",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "b4-lru-ttl-expiry": {
+    "block_bytes": 8684,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "runtime-validation",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "c1-depgraph-install-order": {
+    "block_bytes": 8803,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "deploy-gate",
+     "verification-before-completion"
+    ],
+    "invoked": [
+     "systematic-debugging"
+    ]
+   },
+   "c2-retry-scheduler-sleeps": {
+    "block_bytes": 3825,
+    "header": "SKILL ACTIVATION (3 skills | Fix / Debug + Domain + Workflow)",
+    "must_invoke": [
+     "systematic-debugging"
+    ],
+    "routed": [
+     "systematic-debugging",
+     "project-verification",
+     "verification-before-completion",
+     "test-driven-development"
+    ],
+    "invoked": [
+     "systematic-debugging"
+    ]
+   },
+   "c3-ledger-csv-import": {
+    "block_bytes": 8444,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "project-verification",
+     "verification-before-completion"
+    ],
+    "invoked": [
+     "systematic-debugging"
+    ]
+   },
+   "c4-order-fulfilment-fsm": {
+    "block_bytes": 8417,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "deploy-gate",
+     "verification-before-completion"
+    ],
+    "invoked": [
+     "systematic-debugging"
+    ]
+   },
+   "d1-inventory-reservation": {
+    "block_bytes": 8859,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "deploy-gate",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "d2-text-template-rendering": {
+    "block_bytes": 3422,
+    "header": "SKILL ACTIVATION (3 skills | Fix / Debug + Domain + Workflow)",
+    "must_invoke": [
+     "systematic-debugging"
+    ],
+    "routed": [
+     "systematic-debugging",
+     "deploy-gate",
+     "verification-before-completion",
+     "test-driven-development"
+    ],
+    "invoked": [
+     "systematic-debugging"
+    ]
+   },
+   "d3-date-recurrence-expansion": {
+    "block_bytes": 8859,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "deploy-gate",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   },
+   "d4-query-string-parsing": {
+    "block_bytes": 8859,
+    "header": "SKILL ACTIVATION (3 skills | Build New + Domain + Workflow)",
+    "must_invoke": [
+     "brainstorming"
+    ],
+    "routed": [
+     "brainstorming",
+     "deploy-gate",
+     "verification-before-completion"
+    ],
+    "invoked": []
+   }
+  }
+ },
+ "lines_and_project_writes": {
+  "claude-opus-5-5": {
+   "A0": {
+    "added_raw": 1058,
+    "removed_raw": 108,
+    "added_excluding_dotfiles": 1058,
+    "runs_with_dot_claude_dir": 0,
+    "runs_with_dot_claude_settings_json": 0
+   },
+   "A1": {
+    "added_raw": 1703,
+    "removed_raw": 116,
+    "added_excluding_dotfiles": 1703,
+    "runs_with_dot_claude_dir": 0,
+    "runs_with_dot_claude_settings_json": 0
+   },
+   "A2": {
+    "added_raw": 2500,
+    "removed_raw": 109,
+    "added_excluding_dotfiles": 1268,
+    "runs_with_dot_claude_dir": 16,
+    "runs_with_dot_claude_settings_json": 16
+   }
+  },
+  "claude-fable-5-1": {
+   "A0": {
+    "added_raw": 2193,
+    "removed_raw": 108,
+    "added_excluding_dotfiles": 2193,
+    "runs_with_dot_claude_dir": 0,
+    "runs_with_dot_claude_settings_json": 0
+   },
+   "A1": {
+    "added_raw": 2563,
+    "removed_raw": 92,
+    "added_excluding_dotfiles": 2563,
+    "runs_with_dot_claude_dir": 0,
+    "runs_with_dot_claude_settings_json": 0
+   },
+   "A2": {
+    "added_raw": 3877,
+    "removed_raw": 99,
+    "added_excluding_dotfiles": 2645,
+    "runs_with_dot_claude_dir": 16,
+    "runs_with_dot_claude_settings_json": 16
+   }
+  }
+ },
+ "run_log_mtimes_local": {
+  "claude-opus-5-5": {
+   "A0": {
+    "first_log_mtime": "2026-10-04T01:55:41+0200",
+    "last_log_mtime": "2026-10-04T02:11:38+0200"
+   },
+   "A1": {
+    "first_log_mtime": "2026-10-04T01:56:05+0200",
+    "last_log_mtime": "2026-10-04T02:11:44+0200"
+   },
+   "A2": {
+    "first_log_mtime": "2026-10-04T01:55:54+0200",
+    "last_log_mtime": "2026-10-04T02:11:49+0200"
+   }
+  },
+  "claude-fable-5-1": {
+   "A0": {
+    "first_log_mtime": "2026-10-04T02:13:37+0200",
+    "last_log_mtime": "2026-10-04T02:46:03+0200"
+   },
+   "A1": {
+    "first_log_mtime": "2026-10-04T02:13:49+0200",
+    "last_log_mtime": "2026-10-04T02:45:54+0200"
+   },
+   "A2": {
+    "first_log_mtime": "2026-10-04T02:14:23+0200",
+    "last_log_mtime": "2026-10-04T02:47:03+0200"
+   }
+  }
+ },
+ "note": "Derived from the per-run working copies and transcripts in the session scratchpad on 2026-10-04; those are not kept."
+}

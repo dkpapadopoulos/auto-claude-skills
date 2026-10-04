@@ -1,0 +1,290 @@
+{
+ "a1-invoice-rounding": {
+  "hidden_fail_on_start": 7,
+  "hidden_fail_with_wrong_fix": 4,
+  "hidden_tests": 9,
+  "legs": {
+   "1_hidden_red_on_start": true,
+   "2_hidden_green_with_solution": true,
+   "3_visible_runs_and_green_with_solution": true,
+   "4_wrong_fix_passes_visible_fails_hidden": true,
+   "5_no_leak": true
+  },
+  "notes": [],
+  "pass": true,
+  "sha256": "79560899fff5d27dd85daeefe9ed9ea209b68f6a94afb8545a246d5f50898513",
+  "src_lines": 157,
+  "visible_fail_on_start": 1,
+  "visible_tests": 2
+ },
+ "a2-line-diff": {
+  "hidden_fail_on_start": 7,
+  "hidden_fail_with_wrong_fix": 3,
+  "hidden_tests": 9,
+  "legs": {
+   "1_hidden_red_on_start": true,
+   "2_hidden_green_with_solution": true,
+   "3_visible_runs_and_green_with_solution": true,
+   "4_wrong_fix_passes_visible_fails_hidden": true,
+   "5_no_leak": true
+  },
+  "notes": [],
+  "pass": true,
+  "sha256": "1cc1bfb485165efa44b6c44c9c4a924072a6b157e7d6cc2afc324b106ffc389f",
+  "src_lines": 164,
+  "visible_fail_on_start": 2,
+  "visible_tests": 2
+ },
+ "a3-token-bucket": {
+  "hidden_fail_on_start": 6,
+  "hidden_fail_with_wrong_fix": 6,
+  "hidden_tests": 9,
+  "legs": {
+   "1_hidden_red_on_start": true,
+   "2_hidden_green_with_solution": true,
+   "3_visible_runs_and_green_with_solution": true,
+   "4_wrong_fix_passes_visible_fails_hidden": true,
+   "5_no_leak": true
+  },
+  "notes": [],
+  "pass": true,
+  "sha256": "c8f1d9084cdec455d4b2312d8b374c27b610e1db9f4dc9b8852f240762840e94",
+  "src_lines": 161,
+  "visible_fail_on_start": 1,
+  "visible_tests": 2
+ },
+ "a4-interval-negative-scale": {
+  "hidden_fail_on_start": 11,
+  "hidden_fail_with_wrong_fix": 9,
+  "hidden_tests": 14,
+  "legs": {
+   "1_hidden_red_on_start": true,
+   "2_hidden_green_with_solution": true,
+   "3_visible_runs_and_green_with_solution": true,
+   "4_wrong_fix_passes_visible_fails_hidden": true,
+   "5_no_leak": true
+  },
+  "notes": [],
+  "pass": true,
+  "sha256": "2f059d63201706c5198d3bc6ad98f9a1b0269b029bd00f79b7723019b3892222",
+  "src_lines": 302,
+  "visible_fail_on_start": 2,
+  "visible_tests": 21
+ },
+ "b1-config-editor": {
+  "hidden_fail_on_start": 8,
+  "hidden_fail_with_wrong_fix": 1,
+  "hidden_tests": 8,
+  "legs": {
+   "1_hidden_red_on_start": true,
+   "2_hidden_green_with_solution": true,
+   "3_visible_runs_and_green_with_solution": true,
+   "4_wrong_fix_passes_visible_fails_hidden": true,
+   "5_no_leak": true
+  },
+  "notes": [],
+  "pass": true,
+  "sha256": "7abfe22ecbaf1103125c5d3cd38545743910951816a623b9c580213773fbed60",
+  "src_lines": 151,
+  "visible_fail_on_start": 1,
+  "visible_tests": 1
+ },
+ "b2-room-availability": {
+  "hidden_fail_on_start": 12,
+  "hidden_fail_with_wrong_fix": 1,
+  "hidden_tests": 8,
+  "legs": {
+   "1_hidden_red_on_start": true,
+   "2_hidden_green_with_solution": true,
+   "3_visible_runs_and_green_with_solution": true,
+   "4_wrong_fix_passes_visible_fails_hidden": true,
+   "5_no_leak": true
+  },
+  "notes": [],
+  "pass": true,
+  "sha256": "db1a09eb8df5463921e9ca6e1dbebf67331688dd47de2e692ed318e22e091489",
+  "src_lines": 150,
+  "visible_fail_on_start": 1,
+  "visible_tests": 1
+ },
+ "b3-cursor-pagination": {
+  "hidden_fail_on_start": 26,
+  "hidden_fail_with_wrong_fix": 1,
+  "hidden_tests": 10,
+  "legs": {
+   "1_hidden_red_on_start": true,
+   "2_hidden_green_with_solution": true,
+   "3_visible_runs_and_green_with_solution": true,
+   "4_wrong_fix_passes_visible_fails_hidden": true,
+   "5_no_leak": true
+  },
+  "notes": [],
+  "pass": true,
+  "sha256": "06d995615dbcc37c149b54b6c62939cb7d726de44522888b22d0b454f68cf487",
+  "src_lines": 158,
+  "visible_fail_on_start": 1,
+  "visible_tests": 1
+ },
+ "b4-lru-ttl-expiry": {
+  "hidden_fail_on_start": 14,
+  "hidden_fail_with_wrong_fix": 3,
+  "hidden_tests": 14,
+  "legs": {
+   "1_hidden_red_on_start": true,
+   "2_hidden_green_with_solution": true,
+   "3_visible_runs_and_green_with_solution": true,
+   "4_wrong_fix_passes_visible_fails_hidden": true,
+   "5_no_leak": true
+  },
+  "notes": [],
+  "pass": true,
+  "sha256": "23ef72d1149fef8bbb776407b1e42fec6830d921dd1f0f26851051df7aeb320c",
+  "src_lines": 338,
+  "visible_fail_on_start": 4,
+  "visible_tests": 13
+ },
+ "c1-depgraph-install-order": {
+  "hidden_fail_on_start": 11,
+  "hidden_fail_with_wrong_fix": 5,
+  "hidden_tests": 14,
+  "legs": {
+   "1_hidden_red_on_start": true,
+   "2_hidden_green_with_solution": true,
+   "3_visible_runs_and_green_with_solution": true,
+   "4_wrong_fix_passes_visible_fails_hidden": true,
+   "5_no_leak": true
+  },
+  "notes": [],
+  "pass": true,
+  "sha256": "4d36a2d7903636241058733fb0f81a55da32f1e8a7949bf0968b9396ff7489c0",
+  "src_lines": 419,
+  "visible_fail_on_start": 1,
+  "visible_tests": 20
+ },
+ "c2-retry-scheduler-sleeps": {
+  "hidden_fail_on_start": 11,
+  "hidden_fail_with_wrong_fix": 9,
+  "hidden_tests": 14,
+  "legs": {
+   "1_hidden_red_on_start": true,
+   "2_hidden_green_with_solution": true,
+   "3_visible_runs_and_green_with_solution": true,
+   "4_wrong_fix_passes_visible_fails_hidden": true,
+   "5_no_leak": true
+  },
+  "notes": [],
+  "pass": true,
+  "sha256": "34d8e1a6cdc407c0edcd1abbf058bab2f655c17aac95748f2b19cbbd1a1abd42",
+  "src_lines": 350,
+  "visible_fail_on_start": 1,
+  "visible_tests": 23
+ },
+ "c3-ledger-csv-import": {
+  "hidden_fail_on_start": 13,
+  "hidden_fail_with_wrong_fix": 10,
+  "hidden_tests": 14,
+  "legs": {
+   "1_hidden_red_on_start": true,
+   "2_hidden_green_with_solution": true,
+   "3_visible_runs_and_green_with_solution": true,
+   "4_wrong_fix_passes_visible_fails_hidden": true,
+   "5_no_leak": true
+  },
+  "notes": [],
+  "pass": true,
+  "sha256": "78141665a38f5c555d318aafa7442c3f7b8abb6f6d2d71fee77b9fee9e9c9c11",
+  "src_lines": 439,
+  "visible_fail_on_start": 1,
+  "visible_tests": 23
+ },
+ "c4-order-fulfilment-fsm": {
+  "hidden_fail_on_start": 9,
+  "hidden_fail_with_wrong_fix": 9,
+  "hidden_tests": 13,
+  "legs": {
+   "1_hidden_red_on_start": true,
+   "2_hidden_green_with_solution": true,
+   "3_visible_runs_and_green_with_solution": true,
+   "4_wrong_fix_passes_visible_fails_hidden": true,
+   "5_no_leak": true
+  },
+  "notes": [],
+  "pass": true,
+  "sha256": "5b50ecd23c660a965a10ab3f14b513f01c5326ae0e941a73e92377561bbf4756",
+  "src_lines": 392,
+  "visible_fail_on_start": 1,
+  "visible_tests": 15
+ },
+ "d1-inventory-reservation": {
+  "hidden_fail_on_start": 4,
+  "hidden_fail_with_wrong_fix": 1,
+  "hidden_tests": 10,
+  "legs": {
+   "1_hidden_red_on_start": true,
+   "2_hidden_green_with_solution": true,
+   "3_visible_runs_and_green_with_solution": true,
+   "4_wrong_fix_passes_visible_fails_hidden": true,
+   "5_no_leak": true
+  },
+  "notes": [],
+  "pass": true,
+  "sha256": "80490a4fe530e4f11e36bbc8b6b14cf9296feeae3c2600288173722a045c1676",
+  "src_lines": 173,
+  "visible_fail_on_start": 1,
+  "visible_tests": 2
+ },
+ "d2-text-template-rendering": {
+  "hidden_fail_on_start": 4,
+  "hidden_fail_with_wrong_fix": 1,
+  "hidden_tests": 10,
+  "legs": {
+   "1_hidden_red_on_start": true,
+   "2_hidden_green_with_solution": true,
+   "3_visible_runs_and_green_with_solution": true,
+   "4_wrong_fix_passes_visible_fails_hidden": true,
+   "5_no_leak": true
+  },
+  "notes": [],
+  "pass": true,
+  "sha256": "e9bfe1672f971ae23d7aba0c9dfcf428100e13e8ce3ac554f53bc7bfd57ff4f1",
+  "src_lines": 173,
+  "visible_fail_on_start": 1,
+  "visible_tests": 2
+ },
+ "d3-date-recurrence-expansion": {
+  "hidden_fail_on_start": 5,
+  "hidden_fail_with_wrong_fix": 1,
+  "hidden_tests": 10,
+  "legs": {
+   "1_hidden_red_on_start": true,
+   "2_hidden_green_with_solution": true,
+   "3_visible_runs_and_green_with_solution": true,
+   "4_wrong_fix_passes_visible_fails_hidden": true,
+   "5_no_leak": true
+  },
+  "notes": [],
+  "pass": true,
+  "sha256": "ec844d918f08ba63b22dc50c3c2add6de899e0277153e35e1c5df9184a8dd4ab",
+  "src_lines": 169,
+  "visible_fail_on_start": 1,
+  "visible_tests": 2
+ },
+ "d4-query-string-parsing": {
+  "hidden_fail_on_start": 13,
+  "hidden_fail_with_wrong_fix": 8,
+  "hidden_tests": 14,
+  "legs": {
+   "1_hidden_red_on_start": true,
+   "2_hidden_green_with_solution": true,
+   "3_visible_runs_and_green_with_solution": true,
+   "4_wrong_fix_passes_visible_fails_hidden": true,
+   "5_no_leak": true
+  },
+  "notes": [],
+  "pass": true,
+  "sha256": "f9e6d3e33298ba02380d05be70a9d9621c8552a0fd0a7595b814416659c5f3cf",
+  "src_lines": 322,
+  "visible_fail_on_start": 0,
+  "visible_tests": 29
+ }
+}

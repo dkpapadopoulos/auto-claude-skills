@@ -1,0 +1,81 @@
+{
+ "a2_registry": "35b19a43bf021df4ba09f4b727862e629535076e14bda599e1c0809787b1ed1e",
+ "authoring_prompt": "1e0c3334bbe617ca7653a97e50258a81d135bcf62b313aa894f1d114f82bfcb4",
+ "claude_cli": "2.1.285 (Claude Code)",
+ "plugins": {
+  "auto-claude-skills-3.93.1": "7757000ff15a90a3fd657cdc5bd7c10f27edcd187914a19396555cf8d11763a7",
+  "superpowers-6.4.2": "43ba967acf48cb78cdaed78934d08b6fa548a5f976be3015d6e91ee204e90ceb"
+ },
+ "scripts": {
+  "analyze.py": "433bace2b7cc1ce93c50f0d89765941053e933ab48af837b54c83eaa33c2c0ab",
+  "hidden_runner.py": "2ea994eb2aea452251a127cd37042c7c6559435cf555ad49d6ca552752eb329b",
+  "run.py": "9e179e4d3aa1ee062d7d8bf33ee36bccdb6af8255aeed092c147ae4b72cae785",
+  "validate_tasks.py": "9446395c0a006f3026e20c353891ca7494bca811ee71cf7c55988c7088e90b72"
+ },
+ "tasks": {
+  "a1-invoice-rounding": {
+   "repo": "17c21ed0491e6afe7846595b28d910a4622080966b51b7f33dc21a1cb254c9da",
+   "vault": "a8f15eedec6f525603937fd83028ed48688620f1c3829c56181c5260d9d98744"
+  },
+  "a2-line-diff": {
+   "repo": "c48718bd8ab52c4d15a8ff7417d39da46253d5f832a21ab55340a2985aeeb9db",
+   "vault": "48b58463593f7d42073b9e0a5ff73287717bb2b7c033fa154540cbd5d9b2d921"
+  },
+  "a3-token-bucket": {
+   "repo": "f71ed77852a543cc98e65aff00ddddfc72bd413d0d62b3f24dff4b3b8185034c",
+   "vault": "0656ff2a31633519e68e3025831a3c39559ed7327657af906badb8400c7a2508"
+  },
+  "a4-interval-negative-scale": {
+   "repo": "1c91ecd5dcc415d8cb088c22e99a604156da6111b21365f43b0264f4f250f9a4",
+   "vault": "81b32c8f20b1d81e47e867cf22cb9e6527fdd3bb4faca830747ce04519c48d54"
+  },
+  "b1-config-editor": {
+   "repo": "5e3088608407f3ffd7b202bf366cd6cf37d7c6003ea3e74d05771e6d4558d5f4",
+   "vault": "38da7dd0dfab963f1233189569f78cf3eb707cd24c69d4c0d63e4722090de4d4"
+  },
+  "b2-room-availability": {
+   "repo": "e0ecead422d14189a7d02b54d9d1590d85de72f06ef03daa7b3d3a51f1ca2ff2",
+   "vault": "b169f00f3568f16efe3e48fc181d2d772bc1591f434635d65843bfc2141f8da4"
+  },
+  "b3-cursor-pagination": {
+   "repo": "a8be65b0d076d588154bf34e23ae9bbb281877f7d972c31f7c43300d17b6720b",
+   "vault": "da21dc5493786545422ba954b21ecc828ca3f19bb52a007dbb8981fb55ead238"
+  },
+  "b4-lru-ttl-expiry": {
+   "repo": "ac6d3e18d3938ea3ed879180a036ea563fcbdb5122646c0cf6df3f0b2d9ca1e1",
+   "vault": "b54e47aef86c58e114ec018235af610892bbe69974038f0d4f0b27b9045e6624"
+  },
+  "c1-depgraph-install-order": {
+   "repo": "9fc7963f906e8896b2857a1efbd659ba43667ec55f1eb676fe29b2d92cb41979",
+   "vault": "1e61a25b0b677604f0cd1d2b26f131a04b3bbb3b1be9f4ae417e2a165bd12b84"
+  },
+  "c2-retry-scheduler-sleeps": {
+   "repo": "f15ef34e9e934e028d48cee10d9c8dfe1ccda96db650767b00d4de90d843f6d4",
+   "vault": "23e74f675576cb2381affcbd7158ed74a29b8f6036ad93d00ddf2b2be4744e0b"
+  },
+  "c3-ledger-csv-import": {
+   "repo": "9ec8e2efe59df256e99ef49d493184127123ed39346b11b9baca694dc45ecf15",
+   "vault": "1cc37d880c60c7eab1e2781eb27db1b6850544bbf0abeb30550ba0b88d8813ca"
+  },
+  "c4-order-fulfilment-fsm": {
+   "repo": "25cc3246fa32ce4cfc6acde1f5f54bd7914638799c7b0af13d95f63f54070868",
+   "vault": "7d9fd433e61892821a0b5d8c7360e0b655c81e89b2b9e663c2da05ad48af1c47"
+  },
+  "d1-inventory-reservation": {
+   "repo": "5337bc09e48f3106d63cc32d0be0a05769898e4ff62a9ddf08031d028b969d81",
+   "vault": "992002f4f1dc5fb96345060c9d23fb9b3e05fa5beb99d4eb4e9d235ca4ab6244"
+  },
+  "d2-text-template-rendering": {
+   "repo": "58138573fb6f12f7f1619ab68aa9ee14542242be8137a0fb4c6c23dda662cd65",
+   "vault": "869d058bc05d5e884f4e1bf3f8d6da3592fa01db62e7b32be6c1f63e481d74d6"
+  },
+  "d3-date-recurrence-expansion": {
+   "repo": "7920a7aec44a100612d61d0eb5966815181d751ea669d8bf6382d45a11f92f22",
+   "vault": "19619375c86b3e91cdce3659f294ab413a269c3029a761460f5aef6378fd47ff"
+  },
+  "d4-query-string-parsing": {
+   "repo": "f1e3c0478ff02ac68c17e44375c8d618dbcd3317c1dbf154f78ba7d9d1187b01",
+   "vault": "b76a2f68ab762dd56130746089b144ce6a6b8301d57e063602df16a97c2a9ae3"
+  }
+ }
+}

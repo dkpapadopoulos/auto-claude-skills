@@ -1,0 +1,111 @@
+{
+ "n": 183,
+ "confusion_rows_labeller1_cols_labeller2": {
+  "APPROPRIATE": {
+   "APPROPRIATE": 14,
+   "CONTEXT_DEPENDENT": 1,
+   "NOT_APPROPRIATE": 8
+  },
+  "CONTEXT_DEPENDENT": {
+   "APPROPRIATE": 1,
+   "CONTEXT_DEPENDENT": 45,
+   "NOT_APPROPRIATE": 9
+  },
+  "NOT_APPROPRIATE": {
+   "APPROPRIATE": 0,
+   "CONTEXT_DEPENDENT": 5,
+   "NOT_APPROPRIATE": 100
+  }
+ },
+ "agreement": 0.869,
+ "cohens_kappa": 0.757,
+ "outcome_all": {
+  "never": 125,
+  "later": 28,
+  "same_turn": 22,
+  "loaded_earlier": 8
+ },
+ "consensus_by_outcome": {
+  "appropriate": {
+   "invoked": 8,
+   "loaded_earlier": 2,
+   "never": 4
+  },
+  "not_appropriate": {
+   "invoked": 20,
+   "loaded_earlier": 2,
+   "never": 78
+  },
+  "other": {
+   "invoked": 22,
+   "loaded_earlier": 4,
+   "never": 43
+  }
+ },
+ "by_skill": {
+  "brainstorming": {
+   "n": 50,
+   "consensus_not_appropriate": 29,
+   "consensus_appropriate": 5
+  },
+  "executing-plans": {
+   "n": 46,
+   "consensus_not_appropriate": 20,
+   "consensus_appropriate": 1
+  },
+  "outcome-review": {
+   "n": 2,
+   "consensus_not_appropriate": 2,
+   "consensus_appropriate": 0
+  },
+  "product-discovery": {
+   "n": 19,
+   "consensus_not_appropriate": 18,
+   "consensus_appropriate": 0
+  },
+  "requesting-code-review": {
+   "n": 37,
+   "consensus_not_appropriate": 17,
+   "consensus_appropriate": 0
+  },
+  "subagent-driven-development": {
+   "n": 1,
+   "consensus_not_appropriate": 0,
+   "consensus_appropriate": 1
+  },
+  "systematic-debugging": {
+   "n": 19,
+   "consensus_not_appropriate": 11,
+   "consensus_appropriate": 7
+  },
+  "writing-plans": {
+   "n": 9,
+   "consensus_not_appropriate": 3,
+   "consensus_appropriate": 0
+  }
+ },
+ "by_model": {
+  "opus-5": 157,
+  "opus-5-5": 12,
+  "fable": 13,
+  "opus-4": 1
+ },
+ "prompts_le_40_chars": 93,
+ "replay_installed_3_93_1": {
+  "appropriate": {
+   "same_skill_MUST": 12,
+   "silent": 2
+  },
+  "not_appropriate": {
+   "same_skill_MUST": 70,
+   "block_no_MUST": 13,
+   "silent": 17
+  },
+  "other": {
+   "same_skill_MUST": 39,
+   "block_no_MUST": 7,
+   "silent": 23
+  },
+  "note": "transcribed from replay_head.py output of 2026-10-04; controls: debug prompt -> systematic-debugging MUST, unrelated prompt -> silent"
+ }
+}
