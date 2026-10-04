@@ -8,7 +8,7 @@
 #   * a NOTICE WITH A REMINDER — task-notification block(s) followed only by
 #     `<system-reminder>` block(s): goal check-ins, background review notices.
 #
-# Measured 2026-10-05 over the owner's transcripts (745 distinct non-human inputs): 80 of
+# Measured 2026-10-04 over the owner's transcripts (745 distinct non-human inputs): 80 of
 # 84 peer messages and 29 of 29 notices-with-reminder received a routing block carrying a
 # `MUST INVOKE` line — a report that says "the test fails" was told to start
 # systematic-debugging; a goal check-in was told to brainstorm, and one such mis-route

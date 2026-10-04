@@ -40,7 +40,7 @@ _TN_FALLBACK_DEF='def notification_kind: "prompt";'
 [[ -n "${TASK_NOTIFICATION_JQ_DEF}" ]] || TASK_NOTIFICATION_JQ_DEF="${_TN_FALLBACK_DEF}"
 
 # Two more inputs reach UserPromptSubmit without having been typed by the user, and are not
-# routed either. Measured 2026-10-05 over 745 distinct non-human inputs from real transcripts:
+# routed either. Measured 2026-10-04 over 745 distinct non-human inputs from real transcripts:
 # 80 of 84 peer messages and 29 of 29 notices-with-reminder got a routing block with a
 # MUST INVOKE line (a hand-back saying "the test fails" was told to start
 # systematic-debugging), the model acted on 3 of 124 such lines, and 26 started a
@@ -488,7 +488,7 @@ _score_skills() {
   # here?" got `executing-plans MUST INVOKE`, "is the review done?" got
   # `requesting-code-review MUST INVOKE`, and tests/test-routing.sh carried "what does this
   # error message mean" as a KNOWN FALSE POSITIVE for systematic-debugging.
-  # Measured 2026-10-05 on real prompts labelled by two blind labellers (kappa 0.79): on the
+  # Measured 2026-10-04 on real prompts labelled by two blind labellers (kappa 0.79): on the
   # development half the hook issued 9 right and 90 wrong process mandates; with this guard,
   # 9 right and 75 wrong, and no previously-right mandate is lost. Two other rules were
   # measured on the same rows and rejected. Any question-word start: 7 more wrong mandates

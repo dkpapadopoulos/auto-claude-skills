@@ -7,7 +7,7 @@
 # tests/test-routing.sh has carried "what does this error message mean" as a KNOWN FALSE
 # POSITIVE for systematic-debugging since it was written.
 #
-# Measured 2026-10-05 (two blind labellers, kappa 0.79, on real prompts): on the development
+# Measured 2026-10-04 (two blind labellers, kappa 0.79, on real prompts): on the development
 # half the hook issued 9 right and 90 wrong process mandates; with this guard 9 right and 75
 # wrong, and no previously-right mandate is lost. On a separately labelled field set the
 # model had still INVOKED the mandated skill on 8 of 36 question-shaped prompts, 31 of which

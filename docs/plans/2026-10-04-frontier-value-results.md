@@ -248,7 +248,7 @@ No composite verdict is computed.
   Fable 5.1 on those 3 plus 3 debugging tasks where the block had said brainstorming (c1, c3, c4). Runs
   with any skill invoked: 10 → 3 on Opus 5.5 and 13 → 6 on Fable 5.1, comparing A1 with A2. Whether
   invoking a skill was *better* is not something this pilot can say — every run passed.
-  **CORRECTION, 2026-10-05: the "Build New" classification was caused by the experiment's own prompt
+  **CORRECTION, 2026-10-04: the "Build New" classification was caused by the experiment's own prompt
   suffix, not by the task text.** The fixed line appended to every task ("You are authorized to implement
   this directly; no design or plan approval is needed … Make reasonable assumptions …") contains
   `implement`, `design` and `make`, which hit both of brainstorming's triggers. Replaying the 16 task
@@ -281,7 +281,7 @@ draw from it. The policy reading is a recommendation, not a finding.
    `MUST INVOKE` for 70 of the 100. On these cases the router was wrong more often than right (55%
    clearly wrong against at most 45% right).
 3. *Descriptive, from the pilot.* The routing block said `brainstorming MUST INVOKE` on 9 of 12
-   bug/debug/release-review tasks; no model followed it. (Corrected 2026-10-05: that classification was
+   bug/debug/release-review tasks; no model followed it. (Corrected 2026-10-04: that classification was
    induced by the experiment's own prompt suffix — see §4.) The block is 4.9 KB on average in the field
    (p90 7.2 KB) and 7.8 KB on the pilot's first prompts.
 4. *Side effects observed.* Guard files written into every project; a guard daemon left per headless
@@ -376,3 +376,102 @@ invariants) is on hold until routing precision is measured and fixed.
 - An independent fact-check of this document against the bundle found the result tables exact and
   several conclusions overstated; sections 4 and 5 were rewritten in response, and its list of what the
   bundle cannot verify is reflected in the limits stated above.
+
+## 7. The change set made on this recommendation (2026-10-04)
+
+Section 5's recommendation was "fix routing precision before anything else". This section records
+what was changed, what each change was measured to do, and what was dropped because its benefit
+could not be shown. Each change was written test-first and sent to a cross-family reviewer (Codex)
+for a KEEP / REVERT verdict; a REVERT was acted on before the commit.
+
+### Instrument
+
+- **Gold set.** 652 distinct human prompts from real transcripts, labelled independently by two
+  blind labellers with the same rubric (which process skill, if any, the prompt calls for; NONE;
+  or CONTEXT_DEPENDENT). Agreement kappa 0.79. Split in half before any change was written:
+  326 development rows, 326 held-out rows. Right / wrong are counted on rows where both labellers
+  agree; a mandate on a CONTEXT_DEPENDENT row is "undecidable" and is in neither count.
+- **Non-human corpus.** 745 distinct inputs that reached the hook but were not typed by the user
+  (peer-session messages, subagent hand-backs, task notifications carrying a reminder block).
+- **Replay.** Each prompt is run through a checkout's own activation hook with a registry built by
+  that checkout's session-start hook over the real installed plugins (49 skills available in both
+  arms). Paths are normalised. A baseline-versus-baseline control differs on 0 of 326 rows.
+- **Held-out discipline.** The held-out half was scored once, after the last commit, under a keep
+  rule written down beforehand: wrong mandates must fall and right mandates may fall by at most one.
+- The prompt text is private and is not in this repository; only counts are.
+
+### What changed, and what it measured
+
+| Commit | Change | Measured |
+|---|---|---|
+| `5d786ee7` | The hook no longer routes peer-session messages, subagent hand-backs, or notifications that carry a reminder block | Non-human corpus: 111 routing blocks and 109 `MUST INVOKE` mandates, to 0. All 652 human prompts byte-identical before and after |
+| `4df4c8fc` | The frontmatter parser treats a hyphenated key as a key boundary | A list key followed by a hyphenated key no longer swallows it (reproduced on two real third-party skills). Registry built from the real installation is identical before and after |
+| `f519dc19` | A question does not start a process workflow | See the table below |
+| `12735ff0` | Three superpowers descriptions aligned with what those skills do in 6.4.2 | Injected bytes over the six ratcheted prompt shapes 24,918 to 24,855; no routing change |
+
+Process mandates on human prompts, baseline `3a903316` against final `12735ff0`:
+
+| Half | Right | Wrong | Undecidable | Precision |
+|---|---|---|---|---|
+| Development (326 rows), baseline | 9 | 90 | 21 | 0.091 |
+| Development, final | 9 | 75 | 21 | 0.107 |
+| Held-out (326 rows, scored once), baseline | 11 | 83 | 20 | 0.117 |
+| Held-out, final | 11 | 75 | 20 | 0.128 |
+
+Held-out paired transitions: 8 rows changed, all from a wrong mandate on a gold-NONE row to no
+mandate (requesting-code-review 3, brainstorming 3, executing-plans 2); none in the other
+direction. The keep rule is met. Recall is unchanged at 11 of 19.
+
+**Read this honestly.** The held-out effect (-8) is about half the development effect (-15), which
+is what selecting a rule on the development half should be expected to produce. After the change
+the hook still issues 75 wrong mandates for 11 right ones on the held-out half. The question guard
+removes roughly a tenth of the wrong mandates; it does not fix routing precision. The larger win
+in this change set is the non-human one, which removed every mandate issued to input nobody typed.
+
+### Costs that came with the question guard
+
+- On the rows that change, the phase-attached lines go with the mandate (TDD parallel,
+  verification, security-scanner, runtime-validation). For an informational question that is the
+  intent. For a work order mis-read as a question it compounds the miss.
+- Three shapes are known to be handled wrongly and are pinned as test cells so they are not read
+  as coverage: a one-sentence imperative ending in "?" loses its mandate; "can you explain why
+  ...?" keeps one through the polite-request exception; a question that only mentions a skill name
+  keeps one through the name exception.
+- A guarded question can still anchor a chain through a workflow skill. The persisted state then
+  records neither review nor verification as completed, so the push gate is not weakened (pinned,
+  and checked by removing the walker's exclusion).
+- `ACS_QUESTION_GUARD=off` restores the previous behaviour.
+
+### Reviewer verdicts
+
+| Change | Verdicts | What the review changed |
+|---|---|---|
+| Non-human skip | REVERT, REVERT, KEEP | A quadratic regex (50k spaces took 4.6 s) and a rule that swallowed human text after a harness paragraph; then line separators other than LF |
+| Frontmatter parser | REVERT, KEEP | Emitting hyphenated scalars with a literal tab produced invalid JSON and reset the whole map; now boundary-only |
+| Question guard | KEEP | Named the "instruction, then a trailing question" miss. Measured: closing it costs 3 of the 18 development wins, and was adopted. Asked for persisted-state assertions rather than output checks |
+| Descriptions | KEEP | The test's here-document loop ran zero times in a read-only sandbox while the file reported green; and its upstream-text cell could turn the push gate red for a reason outside the repo. Both fixed. "clean up worktree" was misleading and is dropped |
+
+### Dropped or deferred, and why
+
+- **"Open a PR is not a review request"** — dropped. The labelling rubric itself told labellers that
+  such a prompt is NONE, so the gold set could not show a benefit independently of the rule.
+- **"Classify bug tasks as DEBUG"** — withdrawn. The pilot observation behind it was produced by the
+  experiment's own prompt suffix (section 4 correction).
+- **Narrowing brainstorming's trigger verbs** — deferred. It changes routing for every installer
+  and nothing here measures the right mandates it would cost.
+- **Wording `MUST INVOKE` as a suggestion** — deferred. Whether the model behaves better needs an
+  A/B in real sessions, not a replay.
+- **Any-question-word rule** — rejected on the development half: 7 more wrong mandates removed, one
+  right one lost.
+- **Not addressed, still open from section 6:** the publish guard failing open on a tracked binary
+  file; discovered skills defaulting to priority 200; `disable-model-invocation` not consulted by
+  discovery; `openspec/specs/hypothesis-loop/spec.md` still naming "Option 4 (discard)".
+
+### What would move precision further
+
+The wrong mandates that remain are, by construction, not question-shaped under this rule. On the
+held-out half they are brainstorming 34, requesting-code-review 22, executing-plans 7,
+systematic-debugging 6, product-discovery 6. What kinds of prompt they are was not classified
+here, and the held-out prompts were deliberately not read. The mechanism is known: one trigger
+word is enough to mandate. A candidate next experiment is a two-signal requirement for a mandate,
+measured against this gold set with a fresh held-out half, since this one is now spent.
