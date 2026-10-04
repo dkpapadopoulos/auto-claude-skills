@@ -247,9 +247,17 @@ No composite verdict is computed.
   invoked brainstorming in any run. Opus 5.5 invoked `systematic-debugging` on exactly the 3 routed tasks;
   Fable 5.1 on those 3 plus 3 debugging tasks where the block had said brainstorming (c1, c3, c4). Runs
   with any skill invoked: 10 → 3 on Opus 5.5 and 13 → 6 on Fable 5.1, comparing A1 with A2. Whether
-  invoking a skill was *better* is not something this pilot can say — every run passed. The prompt's
-  "no design or plan approval is needed" line is part of why brainstorming was skipped; the phase
-  classification is independent of it.
+  invoking a skill was *better* is not something this pilot can say — every run passed.
+  **CORRECTION, 2026-10-05: the "Build New" classification was caused by the experiment's own prompt
+  suffix, not by the task text.** The fixed line appended to every task ("You are authorized to implement
+  this directly; no design or plan approval is needed … Make reasonable assumptions …") contains
+  `implement`, `design` and `make`, which hit both of brainstorming's triggers. Replaying the 16 task
+  texts *without* that line: 7 of the 8 bug-fix and debugging tasks route to `systematic-debugging`,
+  3 of the 4 release-review tasks to `requesting-code-review`, and all 4 feature tasks to
+  `systematic-debugging` (their specs mention errors). So the observation above is real for the prompts
+  as sent, but it is not evidence that the router misreads bug reports; it is evidence that incidental
+  vocabulary decides the phase. An earlier version of this paragraph said the classification was
+  independent of the suffix. That was wrong.
 - **Unrequested writes:** in all 32 A2 runs the session-start guard wrote `.claude/settings.json`
   (77 lines of hook configuration) and a lock file into the project directory; none of the 64 A0 and A1
   runs has a `.claude` directory.
@@ -273,7 +281,8 @@ draw from it. The policy reading is a recommendation, not a finding.
    `MUST INVOKE` for 70 of the 100. On these cases the router was wrong more often than right (55%
    clearly wrong against at most 45% right).
 3. *Descriptive, from the pilot.* The routing block said `brainstorming MUST INVOKE` on 9 of 12
-   bug/debug/release-review tasks; no model followed it. The block is 4.9 KB on average in the field
+   bug/debug/release-review tasks; no model followed it. (Corrected 2026-10-05: that classification was
+   induced by the experiment's own prompt suffix — see §4.) The block is 4.9 KB on average in the field
    (p90 7.2 KB) and 7.8 KB on the pilot's first prompts.
 4. *Side effects observed.* Guard files written into every project; a guard daemon left per headless
    session; a machine-global registry holding per-session facts; routing blocks on subagent hand-backs
@@ -301,8 +310,9 @@ draw from it. The policy reading is a recommendation, not a finding.
 - **On shedding.** Do not delete skills. Change what the plugin does with them:
   1. **Routing precision first.** It is the best-evidenced defect and it is ours. Each change needs its
      own red-first test: no `MUST INVOKE` on continuations, approvals, subagent or peer hand-backs, or
-     automated notices; reported bugs and failing tests classified as DEBUG, not "Build New"; the process
-     skill offered as a suggestion unless the match is strong; a smaller first-prompt block.
+     automated notices; the process skill offered as a suggestion unless the match is strong; a smaller
+     first-prompt block. ("Classify bugs as DEBUG, not Build New" was listed here and is withdrawn: its
+     evidence was the suffix artefact corrected in §4.)
      Acceptance instrument: a freshly drawn and freshly labelled sample (the census scripts regenerate
      one; this session's labelled sample is not kept and its labels have been read in aggregate, so it
      could only ever be development data), scored on the share of `MUST INVOKE` cases labelled
