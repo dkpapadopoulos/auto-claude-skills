@@ -29,5 +29,6 @@ Whether hiding them helps is not known. A repeated reminder may be what keeps an
 - `hooks/session-start-hook.sh` — the marker joins the stale-state cleanup.
 - `tests/test-activation-sticky-repeat.sh`, `tests/test-routing-precision-probe.sh` (new); `tests/test-push-gate-display-suppression.sh` (new cells for the gate's decision).
 - `tests/probes/routing-precision/` (new), `README.md`, `CHANGELOG.md`.
+- `tests/test-attestation-measurement.sh` — an existing test that ran the hook against the real home directory now runs it in a throwaway one. It had been writing routing state into a live session on every suite run; this rule's records made that visible.
 
-**What a user sees after installing this: nothing different.** One small local record file is written per mandated prompt (under 500 bytes; nothing prunes them, so `ACS_STICKY_REPEAT=off` is the way to stop it).
+**What a user sees after installing this: nothing different.** One small local record file is written per mandated prompt (about half a kilobyte; nothing prunes them, so `ACS_STICKY_REPEAT=off` is the way to stop it).

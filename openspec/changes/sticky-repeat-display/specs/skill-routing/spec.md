@@ -19,7 +19,7 @@ The activation hook SHALL evaluate, for every block that carries a process manda
 #### Scenario: Suppress hides a repeat and nothing else
 
 - **GIVEN** `ACS_STICKY_REPEAT=suppress` and a session already shown a chain's current step
-- **WHEN** a prompt of six words or fewer that selects no process skill follows
+- **WHEN** a prompt of six words or fewer that selects no skill of its own follows
 - **THEN** no block is displayed
 - **AND** WHEN the chain reaches its next step, that step's first block is displayed
 - **AND** WHEN a prompt's own words select the already-shown skill, its block is displayed

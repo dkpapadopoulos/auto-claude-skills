@@ -142,7 +142,7 @@ done
 # turn that armed the chain, so the state file the gate looks for already exists. They show
 # the gate's answer is unchanged in the ordinary case. What HOLDS display-only for this rule
 # is the turn-by-turn state identity in tests/test-activation-sticky-repeat.sh (cells ID,
-# and X1's exit-early mutant), which that same faulty version fails thirteen times.
+# and X1's exit-early mutant), which that same faulty version fails many times over.
 _sr_two_turns() {   # <mode> -> sets _SR_SHOWN1, _SR_SHOWN2, _SR_OUT, _SR_ARMED, _SR_HID
     _new_session
     export ACS_STICKY_REPEAT="$1"

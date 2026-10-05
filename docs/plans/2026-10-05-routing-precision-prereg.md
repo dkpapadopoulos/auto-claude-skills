@@ -211,12 +211,22 @@ composition should exist at all, or should advance the chain's progress on a bar
 
 ## Amendment log
 
-**A1 — 2026-10-05, before any record existed.** The first freeze was commit `71a837e3`. An
+**A1 — 2026-10-05, before any row existed.** The first freeze was commit `71a837e3`. An
 independent review of that commit (a dispatched reviewer, after the three cross-family
-rounds) found defects in the rule and the instruments. The installed plugin did not yet
-contain the rule, so no shadow record could exist and no row had been built; the freeze is
-therefore moved to the commit that makes these changes, and they are listed here rather
-than made silently.
+rounds) found defects in the rule and the instruments. No row had been built and none could
+have been: the installed plugin does not contain the rule. The freeze is therefore moved to
+the commit that makes these changes, and they are listed here rather than made silently.
+
+*Correction to an earlier wording of this entry, which said no record existed.* Three did,
+in the real `~/.claude/.sticky-repeat-shadow.d`, found by the same reviewer. They were not
+usage: an existing test (`tests/test-attestation-measurement.sh`) ran the hook against the
+real home directory, so each full run of this branch's suite wrote one record there, for
+whichever live session last stamped the token file. All three are `sticky: false`,
+`would_hide: false`; two predate the rule changes below. That test now runs in a throwaway
+home; the three files and the two markers written with them were moved out of `~/.claude`
+before the freeze and are not data. `rule_version` stayed 1 through these changes, so it
+does not separate them: the freeze timestamp does, together with the rule that a row's
+session must have started after it.
 
 - *Rule narrowed.* A block that also carries a skill the prompt itself selected is no
   longer hidden (it was: a five-word documentation request lost its domain skill). Records
@@ -239,6 +249,8 @@ than made silently.
 - *Claims corrected.* The push-gate cells are a check on the ordinary case; the state
   identity cells are what hold display-only. The marker read is bounded by a two-second
   budget, not "about a minute", because the hook is killed at ten seconds.
+
+- *Readers.* An input that cannot be read exits 2 in every script, never a verdict's code.
 
 None of these was chosen by looking at fresh data: there was none. The thresholds K1–K3
 and the stage B limits are unchanged.

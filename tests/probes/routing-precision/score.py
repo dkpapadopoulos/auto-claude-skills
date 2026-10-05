@@ -193,4 +193,9 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except (OSError, ValueError, KeyError, TypeError) as err:
+        # An input that cannot be read is not a verdict. Exit 2, never 1: 1 is a decision.
+        print(f"cannot read the inputs: {type(err).__name__}: {err}", file=sys.stderr)
+        sys.exit(2)

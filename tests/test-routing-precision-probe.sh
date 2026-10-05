@@ -310,6 +310,16 @@ assert_contains "S12: Cohen's kappa matches the value worked by hand" "labeller 
 D="${TEST_TMPDIR}/s-miss"; mk "${D}" 60 54 4 3 12 240 20; sed -i.bak '1d' "${D}/b.jsonl"
 assert_equals "S13: a row one labeller skipped is an error (exit 2), which is no verdict's exit code" "2" "$(score "${D}")"
 assert_contains "S13: and the message says what is missing" "not labelled by both labellers" "$(cat "${D}/out.txt")"
+# So is every other way the inputs can be unreadable. Found in review: these raised, and an
+# uncaught exception exits 1, which is STOP.
+D="${TEST_TMPDIR}/s-nokey"; mk "${D}" 60 54 4 3 12 240 20; rm -f "${D}/key.jsonl"
+assert_equals "S14: a missing key file exits 2" "2" "$(score "${D}")"
+D="${TEST_TMPDIR}/s-badjson"; mk "${D}" 60 54 4 3 12 240 20; printf 'not json\n' > "${D}/a.jsonl"
+assert_equals "S14: a label file that is not JSON exits 2" "2" "$(score "${D}")"
+D="${TEST_TMPDIR}/s-nofield"; mk "${D}" 60 54 4 3 12 240 20; printf '{"label":"WARRANTED"}\n' > "${D}/b.jsonl"
+assert_equals "S14: a label with no row_id exits 2" "2" "$(score "${D}")"
+D="${TEST_TMPDIR}/s-badkey"; mk "${D}" 60 54 4 3 12 240 20; sed -i.bak 's/"would_hide": [a-z]*, //' "${D}/key.jsonl"
+assert_equals "S14: a key with a field missing exits 2" "2" "$(score "${D}")"
 
 # --- T: trial.py ---------------------------------------------------------------------
 echo "== T: trial.py =="
@@ -412,6 +422,39 @@ assert_equals "T6: two of twenty hide-arm sessions denied on first push (ten poi
 D="${TEST_TMPDIR}/t-rise-over"; mk_trial20 "${D}" 10 10 3
 assert_equals "T6: three of twenty (fifteen points) reads as HARM though completion is equal" "1" "$(trial "${D}")"
 assert_contains "T6: and the denied-push line is the one marked" "higher) -> OVER" "$(cat "${D}/out.txt")"
+python3 "${PROBE}/trial.py" --shadow-log "${TEST_TMPDIR}/no-such-log" --since 2026-11-01T00:00:00Z --projects "${TEST_TMPDIR}" > /dev/null 2>&1
+assert_equals "T8: a shadow log that does not exist exits 2, not a reading" "2" "$?"
+# "Before the first push" is decided by the ORDER the assistant issued things, also inside
+# one turn: a review invoked after the push in the same turn did not come before it. And an
+# obligation whose record joins no prompt counts toward neither the rate nor the floor.
+mk_order() {   # <dir>
+    mkdir -p "$1/projects/p" && python3 - "$1" <<'PY'
+import json, sys
+d = sys.argv[1]
+def session(sid, arm, blocks, rec_ts):
+    ts = lambda s: f"2026-11-02T09:00:{s:02d}Z"
+    entries = [{"type": "user", "timestamp": ts(0), "origin": {"kind": "human"}, "message": {"role": "user", "content": "review the PR diff for bugs"}},
+               {"type": "user", "timestamp": ts(20), "origin": {"kind": "human"}, "message": {"role": "user", "content": "go"}},
+               {"type": "assistant", "timestamp": ts(30), "message": {"role": "assistant", "content": blocks}}]
+    open(f"{d}/projects/p/{sid}.jsonl", "w").write("".join(json.dumps(e) + "\n" for e in entries))
+    return {"schema_version": 1, "rule_version": 1, "ts": rec_ts, "session": f"session-{sid}", "skill": "requesting-code-review", "sticky": True,
+            "already_shown": True, "would_hide": True, "mode": "trial", "arm": arm, "hidden_by_rule": arm == "hide", "block_chars": 4000}
+skill = {"type": "tool_use", "id": "s", "name": "Skill", "input": {"skill": "superpowers:requesting-code-review"}}
+push = {"type": "tool_use", "id": "p", "name": "Bash", "input": {"command": "git push origin HEAD"}}
+log = [session("ord-a0", "show", [skill, push], "2026-11-02T09:00:20Z"),      # review, THEN push, in one turn
+       session("ord-bf", "hide", [push, skill], "2026-11-02T09:00:20Z"),      # push, THEN review, in one turn
+       session("ord-cf", "hide", [skill], "2026-11-02T23:00:00Z")]            # record hours from any prompt: unjoined
+open(f"{d}/shadow.jsonl", "w").write("".join(json.dumps(r) + "\n" for r in log))
+PY
+}
+D="${TEST_TMPDIR}/t-order"; mk_order "${D}"
+python3 "${PROBE}/trial.py" --shadow-log "${D}/shadow.jsonl" --since 2026-11-01T00:00:00Z --projects "${D}/projects" > "${D}/out.txt" 2>&1
+trow() { grep -E "^$1 " "${D}/out.txt" | awk '{print $(NF-1), $NF}'; }
+assert_equals "T9: both joined obligations were completed (show hide)" "1 1" "$(trow 'obligations completed  ')"
+assert_equals "T9: only the one reviewed BEFORE its push counts as completed before the first push" "1 0" "$(trow 'obligations completed before the first push attempt')"
+assert_equals "T9: the unjoined obligation is reported" "0 1" "$(trow 'obligations not joined to a prompt')"
+assert_equals "T9: and is not counted as an obligation (so not toward the rate or the floor)" "1 1" "$(trow 'obligations  ')"
+
 # A record written by a changed rule is not trial data.
 D="${TEST_TMPDIR}/t-ver"; mk_trial20 "${D}" 10 10; sed -i.bak 's/"rule_version": 1/"rule_version": 2/' "${D}/shadow.jsonl"
 assert_equals "T7: records of another rule version leave nothing to read (INCONCLUSIVE)" "3" "$(trial "${D}")"

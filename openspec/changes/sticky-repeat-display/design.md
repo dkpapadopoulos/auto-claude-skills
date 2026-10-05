@@ -39,7 +39,7 @@ The hide also requires that the sticky step is the only skill in the block. The 
 
 - Default `shadow`. An unrecognised switch value is `shadow`, never suppression.
 - The record carries the session token, the skill, the chain's step names, flags and counts. No prompt text.
-- `rule_version` is 1. A change to when the rule fires bumps it, and records are not pooled across versions.
+- `rule_version` is 1 and names the rule as of the pre-registration's freeze commit. From then on a change to when the rule fires bumps it, and records are not pooled across versions. It was NOT bumped for the changes made between the first commit and the freeze, so it does not separate anything written before the freeze; the freeze timestamp does.
 
 ## Known limits
 
