@@ -1,8 +1,8 @@
 ## ADDED Requirements
 
-### Requirement: A sticky-repeat display rule exists and is off by default
+### Requirement: A sticky-repeat display rule exists and hides nothing by default
 
-The activation hook SHALL evaluate, for every block that carries a process mandate, whether the mandate was injected by sticky composition and whether the session has already been shown that step on the same chain. `ACS_STICKY_REPEAT` SHALL select the mode: `shadow`, `trial`, `suppress` or `off`. When the variable is unset or holds any other value the mode MUST be `shadow`. In `shadow` the hook MUST display exactly what it displays in `off`.
+The activation hook SHALL evaluate, for every block that carries a process mandate, whether the mandate was injected by sticky composition, whether it is the only skill in the block, and whether the session has already been shown that step on the same chain. `ACS_STICKY_REPEAT` SHALL select the mode, in any letter case: `shadow`, `trial`, `suppress` or `off`. When the variable is unset or holds any other value the mode MUST be `shadow`. In `shadow` the hook MUST display exactly what it displays in `off`.
 
 #### Scenario: The default changes nothing that is displayed
 
@@ -23,16 +23,17 @@ The activation hook SHALL evaluate, for every block that carries a process manda
 - **THEN** no block is displayed
 - **AND** WHEN the chain reaches its next step, that step's first block is displayed
 - **AND** WHEN a prompt's own words select the already-shown skill, its block is displayed
+- **AND** WHEN a short prompt's own words select another skill beside the sticky step, the block is displayed
 
-#### Scenario: A different chain, a compaction, a marker that cannot be believed
+#### Scenario: A different chain, a new task, a compaction, a marker that cannot be believed
 
 - **GIVEN** `ACS_STICKY_REPEAT=suppress`
-- **WHEN** the step belongs to a different chain than the one the session was shown it on, or the session has been compacted since, or the marker file is absent, unreadable, a directory, a FIFO, a symbolic link or a hard link to another file, or holds an over-long line, or the step is listed beyond the marker's read bound
+- **WHEN** the step belongs to a different chain than the one the session was shown it on, or the user has since ordered a process step in their own words or cancelled, or the session has been compacted since (manually or automatically), or the marker file is absent, unreadable, a directory, a FIFO or a symbolic link, or holds an over-long line, or the step is listed beyond the marker's read bound, or `~/.claude` is not writable
 - **THEN** the block is displayed
 
 ### Requirement: The sticky-repeat rule MUST NOT change routing state
 
-In every mode the activation hook SHALL write every pre-existing state file exactly as it does in `off`. The rule's marker and its record MUST be written after those files, MUST NOT be read by any gate, MUST NOT modify any existing file in place (the marker is replaced by an exclusive create and a rename; each record is a new exclusively created file), and MUST be named outside the `.skill-` family of routing-state files. Reading the marker MUST NOT be able to block the hook. In `shadow` the hook MUST NOT write to standard error anything it does not write in `off`. The trial arm MUST be a function of the session token alone.
+In every mode the activation hook SHALL write every pre-existing state file exactly as it does in `off`. The rule's marker and its record MUST be written after those files, MUST NOT be read by any gate, MUST NOT modify any existing file in place (the marker is replaced by an exclusive create and a rename; each record is a new exclusively created file), and MUST be named outside the `.skill-` family of routing-state files. Reading the marker MUST NOT hold the hook for more than a few seconds. In `shadow` the hook MUST NOT write to standard error anything it does not write in `off`. The trial arm MUST be a function of the session token alone.
 
 #### Scenario: State is identical turn by turn
 

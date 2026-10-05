@@ -11,7 +11,9 @@ the session transcripts, and writes TWO files:
 
 Only sessions that STARTED at or after --since count (the freeze timestamp), only records
 the hook wrote in SHADOW mode (in any other mode some blocks were really hidden, which
-changes what the assistant did next), and only records written for a typed prompt. Rows
+changes what the assistant did next), only blocks that were actually DISPLAYED (a block
+hidden for another reason, such as non-human input, was seen by nobody), and only records
+written for a prompt the transcript labels as typed by the user. Rows
 are written in row_id order, which is a hash, so hidden and unhidden rows are interleaved.
 
 Both files hold prompt text. A path inside a git repository, or one git cannot vouch for,
@@ -30,9 +32,8 @@ import json  # noqa: E402
 import os  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import join, open_private, read_session, read_shadow, rec_ts, refuse_repo_path, transcript_for, ts_of  # noqa: E402
+from common import RULE_VERSION, join, open_private, read_session, read_shadow, rec_ts, refuse_repo_path, transcript_for, ts_of  # noqa: E402
 
-RULE_VERSION = 1   # the pre-registered rule; a record written by a changed rule is not a row
 TAIL = 1500        # characters of the previous assistant message
 EARLIER = 8        # earlier typed prompts shown, most recent last
 EACH = 500         # characters of each earlier prompt
@@ -56,7 +57,7 @@ def main():
             return 2
 
     records, bad = read_shadow(args.shadow_log)
-    counts = {"records": len(records), "malformed lines": bad, "not shadow mode": 0, "another rule version": 0, "before the freeze": 0, "no transcript": 0,
+    counts = {"records": len(records), "malformed lines": bad, "not shadow mode": 0, "another rule version": 0, "block not displayed": 0, "before the freeze": 0, "no transcript": 0,
               "session started before the freeze": 0, "no typed prompt within the join window": 0,
               "second record for one prompt": 0, "rows": 0}
     sessions, rows, keys, used = {}, [], [], set()
@@ -66,6 +67,9 @@ def main():
             continue
         if rec.get("rule_version") != RULE_VERSION:
             counts["another rule version"] += 1
+            continue
+        if rec.get("other_suppression") or not rec.get("displayed"):
+            counts["block not displayed"] += 1
             continue
         if rec_ts(rec) < since:
             counts["before the freeze"] += 1
@@ -107,7 +111,7 @@ def main():
             "sticky": bool(rec.get("sticky")), "already_shown": bool(rec.get("already_shown")),
             "would_hide": bool(rec.get("would_hide")), "mode": rec.get("mode"), "arm": rec.get("arm"),
             "hidden_by_rule": bool(rec.get("hidden_by_rule")), "displayed": bool(rec.get("displayed")),
-            "other_suppression": bool(rec.get("other_suppression")),
+            "skills_in_block": int(rec.get("skills_in_block") or 0),
             "block_chars": int(rec.get("block_chars") or 0),
             "invoked_same_turn": rec["skill"] in turn["skills"],
             "invoked_later": rec["skill"] in later,

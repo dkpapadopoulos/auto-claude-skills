@@ -106,11 +106,11 @@ assert_equals "J5: the arming prompt's key says its own words selected the skill
 _yes="$(jq -r 'select(.prompt == "yes") | .row_id' "${OUT}/rows.jsonl")"
 assert_equals "J6: 'yes' joined to its own record, not to the unrecorded prompt before it" "brainstorming" \
     "$(jq -r --arg i "${_yes}" 'select(.row_id == $i) | .process_skills_already_invoked_this_session | join(",")' "${OUT}/rows.jsonl")"
-assert_equals "J7: both outputs are private (0600)" "600 600" \
-    "$(stat -f '%Lp' "${OUT}/rows.jsonl" "${OUT}/key.jsonl" 2>/dev/null | tr '\n' ' ' | sed 's/ $//' || stat -c '%a' "${OUT}/rows.jsonl" "${OUT}/key.jsonl" | tr '\n' ' ' | sed 's/ $//')"
+mode_of() { stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1" 2>/dev/null; }
+assert_equals "J7: both outputs are private (0600)" "600 600" "$(mode_of "${OUT}/rows.jsonl") $(mode_of "${OUT}/key.jsonl")"
 
 # What it could not use is COUNTED.
-printf '%s\n' '{"schema_version":1,"ts":"'"$(now)"'","session":"session-nosuchsession","skill":"brainstorming","would_hide":true,"mode":"shadow","rule_version":1}' > "${LOG}/hand-1.json"
+printf '%s\n' '{"schema_version":1,"ts":"'"$(now)"'","session":"session-nosuchsession","skill":"brainstorming","would_hide":true,"mode":"shadow","rule_version":1,"displayed":true}' > "${LOG}/hand-1.json"
 printf '%s\n' 'not json at all' > "${LOG}/hand-2.json"
 python3 "${PROBE}/rows.py" --shadow-log "${LOG}" --since "${SINCE}" --projects "${PROJ}" \
     --rows "${OUT}/rows2.jsonl" --key "${OUT}/key2.jsonl" > "${OUT}/rows2.txt" 2>&1
@@ -124,7 +124,7 @@ python3 "${PROBE}/rows.py" --shadow-log "${LOG}" --since "${SINCE}" --projects "
     --rows "${OUT}/rows2b.jsonl" --key "${OUT}/key2b.jsonl" > "${OUT}/rows2b.txt" 2>&1
 assert_contains "J8: a record from a non-shadow mode is excluded, and counted" "     1  not shadow mode" "$(cat "${OUT}/rows2b.txt")"
 assert_equals "J8: and does not become a row" "3" "$(grep -c . "${OUT}/rows2b.jsonl")"
-printf '%s\n' '{"schema_version":1,"rule_version":2,"ts":"'"$(now)"'","session":"session-aaaa0","skill":"brainstorming","would_hide":true,"mode":"shadow"}' > "${LOG}/hand-4.json"
+printf '%s\n' '{"schema_version":1,"rule_version":2,"ts":"'"$(now)"'","session":"session-aaaa0","skill":"brainstorming","would_hide":true,"mode":"shadow","displayed":true}' > "${LOG}/hand-4.json"
 python3 "${PROBE}/rows.py" --shadow-log "${LOG}" --since "${SINCE}" --projects "${PROJ}" \
     --rows "${OUT}/rows2c.jsonl" --key "${OUT}/key2c.jsonl" > "${OUT}/rows2c.txt" 2>&1
 assert_contains "J8: a record written by a changed rule is excluded, and counted" "     1  another rule version" "$(cat "${OUT}/rows2c.txt")"
@@ -142,6 +142,35 @@ python3 "${PROBE}/rows.py" --shadow-log "${LOG}" --since "${MID}" --projects "${
     --rows "${OUT}/rows4.jsonl" --key "${OUT}/key4.jsonl" > "${OUT}/rows4.txt" 2>&1
 assert_contains "J9: a record written after the freeze in a session that started before it is excluded, and counted" \
     "     1  session started before the freeze" "$(cat "${OUT}/rows4.txt")"
+
+# A row is a block the USER'S typed prompt was shown. A peer session's message reaches the
+# same hook: its block is hidden by another rule and the hook records it, but it is not a
+# row. Two independent filters hold that (the record says the block was not displayed; the
+# transcript says the prompt was not typed), so each is exercised on its own.
+session dddd0
+sleep 1.1
+jq -nc --arg t "$(now)" --rawfile p "${PROJECT_ROOT}/tests/fixtures/routing-input/peer-teammate.txt" \
+    '{type:"user",timestamp:$t,origin:{kind:"peer"},message:{role:"user",content:$p}}' >> "${TP}"
+jq -nc --rawfile p "${PROJECT_ROOT}/tests/fixtures/routing-input/peer-teammate.txt" --arg t "${TP}" '{prompt:$p, transcript_path:$t}' \
+    | env HOME="${H}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" ACS_STICKY_REPEAT=shadow /bin/bash "${HOOK}" >/dev/null 2>&1
+_peer_rec="$(cat "${LOG}"/session-dddd0.*.json 2>/dev/null | jq -c '[.displayed,.other_suppression]' | head -1)"
+if [ -n "${_peer_rec}" ]; then
+    assert_equals "J11 setup: the hook recorded the peer message's block as hidden by another rule" "[false,true]" "${_peer_rec}"
+    python3 "${PROBE}/rows.py" --shadow-log "${LOG}" --since "${SINCE}" --projects "${PROJ}" \
+        --rows "${OUT}/rows6.jsonl" --key "${OUT}/key6.jsonl" > "${OUT}/rows6.txt" 2>&1
+    assert_contains "J11: a block nobody was shown is not a row, and is counted" "     1  block not displayed" "$(cat "${OUT}/rows6.txt")"
+    assert_equals "J11: no row comes from that session" "0" "$(grep -c 'session-dddd0' "${OUT}/key6.jsonl")"
+else
+    _record_pass "J11: the peer fixture carried no process mandate here, so the hook wrote no record for it"
+fi
+# The other filter, alone: a record that claims its block WAS displayed, for a prompt the
+# transcript labels as not typed.
+printf '%s\n' '{"schema_version":1,"rule_version":1,"ts":"'"$(now)"'","session":"session-dddd0","skill":"brainstorming","would_hide":true,"mode":"shadow","displayed":true}' > "${LOG}/hand-5.json"
+python3 "${PROBE}/rows.py" --shadow-log "${LOG}" --since "${SINCE}" --projects "${PROJ}" \
+    --rows "${OUT}/rows7.jsonl" --key "${OUT}/key7.jsonl" > "${OUT}/rows7.txt" 2>&1
+assert_equals "J11: a displayed block for a prompt that was not typed is not a row either" "0" "$(grep -c 'session-dddd0' "${OUT}/key7.jsonl")"
+assert_not_empty "J11: and is counted as having no typed prompt to join" "$(grep -E '^ +[1-9][0-9]* +no typed prompt within the join window' "${OUT}/rows7.txt")"
+rm -f "${LOG}/hand-5.json"
 
 # Prompt text never lands in a repository.
 python3 "${PROBE}/rows.py" --shadow-log "${LOG}" --since "${SINCE}" --projects "${PROJ}" \
@@ -231,6 +260,34 @@ assert_equals "S10: the owner agreeing on 15 of 20 is INCONCLUSIVE" "3" "$(score
 assert_contains "S10: and says so" "owner agrees on 15 of 20 decided rows" "$(cat "${D}/out.txt")"
 D="${TEST_TMPDIR}/s-noowner"; mk "${D}" 60 54 4 3 12 240 20; head -5 "${D}/owner.jsonl" > "${D}/o5" && mv "${D}/o5" "${D}/owner.jsonl"
 assert_equals "S11: five owner labels is INCONCLUSIVE" "3" "$(score "${D}")"
+# The owner must have labelled twenty rows the labellers DECIDED. Twenty labels of which
+# nineteen are on rows the labellers disagreed about calibrate one row (found in review:
+# this passed, "agrees on 1 of 1").
+D="${TEST_TMPDIR}/s-owner-undecided"; mk "${D}" 60 34 4 3 12 240 20
+python3 - "${D}" <<'PY2'
+import json, sys
+d = sys.argv[1]
+a = {json.loads(l)["row_id"]: json.loads(l)["label"] for l in open(f"{d}/a.jsonl")}
+b = {json.loads(l)["row_id"]: json.loads(l)["label"] for l in open(f"{d}/b.jsonl")}
+undecided = [i for i in a if a[i] != b[i]][:19]
+decided = [i for i in a if a[i] == b[i]][:1]
+open(f"{d}/owner.jsonl", "w").write("".join(json.dumps({"row_id": i, "label": a[i]}) + "\n" for i in undecided + decided))
+PY2
+assert_equals "S11b: twenty owner labels, nineteen on rows the labellers did not decide, is INCONCLUSIVE" "3" "$(score "${D}")"
+assert_contains "S11b: and says how many calibrate" "owner labelled 1 of the rows the labellers decided (20 in all; need 20 decided)" "$(cat "${D}/out.txt")"
+# The kappa floor decides too, not only the printed number.
+D="${TEST_TMPDIR}/s-lowkappa"; mk "${D}" 60 54 4 3 12 240 20
+python3 - "${D}" <<'PY2'
+import json, sys
+d = sys.argv[1]
+rows = [json.loads(l) for l in open(f"{d}/b.jsonl")]
+for n, r in enumerate(rows):
+    if r["row_id"].startswith("r") and n % 2 == 0:      # flip half of the rows the rule does not hide
+        r["label"] = "WARRANTED" if r["label"] == "NOT_WARRANTED" else "NOT_WARRANTED"
+open(f"{d}/b.jsonl", "w").write("".join(json.dumps(r) + "\n" for r in rows))
+PY2
+assert_equals "S12b: labellers who disagree on half the other rows make it INCONCLUSIVE" "3" "$(score "${D}")"
+assert_contains "S12b: and kappa is the reason given" "  - kappa " "$(cat "${D}/out.txt")"
 
 # Kappa, against a value worked by hand: 100 rows, each labeller 50/50, agreeing on 80.
 # po = 0.80, pe = 0.5*0.5 + 0.5*0.5 = 0.50, kappa = 0.30/0.50 = 0.60.
@@ -251,9 +308,7 @@ assert_contains "S12: Cohen's kappa matches the value worked by hand" "labeller 
 
 # Unlabelled rows are an error, not a smaller sample.
 D="${TEST_TMPDIR}/s-miss"; mk "${D}" 60 54 4 3 12 240 20; sed -i.bak '1d' "${D}/b.jsonl"
-_rc="$(score "${D}")"
-[ "${_rc}" != "0" ] && [ "${_rc}" != "3" ] && _record_pass "S13: a row one labeller skipped is an error (exit ${_rc}), not a verdict" \
-    || _record_fail "S13: a row one labeller skipped is an error" "exit ${_rc}"
+assert_equals "S13: a row one labeller skipped is an error (exit 2), which is no verdict's exit code" "2" "$(score "${D}")"
 assert_contains "S13: and the message says what is missing" "not labelled by both labellers" "$(cat "${D}/out.txt")"
 
 # --- T: trial.py ---------------------------------------------------------------------
@@ -299,7 +354,7 @@ for arm, done, last in (("show", show_done, "0"), ("hide", hide_done, "f")):
         if i < done:
             entries.append({"type": "assistant", "timestamp": ts(30), "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "s", "name": "Skill", "input": {"skill": "superpowers:requesting-code-review"}}]}})
         open(f"{d}/projects/p/{sid}.jsonl", "w").write("".join(json.dumps(e) + "\n" for e in entries))
-        log.append({"schema_version": 1, "ts": ts(20), "session": f"session-{sid}", "skill": "requesting-code-review", "sticky": True,
+        log.append({"schema_version": 1, "rule_version": 1, "ts": ts(20), "session": f"session-{sid}", "skill": "requesting-code-review", "sticky": True,
                     "already_shown": True, "would_hide": True, "mode": "trial", "arm": arm, "hidden_by_rule": arm == "hide", "block_chars": 4000})
 open(f"{d}/shadow.jsonl", "w").write("".join(json.dumps(r) + "\n" for r in log))
 PY
@@ -312,6 +367,54 @@ D="${TEST_TMPDIR}/t-drop"; mk_trial "${D}" 11 8
 assert_equals "T3: the hide arm completing 14 points less reads as HARM (exit 1)" "1" "$(trial "${D}")"
 D="${TEST_TMPDIR}/t-edge"; mk_trial "${D}" 11 9
 assert_equals "T4: 9 points less is inside the limit" "0" "$(trial "${D}")"
+# Exactly ten points is "at most ten points", at every level. With 20 an arm that is two
+# obligations, and a floating-point subtraction called 16/20 against 14/20 HARM and 12/20
+# against 10/20 fine (found in review). mk_trial20 builds exactly twenty an arm.
+mk_trial20() {   # <dir> <show completed of 20> <hide completed of 20> [hide sessions whose first push is denied]
+    mkdir -p "$1/projects/p" && python3 - "$@" <<'PY'
+import json, sys
+d, show_done, hide_done = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+hide_denied = int(sys.argv[4]) if len(sys.argv) > 4 else 0
+log = []
+for arm, done, last in (("show", show_done, "0"), ("hide", hide_done, "f")):
+    for i in range(20):
+        sid = f"u{arm}{i:02d}{last}"
+        ts = lambda s: f"2026-11-01T10:{i:02d}:{s:02d}Z"
+        entries = [{"type": "user", "timestamp": ts(0), "origin": {"kind": "human"}, "message": {"role": "user", "content": "review the PR diff for bugs"}},
+                   {"type": "user", "timestamp": ts(20), "origin": {"kind": "human"}, "message": {"role": "user", "content": "go"}}]
+        if i < done:
+            entries.append({"type": "assistant", "timestamp": ts(30), "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "s", "name": "Skill", "input": {"skill": "superpowers:requesting-code-review"}}]}})
+        if arm == "hide" and i >= 20 - hide_denied:
+            entries.append({"type": "assistant", "timestamp": ts(40), "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "p", "name": "Bash", "input": {"command": "git push origin HEAD"}}]}})
+            entries.append({"type": "user", "timestamp": ts(41), "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "p", "content": "PUSH GATE: denied"}]}})
+        open(f"{d}/projects/p/{sid}.jsonl", "w").write("".join(json.dumps(e) + "\n" for e in entries))
+        log.append({"schema_version": 1, "rule_version": 1, "ts": ts(20), "session": f"session-{sid}", "skill": "requesting-code-review", "sticky": True,
+                    "already_shown": True, "would_hide": True, "mode": "trial", "arm": arm, "hidden_by_rule": arm == "hide", "block_chars": 4000})
+open(f"{d}/shadow.jsonl", "w").write("".join(json.dumps(r) + "\n" for r in log))
+PY
+}
+while IFS=' ' read -r _a _b; do
+    [ -n "${_a}" ] || continue
+    D="${TEST_TMPDIR}/t-b-${_a}-${_b}"; mk_trial20 "${D}" "${_a}" "${_b}"
+    assert_equals "T5: ${_a} of 20 against ${_b} of 20 is exactly ten points, which is inside the limit" "0" "$(trial "${D}")"
+done <<EOF
+12 10
+16 14
+8 6
+9 7
+11 9
+EOF
+D="${TEST_TMPDIR}/t-b-over"; mk_trial20 "${D}" 12 9
+assert_equals "T5: three fewer of twenty (fifteen points) is over it" "1" "$(trial "${D}")"
+# The other half of the reading: equal completion, but the hide arm is denied on first push.
+D="${TEST_TMPDIR}/t-rise-ok"; mk_trial20 "${D}" 10 10 2
+assert_equals "T6: two of twenty hide-arm sessions denied on first push (ten points) is inside the limit" "0" "$(trial "${D}")"
+D="${TEST_TMPDIR}/t-rise-over"; mk_trial20 "${D}" 10 10 3
+assert_equals "T6: three of twenty (fifteen points) reads as HARM though completion is equal" "1" "$(trial "${D}")"
+assert_contains "T6: and the denied-push line is the one marked" "higher) -> OVER" "$(cat "${D}/out.txt")"
+# A record written by a changed rule is not trial data.
+D="${TEST_TMPDIR}/t-ver"; mk_trial20 "${D}" 10 10; sed -i.bak 's/"rule_version": 1/"rule_version": 2/' "${D}/shadow.jsonl"
+assert_equals "T7: records of another rule version leave nothing to read (INCONCLUSIVE)" "3" "$(trial "${D}")"
 
 assert_contains "the rubric asks about the obligation, not the prompt's wording" "is REQUIRING the assistant to invoke this specific" "$(cat "${PROBE}/rubric.md")"
 assert_contains "the rubric has an explicit cannot-tell label" "INSUFFICIENT_CONTEXT" "$(cat "${PROBE}/rubric.md")"

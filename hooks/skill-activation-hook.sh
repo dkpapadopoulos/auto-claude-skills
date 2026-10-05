@@ -308,10 +308,20 @@ fi
 # sessions, 92 of 451 mandated blocks on typed prompts were of that kind, and four of the
 # 92 were followed by the mandated skill being invoked in the same turn.
 #
-# The RULE under test: a sticky mandate for a step this session has already been shown,
-# on the same chain, is not displayed. It is a third use of _DISPLAY_SUPPRESS and obeys the
-# same law: only the print is skipped. Scoring, the chain walk and every state write run as
-# before; the gate's decision is pinned in tests/test-push-gate-display-suppression.sh.
+# The RULE under test: a block is not displayed when ALL of these hold --
+#   - its process mandate was injected by sticky composition (the prompt selected no
+#     process skill of its own);
+#   - it carries nothing else: the sticky step is the only skill in it. A short prompt can
+#     still select a domain or workflow skill by its own words, and hiding the block would
+#     hide that too (found in review);
+#   - this session has already been shown that step, on this chain, since the user last
+#     asked for a process step in their own words, and since the last compaction.
+# It is a third use of _DISPLAY_SUPPRESS and obeys the same law: only the print is skipped.
+# Scoring, the chain walk and every state write run as before. What HOLDS that is the
+# turn-by-turn state identity in tests/test-activation-sticky-repeat.sh (cells ID, and X1's
+# exit-early mutant). tests/test-push-gate-display-suppression.sh shows the gate's answer
+# is unchanged after a hidden reply, but cannot by itself detect a hidden turn that skipped
+# its state write: a hidden turn is never the one that armed the chain.
 #
 # It is NOT known to be an improvement. A repeated reminder may be what keeps an unfinished
 # review in view, and nothing measured so far says otherwise. So it ships in SHADOW, and
@@ -324,7 +334,7 @@ fi
 #   off      no rule, no record, no marker
 # The default moves only on the two-stage verdict pre-registered in
 # docs/plans/2026-10-05-routing-precision-prereg.md. An unrecognised value is shadow: a
-# typo must never turn suppression on.
+# typo must never turn suppression on. The four words are matched in any letter case.
 #
 # What it keeps on disk is read by no gate and is deliberately OUTSIDE the `.skill-*` family:
 # that family is routing state, which every display-suppression proof in this repository
@@ -332,10 +342,14 @@ fi
 # was DISPLAYED, so they differ by design and must not be enumerated with it.
 #   .sticky-repeat-shown-<token>  the chain this session is on, then the process steps it
 #                                 has been shown on that chain, one per line. "Already
-#                                 shown" is about an OBLIGATION, not a skill name: another
-#                                 chain starts the list again, and so does a compaction
-#                                 (compact-recovery-hook.sh removes the file), because the
-#                                 earlier display may no longer be in the model's context.
+#                                 shown" is about an OBLIGATION, not a skill name. The
+#                                 list starts again on another chain; when the user's own
+#                                 words select a process step (a new task re-arms the same
+#                                 chain, and its steps are owed their first display again);
+#                                 on a cancel; and at a compaction, because the earlier
+#                                 display may no longer be in the model's context
+#                                 (pre-compact-hook.sh removes the file for manual AND auto
+#                                 compaction; compact-recovery-hook.sh does again).
 #   .sticky-repeat-shadow.d/      one small file per mandated block. No prompt text.
 #
 # HOW THEY ARE TOUCHED, because the first two cuts got this wrong (cross-family review):
@@ -344,12 +358,11 @@ fi
 #    missing, unreadable, a symlink, for another chain, holds an over-long line, when no
 #    chain was walked, or when ~/.claude is not writable (a compaction could not then have
 #    removed it).
-#  - Its read happens before the print and therefore before the state writes, so it must
-#    not be able to stall them indefinitely: it is opened read-write, which does not block
-#    on a FIFO; each read gives up after one second; and at most 64 lines of 1024 characters
-#    are read. The timeout is PER READ: a FIFO with a writer feeding it slowly could hold the
-#    hook for about a minute. That needs a cooperating process, which could as easily edit
-#    the state files itself.
+#  - Its read happens before the print and therefore before the state writes, and this
+#    hook is killed after ten seconds (hooks.json), so the read must not be able to use
+#    that up: it is opened read-write, which does not block on a FIFO; each read gives up
+#    after one second; at most 64 lines of 1024 characters are read; and the whole loop
+#    stops once two seconds have passed, so a FIFO fed slowly costs about three.
 #  - NOTHING IS MODIFIED IN PLACE. The marker is replaced by writing a new file that must
 #    not already exist (noclobber) and renaming it over the old name; each record is its own
 #    new file, created the same way. A rename changes a name, and an exclusive create makes
@@ -366,10 +379,10 @@ fi
 #    the state writes). Such a process can already rewrite the state files directly.
 _STICKY_SKILL=""
 case "${ACS_STICKY_REPEAT:-shadow}" in
-  trial)    _STICKY_REPEAT_MODE="trial" ;;
-  suppress) _STICKY_REPEAT_MODE="suppress" ;;
-  off)      _STICKY_REPEAT_MODE="off" ;;
-  *)        _STICKY_REPEAT_MODE="shadow" ;;
+  [Tt][Rr][Ii][Aa][Ll])             _STICKY_REPEAT_MODE="trial" ;;
+  [Ss][Uu][Pp][Pp][Rr][Ee][Ss][Ss]) _STICKY_REPEAT_MODE="suppress" ;;
+  [Oo][Ff][Ff])                     _STICKY_REPEAT_MODE="off" ;;
+  *)                                _STICKY_REPEAT_MODE="shadow" ;;
 esac
 # Skip slash commands — these are handled by the Skill tool directly
 [[ "$PROMPT" =~ ^[[:space:]]*/ ]] && exit 0
@@ -904,6 +917,9 @@ _apply_sticky_composition() {
   # Trailing punctuation class covers . , ! ? ; : and trailing whitespace.
   if [[ "$P" =~ ^[[:space:]]*(stop|cancel|abort|nevermind|never.mind|forget.it|scrap.that|drop.it|no.thanks|nope|nah)[[:space:]!.,?:\;]*$ ]]; then
     rm -f "$_comp_file" 2>/dev/null
+    # Sticky repeat (#333): the chain is gone, so what was shown for it is no longer a
+    # reason to hide anything. Unlinking a name writes through nothing.
+    rm -f "${HOME}/.claude/.sticky-repeat-shown-${_SESSION_TOKEN}" 2>/dev/null
     return
   fi
 
@@ -948,9 +964,9 @@ ${SORTED}
 EOF
 
   # Inject CURRENT at a solid process-tier score; role-cap picks it.
-  # _STICKY_SKILL records that this process skill came from the chain and not from the
-  # prompt's own words (the hijack guard above has just established that no process skill
-  # scored). The sticky-repeat rule reads it; nothing else does.
+  # _STICKY_SKILL records that this step came from the chain and not from the prompt's own
+  # words (the hijack guard above has just established that no process skill scored). The
+  # sticky-repeat rule reads it; nothing else does.
   _STICKY_SKILL="${_current_name}"
   local _new_line="50|${_current_name}|${_role}|${_invoke}|${_phase}"
   SORTED="$(printf '%s\n%s' "$_new_line" "$SORTED" | grep -v '^$' | sort -s -t'|' -k1 -rn)"
@@ -1846,11 +1862,11 @@ ${HINTS}${COMPOSITION_HINTS}"
   fi
 
   # Sticky repeat (#333; see _STICKY_REPEAT_MODE near the top). Decided here, immediately
-  # before the print, because this is the first point at which the block's process skill
-  # is final. `sticky` = the role caps kept the skill the chain injected. `already` = this
-  # session was shown that step before, on this chain. Only the two together are ever
-  # hidden; a prompt whose own words selected the skill never has _STICKY_SKILL set.
-  _sr_file=""; _sr_sticky=0; _sr_already=0; _sr_header=0; _sr_arm="-"; _sr_hide_now=0
+  # before the print it may suppress. `sticky` = the role caps kept the step the chain
+  # injected. `already` = this session was shown that step before, on this chain. `alone`
+  # = the block holds no other skill. Only the three together are ever hidden; a prompt
+  # whose own words selected a process skill never has _STICKY_SKILL set.
+  _sr_file=""; _sr_sticky=0; _sr_already=0; _sr_header=0; _sr_arm="-"; _sr_hide_now=0; _sr_alone=0
   _sr_prior="${_DISPLAY_SUPPRESS:-}"; _sr_chain="${_full_chain:-}"
   if [[ "${_STICKY_REPEAT_MODE}" != "off" ]] && [[ -n "${PROCESS_SKILL:-}" ]] && [[ -n "${_SESSION_TOKEN:-}" ]]; then
     _sr_file="${HOME}/.claude/.sticky-repeat-shown-${_SESSION_TOKEN}"
@@ -1861,14 +1877,15 @@ ${HINTS}${COMPOSITION_HINTS}"
     # A hide needs a chain: "already shown" is scoped to one, so with no chain walked
     # (_full_chain empty) nothing in the marker is believed. Reviewed as a hole: without
     # this, a step listed under ANOTHER chain's header counted as shown.
-    _sr_sig=""; _sr_ln=0; _sr_entries=""
+    [[ "${TOTAL_COUNT:-0}" -eq 1 ]] && _sr_alone=1
+    _sr_sig=""; _sr_ln=0; _sr_entries=""; _sr_t0="${SECONDS}"
     if [[ -n "${_sr_chain}" ]] && [[ -w "${HOME}/.claude" ]] && [[ -f "${_sr_file}" ]] && [[ ! -L "${_sr_file}" ]]; then
       # The outer braces put stderr away BEFORE the file is opened (`done < f 2>/dev/null`
       # opens first, so an unreadable marker printed a diagnostic that `off` does not).
       # `<>` opens read-write: that cannot block on a FIFO, and `read -t` then gives up.
       {
         {
-          while [[ "${_sr_ln}" -lt 64 ]] && IFS= read -r -t 1 -n 1025 _sr_line; do
+          while [[ "${_sr_ln}" -lt 64 ]] && [[ $((SECONDS - _sr_t0)) -lt 2 ]] && IFS= read -r -t 1 -n 1025 _sr_line; do
             _sr_ln=$((_sr_ln + 1))
             # `read -n` returns CHUNKS: a physical line longer than 1024 characters comes
             # back as two reads, and its tail could equal a skill name. Believe nothing.
@@ -1889,14 +1906,14 @@ ${HINTS}${COMPOSITION_HINTS}"
     # The trial arm is a property of the SESSION: the token's last character, so it costs
     # no fork and cannot change mid-session. Half the hex digits hide, half show.
     case "${_SESSION_TOKEN}" in *[89abcdefABCDEF]) _sr_arm="hide" ;; *) _sr_arm="show" ;; esac
-    if [[ "${_sr_sticky}" -eq 1 ]] && [[ "${_sr_already}" -eq 1 ]] && [[ -z "${_DISPLAY_SUPPRESS:-}" ]]; then
+    if [[ "${_sr_sticky}" -eq 1 ]] && [[ "${_sr_already}" -eq 1 ]] && [[ "${_sr_alone}" -eq 1 ]] && [[ -z "${_DISPLAY_SUPPRESS:-}" ]]; then
       case "${_STICKY_REPEAT_MODE}" in
         suppress) _sr_hide_now=1 ;;
         trial)    [[ "${_sr_arm}" == "hide" ]] && _sr_hide_now=1 ;;
       esac
     fi
     if [[ "${_sr_hide_now}" -eq 1 ]]; then
-      _DISPLAY_SUPPRESS="sticky repeat: ${PROCESS_SKILL} was already shown on this chain and this prompt selected no process skill"
+      _DISPLAY_SUPPRESS="sticky repeat: ${PROCESS_SKILL} was already shown on this chain and this prompt selected no skill of its own"
     fi
   fi
 
@@ -1996,6 +2013,14 @@ ${HINTS}${COMPOSITION_HINTS}"
   if [[ -n "${_sr_file:-}" ]]; then
     _sr_displayed=1; [[ -n "${_DISPLAY_SUPPRESS:-}" ]] && _sr_displayed=0
     _sr_add=0; [[ "${_sr_displayed}" -eq 1 ]] && [[ "${_sr_already}" -eq 0 ]] && _sr_add=1
+    # The user's own words selected this process step and it was displayed: the session is
+    # anchored there afresh. Whatever was shown before belongs to the task before it -- a
+    # new task re-arms the same chain with the same signature -- so the list restarts with
+    # this step alone, and each later step gets its first display again (found in review:
+    # cancel, then a new build order, hid the new task's planning step).
+    if [[ "${_sr_sticky}" -eq 0 ]] && [[ "${_sr_displayed}" -eq 1 ]] && [[ "${_sr_entries}" != "${PROCESS_SKILL}"$'\n' ]]; then
+      _sr_entries=""; _sr_add=1
+    fi
     if [[ -n "${_sr_chain}" ]] && [[ ! -d "${_sr_file}" ]] && { [[ "${_sr_header}" -eq 1 ]] || [[ "${_sr_add}" -eq 1 ]]; }; then
       # Replace, never modify: the new content goes to a name that must not exist (noclobber
       # refuses a planted file, symlink or hard link) and is renamed over the marker. One
@@ -2014,7 +2039,8 @@ ${HINTS}${COMPOSITION_HINTS}"
       } 2>/dev/null || true
     fi
     _sr_tf=(false true)   # indexed by the 0/1 flags below: no fork per field
-    _sr_wh=0; [[ "${_sr_sticky}" -eq 1 ]] && [[ "${_sr_already}" -eq 1 ]] && _sr_wh=1
+    _sr_wh=0; [[ "${_sr_sticky}" -eq 1 ]] && [[ "${_sr_already}" -eq 1 ]] && [[ "${_sr_alone}" -eq 1 ]] && _sr_wh=1
+    _sr_n="${TOTAL_COUNT:-0}"; [[ "${_sr_n}" =~ ^[0-9]{1,4}$ ]] || _sr_n=0
     _sr_os=0; [[ -n "${_sr_prior}" ]] && _sr_os=1
     _sr_cs="${_sr_chain//|/>}"
     _sr_pc="${_PROMPT_COUNT:-0}"; [[ "${_sr_pc}" =~ ^[1-9][0-9]{0,8}$ ]] || _sr_pc=0
@@ -2029,11 +2055,11 @@ ${HINTS}${COMPOSITION_HINTS}"
     {
       [[ -d "${_sr_dir}" ]] || mkdir -p "${_sr_dir}"
       set -C
-      printf '{"schema_version":1,"rule_version":1,"ts":"%s","session":"%s","prompt_count":%s,"skill":"%s","chain":"%s","sticky":%s,"already_shown":%s,"would_hide":%s,"new_chain":%s,"mode":"%s","arm":"%s","hidden_by_rule":%s,"displayed":%s,"other_suppression":%s,"block_chars":%s}\n' \
+      printf '{"schema_version":1,"rule_version":1,"ts":"%s","session":"%s","prompt_count":%s,"skill":"%s","chain":"%s","sticky":%s,"already_shown":%s,"would_hide":%s,"new_chain":%s,"mode":"%s","arm":"%s","hidden_by_rule":%s,"displayed":%s,"other_suppression":%s,"skills_in_block":%s,"block_chars":%s}\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${_sr_tok}" "${_sr_pc}" \
         "${PROCESS_SKILL//[^A-Za-z0-9._-]/}" "${_sr_cs//[^A-Za-z0-9._>-]/}" \
         "${_sr_tf[_sr_sticky]}" "${_sr_tf[_sr_already]}" "${_sr_tf[_sr_wh]}" "${_sr_tf[_sr_header]}" \
-        "${_STICKY_REPEAT_MODE}" "${_sr_arm}" "${_sr_tf[_sr_hide_now]}" "${_sr_tf[_sr_displayed]}" "${_sr_tf[_sr_os]}" "${#OUT}" \
+        "${_STICKY_REPEAT_MODE}" "${_sr_arm}" "${_sr_tf[_sr_hide_now]}" "${_sr_tf[_sr_displayed]}" "${_sr_tf[_sr_os]}" "${_sr_n}" "${#OUT}" \
         > "${_sr_dir}/${_sr_tok}.${_sr_pc}.${RANDOM}${RANDOM}.json"
       set +C
     } 2>/dev/null || true

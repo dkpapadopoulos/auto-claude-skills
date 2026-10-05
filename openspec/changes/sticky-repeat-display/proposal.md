@@ -8,7 +8,7 @@ Whether hiding them helps is not known. A repeated reminder may be what keeps an
 
 ## What Changes
 
-- **A display rule, shipped in shadow.** When the block's process mandate was injected by sticky composition and the session has already been shown that step on the same chain, the rule would hide the block. By default it hides nothing: the hook displays exactly as before and writes one small record per mandated block under `~/.claude/.sticky-repeat-shadow.d/` (no prompt text).
+- **A display rule, shipped in shadow.** When the block's process mandate was injected by sticky composition, the block carries no other skill, and the session has already been shown that step on the same chain (since the user last asked for a process step in their own words, and since the last compaction), the rule would hide the block. By default it hides nothing: the hook displays exactly as before and writes one small record per mandated block under `~/.claude/.sticky-repeat-shadow.d/` (no prompt text).
 - **`ACS_STICKY_REPEAT`** selects `shadow` (default), `trial` (hide in half the sessions, fixed per session by its token), `suppress`, or `off`. An unrecognised value is `shadow`.
 - **Display-only.** Scoring, the chain walk and every pre-existing state write are unchanged in every mode. The rule's own two files are written after all of them and are read by no gate.
 - **A per-session marker** of which steps were shown, scoped to the chain, removed at compaction and by the session-start cleanup. It is believed only as a plain file written for the current chain.
@@ -25,9 +25,9 @@ Whether hiding them helps is not known. A repeated reminder may be what keeps an
 ## Impact
 
 - `hooks/skill-activation-hook.sh` — the rule, its switch, the marker and the record.
-- `hooks/compact-recovery-hook.sh` — removes the marker at compaction.
+- `hooks/pre-compact-hook.sh`, `hooks/compact-recovery-hook.sh` — remove the marker at compaction (the first fires for automatic compaction too).
 - `hooks/session-start-hook.sh` — the marker joins the stale-state cleanup.
 - `tests/test-activation-sticky-repeat.sh`, `tests/test-routing-precision-probe.sh` (new); `tests/test-push-gate-display-suppression.sh` (new cells for the gate's decision).
 - `tests/probes/routing-precision/` (new), `README.md`, `CHANGELOG.md`.
 
-**What a user sees after installing this: nothing different.** One small local record file is written per mandated prompt (about 330 bytes; nothing prunes them, so `ACS_STICKY_REPEAT=off` is the way to stop it).
+**What a user sees after installing this: nothing different.** One small local record file is written per mandated prompt (under 500 bytes; nothing prunes them, so `ACS_STICKY_REPEAT=off` is the way to stop it).

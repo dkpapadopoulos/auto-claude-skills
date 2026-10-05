@@ -136,6 +136,13 @@ done
 # a step the session has already been shown. It ships in shadow (displays as before); these
 # cells run it in the mode that HIDES, because that is the mode that could disarm the gate.
 # The same two turns are run with the rule off, and the gate's whole answer must be the same.
+#
+# WHAT THESE CELLS CANNOT DO, measured in review: a version of the rule that skipped the
+# state writes on a hidden turn leaves all of them green, because a hidden turn is never the
+# turn that armed the chain, so the state file the gate looks for already exists. They show
+# the gate's answer is unchanged in the ordinary case. What HOLDS display-only for this rule
+# is the turn-by-turn state identity in tests/test-activation-sticky-repeat.sh (cells ID,
+# and X1's exit-early mutant), which that same faulty version fails thirteen times.
 _sr_two_turns() {   # <mode> -> sets _SR_SHOWN1, _SR_SHOWN2, _SR_OUT, _SR_ARMED, _SR_HID
     _new_session
     export ACS_STICKY_REPEAT="$1"

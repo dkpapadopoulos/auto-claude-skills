@@ -47,4 +47,15 @@ were invoked before the first push attempt, and how often that attempt was denie
 - One owner's sessions. The owner knows the hypothesis.
 - Stage B has few units; it can catch a large harm and cannot show there is none.
 - The join from a shadow record to its prompt is by session and time (15 s). Records that
-  do not join are counted and printed, never dropped silently.
+  do not join are counted and printed, never dropped silently. The join has only been
+  exercised on transcript entries stamped in whole seconds by the tests, not on a real
+  transcript.
+- Stage B detects a push by the words `git push` / `gh pr merge` in a Bash command and a
+  denial by `PUSH GATE` in its result. That over-counts in a repository whose own tests
+  contain those words.
+- `prompt_count` in a record stays at 1 under `SKILL_VERBOSE=1`.
+
+## Exit codes
+
+`score.py`: 0 PASS, 1 STOP, 3 INCONCLUSIVE, 2 the inputs could not be scored.
+`trial.py`: 0 no large harm seen, 1 harm, 3 INCONCLUSIVE, 2 a usage error.

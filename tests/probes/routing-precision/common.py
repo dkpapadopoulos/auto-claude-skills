@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from extract import iter_entries, open_private, prompt_of, refuse_repo_path, text_of  # noqa: E402,F401
 
 JOIN_WINDOW_S = 15          # a record is written by the hook that ran for the prompt
+RULE_VERSION = 1            # the pre-registered rule; a record written by a changed rule is not data
 PUSH_WORDS = ("git push", "gh pr merge")
 GATED = ("requesting-code-review", "verification-before-completion")
 
@@ -77,7 +78,7 @@ def transcript_for(projects, session):
 
 
 def skill_uses(content):
-    """Bare names of skills invoked in one assistant message's content."""
+    """Bare names of skills invoked in one assistant message's content, in order."""
     out = []
     if isinstance(content, list):
         for block in content:
@@ -85,6 +86,26 @@ def skill_uses(content):
                 name = str((block.get("input") or {}).get("skill") or "")
                 if name:
                     out.append(name.split(":")[-1])
+    return out
+
+
+def ordered_events(content):
+    """("skill", name) and ("push", tool_use_id) for one assistant message, in the order
+    the assistant issued them. Order inside a turn matters: a review invoked AFTER a push
+    in the same turn did not come before it."""
+    out = []
+    if isinstance(content, list):
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                continue
+            if block.get("name") == "Skill":
+                name = str((block.get("input") or {}).get("skill") or "")
+                if name:
+                    out.append(("skill", name.split(":")[-1]))
+            elif block.get("name") == "Bash":
+                cmd = str((block.get("input") or {}).get("command") or "")
+                if any(w in cmd for w in PUSH_WORDS):
+                    out.append(("push", str(block.get("id") or "")))
     return out
 
 
@@ -128,9 +149,11 @@ def read_session(path):
     the assistant did until the next one.
 
     Returns (started_at, turns). Each turn: ts, text, source, prev_assistant (the last
-    assistant text BEFORE the prompt), skills, tools, pushes, denied (ids of denied pushes).
+    assistant text BEFORE the prompt), skills, tools, pushes, denied (ids of denied pushes),
+    and events: (seq, kind, value) for each skill invocation and push, where seq increases
+    through the whole session.
     """
-    started, turns, last_text = None, [], None
+    started, turns, last_text, seq = None, [], None, 0
     for entry in iter_entries(path):
         if entry.get("isSidechain"):
             continue
@@ -146,11 +169,14 @@ def read_session(path):
                 turns[-1]["skills"] += skill_uses(content)
                 turns[-1]["tools"] += tool_names(content)
                 turns[-1]["pushes"] += push_commands(content)
+                for kind, value in ordered_events(content):
+                    seq += 1
+                    turns[-1]["events"].append((seq, kind, value))
             continue
         found = prompt_of(entry)
         if found:
             turns.append({"ts": when, "text": found[0], "source": found[1], "prev_assistant": last_text,
-                          "skills": [], "tools": [], "pushes": [], "denied": []})
+                          "skills": [], "tools": [], "pushes": [], "denied": [], "events": []})
             last_text = None
             continue
         if entry.get("type") == "user" and turns:
@@ -159,7 +185,10 @@ def read_session(path):
 
 
 def typed(turn):
-    return turn["source"] != "sdk" and not turn["text"].lstrip().startswith("<")
+    """A prompt the user typed. The transcript labels its origin; only "human" counts. A
+    peer session's message, an SDK prompt, a notification or an unlabelled entry is not a
+    typed prompt, whatever its text says, and neither is a wrapper block."""
+    return turn["source"] == "human" and not turn["text"].lstrip().startswith("<")
 
 
 def join(record, turns):

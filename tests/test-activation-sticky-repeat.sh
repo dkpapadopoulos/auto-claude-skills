@@ -12,8 +12,10 @@
 #
 #   1. SHADOW CHANGES NOTHING the model sees (byte-identical display to `off`).
 #   2. WHAT IS HIDDEN in suppress mode, and above all what is NOT: a step's first display,
-#      a prompt whose own words select the skill, a step on a different chain, a step after
-#      a compaction, and anything at all when the marker is missing.
+#      a prompt whose own words select the skill, a block that carries any other skill the
+#      prompt selected, a step on a different chain, a step after a compaction (manual OR
+#      auto), a step of a new task after a cancel, and anything at all when the marker is
+#      missing.
 #   3. DISPLAY-ONLY. Every state file the hook wrote before this rule existed is identical,
 #      turn by turn, between `off` and each other mode. The comparison is not vacuous: an
 #      exit-early mutant of the same hook must DIFFER (X1), and the state must be seen to
@@ -33,6 +35,7 @@ echo "=== test-activation-sticky-repeat.sh ==="
 
 HOOK="${PROJECT_ROOT}/hooks/skill-activation-hook.sh"
 COMPACT="${PROJECT_ROOT}/hooks/compact-recovery-hook.sh"
+PRECOMPACT="${PROJECT_ROOT}/hooks/pre-compact-hook.sh"
 FIX="${PROJECT_ROOT}/tests/fixtures/routing-input"
 
 if ! command -v jq >/dev/null 2>&1; then
@@ -166,14 +169,86 @@ d8="$(turn suppress "ok")"
 assert_equals "SU8: recorded as a new chain" "true" "$(rec '.new_chain')"
 
 # Compaction: the earlier display may be gone from the model's context.
+# The compaction comes straight after the arming prompt, so the bare reply that follows
+# asks for the SAME step again (SU2 shows that reply hidden with no compaction). A reply
+# one turn later reaches the chain's NEXT step, which is displayed whatever the marker
+# says -- an earlier version of these cells did that and passed with the removal deleted.
 new_session; turn suppress "${ARM}" >/dev/null
-assert_equals "SU9 setup: the repeat is hidden before compaction" "" "$(turn suppress "go")"
-[ -s "${MARK}" ] && _record_pass "SU9 setup: the marker exists" || _record_fail "SU9 setup: the marker exists" "no ${MARK}"
+assert_equals "SU9 setup: the marker lists the step just shown" "brainstorming" "$(sed 1d "${MARK}" | tr '\n' ' ' | sed 's/ $//')"
 jq -nc --arg t "${TP}" '{transcript_path:$t}' | env HOME="${H}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "${COMPACT}" >/dev/null 2>&1
 [ ! -e "${MARK}" ] && _record_pass "SU9: the real compact-recovery hook removes the marker" \
     || _record_fail "SU9: the real compact-recovery hook removes the marker" "it is still there"
-[ -n "$(turn suppress "go")" ] && _record_pass "SU9: so the next bare reply is shown its step again" \
-    || _record_fail "SU9: so the next bare reply is shown its step again" "nothing was displayed"
+_c9="$(turn suppress "go")"
+assert_equals "SU9: so the bare reply is shown that same step again" "brainstorming" "$(proc "${_c9}")"
+assert_equals "SU9: recorded as sticky and not already shown" "true false" "$(rec '[.sticky,.already_shown] | map(tostring) | join(" ")')"
+
+# AUTO compaction. SessionStart(compact) does not fire for it, so the hook above never runs;
+# only PreCompact does. Found in review: with the removal only in compact-recovery-hook.sh
+# the marker survived every auto-compaction, which is the common kind. The pre-compact hook
+# is run as the existing compaction test runs it: a PATH with no cozempic on it.
+new_session; turn suppress "${ARM}" >/dev/null
+assert_equals "SU9b setup: the marker lists the step just shown" "brainstorming" "$(sed 1d "${MARK}" | tr '\n' ' ' | sed 's/ $//')"
+jq -nc --arg t "${TP}" '{transcript_path:$t, trigger:"auto"}' \
+    | env HOME="${H}" PATH="$(isolated_tool_path)" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "${PRECOMPACT}" >/dev/null 2>&1
+[ ! -e "${MARK}" ] && _record_pass "SU9b: the real pre-compact hook removes the marker (the only hook that fires for auto-compaction)" \
+    || _record_fail "SU9b: the real pre-compact hook removes the marker" "it is still there"
+_c9b="$(turn suppress "go")"
+assert_equals "SU9b: so after an auto-compaction the bare reply is shown that same step again" "brainstorming" "$(proc "${_c9b}")"
+
+# A new task. The user cancels, then orders something else that arms the SAME chain: its
+# signature is identical, so only the reset on the user's own words (and on the cancel)
+# stops the first task's entries hiding the second task's steps. Found in review.
+new_session
+turn suppress "${ARM}" >/dev/null; turn suppress "go" >/dev/null
+_w1="$(turn suppress "yes")"
+assert_equals "SU12 setup: the first task reached its planning step and was shown it" "writing-plans" "$(proc "${_w1}")"
+turn suppress "cancel" >/dev/null
+[ ! -e "${MARK}" ] && _record_pass "SU12: a cancel forgets what was shown" || _record_fail "SU12: a cancel forgets what was shown" "the marker is still there"
+# (The unrelated prompt in between matters: straight after a cancel the next chain inherits
+# the cancelled task's recorded progress -- pre-existing walker behaviour, not this rule's --
+# and skips its planning step altogether. This is the sequence review reproduced.)
+turn suppress "update the readme documentation wording for install section" >/dev/null
+turn suppress "build a new importer for the billing module" >/dev/null
+turn suppress "go" >/dev/null; turn suppress "yes" >/dev/null
+# The planning step must have been DISPLAYED once for each task. Under the defect the second
+# task's was hidden and this reads 1.
+assert_equals "SU12: the planning step was displayed once for the first task and once for the new one" "2" \
+    "$(jq -s '[.[] | select(.skill == "writing-plans" and .displayed == true)] | length' "${H}/records.jsonl")"
+assert_equals "SU12: and the new task's first sight of it was not hidden" "true" \
+    "$(jq -s '[.[] | select(.skill == "writing-plans")] | (.[1].displayed)' "${H}/records.jsonl")"
+# The same, without the cancel: the reset on the user's own words must do it alone.
+new_session
+turn suppress "${ARM}" >/dev/null; turn suppress "go" >/dev/null; turn suppress "yes" >/dev/null
+assert_equals "SU12b setup: the first task's planning step is now a repeat (hidden)" "" "$(turn suppress "option 1, go ahead")"
+_b="$(turn suppress "build a new importer for the billing module")"
+assert_equals "SU12b: a new order in the user's own words is displayed" "brainstorming" "$(proc "${_b}")"
+assert_equals "SU12b: and restarts the list with that step alone" "brainstorming" "$(sed 1d "${MARK}" | tr '\n' ' ' | sed 's/ $//')"
+
+# A block that carries something the prompt DID ask for. A short prompt can select a domain
+# skill by its own words and still get the chain's step injected beside it; hiding the block
+# would hide the skill the user asked for. Found in review.
+new_session
+turn off "${ARM}" >/dev/null; turn off "go" >/dev/null; turn off "yes" >/dev/null
+_d_off="$(turn off "update the readme documentation wording")"
+if printf '%s' "${_d_off}" | grep -q '^ *Domain:' && [ -n "$(proc "${_d_off}")" ]; then
+    _record_pass "SU13 precondition: this short prompt selects a domain skill AND gets the chain's step ($(proc "${_d_off}"))"
+    new_session
+    turn suppress "${ARM}" >/dev/null; turn suppress "go" >/dev/null; turn suppress "yes" >/dev/null
+    _d_sup="$(turn suppress "update the readme documentation wording")"
+    assert_equals "SU13: the block is displayed, byte for byte as with the rule off" "${_d_off}" "${_d_sup}"
+    assert_equals "SU13: recorded as sticky and already shown, but NOT as something the rule would hide" "true true false false" \
+        "$(rec '[.sticky,.already_shown,.would_hide,.hidden_by_rule] | map(tostring) | join(" ")')"
+    [ "$(rec '.skills_in_block')" -ge 2 ] 2>/dev/null && _record_pass "SU13: and the record says the block held $(rec '.skills_in_block') skills" \
+        || _record_fail "SU13: the record says how many skills the block held" "skills_in_block=$(rec '.skills_in_block')"
+else
+    _record_fail "SU13 precondition: this short prompt selects a domain skill AND gets the chain's step" "the fixture no longer reaches the case"
+fi
+
+# The four mode words in any letter case.
+new_session; turn OFF "${ARM}" >/dev/null
+[ ! -e "${LOGD}" ] && _record_pass "SU14: OFF in capitals is off (no record)" || _record_fail "SU14: OFF in capitals is off" "records were written"
+new_session; turn Suppress "${ARM}" >/dev/null
+assert_equals "SU14: Suppress in mixed case hides the repeat" "" "$(turn Suppress "go")"
 
 # A missing marker fails toward display.
 new_session; turn suppress "${ARM}" >/dev/null; rm -f "${MARK}"
@@ -250,7 +325,7 @@ new_session; turn suppress "${ARM}" >/dev/null; rm -f "${MARK}"; mkdir "${MARK}"
 new_session; turn off "${ARM}" >/dev/null; both off "go" >/dev/null; _err_off="$(cat "${H}/err")"
 new_session; turn shadow "${ARM}" >/dev/null; chmod 000 "${MARK}"
 _f4="$(both shadow "go")"; _err_sha="$(cat "${H}/err")"; chmod 600 "${MARK}"
-[ -n "${_f4}" ] && _record_pass "F4: an unreadable marker is ignored (displayed)" || _record_fail "F4: an unreadable marker is ignored (displayed)" "it was hidden"
+[ -n "${_f4}" ] && _record_pass "F4 setup: shadow displays (as it always does; the stderr comparison below is the cell)" || _record_fail "F4 setup: shadow displays" "nothing was displayed"
 assert_equals "F4: and shadow prints nothing to stderr that off does not" "${_err_off}" "${_err_sha}"
 new_session; turn suppress "${ARM}" >/dev/null; chmod 000 "${MARK}"
 _f4b="$(both suppress "go")"; chmod 600 "${MARK}"
@@ -306,9 +381,12 @@ else
         "$(jq -r '(.completed | length) >= 1' "${H}/.claude/.skill-composition-state-${TOK}" 2>/dev/null)"
 fi
 
-# F7: the read is bounded. The step IS listed, beyond the 64th line: it is not believed.
+# F7: the read is bounded at 64 lines. The step IS listed, at line 72: it is not believed.
+# (Seventy fillers, not thousands: a very long file is also stopped by the two-second
+# budget, and then this cell cannot tell which bound did the work -- found by mutation,
+# when the fixture had 5,000 lines and passed with the line bound removed.)
 new_session; turn suppress "${ARM}" >/dev/null
-{ printf '#chain %s\n' "${CHAIN_SIG}"; i=0; while [ "${i}" -lt 5000 ]; do printf 'filler-%s\n' "${i}"; i=$((i + 1)); done; printf 'brainstorming\n'; } > "${MARK}"
+{ printf '#chain %s\n' "${CHAIN_SIG}"; i=0; while [ "${i}" -lt 70 ]; do printf 'filler-%s\n' "${i}"; i=$((i + 1)); done; printf 'brainstorming\n'; } > "${MARK}"
 [ -n "$(turn suppress "go")" ] && _record_pass "F7: an entry beyond the read bound is not believed (displayed)" \
     || _record_fail "F7: an entry beyond the read bound is not believed (displayed)" "it was hidden"
 # F7b: `read -n 1025` returns chunks. A physical line of exactly 1025 filler characters
@@ -325,7 +403,9 @@ new_session; turn suppress "${ARM}" >/dev/null
 printf '#chain %s\nfiller\nbrainstorming\n' "${CHAIN_SIG}" > "${MARK}"
 assert_equals "F control: the same entry under the right header and inside the bound IS believed (hidden)" "" "$(turn suppress "go")"
 
-# F8: a prompt counter that is not a number does not break the record.
+# F8: a corrupt prompt counter does not break the record. What holds this is the hook's
+# OWN pre-existing check on the counter file; the record's separate number check is
+# defensive and no input reaches it (said plainly: removing it leaves this file green).
 new_session; turn shadow "${ARM}" >/dev/null
 printf 'not-a-number' > "${H}/.claude/.skill-prompt-count-${TOK}"
 turn shadow "go" >/dev/null
@@ -333,6 +413,50 @@ if tail -1 "${LOG}" | jq -e '(.prompt_count | type) == "number"' >/dev/null 2>&1
     _record_pass "F8: with a corrupt prompt counter the record is still valid JSON with a numeric count"
 else
     _record_fail "F8: with a corrupt prompt counter the record is still valid JSON" "$(tail -1 "${LOG}" | head -c 200)"
+fi
+
+# F9: ~/.claude is not writable, so a compaction could not have removed the marker. It is
+# not believed. (Root ignores directory permissions, so the cell is announced and skipped.)
+if [ "$(id -u)" = "0" ]; then
+    echo "  SKIP: F9 (running as root; directory permissions do not bind)"
+else
+    new_session; turn suppress "${ARM}" >/dev/null
+    chmod 555 "${H}/.claude"
+    _f9="$(turn suppress "go")"
+    chmod 755 "${H}/.claude"
+    [ -n "${_f9}" ] && _record_pass "F9: with ~/.claude unwritable the marker is not believed (displayed)" \
+        || _record_fail "F9: with ~/.claude unwritable the marker is not believed (displayed)" "it was hidden"
+fi
+
+# F10: a marker that is a directory is not written INTO.
+new_session; turn suppress "${ARM}" >/dev/null; rm -f "${MARK}"; mkdir "${MARK}"
+turn suppress "go" >/dev/null
+assert_equals "F10: nothing is created inside a marker that is a directory" "" "$(ls -A "${MARK}")"
+
+# F11: a line that is not a step name is not carried into the rewritten marker.
+new_session; turn suppress "${ARM}" >/dev/null
+printf '#chain %s\nbrainstorming\nnot a step name; rm -rf\n' "${CHAIN_SIG}" > "${MARK}"
+turn suppress "go" >/dev/null                       # hidden: brainstorming is believed
+_n="$(turn suppress "yes")"                         # the next step is shown and the marker rewritten
+assert_equals "F11 setup: the next step was displayed, so the marker was rewritten" "writing-plans" "$(proc "${_n}")"
+assert_equals "F11: the rewritten marker holds step names only" "brainstorming writing-plans" "$(sed 1d "${MARK}" | tr '\n' ' ' | sed 's/ $//')"
+
+# F12: the read has a time budget. A FIFO behind a bypassed check, fed its header and then
+# one line every half second, must not hold the hook near its ten-second kill (hooks.json):
+# measured in review at 14 s before the budget existed.
+if cmp -s "${HOOK}" "${MUTF}"; then
+    _record_fail "F12: the no-plain-file-check mutation applies" "sed changed nothing"
+else
+    new_session; turn suppress "${ARM}" >/dev/null; rm -f "${MARK}"; mkfifo "${MARK}"
+    ( { printf '#chain %s\n' "${CHAIN_SIG}"; _i=0; while [ "${_i}" -lt 40 ]; do printf 'filler-%s\n' "${_i}"; sleep 0.5; _i=$((_i + 1)); done; } > "${MARK}" 2>/dev/null ) &
+    _feeder=$!
+    _t0="${SECONDS}"
+    jq -nc --arg p "go" --arg t "${TP}" '{prompt:$p, transcript_path:$t}' \
+        | env HOME="${H}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" ACS_STICKY_REPEAT=shadow /bin/bash "${MUTF}" >/dev/null 2>&1
+    _took=$((SECONDS - _t0))
+    kill "${_feeder}" 2>/dev/null; wait "${_feeder}" 2>/dev/null
+    [ "${_took}" -le 6 ] && _record_pass "F12: a slowly fed FIFO holds the hook ${_took}s, well inside its ten-second limit" \
+        || _record_fail "F12: a slowly fed FIFO does not hold the hook near its ten-second limit" "it took ${_took}s"
 fi
 
 # --- TR: the trial arm is fixed by the session ---------------------------------------
@@ -379,9 +503,12 @@ while IFS= read -r _p; do
     # renaming. Checksums of files that embed nothing session-specific must match.
     assert_equals "ID turn ${_n}: trial (hide arm) writes the state off writes" \
         "$(printf '%s\n' "${_s_off}" | grep -v 'session-token')" "$(printf '%s\n' "${_s_tri}" | grep -v 'session-token')"
-    if [ -z "${_d_sup}" ] && [ "${_s_off}" != "${_prev}" ]; then _moved=$((_moved + 1)); fi
+    # The prompt counter changes on every turn, so the whole snapshot always "moves". The
+    # control is on the composition-state line alone: that is the file the gate reads.
+    _c_off="$(printf '%s\n' "${_s_off}" | grep 'composition-state')"
+    if [ -z "${_d_sup}" ] && [ "${_c_off}" != "${_prev}" ]; then _moved=$((_moved + 1)); fi
     [ "${_s_mut}" != "${_s_off}" ] && _mut_diff=$((_mut_diff + 1))
-    _prev="${_s_off}"
+    _prev="${_c_off}"
 done <<EOF
 ${ARM}
 go
@@ -390,8 +517,8 @@ option 1, go ahead
 yes
 thanks
 EOF
-[ "${_moved}" -ge 1 ] && _record_pass "ID control: the state moved on ${_moved} of the turns suppress hid" \
-    || _record_fail "ID control: the state moved on a turn suppress hid" "it never did, so identity was not exercised where it matters"
+[ "${_moved}" -ge 1 ] && _record_pass "ID control: the composition state itself moved on ${_moved} of the turns suppress hid" \
+    || _record_fail "ID control: the composition state moved on a turn suppress hid" "it never did, so identity was not exercised where it matters"
 if cmp -s "${HOOK}" "${MUT}"; then
     _record_fail "X1: the exit-early mutation applies" "sed changed nothing"
 else
