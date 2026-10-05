@@ -304,14 +304,183 @@ if [ -f "${PLUGIN_ROOT}/hooks/lib/verdict.sh" ]; then
     . "${PLUGIN_ROOT}/hooks/lib/verdict.sh" 2>/dev/null || true
     command -v _routing_base >/dev/null 2>&1 && BASE="$(_routing_base "$ROOT" 2>/dev/null)" || BASE=""
 fi
+
+# WHICH files the checker is shown (#332). The checker is a text match, so it
+# reports a skip marker wherever one is written — including inside a string in
+# an evidence bundle under docs/, or in the prose of a spec. The name glob below
+# selects all of those ('*spec*' alone matches every file under openspec/), and
+# because `suspect` fails verdict_is_clean, one such line denied every agent
+# push of a routing branch with a remedy that could never succeed.
+#
+# A repository may therefore DECLARE the paths its gate actually runs:
+#
+#     gate_gaming_paths:
+#       - tests/
+#
+# Four rules, each of which closes a way the declaration could weaken the check:
+#
+# 1. It is read from the MERGE-BASE, never from the branch or the working tree,
+#    so editing it on a branch does not change what that branch is judged by.
+#    This holds against a FIXED base and no further: the base is resolved from
+#    local refs (_routing_base), and whoever can move those can choose the base.
+#    That was already true of the diff itself.
+# 2. A branch that CHANGES the declaration cannot read clean: a `clean` result
+#    becomes `suspect` (an unverified one stays unverified), unless every path
+#    declared at the base is still declared. Without this, narrowing the scope
+#    in one change and skipping tests in the next would read clean twice.
+#    Adding a first declaration counts as a change: it replaces the name glob.
+#    The exempt case is recorded as "widened", which means only that no base
+#    path was lost — a reorder or a dropped duplicate gets the same label.
+# 3. A declaration at the base that cannot be applied leaves the check
+#    UNVERIFIED. It does not fall back to the name glob: the glob can be
+#    NARROWER than what was declared (a declared `checks/validate.sh` has no
+#    "test" in its path), so falling back would read clean over a file the
+#    repository asked to have checked.
+# 4. `.verify.yml` itself is always in scope, declared or not.
+#
+# Limit, stated rather than hidden: a declaration is a claim that these paths
+# cover what the gate runs. Nothing here can check that claim. A marker in a
+# test file outside the declared paths is not seen — including a NEW file a
+# branch adds elsewhere and calls from an existing test.
+#
+# Prints "none" (no declaration), "bad <reason>", or "ok" followed by one path
+# per line. Reads a .verify.yml on stdin. Entries are plain unquoted paths or
+# globs; pathspec magic (a leading ':'), absolute paths and '..' are refused.
+# It recognises this one key and its list. It is not a YAML validator.
+_gg_declared_scope() {
+    awk '
+        { sub(/\r$/, "") }
+        /^gate_gaming_paths:/ {
+            if (seen) bad = "declared more than once"
+            seen = 1; inlist = 1
+            rest = $0; sub(/^gate_gaming_paths:[ \t]*/, "", rest)
+            if (rest != "" && rest !~ /^#/ && bad == "") bad = "only a block list is supported"
+            next
+        }
+        inlist && /^[ \t]*(#.*)?$/ { next }
+        inlist && /^[ \t]+-[ \t]+[^ \t]/ {
+            p = $0; sub(/^[ \t]+-[ \t]+/, "", p); sub(/[ \t]+$/, "", p)
+            if (p !~ "^[A-Za-z0-9._/*-]+$" || p ~ "^[-/]" || p ~ "(^|/)[.][.](/|$)") {
+                if (bad == "") bad = "unsupported entry: " p
+            } else paths[++n] = p
+            next
+        }
+        inlist && /^[ \t]/ { if (bad == "") bad = "malformed list"; next }
+        inlist { inlist = 0 }
+        END {
+            if (!seen) { print "none"; exit }
+            if (bad == "" && n == 0) bad = "no entries"
+            if (bad != "") { print "bad " bad; exit }
+            print "ok"
+            for (i = 1; i <= n; i++) print paths[i]
+        }
+    '
+}
+# _gg_scope_at <rev> — the declaration as <rev> carries it, each entry checked
+# against <rev>'s OWN tree. Same three outputs as the parser.
+# A .verify.yml that is not a regular file at <rev> declares nothing: `git show`
+# of a symlink prints the link's TARGET TEXT, and that text must never be read
+# as a declaration.
+# An entry that matches no file is refused: honoured, it would leave the
+# checker reading `.verify.yml` alone and reporting clean for every change.
+_gg_scope_at() {
+    local rev="$1" decl empty p
+    case "$(git -C "$ROOT" ls-tree "$rev" -- .verify.yml 2>/dev/null)" in
+        "100644 blob"*|"100755 blob"*) ;;
+        *) echo "none"; return 0 ;;
+    esac
+    decl="$(git -C "$ROOT" show "${rev}:.verify.yml" 2>/dev/null | _gg_declared_scope)"
+    case "$decl" in
+        ok*) ;;
+        "") echo "bad the declaration could not be parsed"; return 0 ;;
+        *) printf '%s\n' "$decl"; return 0 ;;
+    esac
+    # The empty tree: diffing it against <rev> lists <rev>'s files under ordinary
+    # pathspec rules, which is how each entry is used when the diff is taken.
+    empty="$(git -C "$ROOT" hash-object -t tree /dev/null 2>/dev/null)"
+    [ -n "$empty" ] || { echo "bad the tree could not be listed"; return 0; }
+    while IFS= read -r p; do
+        [ -n "$p" ] || continue
+        if [ -z "$(git -C "$ROOT" diff --name-only "$empty" "$rev" -- "$p" 2>/dev/null | head -1)" ]; then
+            echo "bad matches no file: ${p}"; return 0
+        fi
+    done <<EOF
+$(printf '%s\n' "$decl" | sed 1d)
+EOF
+    printf '%s\n' "$decl"
+}
+# "unverified" until a scope is actually applied: a check that did not run had
+# no scope, and recording the default for it would describe a diff nobody read.
+GG_SCOPE="unverified"
+GG_SCOPE_CHANGE="none"
+GG_PATHS_REC=""
+GG_PATHS=("*test*" "*spec*" ".verify.yml")
 if [ -n "$BASE" ] && [ -f "$GGC" ]; then
-    # Canonical a/-b/ prefixes pinned: the checker's file tracker parses diff
-    # headers, and a user diff.mnemonicPrefix/noprefix gitconfig would change
-    # them per-machine (the checker also tolerates variant prefixes — belt AND
-    # suspenders, this is gate evidence).
-    if DIFF="$(git -C "$ROOT" -c diff.mnemonicPrefix=false -c diff.noprefix=false diff "$BASE"...HEAD -- '*test*' '*spec*' '.verify.yml' 2>/dev/null)"; then
-        GG="$(printf '%s' "$DIFF" | bash "$GGC" 2>/dev/null)"
-        case "$GG" in clean) GG_STATUS="clean" ;; suspect*) GG_STATUS="suspect" ;; esac
+    _gg_base="$(_gg_scope_at "$BASE")"
+    _gg_head="$(_gg_scope_at HEAD)"
+    _gg_run=true
+    case "$_gg_base" in
+        ok*)
+            _gg_paths=()
+            while IFS= read -r _p; do
+                [ -n "$_p" ] || continue
+                _gg_paths+=("$_p")
+            done <<EOF
+$(printf '%s\n' "$_gg_base" | sed 1d)
+EOF
+            if [ "${#_gg_paths[@]}" -gt 0 ]; then
+                GG_PATHS=("${_gg_paths[@]}" ".verify.yml")
+                GG_SCOPE="declared"
+                echo "gate-gaming scope: gate_gaming_paths as declared at the base ${BASE}"
+            else
+                GG_SCOPE="unusable"; _gg_run=false
+                echo "gate-gaming scope: UNUSABLE — gate_gaming_paths at the base ${BASE} listed no path. The check did not run."
+            fi
+            ;;
+        bad*)
+            GG_SCOPE="unusable"; _gg_run=false
+            echo "gate-gaming scope: UNUSABLE — gate_gaming_paths at the base ${BASE} cannot be applied (${_gg_base#bad }). The check did not run; the declaration has to be fixed on the mainline."
+            ;;
+        *)
+            GG_SCOPE="default"
+            echo "gate-gaming scope: the default name glob (no gate_gaming_paths at the base)"
+            ;;
+    esac
+    if [ "$_gg_run" = "true" ]; then
+        GG_PATHS_REC="$(printf '%s\n' "${GG_PATHS[@]}")"
+        # Canonical a/-b/ prefixes pinned: the checker's file tracker parses diff
+        # headers, and a user diff.mnemonicPrefix/noprefix gitconfig would change
+        # them per-machine (the checker also tolerates variant prefixes — belt AND
+        # suspenders, this is gate evidence).
+        if DIFF="$(git -C "$ROOT" -c diff.mnemonicPrefix=false -c diff.noprefix=false diff "$BASE"...HEAD -- "${GG_PATHS[@]}" 2>/dev/null)"; then
+            GG="$(printf '%s' "$DIFF" | bash "$GGC" 2>/dev/null)"
+            case "$GG" in clean) GG_STATUS="clean" ;; suspect*) GG_STATUS="suspect" ;; esac
+        fi
+    fi
+    # Rule 2: the declaration as COMMITTED on this branch against the base's.
+    # What is compared is the validated LIST of entries (not the files they
+    # match), each side validated against its own tree — so a branch that keeps
+    # the text but deletes every file behind an entry also counts as a change.
+    if [ "$_gg_head" != "$_gg_base" ]; then
+        GG_SCOPE_CHANGE="changed"
+        case "$_gg_base" in ok*)
+            case "$_gg_head" in ok*)
+                _gg_lost=""
+                while IFS= read -r _p; do
+                    [ -n "$_p" ] || continue
+                    printf '%s\n' "$_gg_head" | sed 1d | grep -qxF -- "$_p" || _gg_lost="${_gg_lost}${_gg_lost:+ }${_p}"
+                done <<EOF
+$(printf '%s\n' "$_gg_base" | sed 1d)
+EOF
+                [ -n "$_gg_lost" ] || GG_SCOPE_CHANGE="widened"
+            ;; esac
+        ;; esac
+        if [ "$GG_SCOPE_CHANGE" = "changed" ]; then
+            echo "gate-gaming: this branch changes gate_gaming_paths (base: $(printf '%s' "$_gg_base" | tr '\n' ' '); branch: $(printf '%s' "$_gg_head" | tr '\n' ' ')). That changes what later branches are checked against, so it is recorded as suspect; a person has to review it."
+            [ "$GG_STATUS" = "clean" ] && GG_STATUS="suspect"
+        else
+            echo "gate-gaming: this branch adds paths to gate_gaming_paths and removes none."
+        fi
     fi
 fi
 [ "$GG_STATUS" = "unverified" ] && CNV="${CNV}${CNV:+,}gate-gaming-check"
@@ -375,12 +544,15 @@ else TEST_DELTA="missing"; fi
 
 jq -n --arg sha "$SHA" --arg ts "$TS" --arg ex "$EXCERPT" --arg cmd "$CMDS" --arg disc "$DISCOVERY" \
       --arg p "$PASSED" --arg f "$FAILED" --arg c "$CNV" --arg gg "$GG_STATUS" --arg td "$TEST_DELTA" \
-      --arg wd "$WORKTREE_DIRTY" --arg wdp "$_WD_PATHS_CAPPED" --arg wdn "$WORKTREE_DIRTY_COUNT" '
+      --arg wd "$WORKTREE_DIRTY" --arg wdp "$_WD_PATHS_CAPPED" --arg wdn "$WORKTREE_DIRTY_COUNT" \
+      --arg ggs "$GG_SCOPE" --arg ggp "$GG_PATHS_REC" --arg ggc "$GG_SCOPE_CHANGE" '
   def csv($s): if $s == "" then [] else ($s | split(",")) end;
   def lines($s): [$s | split("\n")[] | select(. != "")];
   {substrate:"local", discovery_source:$disc,
    passed:csv($p), failed:csv($f), could_not_verify:csv($c),
-   gate_gaming_status:$gg, coverage_adequacy_status:"unverified",
+   gate_gaming_status:$gg, gate_gaming_scope:$ggs, gate_gaming_paths:lines($ggp),
+   gate_gaming_scope_change:$ggc,
+   coverage_adequacy_status:"unverified",
    test_delta:$td, worktree_dirty:($wd == "true"),
    dirty_paths:lines($wdp), dirty_path_count:($wdn | tonumber? // 0),
    sha:$sha, command:$cmd, output_excerpt:$ex, ts:$ts,
