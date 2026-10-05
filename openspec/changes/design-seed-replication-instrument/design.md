@@ -1704,7 +1704,7 @@ digest shortened, the mode, what allowed it, and where the reply is kept.
 ### Stage 3: the specification, 2026-10-05
 
 **The send.** One package, built by the builder: the frozen instructions, the
-brief whole, the two data files. 29,363 bytes, SHA-256 `df44411c…8c10`; the
+brief whole, the two data files, and the dispatcher's closing lines. 29,363 bytes, SHA-256 `df44411c…8c10`; the
 digest the consent carried is `cc19a025…1f82`, and the manifest gives both.
 Independent mode. Before the question the owner was given the file's path and
 manifest and was told of three things in the instructions nobody had ruled on:
@@ -1732,7 +1732,7 @@ handles the reply. Nothing was asked again.
 - *Decisions.* None beyond asking for a report that already exists.
 - *Fidelity.* Three dimensions, each on both pages at each width: the content is
   complete and accurate; the retrieval state is the right one; the content is
-  displayed and not hidden behind anything. It gives a protocol for reading a
+  displayed, and not hidden or left behind something that must be opened. It gives a protocol for reading a
   page's content back, by two routes in order, and a third outcome,
   `UNASSESSABLE`, where neither route maps what is shown.
 - *Constructs.* Two: how well the report's stated relationships are
@@ -1753,17 +1753,18 @@ by fidelity, and "Decision rule and claim" says a fidelity-decided pair says
 nothing about presentation. The judged scores are reported beside that.
 
 One of the four checks made before any arm runs is construct coverage, which
-fails "when measured constructs omit what the deriver marked as central". Both
+fails when "measured constructs omit what the deriver marked as central". Both
 constructs are marked central and neither is measured. That check is the
 reviewer's to assess at stage 7, not the author's. If it fails, the registered
 consequence is that the result is reported as inconclusive about improvement,
 with the measurements still reported, and that would be known before an arm is
 launched.
 
-Three things together produce this: the instructions told the deriver that a
-judged construct gives no vote; the deriver found no quality of this screen for
-which the brief supports a direction that code could measure; and the
-registered rule counts votes. The author changes none of them, and by the
+Four things together produce this: the instructions told the deriver that a
+judged construct gives no vote; the instructions, in wording nobody ruled on,
+give a vote only where a construct has a supported direction; the deriver found
+no quality of this screen for which the brief supports a direction that code
+could measure; and the registered rule counts votes. The author changes none of them, and by the
 plan's rule nothing is put to the deriver again because of what a construct is
 or which way it points. What is done with this is the owner's.
 
@@ -1779,7 +1780,9 @@ moves the only decisive stage to where it does not.
   of that code a choice the specification names: which structures the reader
   supports. A page it cannot map is `UNASSESSABLE`, and by the instructions that
   fails the builder. So the choice can decide a pair, and it is the author's
-  unless it is taken from the author. It goes to the reviewer with the audit.
+  unless it is taken from the author. It was not put to the reviewer as a
+  question. The audit raised it unasked and says the specification must define
+  it.
 - The capture must take 375 and 1440. As built it takes 1280 and 400. Open, as
   above.
 - The specification says what it cannot assess from one render: a lookup by
@@ -1794,13 +1797,21 @@ with one more question (whether the specification's reasons for measuring
 nothing by code hold), or a stop. The owner chose the audit as planned.
 
 **The send.** One package, built by the builder: the audit's wording (1475
-bytes, the plan's, with a question on the fidelity dimensions added because the
-owner ruled that the reviewer audits them); the frozen instructions; the brief;
-the two data files; the specification. 48,519 bytes, SHA-256 `1d064641…e71e`;
+bytes, the plan's, with two questions added: one on the fidelity dimensions,
+because the owner ruled that the reviewer audits them, asking also whether code
+could carry each test out; and one asking what the reviewer would want to know
+that is not there); the frozen instructions; the brief; the two data files; the
+specification; and the dispatcher's closing lines. 48,519 bytes, SHA-256 `1d064641…e71e`;
 the consent carried `ad0e7168…cf14`. Critique mode. The owner consented from the
 file. The plan's list for this package did not hold the instructions. The author
 added them so that the reviewer could see the rule the deriver wrote for, and
 said so before the question.
+
+The reviewer has therefore now been sent the frozen bytes of the instructions,
+as context for the audit and not for review. That overtakes the owner's ruling
+that they would not go to the reviewer a third time, the paragraph "What the
+reviewer did not read" above, and the note in the log of what was not sent,
+which are true only up to this send.
 
 **The reply.** Dion `tests/fixtures/design_seed_replication/audit.md`, 14,586
 bytes, SHA-256
@@ -1821,6 +1832,10 @@ Cells pin it and find no recorded term. The reviewer's decisions stand.
 | Central | both, at the level of the construct | |
 | Room for two pages that pass fidelity to differ | yes, on both | less on the not-found page, and not none |
 
+Its verdict on the whole: "largely sound on content fidelity and restraint about
+reader tasks", and "The specification should be retained after these
+corrections."
+
 **What it found wanting,** which bears on what can be built.
 
 - The second route for reading a page back "describe[s] a strategy, not
@@ -1838,6 +1853,14 @@ Cells pin it and find no recorded term. The reviewer's decisions stand.
   page that passed fidelity cannot show.
 - It would want to know the resolution and scaling of the images a judge is
   given, and a rule for scoring groups of very different size alike.
+- Which changes of representation the reference form allows is not stated.
+- Labels, types, units and associations belong within content fidelity and
+  "need explicit tests there".
+- The ordering of the eligibility counts with their total, and the relationship
+  of the restricted count to its warning, are not carried into the rubric.
+- For wider coverage it would want data files with extra keys, null fees and no
+  FX section, the optional optimiser fields, earlier weights to drift from, and
+  a restricted instrument.
 
 **On measuring nothing by code,** which the reviewer was not asked. It says the
 specification's conclusion, that two builders who both pass fidelity get no
@@ -1852,91 +1875,131 @@ done with that here. It is for the owner.
 The audit says the specification points at the wrong documents for its two
 pages. The specification names them by their numbers in the package the deriver
 was sent, where the data files were documents 3 and 4. In the audit's package
-the author had put two documents in front, so they were 4 and 5, and did not
-say so. The specification is right about what it was sent. The author should
-have told the reviewer the numbering had moved.
+the audit's wording is document 1 and the instructions, which the plan's list
+did not hold, are document 2, so the data files were 4 and 5. With the plan's
+list they would have been 3 and 4, as the specification has them. The author's
+addition caused the mismatch, and the reviewer was not told. The specification
+is right about what it was sent. The audit calls this "an
+executable-specification error" and puts it first among its corrections.
 
 **Not done, and why.** The plan's next step asks the reviewer for pages against
 which a measure of each kept construct is developed. No construct has a
-measure. What code there is to write is the fidelity tests, and the audit says
-their rules are not yet defined and that their definition can decide a pair.
-Those rules are not the author's to write. So the plan stops here, at its
-re-plan point, for the owner.
+measure. What code there is to write is the fidelity tests. The audit says the
+first route for reading a page back can be carried out as written, and that the
+second route, covering, partial clipping and scrolling inside the page are not
+yet defined; and that what the reader supports can decide a pair. Those rules
+are not the author's to write. So the plan stops here, before its re-plan
+point, for the owner.
 
-### The registered comparison is not run, 2026-10-05
+### How to go on, 2026-10-05: run as registered
 
-**How this was decided.** The owner was told where the plan had stopped and was
-given three ways on: run it as specified, stop before the arms, or change
-something registered. The author declined to recommend among them, knowing the
-treatment. The owner answered: "spar and get another opinion from codex, go with
-your final recommendations." So the decision below is the author's
-recommendation, taken by the owner in advance. It is not a ruling the owner made
-on its merits, and the owner may reverse it.
+**This entry replaces one that stood for under half an hour.** At commit `1835f2e6`,
+pushed at 21:50,
+this section was headed "The registered comparison is not run" and recorded a
+decision to write a replacement protocol in which a judged construct votes. That
+decision is withdrawn. Nothing was built or sent under it. Why it was wrong is
+below, because the way it went wrong is the thing this design is built against.
 
-**The sparring.** The author wrote a proposal and put it to Codex for critique
-(one text of 2552 bytes, written by hand, holding no file of the project and not
-saying what the builders differ in; the owner consenting; kept with the reply in
-the stage's evidence, row 8 of the log). The proposal: do not run it as
-registered; amend before the freeze so that a judged construct can give a vote
-under a rule fixed first; let a fidelity test that cannot be carried out for the
-reader's own limits decide nothing; take the wording and numbers from the
-reviewer; add no narrow code measure only to get a vote.
+**What the owner said.** Told where the plan had stopped and given three ways on
+(run it as specified, stop before the arms, change something registered), with
+the author declining to recommend because the author knows the treatment, the
+owner answered: "spar and get another opinion from codex, go with your final
+recommendations." What follows is therefore the author's recommendation, taken
+by the owner in advance. The owner did not rule on its merits and may reverse
+it. The author's reason for declining still holds of the recommendation.
 
-Codex ranked the three: "amend, then stop, then run as registered." It agreed
-with the direction and objected to six things, each adopted:
+**First round, and what was wrong with it.** The author put a proposal to Codex
+for critique (one text of 2552 bytes, written by hand, holding no file of the
+project; the owner consenting; row 8 of the log): do not run it as registered;
+amend so that a judged construct votes under a rule whose numbers come from the
+reviewer; let a fidelity test that cannot be carried out decide nothing. Codex
+ranked "amend, then stop, then run as registered", with six objections, and said
+its answer "depends on information you have not supplied": whether earlier
+outputs of these builders had been seen.
 
-| Objection | What is taken from it |
-|---|---|
-| The outcome is not known. What is known is that this protocol cannot compare two pages that pass fidelity on the central qualities. Say "the registered readiness check found the evaluation inadequate", not that the experiment was inconclusive | The wording of the decision below |
-| Letting a judged construct decide changes what can determine a result, after something consequential was learned. "Before the freeze" is not a complete defence | What follows is a **replacement protocol**. It is not the registered comparison going on, and it does not keep that registration's standing |
-| Judging the same pages twice shows consistency, not that the judges measure the right thing | Stated as a limit. Calibration is on separate pages, before any target page exists, with the formula fixed first |
-| "Cannot tell the builders apart" is the wrong claim. Judges are not told identity or assignment; a visible signature may remain | The claim is what is withheld, as "Controlled exposure" already says. Whether a judge formed a belief is asked afterwards, as registered |
-| A test that could not be carried out is neither a pass nor a fail. If it "decides nothing" and votes go on, a page with unverified content could win | Three states: pass, fail, unresolved. An unresolved requirement goes to a second check of the same requirement. If it stays unresolved, the pair has no direction |
-| Taking the numbers from the reviewer does not remove discretion if alternatives can be asked for or refused | The numbers are asked for once and the first complete answer is taken. The owner may refuse the replacement whole, which is a stop. Nobody edits a number |
+The author recorded the amendment as the decision without going back. A fresh
+local check of that entry against the records then found:
 
-It also asked what the author had not said: whether earlier outputs of these
-builders had been seen. **They have.** The author and the owner have both seen
-the pilot's pages and its result, on this same screen. Someone who knows the
-treatment and has seen that could foresee which way of scoring favours which
-builder. Nothing undoes that. It is why the numbers are not the author's, and it
-bounds what the replacement can claim.
+- The author had told Codex that a pre-run check "fails". **It has not been
+  assessed.** Construct coverage is one of the interpretation gate's four
+  pre-run checks and is the reviewer's to assess. Read by its words it would
+  fail. Its registered consequence is a label, "inconclusive about improvement",
+  with the measurements still reported. It is not a stop, and the plan leaves
+  going on to the owner.
+- **The answer to Codex's question is yes.** The author and the owner have both
+  seen the pilot's pages and its result, on this same screen. Someone who knows
+  the treatment and has seen that could foresee which way of scoring favours
+  which builder. Codex had made its ranking depend on this and was not asked
+  again.
+- The amendment would have **reversed two rulings the owner made on their
+  merits** the same day, before the specification existed: that a judged
+  construct gives no vote, and that a fidelity test which cannot be applied
+  counts as failed. The entry did not name them.
+- Codex had not been told that the reviewer said the specification "should be
+  retained", nor of its remark on a code measure of ordering.
+- The entry said each of Codex's six objections was adopted. Three were adopted
+  only in part.
 
-One thing Codex proposed is left open and not adopted here: that one vote for
-each construct be dropped and each construct's result be reported with no
-result for the pair. It is for the replacement's own review.
+**Second round.** The author put those corrections to Codex (2587 bytes, by
+hand, no file of the project; the owner consenting; row 9), with one thing more:
+that under "run as registered" and under the amendment the same pages go to the
+same judges with the same rubrics, and the two differ only in whether scores
+become votes and in how an unassessable fidelity test is treated. Codex answered:
+"No. The ranking does not survive." Its reasons, in its words:
 
-**The decision.**
+- The amendment "now has the structure of rescuing a result". "Having the
+  reviewer supply the numbers does not remove the informed choice to introduce
+  those numbers and make the constructs vote."
+- "The original protocol's inability to deliver the improvement conclusion you
+  want is not, by itself, a defect authorizing a replacement. Its registered
+  provisions expressly allow measurements without that conclusion."
+- "running as registered does not discard the central evidence. It limits the
+  conclusion drawn from it. On these facts, that limit is something to honour,
+  not rescue the study from."
+- The rule that an unassessable fidelity test fails its builder "has a real
+  validity problem, but that does not make a retrospective correction clean."
 
-1. **The registered comparison is not run.** Its own readiness check, construct
-   coverage, cannot pass: the specification measures no construct, and both of
-   its constructs are central. The reviewer was not asked to assess the check;
-   it fails by its own words. No arm is launched under it. This is the check
-   doing what it was written for. It is not a finding about the builders.
-2. **A replacement protocol is written before anything is built,** as the next
-   revision of this document, under a plan of its own that the owner reviews
-   before it is carried out. It says on its face that it was designed after the
-   first specification and its audit were read, by an author and an owner who
-   know the treatment and have seen the pilot.
-3. **What the replacement must hold to be worth running:** a claim no wider than
-   these pages from these paired runs; a whole rule for a pair, with how scores
-   become one value, what difference counts, what a tie and two constructs
-   pointing opposite ways give, and a real possibility of no direction; a
-   judging procedure fixed in advance, with how many judges, in what order, and
-   what is excluded; calibration on pages that are not the builders'; the three
-   states of a fidelity test and the second check; and a record of what changed,
-   why, who knew what, and who decided.
-4. **Stop remains the fallback.** If the judging cannot be shown to be usable on
-   the calibration pages, or the reviewer cannot define the second fidelity
-   check, the replacement is not run either, and that is recorded as the result
-   for this task.
-5. **No narrow code measure is added to get a vote.** The reviewer said one could
-   be grounded in the brief's stated ordering. Asking for it would be asking
-   again because of what a construct is.
+Its ranking on the corrected facts: "run as registered first; a transparently
+exploratory amendment second; stop last", provided the measurements remain worth
+collecting.
 
-**What stands from stages 2 to 4.** The data files and their audit. The builder
-of packages and the measuring harness. The first specification and its audit,
-kept as they came, as the record of why the registered comparison was not run.
-The instructions as frozen are the instructions that produced that
-specification. The replacement's instructions will differ, because they state a
-rule that has changed, and a specification written under them replaces the
-first whatever it says.
+**The recommendation, which the author now holds and the owner has taken in
+advance.**
+
+1. **The comparison is run as registered.** The registered rule for a pair
+   stands, with the owner's rulings of 2026-10-05. The specification is kept,
+   with the audit's decisions on it.
+2. **The four pre-run checks go to the reviewer at stage 7,** as registered. If
+   construct coverage fails, the result carries the registered label,
+   inconclusive about improvement, and the measurements are reported.
+3. **Both judged constructs are scored and reported in full,** each page and
+   width apart, as the specification says. No score becomes a vote.
+4. **The registered treatment of a fidelity test that cannot be carried out
+   stays the primary analysis:** it counts as failed for that builder. Beside
+   it, fixed now and before any page exists, a secondary analysis is reported in
+   which such a test is unknown and decides nothing for the pair. It is labelled
+   secondary. Any pair whose result differs between the two is named. "Unknown"
+   is never reported as passed. This is Codex's proposal.
+5. **Nothing is asked of the deriver again,** and no code measure is asked for.
+   The reviewer called a measure of ordering "an option, not an obligation". It
+   is not taken up: the author will not add a deciding measure after seeing the
+   specification, for the reason that sank the amendment.
+6. **What the audit says is not yet defined** (the second route for reading a
+   page back, covering, partial clipping, scrolling inside the page) goes to the
+   reviewer before any code is written, as the plan already says for a choice
+   the specification leaves open.
+7. **If judged constructs are to decide a result in later work,** this document
+   is revised for that work before anything of it is seen. Not for this one.
+
+**What this replication can then say.** How many pairs were decided by fidelity
+and for which builder, with the secondary analysis beside it; and what blind
+judges scored each page on two constructs the brief supports. It cannot name a
+direction on presentation. That was fixed by the registration and the owner's
+rulings before the specification existed, and it is kept.
+
+**The author's slips here, for the record.** The first recommendation was written
+into this document and pushed before it had been checked against the records,
+and before Codex's condition had been answered. An author who knows the
+treatment recommended making the instrument able to find a direction, in the
+area where the treatment acts, three hours after learning that it could not. The
+check that caught it was a reviewer reading the entry against the files.
