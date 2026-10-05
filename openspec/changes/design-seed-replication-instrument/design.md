@@ -1700,3 +1700,88 @@ succeeds; stability across renders or between widths.
 **Where the sends are logged.** `dispatch-log.md` in the stage's evidence
 directory on the owner's machine: every package, its size, the dispatcher's
 digest shortened, the mode, what allowed it, and where the reply is kept.
+
+### Stage 3: the specification, 2026-10-05
+
+**The send.** One package, built by the builder: the frozen instructions, the
+brief whole, the two data files. 29,363 bytes, SHA-256 `df44411c…8c10`; the
+digest the consent carried is `cc19a025…1f82`, and the manifest gives both.
+Independent mode. Before the question the owner was given the file's path and
+manifest and was told of three things in the instructions nobody had ruled on:
+that any failed fidelity test fails the builder; that a construct votes only
+with a supported direction; and that two dropped phrases had been put back, so
+that the text was a fourth freeze. The owner approved the send. That is consent
+to the send with those three stated. It is not recorded here as three rulings.
+
+One send. No second was made, and none is owed: every part is in the reply.
+
+**The reply.** Dion `tests/fixtures/design_seed_replication/specification.md`,
+17,620 bytes, SHA-256
+`3ce12db28ed36b6279ea366fb9df430f5d3263eca8a9d1c9b3e20adee93e6552`, as it came,
+with the digest beside it. Cells pin the digest, find the nine parts in order,
+and find no recorded term. Nobody edits it.
+
+**Read for form only, by the author.** The nine parts are there. It holds
+sentences in the imperative ("Give the judge the relationship inventory", "Use
+the harness conditions exactly"). They say what the instrument is to do, which
+is what a specification is for; the author found none addressed to whoever
+handles the reply. Nothing was asked again.
+
+**What it says,** in the author's summary. The file is what counts.
+
+- *Decisions.* None beyond asking for a report that already exists.
+- *Fidelity.* Three dimensions, each on both pages at each width: the content is
+  complete and accurate; the retrieval state is the right one; the content is
+  displayed and not hidden behind anything. It gives a protocol for reading a
+  page's content back, by two routes in order, and a third outcome,
+  `UNASSESSABLE`, where neither route maps what is shown.
+- *Constructs.* Two: how well the report's stated relationships are
+  communicated, and how readable the whole output is. It marks both central.
+- *Measures.* **None.** "No construct is measured by code." It says code could
+  measure sizes, contrast, distances and page length, that the materials
+  establish no preferred value for any of them, and that a score built from them
+  "would introduce unsupported preferences".
+- *Judgment.* Both constructs are for a judge, each on a scale of 0 to 4 with an
+  anchor for every score, each page and width scored apart and not averaged.
+- *Viewports.* 375 and 1440, labelled an operational choice.
+
+**What follows, which the specification says itself.** "Both passing gives no
+direction because neither receives a code construct vote", and "That limitation
+is intentional." Under the registered rule, with the owner's ruling that a
+judged construct gives no vote, a pair in this replication can be decided only
+by fidelity, and "Decision rule and claim" says a fidelity-decided pair says
+nothing about presentation. The judged scores are reported beside that.
+
+One of the four checks made before any arm runs is construct coverage, which
+fails "when measured constructs omit what the deriver marked as central". Both
+constructs are marked central and neither is measured. That check is the
+reviewer's to assess at stage 7, not the author's. If it fails, the registered
+consequence is that the result is reported as inconclusive about improvement,
+with the measurements still reported, and that would be known before an arm is
+launched.
+
+Three things together produce this: the instructions told the deriver that a
+judged construct gives no vote; the deriver found no quality of this screen for
+which the brief supports a direction that code could measure; and the
+registered rule counts votes. The author changes none of them, and by the
+plan's rule nothing is put to the deriver again because of what a construct is
+or which way it points. What is done with this is the owner's.
+
+**For the reader, and with no power over anything:** the author, who knows the
+treatment, notes that both constructs lie where a treatment of this kind acts,
+in how content is grouped and how readable it is, and that the specification
+moves the only decisive stage to where it does not.
+
+**What this changes in the stages that follow.**
+
+- Stage 5 has no measure of a construct to write. What is written as code is the
+  three fidelity tests. The protocol for reading a page back leaves the writer
+  of that code a choice the specification names: which structures the reader
+  supports. A page it cannot map is `UNASSESSABLE`, and by the instructions that
+  fails the builder. So the choice can decide a pair, and it is the author's
+  unless it is taken from the author. It goes to the reviewer with the audit.
+- The capture must take 375 and 1440. As built it takes 1280 and 400. Open, as
+  above.
+- The specification says what it cannot assess from one render: a lookup by
+  either identifier, extra keys, the output forms, and whether a page depends on
+  anything outside itself. It claims no complete test of self-containment.
