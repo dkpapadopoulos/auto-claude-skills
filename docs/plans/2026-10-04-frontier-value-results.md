@@ -588,6 +588,46 @@ state is untouched, measured against a freshly labelled set. Both halves of this
 - **No direct gate bypass found** in the display-only design. Its earlier KEEP on the first cuts
   had missed the bypass; this time it was asked the gate question explicitly.
 
+### The cost side of the non-human suppression, measured
+
+Removing 111 routing blocks is only a benefit if those blocks were not useful. A peer message can
+be a real work order, and Codex's counter-argument was exactly that. So the suppressed inputs were
+labelled, under a rule written before any label existed: the net benefit counts as shown only if
+at most 10 of the 109 mandated inputs were genuine work orders for which the mandated skill was
+the right one.
+
+- **Population:** every non-human input in the corpus that got a routing block at the baseline:
+  111, of which 109 carried a `MUST INVOKE` line. By shape: 44 peer messages, 38 subagent
+  hand-backs, 29 notices.
+- **Pass 1:** two blind labellers, same rubric, four labels. They agree on 111 of 111.
+
+  | | Report, hand-back or notice | Work order, mandated skill fits | Work order, mandated skill does not fit |
+  |---|---|---|---|
+  | Carried a mandate (109) | 107 | 0 | 2 |
+  | No mandate (2) | 2 | 0 | 0 |
+
+  The two work orders are automated security-review notices; both labellers noted that one of
+  them, mandated `systematic-debugging`, could arguably be read as a fit.
+- **Pass 2, required by Codex:** pass 1 saw only the head and tail of long texts. All 65 mandated
+  inputs that had been excerpted were read in full by three further readers (472,000 characters
+  the first pass never saw). 64 contain no request to the receiving session; 1 is unclear (a
+  reviewer's reply listing items for the receiver to confirm, which no mandated skill fits).
+- **Result:** work orders the mandated skill fitted: **0 of 109**. Counting every caveat a
+  labeller raised as a fit: 2 of 109. The rule's threshold was 10.
+
+Codex's verdict on this evidence: **KEEP**, worded as "strong evidence supporting KEEP in the
+observed workload", not "net benefit proven". Its two qualifications stand and are adopted here:
+
+- The rule measures RELEVANCE, not net benefit. It is a necessary condition. Counts carry no
+  weight for consequence: one missed instruction that mattered could outweigh many irrelevant
+  displays.
+- All five labellers are the same model family as the author and read the same rubric, so their
+  agreement is corroboration, not independent validation.
+
+And one limit of the corpus itself: it is one owner's five weeks, and it contains no session whose
+work arrived purely as peer messages. The scenario in the counter-argument is therefore
+unmeasured, not shown to be harmless. It is recorded as an open risk.
+
 ### What shipped
 
 | Commit | What |
