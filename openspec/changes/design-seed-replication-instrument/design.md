@@ -1375,17 +1375,17 @@ section it is the later word.
 
 ### What the brief chose, 2026-10-04
 
-Read from the brief by the author, as a fact and not as a judgement of it. The
-screen is `dion report <identifier>`, the stored review report. **It is the
-screen the pilot used.**
+Read from the brief by the author. The screen is `dion report <identifier>`, the
+stored review report. **It is the screen the pilot used.**
 
-Dion has no web or graphical screen. It has two commands that retrieve
-something stored: `dion report`, and `dion research report`, which retrieves
-stored research output in the same kind of envelope. So the statement, which
-asks for "one screen implemented in this project that displays a stored
-report", did not force the choice: the picker chose between two. The brief's own
-account of its choice says the research commands compute their output when run.
-That is not so of `research report`.
+Dion has no web or graphical screen. It has more than one command that retrieves
+something stored by an identifier: `dion report`; `dion research report`, which
+retrieves stored research output in the same kind of envelope; and
+`dion flex inspect`. So the statement, which asks for "one screen implemented in
+this project that displays a stored report", did not force the choice: the
+picker chose among at least two. The brief's own account of its choice says the
+research commands compute their output when run. That is not so of
+`research report`. This is recorded and decides nothing.
 
 By the owner's ruling of 2026-10-02 nothing is rerun for what a brief says, and
 the brief stands. No page, data file or result of the pilot is used to build,
@@ -1402,7 +1402,7 @@ questions and answered.
 
 | Question | Ruling | When |
 |---|---|---|
-| Consent for a package too large for the consent dialog to show whole | The owner reads the package file, whose path and manifest are given before the question. The consent is bound to the bytes by the dispatcher's digest, which the question carries | 2026-10-04, by "proceed" |
+| Consent for a package too large for the consent dialog to show whole | The owner reads the package file, whose path and manifest are given before the question | 2026-10-04, by "proceed" |
 | Who writes the list of operator decisions the architecture table names | Nobody apart from the brief. The deriver lists them with the sentence each rests on, and the reviewer audits the list | 2026-10-04, by "proceed" |
 | The pilot's screen | Recorded, as above | 2026-10-04, by "proceed" |
 | The data file | The report Dion's own test database gives, with nothing added by the author. Not a real statement, which the brief's own steps propose | 2026-10-04, by "proceed" |
@@ -1411,8 +1411,26 @@ questions and answered.
 | Who defines the fidelity dimensions, which no revision had said | The deriver, as a part of its specification, audited by the reviewer | 2026-10-05 |
 | What a builder delivers, there being two data files and no way for a page to load one when shown | One page for each data file | 2026-10-05 |
 | What an unavailable result does to a pair, which "Failures and reruns" leaves to "the rule above" and the rule above does not say | A page that does not render fails fidelity. A fidelity test that cannot be applied to a page that rendered counts as failed for that builder. A construct on which either builder has no value gives no vote | 2026-10-05 |
+| Whether a construct only a judge can score votes, "Judges" saying only that judged scores are reported apart | It gives no vote. Its scores are reported beside the result | 2026-10-05 |
+| Whether the instructions' last form goes to the reviewer a third time | No. They are frozen, and this document says which sentences the reviewer did not read | 2026-10-05 |
 
-Three of these change what earlier sections say, and are not only additions.
+Some of these change what earlier sections say, and are not only additions.
+
+**How a consent is bound to what the owner read.** A question names its package by
+the dispatcher's digest, the approval's preview must hash to that digest, and the
+copy that is sent is checked against it again. That digest is taken with the line
+breaks at the end left off, so for a package the builder made, which always ends
+in line breaks, it is never the file's own digest. The manifest carries both
+since 2026-10-05, so that the file that was read can be matched to the question.
+No send made before that had such a manifest: for those, the match rests on the
+dispatcher having been given that file, and was not shown to the owner.
+
+Of the five sends made so far, one package was built by the builder and had a
+manifest: the fixture audit's. The plan's critique and the two packages that put
+the instructions to the reviewer were written by hand and had none; the owner read
+the first in the consent dialog and was given the path of the other two. The two for the instructions were scanned after the
+fact, on 2026-10-05, with the builder's term list and its patterns for paths and
+addresses, and nothing was found.
 
 **The store, and a control that changed with it.** The safety assessment says the
 store is on the machine the stages run on. The owner states it is not. The
@@ -1420,17 +1438,40 @@ pilot's check of a page against the store treats a store it cannot find as
 "cannot verify", which is a stop. The package builder of these stages does
 otherwise: when no store exists at Dion's default path, in this checkout or the
 main one, it records "not applicable" in the manifest, with how many places it
-looked at, and builds the package. A stop became a note. What stands behind that
-is the owner's statement, and that the data file is synthetic and the brief was
-written from an export of one commit's files, which holds no store. The builder
-looks at two paths, not at the machine.
+looked at, and builds the package. (The one manifest that has gone with a send,
+the fixture audit's, was built before that wording: it says "no store on this
+machine" and gives no count.) A stop became a note. Nobody was asked whether
+the control may be loosened, and nobody ruled that it may: the owner stated a
+fact and the author built the note on it. What stands behind it is that
+statement, that the data file is synthetic, and that the brief was written from
+an export of one commit's files, which holds no store. It is the owner's to
+reverse.
 
 **A pair.** "Decision rule and claim" says a pair is one page from each arm. It is
-two pages from each: the screen built with each data file.
+two pages from each: the screen built with each data file. The
+instructions below say how a builder's two pages enter fidelity and a
+construct's value. What else follows is not yet worked out and is for the plan
+under which arms run: the picker's
+frozen statement speaks of "a single self-contained web page", nothing that
+instructs a builder exists yet, whether one session builds both pages is not
+said, and twice as many pages are rendered. Sentences elsewhere that count ten
+pages, or a budget for one page, are stale.
 
-**The decision rule's unstated part.** The registered rule is unchanged in what it
-says. What it left unsaid about an unavailable result is now said, by the last row
-of the table, before any specification, measure or arm exists.
+**The decision rule's unstated parts.** The registered rule is unchanged in what
+it says. What it left unsaid about an unavailable result, and about a construct
+that is only judged, is now said by the owner's rulings, before any
+specification, measure or arm exists.
+
+Two more things the instructions say were not ruled by anyone. The registered
+rule speaks of one page failing "a fidelity dimension". With several dimensions,
+two pages for each builder and several widths, the instructions say a builder
+fails fidelity if any test that applies to its pages fails. The reviewer called
+how failures combine the largest gap, and gave its wording on the stated
+assumption that any failure fails the builder. That reading was taken. And the
+instructions give a construct a vote only where it has a supported direction,
+which the registered rule does not say; the wording is the reviewer's. The owner
+was not asked either question. Both are stated to the owner with the deriver's
+package, before it is sent.
 
 ### Stage 2: the data files, 2026-10-04
 
@@ -1439,29 +1480,32 @@ of the table, before any specification, measure or arm exists.
 `tests/design_seed_pilot/build_replication_fixture.py`.
 
 The architecture table has the picker specify how the fixture is made and the
-author run it. The brief's steps begin with a real brokerage statement. That
-was not done: it would put the owner's holdings into every page and package
+author run it. The brief's second step loads a real brokerage
+statement; the brief says it had not established whether the project ships a
+synthetic database. That step was not done: it would put the owner's holdings into every page and package
 (risk 4). So the source of the data is the author's and the owner's, and not the
 picker's. The file is the report that `tests/review/_db_fixtures._setup_full_db`
 gives when Dion's review is run on it, stored, and read back with the command's
 own query in the command's own envelope. Nothing is added to that database. A
 cell asks the command itself, on a database of the same content, and compares,
-setting aside the four things every review makes anew: the run id, the report
-id, the content hash and the creation time. It follows that `report.json` is one
-build: a rebuild gives the same report body and other ids, and the digest above
-names that one build.
+setting aside the three things every review makes anew: the run id, the report
+id and the creation time. The report body and its content hash are not among
+them: two builds gave the same of each, and a cell says so. `report.json` is
+therefore one build, and its digest names that one build: a rebuild gives the
+same report under other ids.
 
 The function that builds takes no argument and opens its database in memory. A
-cell records every call that opens a database while it runs and fails if one is
-not in memory; a route to a database that is not such a call would not be seen,
+cell records every call to `duckdb.connect` while it runs and fails unless there
+is exactly one, in memory; a route to a database that is not such a call would not be seen,
 and the source holds none.
 
 What the author chose: that database; the configuration Dion's own tests review
-it with, `tests/config`, which sets the optimiser's policy, the costs and the FX
-thresholds, and so what the report warns of; the review date the database is
+it with, `tests/config`, which sets the optimiser's policy and the costs (it has no FX
+section, so the FX thresholds are the defaults of Dion's configuration loader,
+and those give the four FX lines among the file's seven action items); the review date the database is
 pinned to; the indent of two that the brief's `--pretty` gives; the identifier
 `no-such-report` for the second file; the two file names. Before choosing, one
-thing was looked at: whether this database's report has the two things the brief
+thing was looked at, apart from the file's size: whether this database's report has the two things the brief
 prefers, orders and an FX section. It has three orders and a non-null FX section.
 The author reports that no other database and no other date was tried.
 
@@ -1472,8 +1516,10 @@ choices, which did not then name the configuration. Within that, it found each
 file to be what those sections specify, and found nothing in the choices listed
 to it that favours a way of building the page. It listed the states the brief
 names that neither file exercises: a found report with no FX section, with no
-orders or action items, or with an FX section and no warnings; the compact and the
-text forms of output; a database that is missing or cannot be read. Nothing was
+orders or action items, or with an FX section whose warnings or breaches are empty; the compact and the
+text forms of output; a database that is missing or cannot be read. It also said
+the files cannot show a lookup by both kinds of identifier: the builder asks by
+run id only. Nothing was
 added to supply them: that would be a database of the author's making. It asked
 for things it was not sent, among them the rest of the brief.
 
@@ -1485,10 +1531,16 @@ a larger one would show. That is a limit of the example.
 ### Frozen: the deriver's instructions, 2026-10-05
 
 Dion `tests/design_seed_pilot/exposure/derive/instructions.txt`, SHA-256
-`eeaa20a99534b5c8ccae4481fed88b52aa081b7427114f4be3d4c3d087d9a50f`, 6017 bytes.
-A cell pins the digest. Other cells tie to the harness's own source five things
-the text says: the viewport height, the wait after load, that it waits for load,
-that animation is stopped, and that a judge's images are of the whole page.
+`1d7b58ab0b96397134efa85b40a884f48782caaf462b747d49e04b81d25e7992`, 6355 bytes.
+A cell pins the digest. Other cells look for a phrase of the text and for a line
+of the harness's source, for nine things: the viewport height; the wait after
+load; that it waits for load; that animation is stopped; the light scheme; the
+device scale; the reduced motion asked for; the range of widths it takes; and
+that a judge's images are of the whole page. For six of them the line is the one
+that does it. For the height, the wait and the range of widths it is the line
+that declares the value; the lines that apply them are held by the measuring
+script's own cells and mutants, which need a browser and skip without one. All
+nine read the source as text. None runs the harness.
 
 ```text
 You are given a brief for building one screen as a web page, and two data files. Two builders will each build the screen from that same brief and the same data files, and what they build will be compared. A page cannot load a file when it is shown, so each builder delivers two pages: the screen with the content of one data file built in, and the screen with the content of the other. Write the specification of what is compared. Ground every substantive claim about what matters, and about which way is better, in the brief and the data files. Keep those claims apart from the operational choices and the threshold conventions that are asked for below. Do not infer anything about the builders, and do not bring a design preference from outside these materials.
@@ -1497,11 +1549,11 @@ How the comparison works, so that you can write for it.
 
 A pair is one builder's two pages against the other builder's two pages. It is decided in two stages.
 
-First, fidelity. Each builder is assessed across all fidelity dimensions and all the pages and widths they apply to. A builder fails fidelity if any applicable fidelity test fails. A page that does not render fails. A test that cannot be applied to a page that did render counts as failed for that builder. If exactly one builder fails fidelity, the pair is decided for the other. If both fail, the pair has no direction. If both pass, constructs are compared.
+First, fidelity. Each builder is assessed across all fidelity dimensions and all the pages and widths they apply to. A builder fails fidelity if any fidelity test that applies to its pages fails. A page that does not render fails. A test that applies to a page and cannot be carried out on it, though the page rendered, also counts as failed for that builder. If exactly one builder fails fidelity, the pair is decided for the other. If both fail, the pair has no direction. If both pass, constructs are compared.
 
-Second, constructs. Each construct gives at most one vote, however many things are measured for it. A builder gets that vote only if the construct has a supported direction and the difference favours that builder by more than both the threshold of part 6 and the rendering noise, which is measured later: that is, by more than the larger of the two, on the same scale. A construct on which either builder has no value gives no vote. The builder with more votes is favoured. A tie has no direction.
+Second, constructs. Only a construct measured by code votes, and it gives at most one vote, however many things are measured for it. A construct that only a judge can score gives no vote: its scores are reported beside the result. A builder gets that vote only if the construct has a supported direction and the difference favours that builder by more than both the threshold of part 6 and the rendering noise, which is measured later: that is, by more than the larger of the two, on the same scale. A construct on which either builder has no value gives no vote. The builder with more votes is favoured. A tie has no direction.
 
-A measure is code. It is given one render of one page at each viewport width you name, at a viewport height of 900, after the page has loaded and a further 750 ms, with animation stopped. Those are how the harness renders. Two more are rules a measure is written to and checked against: it does not interact with the page, and it reads only the rendered layout and the document of that page.
+A measure is code. It is given one render of one page at each viewport width you name, from 200 to 4000, at a viewport height of 900, in the light colour scheme, at a device scale of 1, with reduced motion asked for, after the page has loaded and a further 750 ms, with animation stopped. Those are how the harness renders. Two more are rules a measure is written to and checked against: it does not interact with the page, and it reads only the rendered layout and the document of that page.
 
 A judge, where there is one, is a model given the judgment rubric and images of the whole of each page at those widths. It is given nothing else about the pages.
 
@@ -1509,10 +1561,10 @@ Your reply is the specification. Use these nine parts, in this order.
 
 1. Decisions. The reader decisions the brief explicitly supports, each with the sentence it rests on, quoted. If naming a decision takes an inference, label it and explain it. If the brief supports none, say so.
 2. Requirements. What the brief requires of the page that is not a decision, each with its sentence, quoted.
-3. Fidelity. Which of those requirements are fidelity dimensions. For each: a test that returns pass or fail when it can be applied, and a distinct status when it cannot; which data file's page it is applied to; and why a failure of this requirement belongs in fidelity and not in a graded construct. Being an explicit requirement is not by itself enough.
+3. Fidelity. Which of those requirements are fidelity dimensions. For each: a test that code could apply to a render, returning pass or fail when it can be applied and a distinct status when it cannot; which data file's page it is applied to; and why a failure of this requirement belongs in fidelity and not in a graded construct. Being an explicit requirement is not by itself enough.
 4. Constructs. Each quality of a page that a decision, a requirement or a fact of the data makes relevant. For each: what it estimates and what it does not; the specific evidence that makes it relevant, including why any data fact you cite matters to the page's stated purpose; which way is better, if either; the elements of the page it reads and how they are grouped. Find the overlap between constructs and resolve it, by merging constructs or by restricting what each measures: the same quality must not give more than one vote.
-5. Measures. For each construct measured by code, define the measure so that code could be written from it and checked against it: which data file's page it is taken on, what it observes, how it extracts it, and what it excludes. Say how all the observations for a construct, across data files, viewport widths and component measures, combine into one comparable value for each builder. Keep the construct apart from the proxy that is measured. A fallback only in a stated order, saying whether it measures the same thing. Say what is reported in each of these cases, which are not the same: the page did not render; the measure does not apply to this page; what it reads is absent; what it reads is present and not rendered. Name any requirement of the brief that one render with no interaction cannot assess.
-6. Difference. For each construct, the threshold a difference must exceed to count, in the units of the construct's final value or of its judgment score. Where the brief or the data supports that threshold, give the basis. Where neither does, give a threshold all the same and label it a convention; do not claim that it is the smallest difference that matters to a reader.
+5. Measures. For each construct measured by code, define the measure so that code could be written from it and checked against it: which data file's page it is taken on, what it observes, how it extracts it, and what it excludes. Say how all the observations for a construct, across data files, viewport widths and component measures, combine into one comparable value for each builder. Keep the construct apart from the proxy that is measured. A fallback only in a stated order, saying whether it measures the same thing. Say what is reported in each of these cases, which are not the same and are not all a poor result: the page did not render; the measure does not apply to this page; what it reads is absent; what it reads is present and not rendered. Name any requirement of the brief that one render with no interaction cannot assess.
+6. Difference. For each construct measured by code, the threshold a difference must exceed to count, in the units of the construct's final value. Where the brief or the data supports that threshold, give the basis. Where neither does, give a threshold all the same and label it a convention; do not claim that it is the smallest difference that matters to a reader.
 7. Central. The constructs without which the comparison would not address an explicit purpose or requirement of the brief. Cite that purpose or requirement. This does not change how a pair is decided; it is used to judge whether what was measured covers what matters.
 8. Viewports. The viewport widths each measure is taken at, and why. Keep widths the materials require apart from widths you propose.
 9. Judgment. Where code reading one render cannot measure a construct adequately, say whether a judge shown images of the pages can. If it can: the rubric, the scale, and an anchor for every score. If it cannot, mark the construct not measured and say why.
@@ -1520,58 +1572,131 @@ Your reply is the specification. Use these nine parts, in this order.
 Label a choice needed to make a test or a measure reproducible as an operational choice, and give its basis. Label a threshold that part 6 requires and the materials do not support as a convention. Neither establishes a requirement or a preference of the materials. Do not invent requirements or preferences that the materials do not hold, and say so plainly where they do not support a fidelity dimension, a construct, a direction or a conclusion.
 ```
 
-**What the text says that no cell ties to anything.** That a measure does not
-interact with a page, and reads only that page. These are rules for whoever
-writes a measure. The harness hands a measure the whole page object and does not
-enforce them. The reviewer's approval of each measure, at stage 6, is what checks
-them, and the text says they are rules and not facts.
+**What the text says that no cell ties to anything.** This list is what the author
+and two reviews found. It is not shown to be complete.
 
-**How it was reached, with what went wrong.** The author wrote a first text of
-eight parts. It went to the reviewer (Codex, critique mode, told nothing of the
-comparison's subject). The first send ended with no reply: Codex had reached a
-usage limit, and the dispatcher reported that the package might have left the
-machine. It was sent again, the same 2870 bytes, with the owner's consent again.
-The reviewer found no phrase that sets a visual preference, and one conflict:
-the text asked for exact definitions and forbade filling in anything the brief
-does not settle.
+- That a measure does not interact with a page, and reads only that page. These
+  are rules for whoever writes a measure. The harness hands a measure the whole
+  page object and does not enforce them. The reviewer's approval of each measure,
+  at stage 6, is what checks them, and the text says they are rules and not facts.
+- That a judge's images are "at those widths". **This is not true of the capture
+  as built.** It takes two fixed widths, the pilot's, and no argument for others.
+  It must be made to take the specification's widths before any judging package
+  is built. Open.
+- That a judge is given the rubric and "nothing else about the pages", and that a
+  judged construct's scores are reported beside the result. The builder of a
+  judging package is not built, nothing registers what such a package holds, and
+  nothing that reports a result is built.
+- That a page cannot load a file when it is shown. It is true of the capture and
+  of the measuring script, which refuse such a page, and no cell sets the
+  sentence beside them.
+- How a pair is decided, and that rendering noise is measured later. Nothing that
+  decides a pair or measures noise is built. A cell checks only that the
+  sentences are in the text.
+- That a fidelity test is one code could apply to a render. Nothing that applies
+  a fidelity test is built.
 
-The author reworded it and froze it, and that was a mistake caught before the
-text was used. A fresh review of this section against the code found that the
-frozen text gave the constructs step of the registered rule as the whole rule,
-with no fidelity stage and no part for fidelity dimensions, which no revision had
-said who defines; that it spoke of human judgment, where this design's judge is a
-model; that it named two data files and never said which a page shows; and that
-the reviewer had read a draft and not the bytes that were frozen. Nothing had
-been sent to the deriver.
+**How it was reached, with what went wrong.** The text was frozen four times. The
+first three were mistakes, each caught before anything was sent to the deriver.
 
-The text was corrected, the owner ruled the three things the design had not
-settled, and the corrected text went to the reviewer (one package of 6226 bytes).
-It found the rule still left things for a writer to invent: how failures of
-different fidelity dimensions combine; how observations across pages and widths
-become one value; what an unavailable result does; and that calling a threshold
-"the smallest difference that matters" presents a convention as a finding. Its
-rewordings are worked into the frozen text, close to its words.
+The author wrote a first text of eight parts. It went to the reviewer (Codex,
+critique mode, told nothing of the comparison's subject; one package, the owner
+consenting). The first send ended with no reply: Codex had reached a usage limit,
+and the dispatcher reported that the package might have left the machine. It was
+sent again, the same 2870 bytes, with the owner's consent again. The reviewer
+found six phrases that steer what a construct may be and none that sets a visual
+preference; six things a writer would need that were missing; and, as what it
+called the biggest defect, one conflict: the text asked for exact definitions
+and forbade filling in anything the brief does not settle.
 
-**Not adopted, and what the reviewer did not read.**
+*First freeze (3526 bytes).* The author reworded the text and froze it. A fresh
+review of this section against the code, by a reviewer of the author's family,
+found that the frozen text gave the constructs step of the registered rule as
+the whole rule, with no fidelity stage and no part for fidelity dimensions,
+which no revision had said who defines; that it spoke of human judgment, where
+this design's judge is a model; that it named two data files and never said
+which a page shows; and that the reviewer had read a draft and not the bytes
+that were frozen.
+
+The owner then ruled who defines the fidelity dimensions and what a builder
+delivers. The text was corrected and went to the reviewer a second time (one
+package of 6226 bytes, the owner consenting from the file). It found the rule
+still left things for a writer to invent: how failures of different fidelity
+dimensions combine; how observations across pages and widths become one value;
+what an unavailable result does; and that calling a threshold "the smallest
+difference that matters" presents a convention as a finding. The owner ruled
+what an unavailable result does.
+
+*Second freeze (6017 bytes).* The reviewer's rewordings were worked in, close to
+its words, with that ruling, and the text was frozen. A package for the deriver
+was built from it and not sent. A second local review of this section found
+that the text let a judged construct vote, which this design does not say. The
+owner ruled that it does not, and that the text would not go to the reviewer a
+third time.
+
+*Third freeze (6294 bytes).* The ruling was written in, and more of what the
+harness does was stated: the scheme, the scale, the motion asked for and the
+range of widths. A package was built and not sent. A third local check, of this
+section against the reviewer's packages and replies, found that working the
+rewordings in had also dropped two phrases the reviewer had read and nobody had
+asked to remove: that a fidelity test is one "that code could apply to a
+render", which left the text not saying what applies a fidelity test, and that
+the cases of a missing result "are not all a poor result".
+
+*The form above (6355 bytes)* restores those two phrases. That is the author's
+correction of the author's slip. No ruling was asked for it, and it is stated to
+the owner with the deriver's package.
+
+The local reviews' reports are in the session's record. They were not kept as
+files.
+
+**Not adopted.**
 
 - The reviewer would have let a size of difference be "undetermined". This design
-  needs one for every construct. The text requires one and has it labelled a
-  convention where nothing supports it.
+  needs one for every measured construct. The text requires one and has it
+  labelled a convention where nothing supports it.
 - The reviewer would have a construct reported apart with no overall result
   unless a rule were supplied. The registered rule was supplied instead.
-- The plan's first review asked for one exact definition of a measure for each
-  construct. The design allows a construct several measures, with one vote. The
-  text asks how a construct is measured and how everything measured for it
-  combines into one value.
-- The frozen bytes are the corrected text with the second set of rewordings and
-  the owner's ruling on unavailable results worked in. They were not sent a third
-  time. The reviewer has read every sentence's substance in one of two forms, and
-  not the final form.
+- The reviewer would have had the deriver define when a page is ready and what a
+  measure may read. Those are the harness's, and the text states them.
+
+The plan's first review asked that the choice among acceptable ways to measure a
+construct be frozen in the specification, with exact definitions and the
+aggregation of several measures. The author's first draft made that "one exact
+definition of a measure". The text now asks how a construct is measured and how
+everything measured for it combines into one value, which is what was asked.
+
+**What the reviewer did not read.** The frozen bytes, by the owner's ruling. It
+read two earlier forms. Split at full stops and colons, the frozen text has
+92 pieces, and 53 of them stand as they were in the form it read second. Most
+of the rest are its own proposed wording or close to it. "Being an explicit
+requirement is not by itself enough", in part 3, is the reviewer's but for its
+last word, which was "sufficient".
+
+What is in the frozen text that the reviewer neither read nor proposed:
+
+- the three sentences that say what an unavailable result does, and "any fidelity
+  test that applies to its pages", which rewords its "any applicable fidelity
+  test";
+- the two sentences that say a judged construct gives no vote;
+- the added conditions of the render;
+- "of the whole of each page", which answers a question it asked and never saw
+  answered;
+- the first sentence of part 3, and the order of the words around "that code
+  could apply to a render";
+- the second clause of part 7;
+- "the rubric" in part 9;
+- part 6 as narrowed to constructs measured by code.
+
+One removal it did not see: the sentence that a fidelity dimension decides a pair
+outright and that only what the brief requires for a page to be the screen
+belongs there. It had said of "to be the screen at all" that the phrase does not
+establish which breaches deserve an outright loss.
 
 What the reviewer said the instructions cannot let a specification say, kept as
 limits: anything that happens after an interaction; whether a reader in fact
 succeeds; stability across renders or between widths.
 
 **Where the sends are logged.** `dispatch-log.md` in the stage's evidence
-directory on the owner's machine: every package, its size and digest, the mode,
-what allowed it, and the reply.
+directory on the owner's machine: every package, its size, the dispatcher's
+digest shortened, the mode, what allowed it, and where the reply is kept.
