@@ -105,7 +105,7 @@
       "requires": [
         "writing-plans"
       ],
-      "description": "Step-by-step execution of an approved plan. REQUIRED: set up git worktree first. If subagents available, use subagent-driven-development instead. Invoke finishing-a-development-branch after all tasks complete.",
+      "description": "Inline execution of an approved plan by this session. One whole-branch review at the end. REQUIRED: set up git worktree first. Invoke finishing-a-development-branch after all tasks complete.",
       "precondition": "PRECONDITION: invoke Skill(superpowers:executing-plans) — or subagent-driven-development / agent-team-execution — BEFORE editing code. Doing the implementation with raw tools first silently skips the IMPLEMENT phase: no evidence is recorded and the push gate will flag (later, deny) the push. If you deliberately skip it, record it: source '{{PLUGIN_ROOT}}/hooks/lib/phase-attest.sh'; phase_attest executing-plans \"<reason>\".",
       "invoke": "Skill(superpowers:executing-plans)"
     },
@@ -119,7 +119,7 @@
       "priority": 14,
       "precedes": [],
       "requires": [],
-      "description": "Fresh subagent per task with two-stage review (spec compliance then code quality). Preferred over executing-plans when subagents are available.",
+      "description": "Fresh subagent per task with a task review after each, then a whole-branch review. Alternative to executing-plans when subagents are available.",
       "invoke": "Skill(superpowers:subagent-driven-development)"
     },
     {
@@ -187,7 +187,7 @@
       "requires": [
         "openspec-ship"
       ],
-      "description": "Verify tests pass, present 4 options (merge local, create PR, keep branch, discard), execute chosen workflow, clean up worktree.",
+      "description": "Verify tests pass, present options (merge local, create PR, keep branch), execute chosen workflow.",
       "invoke": "Skill(superpowers:finishing-a-development-branch)"
     },
     {
@@ -1486,7 +1486,7 @@
         },
         {
           "step": "finishing-a-development-branch",
-          "purpose": "REQUIRED after all tasks: verify tests, present merge/PR/keep/discard options, clean up worktree."
+          "purpose": "REQUIRED after all tasks: verify tests, present merge/PR/keep options."
         }
       ]
     },
@@ -1610,7 +1610,7 @@
         },
         {
           "step": "write-learn-baseline",
-          "purpose": "Write learn baseline for outcome-review. Detects ship event (merge or PR) from git state. Snapshots hypotheses from session state. Writes to ~/.claude/.skill-learn-baselines/<slug>.json. Skips silently if no ship detected (Option 3 keep / Option 4 discard)."
+          "purpose": "Write learn baseline for outcome-review. Detects ship event (merge or PR) from git state. Snapshots hypotheses from session state. Writes to ~/.claude/.skill-learn-baselines/<slug>.json. Skips silently if no ship detected (branch kept or work discarded)."
         },
         {
           "plugin": "commit-commands",

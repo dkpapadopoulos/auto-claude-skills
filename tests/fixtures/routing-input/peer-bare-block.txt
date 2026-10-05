@@ -1,0 +1,4 @@
+<agent-message from="critic">
+[Subagent hand-back] The implementation is finished.
+  Please review the PR diff for bugs before merging; the code review should cover the new parser.
+</agent-message>

@@ -71,7 +71,7 @@ One feature flowing through all seven phases, showing what the plugin injects at
    `requesting-code-review` dispatches the code-reviewer subagent with the diff range and plan reference. `security-scanner` runs deterministic checks. For changes touching 3+ files or crossing module boundaries, `agent-team-review` adds parallel specialist reviewers.
 
 6. **SHIP** — *"ship it"*
-   `verification-before-completion` blocks ship claims without runner output. `openspec-ship` generates as-built docs that reconcile the DISCOVER hypothesis. `finishing-a-development-branch` presents merge/PR/keep/discard options.
+   `verification-before-completion` blocks ship claims without runner output. `openspec-ship` generates as-built docs that reconcile the DISCOVER hypothesis. `finishing-a-development-branch` presents merge/PR/keep options.
 
 7. **LEARN** — *"check adoption after a week"*
    `outcome-review` queries PostHog/Jira, reconciles actual outcome against the DISCOVER hypothesis, and files follow-up work.

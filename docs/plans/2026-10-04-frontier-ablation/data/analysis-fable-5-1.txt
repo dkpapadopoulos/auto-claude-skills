@@ -1,0 +1,28 @@
+# claude-fable-5-1: 16 tasks, 48 runs
+
+| task | A0 Q | A1 Q | A2 Q | A0 ktok | A1 ktok | A2 ktok | A0 $ | A1 $ | A2 $ | A0 skills/agents | A1 skills/agents | A2 skills/agents |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| a1-invoice-rounding | 1.00 | 1.00 | 1.00 | 178 | 323 | 376 | 0.62 | 0.91 | 1.10 | 0/0 | 1/0 | 0/0 |
+| a2-line-diff | 1.00 | 1.00 | 1.00 | 119 | 245 | 365 | 0.48 | 0.81 | 0.99 | 0/0 | 1/0 | 0/0 |
+| a3-token-bucket | 1.00 | 1.00 | 1.00 | 185 | 358 | 240 | 0.66 | 0.91 | 0.79 | 0/0 | 1/0 | 0/0 |
+| a4-interval-negative-scale | 1.00 | 1.00 | 1.00 | 164 | 232 | 345 | 0.69 | 0.90 | 1.06 | 0/0 | 1/0 | 1/0 |
+| b1-config-editor | 1.00 | 1.00 | 1.00 | 194 | 239 | 283 | 0.89 | 0.87 | 0.90 | 0/0 | 0/0 | 0/0 |
+| b2-room-availability | 1.00 | 1.00 | 1.00 | 116 | 345 | 283 | 0.45 | 0.82 | 0.92 | 0/0 | 1/0 | 0/0 |
+| b3-cursor-pagination | 1.00 | 1.00 | 1.00 | 124 | 383 | 305 | 0.56 | 1.08 | 1.07 | 0/0 | 1/0 | 0/0 |
+| b4-lru-ttl-expiry | 1.00 | 1.00 | 1.00 | 407 | 508 | 523 | 1.47 | 1.73 | 1.77 | 0/0 | 1/0 | 0/0 |
+| c1-depgraph-install-order | 1.00 | 1.00 | 1.00 | 264 | 300 | 464 | 0.88 | 1.13 | 1.33 | 0/0 | 1/0 | 1/0 |
+| c2-retry-scheduler-sleeps | 1.00 | 1.00 | 1.00 | 316 | 358 | 390 | 0.89 | 1.23 | 1.37 | 0/0 | 1/0 | 1/0 |
+| c3-ledger-csv-import | 1.00 | 1.00 | 1.00 | 230 | 469 | 393 | 0.87 | 1.10 | 1.12 | 0/0 | 1/0 | 1/0 |
+| c4-order-fulfilment-fsm | 1.00 | 1.00 | 1.00 | 191 | 335 | 353 | 0.85 | 1.02 | 1.23 | 0/0 | 1/0 | 1/0 |
+| d1-inventory-reservation | 1.00 | 1.00 | 1.00 | 183 | 227 | 267 | 0.73 | 0.75 | 1.08 | 0/0 | 0/0 | 0/0 |
+| d2-text-template-rendering | 1.00 | 1.00 | 1.00 | 201 | 384 | 344 | 0.88 | 1.09 | 1.13 | 0/0 | 1/0 | 1/0 |
+| d3-date-recurrence-expansion | 1.00 | 1.00 | 1.00 | 251 | 294 | 224 | 0.92 | 0.89 | 1.05 | 0/0 | 0/0 | 0/0 |
+| d4-query-string-parsing | 1.00 | 1.00 | 1.00 | 270 | 388 | 391 | 1.53 | 1.66 | 1.75 | 0/0 | 1/0 | 0/0 |
+
+totals: {"A0": {"usd": 13.36, "ktok": 3393.21, "wall_min": 25.16, "Qbin": 16, "Qmean": 1.0, "visible_ok": 16, "timeouts": 0, "no_edit": 0, "routing_blocks": 0, "ups_hook_kb": 0.0}, "A1": {"usd": 16.9, "ktok": 5387.63, "wall_min": 29.36, "Qbin": 16, "Qmean": 1.0, "visible_ok": 16, "timeouts": 0, "no_edit": 0, "routing_blocks": 0, "ups_hook_kb": 0.0}, "A2": {"usd": 18.67, "ktok": 5547.44, "wall_min": 31.29, "Qbin": 16, "Qmean": 1.0, "visible_ok": 16, "timeouts": 0, "no_edit": 0, "routing_blocks": 16, "ups_hook_kb": 124.64}}
+
+PRIMARY A2 vs A0: {"pairs": 16, "Q_mean_diff": 0.0, "Q_p_signflip": 1.0, "Qbin_pass": {"A2": 16, "A0": 16}, "Qbin_discordant": {"A2_only": 0, "A0_only": 0}, "Qbin_p_mcnemar": 1.0, "tokens_ratio_median": 1.709, "tokens_ratio_range": [0.89, 3.07], "tokens_more_less": [15, 1], "tokens_p_sign": 0.0005, "usd_ratio_median": 1.468, "wall_ratio_median": 1.288}
+secondary A1 vs A0: {"pairs": 16, "Q_mean_diff": 0.0, "Q_p_signflip": 1.0, "Qbin_pass": {"A1": 16, "A0": 16}, "Qbin_discordant": {"A1_only": 0, "A0_only": 0}, "Qbin_p_mcnemar": 1.0, "tokens_ratio_median": 1.598, "tokens_ratio_range": [1.13, 3.08], "tokens_more_less": [16, 0], "tokens_p_sign": 0.0, "usd_ratio_median": 1.278, "wall_ratio_median": 1.173}
+secondary A2 vs A1: {"pairs": 16, "Q_mean_diff": 0.0, "Q_p_signflip": 1.0, "Qbin_pass": {"A2": 16, "A1": 16}, "Qbin_discordant": {"A2_only": 0, "A1_only": 0}, "Qbin_p_mcnemar": 1.0, "tokens_ratio_median": 1.042, "tokens_ratio_range": [0.67, 1.55], "tokens_more_less": [10, 6], "tokens_p_sign": 0.4545, "usd_ratio_median": 1.121, "wall_ratio_median": 1.01}
+
+skills invoked: {"A1:systematic-debugging": 10, "A1:test-driven-development": 3, "A2:systematic-debugging": 6}

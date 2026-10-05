@@ -39,6 +39,69 @@ fi
 _TN_FALLBACK_DEF='def notification_kind: "prompt";'
 [[ -n "${TASK_NOTIFICATION_JQ_DEF}" ]] || TASK_NOTIFICATION_JQ_DEF="${_TN_FALLBACK_DEF}"
 
+# Two more inputs reach UserPromptSubmit without having been typed by the user, and get no
+# routing DISPLAY. Measured 2026-10-04 over 745 distinct non-human inputs from real
+# transcripts: 111 got a routing block, 109 of them with a MUST INVOKE line — 80 of 84 peer
+# messages and 29 of 29 notices-with-reminder (a hand-back saying "the test fails" was told
+# to start systematic-debugging). After this change: 0 blocks, and routing state identical
+# to before on all 745.
+#   * a PEER MESSAGE: a prompt that opens with an <agent-message from="..."> tag (after the
+#     optional harness intro line), contains exactly ONE closing tag, and has after it
+#     nothing, or ONE LINE that opens like one of the two harness paragraphs and ends
+#     "permission laundering.". "One line" means no vertical-space character at all: LF, CR,
+#     VT, FF, NEL, U+2028, U+2029 (review found a request after U+2028 was swallowed when
+#     only LF was excluded). Opening tags are not counted: a report that QUOTES an opening
+#     tag in its body is still one message.
+#   * a NOTICE WITH A REMINDER: what the shared classifier calls a notification, followed
+#     only by <system-reminder> blocks (goal check-ins, background review notices).
+# This is the ACTIVATION hook's own definition, on purpose. hooks/lib/task-notification.sh is
+# shared with egress-consent-turn-hook.sh, where "not the user" keeps an egress approval
+# alive; widening it there would lengthen approvals. Here a match means ONE thing: the
+# final routing block is not printed. Scoring, the chain walk and every state write
+# (composition state, prompt counter, zero-match counters, last-invoked) happen exactly as
+# they did before this change — see _DISPLAY_SUPPRESS below for the bypass that an early
+# exit caused. So a peer's message still arms a chain, as it always did (70 of the 745
+# measured inputs do). Whether automated text SHOULD move a workflow is a separate
+# question, and not one to answer by removing a gate's precondition.
+# That is the whole consequence, so the looser shape is affordable. A text shape is not
+# authenticated provenance: a user who pastes one of these verbatim gets no routing display
+# for that prompt, and nothing else changes ([no-skills] already lets a user suppress it).
+# Anything that is not exactly one of those shapes is the user: leading text, text on a line
+# after the block or after the harness paragraph, two agent-message blocks, an empty `from`,
+# a reminder with no notification before it. A prompt the regex engine cannot evaluate is
+# the user too. Known residual: text appended on the SAME line as the harness paragraph and
+# still ending "permission laundering." is not seen as the user.
+# The harness paragraph is matched by its opening and closing words, not verbatim: two
+# wordings were already observed in five weeks, and an exact match would silently stop
+# recognising peer messages at the next rewording. If the opening or closing words change,
+# the intro+paragraph form is routed again (the old behaviour); the bare-block form is not
+# affected.
+# The notice shape reuses notification_kind, so without the shared lib it cannot be
+# recognised and is routed as before; the peer shape does not depend on the lib.
+# COST. The prompt is cut with split() and every regex is anchored at the start of its input.
+# That removes the one quadratic shape found; it is a bounded-regression claim pinned by a
+# timing cell, not a proof of linearity. The first cut used an unanchored `sub(...+\s*$)` to strip the reminders:
+# on a prompt of N spaces followed by a reminder tag that was quadratic (25k spaces 1.2 s,
+# 50k 4.6 s, against 0.03 s before the change; found in review). `contains` runs first, so a
+# prompt with neither closing tag costs no regex at all.
+# Fixtures (live wrapper text): tests/fixtures/routing-input/. Regression:
+# tests/test-activation-nonhuman-skip.sh.
+_NONHUMAN_JQ_DEF='def acs_nonhuman:
+  . as $p
+  | try (
+      if ($p | contains("</agent-message>")) then
+        ($p | sub("^\\s+"; "") | ltrimstr("Another Claude session sent a message:") | sub("^\\s+"; "")
+            | split("</agent-message>")) as $parts
+        | ($parts | length) == 2
+          and ($parts[0] | test("^<agent-message from=\"[^\"\\n]{1,200}\">"))
+          and ($parts[1] | test("^\\s*(?:(?:That \"other Claude session\" is an agent working inside this same session|This came from another Claude session)[^\\n\\r\\x{0B}\\f\\x{85}\\x{2028}\\x{2029}]{0,1400}permission laundering\\.\\s*)?$"))
+      elif ($p | contains("</task-notification>")) and ($p | contains("<system-reminder>")) then
+        ($p | split("</task-notification>")) as $parts
+        | ($parts[-1] | test("^\\s*(?:<system-reminder>(?:(?!</system-reminder>)[\\s\\S])*</system-reminder>\\s*)+$"))
+          and (([first((($parts[:-1] | join("</task-notification>")) + "</task-notification>") | notification_kind)][0]) == "notification")
+      else false end
+    ) catch false;'
+
 # Capture stdin once; extract the first payload's kind, then transcript_path and prompt,
 # in the SAME single jq fork the prompt already cost (\x1f-joined; the prompt goes last
 # because it may contain anything, and a kind cannot contain \x1f; a transcript_path
@@ -62,18 +125,31 @@ _HOOK_INPUT="$(
     [ -n "${_hs_line}" ] && printf '%s' "${_hs_line}"
     exit 0
 )" || _HOOK_INPUT=""
+# If this hook's OWN definition ever fails to compile, classify nothing as non-human rather
+# than drop the user's prompt: the last retry below swaps it for this.
+_NH_FALLBACK_DEF='def acs_nonhuman: false;'
 _fields_extract() {
-  printf '%s' "${_HOOK_INPUT}" | jq -nr "$1"' [inputs] as $all
+  printf '%s' "${_HOOK_INPUT}" | jq -nr "$1 $2"' [inputs] as $all
     | [$all[] | try ([.transcript_path // "", .prompt // ""] | join("\u001f")) catch null] as $lines
     | if ($lines | length) > 0 and $lines[-1] == null then error("last value failed") else . end
     | ([$lines[] | select(. != null)] | join("\n")) as $joined
-    | ($joined | split("\u001f") | .[1:] | join("\u001f")
-       | ([first(notification_kind)][0] | if . == "notification" or . == "unclassifiable" then . else "prompt" end)) as $kind
+    | ($joined | split("\u001f") | .[1:] | join("\u001f")) as $text
+    | ($text | [first(notification_kind)][0] | if . == "notification" or . == "unclassifiable" then . else "prompt" end) as $lib_kind
+    | (if $lib_kind == "prompt" and ([first($text | acs_nonhuman)][0] == true) then "nonhuman" else $lib_kind end) as $kind
     | $kind + "\u001f" + $joined' 2>/dev/null
 }
-_FIELDS="$(_fields_extract "${TASK_NOTIFICATION_JQ_DEF}")" || _FIELDS=""
+# Each retry gives up ONE definition, so a fault in one does not cost the other: first the
+# hook's own (a pure task notification must still be recognised through the lib), then the
+# lib's (a peer message must still be recognised without it), then both.
+_FIELDS="$(_fields_extract "${TASK_NOTIFICATION_JQ_DEF}" "${_NONHUMAN_JQ_DEF}")" || _FIELDS=""
+if [[ -z "${_FIELDS}" && -n "${_HOOK_INPUT}" ]]; then
+  _FIELDS="$(_fields_extract "${TASK_NOTIFICATION_JQ_DEF}" "${_NH_FALLBACK_DEF}")" || _FIELDS=""
+fi
 if [[ -z "${_FIELDS}" && -n "${_HOOK_INPUT}" && "${TASK_NOTIFICATION_JQ_DEF}" != "${_TN_FALLBACK_DEF}" ]]; then
-  _FIELDS="$(_fields_extract "${_TN_FALLBACK_DEF}")" || _FIELDS=""
+  _FIELDS="$(_fields_extract "${_TN_FALLBACK_DEF}" "${_NONHUMAN_JQ_DEF}")" || _FIELDS=""
+  if [[ -z "${_FIELDS}" ]]; then
+    _FIELDS="$(_fields_extract "${_TN_FALLBACK_DEF}" "${_NH_FALLBACK_DEF}")" || _FIELDS=""
+  fi
 fi
 _PROMPT_KIND="${_FIELDS%%$'\x1f'*}"
 _FIELDS="${_FIELDS#*$'\x1f'}"
@@ -199,6 +275,30 @@ if [[ "${_PROMPT_KIND}" == "notification" ]]; then
   [[ -n "${SKILL_DEBUG:-}" ]] && \
     printf '[skill-hook] prompt is a background-task notification; no routing emitted.\n' >&2
   exit 0
+fi
+# DISPLAY SUPPRESSION. Non-human input gets no routing block, and the rule is the one the
+# consultation guard below learned the hard way: suppress what is DISPLAYED, never what is
+# WRITTEN. Scoring, the chain walk and every state write run exactly as they would have;
+# only the final print is skipped (see _format_output).
+#
+# The first cut stopped earlier -- an `exit 0` here -- and that also skipped the
+# composition-state write. openspec-guard.sh runs its chain checks only when that file
+# exists, so, measured with review evidence and a clean verdict in place,
+# `git push origin HEAD` went DENY -> allow after a peer's work order and after a notice
+# with a reminder. Review caught it before it was published.
+# Regression at the GATE's decision, not at the state file:
+# tests/test-push-gate-display-suppression.sh.
+#
+# A second use of this mechanism was built, measured and REMOVED: hiding the block on a plain
+# question whose only process match was a trigger word. In its final, tight form it removed
+# 2 of 83 wrong mandates on a held-out half and 8 of 90 on the development half, lost no
+# right one and changed no state -- too small an effect for its heuristics, and every looser
+# form that removed more also hid real work orders. The record, the three rules tried and
+# the code (commit 7bdd2de2) are in docs/plans/2026-10-04-frontier-value-results.md, section 7.
+# Anything that revives it MUST go through _DISPLAY_SUPPRESS, never through the scorer.
+_DISPLAY_SUPPRESS=""
+if [[ "${_PROMPT_KIND}" == "nonhuman" ]]; then
+  _DISPLAY_SUPPRESS="non-human input"
 fi
 # Skip slash commands — these are handled by the Skill tool directly
 [[ "$PROMPT" =~ ^[[:space:]]*/ ]] && exit 0
@@ -357,6 +457,7 @@ else
 
 Phase: assess current phase (DISCOVER/DESIGN/PLAN/IMPLEMENT/REVIEW/SHIP/LEARN/DEBUG)
 and consider whether any installed skill applies."
+  [[ -n "${_DISPLAY_SUPPRESS}" ]] || \
   printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":%s}}\n' \
     "$(printf '%s' "$OUT" | jq -Rs .)"
   exit 0
@@ -415,6 +516,7 @@ _score_skills() {
   # Score each skill (name-boost check merged into the same loop — no separate pre-pass)
   RESULTS=""
   _EXPLAIN_SCORING=""
+
   while IFS="$FS" read -r skill_name skill_name_lower skill_role skill_priority skill_invoke skill_phase triggers_joined keywords_joined _required_when; do
     [[ -z "$skill_name" ]] && continue
 
@@ -1348,7 +1450,8 @@ EOF
       COMPOSITION_CHAIN="
 Composition: ${_phase_labels}${_chain_lines}"
 
-      # Surface active skip-attestations on EVERY prompt (phase-enforcement,
+      # Surface active skip-attestations on EVERY prompt that displays a chain (a prompt
+      # whose display is suppressed -- see _DISPLAY_SUPPRESS -- shows nothing) (phase-enforcement,
       # codex #5): a skipped step must stay visible to the human and the REVIEW
       # lens, not live only in logs. Fail-open; single jq fork; bounded to 6.
       # Appended to COMPOSITION_CHAIN (not SKILL_LINES): this site only runs
@@ -1667,8 +1770,15 @@ Evaluate: **Phase: [${EVAL_PHASE}]** | ${EVAL_SKILLS}${DOMAIN_HINT}${COMPOSITION
 ${HINTS}${COMPOSITION_HINTS}"
   fi
 
-  printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":%s}}\n' \
-    "$(printf '%s' "$OUT" | jq -Rs .)"
+  # Display suppression (see the definition of _DISPLAY_SUPPRESS near the top): everything
+  # below this print -- last-invoked signal, composition state -- still runs.
+  if [[ -n "${_DISPLAY_SUPPRESS:-}" ]]; then
+    [[ -n "${SKILL_DEBUG:-}${SKILL_EXPLAIN:-}" ]] && \
+      printf '[skill-hook]   [display-suppressed] %s; nothing is emitted, routing state is written as usual\n' "${_DISPLAY_SUPPRESS}" >&2
+  else
+    printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":%s}}\n' \
+      "$(printf '%s' "$OUT" | jq -Rs .)"
+  fi
 
   # Write last-invoked skill signal for composition tie-breaking
   if [[ "$TOTAL_COUNT" -gt 0 ]] && [[ -n "${_SESSION_TOKEN:-}" ]]; then

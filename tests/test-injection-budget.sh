@@ -158,7 +158,7 @@ echo "=== test-injection-budget.sh ==="
 # There is no "correct" value to assert instead. Nothing documents a budget for
 # hook output, and the native warning does not measure it, so the honest gate is
 # "this does not grow without someone saying so".
-_INJECTION_BASELINE=24918
+_INJECTION_BASELINE=24855
 _MIN_SHAPES=6
 
 setup_test_env

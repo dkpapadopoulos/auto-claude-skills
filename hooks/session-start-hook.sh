@@ -272,6 +272,24 @@ DEFAULT_JSON_PRISTINE="${DEFAULT_JSON}"
 # Output: JSON objects separated by \x1f, one per file
 # Each object has optional keys: triggers, role, phase, priority, precedes, requires
 # Malformed files produce empty objects.
+# A key may contain hyphens (allowed-tools, disable-model-invocation). The key pattern used
+# to exclude the hyphen, so such a line was not a key at all: the key before it stayed
+# current and the list items below were appended to THAT key. A third-party skill with
+# `triggers:` followed by `allowed-tools:` had its tool names registered as routing triggers
+# (gstack careful: triggers [..., "Bash", "Read"]). A hyphenated key is now a key BOUNDARY
+# and nothing more: its scalar value stays un-emitted, as before, and its list is discarded
+# instead of leaking into the key before it. No consumer reads one. Emitting them was the first cut
+# of this fix and review found the cost: a hyphenated scalar holding a literal tab produced
+# invalid JSON, `jq --argjson` failed, and because the files are parsed as one batch that
+# reset the WHOLE map — every skill lost its frontmatter. In the values that ARE emitted,
+# characters matched by awk [[:cntrl:]] are now turned into spaces for the same reason; that
+# hazard predates this change for non-hyphenated keys. This is not a promise about every
+# control character: the class is locale-dependent beyond ASCII (C1 controls are replaced
+# under a UTF-8 locale and kept under C, valid JSON either way), and a NUL truncates the
+# value in BSD awk. A file with CRLF line endings still yields an empty object, as before.
+# Regression: tests/test-frontmatter-hyphen-keys.sh.
+# This comment sits OUTSIDE the awk program on purpose: the program is a single-quoted
+# shell string, and an apostrophe in a comment inside it ends the string (bash -n fails).
 _parse_frontmatter() {
     [ $# -eq 0 ] && return
     awk '
@@ -291,26 +309,25 @@ _parse_frontmatter() {
         val = $0; sub(/^  - ["'"'"']?/, "", val); sub(/["'"'"']?[ \t]*$/, "", val)
         if (cur_key != "") {
             if (arr_started) arr = arr ","; else arr_started = 1
+            gsub(/[[:cntrl:]]/, " ", val)
             gsub(/\\/, "\\\\", val)
             gsub(/"/, "\\\"", val)
             arr = arr "\"" val "\""
         }
         next
     }
-    /^[a-zA-Z_][a-zA-Z0-9_]*:/ {
-        if (cur_key != "" && arr_started) {
-            if (obj != "{") obj = obj ","
-            obj = obj "\"" cur_key "\":[" arr "]"
-        }
+    /^[a-zA-Z_][a-zA-Z0-9_-]*:/ {
+        flush_list()
         cur_key = $0; sub(/:.*/, "", cur_key)
         val = $0; sub(/^[^:]*:[ \t]*/, "", val); sub(/[ \t]*$/, "", val)
         arr = ""; arr_started = 0
         if (val != "" && val !~ /^[ \t]*$/) {
             sub(/^["'"'"']/, "", val); sub(/["'"'"']$/, "", val)
-            if (cur_key == "name" || cur_key == "description" || cur_key == "license") {
+            if (cur_key == "name" || cur_key == "description" || cur_key == "license" || cur_key ~ /-/) {
                 cur_key = ""
             } else {
                 if (obj != "{") obj = obj ","
+                gsub(/[[:cntrl:]]/, " ", val)
                 gsub(/\\/, "\\\\", val)
                 gsub(/"/, "\\\"", val)
                 obj = obj "\"" cur_key "\":\"" val "\""
@@ -321,11 +338,14 @@ _parse_frontmatter() {
         }
         next
     }
-    function emit() {
-        if (cur_key != "" && arr_started) {
+    function flush_list() {
+        if (cur_key != "" && arr_started && cur_key !~ /-/) {
             if (obj != "{") obj = obj ","
             obj = obj "\"" cur_key "\":[" arr "]"
         }
+    }
+    function emit() {
+        flush_list()
         printf "%s", obj "}"
     }
     END { emit() }
