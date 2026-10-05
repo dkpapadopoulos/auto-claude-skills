@@ -1360,6 +1360,129 @@ note in Dion's instruction file naming the pilot's branch, and the omitted file
 is feedback to that plugin's maintainers, which nothing left in the tree refers
 to. None concerns a screen of the application, a stored report or its data.
 
+## Stages 2 to 7, as they are done
+
+Entries are added here as each thing is fixed. Revision 6 of this document, which
+will correct what earlier revisions say of these stages, is written when they are
+done. Until then this section is the record.
+
+### What the brief chose, 2026-10-04
+
+Read from the brief by the author, as a fact and not as a judgement of it. The
+screen is `dion report <identifier>`, the stored review report. **It is the
+screen the pilot used.** Dion has no web or graphical screen and one command whose
+job is to retrieve a stored report, so a statement that asks for "a screen that
+displays a stored report" leads to it. The owner had ruled that nothing is rerun
+for what a brief says, and it stands. No page, data file or result of the pilot
+is used to build, calibrate or try anything in these stages. The author has seen
+them, and no rule undoes that.
+
+### Owner rulings for these stages, 2026-10-04
+
+Given as "review this with Codex and proceed", after the plan and its five
+recommendations were put, and after the review contradicted none of them.
+
+| Question | Ruling |
+|---|---|
+| Consent for a package too large for the consent dialog to show whole | The owner reads the package file, whose path and manifest are given before the question. Packages that fit stay under 2.4 KB |
+| Who writes the list of operator decisions the architecture table names | Nobody apart from the brief. The deriver lists them with the sentence each rests on, and the reviewer audits the list |
+| The pilot's screen | Recorded, as above |
+| The data file | The report Dion's own test database gives, with nothing added by the author. Not a real statement, which the brief's own steps propose |
+| Viewport widths, which the brief does not state | The deriver states them, and why |
+| The owner's real store | Not on this machine (stated by the owner). A package is scanned against a store when one exists at Dion's default path; when none does, its manifest says so |
+
+The last of these corrects the safety assessment, which says the store is on the
+machine the stages run on.
+
+### Stage 2: the data files, 2026-10-04
+
+`tests/fixtures/design_seed_replication/report.json` (SHA-256 `690c8ebe…1d76e`,
+7199 bytes) and `report-not-found.json` (`d5e4b21c…05150`, 220 bytes), built by
+`tests/design_seed_pilot/build_replication_fixture.py`.
+
+The brief proposes making the data file from a real brokerage statement. That
+was not done: it would put the owner's holdings into every page and package
+(risk 4). The file is the report that `tests/review/_db_fixtures._setup_full_db`
+gives when Dion's review is run on it, stored, and read back with the command's
+own query in the command's own envelope. Nothing is added to that database. A
+cell asks the command itself, on a database of the same content, and compares.
+The builder takes no argument and opens its database in memory; a cell fails if
+any connection is not.
+
+What the author chose, all of it: that database; its pinned review date; the
+indent of two that the brief's `--pretty` gives; the identifier `no-such-report`
+for the second file; the two file names. Before choosing, one thing was looked
+at: whether this database's report has the two things the brief prefers, orders
+and an FX section. It has three orders and a non-null FX section. No other
+database and no other date was tried.
+
+The reviewer audited the files against the brief (one package of 13,086 bytes,
+the owner consenting from the file). It found both conform to what the brief
+specifies, and nothing in the author's choices that favours a way of building
+the page. It listed the states the brief names that neither file exercises: a
+found report with no FX section, with no orders or action items, or with an FX
+section and no warnings; the compact and the text forms of output; a database
+that is missing or cannot be read. Nothing was added to supply them: that would
+be a database of the author's making. The example is small, three instruments,
+all in one currency, with blank symbols, and a page built only against it could
+overlook what a larger one would show. That is a limit of the example.
+
+### Frozen: the deriver's instructions, 2026-10-05
+
+Dion `tests/design_seed_pilot/exposure/derive/instructions.txt`, SHA-256
+`4ee83130648470ac2dc0d66169fea9668053a7a242e837301ea0b574e3ed971e`, 3526 bytes.
+A cell pins the digest, and that what the text says of the harness is what the
+harness does.
+
+```text
+You are given a brief for building one screen as a single web page, and two data files. Two builders will each build the page from that same brief and the same data files, and their pages will be compared. Write the specification of what is compared. Ground every claim about what matters, and about which way is better, in the brief and the data files. Do not infer anything about the builders, and do not bring a design preference from outside these materials.
+
+How the comparison works, so that you can write for it. Each construct is compared separately between the two pages. For a pair of pages the result is which page is ahead on more constructs; a construct counts once, however many things are measured for it. A measure sees one render of a page at each viewport width you name, at a viewport height of 900, after the page has loaded and a further 750 ms, with animation stopped and with no interaction. It may read the rendered layout and the document of that one page, and nothing else.
+
+Your reply is the specification. Use these eight parts, in this order.
+
+1. Decisions. The reader decisions the brief explicitly supports, each with the sentence it rests on, quoted. If naming a decision takes an inference, label it and explain it. If the brief supports none, say so.
+2. Requirements. What the brief requires of the page that is not a decision, each with its sentence, quoted.
+3. Constructs. Each quality of a page that a decision, a requirement or a fact of the data makes relevant. For each: what it estimates and what it does not; the specific evidence that makes it relevant, including why any data fact you cite matters to the page's stated purpose; which way is better, if either; the elements of the page it reads and how they are grouped. Say where two constructs overlap, so that no quality counts twice.
+4. Measures. For each construct, one reproducible measure: what it observes, how it extracts it, how what it reads combines into one value, and what it excludes. Keep the construct apart from the proxy that is measured. A fallback only in a stated order, saying whether it measures the same thing. Say what is reported in each of these cases, which are not the same and are not all a poor result: the page did not render; the measure does not apply to this page; what it reads is absent; what it reads is present and not rendered. Name any requirement of the brief that one render with no interaction cannot assess.
+5. Difference. For each construct, the smallest difference between two pages that matters. Say whether the brief or the data supports that size, and give the basis; where neither does, give a size all the same and call it a convention.
+6. Central. The constructs without which the comparison would not address an explicit purpose or requirement of the brief. Cite that purpose or requirement.
+7. Viewports. The viewport widths each measure is taken at, and why. Keep widths the materials require apart from widths you propose.
+8. Judgment. Where code reading one render cannot measure a construct adequately, say whether structured human judgment can. If it can: what a judge may look at, the scale, and an anchor for every score. If it cannot, mark the construct not measured and say why.
+
+Do not invent requirements or preferences that the materials do not hold. A choice you must make to make a measure reproducible is allowed: label it as an operational choice and give its basis. Where the evidence does not support a construct, a direction, a size or a conclusion, say so.
+```
+
+**How it was reached.** The author wrote a first text of eight parts. It went to
+the reviewer (Codex, critique mode, told nothing of the comparison's subject)
+with four questions. The first send ended with no reply: Codex had reached a
+usage limit, and the dispatcher reported that the package might have left the
+machine. It was sent again, the same bytes, with the owner's consent again, and
+is logged as one resend after a failed send.
+
+The reviewer found no phrase that sets a visual preference, and one defect that
+mattered: the text asked for exact definitions and also forbade filling in
+anything the brief does not settle, and a deriver cannot do both. Its rewordings
+are adopted: a decision is listed only where the brief supports it, quoted;
+evidence for a construct must say why a fact of the data matters to the page's
+purpose; a construct is kept apart from the proxy measured for it; four ways a
+measure can come up empty are told apart and are not all a poor result; a
+choice needed to make a measure reproducible is allowed and labelled.
+
+Three of its points were answered from what this design already fixes, and not
+left to the deriver. It said "one vote" names no rule: the registered rule is
+stated, that the page ahead on more constructs is favoured and a construct
+counts once. It asked the deriver to define when a page is ready and what a
+measure may read: those are facts of the harness and are stated as they are. It
+would have let a size of difference be "undetermined": the design needs one for
+every construct, so the deriver gives one and says whether the materials support
+it or it is a convention.
+
+What the reviewer said the instructions cannot let a specification say, kept as
+limits: anything that happens after an interaction; whether a reader in fact
+succeeds; stability across renders or between widths. The changed text was not
+sent again.
+
 Open after revision 5: the arm launcher binds neither the CLI version, the
 harness nor the term list; the package builder is not built; the cost of
 composing the brief in one message is not measured; the picker's brief is kept and
