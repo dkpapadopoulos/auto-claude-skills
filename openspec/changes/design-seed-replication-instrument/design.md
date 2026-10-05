@@ -1785,3 +1785,80 @@ moves the only decisive stage to where it does not.
 - The specification says what it cannot assess from one render: a lookup by
   either identifier, extra keys, the output forms, and whether a page depends on
   anything outside itself. It claims no complete test of self-containment.
+
+### Stage 4: the reviewer's audit, 2026-10-05
+
+Before it was sent, the owner was told what the specification says and what
+follows from it, and was asked how to go on: the audit as planned, the audit
+with one more question (whether the specification's reasons for measuring
+nothing by code hold), or a stop. The owner chose the audit as planned.
+
+**The send.** One package, built by the builder: the audit's wording (1475
+bytes, the plan's, with a question on the fidelity dimensions added because the
+owner ruled that the reviewer audits them); the frozen instructions; the brief;
+the two data files; the specification. 48,519 bytes, SHA-256 `1d064641…e71e`;
+the consent carried `ad0e7168…cf14`. Critique mode. The owner consented from the
+file. The plan's list for this package did not hold the instructions. The author
+added them so that the reviewer could see the rule the deriver wrote for, and
+said so before the question.
+
+**The reply.** Dion `tests/fixtures/design_seed_replication/audit.md`, 14,586
+bytes, SHA-256
+`216c086e7a7948f075057050a8bd0f036e2d8bfb23aef6344fbaf53c9bb23d00`, as it came.
+Cells pin it and find no recorded term. The reviewer's decisions stand.
+
+**What it decided,** in the author's summary. The file is what counts.
+
+| Thing | Decision | Its reason, shortly |
+|---|---|---|
+| Part 1, decisions | correct | retrieval is the evidenced purpose and no other |
+| Part 2, requirements | all kept | incomplete as a list: the stated relationships, the stated meanings of values, and that structure and membership are kept, should each be a named requirement |
+| Fidelity: complete, accurate content | kept | code can carry it out by the first route; the second route is not yet defined enough |
+| Fidelity: correct retrieval state | kept, to be merged into the first or marked a redundant check | it follows from comparing the whole inventory |
+| Fidelity: displayed and not hidden | kept | only partly specified: clipping, covering and what is readable are not defined |
+| Construct A, relationships communicated | kept, narrowed | the part on the metrics repeated in two sections is cut as a scored relationship; the two parts for the not-found page are merged |
+| Construct B, readable output | kept, all its parts | |
+| Central | both, at the level of the construct | |
+| Room for two pages that pass fidelity to differ | yes, on both | less on the not-found page, and not none |
+
+**What it found wanting,** which bears on what can be built.
+
+- The second route for reading a page back "describe[s] a strategy, not
+  sufficient matching rules". The specification must say which structures are
+  supported, how a path is rebuilt, how repeated values are told apart and how a
+  conflict is resolved. "Promising that an extractor will publish these rules
+  later does not supply them now."
+- A box that is laid out is not text that is seen: another element can cover it.
+  How partial clipping is treated is not settled.
+- A region that scrolls inside the page needs a rule.
+- Because `UNASSESSABLE` fails the builder, "extraction coverage materially
+  affects the comparison. That limitation must not be mistaken for proof that
+  the page violates the brief."
+- The lowest anchors of both rubrics partly describe fidelity failures, which a
+  page that passed fidelity cannot show.
+- It would want to know the resolution and scaling of the images a judge is
+  given, and a rule for scoring groups of very different size alike.
+
+**On measuring nothing by code,** which the reviewer was not asked. It says the
+specification's conclusion, that two builders who both pass fidelity get no
+direction, "is valid under the supplied comparison rules", and that scores by a
+judge alone are permissible. It also says the specification "overstates the
+reason when it implies that these materials cannot support any directional code
+proxy. A narrowly defined ordering measure could be grounded in the explicit
+order requirement", and calls that "an option, not an obligation". Nothing is
+done with that here. It is for the owner.
+
+**One finding of the audit is the author's doing and not the specification's.**
+The audit says the specification points at the wrong documents for its two
+pages. The specification names them by their numbers in the package the deriver
+was sent, where the data files were documents 3 and 4. In the audit's package
+the author had put two documents in front, so they were 4 and 5, and did not
+say so. The specification is right about what it was sent. The author should
+have told the reviewer the numbering had moved.
+
+**Not done, and why.** The plan's next step asks the reviewer for pages against
+which a measure of each kept construct is developed. No construct has a
+measure. What code there is to write is the fidelity tests, and the audit says
+their rules are not yet defined and that their definition can decide a pair.
+Those rules are not the author's to write. So the plan stops here, at its
+re-plan point, for the owner.
