@@ -1425,7 +1425,7 @@ since 2026-10-05, so that the file that was read can be matched to the question.
 No send made before that had such a manifest: for those, the match rests on the
 dispatcher having been given that file, and was not shown to the owner.
 
-Of the five sends made so far, one package was built by the builder and had a
+Of the first five sends, one package was built by the builder and had a
 manifest: the fixture audit's. The plan's critique and the two packages that put
 the instructions to the reviewer were written by hand and had none; the owner read
 the first in the consent dialog and was given the path of the other two. The two for the instructions were scanned after the
@@ -1438,7 +1438,7 @@ pilot's check of a page against the store treats a store it cannot find as
 "cannot verify", which is a stop. The package builder of these stages does
 otherwise: when no store exists at Dion's default path, in this checkout or the
 main one, it records "not applicable" in the manifest, with how many places it
-looked at, and builds the package. (The one manifest that has gone with a send,
+looked at, and builds the package. (The first manifest that went with a send,
 the fixture audit's, was built before that wording: it says "no store on this
 machine" and gives no count.) A stop became a note. Nobody was asked whether
 the control may be loosened, and nobody ruled that it may: the owner stated a
@@ -2003,3 +2003,89 @@ and before Codex's condition had been answered. An author who knows the
 treatment recommended making the instrument able to find a direction, in the
 area where the treatment acts, three hours after learning that it could not. The
 check that caught it was a reviewer reading the entry against the files.
+
+### Three reviews of the code of these stages, 2026-10-05 and 2026-10-06
+
+The code of these stages (the fixture builder, the package builder, the measuring
+script and the cells that pin the kept texts) was reviewed three times before it
+was pushed, each time by a fresh reviewer of the author's family that read the
+code and ran nothing. Each review found something the one before had not, and
+the first two found controls that did not hold. All of it is in Dion's branch
+`derive-measures`.
+
+| Review | Of | Found | Then |
+|---|---|---|---|
+| First | everything the branch added | 2 Critical, 12 Important, 9 Minor | Dion `38279d4`, `eb9625b` |
+| Second | the first repair | 1 Critical, 5 Important, 6 Minor | Dion `868aa02`, `9da22eb` |
+| Third | the second repair | none Critical, 2 Important, 10 Minor | Dion `453b5fe` |
+
+The third repair was not reviewed. Its cells were written first and failed, and
+its mutants are all killed, and that is what stands behind it.
+
+**The package builder let through what it said it refused.** One character that
+shows as nothing, set inside a word, hid that word from five of its six scans:
+the store's tokens, a path, an address, a forged heading, a recorded term. The
+first repair refused such characters by their kind. The second review named
+characters that are letters or symbols by kind and show as nothing all the same.
+A list of what to refuse grows each time someone names another, so the builder
+now holds a list of what is **let in**: the ASCII that prints, Latin-1, the
+dashes and quotation marks, and the arrows; within those only letters, digits,
+punctuation and symbols; and only characters that compatibility folding leaves
+alone, but for the ellipsis. Anything else is refused and its code point named.
+A reply that holds a character outside the list cannot go into a later package
+until the list is widened by a dated change. That is on purpose, and it will
+happen: the list holds no currency sign and no sign for "at most".
+
+What the list does not close, and what was done: the dashes are let in, since
+every text holds them, and they are look-alikes of the hyphen that three scans
+look for, so the scans read each dash as a hyphen; the ellipsis folds to three
+full stops, so the scans read it both ways. A look-alike used on purpose by the
+author is outside what the builder is for.
+
+**A failed call to git was read as "no store".** In a linked worktree, which is
+where this branch lives, the main checkout is the only place a store could be.
+The builder now cannot check unless git answers with one line that names a
+directory called `.git` that is there, and one cell asks real git in a real
+linked worktree.
+
+**The measuring script decided whether to refuse a page before the measure ran,
+and never looked again.** A page could wait for the first thing done to it, ask
+for another file, and still be measured. The first repair read the counts after
+the measure, in the same turn. The second review said a request made a moment
+later would not yet be counted, and a cell showed it: of three pages that ask at
+once, 30 ms later and 300 ms later, the last two were given a value. The script
+now waits the settle time again before reading. Its header says what that does
+not guarantee: a request made in the last moments of that wait.
+
+**Other things found and repaired:** the conditions a page is rendered under were
+written into the output and never read back from the page; the fixture's cells
+compared parsed values, where 3 and 3.0 and true are equal; the cell said to
+build "beside a store" arranged nothing the project would follow; the
+manifest's digest of a file came from a second read of it; a label was not
+scanned as a document is; a package that could not be written whole was left
+behind; the account's name and the stores had defaults that could switch a scan
+off with nothing said.
+
+**What was sent before the repairs.** Nine sends were made in these stages, of
+eight packages. Seven of the eight are kept as files, and each passes the scans
+of the builder as it now stands. The three that the builder built (the fixture
+audit's, the deriver's and the audit's) are rebuilt by it from their kept
+sources byte for byte. Every reply kept so far can go into a package. The
+plan's critique, the first send, was not kept as a file and could not be looked
+at again. So the controls were weaker than this document said when those
+packages went, and nothing shows that anything got through.
+
+**The counts, and what they do not show.** Cells: 161 for the builder, 16 for the
+kept texts, 47 for the measuring script, 18 for the fixture. Mutants, all
+killed: 92 for the builder, run on the final code; 36 for the measuring script
+and 11 for the fixture, run before the third repair, which changed neither but
+for a comment. A killed mutant shows a cell can fail. It does not show the code
+is right: the first list of mutants was all killed too, and the builder was
+letting a zero-width space through.
+
+**Left for the plan that follows,** each named by the third review and not done:
+the measuring script exits with a trace and no output if a page closes itself
+during the second wait; what counts as a value it can print does not check that
+a record is a plain one; how long the second wait is, is pinned by no cell; the
+check that reads a package back opens it in the locale's encoding and not in
+UTF-8; and the capture reads one of its three counts before its image.
