@@ -1862,3 +1862,81 @@ measure. What code there is to write is the fidelity tests, and the audit says
 their rules are not yet defined and that their definition can decide a pair.
 Those rules are not the author's to write. So the plan stops here, at its
 re-plan point, for the owner.
+
+### The registered comparison is not run, 2026-10-05
+
+**How this was decided.** The owner was told where the plan had stopped and was
+given three ways on: run it as specified, stop before the arms, or change
+something registered. The author declined to recommend among them, knowing the
+treatment. The owner answered: "spar and get another opinion from codex, go with
+your final recommendations." So the decision below is the author's
+recommendation, taken by the owner in advance. It is not a ruling the owner made
+on its merits, and the owner may reverse it.
+
+**The sparring.** The author wrote a proposal and put it to Codex for critique
+(one text of 2552 bytes, written by hand, holding no file of the project and not
+saying what the builders differ in; the owner consenting; kept with the reply in
+the stage's evidence, row 8 of the log). The proposal: do not run it as
+registered; amend before the freeze so that a judged construct can give a vote
+under a rule fixed first; let a fidelity test that cannot be carried out for the
+reader's own limits decide nothing; take the wording and numbers from the
+reviewer; add no narrow code measure only to get a vote.
+
+Codex ranked the three: "amend, then stop, then run as registered." It agreed
+with the direction and objected to six things, each adopted:
+
+| Objection | What is taken from it |
+|---|---|
+| The outcome is not known. What is known is that this protocol cannot compare two pages that pass fidelity on the central qualities. Say "the registered readiness check found the evaluation inadequate", not that the experiment was inconclusive | The wording of the decision below |
+| Letting a judged construct decide changes what can determine a result, after something consequential was learned. "Before the freeze" is not a complete defence | What follows is a **replacement protocol**. It is not the registered comparison going on, and it does not keep that registration's standing |
+| Judging the same pages twice shows consistency, not that the judges measure the right thing | Stated as a limit. Calibration is on separate pages, before any target page exists, with the formula fixed first |
+| "Cannot tell the builders apart" is the wrong claim. Judges are not told identity or assignment; a visible signature may remain | The claim is what is withheld, as "Controlled exposure" already says. Whether a judge formed a belief is asked afterwards, as registered |
+| A test that could not be carried out is neither a pass nor a fail. If it "decides nothing" and votes go on, a page with unverified content could win | Three states: pass, fail, unresolved. An unresolved requirement goes to a second check of the same requirement. If it stays unresolved, the pair has no direction |
+| Taking the numbers from the reviewer does not remove discretion if alternatives can be asked for or refused | The numbers are asked for once and the first complete answer is taken. The owner may refuse the replacement whole, which is a stop. Nobody edits a number |
+
+It also asked what the author had not said: whether earlier outputs of these
+builders had been seen. **They have.** The author and the owner have both seen
+the pilot's pages and its result, on this same screen. Someone who knows the
+treatment and has seen that could foresee which way of scoring favours which
+builder. Nothing undoes that. It is why the numbers are not the author's, and it
+bounds what the replacement can claim.
+
+One thing Codex proposed is left open and not adopted here: that one vote for
+each construct be dropped and each construct's result be reported with no
+result for the pair. It is for the replacement's own review.
+
+**The decision.**
+
+1. **The registered comparison is not run.** Its own readiness check, construct
+   coverage, cannot pass: the specification measures no construct, and both of
+   its constructs are central. The reviewer was not asked to assess the check;
+   it fails by its own words. No arm is launched under it. This is the check
+   doing what it was written for. It is not a finding about the builders.
+2. **A replacement protocol is written before anything is built,** as the next
+   revision of this document, under a plan of its own that the owner reviews
+   before it is carried out. It says on its face that it was designed after the
+   first specification and its audit were read, by an author and an owner who
+   know the treatment and have seen the pilot.
+3. **What the replacement must hold to be worth running:** a claim no wider than
+   these pages from these paired runs; a whole rule for a pair, with how scores
+   become one value, what difference counts, what a tie and two constructs
+   pointing opposite ways give, and a real possibility of no direction; a
+   judging procedure fixed in advance, with how many judges, in what order, and
+   what is excluded; calibration on pages that are not the builders'; the three
+   states of a fidelity test and the second check; and a record of what changed,
+   why, who knew what, and who decided.
+4. **Stop remains the fallback.** If the judging cannot be shown to be usable on
+   the calibration pages, or the reviewer cannot define the second fidelity
+   check, the replacement is not run either, and that is recorded as the result
+   for this task.
+5. **No narrow code measure is added to get a vote.** The reviewer said one could
+   be grounded in the brief's stated ordering. Asking for it would be asking
+   again because of what a construct is.
+
+**What stands from stages 2 to 4.** The data files and their audit. The builder
+of packages and the measuring harness. The first specification and its audit,
+kept as they came, as the record of why the registered comparison was not run.
+The instructions as frozen are the instructions that produced that
+specification. The replacement's instructions will differ, because they state a
+rule that has changed, and a specification written under them replaces the
+first whatever it says.
