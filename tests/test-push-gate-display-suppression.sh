@@ -1,23 +1,21 @@
 #!/usr/bin/env bash
 # Suppressing the routing DISPLAY must never disarm the push gate.
 #
-# The activation hook shows nothing for two kinds of input: text nobody typed (a peer
-# session's message, a subagent hand-back, a task notification followed by a reminder) and a
-# question whose only process match is a trigger word. Both were first implemented by
-# stopping early — an `exit 0` for the first, dropping the skill in the scorer for the second
-# — and stopping early also skips the composition-state write. openspec-guard.sh runs its
-# chain checks only when that file exists.
+# The activation hook shows nothing for text nobody typed: a peer session's message, a
+# subagent hand-back, a task notification followed by a reminder. That was first implemented
+# by stopping early — an `exit 0` — and stopping early also skips the composition-state
+# write. openspec-guard.sh runs its chain checks only when that file exists.
 #
 # Measured on that first cut, with review evidence and a clean verdict in place:
 #   `git push origin HEAD` after a teammate's work order            DENY -> allow
 #   ... after a subagent hand-back, a bare block, a notice+reminder DENY -> allow
-#   ... after "is the review of the PR diff for bugs done?"         DENY -> allow
-#   ... after "what's the best next step here"                      DENY -> allow
-# (That last prompt has no question mark and is no longer suppressed by the tighter rule
-# that shipped; the cells below use prompts the shipped rule does suppress.)
-# The whole suite was green and two cross-family reviews had said KEEP. A dispatched
-# reviewer pointed at the comment in the hook that describes this exact bypass for
-# consultation prompts; the flipping pair above confirmed it before anything was published.
+# The whole suite was green and cross-family review had said KEEP. A dispatched reviewer
+# pointed at the comment in the hook that describes this exact bypass for consultation
+# prompts; the flipping pair above confirmed it before anything was published.
+# (A second feature, hiding the block on a plain question, had the same defect by a
+# different route — dropping the skill in the scorer — and flipped the same way. It was
+# reworked to display-only, measured, and then removed as too small an effect; see the
+# hook's _DISPLAY_SUPPRESS comment. Anything that revives it belongs in this file.)
 #
 # This file asserts the GUARD'S DECISION, end to end, for the same reason
 # tests/test-push-gate-consultation-bypass.sh does: a unit assertion on the state file
@@ -132,15 +130,12 @@ for _f in peer-teammate.txt peer-subagent-handback.txt peer-bare-block.txt notic
     fi
     _suppressed_then_push "non-human ${_f%.txt}" "$(cat "${FIX}/${_f}")"
 done
-_suppressed_then_push "question (ends with ?)" "is the review of the PR diff for bugs done?"
-_suppressed_then_push "question (another skill)" "what's the next step?"
-_suppressed_then_push "work order read as a question (known limit)" "should we review the PR diff for bugs now?"
 
 # --- R1: the OTHER chain check, exercised independently ---------------------------------
 _new_session
 rm -f "${HOME}/.claude/.skill-invocation-evidence-${_TOK}"
-shown="$(_turn "is the review of the PR diff for bugs done?")"
-assert_equals "R1 setup: the question is suppressed" "" "${shown}"
+shown="$(_turn "$(cat "${FIX}/peer-teammate.txt")")"
+assert_equals "R1 setup: the peer message is suppressed" "" "${shown}"
 out="$(_push)"
 assert_contains "R1: with review evidence absent, the denial moves to the review check" \
     "requesting-code-review" "${out:-<empty>}"

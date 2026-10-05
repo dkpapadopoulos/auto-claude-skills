@@ -276,19 +276,26 @@ if [[ "${_PROMPT_KIND}" == "notification" ]]; then
     printf '[skill-hook] prompt is a background-task notification; no routing emitted.\n' >&2
   exit 0
 fi
-# DISPLAY SUPPRESSION. Two kinds of input get no routing block, and for both the rule is the
-# one the consultation guard below learned the hard way: suppress what is DISPLAYED, never
-# what is WRITTEN. Scoring, the chain walk and every state write run exactly as they would
-# have; only the final print is skipped (see _format_output).
+# DISPLAY SUPPRESSION. Non-human input gets no routing block, and the rule is the one the
+# consultation guard below learned the hard way: suppress what is DISPLAYED, never what is
+# WRITTEN. Scoring, the chain walk and every state write run exactly as they would have;
+# only the final print is skipped (see _format_output).
 #
-# The first cut of both features stopped earlier -- an `exit 0` here for non-human input, a
-# `continue` in the scorer for questions -- and that also skipped the composition-state
-# write. openspec-guard.sh runs its chain checks only when that file exists, so, measured
-# with review evidence and a clean verdict in place, `git push origin HEAD` went
-# DENY -> allow after a peer's work order, after a notice with a reminder, and after
-# "is the review of the PR diff for bugs done?". Review caught it before it was published.
+# The first cut stopped earlier -- an `exit 0` here -- and that also skipped the
+# composition-state write. openspec-guard.sh runs its chain checks only when that file
+# exists, so, measured with review evidence and a clean verdict in place,
+# `git push origin HEAD` went DENY -> allow after a peer's work order and after a notice
+# with a reminder. Review caught it before it was published.
 # Regression at the GATE's decision, not at the state file:
 # tests/test-push-gate-display-suppression.sh.
+#
+# A second use of this mechanism was built, measured and REMOVED: hiding the block on a plain
+# question whose only process match was a trigger word. In its final, tight form it removed
+# 2 of 83 wrong mandates on a held-out half and 8 of 90 on the development half, lost no
+# right one and changed no state -- too small an effect for its heuristics, and every looser
+# form that removed more also hid real work orders. The record, the three rules tried and
+# the code (commit 7bdd2de2) are in docs/plans/2026-10-04-frontier-value-results.md, section 7.
+# Anything that revives it MUST go through _DISPLAY_SUPPRESS, never through the scorer.
 _DISPLAY_SUPPRESS=""
 if [[ "${_PROMPT_KIND}" == "nonhuman" ]]; then
   _DISPLAY_SUPPRESS="non-human input"
@@ -510,72 +517,6 @@ _score_skills() {
   RESULTS=""
   _EXPLAIN_SCORING=""
 
-  # ---- Question guard: a question is not a work order ----------------------------------
-  # A trigger word inside a plain question used to mandate a process skill: "what's the next
-  # step?" got `executing-plans MUST INVOKE`, "is the review done?" got
-  # `requesting-code-review MUST INVOKE`.
-  #
-  # WHAT IT DOES. When the prompt is question-shaped, the selected process skill got there on
-  # trigger words alone, and no domain or workflow skill was selected with it, the hook
-  # DISPLAYS NOTHING for that prompt. It changes nothing else: the skill is scored, selected
-  # and walked as before, and composition state, last-invoked and the prompt counter are
-  # written as before (see _DISPLAY_SUPPRESS near the top of this file for why that is not
-  # negotiable).
-  #
-  # QUESTION-SHAPED is deliberately tight. ALL of these must hold:
-  #   - the prompt OPENS with an interrogative: what why how is are does did who which where
-  #     when should
-  #   - it ENDS with "?"
-  #   - it is ONE clause on ONE line: no ". ? ! : ; ," followed by more text, no " - " dash
-  #   - it contains no request phrase: can/could/would/will + you/u/we/i, "is it possible",
-  #     "are you able", "any chance", "please", "how about", "what about", "why don't",
-  #     "why not"
-  # Two looser rules were built first and withdrawn. One also took any prompt ending in "?"
-  # and any one-clause prompt opening with a question word; each review of it found more
-  # families of ordinary work orders read as questions ("fix the failing test, ok?", "is
-  # still broken after your change - debug it", "how about we implement the cache layer
-  # now", "debug the crash in the parser?"). Requiring BOTH the opener and the question mark
-  # removes those families at the cost of reach.
-  #
-  # "ON TRIGGER WORDS ALONE" excludes: a skill the user named; a skill one of whose keyword
-  # phrases matched; a skill matched by a trigger alternative that is itself written as a
-  # question ("how.(should|would|could)", "what.should.we", "which.issue", "where.were.we");
-  # a LEARN- or DEBUG-phase skill, because a question is how an outcome review or a debugging
-  # session is asked for ("why is the test failing?"); and a skill that is already a step of
-  # this session's chain, because "what's the next step?" during a workflow is asking for
-  # the chain render.
-  #
-  # MEASURED 2026-10-05 on real prompts labelled by two blind labellers (kappa 0.79),
-  # development half: right process mandates 9 -> 9, wrong 90 -> 82. Routing state was
-  # byte-identical to the unguarded hook on all 652 prompts. Each prompt was replayed in a
-  # fresh HOME, so those figures describe a prompt arriving with no chain; inside a chain the
-  # guard does less (see the last exclusion). Held-out figures and the rejected variants:
-  # docs/plans/2026-10-04-frontier-value-results.md, section 7.
-  #
-  # KNOWN LIMITS, pinned as cells so they cannot be mistaken for coverage. Plain questions
-  # that still carry a mandate: any question typed without a question mark; a question of two
-  # clauses; one containing a request phrase ("can you explain why the review matters?"); one
-  # that mentions a skill's name. A work order still read as a question: "should we review
-  # the PR diff for bugs now?" loses its display for that one prompt (its state is written).
-  # A question that also selects a domain or workflow skill is displayed unchanged, mandate
-  # included: re-rendering the block without its process skill would mean selecting twice.
-  #
-  # `ACS_QUESTION_GUARD=off` (exactly that, lowercase) restores the old display. The hook
-  # honours it wherever it is set — it is an escape hatch, not a test-only switch.
-  # Regression: tests/test-activation-question-guard.sh (rule and state identity) and
-  # tests/test-push-gate-display-suppression.sh (the push gate's decision).
-  _Q_SHAPED=0
-  _Q_TRIGGER_ONLY=" "
-  if [[ "${ACS_QUESTION_GUARD:-on}" != "off" ]]; then
-    _q_open='^[[:space:]]*(what|why|how|is|are|does|did|who|which|where|when|should)([^a-z0-9]|$)'
-    _q_end='[?][[:space:]]*$'
-    _q_multi='[.?!:;,][[:space:]]+[^[:space:]]|[[:space:]](-+|—|–)[[:space:]]'
-    _q_request='(^|[^a-z0-9])((can|could|would|will)[[:space:]]+(you|u|we|i)|is it possible|are you able|any chance|please|(how|what) about|why (don.?t|not))([^a-z0-9]|$)'
-    if [[ "$P" =~ $_q_open ]] && [[ "$P" =~ $_q_end ]] && ! [[ "$P" =~ $_q_multi ]] \
-       && [[ "$P" != *$'\n'* ]] && ! [[ "$P" =~ $_q_request ]]; then
-      _Q_SHAPED=1
-    fi
-  fi
   while IFS="$FS" read -r skill_name skill_name_lower skill_role skill_priority skill_invoke skill_phase triggers_joined keywords_joined _required_when; do
     [[ -z "$skill_name" ]] && continue
 
@@ -647,7 +588,6 @@ _score_skills() {
 
     # Score triggers (iterate using string splitting — no per-trigger jq fork)
     trigger_score=0
-    _q_form=0
     _explain_parts=""  # accumulate per-trigger explain details
     if [[ -n "$triggers_joined" ]]; then
       _remaining="$triggers_joined"
@@ -687,15 +627,6 @@ _score_skills() {
           while true; do
             matched="${BASH_REMATCH[0]}"
             [[ -z "$matched" ]] && break
-            # A trigger alternative written as a question ("how.(should|would|could)",
-            # "which.issue", "where.were.we") is meant to match questions, so a hit whose
-            # text opens with one of these words exempts the skill from the question guard.
-            # It is checked on each hit this scan visits, which is the leftmost one and any
-            # later ones tried while looking for a word-boundary hit — not on every possible
-            # match, so a question-form alternative later in the prompt can go unseen.
-            case "$matched" in
-              how[!a-z]*|what[!a-z]*|which[!a-z]*|where[!a-z]*) _q_form=1 ;;
-            esac
 
             _pre="${_scan%%"$matched"*}"
             _abs=$((_offset + ${#_pre}))
@@ -784,16 +715,6 @@ _score_skills() {
         _EXPLAIN_SCORING="${_EXPLAIN_SCORING}[skill-hook]   ${skill_name}: trigger=(${_trig_display}) no-match
 "
       fi
-    fi
-
-    # Question guard (see the top of this function). Admission is NOT changed: the skill
-    # is scored, selected and walked exactly as before. It is only remembered as having got
-    # there on trigger words alone, and the display decision is taken after selection.
-    if [[ "$_Q_SHAPED" -eq 1 ]] && [[ "$skill_role" == "process" ]] \
-       && [[ "$skill_phase" != "LEARN" ]] && [[ "$skill_phase" != "DEBUG" ]] \
-       && [[ "$trigger_score" -gt 0 ]] && [[ "$name_boost" -eq 0 ]] && [[ "$keyword_score" -eq 0 ]] \
-       && [[ "$_q_form" -eq 0 ]]; then
-      _Q_TRIGGER_ONLY="${_Q_TRIGGER_ONLY}${skill_name} "
     fi
 
     # Apply skill-name-mention boost (+100) and allow through even with zero trigger_score
@@ -2049,27 +1970,6 @@ EOF
 
 _select_by_role_caps
 _determine_label_phase
-# Question guard, display half: the prompt is a question, the selected process skill is
-# there on trigger words alone, and no domain or workflow skill was selected alongside it.
-# Then nothing is displayed -- which also hides any required-role line attached to the
-# phase (the "agent-team-review INVOKE WHEN" line on a review question).
-# State is written as usual. With a domain or workflow skill
-# selected the block is shown unchanged, mandate included: dropping it lost real routing
-# ("... error rates jumped, should we rollback?" must still reach incident-analysis), and
-# re-rendering the block without its process skill would mean selecting twice.
-if [[ -z "${_DISPLAY_SUPPRESS}" ]] && [[ -n "${PROCESS_SKILL}" ]] && [[ "${_Q_TRIGGER_ONLY}" == *" ${PROCESS_SKILL} "* ]] \
-   && [[ "${HAS_DOMAIN:-0}" -eq 0 ]] && [[ "${HAS_WORKFLOW:-0}" -eq 0 ]]; then
-  # Stand down when this skill is already a step of the session's chain: "where were we?",
-  # "what's the next step?" during a workflow are asking for exactly the chain render.
-  # Read with a builtin (no fork). The file read here is the one written BEFORE this prompt.
-  _q_chain=""
-  if [[ -n "${_SESSION_TOKEN:-}" ]] && [[ -f "${HOME}/.claude/.skill-composition-state-${_SESSION_TOKEN}" ]]; then
-    IFS= read -r -d '' _q_chain < "${HOME}/.claude/.skill-composition-state-${_SESSION_TOKEN}" || true
-  fi
-  if [[ "${_q_chain}" != *"\"${PROCESS_SKILL}\""* ]]; then
-    _DISPLAY_SUPPRESS="question: ${PROCESS_SKILL} matched on trigger words alone"
-  fi
-fi
 
 # =================================================================
 # METHODOLOGY HINTS
