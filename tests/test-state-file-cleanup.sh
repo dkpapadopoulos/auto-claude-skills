@@ -119,6 +119,47 @@ fi
 teardown_test_env
 
 # ---------------------------------------------------------------------------
+# C5s — sticky-repeat display marker (#333): one small file per session, so it
+# is pruned with the others; the CURRENT session's is preserved. Losing a live
+# marker would only cause one extra display, but leaking one per session would
+# never stop. The record DIRECTORY is deliberately not in this family: it is
+# the experiment's data and must outlive its sessions.
+# ---------------------------------------------------------------------------
+echo "--- C5s: sticky-repeat marker GC ---"
+setup_test_env
+mkdir -p "${HOME}/.claude"
+STALE_MARK="${HOME}/.claude/.sticky-repeat-shown-session-deadbeef-old"
+SHADOW_DIR="${HOME}/.claude/.sticky-repeat-shadow.d"
+SHADOW_REC="${SHADOW_DIR}/session-deadbeef-old.3.12345.json"
+printf '#chain a|b\na\n' > "${STALE_MARK}"
+mkdir -p "${SHADOW_DIR}" && printf '{}\n' > "${SHADOW_REC}"
+backdate "${STALE_MARK}"
+backdate "${SHADOW_REC}"
+backdate "${SHADOW_DIR}"
+run_hook
+TOK="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null)"
+if [ -f "${STALE_MARK}" ]; then
+    _record_fail "C5s-a: stale dead-token sticky-repeat marker pruned" "still present"
+else
+    _record_pass "C5s-a: stale dead-token sticky-repeat marker pruned"
+fi
+if [ -f "${SHADOW_REC}" ]; then
+    _record_pass "C5s-b: a shadow record is NOT pruned, however old"
+else
+    _record_fail "C5s-b: a shadow record is NOT pruned, however old" "deleted"
+fi
+CUR_MARK="${HOME}/.claude/.sticky-repeat-shown-${TOK}"
+printf '#chain a|b\na\n' > "${CUR_MARK}"
+backdate "${CUR_MARK}"        # stale mtime, but it's the ACTIVE token
+run_hook
+if [ -f "${CUR_MARK}" ]; then
+    _record_pass "C5s-c: current-session marker preserved despite stale mtime"
+else
+    _record_fail "C5s-c: current-session marker preserved despite stale mtime" "deleted"
+fi
+teardown_test_env
+
+# ---------------------------------------------------------------------------
 # C6 — reviewer-dispatch pairing file (openspec/changes/reviewer-completion-
 # evidence/): stale dead-token pairings are pruned with the family; the CURRENT
 # session's pairing is preserved. A pairing GC'd mid-session would silently

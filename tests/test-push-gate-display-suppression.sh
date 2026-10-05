@@ -131,6 +131,40 @@ for _f in peer-teammate.txt peer-subagent-handback.txt peer-bare-block.txt notic
     _suppressed_then_push "non-human ${_f%.txt}" "$(cat "${FIX}/${_f}")"
 done
 
+# --- SR: the sticky-repeat rule (#333) ---------------------------------------------------
+# A third use of display suppression: a bare reply inside an armed chain no longer re-displays
+# a step the session has already been shown. It ships in shadow (displays as before); these
+# cells run it in the mode that HIDES, because that is the mode that could disarm the gate.
+# The same two turns are run with the rule off, and the gate's whole answer must be the same.
+_sr_two_turns() {   # <mode> -> sets _SR_SHOWN1, _SR_SHOWN2, _SR_OUT, _SR_ARMED, _SR_HID
+    _new_session
+    export ACS_STICKY_REPEAT="$1"
+    _SR_SHOWN1="$(_turn "review the PR diff for bugs")"
+    _SR_SHOWN2="$(_turn "go")"
+    _SR_ARMED="$(_armed)"
+    # One record per file; the latest written is the bare reply's.
+    _SR_HID="$(jq -r '.hidden_by_rule' "${HOME}/.claude/.sticky-repeat-shadow.d/$(ls -t "${HOME}/.claude/.sticky-repeat-shadow.d" 2>/dev/null | head -1)" 2>/dev/null)"
+    _SR_OUT="$(_push)"
+    unset ACS_STICKY_REPEAT
+    _cleanup
+}
+_sr_two_turns off
+assert_contains "SR control (rule off): the bare reply re-displays the chain's step" "SKILL ACTIVATION" "${_SR_SHOWN2:-<empty>}"
+assert_contains "SR control (rule off): and the push denies on the chain's verify check" "on this active chain" "${_SR_OUT:-<empty>}"
+_SR_OUT_OFF="${_SR_OUT}"
+_sr_two_turns suppress
+assert_contains "SR: the work order's own block is displayed (a step's first display is never hidden)" "SKILL ACTIVATION" "${_SR_SHOWN1:-<empty>}"
+# PRECONDITIONS: the rule fired, and a chain exists to be checked.
+assert_equals "SR: the bare reply that follows displays nothing" "" "${_SR_SHOWN2}"
+assert_equals "SR: and it was this rule that hid it" "true" "${_SR_HID:-<no record>}"
+assert_equals "SR: a chain is still armed" "true" "${_SR_ARMED}"
+assert_contains "SR: the push still denies" '"deny"' "${_SR_OUT:-<empty>}"
+assert_contains "SR: and the denial is the chain's" "on this active chain" "${_SR_OUT:-<empty>}"
+# The session homes differ, so the throwaway path is the only thing allowed to differ.
+assert_equals "SR: the gate's whole answer is the one it gives with the rule off" \
+    "$(printf '%s' "${_SR_OUT_OFF}" | sed 's|/tmp/pg-display-[A-Za-z0-9]*|HOME|g')" \
+    "$(printf '%s' "${_SR_OUT}" | sed 's|/tmp/pg-display-[A-Za-z0-9]*|HOME|g')"
+
 # --- R1: the OTHER chain check, exercised independently ---------------------------------
 _new_session
 rm -f "${HOME}/.claude/.skill-invocation-evidence-${_TOK}"

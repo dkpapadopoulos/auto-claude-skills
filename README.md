@@ -228,6 +228,7 @@ Shows trigger matches, scoring, role-cap filtering, and the context that would b
 |----------|--------|
 | `SKILL_EXPLAIN=1` | Routing explanation with raw scores to stderr |
 | `SKILL_VERBOSE=1` | Full output regardless of session depth |
+| `ACS_STICKY_REPEAT=shadow\|trial\|suppress\|off` | Experiment (#333). Inside a workflow, a bare reply such as "yes" re-displays the current step's `MUST INVOKE` block. `shadow` (default) displays as before and records (in `~/.claude/.sticky-repeat-shadow.d/`, no prompt text) what a "don't repeat a step already shown" rule would hide; `trial` hides it in half of sessions; `suppress` in all; `off` disables the rule and its record. Routing state and the push gate are identical in every mode |
 
 ## What It Is Not
 
