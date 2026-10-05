@@ -386,16 +386,17 @@ cross-family reviewer (Codex) for a KEEP / REVERT verdict.
 
 ### The short version
 
-- Input nobody typed (peer messages, subagent hand-backs, notices carrying a reminder) no longer
-  gets a routing block: 111 blocks across 745 real inputs, to 0. This is the clear win.
-- A plain question whose only process match is a trigger word no longer gets one either. On
-  the held-out half that removes 2 of 83 wrong mandates and no right one. That is a marginal
-  effect; whether it earns its code is the owner's call (see "Read this honestly").
-- Routing STATE is unchanged by both: every state file is byte-identical to the baseline on all
-  1,397 replayed inputs. That property was not true of the first cut, which disarmed the push
-  gate; see "What went wrong" below.
-- After the change the hook still issues 81 wrong process mandates for 11 right ones on the
-  held-out half. Routing precision is still the open defect.
+- **Shipped:** input nobody typed (peer messages, subagent hand-backs, notices carrying a
+  reminder) no longer gets a routing block: 111 blocks across 745 real inputs, to 0. Routing
+  STATE is unchanged: every state file is byte-identical to the baseline on all 1,397 replayed
+  inputs, and human prompts get exactly the mandates and block headers they got before.
+- **Built, measured and removed:** a guard that hid the block on a plain question. Its first cut
+  disarmed the push gate (as did the first cut of the non-human change; see "What went wrong").
+  Reworked to be display-only and then tightened after review, it removed 2 of 83 wrong mandates
+  on the held-out half with no right one lost. Cross-family review said REMOVE; it is removed.
+- **Also shipped:** a frontmatter parser fix, and three superpowers descriptions corrected.
+- **Not fixed:** routing precision. The hook still issues 83 wrong process mandates for 11 right
+  ones on the held-out half of human prompts, exactly as before this change set.
 
 ### Instrument
 
@@ -416,37 +417,40 @@ cross-family reviewer (Codex) for a KEEP / REVERT verdict.
 
 ### What changed, and what it measured
 
-Baseline `3a903316`; final `7bdd2de2`.
+Baseline `3a903316`; final `ba8442b3`.
 
 | Commits | Change | Measured |
 |---|---|---|
 | `5d786ee7`, reworked in `924046cb` | No routing DISPLAY for peer-session messages, subagent hand-backs, or notifications that carry a reminder block | 745 non-human inputs: routing blocks 111 to 0, injected bytes 579,568 to 0. State identical on all 745; chains armed 70 before and 70 after |
 | `4df4c8fc` | The frontmatter parser treats a hyphenated key as a key boundary | A list key followed by a hyphenated key no longer swallows it (reproduced on two real third-party skills). Registry built from the real installation identical before and after |
-| `f519dc19`, reworked in `924046cb`, tightened in `7bdd2de2` | A plain question does not get a process mandate from a trigger word alone | See the table below. State identical on all 652 human prompts |
+| `f519dc19`, reworked in `924046cb`, tightened in `7bdd2de2`, **removed in `ba8442b3`** | A plain question does not get a process mandate from a trigger word alone | Not shipped. Its measurements are the table below |
 | `12735ff0`, `b8ade2e8` | Three superpowers descriptions aligned with what those skills do in 6.4.2 | Injected bytes over the six ratcheted prompt shapes 24,918 to 24,855; no routing change |
 
-Process mandates on human prompts:
+Process mandates on human prompts. **The shipped hook is the baseline row**: with the guard
+removed, mandates and block headers are identical to the baseline on all 652 prompts. The other
+rows are what the removed guard measured in its last form (`7bdd2de2`).
 
 | Half | Right | Wrong | Undecidable | Precision |
 |---|---|---|---|---|
-| Development (326 rows), baseline | 9 | 90 | 21 | 0.091 |
-| Development, final | 9 | 82 | 21 | 0.099 |
-| Held-out (326 rows), baseline | 11 | 83 | 20 | 0.117 |
-| Held-out, final | 11 | 81 | 20 | 0.120 |
+| Development (326 rows), baseline = shipped | 9 | 90 | 21 | 0.091 |
+| Development, with the removed guard | 9 | 82 | 21 | 0.099 |
+| Held-out (326 rows), baseline = shipped | 11 | 83 | 20 | 0.117 |
+| Held-out, with the removed guard | 11 | 81 | 20 | 0.120 |
 
-Held-out paired transitions, final rule: 2 rows changed, both from a wrong mandate on a gold-NONE
+Held-out paired transitions for the removed guard's last form: 2 rows changed, both from a wrong mandate on a gold-NONE
 row to no display (brainstorming 1, executing-plans 1); none in the other direction. Recall is
-unchanged at 11 of 19. Human prompts with any output: 419 to 409 of 652.
+unchanged at 11 of 19. Human prompts with any output: 419 to 409 of 652 (419 again once removed).
 
-**Read this honestly.** Two held-out rows is a marginal effect: it meets the keep rule written
-beforehand (wrong mandates must fall, right ones may fall by at most one) and nothing more. Ten
-changed rows across both halves all go the same way, no right mandate is lost in either half, and
-no state changes anywhere — so it is not harmful — but its measured benefit is about one prompt in
-sixty-five. The guard costs roughly seventy lines of hook logic and one pinned misread. It ships
-because it passed the rule set for it; removing it (`git revert` of the guard, or
-`ACS_QUESTION_GUARD=off`) would be a defensible reading of the same numbers. It does not fix
-routing precision, and the three successive versions below show why a shape rule cannot: every
-loosening that removed more wrong mandates also caught more real work orders.
+**Why it was removed.** Two held-out rows met the keep rule written beforehand (wrong mandates
+must fall, right ones may fall by at most one) and nothing more. Ten changed rows across both
+halves all went the same way, no right mandate was lost, and no state changed — so the guard was
+not harmful — but its measured benefit was about one prompt in sixty-five, for roughly seventy
+lines of shape heuristics and a pinned misread. Meeting a pre-set rule shows the rule was met; it
+does not show the threshold was the right one, and three scorings of one held-out half are
+feedback even when no row is read. The cross-family verdict on the final range was REMOVE, and
+the goal for this change set was to proceed only where a net benefit is shown. The three
+successive versions below are the more useful result: every loosening that removed more wrong
+mandates also hid more real work orders, which is why a shape rule cannot fix routing precision.
 
 **The held-out half was scored three times, and why.** A keep rule was written before each
 scoring, and the reason for each re-scoring was written before it ran.
@@ -455,7 +459,7 @@ scoring, and the reason for each re-scoring was written before it ran.
 |---|---|---|---|
 | 1 | First cut: any prompt ending in "?" or opening with a question word; skill dropped in the scorer | 83 to 75 | It disarmed the push gate |
 | 2 | Display-only rework, same shape, shown unchanged when a domain or workflow skill is co-selected | 83 to 79 | A second review found many ordinary work orders read as questions |
-| 3 | Tightened: opening interrogative AND closing "?" AND one clause AND no request phrase | 83 to 81 | This is what ships |
+| 3 | Tightened: opening interrogative AND closing "?" AND one clause AND no request phrase | 83 to 81 | Not re-scored; removed after review (section 8) |
 
 No held-out row was read at any point, and no held-out count chose a rule: scoring 2's rule was
 chosen on gate safety, scoring 3's on the review's examples and a development-half threshold
@@ -488,28 +492,27 @@ How it got that far, in order:
    a comment next to it", cited the passage (and said it had not reproduced the effect at the
    gate). The flipping pair then confirmed it. Neither commit had been published.
 
-The rework makes both features display-only: scoring, the chain walk and every state write run as
-before, and only the final print is skipped. Three tests now hold it, at three levels:
+The rework made both features display-only: scoring, the chain walk and every state write run as
+before, and only the final print is skipped. Two tests hold that for what shipped:
 
 - `tests/test-push-gate-display-suppression.sh` asserts the GATE'S decision after each suppressed
-  input (34 cells; restoring the early exit fails 12, restoring the scorer drop fails 11).
+  input (22 cells; restoring the early exit fails 12).
 - `tests/test-activation-nonhuman-skip.sh` compares the state written against a reference hook
   lifted from the real one with `sed` (72 cells).
-- `tests/test-activation-question-guard.sh` compares the state written against the same prompt
-  with the guard switched off (103 cells).
-- A mutation sweep of 59 single-change mutants of the hook — every opening word, request phrase,
-  separator and exemption, and both first-cut behaviours — has 58 caught by a named cell. The one
-  that is not is a condition redundant with the chain-member rule, kept as a second line of
-  defence and named as unpinned in the test header.
 
-### Costs and limits of the question guard
+Before the guard was removed, a sweep of 59 single-change mutants of the hook had 58 caught by a
+named cell; 54 of those mutants were of the guard and went with it. The five that concern the
+non-human change (the early exit, the no-registry print, the two retries, the print suppression
+itself) are each caught.
 
-- **The rule is deliberately tight.** A prompt is question-shaped only if it opens with an
-  interrogative, ends with "?", is one clause on one line, and contains no request phrase. A
-  DEBUG- or LEARN-phase skill is exempt (a question is how debugging and outcome reviews are
+### Limits of the removed question guard, for whoever revives it
+
+- **The rule was deliberately tight.** A prompt was question-shaped only if it opened with an
+  interrogative, ended with "?", was one clause on one line, and contained no request phrase. A
+  DEBUG- or LEARN-phase skill was exempt (a question is how debugging and outcome reviews are
   asked for), as is a skill that is already a step of the session's chain ("what's the next
   step?" during a workflow asks for the chain render).
-- **It stands down when another skill was selected.** If a domain or workflow skill was selected
+- **It stood down when another skill was selected.** If a domain or workflow skill was selected
   with the process skill, the block is shown unchanged, mandate included; suppressing it lost
   real routing (an incident question must still reach incident-analysis).
 - **Plain questions that still carry a mandate**, pinned as test cells so they are not taken for
@@ -520,7 +523,9 @@ before, and only the final print is skipped. Three tests now hold it, at three l
   now?" loses its display for that one prompt. Its state is still written.
 - **The replay is stateless.** Inside an active chain the guard does less than these figures
   suggest, because it stands down for the chain's own steps.
-- `ACS_QUESTION_GUARD=off` restores the previous display.
+- It had an off switch (`ACS_QUESTION_GUARD=off`); the switch went with it.
+- The code is at `7bdd2de2` and its test file at the same commit. Anything that revives it must
+  suppress the DISPLAY only; the hook's `_DISPLAY_SUPPRESS` comment says so.
 
 ### Reviewer verdicts
 
@@ -532,7 +537,7 @@ before, and only the final print is skipped. Three tests now hold it, at three l
 | Descriptions | Codex: KEEP | A here-document loop in the new test ran zero times in a read-only sandbox while the file reported green; an upstream-text cell could turn the push gate red for a reason outside the repo. Both fixed |
 | Whole range | Dispatched reviewer: ready after fixes | The gate bypass (rated Important; measured here as a DENY to allow flip); five families of work orders misread as questions; a mandate-free test that still shipped a phase block; the guard switching itself off after the first chain. All addressed in the rework |
 | Display-only rework | Dispatched reviewer: ready after fixes, no bypass | Confirmed display-only independently (37 multi-turn steps on against off; 53 turns baseline against head; its positive control diverged on 11 of 11). Found the question rule too loose in five more families, continuation prompts going silent inside a chain, eight surviving mutants, two cells passing for the wrong reason (one of them the gate test's "the denial is the chain's"), and a retry order that let a notification be routed. All addressed in `7bdd2de2` |
-| Display-only rework and final rule | Codex | See section 8 |
+| Display-only rework and final rule | Codex: KEEP the non-human suppression, REMOVE the question guard | See section 8 |
 
 ### Dropped or deferred, and why
 
@@ -558,9 +563,61 @@ before, and only the final print is skipped. Three tests now hold it, at three l
 
 ### What would move precision further
 
-The wrong mandates that remain are, by construction, not suppressed by this rule. On the held-out
-half they are brainstorming 36, requesting-code-review 25, executing-plans 8, systematic-debugging
-6, product-discovery 6. What kinds of prompt they are was not classified here, and the held-out
-prompts were deliberately not read. The mechanism is known: one trigger word is enough to mandate.
-A candidate next experiment is a two-signal requirement for a mandate, as a DISPLAY rule so that
+The wrong mandates on the held-out half are brainstorming 37, requesting-code-review 25,
+executing-plans 9, systematic-debugging 6, product-discovery 6. What kinds of prompt they are was
+not classified here, and the held-out prompts were deliberately not read. The mechanism is known:
+one trigger word is enough to mandate. What this change set established is what does NOT work: a
+rule about the prompt's shape.
+A candidate next experiment is in section 8.
 state is untouched, measured against a freshly labelled set. Both halves of this one are spent.
+
+## 8. Final reviews, what shipped, and what is left for the owner
+
+### Cross-family verdict on the final range (Codex, `e10e845b..a4ed7ae9`)
+
+- **Non-human display suppression: KEEP.** The suppression surrounds only output; the writes
+  after it remain reachable. Strongest argument for the other verdict, in its words: automated
+  text still arms workflows while their instructions and skip disclosures become invisible, and
+  state equivalence does not establish behavioural equivalence. That is accurate and is the
+  residual risk of what shipped: a session fed only by peer messages has a chain armed and never
+  sees the routing block, so it first hears of the chain at a gate deny. The deny names the
+  invocation it wants, so the situation is recoverable; it is not pleasant.
+- **Question guard: REMOVE.** Acted on (`ba8442b3`). Its further findings on the guard — the
+  chain-membership read was a substring test on a file written without an atomic rename, and the
+  "one clause" check ignored conjunctions — went with the code.
+- **No direct gate bypass found** in the display-only design. Its earlier KEEP on the first cuts
+  had missed the bypass; this time it was asked the gate question explicitly.
+
+### What shipped
+
+| Commit | What |
+|---|---|
+| `5d786ee7` + `924046cb` + `7bdd2de2` + `ba8442b3` (net) | Non-human input gets no routing display; state unchanged; fail-open retries |
+| `4df4c8fc` | Frontmatter parser: a hyphenated key is a key boundary |
+| `12735ff0`, `b8ade2e8`, part of `7bdd2de2` | Three superpowers descriptions and one eval rubric aligned with 6.4.2; drift test |
+
+The net difference in `hooks/skill-activation-hook.sh` against the baseline is the non-human
+classifier, its retries, and the suppression of two prints. Nothing in scoring, selection or the
+chain walk changed.
+
+### The next experiment on routing precision
+
+Codex's proposal, which fits what the three shape rules showed: freeze a candidate that
+distinguishes a request from discussion using conversational context rather than the prompt's
+shape, then evaluate it once on fresh, blind-labelled multi-turn sessions, measuring unwanted
+mandates and missed work orders together, plus whether gates were actually completed. Whatever
+it is, it must be a display rule. Both halves of the gold set used here are spent.
+
+### For the owner
+
+- **Publication.** The push gate refuses this branch: the verification verdict is "suspect"
+  because the gate-gaming check matches the literal `@unittest.skip("later")` in
+  `docs/plans/2026-10-04-frontier-ablation/harness/test_hidden_runner.py`, where it is the input
+  of a test proving a skipped test is not counted as a pass. That file was published earlier; it
+  blocks now because this range also touches `hooks/` and `config/`, which makes the gate require
+  a fully clean verdict. The fixture was not reworded and the detector was not touched: either
+  would be working around a guardrail. The choice is the owner's (push by hand; authorise the
+  rewording; or teach the detector about string literals or `docs/` as its own change).
+- **Whether automated text should arm a chain at all** is still open (70 of 745 inputs do).
+- The items listed as open in sections 6 and 7 are unchanged.
+
