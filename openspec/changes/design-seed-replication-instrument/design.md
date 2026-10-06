@@ -2089,3 +2089,73 @@ during the second wait; what counts as a value it can print does not check that
 a record is a plain one; how long the second wait is, is pinned by no cell; the
 check that reads a package back opens it in the locale's encoding and not in
 UTF-8; and the capture reads one of its three counts before its image.
+
+### Stages 5 to 7 begin, 2026-10-06
+
+Under the plan for running the comparison as registered. The owner answered four
+questions before anything was asked of the reviewer, each put as a question:
+
+| Question | Ruling | When |
+|---|---|---|
+| The audit cuts one part of a construct and merges two. Who turns that into what a judge is given | Nobody rewrites. The judging package holds the specification's parts 4 and 9 and the audit's section 3, each word for word, and one fixed sentence: where the audit cuts or merges a part, the audit governs | 2026-10-06 |
+| The reviewer defines the rules the audit found undefined, and later approves the code written to them. May one party do both | Yes, stated as a limit: an error in the rules is not caught by the approval | 2026-10-06 |
+| If the reviewer says the second way of reading a page back cannot be defined | Go on. Only the first way then exists, and a page not shown as JSON is unassessable: failed in the primary analysis, unknown in the secondary | 2026-10-06 |
+| Who writes the pages the fidelity tests are developed and accepted against | The reviewer: development pages first, acceptance pages after the code is committed | 2026-10-06 |
+
+**The question a judge is asked afterwards** is not the reviewer's to write. To ask
+a judge which builder made a page, the question has to say what the builders
+differ in, and the reviewer is not told that. It is asked only after the scores
+are kept, so it cannot move a score. The author drafts it and the owner approves
+the exact text. No revision had said who writes it.
+
+**The rules the audit found undefined.** One package, built by the builder: a
+question of seven items (1998 bytes), the specification, the audit and the two
+data files. 42,015 bytes, SHA-256 `4bc6b211…2cff`; the consent carried
+`1862f211…f128`. Critique mode. The owner consented from the file. Its first
+paragraph says which documents the specification's "Document 3" and "Document 4"
+are in this package, which the audit's package had not said.
+
+The reply is kept as it came: Dion
+`tests/fixtures/design_seed_replication/fidelity-rules.md`, 12,088 bytes, SHA-256
+`f3e87728a70aadf87722ad5349aed3241252f0d1ba97b7fcb9a435ac966be6cf`. Cells pin it,
+check it can go into a package, and find the seven answers in order. None is
+"cannot be defined". It opens by saying what the rules are: "operational
+conventions, not claims that the brief specifies these thresholds".
+
+In the author's summary; the file is what counts:
+
+| Asked | The rule, shortly |
+|---|---|
+| The second way of reading a page back | One grammar and no other: a single outermost `dl` of `dt` and `dd` pairs; a nested `dl` for an object; an `ol` for a list; a table with one header row for a list of objects; and every value written as a complete JSON token, so that text is in quotation marks and nothing is `null` unless it says so. Anything else is `UNASSESSABLE`. A path is matched by where it is, never by its value |
+| Covering | By the ink of the text, not by its box. A value is shown only if every glyph of it has some ink that nothing later painted covers whole. Not one glyph may be covered whole |
+| Clipping | Not one sample of ink may be clipped. No tolerance by geometry |
+| Scrolling inside the page | A new status, `LAID_OUT_IN_SCROLL_REGION`: it meets the display requirement under conditions, and is "not a claim of observed visibility" |
+| Changes of representation | Spacing, styling, the order of an object's members, and the grammar above. Not thousands separators, rounding, a percent sign in place of a fraction, or a label in other words |
+| Tests within content fidelity | Labels, types, values with zero tolerance, units, the sign of drift and of delta, associations by the whole tree, and that only the proposed metrics exist |
+| A judge's images | One captured pixel for one CSS pixel, never resized. A page taller than 1600 pixels is cut into crops of 1600 with 200 of overlap. If the judging system "cannot consume these pixels without automatic reduction", the assessment is `NOT_SCORED` |
+
+**What follows from the rules, in the author's reading.** Three things, none of
+them decided here.
+
+- A page that is neither plain JSON nor written in that one grammar is
+  unassessable, and in the primary analysis that fails its builder. The audit
+  had said that what the reader supports "materially affects the comparison".
+  The secondary analysis is what shows how much.
+- For covering and for clipping the rules say what to do when the harness cannot
+  find out: `UNASSESSABLE`, and of covering, "not `PASS`". Whether the harness can
+  find out, from one render in a browser, is not known. It is found by building
+  against the reviewer's pages.
+- A judge here is a session that reads an image file. Whether an image of 1440 by
+  1600 pixels reaches such a session with no reduction is not known, and has to
+  be measured before any judging package is built. If it does not, the rule as
+  given scores nothing, and the rule goes back to the reviewer with what was
+  measured. The author does not pick another size.
+
+**The capture takes its widths from the caller,** which closes the open item above:
+it had two of its own, the pilot's. It has no default, so that a caller who leaves
+them out does not get the pilot's without knowing. The count of pages, which it
+read before its image, is now read after it with the other two, and after the
+settle time again: a page that opened another page when the capture added its
+style was photographed and its image kept, and a cell showed it. The limit a
+cell pinned at 750 ms after load has moved with that and is pinned where it now
+stands: a page that waits past both settles is still not refused.
