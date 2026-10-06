@@ -2102,11 +2102,14 @@ questions before anything was asked of the reviewer, each put as a question:
 | If the reviewer says the second way of reading a page back cannot be defined | Go on. Only the first way then exists, and a page not shown as JSON is unassessable: failed in the primary analysis, unknown in the secondary | 2026-10-06 |
 | Who writes the pages the fidelity tests are developed and accepted against | The reviewer: development pages first, acceptance pages after the code is committed | 2026-10-06 |
 
-**The question a judge is asked afterwards** is not the reviewer's to write. To ask
-a judge which builder made a page, the question has to say what the builders
-differ in, and the reviewer is not told that. It is asked only after the scores
-are kept, so it cannot move a score. The author drafts it and the owner approves
-the exact text. No revision had said who writes it.
+**The question a judge is asked afterwards** is not written in these stages. "Two
+turns", above, leaves its wording to the freeze, and the launcher refuses one that
+holds a recorded term, so it cannot name what the builders differ in. The plan
+for these stages first had the reviewer write it and then, for a few hours, the
+author with the owner's approval, on the ground that it must name the difference.
+Both were wrong about what is already registered, and neither was done: it was
+left out of the reviewer's package, and the author told the owner a draft would
+come and has taken that back.
 
 **The rules the audit found undefined.** One package, built by the builder: a
 question of seven items (1998 bytes), the specification, the audit and the two
