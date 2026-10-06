@@ -29,8 +29,15 @@ PARTIAL loss is not refused. The origin counts are printed on every run; read th
 Both files hold prompt text. A path inside a git repository, or one git cannot vouch for,
 is refused (exit 2). Prints counts only.
 
+COLLECTION STATUS. The pre-registration closes stage A when 60 rows the rule would hide
+have been recorded, or on 2026-11-16, whichever is first, and stage A is scored ONCE. With
+--count-only nothing is written: the same rows are built, the counts are printed, and the
+last line says whether collection is OPEN or CLOSED. That is the check to run before
+labelling; it reads no label and prints no prompt.
+
 Usage:
   rows.py --shadow-log FILE --since ISO8601 --rows FILE --key FILE [--projects DIR]
+  rows.py --shadow-log FILE --since ISO8601 --count-only [--projects DIR]
 """
 import sys
 
@@ -38,6 +45,7 @@ sys.dont_write_bytecode = True
 
 import argparse  # noqa: E402
 import collections  # noqa: E402
+import datetime  # noqa: E402
 import hashlib  # noqa: E402
 import json  # noqa: E402
 import os  # noqa: E402
@@ -45,6 +53,8 @@ import os  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import RULE_VERSION, join, open_private, read_session, read_shadow, rec_ts, refuse_repo_path, transcript_for, ts_of  # noqa: E402
 
+CLOSE_AT_HIDDEN_ROWS = 60     # pre-registered: collection closes at this many would-hide rows
+CLOSE_ON = "2026-11-16"       # or on this date, whichever is first
 TAIL = 1500        # characters of the previous assistant message
 EARLIER = 8        # earlier typed prompts shown, most recent last
 EACH = 500         # characters of each earlier prompt
@@ -54,16 +64,28 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--shadow-log", required=True)
     ap.add_argument("--since", required=True, help="ISO-8601 freeze timestamp; sessions that started earlier are excluded")
-    ap.add_argument("--rows", required=True)
-    ap.add_argument("--key", required=True)
+    ap.add_argument("--rows")
+    ap.add_argument("--key")
+    ap.add_argument("--count-only", action="store_true", help="write nothing; print the counts and whether collection is open")
+    ap.add_argument("--today", help=argparse.SUPPRESS)   # tests only: the date to judge the closing date against
     ap.add_argument("--projects", default=os.path.expanduser("~/.claude/projects"))
     args = ap.parse_args()
+    if not args.count_only and not (args.rows and args.key):
+        print("--rows and --key are required unless --count-only is given", file=sys.stderr)
+        return 2
+    if args.count_only and (args.rows or args.key):
+        print("--count-only writes nothing: do not pass --rows or --key with it", file=sys.stderr)
+        return 2
+    today = args.today or datetime.date.today().isoformat()
+    if ts_of(today + "T00:00:00+00:00") is None:
+        print(f"not a date: {today}", file=sys.stderr)
+        return 2
 
     since = ts_of(args.since)
     if since is None:
         print(f"not an ISO-8601 timestamp: {args.since}", file=sys.stderr)
         return 2
-    for out in (args.rows, args.key):
+    for out in (() if args.count_only else (args.rows, args.key)):
         if refuse_repo_path(out):
             return 2
 
@@ -147,18 +169,26 @@ def main():
         print("prompt (the origins above) AND the timing: a record joins a prompt at most 15 s before it.", file=sys.stderr)
         return 2
     order = sorted(range(len(rows)), key=lambda i: rows[i]["row_id"])
-    with open_private(args.rows) as out:
-        for i in order:
-            out.write(json.dumps(rows[i], ensure_ascii=False) + "\n")
-    with open_private(args.key) as out:
-        for i in order:
-            out.write(json.dumps(keys[i]) + "\n")
+    if not args.count_only:
+        with open_private(args.rows) as out:
+            for i in order:
+                out.write(json.dumps(rows[i], ensure_ascii=False) + "\n")
+        with open_private(args.key) as out:
+            for i in order:
+                out.write(json.dumps(keys[i]) + "\n")
     for name, n in counts.items():
         print(f"{n:6d}  {name}")
     for name, n in origins.most_common():
         print(f"{n:6d}    of those unjoined: {name}")
     print(f"{sum(1 for k in keys if k['would_hide']):6d}  rows the rule would hide")
     print(f"{len({k['session'] for k in keys}):6d}  sessions")
+    hidden = sum(1 for k in keys if k["would_hide"])
+    if hidden >= CLOSE_AT_HIDDEN_ROWS:
+        print(f"collection: CLOSED ({hidden} rows the rule would hide; closes at {CLOSE_AT_HIDDEN_ROWS}). Label and score once.")
+    elif today >= CLOSE_ON:
+        print(f"collection: CLOSED (closing date {CLOSE_ON} reached with {hidden} rows the rule would hide). Label and score once.")
+    else:
+        print(f"collection: OPEN ({hidden} of {CLOSE_AT_HIDDEN_ROWS} rows the rule would hide; closes at {CLOSE_AT_HIDDEN_ROWS} or on {CLOSE_ON}). Do not label or score yet.")
     return 0
 
 

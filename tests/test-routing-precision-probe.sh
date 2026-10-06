@@ -24,7 +24,7 @@ echo "=== test-routing-precision-probe.sh ==="
 
 PROBE="${PROJECT_ROOT}/tests/probes/routing-precision"
 HOOK="${PROJECT_ROOT}/hooks/skill-activation-hook.sh"
-for _f in common.py rows.py score.py trial.py rubric.md README.md; do
+for _f in common.py rows.py score.py trial.py owner_sample.py rubric.md README.md; do
     if [ ! -f "${PROBE}/${_f}" ]; then
         _record_fail "probe file exists: ${_f}" "missing ${PROBE}/${_f}"; print_summary; exit 1
     fi
@@ -504,6 +504,99 @@ assert_equals "T7: records of another rule version leave nothing to read (INCONC
 D="${TEST_TMPDIR}/t-shape"; mkdir -p "${D}/projects/p"
 printf '%s\n' '{"schema_version":1,"rule_version":3,"ts":"2026-11-01T10:00:20Z","session":5,"skill":"requesting-code-review","would_hide":true,"mode":"trial","arm":"hide"}' > "${D}/shadow.jsonl"
 assert_equals "T10: a trial record whose session is not a string exits 2, never a reading" "2" "$(trial "${D}")"
+
+# --- C: is collection closed? (rows.py --count-only) -----------------------------------
+# Stage A is scored ONCE, after collection closes at 60 would-hide rows or on 2026-11-16.
+# --count-only is how that is checked without writing a prompt or reading a label.
+echo "== C: collection status =="
+mk_rows() {   # <dir> <number of sessions, each with one would-hide row>
+    mkdir -p "$1/projects/p" && python3 - "$1" "$2" <<'PY'
+import json, sys
+d, n = sys.argv[1], int(sys.argv[2])
+log = []
+for i in range(n):
+    sid = f"c{i:03d}0"
+    ts = lambda s: f"2026-10-20T10:{i % 60:02d}:{s:02d}Z"
+    entries = [{"type": "user", "timestamp": ts(0), "origin": {"kind": "human"}, "message": {"role": "user", "content": "build a thing"}},
+               {"type": "user", "timestamp": ts(20), "origin": {"kind": "human"}, "message": {"role": "user", "content": "ok"}}]
+    open(f"{d}/projects/p/{sid}.jsonl", "w").write("".join(json.dumps(e) + "\n" for e in entries))
+    log.append({"schema_version": 1, "rule_version": 3, "ts": ts(20), "session": f"session-{sid}", "skill": "brainstorming", "sticky": True,
+                "already_shown": True, "would_hide": True, "mode": "shadow", "arm": "show", "hidden_by_rule": False, "displayed": True,
+                "other_suppression": False, "skills_in_block": 1, "block_chars": 3000})
+open(f"{d}/shadow.jsonl", "w").write("".join(json.dumps(r) + "\n" for r in log))
+PY
+}
+count_only() { python3 "${PROBE}/rows.py" --shadow-log "$1/shadow.jsonl" --since 2026-10-06T00:00:00Z --projects "$1/projects" --count-only --today "${2:-2026-10-21}" > "$1/status.txt" 2>&1; echo $?; }
+D="${TEST_TMPDIR}/c-59"; mk_rows "${D}" 59
+assert_equals "C1: --count-only exits 0" "0" "$(count_only "${D}")"
+assert_contains "C1: 59 would-hide rows before the closing date is OPEN" "collection: OPEN (59 of 60 rows the rule would hide" "$(cat "${D}/status.txt")"
+assert_contains "C1: and says not to label or score yet" "Do not label or score yet" "$(cat "${D}/status.txt")"
+assert_equals "C1: nothing but the fixture and the status text is in the directory (no rows, no key)" "projects shadow.jsonl status.txt" "$(ls "${D}" | tr '\n' ' ' | sed 's/ $//')"
+D="${TEST_TMPDIR}/c-60"; mk_rows "${D}" 60
+count_only "${D}" >/dev/null
+assert_contains "C2: the sixtieth would-hide row closes collection" "collection: CLOSED (60 rows the rule would hide" "$(cat "${D}/status.txt")"
+D="${TEST_TMPDIR}/c-date"; mk_rows "${D}" 5
+count_only "${D}" 2026-11-15 >/dev/null
+assert_contains "C3: the day before the closing date is still OPEN" "collection: OPEN (5 of 60" "$(cat "${D}/status.txt")"
+count_only "${D}" 2026-11-16 >/dev/null
+assert_contains "C3: the closing date closes it whatever the count" "collection: CLOSED (closing date 2026-11-16 reached with 5 rows" "$(cat "${D}/status.txt")"
+python3 "${PROBE}/rows.py" --shadow-log "${D}/shadow.jsonl" --since 2026-10-06T00:00:00Z --projects "${D}/projects" --count-only --rows "${D}/r.jsonl" --key "${D}/k.jsonl" > /dev/null 2>&1
+assert_equals "C4: --count-only with an output path is refused (exit 2), and writes nothing" "2 no" "$? $([ -e "${D}/r.jsonl" ] && echo yes || echo no)"
+python3 "${PROBE}/rows.py" --shadow-log "${D}/shadow.jsonl" --since 2026-10-06T00:00:00Z --projects "${D}/projects" > /dev/null 2>&1
+assert_equals "C4: without --count-only the output paths are still required (exit 2)" "2" "$?"
+python3 "${PROBE}/rows.py" --shadow-log "${D}/shadow.jsonl" --since 2026-10-06T00:00:00Z --projects "${D}/projects" --rows "${OUT}/c-r.jsonl" --key "${OUT}/c-k.jsonl" --today 2026-10-21 > "${D}/full.txt" 2>&1
+assert_equals "C5: the ordinary run still writes its rows, and reports the same status line" "5 yes" \
+    "$(grep -c . "${OUT}/c-r.jsonl") $(grep -qF 'collection: OPEN (5 of 60' "${D}/full.txt" && echo yes || echo no)"
+
+# --- O: the owner's calibration rows (owner_sample.py) ------------------------------------
+# "Drawn at random from the rows both labellers decided", by a script, so nobody picks them.
+echo "== O: the owner's sample =="
+mk_owner() {   # <dir> <decided> <disagreed> <both cannot tell>
+    mkdir -p "$1" && python3 - "$@" <<'PY'
+import json, sys
+d, dec, dis, und = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+rows, a, b = [], [], []
+def add(i, la, lb):
+    rid = f"row{i:04d}"
+    rows.append({"row_id": rid, "skill": "brainstorming", "prompt": f"prompt {i}", "previous_assistant_message_tail": "", "earlier_prompts": [],
+                 "tools_used_since_the_previous_prompt": [], "process_skills_already_invoked_this_session": []})
+    a.append({"row_id": rid, "label": la}); b.append({"row_id": rid, "label": lb})
+n = 0
+for i in range(dec):
+    lab = "WARRANTED" if i % 4 == 0 else "NOT_WARRANTED"; add(n, lab, lab); n += 1
+for i in range(dis):
+    add(n, "WARRANTED", "NOT_WARRANTED"); n += 1
+for i in range(und):
+    add(n, "INSUFFICIENT_CONTEXT", "INSUFFICIENT_CONTEXT"); n += 1
+for name, items in (("rows", rows), ("a", a), ("b", b)):
+    open(f"{d}/{name}.jsonl", "w").write("".join(json.dumps(x) + "\n" for x in items))
+PY
+}
+draw() { python3 "${PROBE}/owner_sample.py" --rows "$1/rows.jsonl" --labels "$1/a.jsonl" --labels "$1/b.jsonl" --out "$2" ${3:+--n "$3"} > "$1/draw.txt" 2>&1; echo $?; }
+D="${TEST_TMPDIR}/o-1"; mk_owner "${D}" 30 6 4
+assert_equals "O1: owner_sample.py exits 0" "0" "$(draw "${D}" "${OUT}/owner-rows.jsonl")"
+assert_equals "O1: twenty rows are drawn" "20" "$(grep -c . "${OUT}/owner-rows.jsonl")"
+assert_equals "O1: every one of them is a row both labellers decided (ids 0..29 here)" "0" \
+    "$(jq -r '.row_id' "${OUT}/owner-rows.jsonl" | awk '{ n = substr($0, 4) + 0; if (n > 29) bad++ } END { print bad + 0 }')"
+assert_equals "O1: no row is drawn twice" "20" "$(jq -r '.row_id' "${OUT}/owner-rows.jsonl" | sort -u | grep -c .)"
+assert_equals "O2: the owner sees the labeller's view and nothing else (no label, no key field)" \
+    "earlier_prompts previous_assistant_message_tail process_skills_already_invoked_this_session prompt row_id skill tools_used_since_the_previous_prompt" \
+    "$(jq -r 'keys[]' "${OUT}/owner-rows.jsonl" | sort -u | tr '\n' ' ' | sed 's/ $//')"
+assert_equals "O2: the file is private (0600)" "600" "$(mode_of "${OUT}/owner-rows.jsonl")"
+draw "${D}" "${OUT}/owner-rows-again.jsonl" >/dev/null
+assert_equals "O3: the same inputs give the same draw (the seed comes from the row ids, nobody picks it)" "same" \
+    "$(cmp -s "${OUT}/owner-rows.jsonl" "${OUT}/owner-rows-again.jsonl" && echo same || echo different)"
+assert_equals "O3: and the draw is not simply the first twenty rows" "no" \
+    "$([ "$(jq -r '.row_id' "${OUT}/owner-rows.jsonl" | sort | tr '\n' ' ')" = "$(jq -r '.row_id' "${D}/rows.jsonl" | head -20 | sort | tr '\n' ' ')" ] && echo yes || echo no)"
+D="${TEST_TMPDIR}/o-few"; mk_owner "${D}" 7 10 10
+draw "${D}" "${OUT}/owner-few.jsonl" >/dev/null
+assert_equals "O4: with fewer decided rows than asked for, all of them are drawn" "7" "$(grep -c . "${OUT}/owner-few.jsonl")"
+assert_contains "O4: and it says stage A will read INCONCLUSIVE" "FEWER THAN 20 decided rows exist" "$(cat "${D}/draw.txt")"
+D="${TEST_TMPDIR}/o-1"
+assert_equals "O5: writing the owner's rows inside this repository is refused (exit 2)" "2" "$(draw "${D}" "${PROJECT_ROOT}/tests/owner-leak.jsonl")"
+if [ -e "${PROJECT_ROOT}/tests/owner-leak.jsonl" ]; then rm -f "${PROJECT_ROOT}/tests/owner-leak.jsonl"; _record_fail "O5: and nothing was written there" "a file was created inside the repository"; else _record_pass "O5: and nothing was written there"; fi
+printf '[]\n' >> "${D}/a.jsonl"
+assert_equals "O6: a label line of the wrong shape exits 2" "2" "$(draw "${D}" "${OUT}/owner-bad.jsonl")"
 
 assert_contains "the rubric asks about the obligation, not the prompt's wording" "is REQUIRING the assistant to invoke this specific" "$(cat "${PROBE}/rubric.md")"
 assert_contains "the rubric has an explicit cannot-tell label" "INSUFFICIENT_CONTEXT" "$(cat "${PROBE}/rubric.md")"
