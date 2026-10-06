@@ -41,6 +41,23 @@ of tools was argued with it a second time at the owner's request, and both are
 in "Review". Like revisions 3 and 4, this one was written after the build and
 makes no claim that its wording preceded it.
 
+Revision 6, 2026-10-07. **The instrument as registered decides nothing, and the
+plan that was building it has stopped, by the owner's decision.** Stages 1 to 4
+are done. Stage 5 was built. At stage 6 the reviewer refused the content test
+and the display test, the only two things that can decide a pair, since the
+owner ruled that no judged construct gives a vote. Asked what could be approved,
+it gave rules for a rebuild and approved nothing. Stage 7, the freeze and the
+arms were not begun. No arm has run, no judge has scored anything, and no result
+exists. The entries from "The gate, the one run over the acceptance pages, and
+the reviewer refuses two tests" to the end are the record.
+
+This revision changes no rule. It corrects lines that later entries had made
+stale, each marked "(Revision 6)" where it stands, and says in each section a
+later entry amends where that entry is. The plan had the entries of stages 2 to
+7 moved into the sections they amend. They are not moved: that was to ready the
+document for a freeze, and none is coming. "How to go on" is whole. Like
+revisions 3 to 5, this one was written after what it reports.
+
 Precedent for the form: the pilot's registration, archived at
 `openspec/changes/archive/2026-09-24-design-seed-capability/design.md`. Rule
 numbers such as v2-2 refer to that document.
@@ -74,8 +91,8 @@ Eight stages.
 | # | Stage | Done by | Inputs |
 |---|---|---|---|
 | 1 | Choose the task, the stored report and the fixture's states; write the brief | picker | a sanitised export of Dion; frozen instructions |
-| 2 | Build the fixture | author, running a transformation the picker specified | the picker's specification |
-| 3 | Specify what is measured | deriver | the brief, the fixture, the frozen list of operator decisions |
+| 2 | Build the fixture | author, from Dion's own test database with nothing added, by the owner's ruling. The brief's own step loads a real statement and was not done (Revision 6) | the brief's sections on states and fixture |
+| 3 | Specify what is measured | deriver | the brief, the two data files, the frozen instructions. No list of operator decisions was frozen apart from the brief: the deriver lists them, each with the sentence it rests on (Revision 6) |
 | 4 | Audit each construct for task relevance | reviewer, under rule v2-2 | the brief, the fixture, the deriver's specification |
 | 5 | Implement and calibrate each measure | author | the deriver's specification |
 | 6 | Approve each implementation against its specification | reviewer | the specification, the code, the calibration results |
@@ -85,6 +102,12 @@ Eight stages.
 The picker, the deriver and the reviewer each have controlled exposure. The
 deriver and the reviewer are separate dispatches, so the party that approves a
 measure is not the party that specified it.
+
+(Revision 6) That last sentence did not hold for the fidelity tests. The audit
+found their rules undefined, and the owner ruled on 2026-10-06 that the reviewer
+defines them and later approves the code written to them, stated as a limit.
+How each stage went is under "Stages 2 to 7, as they are done". Stages 1 to 5
+were done; stage 6 ended in two refusals; 7 and 8 were not begun.
 
 ### Who decides what
 
@@ -98,7 +121,9 @@ label-to-value distance, and each favours different pages.
 | The statement of what is wanted, given to the picker | author | reviewer, before the picker runs; then frozen |
 | The snapshot of Dion the picker may see | a rule, stated below | sanitising by rule, then a scan of the result, with its search terms and everything removed recorded |
 | The task, the stored report, the fixture's states | picker | recorded |
-| How the fixture is transformed | picker specifies; author runs | reviewer audits the output against the specification |
+| Where the fixture's data comes from (Revision 6; was "how the fixture is transformed", by the picker) | the owner, by ruling: Dion's own test database, nothing added | reviewer audited the two files against the brief's sections on states and fixture |
+| The instructions given to the deriver (Revision 6; no row before) | author | reviewer, twice; then frozen, with the sentences the reviewer did not read named |
+| The fidelity dimensions, and the rules for them the audit found undefined (Revision 6; no row before) | deriver; then reviewer | reviewer; then nobody else: the same party approves the code, by the owner's ruling |
 | Constructs, their direction, scope and grouping | deriver | reviewer, under v2-2 |
 | Which operationalisations of a construct are acceptable | deriver | recorded |
 | What size of difference matters | deriver | recorded |
@@ -520,7 +545,11 @@ judging result.
 - That the package is clean. A hash shows the bytes are the ones listed. The
   term scan finds its terms and nothing else. Image metadata, a provenance-
   bearing anchor, a revealing file name inside the package: these are the
-  package builder's to control, and that builder is not built.
+  package builder's to control, and that builder is not built. (Revision 6) It
+  is built, `build_judging_package.py` in Dion: every picture is read to its
+  pixels and written again from them, and a file is named by its width and its
+  number in the order of the crops.
+  The reviewer has not read it, and no arm's page has been through it.
 - Read spellings other than the three tested.
 
 ### The picker
@@ -832,6 +861,11 @@ Each measure is registered with:
 - what it does when extraction fails;
 - the rendering conditions: browser build, widths, fonts, colour scheme.
 
+(Revision 6) No measure of a construct was registered or built: the owner ruled
+on 2026-10-05 that the comparison is run as registered and that no code measure
+of a construct is asked for ("How to go on"). The measures built are the three
+fidelity tests, and two of them were refused.
+
 ### Validity tests, before freeze
 
 | Test | The measure must |
@@ -879,7 +913,9 @@ that is procedure, and nothing in the launcher enforces it.
 
 ### A pair
 
-One pair is one page from arm S and one from arm C, built from the same brief,
+One pair is two pages from arm S and two from arm C, one for each data file
+(Revision 6; it said one page from each, and the owner ruled on 2026-10-05 that a
+builder delivers a page for each data file), built from the same brief,
 fixture bytes, model configuration, tool access and budget, in fresh sessions.
 Budget is total, counted from launch, so the seed's context is paid for out of
 arm S's budget.
@@ -897,6 +933,15 @@ before launch. All five appear in the final record, whatever happened in them.
 
 Fidelity-decided pairs are reported separately. They say nothing about
 presentation.
+
+(Revision 6) What the rule left unsaid was ruled on 2026-10-05: a page that does
+not render fails fidelity; a fidelity test that cannot be carried out counts as
+failed for that builder in the primary analysis and as unknown in a secondary
+one; a construct only a judge can score gives no vote. With no code measure of a
+construct either, step 2 never applies, and a pair is decided by fidelity or has
+no direction. `decide_pair.py` in Dion is that rule in code. Both tests it
+counts were refused by the reviewer on 2026-10-06, and a refused test is not
+used: every pair would have no direction.
 
 ### Failures and reruns
 
@@ -932,6 +977,9 @@ only be assessed afterwards, by rules fixed now.
 If any check fails, the result is reported as **inconclusive about
 improvement**. The measurements are still reported.
 
+(Revision 6) The four checks made before a run were never put to the reviewer:
+the plan stopped at stage 6.
+
 ## What a feasibility probe showed
 
 Run on 2026-09-29 against the pilot's six preserved pages, at 1280 and 400
@@ -958,13 +1006,16 @@ review.
 
 | Field | Status | Evidence |
 |---|---|---|
-| `private_data` | Present | Dion's store of real holdings is on the machine the stages run on |
+| `private_data` | Present as registered. (Revision 6) The owner stated on 2026-10-04 that the store is not on this machine. No check here shows it; the package builder looks at two paths and records "not applicable" when no store is at either | Dion's store of real holdings is on the machine the stages run on |
 | `untrusted_input` | Present | arms' generated HTML and scripts run in a browser, and the measures read the result |
 | `outbound_action` | Present | packages to the deriver and the reviewer; a judge's input, if any construct is judged |
 
 ### Classification
 
-**Risk level:** lethal trifecta, as the pilot was.
+**Risk level:** lethal trifecta, as the pilot was. (Revision 6) The level is
+kept though the first field now rests on the owner's statement. One control was
+loosened on that statement and nobody ruled that it may be: see "The store, and
+a control that changed with it".
 
 **Autonomy:** mixed. Work inside a worktree is reversible. Sending a package is
 not: once data has left the machine it cannot be recalled.
@@ -983,6 +1034,9 @@ the second contains the first.
 - Threat region: values in the page's visible text and embedded JSON.
 - Control region: the pilot's egress check reads visible text, embedded JSON,
   identifiers and numbers, and compares them with the fixture and the store.
+  (Revision 6) The store is stated not to be on this machine, and that check
+  stops when it finds none. Nothing of these stages runs it on an arm's page: no
+  arm has run. A judge would be sent pictures, which it does not read.
 - Overlap: the control reads the region the threat occupies, for values written
   as identifiers or numbers.
 - Not looked at: values put into prose, transformed or encoded. Matching
@@ -1015,7 +1069,11 @@ the second contains the first.
 - `unvalidated-against`: a picker that reached the store. The check is built
   and the picker's own calls are read after its run ("The picker"); whether the
   brief holds anything of the store is looked at when the package that carries
-  the brief is built, which is a later stage.
+  the brief is built, which is a later stage. (Revision 6) Two packages carried
+  the brief whole, to the deriver and to the reviewer on 2026-10-05, both built
+  by the package builder. It scanned them for recorded terms, paths, addresses
+  and the account's name. Its scan against the store recorded "not applicable":
+  no store was at either path. So the brief was not compared with a store.
 
 **4. The fixture is built from the real store.**
 
@@ -1026,7 +1084,10 @@ the second contains the first.
 - Overlap: the control covers the threat for that builder. The store cannot be
   reached from it.
 - Not looked at: a new builder written for a new task. Nothing stops one from
-  opening a file.
+  opening a file. (Revision 6) One was written: `build_replication_fixture.py`.
+  It takes no argument and opens its database in memory, and a cell fails
+  unless it makes exactly one database connection, in memory. A route to a
+  database that is not such a call would not be seen; the source holds none.
 - Revision 1 described this control as "a throwaway database path", taken from
   the pilot's registration. Review rightly said a path shows nothing about
   where rows come from. The first draft of this revision then marked the risk
@@ -1039,7 +1100,12 @@ the second contains the first.
 - Control region: request interception in the capture script.
 - Overlap: partial. Interception sees requests. It does not see a script that
   alters the page to mislead a measure, and it is not applied to measurement
-  runs, which do not exist yet.
+  runs, which do not exist yet. (Revision 6) They exist. The measuring script
+  applies the same request policy, runs only under the isolation, and refuses a
+  page that asked for another file or opened another page. The fidelity tests
+  read a page from a world of their own, which keeps the browser's functions
+  from a page's script and not the document: a page that alters its own
+  document while it is read is still not seen.
 - **Unmitigated.**
 
 ### Mitigation
@@ -1071,7 +1137,7 @@ cases named there and no others.
 | Who chooses the task and writes the brief | a blind agent | the owner naming a screen; a task outside Dion |
 | How many pairs | five, on one task | three on one task; three on each of two tasks |
 | Who derives the property list | another model family, sent one text package | the same family under denied reads |
-| The pilot's brief | retired | kept as a second task with one dimension declared contaminated |
+| The pilot's brief | retired. (Revision 6) The picker then chose the screen the pilot used; see "What the brief chose" | kept as a second task with one dimension declared contaminated |
 
 Five pairs is about ten arm runs. More runs reduce uncertainty from generation.
 They do not correct an instrument that is biased, and they say nothing about
@@ -1090,6 +1156,12 @@ There are also more cross-family sends than revision 1 had. It had one, to the
 deriver. This revision adds the reviewer, which receives a package before stage
 1 and at stages 4, 6 and 7. Each send needs its own consent, asked for when the
 package exists.
+
+(Revision 6) There were many more. For stages 2 to 6 seventeen sends are logged,
+nine and then eight, each with its own consent: the reviewer was also asked for
+the rules the audit found undefined, three times; for the pages the tests were
+developed against and the pages they were accepted against; and, after it
+refused, for what could be approved. Stage 7's was never made.
 
 ## Out of scope
 
@@ -1346,7 +1418,10 @@ One run, the registered one, and the launcher's first live run. It was valid.
 The brief, the stream and the transcript are kept on the owner's machine, outside
 any repository, because the transcript holds the account's address. The brief's
 text is not reproduced here. Freezing it is the next stage's, and nobody has
-judged it: whether it stands is not decided by what it says.
+judged it: whether it stands is not decided by what it says. (Revision 6) It
+stands, by the owner's ruling of 2026-10-02 that nothing is rerun for what a
+brief says. It was sent whole to the deriver and the reviewer and is not frozen
+by an entry of its own.
 
 What the reviewer was sent of the removal record, and what it said. A summary of
 paths, line counts and kinds of term, with Dion's file paths in it (one package,
@@ -1372,6 +1447,11 @@ Entries are added here as each thing is fixed. Revision 6 of this document, whic
 will correct what earlier revisions say of these stages, is written when they are
 done. Until then this section is the record, and where it differs from an earlier
 section it is the later word.
+
+(Revision 6, 2026-10-07) It was written when the plan stopped, at stage 6. The
+entries stay here, in the order they were made. This section is still the later
+word where it differs from an earlier one, and the earlier sections now say so
+where they stand.
 
 ### What the brief chose, 2026-10-04
 
@@ -2725,3 +2805,45 @@ estimate, and the author is not blind.**
 **Not done, and waiting on the owner:** every word of the author's a judge reads
 and the three questions about the judging package have gone to nobody; the four
 pre-run checks; Revision 6.
+
+### The plan stops, 2026-10-07
+
+The owner, given the reviewer's answer and what a rebuild would take, chose:
+"Stop the plan here". Put beside it and not chosen: a trial of whether the
+browser can give its own paint record; a rebuild of content with display left
+out, which would change the registered decision; and going on to the four
+pre-run checks with no test approved.
+
+So, as of this entry:
+
+- **Done:** stages 1 to 4; the capture at the specification's widths; the three
+  fidelity tests, the judging package builder and the pair decision as code;
+  the reviewer's twenty development pages and twenty-two acceptance pages; one
+  run of the tests over the acceptance pages.
+- **Refused by the reviewer, and not used:** the content test and the display
+  test. The state test is approved and copies a refused test.
+- **Never sent to the reviewer:** the judging package builder; every word of the
+  author's that a judge would read; the question whether rule 7 belongs in a
+  judge's instructions; what is done with a page wider than its window; the four
+  pre-run checks.
+- **Not begun:** the freeze, the arms, any judging, any result.
+
+**What this record supports, and no more.** An instrument whose only deciding
+tests are written to rules by a reviewer of another model family, and approved
+by that reviewer reading the code, was not built to that reviewer's approval in
+one round. Its pages did not find what its reading found. For display, the
+reviewer's own rules ask for evidence that nothing here shows a browser can
+give. That is a finding about this instrument. It says nothing about the design
+seed: no page of either arm was built.
+
+**Open after revision 6,** should the work be taken up again, each needing a
+plan and most a registration of its own: whether the browser can supply the
+paint record the reviewer names; a content test written to the fourth reply of
+rules; whether a pair may be decided on content alone; the arm launcher still
+binds neither the CLI version, the harness nor the term list; which models may
+judge, given what the API does with a large image; how many judges score a
+page and in what order.
+
+Dion branch `fidelity-and-judging` ends at `ee8d239`, on `derive-measures`,
+neither pushed by this entry. The code is kept as it was refused, and its
+READMEs say so at their heads.
