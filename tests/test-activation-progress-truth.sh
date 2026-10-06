@@ -110,6 +110,28 @@ assert_equals "R2: a step invoked out of order is the only one completed" '["exe
 assert_equals "R2: the schedule is what it was before this change (it counts steps, it does not look for the first gap)" \
     "brainstorming writing-plans executing-plans " "${SCHED}"
 
+# --- E: when the walk has ended ----------------------------------------------------------
+# A second reader of the state decides whether a chain is still "live", which lets a short
+# prompt past the hook's early exits. It compared the chain against .completed alone. Once
+# the walker stopped writing there, a chain walked to its end stayed live for ever, and a
+# four-letter prompt that used to be dropped was routed and mandated a step (found in
+# review, measured: "ship" mandated verification-before-completion).
+echo "== E: a chain walked to its end =="
+new_session e1
+say "${BUILD}"
+for _s in brainstorming writing-plans executing-plans requesting-code-review verification-before-completion; do returned "superpowers:${_s}"; done
+say ok; say ok; say ok; say ok
+assert_equals "E1 setup: the walk has passed every step" "7 7" \
+    "$(jq -r '"\(.chain | length) \([.chain[] as $s | select((.completed + .assumed) | index($s))] | length)"' "${STATE}")"
+SCHED=""; say ok; say ship; say fix
+assert_equals "E1: short prompts are dropped by the early exit again, as before the lists were split" "- - - " "${SCHED}"
+assert_equals "E1: and the block is empty, not merely stepless" "" "${LAST}"
+# Control: while steps remain, the same short prompt IS let through. Without this, "dropped"
+# is equally true of a hook that drops every short prompt.
+new_session e2
+say "${BUILD}"; SCHED=""; say ok
+assert_equals "E2 control: with steps left, a bare reply still reaches the chain" "brainstorming " "${SCHED}"
+
 # --- X: cancel -----------------------------------------------------------------------------
 echo "== X: cancel =="
 new_session x1

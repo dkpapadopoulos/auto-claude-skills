@@ -185,11 +185,18 @@ fi
 # _comp_active: returns 0 (true) if composition state is live for this session,
 # 1 (false) otherwise. Used to bypass short-prompt and blocklist early-exits
 # so bare acks during an active SDLC chain can reach the sticky-emission logic.
+# "Live" means the WALK has steps left: chain steps that are neither confirmed nor
+# assumed, counted the way _apply_sticky_composition counts them. It used to compare the
+# chain against .completed alone, which was the same thing while the walker wrote there.
+# Left as it was after the two lists were split, a chain walked to its end stayed "live"
+# for ever, and a short prompt the early exits used to drop was routed instead (found in
+# review).
 _comp_active() {
   [[ -z "${_SESSION_TOKEN}" ]] && return 1
   local _f="${HOME}/.claude/.skill-composition-state-${_SESSION_TOKEN}"
   [[ -f "$_f" ]] || return 1
-  jq -e '(.chain // [] | length) > (.completed // [] | length)' "$_f" >/dev/null 2>&1
+  jq -e '(.chain // []) as $c | ((.completed // []) + (.assumed // [])) as $d
+         | ($c | length) > ([$c[] | select(. as $x | $d | index($x))] | length)' "$_f" >/dev/null 2>&1
 }
 
 # --- consultation-versus-development discrimination (contracts C2/C3) ----
@@ -2033,18 +2040,14 @@ ${HINTS}${COMPOSITION_HINTS}"
               assumed:   [ $chain[] | select(. as $x | (($credit + $pa) | index($x) != null) and ($pc | index($x) == null)) ] }
           else { completed: [], assumed: $credit } end
         ' 2>/dev/null)" || _merged=""
-        if [[ -n "$_merged" ]]; then
-          _comp_completed="$(printf '%s' "$_merged" | jq -c '.completed' 2>/dev/null)" || _comp_completed="[]"
-          _comp_assumed="$(printf '%s' "$_merged" | jq -c '.assumed' 2>/dev/null)" || _comp_assumed="[]"
-          [[ -n "$_comp_completed" ]] || _comp_completed="[]"
-          [[ -n "$_comp_assumed" ]] || _comp_assumed="[]"
-        fi
       fi
+      # One object carries both lists into the write, so the merge costs one fork, as it
+      # did. An empty or unparseable merge falls back to nothing confirmed, prefix assumed.
+      [[ "${_merged:-}" == "{"* ]] || _merged="$(jq -cn --argjson credit "$_comp_assumed" '{completed: [], assumed: $credit}' 2>/dev/null)"
       jq -n --argjson chain "$_comp_chain" \
-            --argjson completed "$_comp_completed" \
-            --argjson assumed "$_comp_assumed" \
+            --argjson m "${_merged:-{\}}" \
             --argjson idx "${_current_idx:-0}" \
-            '{chain:$chain, current_index:$idx, completed:$completed, assumed:$assumed, updated_at:now|todate}' \
+            '{chain:$chain, current_index:$idx, completed:($m.completed // []), assumed:($m.assumed // []), updated_at:now|todate}' \
         > "${HOME}/.claude/.skill-composition-state-${_SESSION_TOKEN}" 2>/dev/null || true
     fi
   fi

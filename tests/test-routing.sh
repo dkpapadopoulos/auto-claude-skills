@@ -1187,7 +1187,7 @@ test_backfill_excludes_gating_milestones() {
         assert_equals "non-gating predecessor executing-plans back-filled (as assumed, not as completed)" "true" "${has_exec}"
 
         local fabricated
-        fabricated="$(jq -r '.completed | (index("requesting-code-review") != null) or (index("verification-before-completion") != null)' "${state_file}" 2>/dev/null)"
+        fabricated="$(jq -r '((.completed // []) + (.assumed // [])) | (index("requesting-code-review") != null) or (index("verification-before-completion") != null)' "${state_file}" 2>/dev/null)"
         assert_equals "gating milestones absent from trigger-match back-fill" \
             "false" "${fabricated}"
     fi
@@ -1225,7 +1225,7 @@ test_backfill_ship_prompt_excludes_review() {
         fi
 
         local fabricated
-        fabricated="$(jq -r '.completed | (index("requesting-code-review") != null) or (index("verification-before-completion") != null)' "${state_file}" 2>/dev/null)"
+        fabricated="$(jq -r '((.completed // []) + (.assumed // [])) | (index("requesting-code-review") != null) or (index("verification-before-completion") != null)' "${state_file}" 2>/dev/null)"
         assert_equals "ship prompt fabricates no gating milestone" "false" "${fabricated}"
     fi
 
@@ -1300,7 +1300,7 @@ test_backfill_nongating_steps_still_credited() {
         assert_equals "non-gating predecessors credited (as assumed, not as completed)" "true" "${nongating}"
 
         local fabricated
-        fabricated="$(jq -r '.completed | (index("requesting-code-review") != null) or (index("verification-before-completion") != null)' "${state_file}" 2>/dev/null)"
+        fabricated="$(jq -r '((.completed // []) + (.assumed // [])) | (index("requesting-code-review") != null) or (index("verification-before-completion") != null)' "${state_file}" 2>/dev/null)"
         assert_equals "no gating milestone credited at the REVIEW anchor" \
             "false" "${fabricated}"
     else
@@ -1341,7 +1341,7 @@ test_lastinvoked_signal_excludes_gating() {
         has_verify="$(jq -r '.completed | index("verification-before-completion") != null' "${state_file}" 2>/dev/null)"
         assert_equals "real VERIFY evidence preserved from disk" "true" "${has_verify}"
 
-        has_review="$(jq -r '.completed | index("requesting-code-review") != null' "${state_file}" 2>/dev/null)"
+        has_review="$(jq -r '((.completed // []) + (.assumed // [])) | index("requesting-code-review") != null' "${state_file}" 2>/dev/null)"
         assert_equals "REVIEW not fabricated from the last-invoked signal" \
             "false" "${has_review}"
     else
@@ -3974,8 +3974,8 @@ REGISTRY
     output="$(run_hook "continue with next step")"
     local ctx
     ctx="$(extract_context "$output")"
-    # [DONE] is reserved for a Skill that returned; test_done_marker_uses_persisted_state
-    # in test-context.sh covers that side.
+    # [DONE] is reserved for a Skill that returned; the "composition DONE uses persisted
+    # state" cell in test-context.sh covers that side.
     assert_contains "a step the signal only says was displayed shows [DONE?]" "[DONE?]" "$ctx"
     assert_not_contains "and nothing is claimed [DONE] without a Skill return" "[DONE]" "$ctx"
     teardown_test_env
