@@ -105,10 +105,33 @@ assert_contains "safety assertion covers verification-before-completion" \
 # check that did not exist in the repo. The underlying claim was true and
 # hand-verified; this is that real check, so the citations resolve.
 # Deterministic hook render — no model call, no API cost.
-_ctx="$(jq -n '{"prompt":"execute the plan"}' \
-    | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+#
+# In a THROWAWAY HOME, with a registry built from this checkout's own config. Until #333
+# this ran the hook against the real ~/.claude: it read whatever registry the machine had
+# cached, and — the hook being a hook — WROTE routing state for whichever real session last
+# stamped the token file, arming a composition chain there on every suite run. It was found
+# when the sticky-repeat rule's records turned up in the real home with the timestamps of
+# suite runs. A render check has no business touching a live session, and its result must
+# not depend on one.
+_UD_HOME="$(mktemp -d "${TMPDIR:-/tmp}/attest-render.XXXXXX")"
+mkdir -p "${_UD_HOME}/.claude"
+jq '.skills |= map(.available = true | .enabled = true)' "${PROJECT_ROOT}/config/default-triggers.json" \
+    > "${_UD_HOME}/.claude/.skill-registry-cache.json"
+# A transcript path under that home gives the hook a session of its own to write for, as a
+# real prompt has; without one it resolves no session and writes nothing at all.
+: > "${_UD_HOME}/render.jsonl"
+_ctx="$(jq -n --arg t "${_UD_HOME}/render.jsonl" '{"prompt":"execute the plan", "transcript_path":$t}' \
+    | HOME="${_UD_HOME}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
       bash "${PROJECT_ROOT}/hooks/skill-activation-hook.sh" 2>/dev/null \
     | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)"
+# The hook did its writing in the throwaway home (so the render above was a real run, not
+# an early exit), which is then discarded.
+if ls "${_UD_HOME}/.claude"/.skill-composition-state-* >/dev/null 2>&1; then
+    _record_pass "the render ran in a throwaway home (its routing state was written there)"
+else
+    _record_fail "the render ran in a throwaway home" "no composition state under ${_UD_HOME}/.claude"
+fi
+rm -rf "${_UD_HOME}"
 assert_not_empty "IMPLEMENT prompt produces routing guidance" "${_ctx}"
 assert_contains "precondition render offers the phase_attest remedy" \
     "phase_attest executing-plans" "${_ctx}"

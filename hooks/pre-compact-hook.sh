@@ -55,6 +55,13 @@ fi
 if [ -n "$_SESSION_TOKEN" ]; then
     printf '%s trigger=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$TRIGGER" \
         > "${HOME}/.claude/.skill-compact-pending-${_SESSION_TOKEN}" 2>/dev/null || true
+    # Sticky repeat (#333): after a compaction the earlier display of a chain step may be
+    # gone from the model's context, so the record of it is dropped and each step is shown
+    # once more. It is dropped HERE because this is the only hook that fires for both
+    # manual and auto compaction: SessionStart(compact) no longer fires for auto, so
+    # removing it only in compact-recovery-hook.sh left it in place for the common case
+    # (found in review). Removed, never truncated: truncating writes through a link.
+    rm -f "${HOME}/.claude/.sticky-repeat-shown-${_SESSION_TOKEN}" 2>/dev/null || true
 fi
 
 # --- cozempic checkpoint + prune (optional; PATH discovery as before) ---

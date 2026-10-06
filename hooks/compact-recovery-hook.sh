@@ -35,6 +35,13 @@ else
 fi
 if [ -n "$_SESSION_TOKEN" ]; then
     printf '0' > "${HOME}/.claude/.skill-prompt-count-${_SESSION_TOKEN}" 2>/dev/null || true
+    # Sticky repeat (#333): the activation hook does not re-display a chain step this
+    # session was already shown. After a compaction that earlier display may no longer be
+    # in the model's context, so the record of it is dropped and each step is shown again
+    # once. Removing the file can only cause a display, never hide one. It is removed, not
+    # truncated: truncating writes through whatever the name is linked to. If the removal
+    # fails the activation hook still refuses the marker while ~/.claude is unwritable.
+    rm -f "${HOME}/.claude/.sticky-repeat-shown-${_SESSION_TOKEN}" 2>/dev/null || true
 fi
 
 # --- Consume the pending marker (prompt-carrier coordination; see
