@@ -2162,3 +2162,82 @@ settle time again: a page that opened another page when the capture added its
 style was photographed and its image kept, and a cell showed it. The limit a
 cell pinned at 750 ms after load has moved with that and is pinned where it now
 stands: a page that waits past both settles is still not refused.
+
+### The pages the tests are developed against, and what the reviewer settled, 2026-10-06
+
+Three more sends to the reviewer, each built by the builder, each with the
+owner's consent from the file, all in critique mode. They are rows 2 to 4 of the
+stage's log.
+
+| What was asked | Bytes sent | Reply kept as | Reply, bytes and SHA-256 |
+|---|---|---|---|
+| A small data file of the reviewer's own and twenty pages of it, one for each case, each with the status the rules give each test | 54,357 | `validity/development/pages.md` | 21,911, `985c468f…e62c` |
+| Six things those pages marked as not settled by the rules | 36,360 | `fidelity-settlement.md` | 7876, `83ced066…d1e2` |
+| Five things still undefined when the code was about to be written | 44,370 | `fidelity-further.md` | 5760, `ffab27b1…d149` |
+
+All under Dion `tests/fixtures/design_seed_replication/`. The plan allowed one
+further send for a gap and gave a second to the owner. The owner was told the
+third send was a second one and approved it.
+
+**The pages are of a small data file, not of the data file of stage 2.** That
+file is 7 KB, and twenty pages of it in the rules' grammar would not have come
+back whole. The author asked for a small one and said why to the owner before
+the send. The reviewer chose what it holds. The pages an arm builds are still
+tested against the two data files of stage 2, and two of the twenty pages are of
+the not-found one.
+
+Each page, the data file and the list of expected statuses are cut out of the
+replies by a script, and cells cut them out again and compare, so none can be
+changed by hand. The pages were read as text before they were filed: no script,
+and no reference to anything outside the page.
+
+**The reviewer marked nineteen of its own sixty statuses "UNSETTLED"**, on twelve
+pages, saying its rules did not determine them. It then settled them. In the
+author's summary; the files are what count:
+
+- Extraction reads text that is laid out, before clipping and covering, and
+  leaves out text hidden by `display`, by `visibility`, by an opacity of zero or
+  in a closed disclosure. So a hidden value is missing to the content test, and
+  a clipped or covered one is not.
+- A leaf that is not exactly one JSON token (a blank, a number with a thousands
+  separator) makes content `UNASSESSABLE`. Never `FAIL`: nothing is repaired.
+- The state test "copies content". It decides nothing of its own.
+- Display is assessed apart from content: a proved failure first, then
+  `UNASSESSABLE`, then `PASS`.
+- The first way of reading a page back is one `pre` element whose text is the
+  whole stored document as one JSON object.
+- Controls inside a value are unsupported. Of generated text only literal strings
+  are read. The number an ordered list shows is never part of a value.
+- Text with no visible fill, or of a font size of zero, is hidden text. Text laid
+  out where the document cannot be scrolled to is a display failure.
+
+**And one rule that decides more than the rest.** Of its first answer on text
+outside the mapped structure the reviewer said: "The previous classification of
+outside text was not executable." Its rule now: after mapping, any text outside
+the mapped structure other than white space makes content `UNASSESSABLE`. "Thus
+an outside heading 'Report' is **not proved invented**, but it is also **not
+automatically ignored**." One status changed by it: the page that shows the
+not-found file and a report beside it is unassessable, where it had failed.
+
+**What follows, in the author's reading. The owner is told; nothing is decided
+here.**
+
+- A page is assessable on content only if it shows the stored document as one
+  `pre` of JSON, or in the one grammar of definition lists, ordered lists and
+  tables with every value written as a JSON token, **and shows no other text**:
+  no heading, no caption, no sentence. Nothing tells a builder so. The brief asks
+  for a page that shows a stored report.
+- So for most pages a builder would make, content is `UNASSESSABLE`. In the
+  primary analysis, as registered and as the owner ruled, that fails the
+  builder. Where both builders of a pair are so, the pair has no direction.
+- **Where one builder shows nothing but the JSON and the other shows the same
+  content with a heading, the primary analysis decides the pair for the first.**
+  It would favour the plainest page for a reason that is the reader's and not the
+  brief's. The audit had said extraction coverage "materially affects the
+  comparison" and "must not be mistaken for proof that the page violates the
+  brief". The secondary analysis, in which unassessable is unknown, is where that
+  shows: every pair whose result differs between the two is named.
+- The owner ruled on 2026-10-06 to go on if the second way of reading a page
+  could not be defined. It was defined, narrowly, and the consequence is of the
+  same kind. The ruling is read as covering it. It is the owner's to say
+  otherwise.
