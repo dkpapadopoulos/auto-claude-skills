@@ -47,13 +47,14 @@ are done. Stage 5 was built. At stage 6 the reviewer refused the content test
 and the display test, the only two things that can decide a pair, since the
 owner ruled that no judged construct gives a vote. Asked what could be approved,
 it gave rules for a rebuild and approved nothing. Stage 7, the freeze and the
-arms were not begun. No arm has run, no judge has scored anything, and no result
-exists. The entries from "The gate, the one run over the acceptance pages, and
+arms were not begun. Nothing of stage 5 was calibrated. No arm has run, no judge
+has scored anything, and no result exists. The entries from "The gate, the one run over the acceptance pages, and
 the reviewer refuses two tests" to the end are the record.
 
 This revision changes no rule. It corrects lines that later entries had made
-stale, each marked "(Revision 6)" where it stands, and says in each section a
-later entry amends where that entry is. The plan had the entries of stages 2 to
+stale, each marked "(Revision 6)" where it stands. Some of those notes name the
+entry they rest on and some do not; the entries are all under "Stages 2 to 7,
+as they are done". The plan had the entries of stages 2 to
 7 moved into the sections they amend. They are not moved: that was to ready the
 document for a freeze, and none is coming. "How to go on" is whole. Like
 revisions 3 to 5, this one was written after what it reports.
@@ -64,7 +65,8 @@ numbers such as v2-2 refer to that document.
 
 ## What this design can and cannot deliver
 
-It can deliver a **descriptive comparison**: ten generated pages, measured by an
+It can deliver a **descriptive comparison**: ten generated pages (Revision 6:
+twenty, a builder delivering a page for each of two data files), measured by an
 instrument whose contents were specified by parties with controlled exposure to
 the seed, under rules fixed before any page existed.
 
@@ -91,8 +93,8 @@ Eight stages.
 | # | Stage | Done by | Inputs |
 |---|---|---|---|
 | 1 | Choose the task, the stored report and the fixture's states; write the brief | picker | a sanitised export of Dion; frozen instructions |
-| 2 | Build the fixture | author, from Dion's own test database with nothing added, by the owner's ruling. The brief's own step loads a real statement and was not done (Revision 6) | the brief's sections on states and fixture |
-| 3 | Specify what is measured | deriver | the brief, the two data files, the frozen instructions. No list of operator decisions was frozen apart from the brief: the deriver lists them, each with the sentence it rests on (Revision 6) |
+| 2 | Build the fixture | author, from Dion's own test database with nothing added: the author's recommendation, taken as ruled by the owner's "proceed" of 2026-10-04. The brief's own step loads a real statement and was not done. (Revision 6; it said "author, running a transformation the picker specified", from "the picker's specification") | Dion's test database and its tests' configuration, which the author chose; the reviewer audited the two files against the brief's sections on states and fixture |
+| 3 | Specify what is measured | deriver | the brief, the two data files, the frozen instructions. No list of operator decisions was frozen apart from the brief: the deriver lists them, each with the sentence it rests on. (Revision 6; it said "the brief, the fixture, the frozen list of operator decisions") |
 | 4 | Audit each construct for task relevance | reviewer, under rule v2-2 | the brief, the fixture, the deriver's specification |
 | 5 | Implement and calibrate each measure | author | the deriver's specification |
 | 6 | Approve each implementation against its specification | reviewer | the specification, the code, the calibration results |
@@ -106,8 +108,12 @@ measure is not the party that specified it.
 (Revision 6) That last sentence did not hold for the fidelity tests. The audit
 found their rules undefined, and the owner ruled on 2026-10-06 that the reviewer
 defines them and later approves the code written to them, stated as a limit.
-How each stage went is under "Stages 2 to 7, as they are done". Stages 1 to 5
-were done; stage 6 ended in two refusals; 7 and 8 were not begun.
+How each stage went is under "Stages 2 to 7, as they are done". Stages 1 to 4
+were done. Stage 5 was built and nothing was calibrated; what was built is the
+three fidelity tests, written to the reviewer's replies of rules and not to the
+deriver's specification alone. Stage 6 was put to the reviewer with the rules,
+the code and the results on its acceptance pages, and ended in two refusals.
+Stages 7 and 8 were not begun.
 
 ### Who decides what
 
@@ -121,14 +127,14 @@ label-to-value distance, and each favours different pages.
 | The statement of what is wanted, given to the picker | author | reviewer, before the picker runs; then frozen |
 | The snapshot of Dion the picker may see | a rule, stated below | sanitising by rule, then a scan of the result, with its search terms and everything removed recorded |
 | The task, the stored report, the fixture's states | picker | recorded |
-| Where the fixture's data comes from (Revision 6; was "how the fixture is transformed", by the picker) | the owner, by ruling: Dion's own test database, nothing added | reviewer audited the two files against the brief's sections on states and fixture |
+| Where the fixture's data comes from (Revision 6; was "how the fixture is transformed", by the picker) | the author recommended Dion's own test database with nothing added, taken as ruled by the owner's "proceed"; which database, configuration and date is the author's | reviewer audited the two files against the brief's sections on states and fixture |
 | The instructions given to the deriver (Revision 6; no row before) | author | reviewer, twice; then frozen, with the sentences the reviewer did not read named |
 | The fidelity dimensions, and the rules for them the audit found undefined (Revision 6; no row before) | deriver; then reviewer | reviewer; then nobody else: the same party approves the code, by the owner's ruling |
 | Constructs, their direction, scope and grouping | deriver | reviewer, under v2-2 |
 | Which operationalisations of a construct are acceptable | deriver | recorded |
 | What size of difference matters | deriver | recorded |
 | The code for each measure | author | reviewer approves or rejects |
-| Rendering-noise tolerance | measured at calibration | recorded |
+| Rendering-noise tolerance | measured at calibration. (Revision 6) Never measured: nothing was calibrated | recorded |
 | Whether a construct is cut | reviewer | recorded with reason |
 | Whether a construct has no working measure | author reports; reviewer confirms | listed as not measured |
 
@@ -861,10 +867,11 @@ Each measure is registered with:
 - what it does when extraction fails;
 - the rendering conditions: browser build, widths, fonts, colour scheme.
 
-(Revision 6) No measure of a construct was registered or built: the owner ruled
-on 2026-10-05 that the comparison is run as registered and that no code measure
-of a construct is asked for ("How to go on"). The measures built are the three
-fidelity tests, and two of them were refused.
+(Revision 6) No measure of a construct was registered or built. That the
+comparison is run as registered, and that no code measure of a construct is
+asked for, is the author's recommendation of 2026-10-05, which the owner took
+in advance and did not rule on ("How to go on"). The measures built are the
+three fidelity tests, and two of them were refused.
 
 ### Validity tests, before freeze
 
@@ -883,6 +890,7 @@ their own code separates.
 ### Two thresholds, kept apart
 
 - **Rendering noise.** Measured at calibration, across repeated renders.
+  (Revision 6) Not measured: no calibration was made.
 - **A difference that matters.** Specified by the deriver, per construct.
 
 A measure that never varies can still report a difference too small to matter.
@@ -934,14 +942,20 @@ before launch. All five appear in the final record, whatever happened in them.
 Fidelity-decided pairs are reported separately. They say nothing about
 presentation.
 
-(Revision 6) What the rule left unsaid was ruled on 2026-10-05: a page that does
-not render fails fidelity; a fidelity test that cannot be carried out counts as
-failed for that builder in the primary analysis and as unknown in a secondary
-one; a construct only a judge can score gives no vote. With no code measure of a
-construct either, step 2 never applies, and a pair is decided by fidelity or has
-no direction. `decide_pair.py` in Dion is that rule in code. Both tests it
-counts were refused by the reviewer on 2026-10-06, and a refused test is not
-used: every pair would have no direction.
+(Revision 6) "One page" is now four results for a builder: two pages, each at
+two widths. What the rule left unsaid was ruled by the owner on 2026-10-05: a
+page that does not render fails fidelity; a fidelity test that cannot be
+carried out counts as failed for that builder; a construct only a judge can
+score gives no vote. The secondary analysis, in which such a test is unknown,
+is not of that ruling. It is from "How to go on", the recommendation the owner
+took in advance, and the owner's ruling of 2026-10-06 speaks of both analyses.
+With no code measure of a construct either, step 2 never applies, and a pair
+is decided by fidelity or has no direction. `decide_pair.py` in Dion is that
+rule in code, with readings nobody ruled: that any failed test fails the
+builder, and the three recorded under "What fidelity decides for a pair". The
+reviewer has not read it. Both tests it counts were refused by the reviewer on
+2026-10-06. The plan of these stages, and no entry of this document, has a
+refused test not used; by that, every pair would have no direction.
 
 ### Failures and reruns
 
@@ -1249,7 +1263,8 @@ launcher that is killed leaves its copy behind.
 Open after revision 4: the arm launcher does not bind the CLI version or the
 harness; the package builder, which decides what a judge sees, is not built;
 how many judges score a pair, and in what order they are shown the pages, is
-for the freeze.
+for the freeze. (Revision 6: that builder was built on 2026-10-06; see "The
+judge".)
 
 ### The picker's launch, 2026-10-02
 
@@ -1436,7 +1451,9 @@ is feedback to that plugin's maintainers, which nothing left in the tree refers
 to. None concerns a screen of the application, a stored report or its data.
 
 Open after revision 5: the arm launcher binds neither the CLI version, the
-harness nor the term list; the package builder is not built; the cost of
+harness nor the term list; the package builder is not built (Revision 6: the
+builder of text packages was built on 2026-10-04 and the builder of a judging
+package on 2026-10-06); the cost of
 composing the brief in one message is not measured; the picker's brief is kept and
 not frozen; the deriver's and the
 reviewer's packages, the freeze and the arms each have their own plan.
@@ -2581,11 +2598,11 @@ from a frozen copy of it:
 | `measure.tsv` | 59 cells | 44 | 42 |
 | `capture-policy.tsv` | 72 cells | 25 | 21 |
 
-Three of the nine survivors were cells that could not fail. One cell of the
-package builder replaced `json.dumps` for everything, so its own helper failed
-before the build began and it passed without a build. No cell of the pair
-decision gave a run that had failed, or had not said it extracted, a status in
-what it printed. Cells were mended and added (`61b6ab4`, `8a79ebe`), and both
+Three of the nine survivors were faults no cell could see. One cell of the
+package builder could not fail: it replaced `json.dumps` for everything, so its
+own helper failed before the build began and it passed without a build. For the
+other two there was no cell: none gave a run that had failed, or had not said
+it extracted, a status in what it printed. Cells were mended and added (`61b6ab4`, `8a79ebe`), and both
 lists run whole again on `a0f2414`: 37 of 37 and 27 of 27 killed. Two survivors
 of `measure.tsv` stand
 behind a second check that catches the same fault and are left, named in the
@@ -2609,13 +2626,24 @@ restored to what it is on main (`e56b23f`). The entry above says "after the
 fixes" of a gate that never ran the repository's cells. The mutant lists and the
 cells they name were the whole of it.
 
-**The acceptance pages.** 22 pages, kept unread until the gate was done, then
-filed as they came (`6b00904`). Every test was asked about every page once, at
-375 and 1440, from that commit with a clean tree. `RESULTS.json` holds what each
+**The acceptance pages.** 22 pages. The reviewer wrote them from its rules
+before the code was final: its reply came at 13:19 on 2026-10-06, and the two
+reviews changed the fidelity code after that (`9263bb6`, `3663a87`, 14:18). The
+pages were kept unread through that, and until five of the seven lists had run
+on the final code: the three of the fidelity tests, the package and the pair.
+Then they were filed as they came (`6b00904`, 15:10) and run. **The lists of
+the measuring script and of the capture finished after the run,** at 15:34, on
+the same copy of `3663a87`; every acceptance run goes through the measuring
+script. No code changed between, so no result is affected, and "kept unread
+until the gate was done" would not have been true. The form of the reply (where
+a page's number stands) was seen at 13:20, from its fence lines, when the
+filing script was made to read it. Every test was asked about every page once,
+at 375 and 1440, from that commit with a clean tree. `RESULTS.json` holds what each
 said beside what the reviewer expected.
 
 - Content: the expected status in 44 of 44 runs.
-- State: the content test's status in every run.
+- State: the content test's status in every run, which is also the status the
+  reviewer expected of it in all 44.
 - Display: 42 of 44. Page 12, a value a style sheet writes as literal strings,
   was expected to pass and is `UNASSESSABLE` at both widths: "part of it is text
   a style sheet wrote, which cannot be examined glyph by glyph".
@@ -2635,10 +2663,12 @@ the owner's consent. Rows 6 and 7 of the stage's log.
 - Display, 64,995 bytes: the request; the three rule replies; `display.mjs` and
   `ink.mjs` as they ran; what the display test said of the 22 pages.
 
-**Not sent, and said so in each request:** `snapshot.mjs`, which collects from
-the browser the facts the reading turns on; `json_tree.mjs`; `png.mjs`;
-`measure.mjs`. And the list of twenty-seven places where the rules are silent,
-which was to go as a third package and has not gone.
+**Not sent.** The first request names as left out `snapshot.mjs`, which
+collects from the browser the facts the reading turns on, and `json_tree.mjs`.
+The second names the reading of a page's structure and `png.mjs`. Both name the
+list of twenty-seven places where the rules are silent, which was to go as a
+third package. **Left out and named in neither request:** `measure.mjs`, the
+script that renders a page and calls a test, and `world.mjs`.
 
 **What the reviewer answered.** Both replies are kept as they came, in Dion
 under `validity/approval/` with their digests, and a cell holds the verdicts to
@@ -2654,26 +2684,31 @@ them. Its last lines, word for word:
 > verdicts and replaces some explicitly required failures with UNASSESSABLE.
 
 Of page 12 it said its own expected `PASS` was wrong and the test's status
-stands, and that "the disagreements in Document 7 do not themselves justify
-refusal". It refuses over the code read against the rules.
+stands, and: "The disagreements in Document 7 do not themselves justify
+refusal." It refuses over the code read against the rules.
 
 Content, twelve places, a defect in what is published, and contracts of the
 files it was not sent:
 
-- conventions of the author's where the rules do not settle, each of them on the
-  author's own list: a key in a `pre` that differs only as a label may; a
-  `text-transform`; `attr()` anywhere on a page making every generated string
-  unsupported; a disclosure's summary; what counts as text outside the
-  structure; a shadow tree anywhere stopping the reading; labels that match no
-  stored key, counted and compared with the keys that have none;
-- departures the list does not name: a `br` adds a line break without the hiding
-  rules being applied to the `br` itself; hidden text beside a structure makes it
-  unsupported, where the settlement has hidden characters absent from what is
-  read; a `colgroup` is passed over unread; a string a style sheet writes is not
-  decoded by every rule CSS has for one;
-- of the shadow tree it says more than "not settled": the stop "can suppress a
-  proved comparison failure in an ordinary `pre`", giving `UNASSESSABLE` where
-  the rules require `FAIL`.
+- **Four where the reviewer itself says its rules do not settle the case,** and
+  the code chose: a key in a `pre` that differs only as a label may; a
+  `text-transform`; white space before a disclosure's summary or in it; a label
+  that matches no stored key taken as possibly a missing key's.
+- **Four where it says the rule speaks and the code does otherwise,** each a
+  choice the author had on its own list as a place the rules are silent, which
+  they were not: `attr()` anywhere on a page making every generated string
+  unsupported ("the rule concerns the participating pseudo-element's content
+  form"); controls and frames counted as text outside the structure ("the rule
+  enumerates eligible textual contributions"); more unmatched labels than
+  missing keys taken as proof of an invented member, "for which rule 1 requires
+  `UNASSESSABLE`"; a shadow tree anywhere stopping the reading, which "can
+  suppress a proved comparison failure in an ordinary `pre`".
+- **Four the author's list does not name as choices:** a `br` adds a line break
+  without the hiding rules being applied to the `br` itself; hidden text beside
+  a structure makes it unsupported, where the settlement has hidden characters
+  absent from what is read (the list names text beside a structure, and not
+  that hidden text counts); a `colgroup` is passed over unread; a string a style
+  sheet writes is not decoded by every rule CSS has for one.
 
 Display, fourteen places:
 
@@ -2684,14 +2719,23 @@ Display, fourteen places:
   is looked for is not proved to hold it; two pictures are not proved to differ
   in the glyphs' colour alone; a movement within 1/128 px is taken as whole,
   where rule 3 allows no tolerance;
-- seven are about statuses: where no route reads a page the test returns at
-  once and looks for no failure, though the settlement allows one that is
-  "independently attributable"; a glyph with no ink while clipped fails without
-  its ink being set side by side; where a glyph lies is taken from its box and
-  not its ink; the far edges have a pixel's leave the rules do not give; ink cut
-  by another clip while out of view in a scroll region is `UNASSESSABLE` here and
-  `FAIL` by rule 4; a glyph covered whole in a scroll region has no failing
-  branch; text shared by several stored paths is reported for one of them.
+- six are about statuses, three of them resting on evidence too: where no route
+  reads a page the test returns at once and looks for no failure, though the
+  settlement allows one that is "independently attributable"; a glyph with no
+  ink while clipped fails without its ink being set side by side; where a glyph
+  lies is taken from its box and not its ink; the far edges have a pixel's leave
+  the rules do not give; ink cut by another clip while out of view in a scroll
+  region is `UNASSESSABLE` here and `FAIL` by rule 4; a glyph covered whole in a
+  scroll region has no failing branch;
+- one is about what is reported and, in its words, "does not necessarily change
+  the aggregate display status": text shared by several stored paths is
+  reported for one of them.
+
+It also says two things for the code. "The generated-text fallback and
+conservative uncertainty for unsupported rendering situations are not themselves
+violations." And of a scroll region inside another, that rule 4 does cover it,
+that a harness unable to establish the ink may still return `UNASSESSABLE`, and
+that the code's comment saying the rules do not speak of nesting "is incorrect".
 
 **One finding reverses a change made on the way.** Ink cut by another clip while
 out of view in a scroll region failed at first. One of the two readers who read
@@ -2710,28 +2754,30 @@ would decide nothing, and that is known before any arm is run.**
 
 **What the author can and cannot say about the findings.** The author is not
 blind, wrote the code, and is not the one to weigh a refusal of it. Three things
-are fact and not weighing:
+are fact:
 
-1. The acceptance pages did not find these. 86 of 88 runs agreed, and on the
-   other two the reviewer withdrew its own expectation. Everything the reviewer
-   refuses over it found by reading the code. So pages written by the reviewer
-   were a weaker test of the code than the reviewer reading it, by a wide margin,
-   and the plan had them as the main one.
+1. The acceptance pages did not find these. Content and display agreed in 86 of
+   88 runs (130 of 132 with state), and on the other two the reviewer withdrew
+   its own expectation. Everything the reviewer refuses over it found by reading
+   the code.
 2. Some findings say the package does not establish a thing which a file not
    sent would have shown or denied: that the measuring script stops motion
    before any picture is taken; how the page-wide `attr()` flag is found and why
    (the browser gives back the text and not the form); which elements the
-   collector walks. The reviewer said so itself: "findings about the omitted
+   collector walks. The reviewer said so itself: "Findings about the omitted
    extraction and pixel-reading implementations cannot be established from this
-   package". Whether any finding would fall with those files is not known.
-3. The seven findings about evidence are not mended by changing a branch. Rule 2
-   says "use the browser's text paint operations and paint order from the
-   captured render", and allows `UNASSESSABLE` where "the harness cannot obtain
+   package." Whether any finding would fall with those files is not known.
+3. Rule 2 says "Use the browser's text paint operations and paint order from the
+   captured render", and has `UNASSESSABLE` where the harness "cannot obtain
    sufficient paint information". This code takes pictures and compares them.
-   The entry above said so, and so did the request. A display test the reviewer
-   would approve either reads the browser's own record of what it painted, which
-   nothing here does, or says `UNASSESSABLE` wherever a picture proves nothing,
-   which by these findings is nearly everywhere.
+   The entry above said so, and so did the request.
+
+And two things are the author's reading, written before the reviewer was asked
+what it could approve, and no more than that. The reviewer's pages were a much
+weaker test of this code than the reviewer reading it; the plan ranked neither,
+and had the pages' results go with the source. And the seven findings about
+evidence are not mended by changing a branch: they ask for another kind of
+evidence, or for `UNASSESSABLE` wherever a picture proves nothing.
 
 **The owner's answer, 2026-10-06: "Ask what is approvable".** One further send,
 no code changed: row 8 of the stage's log, 54,156 bytes, with consent to that
@@ -2763,20 +2809,27 @@ lines:
   What is published for an occurrence grows: every container, every unresolved
   claim, node identities with character ranges, exact decimals.
 - **Of the twenty-seven places:** ten as done (4, 7, 8, 10, 11, 13, 18, 19, 20,
-  23); ten otherwise (5, 6, 14, 15, 16, 21, 24, 25, 26, 27); seven settled by
-  its rules for the findings, none of them as done (1, 2, 3, 9, 12, 17, 22).
+  23); ten otherwise (5, 6, 14, 15, 16, 21, 24, 25, 26, 27); and "Places 1–3,
+  9, 12, 17 and 22 are settled by section 1", its rules for the findings. The
+  reply does not say how those seven compare with the code. The author reads
+  each as differing from it in some part, though not in every part: a move of
+  other than whole pixels stays `UNASSESSABLE`, as in place 22.
 - **Display evidence.** Pictures compared "can be approved only as a restricted,
   abstaining method": an ink-based `PASS` or `FAIL` needs guarantees held apart
   from the pictures (the glyphs the browser shaped, their whole ink, alpha kept,
   exact registration, proof that rounding to eight bits hides nothing), and
-  "aggregate `PASS` requires every required check to be established". The
-  browser's own paint record "is a potentially approvable basis, but the
-  description alone is insufficient"; it would have to give shaped glyphs, exact
-  alpha, the order across layers and text that was clipped or culled, and "this
-  package does not establish whether the intended browser can supply that
-  trace". No display test at all "is acceptable as a decision not to assess
-  display" and "must be labelled as an unperformed assessment, not a successful
-  fidelity gate".
+  "Aggregate `PASS` requires every required check to be established." The
+  browser's own paint record, which the author had put to it as a possibility
+  and not tried, "is a potentially approvable basis, but the description alone
+  is insufficient"; it would have to give shaped glyphs, exact alpha, the order
+  across layers and text that was clipped or culled. Of both: "a and b can be
+  approved conditionally; neither has been established as sufficient here." If
+  neither can give its guarantees, "the needed evidence is an instrumented
+  rendering trace exposing glyph attribution, original ink, clip/mask effects
+  and compositing survival. This package does not establish whether the
+  intended browser can supply that trace." No display test at all "is
+  acceptable as a decision not to assess display" and "must be labelled as an
+  unperformed assessment, not a successful fidelity gate".
 - **What an approval would need.** The rules as one text; every file a verdict
   depends on, the collector and the capture among them; the browser's exact
   build; lockfiles; raw evidence behind example verdicts. "Parts read
@@ -2784,17 +2837,24 @@ lines:
   approval": component packages, then one integration package that stands by
   itself.
 
-**What that comes to. The first two are consequences; the third is the author's
-estimate, and the author is not blind.**
+**What that comes to. The author is not blind, and only the middle of the first
+is a consequence of the code.**
 
-1. With pictures as the evidence, the display test can fail a page (a member
-   absent, text hidden) or abstain, and cannot pass one: nothing here holds the
-   guarantees a pass from ink needs. By the pair decision as registered a pair is
-   decided for a builder only when that builder passes. So a rebuild on pictures
-   leaves every pair without a direction, as now.
+1. The reviewer does not say pictures cannot pass a page. It says they may give
+   a `PASS` or `FAIL` from ink "only for cases with independently established
+   guarantees", and lists them. Nothing here holds those guarantees, and the
+   author knows no way to get them from this browser without the trace the
+   reviewer names; that is the author's judgment and was not tried. Without
+   them a display test on pictures can fail a page (a member absent, text
+   hidden) or abstain, and cannot pass one. What follows from that is a
+   consequence of `decide_pair.py`, checked by running it: a pair is decided
+   for a builder only when that builder passes everything, so no pair is
+   decided. One part of that code is the author's reading and not a ruling:
+   that a builder with an unknown test is never the one decided for.
 2. Leaving display out is open, and the reviewer says how it must be labelled.
-   A pair would then be decided on content alone. That changes the registered
-   decision, which counts content and display, and is not this plan's to make.
+   A pair would then be decided on content alone, once a content test is built
+   again and approved. That changes the decision as it stands, which counts
+   content and display, and is not this plan's to make.
 3. Size. Content: the rules are now given and can be written to; it is most of
    the reading and comparing code again, its cells and mutants, new acceptance
    pages, and an approval in several packages where this one took two. Display
@@ -2822,28 +2882,33 @@ So, as of this entry:
   run of the tests over the acceptance pages.
 - **Refused by the reviewer, and not used:** the content test and the display
   test. The state test is approved and copies a refused test.
-- **Never sent to the reviewer:** the judging package builder; every word of the
-  author's that a judge would read; the question whether rule 7 belongs in a
-  judge's instructions; what is done with a page wider than its window; the four
-  pre-run checks.
+- **Never sent to the reviewer:** the pair decision; the judging package
+  builder; every word of the author's that a judge would read; the question
+  whether rule 7 belongs in a judge's instructions; what is done with a page
+  wider than its window; the four pre-run checks. And of the fidelity tests
+  themselves, the collector of a page's facts, the JSON reader, the picture
+  reader, the measuring script and the module that opens a world in the page.
 - **Not begun:** the freeze, the arms, any judging, any result.
 
 **What this record supports, and no more.** An instrument whose only deciding
 tests are written to rules by a reviewer of another model family, and approved
 by that reviewer reading the code, was not built to that reviewer's approval in
-one round. Its pages did not find what its reading found. For display, the
-reviewer's own rules ask for evidence that nothing here shows a browser can
-give. That is a finding about this instrument. It says nothing about the design
-seed: no page of either arm was built.
+one round. Its pages did not find what its reading found. Part of what it
+refused over, it settled only afterwards: its fourth reply calls one rule "a new
+conservative amendment" and says of an earlier distinction that it "was not
+executable". For display, the reviewer's own rules ask for evidence that nothing
+here shows a browser can give. That is a finding about this instrument. It says
+nothing about the design seed: no page of either arm was built.
 
 **Open after revision 6,** should the work be taken up again, each needing a
 plan and most a registration of its own: whether the browser can supply the
-paint record the reviewer names; a content test written to the fourth reply of
+paint record the author proposed, or the trace the reviewer names; a content
+test written to the fourth reply of
 rules; whether a pair may be decided on content alone; the arm launcher still
 binds neither the CLI version, the harness nor the term list; which models may
 judge, given what the API does with a large image; how many judges score a
 page and in what order.
 
 Dion branch `fidelity-and-judging` ends at `ee8d239`, on `derive-measures`,
-neither pushed by this entry. The code is kept as it was refused, and its
-READMEs say so at their heads.
+neither pushed by this entry. The code is kept as it was refused, and the README
+of the fidelity tests says so at its head.
