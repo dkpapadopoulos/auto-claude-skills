@@ -415,6 +415,11 @@ GG_SCOPE="unverified"
 GG_SCOPE_CHANGE="none"
 GG_PATHS_REC=""
 GG_PATHS=("*test*" "*spec*" ".verify.yml")
+# What the checker flagged, for the reader of a `suspect` verdict. Without it the only
+# thing a later deny can say is "not clean", and the one remedy on offer (run it again)
+# cannot work: the check re-reads the same diff. At most ten lines of 200 characters, with
+# control characters removed; the full output is printed below when the check runs.
+GG_HITS=""
 if [ -n "$BASE" ] && [ -f "$GGC" ]; then
     _gg_base="$(_gg_scope_at "$BASE")"
     _gg_head="$(_gg_scope_at HEAD)"
@@ -455,6 +460,11 @@ EOF
         if DIFF="$(git -C "$ROOT" -c diff.mnemonicPrefix=false -c diff.noprefix=false diff "$BASE"...HEAD -- "${GG_PATHS[@]}" 2>/dev/null)"; then
             GG="$(printf '%s' "$DIFF" | bash "$GGC" 2>/dev/null)"
             case "$GG" in clean) GG_STATUS="clean" ;; suspect*) GG_STATUS="suspect" ;; esac
+            if [ "$GG_STATUS" = "suspect" ]; then
+                GG_HITS="$(printf '%s\n' "$GG" | sed -n 's/^> //p' | tr -d '\000-\010\013-\037' | cut -c1-200 | head -10)"
+                echo "gate-gaming: SUSPECT. Flagged in this branch's diff (re-running cannot clear it; the diff has to change):"
+                printf '%s\n' "$GG" | sed -n 's/^> /  /p' | tr -d '\000-\010\013-\037' | cut -c1-200
+            fi
         fi
     fi
     # Rule 2: the declaration as COMMITTED on this branch against the base's.
@@ -478,6 +488,8 @@ EOF
         if [ "$GG_SCOPE_CHANGE" = "changed" ]; then
             echo "gate-gaming: this branch changes gate_gaming_paths (base: $(printf '%s' "$_gg_base" | tr '\n' ' '); branch: $(printf '%s' "$_gg_head" | tr '\n' ' ')). That changes what later branches are checked against, so it is recorded as suspect; a person has to review it."
             [ "$GG_STATUS" = "clean" ] && GG_STATUS="suspect"
+            GG_HITS="${GG_HITS}${GG_HITS:+
+}this branch changes gate_gaming_paths in .verify.yml (the declaration of which paths this check reads)"
         else
             echo "gate-gaming: this branch adds paths to gate_gaming_paths and removes none."
         fi
@@ -545,13 +557,13 @@ else TEST_DELTA="missing"; fi
 jq -n --arg sha "$SHA" --arg ts "$TS" --arg ex "$EXCERPT" --arg cmd "$CMDS" --arg disc "$DISCOVERY" \
       --arg p "$PASSED" --arg f "$FAILED" --arg c "$CNV" --arg gg "$GG_STATUS" --arg td "$TEST_DELTA" \
       --arg wd "$WORKTREE_DIRTY" --arg wdp "$_WD_PATHS_CAPPED" --arg wdn "$WORKTREE_DIRTY_COUNT" \
-      --arg ggs "$GG_SCOPE" --arg ggp "$GG_PATHS_REC" --arg ggc "$GG_SCOPE_CHANGE" '
+      --arg ggs "$GG_SCOPE" --arg ggp "$GG_PATHS_REC" --arg ggc "$GG_SCOPE_CHANGE" --arg ggh "$GG_HITS" '
   def csv($s): if $s == "" then [] else ($s | split(",")) end;
   def lines($s): [$s | split("\n")[] | select(. != "")];
   {substrate:"local", discovery_source:$disc,
    passed:csv($p), failed:csv($f), could_not_verify:csv($c),
    gate_gaming_status:$gg, gate_gaming_scope:$ggs, gate_gaming_paths:lines($ggp),
-   gate_gaming_scope_change:$ggc,
+   gate_gaming_scope_change:$ggc, gate_gaming_hits:lines($ggh),
    coverage_adequacy_status:"unverified",
    test_delta:$td, worktree_dirty:($wd == "true"),
    dirty_paths:lines($wdp), dirty_path_count:($wdn | tonumber? // 0),
