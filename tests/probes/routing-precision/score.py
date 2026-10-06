@@ -55,9 +55,12 @@ def die(message):
 def read_jsonl(path):
     out = []
     with open(path, encoding="utf-8") as src:
-        for line in src:
+        for n, line in enumerate(src, 1):
             if line.strip():
-                out.append(json.loads(line))
+                item = json.loads(line)
+                if not isinstance(item, dict) or not isinstance(item.get("row_id"), str) or not item["row_id"]:
+                    die(f"{path}: line {n} is not an object with a row_id")
+                out.append(item)
     return out
 
 
@@ -195,7 +198,11 @@ def main():
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except (OSError, ValueError, KeyError, TypeError) as err:
-        # An input that cannot be read is not a verdict. Exit 2, never 1: 1 is a decision.
+    except Exception as err:  # noqa: BLE001 -- deliberately everything
+        # A failure inside main() must not look like a verdict: an unhandled exception exits
+        # 1, and 1 is a decision (STOP / HARM). SystemExit is not an Exception, so the verdict
+        # codes returned above pass through untouched. Not covered: a failure while importing,
+        # above this guard, and KeyboardInterrupt. This also swallows the traceback of a bug in
+        # this script; the type and message are printed.
         print(f"cannot read the inputs: {type(err).__name__}: {err}", file=sys.stderr)
         sys.exit(2)

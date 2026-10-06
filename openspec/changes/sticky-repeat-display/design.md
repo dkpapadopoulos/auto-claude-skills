@@ -39,7 +39,8 @@ The hide also requires that the sticky step is the only skill in the block. The 
 
 - Default `shadow`. An unrecognised switch value is `shadow`, never suppression.
 - The record carries the session token, the skill, the chain's step names, flags and counts. No prompt text.
-- `rule_version` is 1 and names the rule as of the pre-registration's freeze commit. From then on a change to when the rule fires bumps it, and records are not pooled across versions. It was NOT bumped for the changes made between the first commit and the freeze, so it does not separate anything written before the freeze; the freeze timestamp does.
+- `rule_version` is 2 and names the rule as of the pre-registration's freeze commit; the readers accept 2 only. Version 1 is what builds before the freeze wrote (it was left at 1 through one round of rule changes, which a cross-family review rejected: a timestamp the readers do not check is not a separation). A change to when the rule fires, or to the chain walk that decides which step is injected, bumps it, and records are not pooled across versions.
+- The list restart when the user's own words select a process step ("re-anchor") is a policy, not a detection of a new task: the hook cannot tell the two apart. It errs toward displaying and makes the rule fire less often.
 
 ## Known limits
 

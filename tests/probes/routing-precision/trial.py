@@ -23,7 +23,8 @@ tried to push.
 
 KNOWN NOISE: a push is any Bash command containing "git push" or "gh pr merge", and a
 denial is any result of such a command containing "PUSH GATE". In a repository whose own
-tests and fixtures contain those words, that over-counts in both arms alike.
+tests and fixtures contain those words that over-counts, and nothing here shows it does so
+equally in both arms: hiding a block can change which commands a session runs.
 
 It prints the pre-registered reading of those numbers. It does not flip anything. The two
 comparisons are done in whole numbers: at twenty obligations an arm, ten points is exactly
@@ -113,8 +114,10 @@ def main():
                 continue
             arms[arm]["obligations completed"] += 1
             turns_to_done[arm].append(done - at)
-            done_seq = next(q for i in range(at, len(turns)) for q, kind, value in turns[i]["events"]
-                            if kind == "skill" and value == skill)
+            done_seq = next((q for i in range(at, len(turns)) for q, kind, value in turns[i]["events"]
+                             if kind == "skill" and value == skill), None)
+            if done_seq is None:
+                raise ValueError(f"{sid}: {skill} is in a turn's skills but not in its events")
             if first_push_seq is None or done_seq < first_push_seq:
                 arms[arm]["obligations completed before the first push attempt"] += 1
 
@@ -140,6 +143,8 @@ def main():
 
     def within(a_num, a_den, b_num, b_den, limit):
         """a_num/a_den - b_num/b_den <= limit, in whole numbers (limit is hundredths)."""
+        if a_den <= 0 or b_den <= 0:
+            raise ValueError("a rate over nothing cannot be compared")   # exit 2, never a reading
         hundredths = round(limit * 100)
         return 100 * (a_num * b_den - b_num * a_den) <= hundredths * a_den * b_den
 
@@ -167,7 +172,11 @@ def main():
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except (OSError, ValueError, KeyError, TypeError) as err:
-        # An input that cannot be read is not a verdict. Exit 2, never 1: 1 is a decision.
+    except Exception as err:  # noqa: BLE001 -- deliberately everything
+        # A failure inside main() must not look like a verdict: an unhandled exception exits
+        # 1, and 1 is a decision (STOP / HARM). SystemExit is not an Exception, so the verdict
+        # codes returned above pass through untouched. Not covered: a failure while importing,
+        # above this guard, and KeyboardInterrupt. This also swallows the traceback of a bug in
+        # this script; the type and message are printed.
         print(f"cannot read the inputs: {type(err).__name__}: {err}", file=sys.stderr)
         sys.exit(2)

@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from extract import iter_entries, open_private, prompt_of, refuse_repo_path, text_of  # noqa: E402,F401
 
 JOIN_WINDOW_S = 15          # a record is written by the hook that ran for the prompt
-RULE_VERSION = 1            # the pre-registered rule; a record written by a changed rule is not data
+RULE_VERSION = 2            # the pre-registered rule (1 = builds before the freeze); any other version is not data
 PUSH_WORDS = ("git push", "gh pr merge")
 GATED = ("requesting-code-review", "verification-before-completion")
 
@@ -191,8 +191,12 @@ def typed(turn):
     return turn["source"] == "human" and not turn["text"].lstrip().startswith("<")
 
 
-def join(record, turns):
+def join(record, turns, any_source=False):
     """Index of the turn a shadow record describes, or None.
+
+    With any_source, prompts of every origin are candidates. That is for DIAGNOSIS only: it
+    answers "what did the transcript call the prompt this record was written for?" when the
+    normal join found no typed one.
 
     The hook writes its record while handling the prompt, so the prompt is the LATEST typed
     one that is not after the record and is no more than the window before it. The record's
@@ -203,7 +207,7 @@ def join(record, turns):
     when = rec_ts(record)
     best = None
     for i, turn in enumerate(turns):
-        if turn["ts"] is None or not typed(turn):
+        if turn["ts"] is None or not (any_source or typed(turn)):
             continue
         if turn["ts"] < when + 1.0 and when - turn["ts"] <= JOIN_WINDOW_S:
             if best is None or turn["ts"] >= turns[best]["ts"]:

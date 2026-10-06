@@ -1,7 +1,7 @@
 # Pre-registration — routing precision: stop repeating a chain step's mandate on a prompt that asked for nothing
 
 Issue #333. **Frozen by the latest commit that changes this file** (see the amendment log
-at the foot: the first freeze was replaced once, before any record existed). That commit's
+at the foot: the freeze has been replaced twice, each time before any row existed). That commit's
 timestamp is the boundary: everything observed before it is development data and may not
 be used to judge the rule. Changes after it go in the amendment log, with the reason,
 before the data they affect is looked at.
@@ -25,6 +25,16 @@ skill of its own ("sticky composition"). The rule:
   starts the list again); a step after a manual or automatic compaction; or anything when
   its marker cannot be believed.
 - "Already shown" counts a display made either way (by the prompt's own words or sticky).
+- **Re-anchor, a policy of the rule and not a detection.** Whenever the user's own words
+  select a process step and it is displayed, the "already shown" list restarts with that
+  step alone. The hook cannot tell a new task from the same task asked for again; this is
+  chosen because it errs toward displaying. Its cost is stated here so it is not discovered
+  later: the rule fires less often than "shown before on this chain" would, and stage A's
+  would-hide rows are the ones this policy leaves.
+- **The rule's version is 2.** Records carry `rule_version`; the readers accept 2 and
+  nothing else. Version 1 is what builds before this freeze wrote. Any later change to
+  when the rule fires, or to the chain walk that decides which step is injected, takes a
+  new version and an amendment, and rows are never pooled across versions.
 
 It ships **in shadow**: the hook displays exactly as before and records, for every mandated
 block, whether the rule would have hidden it (`~/.claude/.sticky-repeat-shadow.d/`, no
@@ -51,7 +61,11 @@ session's message, for instance) was seen by nobody and is not a row. All of the
 labelled, not only the ones the rule would hide. Built by
 `tests/probes/routing-precision/rows.py`, which writes the labeller's view and the key as
 separate files; the labeller's view carries nothing about the rule, the session or what
-happened next.
+happened next. If displayed records exist and not one of them joins a typed prompt,
+`rows.py` exits 2 and writes nothing: that is a reader that no longer recognises a typed
+prompt, not a small sample, and it must not be scored as INCONCLUSIVE. (Checked against
+real transcripts on 2026-10-06: the twelve most recent top-level ones label typed prompts
+`human`, and the only unlabelled entries are another session's messages.)
 
 **The question** (verbatim in `tests/probes/routing-precision/rubric.md`): *at this turn —
 given the task in progress, what the user just said, the work already done, and what is
@@ -254,3 +268,23 @@ session must have started after it.
 
 None of these was chosen by looking at fresh data: there was none. The thresholds K1–K3
 and the stage B limits are unchanged.
+
+**A2 — 2026-10-06, before any row existed.** A fourth cross-family review (Codex), of the
+changes A1 lists, said REVERT. No row had been built: the installed plugin still does not
+contain the rule. The freeze moves to the commit that makes these changes.
+
+- *Rule version.* A1 changed when the rule fires and left `rule_version` at 1, relying on
+  the freeze timestamp to keep earlier records out. Nothing in the readers enforced that a
+  record was written by the frozen rule. The hook now writes 2 and the readers accept only
+  2. A version-2 record with no `skills_in_block` is counted as malformed, not read as zero.
+- *Re-anchor.* A1 described the list restart as recognising a new task. It recognises
+  nothing; it is a policy, now stated as one in "What is being tested", with its cost.
+- *Reader exit codes.* A1 said a failure to read the inputs exits 2. It did not for an
+  input of the wrong shape (a label line that is a JSON array raised an exception the
+  handler did not list, and exited 1, which is STOP). Every uncaught failure is now 2.
+- *Instrument fault.* Displayed records with no typed prompt among them exit 2 from
+  `rows.py` (see Stage A, Rows).
+- *Stage B noise.* The statement that push detection over-counts "in both arms alike" was
+  unsupported and is withdrawn: hiding a block can change which commands a session runs.
+- *Not changed, and why.* The label thresholds, the labels, the trial's two comparisons and
+  its floor are as frozen in A1.

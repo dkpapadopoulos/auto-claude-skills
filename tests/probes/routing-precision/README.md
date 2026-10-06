@@ -52,10 +52,21 @@ were invoked before the first push attempt, and how often that attempt was denie
   transcript.
 - Stage B detects a push by the words `git push` / `gh pr merge` in a Bash command and a
   denial by `PUSH GATE` in its result. That over-counts in a repository whose own tests
-  contain those words.
+  contain those words, and nothing shows it does so equally in both arms.
 - `prompt_count` in a record stays at 1 under `SKILL_VERBOSE=1`.
 
 ## Exit codes
 
+`rows.py`: 0 written, 2 the inputs could not be read, an output path was refused, or the
+INSTRUMENT FAULT below.
 `score.py`: 0 PASS, 1 STOP, 3 INCONCLUSIVE, 2 the inputs could not be scored.
-`trial.py`: 0 no large harm seen, 1 harm, 3 INCONCLUSIVE, 2 a usage error.
+`trial.py`: 0 no large harm seen, 1 harm, 3 INCONCLUSIVE, 2 the inputs could not be read.
+
+In all three, 2 covers every uncaught failure: an exception must never exit 1, because 1
+is a decision.
+
+**Instrument fault.** A "typed" prompt is one the transcript labels with origin `human`
+whose text does not start with `<`. If displayed records exist and none joins a typed
+prompt, `rows.py` exits 2, writes nothing, and prints what the transcript called the
+prompts those records were written for. That is the reader failing to recognise a typed
+prompt, not a thin sample.

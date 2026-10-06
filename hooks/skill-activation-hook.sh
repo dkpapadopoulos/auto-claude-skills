@@ -362,7 +362,9 @@ fi
 #    hook is killed after ten seconds (hooks.json), so the read must not be able to use
 #    that up: it is opened read-write, which does not block on a FIFO; each read gives up
 #    after one second; at most 64 lines of 1024 characters are read; and the whole loop
-#    stops once two seconds have passed, so a FIFO fed slowly costs about three.
+#    stops once two seconds have passed, so a FIFO fed slowly costs about three. That bounds
+#    this read, not the hook: nothing reserves time for the state writes that follow, so a
+#    hook already near its ten seconds for other reasons can still be killed before them.
 #  - NOTHING IS MODIFIED IN PLACE. The marker is replaced by writing a new file that must
 #    not already exist (noclobber) and renaming it over the old name; each record is its own
 #    new file, created the same way. A rename changes a name, and an exclusive create makes
@@ -1913,7 +1915,7 @@ ${HINTS}${COMPOSITION_HINTS}"
       esac
     fi
     if [[ "${_sr_hide_now}" -eq 1 ]]; then
-      _DISPLAY_SUPPRESS="sticky repeat: ${PROCESS_SKILL} was already shown on this chain and this prompt selected no skill of its own"
+      _DISPLAY_SUPPRESS="sticky repeat: ${PROCESS_SKILL} was already shown on this chain and is the only skill in this block"
     fi
   fi
 
@@ -2013,11 +2015,13 @@ ${HINTS}${COMPOSITION_HINTS}"
   if [[ -n "${_sr_file:-}" ]]; then
     _sr_displayed=1; [[ -n "${_DISPLAY_SUPPRESS:-}" ]] && _sr_displayed=0
     _sr_add=0; [[ "${_sr_displayed}" -eq 1 ]] && [[ "${_sr_already}" -eq 0 ]] && _sr_add=1
-    # The user's own words selected this process step and it was displayed: the session is
-    # anchored there afresh. Whatever was shown before belongs to the task before it -- a
-    # new task re-arms the same chain with the same signature -- so the list restarts with
-    # this step alone, and each later step gets its first display again (found in review:
-    # cancel, then a new build order, hid the new task's planning step).
+    # RE-ANCHOR, a POLICY of the rule and part of its version: whenever the user's own words
+    # select a process step and it is displayed, the list restarts with that step alone. It
+    # is NOT evidence that a new task began -- the hook cannot tell a new task from the same
+    # one asked for again, and a new task re-arms the same chain with the same signature. It
+    # is chosen because it errs toward displaying: later steps get one more first display.
+    # The cost is that the rule fires less often than "already shown on this chain" would
+    # (found in review: cancel, then a new build order, hid the new task's planning step).
     if [[ "${_sr_sticky}" -eq 0 ]] && [[ "${_sr_displayed}" -eq 1 ]] && [[ "${_sr_entries}" != "${PROCESS_SKILL}"$'\n' ]]; then
       _sr_entries=""; _sr_add=1
     fi
@@ -2055,7 +2059,7 @@ ${HINTS}${COMPOSITION_HINTS}"
     {
       [[ -d "${_sr_dir}" ]] || mkdir -p "${_sr_dir}"
       set -C
-      printf '{"schema_version":1,"rule_version":1,"ts":"%s","session":"%s","prompt_count":%s,"skill":"%s","chain":"%s","sticky":%s,"already_shown":%s,"would_hide":%s,"new_chain":%s,"mode":"%s","arm":"%s","hidden_by_rule":%s,"displayed":%s,"other_suppression":%s,"skills_in_block":%s,"block_chars":%s}\n' \
+      printf '{"schema_version":1,"rule_version":2,"ts":"%s","session":"%s","prompt_count":%s,"skill":"%s","chain":"%s","sticky":%s,"already_shown":%s,"would_hide":%s,"new_chain":%s,"mode":"%s","arm":"%s","hidden_by_rule":%s,"displayed":%s,"other_suppression":%s,"skills_in_block":%s,"block_chars":%s}\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${_sr_tok}" "${_sr_pc}" \
         "${PROCESS_SKILL//[^A-Za-z0-9._-]/}" "${_sr_cs//[^A-Za-z0-9._>-]/}" \
         "${_sr_tf[_sr_sticky]}" "${_sr_tf[_sr_already]}" "${_sr_tf[_sr_wh]}" "${_sr_tf[_sr_header]}" \
