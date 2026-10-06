@@ -110,7 +110,7 @@ mode_of() { stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1" 2>/dev/null; }
 assert_equals "J7: both outputs are private (0600)" "600 600" "$(mode_of "${OUT}/rows.jsonl") $(mode_of "${OUT}/key.jsonl")"
 
 # What it could not use is COUNTED.
-printf '%s\n' '{"schema_version":1,"ts":"'"$(now)"'","session":"session-nosuchsession","skill":"brainstorming","would_hide":true,"mode":"shadow","rule_version":2,"displayed":true,"skills_in_block":1}' > "${LOG}/hand-1.json"
+printf '%s\n' '{"schema_version":1,"ts":"'"$(now)"'","session":"session-nosuchsession","skill":"brainstorming","would_hide":true,"mode":"shadow","rule_version":3,"displayed":true,"skills_in_block":1}' > "${LOG}/hand-1.json"
 printf '%s\n' 'not json at all' > "${LOG}/hand-2.json"
 python3 "${PROBE}/rows.py" --shadow-log "${LOG}" --since "${SINCE}" --projects "${PROJ}" \
     --rows "${OUT}/rows2.jsonl" --key "${OUT}/key2.jsonl" > "${OUT}/rows2.txt" 2>&1
@@ -130,17 +130,17 @@ python3 "${PROBE}/rows.py" --shadow-log "${LOG}" --since "${SINCE}" --projects "
 assert_contains "J8: a record written by another version of the rule is excluded, and counted" "     1  another rule version" "$(cat "${OUT}/rows2c.txt")"
 # A current-version record always carries the number of skills in its block. One without it
 # was not written by the hook this reader was frozen with, and is not read as "zero skills".
-printf '%s\n' '{"schema_version":1,"rule_version":2,"ts":"'"$(now)"'","session":"session-aaaa0","skill":"brainstorming","would_hide":true,"mode":"shadow","displayed":true}' > "${LOG}/hand-6.json"
+printf '%s\n' '{"schema_version":1,"rule_version":3,"ts":"'"$(now)"'","session":"session-aaaa0","skill":"brainstorming","would_hide":true,"mode":"shadow","displayed":true}' > "${LOG}/hand-6.json"
 python3 "${PROBE}/rows.py" --shadow-log "${LOG}" --since "${SINCE}" --projects "${PROJ}" \
     --rows "${OUT}/rows2d.jsonl" --key "${OUT}/key2d.jsonl" > "${OUT}/rows2d.txt" 2>&1
 assert_contains "J13: a current-version record with no skills_in_block is counted as malformed" "     2  malformed lines" "$(cat "${OUT}/rows2d.txt")"
 assert_equals "J13: and does not become a row" "3" "$(grep -c . "${OUT}/rows2d.jsonl")"
 rm -f "${LOG}/hand-6.json"
-assert_equals "J8: the real hook's records are rule version 2, the version the readers accept" "2" "$(cat "${LOG}"/session-aaaa0.*.json | jq -r '.rule_version' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+assert_equals "J8: the real hook's records are rule version 3, the version the readers accept" "3" "$(cat "${LOG}"/session-aaaa0.*.json | jq -r '.rule_version' | sort -u | tr '\n' ' ' | sed 's/ $//')"
 
 # A record of the wrong SHAPE must exit 2 as well: a session that is a number raised
 # AttributeError, and an uncaught exception exits 1, which a caller reads as a decision.
-mkdir -p "${OUT}/shape.d"; printf '%s\n' '{"schema_version":1,"rule_version":2,"ts":"'"$(now)"'","session":5,"skill":"brainstorming","would_hide":true,"mode":"shadow","displayed":true,"skills_in_block":1}' > "${OUT}/shape.d/x.json"
+mkdir -p "${OUT}/shape.d"; printf '%s\n' '{"schema_version":1,"rule_version":3,"ts":"'"$(now)"'","session":5,"skill":"brainstorming","would_hide":true,"mode":"shadow","displayed":true,"skills_in_block":1}' > "${OUT}/shape.d/x.json"
 python3 "${PROBE}/rows.py" --shadow-log "${OUT}/shape.d" --since "${SINCE}" --projects "${PROJ}" \
     --rows "${OUT}/rows10.jsonl" --key "${OUT}/key10.jsonl" > "${OUT}/rows10.txt" 2>&1
 assert_equals "J14: a record whose session is not a string exits 2" "2" "$?"
@@ -180,7 +180,7 @@ else
 fi
 # The other filter, alone: a record that claims its block WAS displayed, for a prompt the
 # transcript labels as not typed.
-printf '%s\n' '{"schema_version":1,"rule_version":2,"ts":"'"$(now)"'","session":"session-dddd0","skill":"brainstorming","would_hide":true,"mode":"shadow","displayed":true,"skills_in_block":1}' > "${LOG}/hand-5.json"
+printf '%s\n' '{"schema_version":1,"rule_version":3,"ts":"'"$(now)"'","session":"session-dddd0","skill":"brainstorming","would_hide":true,"mode":"shadow","displayed":true,"skills_in_block":1}' > "${LOG}/hand-5.json"
 python3 "${PROBE}/rows.py" --shadow-log "${LOG}" --since "${SINCE}" --projects "${PROJ}" \
     --rows "${OUT}/rows7.jsonl" --key "${OUT}/key7.jsonl" > "${OUT}/rows7.txt" 2>&1
 assert_equals "J11: a displayed block for a prompt that was not typed is not a row either" "0" "$(grep -c 'session-dddd0' "${OUT}/key7.jsonl")"
@@ -403,7 +403,7 @@ for arm, done, last in (("show", show_done, "0"), ("hide", hide_done, "f")):
         if i < done:
             entries.append({"type": "assistant", "timestamp": ts(30), "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "s", "name": "Skill", "input": {"skill": "superpowers:requesting-code-review"}}]}})
         open(f"{d}/projects/p/{sid}.jsonl", "w").write("".join(json.dumps(e) + "\n" for e in entries))
-        log.append({"schema_version": 1, "rule_version": 2, "ts": ts(20), "session": f"session-{sid}", "skill": "requesting-code-review", "sticky": True,
+        log.append({"schema_version": 1, "rule_version": 3, "ts": ts(20), "session": f"session-{sid}", "skill": "requesting-code-review", "sticky": True,
                     "already_shown": True, "would_hide": True, "mode": "trial", "arm": arm, "hidden_by_rule": arm == "hide", "block_chars": 4000})
 open(f"{d}/shadow.jsonl", "w").write("".join(json.dumps(r) + "\n" for r in log))
 PY
@@ -437,7 +437,7 @@ for arm, done, last in (("show", show_done, "0"), ("hide", hide_done, "f")):
             entries.append({"type": "assistant", "timestamp": ts(40), "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "p", "name": "Bash", "input": {"command": "git push origin HEAD"}}]}})
             entries.append({"type": "user", "timestamp": ts(41), "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "p", "content": "PUSH GATE: denied"}]}})
         open(f"{d}/projects/p/{sid}.jsonl", "w").write("".join(json.dumps(e) + "\n" for e in entries))
-        log.append({"schema_version": 1, "rule_version": 2, "ts": ts(20), "session": f"session-{sid}", "skill": "requesting-code-review", "sticky": True,
+        log.append({"schema_version": 1, "rule_version": 3, "ts": ts(20), "session": f"session-{sid}", "skill": "requesting-code-review", "sticky": True,
                     "already_shown": True, "would_hide": True, "mode": "trial", "arm": arm, "hidden_by_rule": arm == "hide", "block_chars": 4000})
 open(f"{d}/shadow.jsonl", "w").write("".join(json.dumps(r) + "\n" for r in log))
 PY
@@ -476,7 +476,7 @@ def session(sid, arm, blocks, rec_ts):
                {"type": "user", "timestamp": ts(20), "origin": {"kind": "human"}, "message": {"role": "user", "content": "go"}},
                {"type": "assistant", "timestamp": ts(30), "message": {"role": "assistant", "content": blocks}}]
     open(f"{d}/projects/p/{sid}.jsonl", "w").write("".join(json.dumps(e) + "\n" for e in entries))
-    return {"schema_version": 1, "rule_version": 2, "ts": rec_ts, "session": f"session-{sid}", "skill": "requesting-code-review", "sticky": True,
+    return {"schema_version": 1, "rule_version": 3, "ts": rec_ts, "session": f"session-{sid}", "skill": "requesting-code-review", "sticky": True,
             "already_shown": True, "would_hide": True, "mode": "trial", "arm": arm, "hidden_by_rule": arm == "hide", "block_chars": 4000}
 skill = {"type": "tool_use", "id": "s", "name": "Skill", "input": {"skill": "superpowers:requesting-code-review"}}
 push = {"type": "tool_use", "id": "p", "name": "Bash", "input": {"command": "git push origin HEAD"}}
@@ -495,14 +495,14 @@ assert_equals "T9: the unjoined obligation is reported" "0 1" "$(trow 'obligatio
 assert_equals "T9: and is not counted as an obligation (so not toward the rate or the floor)" "1 1" "$(trow 'obligations  ')"
 
 # A record written by a changed rule is not trial data.
-D="${TEST_TMPDIR}/t-ver"; mk_trial20 "${D}" 10 10; sed -i.bak 's/"rule_version": 2/"rule_version": 1/' "${D}/shadow.jsonl"
+D="${TEST_TMPDIR}/t-ver"; mk_trial20 "${D}" 10 10; sed -i.bak 's/"rule_version": 3/"rule_version": 1/' "${D}/shadow.jsonl"
 assert_equals "T7: records of another rule version leave nothing to read (INCONCLUSIVE)" "3" "$(trial "${D}")"
 # A record of the wrong SHAPE must not exit 1 (HARM). A session that is a number raised
 # AttributeError, uncaught. The record is ALONE in its log on purpose: next to string
 # sessions the sort fails first with a TypeError, which the old handler did catch, and the
 # cell then passed without the fix (measured by mutation).
 D="${TEST_TMPDIR}/t-shape"; mkdir -p "${D}/projects/p"
-printf '%s\n' '{"schema_version":1,"rule_version":2,"ts":"2026-11-01T10:00:20Z","session":5,"skill":"requesting-code-review","would_hide":true,"mode":"trial","arm":"hide"}' > "${D}/shadow.jsonl"
+printf '%s\n' '{"schema_version":1,"rule_version":3,"ts":"2026-11-01T10:00:20Z","session":5,"skill":"requesting-code-review","would_hide":true,"mode":"trial","arm":"hide"}' > "${D}/shadow.jsonl"
 assert_equals "T10: a trial record whose session is not a string exits 2, never a reading" "2" "$(trial "${D}")"
 
 assert_contains "the rubric asks about the obligation, not the prompt's wording" "is REQUIRING the assistant to invoke this specific" "$(cat "${PROBE}/rubric.md")"

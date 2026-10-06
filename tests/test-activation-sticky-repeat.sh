@@ -377,8 +377,10 @@ else
     else
         _record_pass "F6b: with the check bypassed, opening a FIFO does not block the hook (finished in $((SECONDS - _t0))s)"
     fi
+    # The walker's own progress is in .assumed now (.completed is real Skill returns only),
+    # so that is the list that shows this turn's state write happened.
     assert_equals "F6b: and the state the gate reads was still written" "true" \
-        "$(jq -r '(.completed | length) >= 1' "${H}/.claude/.skill-composition-state-${TOK}" 2>/dev/null)"
+        "$(jq -r '(.assumed | length) >= 1' "${H}/.claude/.skill-composition-state-${TOK}" 2>/dev/null)"
 fi
 
 # F7: the read is bounded at 64 lines. The step IS listed, at line 72: it is not believed.

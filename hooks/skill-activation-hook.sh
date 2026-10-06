@@ -185,11 +185,18 @@ fi
 # _comp_active: returns 0 (true) if composition state is live for this session,
 # 1 (false) otherwise. Used to bypass short-prompt and blocklist early-exits
 # so bare acks during an active SDLC chain can reach the sticky-emission logic.
+# "Live" means the WALK has steps left: chain steps that are neither confirmed nor
+# assumed, counted the way _apply_sticky_composition counts them. It used to compare the
+# chain against .completed alone, which was the same thing while the walker wrote there.
+# Left as it was after the two lists were split, a chain walked to its end stayed "live"
+# for ever, and a short prompt the early exits used to drop was routed instead (found in
+# review).
 _comp_active() {
   [[ -z "${_SESSION_TOKEN}" ]] && return 1
   local _f="${HOME}/.claude/.skill-composition-state-${_SESSION_TOKEN}"
   [[ -f "$_f" ]] || return 1
-  jq -e '(.chain // [] | length) > (.completed // [] | length)' "$_f" >/dev/null 2>&1
+  jq -e '(.chain // []) as $c | ((.completed // []) + (.assumed // [])) as $d
+         | ($c | length) > ([$c[] | select(. as $x | $d | index($x))] | length)' "$_f" >/dev/null 2>&1
 }
 
 # --- consultation-versus-development discrimination (contracts C2/C3) ----
@@ -901,9 +908,23 @@ EOF
 
 # --- _apply_sticky_composition ------------------------------------
 # Sticky-emit the CURRENT chain step when composition state is active and
-# the prompt is short (a bare ack like "yes"/"ok"/"do it"). Display-only:
-# does NOT mutate .completed — that stays the responsibility of the
-# PostToolUse ^Skill$ completion hook.
+# the prompt is short (a bare ack like "yes"/"ok"/"do it").
+#
+# WHAT ADVANCES THE WALK, AND WHAT IS RECORDED AS DONE. These used to be one list. This
+# comment said a sticky reply "does NOT mutate .completed", and that was false: the step
+# it displayed was written as the last-invoked signal, the next prompt credited that
+# signal, and six bare replies recorded DESIGN, PLAN and IMPLEMENT as completed with
+# nothing invoked. They are two lists now:
+#   .completed  a Skill tool that really returned (skill-completion-hook.sh). The walker
+#               never adds to it; it carries it forward on the same chain, and ONLY there:
+#               a chain switch, or a prior file it cannot read, starts both lists again,
+#               as it always did. A state file written by an older build keeps the
+#               inferred names it already held in .completed until the chain changes.
+#   .assumed    what the walker INFERS: the steps before an anchor, and a step it showed
+#               on the previous prompt. Never evidence. Rendered [DONE?].
+# The walk position is chain[count of steps in either list], so WHICH step is mandated on
+# each prompt is exactly what it was. Whether a bare reply should advance the walk at all
+# is a separate question, deliberately not changed here.
 # Input globals: $P, $SORTED, $REGISTRY, $_SESSION_TOKEN
 # Output: mutates $SORTED by injecting CURRENT skill.
 # Fails open: any jq error, missing file, or unavailable skill returns silently.
@@ -919,21 +940,31 @@ _apply_sticky_composition() {
   # Trailing punctuation class covers . , ! ? ; : and trailing whitespace.
   if [[ "$P" =~ ^[[:space:]]*(stop|cancel|abort|nevermind|never.mind|forget.it|scrap.that|drop.it|no.thanks|nope|nah)[[:space:]!.,?:\;]*$ ]]; then
     rm -f "$_comp_file" 2>/dev/null
+    # The cancelled task's POSITION goes with its chain. The last-invoked signal is that
+    # position: left behind, the next task's first prompt credited every step up to it,
+    # and a new build order was told to request a code review on its second prompt
+    # (measured). The push guard reads this file only for its phase, to decide whether to
+    # print SHIP-phase advisories; after a cancel there is no phase to advise on.
+    rm -f "${HOME}/.claude/.skill-last-invoked-${_SESSION_TOKEN}" 2>/dev/null
     # Sticky repeat (#333): the chain is gone, so what was shown for it is no longer a
     # reason to hide anything. Unlinking a name writes through nothing.
     rm -f "${HOME}/.claude/.sticky-repeat-shown-${_SESSION_TOKEN}" 2>/dev/null
     return
   fi
 
-  # CURRENT = chain[length(completed)]. Bail if exhausted, chain empty, or any
-  # completed entry is not in chain (malformed state).
+  # CURRENT = chain[number of chain steps that are confirmed OR assumed]. Bail if
+  # exhausted, chain empty, or either list holds a name that is not a chain member
+  # (malformed state). A list that is not an array makes jq fail, which is also a bail.
+  # Counted over the chain, so a name in both lists counts once.
   local _current_name
   _current_name="$(jq -r '
-    (.chain // []) as $c | (.completed // []) as $d |
+    (.chain // []) as $c | (.completed // []) as $d | (.assumed // []) as $a |
     if ($c | length) == 0 then empty
-    elif ($d | length) >= ($c | length) then empty
-    elif ($d | all(. as $x | $c | index($x))) then $c[$d | length]
-    else empty end
+    elif (($d + $a) | all(. as $x | $c | index($x))) | not then empty
+    else
+      ([$c[] | select(. as $x | ($d + $a) | index($x))] | length) as $n
+      | if $n >= ($c | length) then empty else $c[$n] end
+    end
   ' "$_comp_file" 2>/dev/null)"
   [[ -z "$_current_name" ]] && return
 
@@ -1493,10 +1524,11 @@ EOF
         [[ -z "$_cname" ]] && continue
 
         if [[ "$_idx" -lt "$_current_idx" ]]; then
-          # Check persisted state first, fall back to last-invoked signal
-          if [[ -n "$_COMP_COMPLETED" ]] && printf '%s\n' "$_COMP_COMPLETED" | grep -qx "$_cname" 2>/dev/null; then
-            _marker="DONE"
-          elif [[ "$_last_skill_chain_idx" -ge 0 ]] && [[ "$_idx" -le "$_last_skill_chain_idx" ]]; then
+          # [DONE] is a claim: the Skill tool returned for this step (the completion hook
+          # put it in .completed). Everything else before the current step is inferred and
+          # says so. The last-invoked signal used to earn [DONE] here; it is written when a
+          # step is DISPLAYED, so it is not evidence that anything ran.
+          if [[ -n "$_COMP_COMPLETED" ]] && printf '%s\n' "$_COMP_COMPLETED" | grep -qxF -- "$_cname" 2>/dev/null; then
             _marker="DONE"
           else
             _marker="DONE?"
@@ -1978,34 +2010,44 @@ ${HINTS}${COMPOSITION_HINTS}"
       [[ -n "${SKILL_EXPLAIN:-}" ]] && \
         printf '[skill-hook] composition state write skipped: jq failed to encode chain\n' >&2
     }
-    # (c) Monotonic floor vs the completion hook's on-disk progress: when the
-    # chain is unchanged, union the computed prefix with the existing
-    # .completed. A prompt that re-anchors EARLIER in the same chain (e.g.
-    # "merge PR49" matching the review trigger after verification already
-    # ran) must not truncate recorded progress — that re-arms the push gate
-    # against already-reviewed work. Chain switch and pure-cancel remain the
-    # only resets. Fail-open: missing/malformed prior state, or jq failure,
-    # degrades to the prefix-only write. current_index intentionally stays
-    # the anchor index (display semantics); the push gate keys off
-    # .completed only.
+    # WHERE THE COMPUTED PREFIX GOES. It is what the walker INFERS (the steps before
+    # this prompt's anchor, and the step the last prompt displayed), so it is written to
+    # .assumed. It used to be written to .completed, where it read as "this ran".
+    # .completed is now only ever what the completion hook put there.
+    #
+    # (c) Monotonic floor, both lists: when the chain is unchanged, .completed is carried
+    # forward exactly as it is on disk and .assumed is the union of the computed prefix
+    # with the one on disk, less anything confirmed. A prompt that re-anchors EARLIER in
+    # the same chain (e.g. "merge PR49" matching the review trigger after verification
+    # already ran) must not truncate recorded progress — that re-arms the push gate
+    # against already-reviewed work. Chain switch and pure-cancel remain the only resets.
+    # Fail-open: missing/malformed prior state, or jq failure, degrades to nothing
+    # confirmed and the prefix assumed. current_index intentionally stays the anchor
+    # index (display semantics); the push gate keys off .completed only, and only for the
+    # two gated steps, which the prefix never contains.
     if [[ -n "$_comp_chain" ]]; then
+      _comp_assumed="$_comp_completed"; _comp_completed="[]"
       _prev_state="${HOME}/.claude/.skill-composition-state-${_SESSION_TOKEN}"
       if [[ -f "$_prev_state" ]]; then
-        _merged="$(jq -n --argjson chain "$_comp_chain" \
-                         --argjson completed "$_comp_completed" \
-                         --slurpfile prev "$_prev_state" '
+        _merged="$(jq -cn --argjson chain "$_comp_chain" \
+                          --argjson credit "$_comp_assumed" \
+                          --slurpfile prev "$_prev_state" '
           ($prev[0] // {}) as $p |
           if ($p.chain // []) == $chain then
-            ($completed + ($p.completed // [])) as $u |
-            [ $chain[] | select(. as $x | $u | index($x) != null) ]
-          else $completed end
+            (($p.completed // []) | if type == "array" then . else [] end) as $pc |
+            (($p.assumed // [])   | if type == "array" then . else [] end) as $pa |
+            { completed: [ $chain[] | select(. as $x | $pc | index($x) != null) ],
+              assumed:   [ $chain[] | select(. as $x | (($credit + $pa) | index($x) != null) and ($pc | index($x) == null)) ] }
+          else { completed: [], assumed: $credit } end
         ' 2>/dev/null)" || _merged=""
-        [[ -n "$_merged" ]] && _comp_completed="$_merged"
       fi
+      # One object carries both lists into the write, so the merge costs one fork, as it
+      # did. An empty or unparseable merge falls back to nothing confirmed, prefix assumed.
+      [[ "${_merged:-}" == "{"* ]] || _merged="$(jq -cn --argjson credit "$_comp_assumed" '{completed: [], assumed: $credit}' 2>/dev/null)"
       jq -n --argjson chain "$_comp_chain" \
-            --argjson completed "$_comp_completed" \
+            --argjson m "${_merged:-{\}}" \
             --argjson idx "${_current_idx:-0}" \
-            '{chain:$chain, current_index:$idx, completed:$completed, updated_at:now|todate}' \
+            '{chain:$chain, current_index:$idx, completed:($m.completed // []), assumed:($m.assumed // []), updated_at:now|todate}' \
         > "${HOME}/.claude/.skill-composition-state-${_SESSION_TOKEN}" 2>/dev/null || true
     fi
   fi
@@ -2059,7 +2101,7 @@ ${HINTS}${COMPOSITION_HINTS}"
     {
       [[ -d "${_sr_dir}" ]] || mkdir -p "${_sr_dir}"
       set -C
-      printf '{"schema_version":1,"rule_version":2,"ts":"%s","session":"%s","prompt_count":%s,"skill":"%s","chain":"%s","sticky":%s,"already_shown":%s,"would_hide":%s,"new_chain":%s,"mode":"%s","arm":"%s","hidden_by_rule":%s,"displayed":%s,"other_suppression":%s,"skills_in_block":%s,"block_chars":%s}\n' \
+      printf '{"schema_version":1,"rule_version":3,"ts":"%s","session":"%s","prompt_count":%s,"skill":"%s","chain":"%s","sticky":%s,"already_shown":%s,"would_hide":%s,"new_chain":%s,"mode":"%s","arm":"%s","hidden_by_rule":%s,"displayed":%s,"other_suppression":%s,"skills_in_block":%s,"block_chars":%s}\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${_sr_tok}" "${_sr_pc}" \
         "${PROCESS_SKILL//[^A-Za-z0-9._-]/}" "${_sr_cs//[^A-Za-z0-9._>-]/}" \
         "${_sr_tf[_sr_sticky]}" "${_sr_tf[_sr_already]}" "${_sr_tf[_sr_wh]}" "${_sr_tf[_sr_header]}" \

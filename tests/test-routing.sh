@@ -961,21 +961,26 @@ test_completed_uses_current_idx_floor() {
                 "current_index was ${current_idx}"
         fi
 
-        # The fix: completed length == current_index (every chain slot before
+        # The fix: the walker's progress == current_index (every chain slot before
         # the anchor is implicitly done via the linear composition model),
         # even though the last-invoked signal is a non-chain domain skill.
+        # That progress is INFERRED, so it is held in .assumed. It used to be
+        # written to .completed, which read as "these skills ran"; nothing here
+        # invoked one, and .completed must say so.
         local completed_count
-        completed_count="$(jq '.completed | length' "${state_file}" 2>/dev/null)"
-        assert_equals "completed length equals current_index" \
+        completed_count="$(jq '.assumed | length' "${state_file}" 2>/dev/null)"
+        assert_equals "assumed length equals current_index" \
             "${current_idx}" "${completed_count}"
+        assert_equals "nothing was invoked, so nothing is recorded as completed" \
+            "[]" "$(jq -c '.completed' "${state_file}" 2>/dev/null)"
 
         # The first entry of completed should equal chain[0] (the earliest
         # predecessor the walker found). Regardless of which skill matched,
         # the predecessor chain is rooted at whatever requires-chain terminates.
         local first_completed first_chain
-        first_completed="$(jq -r '.completed[0] // empty' "${state_file}" 2>/dev/null)"
+        first_completed="$(jq -r '.assumed[0] // empty' "${state_file}" 2>/dev/null)"
         first_chain="$(jq -r '.chain[0] // empty' "${state_file}" 2>/dev/null)"
-        assert_equals "completed[0] equals chain[0]" "${first_chain}" "${first_completed}"
+        assert_equals "assumed[0] equals chain[0]" "${first_chain}" "${first_completed}"
     fi
 
     teardown_test_env
@@ -1178,11 +1183,11 @@ test_backfill_excludes_gating_milestones() {
 
         # Non-gating predecessors are still back-filled (writer-ran + chore guard).
         local has_exec
-        has_exec="$(jq -r '.completed | index("executing-plans") != null' "${state_file}" 2>/dev/null)"
-        assert_equals "non-gating predecessor executing-plans back-filled" "true" "${has_exec}"
+        has_exec="$(jq -r '.assumed | index("executing-plans") != null' "${state_file}" 2>/dev/null)"
+        assert_equals "non-gating predecessor executing-plans back-filled (as assumed, not as completed)" "true" "${has_exec}"
 
         local fabricated
-        fabricated="$(jq -r '.completed | (index("requesting-code-review") != null) or (index("verification-before-completion") != null)' "${state_file}" 2>/dev/null)"
+        fabricated="$(jq -r '((.completed // []) + (.assumed // [])) | (index("requesting-code-review") != null) or (index("verification-before-completion") != null)' "${state_file}" 2>/dev/null)"
         assert_equals "gating milestones absent from trigger-match back-fill" \
             "false" "${fabricated}"
     fi
@@ -1220,7 +1225,7 @@ test_backfill_ship_prompt_excludes_review() {
         fi
 
         local fabricated
-        fabricated="$(jq -r '.completed | (index("requesting-code-review") != null) or (index("verification-before-completion") != null)' "${state_file}" 2>/dev/null)"
+        fabricated="$(jq -r '((.completed // []) + (.assumed // [])) | (index("requesting-code-review") != null) or (index("verification-before-completion") != null)' "${state_file}" 2>/dev/null)"
         assert_equals "ship prompt fabricates no gating milestone" "false" "${fabricated}"
     fi
 
@@ -1291,11 +1296,11 @@ test_backfill_nongating_steps_still_credited() {
         assert_equals "anchored at requesting-code-review" "3" "${idx}"
 
         local nongating
-        nongating="$(jq -r '.completed | (index("brainstorming") != null) and (index("writing-plans") != null) and (index("executing-plans") != null)' "${state_file}" 2>/dev/null)"
-        assert_equals "non-gating predecessors credited" "true" "${nongating}"
+        nongating="$(jq -r '.assumed | (index("brainstorming") != null) and (index("writing-plans") != null) and (index("executing-plans") != null)' "${state_file}" 2>/dev/null)"
+        assert_equals "non-gating predecessors credited (as assumed, not as completed)" "true" "${nongating}"
 
         local fabricated
-        fabricated="$(jq -r '.completed | (index("requesting-code-review") != null) or (index("verification-before-completion") != null)' "${state_file}" 2>/dev/null)"
+        fabricated="$(jq -r '((.completed // []) + (.assumed // [])) | (index("requesting-code-review") != null) or (index("verification-before-completion") != null)' "${state_file}" 2>/dev/null)"
         assert_equals "no gating milestone credited at the REVIEW anchor" \
             "false" "${fabricated}"
     else
@@ -1336,7 +1341,7 @@ test_lastinvoked_signal_excludes_gating() {
         has_verify="$(jq -r '.completed | index("verification-before-completion") != null' "${state_file}" 2>/dev/null)"
         assert_equals "real VERIFY evidence preserved from disk" "true" "${has_verify}"
 
-        has_review="$(jq -r '.completed | index("requesting-code-review") != null' "${state_file}" 2>/dev/null)"
+        has_review="$(jq -r '((.completed // []) + (.assumed // [])) | index("requesting-code-review") != null' "${state_file}" 2>/dev/null)"
         assert_equals "REVIEW not fabricated from the last-invoked signal" \
             "false" "${has_review}"
     else
@@ -3957,7 +3962,10 @@ test_done_marker_when_signal_exists() {
   ]
 }
 REGISTRY
-    # Simulate: writing-plans was last invoked (so brainstorming is DONE)
+    # Simulate: writing-plans was the last step DISPLAYED. The signal file is named
+    # last-invoked, and this test used to read it as proof that brainstorming ran. It is
+    # written when a step is shown, by the activation hook; the Skill tool returning is
+    # recorded elsewhere (.completed, by the completion hook). So it earns [DONE?].
     printf 'test-done-session' > "${HOME}/.claude/.skill-session-token"
     printf '{"skill":"writing-plans","phase":"PLAN"}' > "${HOME}/.claude/.skill-last-invoked-test-done-session"
 
@@ -3966,9 +3974,10 @@ REGISTRY
     output="$(run_hook "continue with next step")"
     local ctx
     ctx="$(extract_context "$output")"
-    # The composition chain should show [DONE] for brainstorming (not [DONE?])
-    assert_contains "brainstorming should show [DONE] when signal confirms it ran" "[DONE]" "$ctx"
-    assert_not_contains "should not show [DONE?] when signal confirms completion" "[DONE?]" "$ctx"
+    # [DONE] is reserved for a Skill that returned; the "composition DONE uses persisted
+    # state" cell in test-context.sh covers that side.
+    assert_contains "a step the signal only says was displayed shows [DONE?]" "[DONE?]" "$ctx"
+    assert_not_contains "and nothing is claimed [DONE] without a Skill return" "[DONE]" "$ctx"
     teardown_test_env
 }
 test_done_marker_when_signal_exists
