@@ -423,7 +423,9 @@ Per-skill `evals/evals.json` files MUST be JSON arrays where each element is an 
 
 The activation hook MUST sticky-emit the CURRENT chain step when composition state is active and the user's prompt is short (≤ 6 words by whitespace count), so the SDLC chain context remains visible across bare acknowledgment prompts that would otherwise produce no routing output.
 
-The hook MUST treat the composition-state file (`~/.claude/.skill-composition-state-<token>`) as authoritative: `CURRENT = .chain[length(.completed)]`. Sticky emission is display-only and MUST NOT mutate `.completed`; chain advancement remains the responsibility of the `PostToolUse ^Skill$` completion hook.
+The hook MUST treat the composition-state file (`~/.claude/.skill-composition-state-<token>`) as authoritative. The file holds two lists: `.completed`, the steps for which a Skill tool returned, and `.assumed`, the steps the walker infers. `CURRENT = .chain[n]`, where `n` is the number of chain steps present in either list. Sticky emission MUST NOT add to `.completed`, directly or through a later prompt: `.completed` gains a name only from the `PostToolUse ^Skill$` completion hook. What a sticky turn infers MUST be written to `.assumed`.
+
+A step before the current one MUST render `[DONE]` only when it is in `.completed`, and `[DONE?]` otherwise. The last-invoked signal, which is written when a step is displayed, MUST NOT earn `[DONE]`.
 
 #### Scenario: Bare ack during active chain emits CURRENT
 
@@ -437,6 +439,21 @@ The hook MUST treat the composition-state file (`~/.claude/.skill-composition-st
 - **WHEN** `.completed` grows from `[]` to `[A,B,C,D,E,F]` across the lifetime of a session
 - **THEN** for each `i` in 0..N-1, a bare ack MUST emit `chain[i]` as the active skill — never re-emitting the previous step
 
+#### Scenario: Bare replies record nothing as completed
+
+- **GIVEN** a prompt has armed the canonical chain and no Skill tool has returned
+- **WHEN** six bare replies follow
+- **THEN** `.completed` MUST be empty
+- **AND** `.assumed` MUST hold the steps the walk has passed
+- **AND** the step mandated on each of those prompts MUST be the one mandated before the lists were split
+- **AND** every step before the current one MUST render `[DONE?]`
+
+#### Scenario: A confirmed step and an assumed step render differently
+
+- **GIVEN** a Skill tool returned for the first step and the walk has passed the second without a return
+- **WHEN** a bare reply is routed
+- **THEN** the first step MUST render `[DONE]` and the second `[DONE?]`
+
 #### Scenario: No composition state means no sticky
 
 - **GIVEN** no `~/.claude/.skill-composition-state-<token>` file exists
@@ -445,7 +462,7 @@ The hook MUST treat the composition-state file (`~/.claude/.skill-composition-st
 
 #### Scenario: Corrupt composition state fails open
 
-- **GIVEN** the composition-state file contains invalid JSON
+- **GIVEN** the composition-state file contains invalid JSON, or a list that is not an array, or a list naming a step that is not in the chain
 - **WHEN** any prompt arrives
 - **THEN** the sticky function MUST return silently, the hook MUST exit 0, and no crash MUST occur
 
@@ -457,7 +474,7 @@ The hook MUST treat the composition-state file (`~/.claude/.skill-composition-st
 
 ### Requirement: Pure-Cancel Prompts Clear Composition State
 
-The activation hook MUST recognize a small set of unambiguous cancellation prompts and clear the composition-state file when matched. The match MUST be anchored to the whole prompt (with optional surrounding whitespace and trailing punctuation) so mixed prompts that contain a cancel word alongside other content do not trigger this path.
+The activation hook MUST recognize a small set of unambiguous cancellation prompts and clear the composition-state file when matched. It MUST also remove the last-invoked signal for the session, because that signal is the cancelled task's position: left behind, the next task is credited with every step up to it. The match MUST be anchored to the whole prompt (with optional surrounding whitespace and trailing punctuation) so mixed prompts that contain a cancel word alongside other content do not trigger this path.
 
 Recognized cancellation tokens: `stop`, `cancel`, `abort`, `nevermind`/`never mind`, `forget it`, `scrap that`, `drop it`, `no thanks`, `nope`, `nah`. Trailing punctuation `[ \t!.,?:;]` MUST be tolerated. Leading whitespace MUST be tolerated.
 
@@ -467,6 +484,13 @@ Recognized cancellation tokens: `stop`, `cancel`, `abort`, `nevermind`/`never mi
 - **WHEN** the user submits `cancel`, `stop.`, `cancel?`, `stop!`, `  never mind  `, `nope`, or `no thanks`
 - **THEN** the composition-state file MUST be deleted and the hook MUST NOT emit `Process: writing-plans` (or any other CURRENT-step sticky line)
 
+#### Scenario: The next task does not inherit the cancelled one's position
+
+- **GIVEN** a chain walked several steps forward, then a pure cancel
+- **WHEN** a new prompt arms the same chain and a bare reply follows
+- **THEN** the last-invoked signal MUST have been removed by the cancel
+- **AND** the steps mandated MUST be the ones a session with no history is given
+
 #### Scenario: Mixed prompt with cancel word routes naturally
 
 - **GIVEN** an active chain with `CURRENT=writing-plans`
@@ -475,7 +499,7 @@ Recognized cancellation tokens: `stop`, `cancel`, `abort`, `nevermind`/`never mi
 
 ### Requirement: Composition-State-Aware Early-Exit Bypass
 
-The activation hook MUST consult composition state before exiting via the short-prompt gate (`PROMPT < 5 chars`) or the greeting blocklist. When `_comp_active` returns true (chain length > completed length), both early exits MUST be bypassed so the bare-ack prompt reaches the routing pipeline.
+The activation hook MUST consult composition state before exiting via the short-prompt gate (`PROMPT < 5 chars`) or the greeting blocklist. When `_comp_active` returns true, both early exits MUST be bypassed so the bare-ack prompt reaches the routing pipeline. `_comp_active` MUST be true exactly when the chain has steps that are in neither `.completed` nor `.assumed`, counted the way sticky emission counts them.
 
 #### Scenario: Short prompt bypassed when chain alive
 
@@ -488,6 +512,12 @@ The activation hook MUST consult composition state before exiting via the short-
 - **GIVEN** composition state with a live chain
 - **WHEN** the user submits `ok` (in the greeting blocklist)
 - **THEN** the blocklist early-exit MUST NOT fire; the hook MUST continue to scoring
+
+#### Scenario: A chain walked to its end is not live
+
+- **GIVEN** a chain every step of which is confirmed or assumed
+- **WHEN** the user submits a prompt shorter than five characters, including one that would match a trigger
+- **THEN** the short-prompt early-exit MUST fire and nothing is emitted
 
 ### Requirement: Serena Grep Matcher Regex Coverage
 
@@ -970,7 +1000,7 @@ The PLAN-phase DESIGN COMPLETENESS check MUST recognize each canonical design se
 - **AND** the activation output MUST NOT annotate the two present sections with `(missing`
 
 ### Requirement: Composition completed-array monotonicity
-The UserPromptSubmit walker's composition-state write MUST NOT remove entries from `.completed` while the chain is unchanged. When a prior state file exists with a `.chain` equal to the newly built chain, the written `.completed` MUST be the union of the walker's computed prefix and the prior on-disk `.completed`, projected through the chain (chain order, no duplicates, entries not in the chain dropped). When the newly built chain differs from the prior `.chain`, the prior `.completed` MUST NOT leak into the new state. Missing, unreadable, or malformed prior state MUST degrade to the prefix-only write without failing the hook.
+The UserPromptSubmit walker's composition-state write MUST NOT remove entries from `.completed` while the chain is unchanged, and MUST NOT add any. When a prior state file exists with a `.chain` equal to the newly built chain, the written `.completed` MUST be the prior on-disk `.completed` projected through the chain (chain order, no duplicates, entries not in the chain dropped), and the written `.assumed` MUST be the union of the walker's computed prefix and the prior on-disk `.assumed`, projected the same way, less every entry of `.completed`. When the newly built chain differs from the prior `.chain`, neither prior list MUST leak into the new state. Missing, unreadable, or malformed prior state MUST degrade to an empty `.completed` and a prefix-only `.assumed` without failing the hook. The computed prefix MUST NOT contain `requesting-code-review` or `verification-before-completion`, so neither list ever holds a gated step the walker inferred.
 
 #### Scenario: Backward re-anchor preserves recorded progress
 - **WHEN** the on-disk state records `.completed` through a later chain step and a prompt re-anchors at an earlier step of the same chain (e.g. a "pr"-matching prompt after verification already ran)
@@ -981,10 +1011,16 @@ The UserPromptSubmit walker's composition-state write MUST NOT remove entries fr
 #### Scenario: Chain switch resets completed
 - **WHEN** the prompt anchors a chain different from the on-disk `.chain`
 - **THEN** the written `.completed` MUST NOT contain entries carried over from the old chain
+- **AND** the written `.assumed` MUST hold the computed prefix only
 
 #### Scenario: Malformed prior state degrades to prefix-only
 - **WHEN** the prior state file is missing, unreadable, or not valid JSON
-- **THEN** the walker MUST write the prefix-derived `.completed` and exit zero
+- **THEN** the walker MUST write an empty `.completed` and the prefix-derived `.assumed`, and exit zero
+
+#### Scenario: A state file written before the lists were split
+- **WHEN** the prior state file has no `.assumed` field and the chain is unchanged
+- **THEN** the written `.completed` MUST still contain every entry it held
+- **AND** the walk MUST continue from the same step
 
 ### Requirement: Workflow-Free Skill Descriptions
 skill-scaffold MUST direct that skill descriptions (SKILL.md frontmatter and routing entry `description` fields) state what the skill is for and when to use it, and MUST NOT summarize the skill's workflow steps. A description containing process steps risks the agent following the summary instead of reading the full skill.
@@ -1810,4 +1846,66 @@ file-reading tool are part of the path and make it unopenable.
 - **GIVEN** a hint naming a plugin file for the reader to read
 - **WHEN** the hint is rendered
 - **THEN** the emitted path MUST NOT be wrapped in shell quotes
+
+### Requirement: A sticky-repeat display rule exists and hides nothing by default
+
+The activation hook SHALL evaluate, for every block that carries a process mandate, whether the mandate was injected by sticky composition, whether it is the only skill in the block, and whether the session has already been shown that step on the same chain. `ACS_STICKY_REPEAT` SHALL select the mode, in any letter case: `shadow`, `trial`, `suppress` or `off`. When the variable is unset or holds any other value the mode MUST be `shadow`. In `shadow` the hook MUST display exactly what it displays in `off`.
+
+#### Scenario: The default changes nothing that is displayed
+
+- **GIVEN** a session in which a prompt has armed a composition chain
+- **WHEN** a bare reply follows and `ACS_STICKY_REPEAT` is unset
+- **THEN** the block displayed is byte-identical to the one displayed with `ACS_STICKY_REPEAT=off`
+- **AND** a record says the rule would have hidden it
+
+#### Scenario: A mistyped mode
+
+- **WHEN** `ACS_STICKY_REPEAT` holds a value that is not one of the four modes
+- **THEN** the block is displayed
+
+#### Scenario: Suppress hides a repeat and nothing else
+
+- **GIVEN** `ACS_STICKY_REPEAT=suppress` and a session already shown a chain's current step
+- **WHEN** a prompt of six words or fewer that selects no skill of its own follows
+- **THEN** no block is displayed
+- **AND** WHEN the chain reaches its next step, that step's first block is displayed
+- **AND** WHEN a prompt's own words select the already-shown skill, its block is displayed
+- **AND** WHEN a short prompt's own words select another skill beside the sticky step, the block is displayed
+
+#### Scenario: A different chain, a new task, a compaction, a marker that cannot be believed
+
+- **GIVEN** `ACS_STICKY_REPEAT=suppress`
+- **WHEN** the step belongs to a different chain than the one the session was shown it on, or the user has since ordered a process step in their own words or cancelled, or the session has been compacted since (manually or automatically), or the marker file is absent, unreadable, a directory, a FIFO or a symbolic link, or holds an over-long line, or the step is listed beyond the marker's read bound, or `~/.claude` is not writable
+- **THEN** the block is displayed
+
+### Requirement: The sticky-repeat rule MUST NOT change routing state
+
+In every mode the activation hook SHALL write every pre-existing state file exactly as it does in `off`. The rule's marker and its record MUST be written after those files, MUST NOT be read by any gate, MUST NOT modify any existing file in place (the marker is replaced by an exclusive create and a rename; each record is a new exclusively created file), and MUST be named outside the `.skill-` family of routing-state files. Reading the marker MUST NOT hold the hook for more than a few seconds. In `shadow` the hook MUST NOT write to standard error anything it does not write in `off`. The trial arm MUST be a function of the session token alone.
+
+#### Scenario: State is identical turn by turn
+
+- **GIVEN** the same sequence of prompts run in `off` and in `suppress`
+- **WHEN** each turn completes
+- **THEN** every state file other than the rule's own marker and record is identical between the two
+
+#### Scenario: The push gate's decision
+
+- **GIVEN** a clean verification verdict, review evidence, and a chain armed by a work order
+- **WHEN** a bare reply is hidden by the rule and a push follows
+- **THEN** the push gate's output is the one it gives with the rule off
+
+#### Scenario: A marker aliased onto a state file
+
+- **GIVEN** the marker is a symbolic link or a hard link to a routing-state file, or the record directory is a symbolic link to the state directory
+- **WHEN** a turn completes
+- **THEN** that state file holds exactly what the hook writes to it with the rule off
+
+### Requirement: The sticky-repeat record carries no prompt text
+
+The hook SHALL write one record per block with a process mandate, in every mode but `off`, stating the session, the skill, the chain, whether the mandate was sticky, whether the step was already shown, the mode, the trial arm, and whether the block was displayed. No value in the record SHALL be taken from the prompt, and each record MUST be a single valid JSON object.
+
+#### Scenario: The record matches what happened
+
+- **WHEN** a turn completes
+- **THEN** the record's `displayed` field is true exactly when a block was emitted for that turn
 

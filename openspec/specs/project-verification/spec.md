@@ -160,3 +160,149 @@ The gate-gaming check MUST report `suspect` when the diff it receives deletes a 
 - WHEN the diff is piped into `gate-gaming-check.sh`
 - THEN the `.verify.yml` weakening pattern produces no hit
 
+### Requirement: Gate-gaming scope may be declared and is read from the merge-base
+
+The verdict writer SHALL take the gate-gaming diff over the paths listed under `gate_gaming_paths:` in `.verify.yml`, plus `.verify.yml` itself, when a usable declaration exists at the merge-base with the mainline. The declaration MUST be read from the merge-base revision and MUST NOT be read from the branch head, the index or the working tree. When no declaration exists at the merge-base, or `.verify.yml` is not a regular file there, the writer SHALL use the name glob (`*test*`, `*spec*`, `.verify.yml`) unchanged.
+
+#### Scenario: A marker on a file the gate runs
+
+- **GIVEN** the merge-base declares `tests/`
+- **WHEN** the branch adds a skip marker to a test file under `tests/`
+- **THEN** `gate_gaming_status` MUST be `suspect`
+- **AND** a push of that branch touching a routing path MUST be denied by routing governance
+
+#### Scenario: The same marker quoted in a document
+
+- **GIVEN** the merge-base declares `tests/`
+- **WHEN** the branch adds a file under `docs/` that contains the same marker inside a string
+- **THEN** `gate_gaming_status` MUST be `clean`
+- **AND** `gate_gaming_scope` MUST be `declared`
+
+#### Scenario: No declaration
+
+- **GIVEN** the merge-base has no `gate_gaming_paths` key
+- **WHEN** the branch adds that file under `docs/`
+- **THEN** `gate_gaming_status` MUST be `suspect`
+- **AND** `gate_gaming_scope` MUST be `default`
+
+#### Scenario: A branch edits its own declaration
+
+- **GIVEN** the merge-base declares `tests/`, or declares nothing
+- **WHEN** the branch adds or re-points `gate_gaming_paths` — committed, staged or uncommitted — and adds a skip marker to a test file under `tests/`
+- **THEN** the scope MUST be the one at the merge-base
+- **AND** `gate_gaming_status` MUST be `suspect`
+
+### Requirement: A changed declaration is suspect
+
+The writer SHALL record `gate_gaming_status` as `suspect` in place of `clean` when the declaration committed at the branch head differs from the declaration at the merge-base, unless both are usable and every path declared at the merge-base is still declared at the head. The verdict SHALL carry `gate_gaming_scope_change` with the value `none`, `widened` or `changed`.
+
+#### Scenario: A branch only narrows the declaration
+
+- **GIVEN** the merge-base declares `tests/` and `docs/`
+- **WHEN** the branch commits a declaration of `docs/` alone and changes nothing else
+- **THEN** `gate_gaming_status` MUST be `suspect`
+- **AND** `gate_gaming_scope_change` MUST be `changed`
+
+#### Scenario: A branch adds a first declaration
+
+- **GIVEN** the merge-base has no `gate_gaming_paths` key
+- **WHEN** the branch commits one
+- **THEN** `gate_gaming_status` MUST be `suspect`
+
+#### Scenario: A branch only adds a path
+
+- **GIVEN** the merge-base declares `tests/`
+- **WHEN** the branch commits a declaration of `tests/` and `docs/`
+- **THEN** `gate_gaming_status` MUST be `clean`
+- **AND** `gate_gaming_scope_change` MUST be `widened`
+
+### Requirement: An unusable declaration leaves the check unverified
+
+When the declaration at the merge-base is an inline list, is declared more than once, has no entries, or contains an entry that is quoted, starts with `:`, `-` or `/`, contains `..` as a path segment, contains whitespace, or matches no file at the merge-base, the writer MUST NOT run the check over any pathspec. It SHALL record `gate_gaming_status` as `unverified`, add `gate-gaming-check` to `could_not_verify`, record `gate_gaming_scope` as `unusable`, and print the reason. It MUST NOT apply a subset of the declared paths and MUST NOT fall back to the name glob.
+
+#### Scenario: Pathspec magic
+
+- **GIVEN** the merge-base declares `docs/` and `:(exclude)tests/`
+- **WHEN** the writer records a verdict
+- **THEN** `gate_gaming_status` MUST be `unverified`
+- **AND** `gate_gaming_scope` MUST be `unusable`
+
+#### Scenario: A declared file the name glob would not select
+
+- **GIVEN** the merge-base declares `checks/validate.py` and a second entry that matches no file
+- **WHEN** the branch removes an assertion from `checks/validate.py`
+- **THEN** `gate_gaming_status` MUST NOT be `clean`
+
+### Requirement: The verdict records the scope that was used
+
+The verdict SHALL carry `gate_gaming_scope` with the value `declared`, `default`, `unusable` or `unverified`, and `gate_gaming_paths` with the pathspec the diff was taken over. `unverified` and an empty list SHALL be recorded when no base could be resolved or the checker is missing.
+
+#### Scenario: A declared scope
+
+- **GIVEN** the merge-base declares `tests/`
+- **WHEN** the writer records a verdict
+- **THEN** `gate_gaming_paths` MUST be `["tests/", ".verify.yml"]`
+
+#### Scenario: A gate entry removed under a declared scope
+
+- **GIVEN** the merge-base declares `tests/`
+- **WHEN** the branch deletes a `- name:` entry from `.verify.yml`
+- **THEN** `gate_gaming_status` MUST be `suspect`
+
+### Requirement: Net removal of unlisted assertion families is suspect
+
+The gate-gaming check SHALL count, per file, the deleted and the added diff lines that call an assertion of a family its fixed list does not name: `assert_<name>`, `assert<Name>(` other than the listed names, and this plugin's `_record_pass` / `_record_fail`. It SHALL report a file when more such lines were deleted than added. A comment-only line and a definition of a helper MUST NOT be counted. The fixed list and its rule MUST run unchanged on the same input, and a diff they flag MUST still be flagged. A line MUST be attributed to a file by the diff's hunk structure, and MUST NOT be attributed by a line's resemblance to a file header.
+
+#### Scenario: A deleted bash assertion
+
+- **GIVEN** a branch diff that deletes an `assert_equals` line from a test file and adds none
+- **WHEN** the verdict is written
+- **THEN** `gate_gaming_status` MUST be `suspect`
+- **AND** the hit MUST name the file and both counts
+
+#### Scenario: An assertion edited in place
+
+- **GIVEN** a diff that deletes one such assertion line and adds one in the same file
+- **WHEN** the check runs
+- **THEN** that file MUST NOT be reported
+
+#### Scenario: An assertion commented out, and one moved to another file
+
+- **WHEN** an assertion line is replaced by a comment, or deleted from one file and added to another
+- **THEN** the file that lost it MUST be reported
+
+#### Scenario: A source line that imitates a file header
+
+- **GIVEN** a diff in which an added source line reads like a `+++` header naming another file, followed by deleted assertions
+- **WHEN** the check runs
+- **THEN** the deletions MUST be charged to the file they were deleted from
+
+#### Scenario: A helper definition is deleted
+
+- **WHEN** the only deleted lines are definitions such as `assert_not_empty() {`
+- **THEN** the check MUST NOT report the file
+
+### Requirement: A not-clean verdict states a remedy that can be carried out
+
+The verdict writer SHALL record the lines the gate-gaming check flagged, at most ten, with control characters removed. When the push guard denies a push because the verification verdict for exactly the pushed commit is not clean, its text SHALL name every blocker and what clears it, and for a `suspect` result SHALL state that re-running verification cannot clear it while the diff is unchanged. That text MUST NOT contain a flagged diff line, and MUST show a gate name only when the name is a plain label; other names MUST be counted. For a verdict at any other commit, or none, the previous text SHALL stand. The decision to deny MUST NOT change.
+
+#### Scenario: A suspect verdict at the pushed commit
+
+- **GIVEN** a routing change whose verdict at HEAD is `suspect`
+- **WHEN** a push is attempted
+- **THEN** the push MUST be denied by routing governance
+- **AND** the reason given to the model MUST say that re-running cannot clear it, and how many lines were flagged
+- **AND** the reason MUST NOT say to run verification until it reports a clean verdict
+
+#### Scenario: Text chosen by the branch author
+
+- **GIVEN** a verdict whose flagged line, or whose failing gate's name, is worded as an instruction
+- **WHEN** the remedy is rendered
+- **THEN** that wording MUST NOT appear in it
+
+#### Scenario: A verdict for an earlier commit
+
+- **GIVEN** a `suspect` verdict for an ancestor of the pushed commit
+- **WHEN** a push is attempted
+- **THEN** the push MUST be denied with the text that asks for a verdict at this commit
+
