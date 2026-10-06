@@ -414,10 +414,23 @@ assert_contains "workflow name:/run: removals stay clean" "clean" "${out:-<empty
 # ---------------------------------------------------------------------------
 # 5. Wiring: verify-and-record.sh feeds .verify.yml hunks to the checker
 # ---------------------------------------------------------------------------
-# Grep the diff invocation line only — the script mentions .verify.yml in
-# other contexts (VY= path), which would pass this assertion vacuously.
-var="$(grep -F -- '...HEAD --' "${PROJECT_ROOT}/scripts/verify-and-record.sh" || true)"
-assert_contains "gate-gaming diff pathspec includes .verify.yml" ".verify.yml" "${var:-<empty>}"
+# The pathspec is an array since #332 (a repository may declare its own paths),
+# so the diff line no longer names .verify.yml itself. Pin EVERY assignment of
+# that array instead: the default glob and the declared scope must both carry
+# it. Grep the assignments only — the script mentions .verify.yml in other
+# contexts (VY= path), which would pass this assertion vacuously — and hold a
+# floor of two, so dropping one assignment cannot pass on the other.
+# This is a source pin; the behaviour (a gate entry removed under a declared
+# scope is still suspect) is driven end to end in tests/test-gate-gaming-scope.sh
+# (B5, with mutation M2).
+var="$(grep -F -- '...HEAD -- "${GG_PATHS[@]}"' "${PROJECT_ROOT}/scripts/verify-and-record.sh" || true)"
+assert_contains "gate-gaming diff is taken over the GG_PATHS array" 'GG_PATHS[@]' "${var:-<empty>}"
+_gg_assign="$(grep -E '^[[:space:]]*GG_PATHS=\(' "${PROJECT_ROOT}/scripts/verify-and-record.sh" || true)"
+_gg_assign_n="$(printf '%s\n' "${_gg_assign}" | grep -c . || true)"
+_gg_assign_ok="$(printf '%s\n' "${_gg_assign}" | grep -c -F '".verify.yml"' || true)"
+[ "${_gg_assign_n}" -ge 2 ] && _record_pass "both gate-gaming pathspec assignments found (${_gg_assign_n})" \
+    || _record_fail "both gate-gaming pathspec assignments found" "found ${_gg_assign_n}, expected at least 2"
+assert_equals "every gate-gaming pathspec assignment includes .verify.yml" "${_gg_assign_n}" "${_gg_assign_ok}"
 
 # The SKILL.md-documented manual invocation is the SECOND verdict writer
 # (model-run fallback); its pathspec must match verify-and-record.sh or the

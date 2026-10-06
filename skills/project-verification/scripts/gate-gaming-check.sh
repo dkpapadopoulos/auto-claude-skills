@@ -10,8 +10,11 @@
 # a strictly POSIX-only grep would silently under-match (acceptable for an advisory tripwire).
 # Known coverage gaps (extend the patterns, don't assume completeness): skip dialects not
 # yet matched include RSpec xit/pending, Rust #[ignore], and PHPUnit markTestSkipped(); and
-# the caller's `-- '*test*' '*spec*' '.verify.yml'` pathspec misses non-canonical test files
-# (conftest.py, __mocks__/, fixtures/). .verify.yml weakening is ENTRY-removal-only: a
+# the caller's default `-- '*test*' '*spec*' '.verify.yml'` pathspec misses non-canonical test
+# files (__mocks__/, fixtures/) while selecting documents that merely have "test" or "spec" in
+# their path. This script matches TEXT and cannot tell a marker from a quotation of one (#332),
+# so WHICH files it is shown is the caller's job: scripts/verify-and-record.sh honours a
+# `gate_gaming_paths:` list in the merge-base's .verify.yml. .verify.yml weakening is ENTRY-removal-only: a
 # `- name:` deleted and not re-added flags; run:-line rewrites (incl. to a no-op) and
 # renames that re-add a name do not. All acceptable for an advisory tripwire — see the
 # SKILL.md Limits note.

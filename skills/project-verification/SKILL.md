@@ -47,6 +47,40 @@ the Verification checklist — the human should still eyeball that summary
 before any downstream push relies on it. If there is no `.verify.yml`, offer
 to write one (per Step 1).
 
+**Which files the gate-gaming check reads.** By default the writer diffs every
+path whose name contains `test` or `spec` — which also selects documents (an
+evidence bundle under `docs/`, every file under `openspec/`), and the check is
+a text match, so a skip marker quoted in one of them reads as `suspect`. A
+repository can declare the paths its gate actually runs with
+`gate_gaming_paths:` in `.verify.yml` (schema in
+`references/discovery-ladder.md`). Three rules follow from that being a
+weakening as well as a fix:
+
+- The declaration is read from the **merge-base with the mainline**, never from
+  the branch or the working tree. Editing it on a branch does not change what
+  that branch is judged by.
+- A branch that **changes** the declaration cannot read `clean`: a clean
+  result becomes `suspect`, unless every path declared at the merge-base is
+  still declared. The change decides what every later branch is checked
+  against. Adding a first declaration counts. So a declaration is always
+  introduced or narrowed by a person, never cleared by an agent.
+- A declaration at the merge-base that cannot be applied (a typo'd path,
+  pathspec magic, an inline list) leaves the check **unverified** — it does not
+  fall back to the name glob, which can be narrower than what was declared.
+
+The writer prints the scope it used and records `gate_gaming_scope`
+(`declared`, `default`, `unusable`, or `unverified` when the check did not
+run), `gate_gaming_paths`, and `gate_gaming_scope_change` (`none`, `widened`,
+`changed`). If a `suspect` hit is a quoted marker in a file the gate never
+runs, the remedy is that declaration, reviewed and merged by a human — do NOT
+reword the line or edit the checker to clear it; tell the user instead.
+
+**What a declaration costs.** It is a claim that its paths cover what the gate
+runs, and nothing checks that claim. A marker in a test file outside them is
+not seen, including a new file a branch adds elsewhere and calls from an
+existing test. And the merge-base is resolved from local refs, so this is a
+tripwire against careless weakening, not a boundary against a deliberate one.
+
 ### No `.verify.yml`: still do not author the JSON by hand
 
 Once Step 1 has settled **which** commands are the gate — including after a

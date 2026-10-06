@@ -4,3 +4,18 @@ commands:
   - name: tests
     run: bash tests/run-tests.sh
 fail_fast: false
+# Paths the gate-gaming check is shown (#332). Read from the merge-base, never
+# from the branch, so an edit here takes effect only once it is on main — and a
+# branch that removes or replaces an entry is itself recorded `suspect`, so a
+# person reviews it. An entry that matches no file leaves the check unverified
+# for every branch until it is fixed.
+# The list has to cover every file the gate above runs: tests/test-*.sh, plus
+# the two assertion scripts tests/test-db-gate-score.sh delegates to. Nothing
+# proves it complete; tests/test-gate-gaming-scope.sh holds an inventory that
+# fails when a known gate-run file falls outside it. Without this list the check
+# uses a name glob that also selects docs/ evidence bundles and every OpenSpec
+# document.
+gate_gaming_paths:
+  - tests/
+  - scripts/db-gate-race/test-score.sh
+  - scripts/db-gate-race/validate-corpus.sh
