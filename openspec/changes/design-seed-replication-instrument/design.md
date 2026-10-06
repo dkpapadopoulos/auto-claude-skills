@@ -2241,3 +2241,158 @@ here.**
   could not be defined. It was defined, narrowly, and the consequence is of the
   same kind. The ruling is read as covering it. It is the owner's to say
   otherwise.
+
+### The fidelity tests, the judging package and the pair decision, 2026-10-06
+
+The owner, told the consequence of the rule on outside text and given three ways
+on, ruled on 2026-10-06: "Build as ruled". What follows is built to the
+reviewer's rules as they stand. All of it is on Dion branch
+`fidelity-and-judging`, commits `1a1fac2` to `ff44dc9`, local and not pushed.
+
+**The three tests.** `tests/design_seed_pilot/fidelity/` and three measures:
+`fidelity-content`, `fidelity-state`, `fidelity-displayed`. Each gives `PASS`,
+`FAIL` or `UNASSESSABLE` and what stands behind it. The measuring script hands a
+measure the data file a page is of.
+
+- Content reads a page by one of two routes and no other: one `pre` whose shown
+  text is the whole stored document as JSON; or one outermost `dl` and the
+  grammar under it, every leaf one JSON token. Text that is hidden is not read.
+  Anything the page shows outside the structure makes content `UNASSESSABLE`. A
+  proved failure comes first, then anything unresolved, then `PASS`.
+- State copies content, as the reviewer settled. It is a measure of its own
+  because the specification names it, and it is not counted again for a pair.
+- Display asks of every glyph of every required key and value whether any of
+  its ink reaches the picture and whether any of its ink is clipped. The page is
+  painted twice with nothing changed but the colour of the glyphs asked about,
+  and a pixel that differs is that ink. Four ways of painting tell covering from
+  clipping from a scroll region. Where clipping cannot be taken off without the
+  layout moving by other than whole pixels, the answer is `UNASSESSABLE`: the
+  rules allow no tolerance.
+
+**Against the reviewer's twenty pages, at 375 and 1440, all three tests give the
+status the reviewer gave, and for display the note too.** That is 120 of the 122
+cells of `test_fidelity_pages.py`. The author wrote the tests and did not write
+the pages or the statuses.
+
+**What that does not show.** The twenty pages each turn on one thing; the rules
+say much more. 135 further cells (`test_fidelity_rules.py`, 91 of content and 44
+of display) are each one sentence of the rules on a page the AUTHOR wrote, with
+the status the author reads the sentence to give. They show the tests do what
+the author read. They cannot show the author read the rules as the reviewer
+meant. The reviewer's acceptance pages are for that; see below.
+
+**Where the rules say nothing.** Twenty-three places, listed in
+`fidelity/README.md` for the reviewer to rule on. Every one goes towards
+`UNASSESSABLE` unless the list says otherwise, and none was chosen to favour a
+page. The ones most likely to matter: an element with a shadow tree anywhere in
+the page (no route is tried); a `text-transform` (text is read as shown; one that
+would change a value in a way the tests do not work out makes it unsupported);
+a structure wrapped in a styling element (unsupported: the rules allow wrappers
+"within a leaf"); what counts as text outside the structure (text, generated
+strings and counters, a control showing a value, a picture shown as its `alt`
+words, any frame; not a picture or a canvas, so words in a picture are not
+seen); and that the braces and commas of a `pre` are not "required" for display.
+
+**Four things measured on the way, each of which changed the code.**
+
+1. One pair of pictures cannot carry three sets of glyphs, one to a colour
+   channel. The browser shapes a glyph's soft edge by how light its colour is, so
+   a glyph turned from black to green changes red at its edge, by up to 43 of
+   255. It made the covered glyph of the reviewer's page l pass. One set of
+   glyphs to a pair.
+2. The browser gives back `attr()` in a computed `content` as the text it found.
+   A literal string cannot be told from one built from an attribute, so where any
+   style sheet of a page uses `attr()` in a `content`, every generated string on
+   that page is unsupported.
+3. **Taking a picture of a whole page changes how this browser lays out its
+   text, once.** A line of 87 characters of 13px monospace was 678.72 px wide
+   before the first such picture and 680.92 px after it, at both widths, and
+   stayed so. Time alone did not do it, nor a picture of the viewport. The first
+   picture already shows the changed layout (its pixels equal the second's
+   wherever both have them) and is made the size the page was before. **So the
+   capture's one picture, which is what a judge is given, was cut short on a page
+   wider than its viewport:** two columns of pixels on the page that showed it.
+   `capture.mjs` now takes a picture, throws it away and keeps the next. A cell
+   holds it: a page whose last 20 px are blank showed 18 of them and shows 20.
+   The display test does the same before it reads where any glyph lies. This
+   reopens stage 5's capture, which the entry above had closed.
+4. Found by asking the tests about the data file of stage 2 itself, shown as a
+   `pre`: it passes all three at both widths, about 4,500 glyphs in about three
+   seconds a test. Item 3 was found by this; before the fix the display test did
+   not run on it at 375.
+
+**Does a judge see an image at the size it was captured? Measured, in part.** A
+headless session with the judge manifest's own flags (CLI 2.1.285; the session's
+own `init` gives the model as `claude-opus-5-5`) was asked to Read four PNGs:
+1440x1600, 375x1600, 1440x1500, 1440x900. For each, the image in the Read
+tool's result is the same bytes as the file. So the CLI hands a crop on
+unchanged. **Not measured: what the API does with it after that.** Its vision
+page, read the same day, says images over a model's limits are downscaled, and
+gives the limits as 2576 px on the long edge and 4784 visual tokens for "Claude
+4.7 and later models", and 1568 px and 1568 tokens for all others. By that rule
+a 1440x1600 crop (3016 tokens) is not reduced on the first tier and is on the
+second. So the reviewer's rule 7 can be met as written only while a judge's
+model is of the first tier. The launcher records each judge's model. Which
+models may judge, and a check of the recorded model against that, are the
+freeze's. Evidence, outside the repository: `read-measure/` of the stage's
+evidence directory.
+
+**What a judge is given** (`build_judging_package.py`). The owner ruled that
+nobody rewrites the rubric. `INSTRUCTIONS.md` is, in order: the specification's
+parts 4 and 9; the audit's section 3; the one sentence "Where the audit cuts or
+merges a part, the audit governs."; and the reviewer's rule 7, each cut from its
+kept file by its heading and each kept file checked against its digest. It is
+11,738 bytes, the same for every page of every builder, SHA-256 `cbb45433…0dbd`.
+
+Two departures from the plan, which said "and nothing else". The owner was told
+both; both go to the reviewer with the code.
+
+- **Rule 7 is in the instructions.** It says what to do with a page cut into
+  several images ("Do not score crops independently or average crop scores"),
+  and only a judge can do that.
+- **Five lines are the author's:** four headings (`# From the specification`,
+  `# From the audit of the specification`, `# Which governs`, `# The images`) and
+  "The images of this page are listed in IMAGES.md, in order." Without them a
+  judge cannot tell which of three texts is the audit. They are pinned with the
+  rest. An author who is not blind wrote them, and they say only where a text is
+  from.
+
+Images are the captured pixels: a page of at most 1600 rows as the capture
+wrote it, byte for byte; a taller one cut by rows as rule 7 says. Nothing of the
+capture's own name for a page reaches a package. A stored value the display test
+finds inside a region that scrolls is listed as in no image. How many judges
+score a page, in what order, and what they are asked afterwards remain the
+freeze's.
+
+**What fidelity decides for a pair** (`decide_pair.py`). Fidelity decides a pair
+or the pair has no direction; no construct gives a vote. Content and display are
+counted. Primary: a test that could not be carried out is failed. Secondary: it
+is unknown.
+
+One case the registered words leave open, and how it is read. "Such a test is
+unknown and decides nothing for the pair": if one builder has an unknown test
+and the other fails outright, is the pair decided for the first? **It is read as
+no: a builder with an unknown test is never the one a pair is decided for.** The
+other reading drops the unknown test and decides on the rest, which would favour
+a builder whose content could not be read. The entry "How to go on" says
+"'Unknown' is never reported as passed", and Codex's own words were that it
+"should not silently become 'passed'". So the secondary differs from the primary
+in exactly one case: one builder unknown, the other passing everything. The
+owner was told this reading.
+
+**The acceptance pages are asked for and not yet read.** Row 5 of the stage's
+log. The request went with the reviewer's three rule replies, its small data
+file and the not-found file: 29,015 bytes. **It went without the specification,
+the audit, the found data file and the twenty pages,** and says so. With them it
+was 89,727 bytes, and a package has to be shown whole in the question that asks
+the owner's consent; that one could not be. So the reviewer wrote these pages
+from its rules alone, which it had not done before. The reply is kept, 14,357
+bytes, SHA-256 `ad9293a8…89e2`: 22 pages, each with its line. Its form differs
+from the one asked for (the number of a page stands on the line before its
+block), seen from the fence lines alone, and the filing script reads both. The
+author has not read the pages and will not until the mutant run on the final
+code is done. No code is changed for a page's sake after the one run over them.
+
+**Names in the plan that did not survive the rules:** no
+`fidelity_inventory.mjs` (the inventory is the tree `json_tree.mjs` reads); three
+test files and three mutant lists where the plan had one of each.
