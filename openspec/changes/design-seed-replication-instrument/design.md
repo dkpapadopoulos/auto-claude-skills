@@ -2191,7 +2191,7 @@ replies by a script, and cells cut them out again and compare, so none can be
 changed by hand. The pages were read as text before they were filed: no script,
 and no reference to anything outside the page.
 
-**The reviewer marked nineteen of its own sixty statuses "UNSETTLED"**, on twelve
+**The reviewer marked eighteen of its own sixty statuses "UNSETTLED"**, on twelve
 pages, saying its rules did not determine them. It then settled them. In the
 author's summary; the files are what count:
 
