@@ -1,7 +1,7 @@
 # Pre-registration — routing precision: stop repeating a chain step's mandate on a prompt that asked for nothing
 
 Issue #333. **Frozen by the latest commit that changes this file** (see the amendment log
-at the foot: the freeze has been replaced twice, each time before any row existed). That commit's
+at the foot: the freeze has been replaced three times, each time before any row existed). That commit's
 timestamp is the boundary: everything observed before it is development data and may not
 be used to judge the rule. Changes after it go in the amendment log, with the reason,
 before the data they affect is looked at.
@@ -31,8 +31,8 @@ skill of its own ("sticky composition"). The rule:
   chosen because it errs toward displaying. Its cost is stated here so it is not discovered
   later: the rule fires less often than "shown before on this chain" would, and stage A's
   would-hide rows are the ones this policy leaves.
-- **The rule's version is 2.** Records carry `rule_version`; the readers accept 2 and
-  nothing else. Version 1 is what builds before this freeze wrote. Any later change to
+- **The rule's version is 3.** Records carry `rule_version`; the readers accept 3 and
+  nothing else. Versions 1 and 2 are what builds before this freeze wrote. Any later change to
   when the rule fires, or to the chain walk that decides which step is injected, takes a
   new version and an amendment, and rows are never pooled across versions.
 
@@ -221,7 +221,8 @@ the fixes and the one it left open are in
 
 Narrowing trigger verbs (the 327 rows where the prompt's own words selected the skill);
 rewording `MUST INVOKE`; whether automated text should arm a chain; whether sticky
-composition should exist at all, or should advance the chain's progress on a bare reply.
+composition should exist at all, or should advance the chain's WALK on a bare reply (it
+still does; see A3 for what changed about how that is recorded).
 
 ## Amendment log
 
@@ -288,3 +289,27 @@ contain the rule. The freeze moves to the commit that makes these changes.
   unsupported and is withdrawn: hiding a block can change which commands a session runs.
 - *Not changed, and why.* The label thresholds, the labels, the trial's two comparisons and
   its floor are as frozen in A1.
+
+**A3 — 2026-10-06, before any row existed.** The owner asked for two defects in the chain
+walk to be fixed; both were listed under "Out of scope" and "Known limits" until now. The
+installed plugin still does not contain the rule, so no row exists. The freeze moves to
+the commit that makes these changes and `rule_version` is 3.
+
+- *A cancel forgets the position.* A cancel removed the chain and left the last-displayed
+  signal behind, so the next task inherited the cancelled task's position: its second
+  prompt was told to request a code review. The signal is now removed with the chain.
+  **This changes which step is injected after a cancel**, and therefore which blocks the
+  rule would hide there. It is the only change to the schedule. Measured, old hook against
+  new through the real guard, nine multi-turn sessions: the mandated step is identical on
+  every turn of the seven sessions without a cancel, and differs only after the cancel in
+  the other two.
+- *What a bare reply records.* The walk still advances on a bare reply, exactly as before.
+  What it walks past is now recorded as `assumed`, not `completed`, and rendered `[DONE?]`
+  instead of `[DONE]`. A block's text therefore differs by one character per assumed step;
+  the rule, the rows and the labels are unaffected. `block_chars` in a record is the
+  rendered length and moves with it.
+- *Not changed, and why.* Whether a bare reply SHOULD advance the walk. A cross-family
+  review argued it should not (six acknowledgements are no evidence that anything ran).
+  That is a change to what is mandated, with an unmeasured effect on whether review and
+  verification still get invoked, and it is left to the owner. If it is made, it takes a
+  new version and restarts stage A.

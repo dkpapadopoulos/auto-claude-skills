@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from extract import iter_entries, open_private, prompt_of, refuse_repo_path, text_of  # noqa: E402,F401
 
 JOIN_WINDOW_S = 15          # a record is written by the hook that ran for the prompt
-RULE_VERSION = 2            # the pre-registered rule (1 = builds before the freeze); any other version is not data
+RULE_VERSION = 3            # the pre-registered rule (1, 2 = builds before the freeze); any other version is not data
 PUSH_WORDS = ("git push", "gh pr merge")
 GATED = ("requesting-code-review", "verification-before-completion")
 

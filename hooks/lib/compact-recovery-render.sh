@@ -50,6 +50,8 @@ ${_team}
                     if ((.chain // []) | length) > 0 then
                       "Chain: "        + (.chain | join(" -> "))            + "\n" +
                       "Completed: "    + ((.completed // []) | join(", "))  + "\n" +
+                      (((.assumed // []) | if type == "array" then . else [] end) as $a
+                       | if ($a | length) > 0 then "Assumed done, NOT invoked (inferred from the conversation, not evidence): " + ($a | join(", ")) + "\n" else "" end) +
                       "Current step: " + (if (.current_index // 0) >= 0 then (.chain[.current_index // 0] // "unknown") else "unknown" end) + "\n" +
                       "Resume from: "  + (if (.current_index // 0) >= 0 then (.chain[.current_index // 0] // "unknown") else "unknown" end)
                     else empty end' "$_comp" 2>/dev/null)" || _chain=""
