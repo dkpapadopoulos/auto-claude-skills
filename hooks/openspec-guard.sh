@@ -1808,6 +1808,21 @@ EOF
                     # No clean covering verdict, OR the clean verdict is an ancestor and
                     # routing files CHANGED after it (an unverified routing delta) — deny.
                     _MSG="PUSH GATE (routing governance): this push modifies routing files (skills/, config/, or hooks/) but no clean verification verdict covering these changes exists. Run Skill(auto-claude-skills:project-verification) until it reports a clean verdict, then push."
+                    # A verdict AT this commit that is not clean says why, and "run it
+                    # until it is clean" is false for some of those reasons: a `suspect`
+                    # gate-gaming result re-reads the same diff and never changes. Name
+                    # every blocker and what clears it. The deny is the same deny; only
+                    # the text an agent is handed differs. EXACTLY this commit, not an
+                    # ancestor: a verdict for an earlier commit (or none) describes a
+                    # tree that is not the one being pushed, so the text above stands
+                    # and the re-run it asks for produces the verdict this reads.
+                    if command -v verdict_unclean_remedy >/dev/null 2>&1 \
+                       && verdict_sha_is_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
+                        _rg_fix="$(verdict_unclean_remedy "${_VERDICT_TOKEN}")" || _rg_fix=""
+                        if [ -n "${_rg_fix}" ]; then
+                            _MSG="PUSH GATE (routing governance): this push modifies routing files (skills/, config/, or hooks/) and the verification verdict covering it is not clean. ${_rg_fix}"
+                        fi
+                    fi
                     _emit_deny "${_MSG}"
                     _DECISION="deny:routing-governance"
                     exit 0
