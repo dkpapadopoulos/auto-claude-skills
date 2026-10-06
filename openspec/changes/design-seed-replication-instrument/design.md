@@ -2582,7 +2582,7 @@ test files and three mutant lists where the plan had one of each.
 **The reviewer refused the content test and the display test.** By the plan a
 refused test is not used, and a refusal of the content test is one of its four
 stop conditions: the owner is asked. This entry is the record the owner is asked
-on. Dion branch `fidelity-and-judging`, commits `3663a87` to `ee8d239`, local
+on. Dion branch `fidelity-and-judging`, commits `3663a87` to `7b309ae`, local
 and not pushed.
 
 **The gate, on `3663a87`,** the last commit that changed a file a list mutates,
@@ -2606,9 +2606,13 @@ it extracted, a status in what it printed. Cells were mended and added (`61b6ab4
 lists run whole again on `a0f2414`: 37 of 37 and 27 of 27 killed. Two survivors
 of `measure.tsv` stand
 behind a second check that catches the same fault and are left, named in the
-README. The four of the capture list are the four already recorded. Ten branches
-of the display test have neither a mutant nor a cell that names their reason;
-`mutations/README.md` lists them as untested.
+README. The four of the capture list are the four already recorded. Fourteen
+branches of the display test have neither a mutant nor a cell of the author's
+that names their reason; `mutations/README.md` lists them, ten found by the
+author and four by a later reader. One of the four was run as a mutant on
+2026-10-07: a leaf that could not be read, passed over. It lives through all 60
+of the author's display cells and is killed by two cells of the reviewer's own
+pages.
 
 The two fidelity lists were run against the author's cells and not against the
 reviewer's pages. A count above says a fault is seen by the author's reading of a
@@ -2909,6 +2913,15 @@ binds neither the CLI version, the harness nor the term list; which models may
 judge, given what the API does with a large image; how many judges score a
 page and in what order.
 
-Dion branch `fidelity-and-judging` ends at `ee8d239`, on `derive-measures`,
+**Two fresh readers, before anything was pushed,** read-only, of the author's
+family. One read these entries and Revision 6 against the logs, the replies and
+the code: one critical finding (a recommendation the owner took in advance,
+recorded as a ruling) and eleven important, each corrected where it stands. One
+read Dion's commits since the code was last reviewed: nothing critical; no
+fidelity code changed after `3663a87`; the report sent to the reviewer is byte
+for byte what the script prints from the filed results; three important, in the
+READMEs and in the cells of the report script, corrected or named there.
+
+Dion branch `fidelity-and-judging` ends at `7b309ae`, on `derive-measures`,
 neither pushed by this entry. The code is kept as it was refused, and the README
 of the fidelity tests says so at its head.
