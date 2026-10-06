@@ -2479,3 +2479,249 @@ read:** the two reviews above. The reviewer is told so with the results.
 **Names in the plan that did not survive the rules:** no
 `fidelity_inventory.mjs` (the inventory is the tree `json_tree.mjs` reads); three
 test files and three mutant lists where the plan had one of each.
+
+### The gate, the one run over the acceptance pages, and the reviewer refuses two tests, 2026-10-06
+
+**The reviewer refused the content test and the display test.** By the plan a
+refused test is not used, and a refusal of the content test is one of its four
+stop conditions: the owner is asked. This entry is the record the owner is asked
+on. Dion branch `fidelity-and-judging`, commits `3663a87` to `ee8d239`, local
+and not pushed.
+
+**The gate, on `3663a87`,** the last commit that changed a file a list mutates,
+from a frozen copy of it:
+
+| List | Run against | Mutants | Killed |
+|---|---|---|---|
+| `fidelity-pure.tsv` | 100 cells | 38 | 38 |
+| `fidelity-content.tsv` | the author's 114 cells of content | 66 | 66 |
+| `fidelity-display.tsv` | the author's 60 cells of display | 50 | 50 |
+| `judging-package.tsv` | 100 cells | 37 | 36 |
+| `decide-pair.tsv` | 50 cells | 27 | 25 |
+| `measure.tsv` | 59 cells | 44 | 42 |
+| `capture-policy.tsv` | 72 cells | 25 | 21 |
+
+Three of the nine survivors were cells that could not fail. One cell of the
+package builder replaced `json.dumps` for everything, so its own helper failed
+before the build began and it passed without a build. No cell of the pair
+decision gave a run that had failed, or had not said it extracted, a status in
+what it printed. Cells were mended and added (`61b6ab4`, `8a79ebe`), and both
+lists run whole again on `a0f2414`: 37 of 37 and 27 of 27 killed. Two survivors
+of `measure.tsv` stand
+behind a second check that catches the same fault and are left, named in the
+README. The four of the capture list are the four already recorded. Ten branches
+of the display test have neither a mutant nor a cell that names their reason;
+`mutations/README.md` lists them as untested.
+
+The two fidelity lists were run against the author's cells and not against the
+reviewer's pages. A count above says a fault is seen by the author's reading of a
+rule, and no more than that.
+
+**That gate was not the repository's own, and the tree was red under it.**
+Dion's `scripts/ci.sh` was first run on this branch on `95a2c9e`, after the
+refusals. One cell failed: `build_fixture.py`, held to a digest frozen with the
+pilot, had changed. Commit `216e937` of 2026-10-06 ran the formatter over the
+directory, and twelve files it had no business with were rewritten. Every commit
+from there to `95a2c9e` carries them, the commit of the acceptance run among
+them. None of the twelve is a file of the fidelity tests, the judging package or
+the pair decision, so the code that run asked is unchanged by it; each is
+restored to what it is on main (`e56b23f`). The entry above says "after the
+fixes" of a gate that never ran the repository's cells. The mutant lists and the
+cells they name were the whole of it.
+
+**The acceptance pages.** 22 pages, kept unread until the gate was done, then
+filed as they came (`6b00904`). Every test was asked about every page once, at
+375 and 1440, from that commit with a clean tree. `RESULTS.json` holds what each
+said beside what the reviewer expected.
+
+- Content: the expected status in 44 of 44 runs.
+- State: the content test's status in every run.
+- Display: 42 of 44. Page 12, a value a style sheet writes as literal strings,
+  was expected to pass and is `UNASSESSABLE` at both widths: "part of it is text
+  a style sheet wrote, which cannot be examined glyph by glyph".
+
+No code was changed after that run.
+
+**What was sent for approval.** Two packages, because one that holds the rules
+and the code of all three tests cannot be shown whole in the question that asks
+the owner's consent. Rows 6 and 7 of the stage's log.
+
+- Content and state, 64,059 bytes: the request; the reviewer's three rule
+  replies; `extract.mjs`, `compare.mjs` and `content.mjs` as they ran, but that
+  five comment lines of the first (they name the directory the rules are kept
+  in, which holds a recorded term) are left out and one line of the second (a
+  pattern the package builder takes for a path) is replaced by a note, both said
+  in the request; and what the content test said of the 22 pages.
+- Display, 64,995 bytes: the request; the three rule replies; `display.mjs` and
+  `ink.mjs` as they ran; what the display test said of the 22 pages.
+
+**Not sent, and said so in each request:** `snapshot.mjs`, which collects from
+the browser the facts the reading turns on; `json_tree.mjs`; `png.mjs`;
+`measure.mjs`. And the list of twenty-seven places where the rules are silent,
+which was to go as a third package and has not gone.
+
+**What the reviewer answered.** Both replies are kept as they came, in Dion
+under `validity/approval/` with their digests, and a cell holds the verdicts to
+them. Its last lines, word for word:
+
+> content: REFUSE, because the implementation contains unsupported status rules
+> and extraction departures despite matching all 44 acceptance runs.
+>
+> state: APPROVE, because copying content’s status exactly implements the state
+> rule, although this does not authorize using the refused content test.
+>
+> display: REFUSE, because the implementation can issue unsupported PASS and FAIL
+> verdicts and replaces some explicitly required failures with UNASSESSABLE.
+
+Of page 12 it said its own expected `PASS` was wrong and the test's status
+stands, and that "the disagreements in Document 7 do not themselves justify
+refusal". It refuses over the code read against the rules.
+
+Content, twelve places, a defect in what is published, and contracts of the
+files it was not sent:
+
+- conventions of the author's where the rules do not settle, each of them on the
+  author's own list: a key in a `pre` that differs only as a label may; a
+  `text-transform`; `attr()` anywhere on a page making every generated string
+  unsupported; a disclosure's summary; what counts as text outside the
+  structure; a shadow tree anywhere stopping the reading; labels that match no
+  stored key, counted and compared with the keys that have none;
+- departures the list does not name: a `br` adds a line break without the hiding
+  rules being applied to the `br` itself; hidden text beside a structure makes it
+  unsupported, where the settlement has hidden characters absent from what is
+  read; a `colgroup` is passed over unread; a string a style sheet writes is not
+  decoded by every rule CSS has for one;
+- of the shadow tree it says more than "not settled": the stop "can suppress a
+  proved comparison failure in an ordinary `pre`", giving `UNASSESSABLE` where
+  the rules require `FAIL`.
+
+Display, fourteen places:
+
+- seven are about the evidence and not about a branch: a grapheme cluster is not
+  a glyph; a glyph given another colour is not its own ink, alpha or stroke; a
+  difference of eight-bit colours is not an exact measure of ink or of alpha; the
+  render with covers off changes more than what covers; the margin in which ink
+  is looked for is not proved to hold it; two pictures are not proved to differ
+  in the glyphs' colour alone; a movement within 1/128 px is taken as whole,
+  where rule 3 allows no tolerance;
+- seven are about statuses: where no route reads a page the test returns at
+  once and looks for no failure, though the settlement allows one that is
+  "independently attributable"; a glyph with no ink while clipped fails without
+  its ink being set side by side; where a glyph lies is taken from its box and
+  not its ink; the far edges have a pixel's leave the rules do not give; ink cut
+  by another clip while out of view in a scroll region is `UNASSESSABLE` here and
+  `FAIL` by rule 4; a glyph covered whole in a scroll region has no failing
+  branch; text shared by several stored paths is reported for one of them.
+
+**One finding reverses a change made on the way.** Ink cut by another clip while
+out of view in a scroll region failed at first. One of the two readers who read
+the code before the acceptance pages were read held that the rules do not say
+at which scroll position "all other clips still apply", and it was made
+`UNASSESSABLE`. The reviewer has it fail. A reader of the author's family read
+the rule one way and the rules' own writer reads it the other; the entry above
+recorded the change as a repair.
+
+**What the refusals come to, as the plan stands.** A refused test is treated as
+a rule that cannot be defined: every page is unassessable on it. With content
+and display both refused, every builder fails both in the primary analysis and
+is unknown on both in the secondary, so every pair has no direction in both,
+whatever the pages are. No construct gives a vote. **As it stands the instrument
+would decide nothing, and that is known before any arm is run.**
+
+**What the author can and cannot say about the findings.** The author is not
+blind, wrote the code, and is not the one to weigh a refusal of it. Three things
+are fact and not weighing:
+
+1. The acceptance pages did not find these. 86 of 88 runs agreed, and on the
+   other two the reviewer withdrew its own expectation. Everything the reviewer
+   refuses over it found by reading the code. So pages written by the reviewer
+   were a weaker test of the code than the reviewer reading it, by a wide margin,
+   and the plan had them as the main one.
+2. Some findings say the package does not establish a thing which a file not
+   sent would have shown or denied: that the measuring script stops motion
+   before any picture is taken; how the page-wide `attr()` flag is found and why
+   (the browser gives back the text and not the form); which elements the
+   collector walks. The reviewer said so itself: "findings about the omitted
+   extraction and pixel-reading implementations cannot be established from this
+   package". Whether any finding would fall with those files is not known.
+3. The seven findings about evidence are not mended by changing a branch. Rule 2
+   says "use the browser's text paint operations and paint order from the
+   captured render", and allows `UNASSESSABLE` where "the harness cannot obtain
+   sufficient paint information". This code takes pictures and compares them.
+   The entry above said so, and so did the request. A display test the reviewer
+   would approve either reads the browser's own record of what it painted, which
+   nothing here does, or says `UNASSESSABLE` wherever a picture proves nothing,
+   which by these findings is nearly everywhere.
+
+**The owner's answer, 2026-10-06: "Ask what is approvable".** One further send,
+no code changed: row 8 of the stage's log, 54,156 bytes, with consent to that
+text. It held the reviewer's three rule replies, its two refusals, and the list
+of twenty-seven places, which it had not seen. It was asked for the rule at each
+finding and each place, which evidence for display it could approve, and what it
+would need to be sent.
+
+**What the reviewer answered.** Kept as it came, 18,388 bytes, SHA-256
+`1fc01491…2a2c`, and in Dion under `validity/approval/`. It opens: "These are
+implementation rules for a rebuild, not approval of the unseen code." Its last
+lines:
+
+> content: CAN BE APPROVED IF the rebuild implements these settled extraction,
+> comparison, precedence and reporting rules and supplies the complete collector
+> and dependency evidence for review.
+>
+> display: CAN BE APPROVED IF every categorical verdict has sufficient attributed
+> rendering evidence under these rules, unresolved checks abstain, and
+> independently proved failures retain precedence.
+
+- **It is a fourth reply of rules, and it amends the first three.** A key in a
+  `pre` is compared exactly, and another spelling fails. In the grammar a label
+  that matches no stored key is unresolved, "a new conservative amendment":
+  never an invented member, never proof that a member is absent, and nothing is
+  inferred from how many there are. A `text-transform` that changes what is
+  shown, or cannot be shown to leave it alone, is `UNASSESSABLE` for labels and
+  generated text as for values. A shadow tree stops nothing elsewhere on a page.
+  What is published for an occurrence grows: every container, every unresolved
+  claim, node identities with character ranges, exact decimals.
+- **Of the twenty-seven places:** ten as done (4, 7, 8, 10, 11, 13, 18, 19, 20,
+  23); ten otherwise (5, 6, 14, 15, 16, 21, 24, 25, 26, 27); seven settled by
+  its rules for the findings, none of them as done (1, 2, 3, 9, 12, 17, 22).
+- **Display evidence.** Pictures compared "can be approved only as a restricted,
+  abstaining method": an ink-based `PASS` or `FAIL` needs guarantees held apart
+  from the pictures (the glyphs the browser shaped, their whole ink, alpha kept,
+  exact registration, proof that rounding to eight bits hides nothing), and
+  "aggregate `PASS` requires every required check to be established". The
+  browser's own paint record "is a potentially approvable basis, but the
+  description alone is insufficient"; it would have to give shaped glyphs, exact
+  alpha, the order across layers and text that was clipped or culled, and "this
+  package does not establish whether the intended browser can supply that
+  trace". No display test at all "is acceptable as a decision not to assess
+  display" and "must be labelled as an unperformed assessment, not a successful
+  fidelity gate".
+- **What an approval would need.** The rules as one text; every file a verdict
+  depends on, the collector and the capture among them; the browser's exact
+  build; lockfiles; raw evidence behind example verdicts. "Parts read
+  independently with no memory of the others do not suffice for whole-system
+  approval": component packages, then one integration package that stands by
+  itself.
+
+**What that comes to. The first two are consequences; the third is the author's
+estimate, and the author is not blind.**
+
+1. With pictures as the evidence, the display test can fail a page (a member
+   absent, text hidden) or abstain, and cannot pass one: nothing here holds the
+   guarantees a pass from ink needs. By the pair decision as registered a pair is
+   decided for a builder only when that builder passes. So a rebuild on pictures
+   leaves every pair without a direction, as now.
+2. Leaving display out is open, and the reviewer says how it must be labelled.
+   A pair would then be decided on content alone. That changes the registered
+   decision, which counts content and display, and is not this plan's to make.
+3. Size. Content: the rules are now given and can be written to; it is most of
+   the reading and comparing code again, its cells and mutants, new acceptance
+   pages, and an approval in several packages where this one took two. Display
+   to a pass: first a trial of whether this browser gives the trace at all,
+   which may end in "it does not"; if it does, a test built on it from nothing.
+   The author cannot put a number of days on the second and will not guess.
+
+**Not done, and waiting on the owner:** every word of the author's a judge reads
+and the three questions about the judging package have gone to nobody; the four
+pre-run checks; Revision 6.
