@@ -2317,7 +2317,7 @@ seen); and that the braces and commas of a `pre` are not "required" for display.
    The display test does the same before it reads where any glyph lies. This
    reopens stage 5's capture, which the entry above had closed.
 4. Found by asking the tests about the data file of stage 2 itself, shown as a
-   `pre`: it passes all three at both widths, about 4,500 glyphs in about three
+   `pre`: it passes all three at both widths, 4,230 glyphs in three to five
    seconds a test. Item 3 was found by this; before the fix the display test did
    not run on it at 375.
 
