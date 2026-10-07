@@ -42,6 +42,73 @@ python3 "$P/trial.py" --shadow-log ~/.claude/.sticky-repeat-shadow.d --since <tr
 It compares, per arm, whether code review and verification were still invoked, whether they
 were invoked before the first push attempt, and how often that attempt was denied.
 
+## Runbook: the order to do things in
+
+Nothing here can be hurried. Rows come only from prompts the owner typed, in sessions that
+started after the freeze, on a build whose hook writes `rule_version` 3. Headless or scripted
+prompts are not typed prompts and are never rows.
+
+```bash
+P=tests/probes/routing-precision
+LOG=~/.claude/.sticky-repeat-shadow.d
+FREEZE="$(git log -1 --format=%cI -- docs/plans/2026-10-05-routing-precision-prereg.md)"
+```
+
+**0. Is the instrument live?** The installed plugin's hook must write version 3:
+`grep -o '"rule_version":[0-9]*' <installed plugin>/hooks/skill-activation-hook.sh`. An
+older build writes records the readers refuse. `$LOG` appears with the first mandated block
+of a new session.
+
+**1. Is collection closed?** Stage A is scored once, so check before doing anything else:
+
+```bash
+python3 "$P/rows.py" --shadow-log "$LOG" --since "$FREEZE" --count-only
+```
+
+The last line says `collection: OPEN` or `collection: CLOSED`. It writes nothing and reads no
+label. While it says OPEN, stop here: do not build rows for labelling, do not label, do not
+score. It closes at 60 rows the rule would hide, or on 2026-11-16.
+
+**2. Build the rows**, into a private directory outside any repository:
+
+```bash
+T="$(mktemp -d)"
+python3 "$P/rows.py" --shadow-log "$LOG" --since "$FREEZE" --rows "$T/rows.jsonl" --key "$T/key.jsonl"
+```
+
+**3. Two blind labellers.** Each gets `rows.jsonl` and `rubric.md` and nothing else, in its
+own context, and writes one line per row, `{"row_id": "...", "label": "..."}`, to `a.jsonl`
+and `b.jsonl`. Neither sees `key.jsonl`, the other's labels, the pre-registration or this
+file's account of the hypothesis.
+
+**4. The owner's twenty**, drawn by a script so nobody chooses them:
+
+```bash
+python3 "$P/owner_sample.py" --rows "$T/rows.jsonl" --labels "$T/a.jsonl" --labels "$T/b.jsonl" --out "$T/owner-rows.jsonl"
+```
+
+The owner labels `owner-rows.jsonl` the same way, into `owner.jsonl`, without seeing the
+labellers' answers.
+
+**5. Score, once.**
+
+```bash
+python3 "$P/score.py" --key "$T/key.jsonl" --labels "$T/a.jsonl" --labels "$T/b.jsonl" --owner "$T/owner.jsonl"
+```
+
+Record the whole output on the issue. `STOP` or `INCONCLUSIVE` ends here: the rule stays in
+shadow or is removed. `PASS` goes to stage B and is not a licence to suppress.
+
+**6. Stage B**, only after a PASS. The owner sets `ACS_STICKY_REPEAT=trial` in the environment
+Claude Code starts with and notes the time as the trial start. It closes at 20 obligations in
+each arm or six weeks later. Then:
+
+```bash
+python3 "$P/trial.py" --shadow-log "$LOG" --since <trial start>
+```
+
+Whatever it reads, making suppression the default is the owner's decision.
+
 ## What these cannot tell you
 
 - One owner's sessions. The owner knows the hypothesis.
