@@ -22,7 +22,8 @@ paths:
 # Routing, session tokens and composition state
 
 Path-scoped rule, split out of the repo-root `CLAUDE.md` Gotchas section so it
-loads only when you touch the files it governs. Every bullet is verbatim.
+loads only when you touch the files it governs. Every bullet is verbatim,
+except the keyword-path bullet, which was written here (2026-10-08).
 
 - Concurrent sessions share `~/.claude/` — session-token scoping prevents counter races.
 
@@ -34,3 +35,4 @@ loads only when you touch the files it governs. Every bullet is verbatim.
 
 - `max_iterations` is role-gated: the cap in `config/default-triggers.json` is only honored for skills with `role: domain` or `role: required`. Process and workflow skills (e.g., `verification-before-completion`, `openspec-ship`, `finishing-a-development-branch`, `requesting-code-review`) are NEVER capped — this is a hardcoded invariant in `hooks/skill-activation-hook.sh::_score_skills`, not config-driven. Protects SDLC phase gates from accidental misconfiguration. Push-gate (`hooks/openspec-guard.sh`) is independent of this mechanism. Regression: `tests/test-routing.sh::test_max_iterations_role_allowlist`.
 
+- **A keyword is a second way in, and a trigger's constraints do not apply to it (#310).** `hooks/skill-activation-hook.sh::_score_skills` admits a skill on a trigger match OR on a plain substring match against its `keywords` in `config/default-triggers.json` (+20 each). The keyword path has no word boundary, skips a keyword under 6 characters, and compares the keyword as written against a lowercased prompt, so a keyword holding a capital never fires. Narrowing a trigger therefore narrows nothing while a keyword still matches: PR #309's `prototype-lab` fix landed 1 of 6 until the `side by side` keyword was deleted too, with the suite green. `scripts/keyword-path-audit.sh` measures every keyword through the real hook (`covered` / `keyword-only` / `inert`) and runs each keyword-carrying skill's fixture lines through it; `tests/fixtures/keyword-path/decisions.tsv` must hold a row for every keyword that is not `covered`, so a trigger narrowed past a keyword fails until someone decides. Limit: classes are measured on the bare keyword, so a keyword inside a longer word shows only where a fixture has such a line (how `mine improvements` inside "determine improvements" was found); and every probe uses a one-skill registry, so it sees admission, not what a keyword's 20 points do to ranking. Regression: `tests/test-keyword-path-audit.sh`.
