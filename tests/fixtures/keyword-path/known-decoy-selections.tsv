@@ -2,10 +2,12 @@
 #
 # tests/test-regex-fixtures.sh checks a NO_MATCH line against the trigger regex only.
 # scripts/keyword-path-audit.sh runs it through the real hook with the skill's shipped
-# entry, where the keyword path can still admit it. Each row below is a live defect that
+# entry, where the keyword path can still admit it. A row here is a live defect that
 # is known and not yet fixed. A new one fails the audit; so does a row whose prompt is
 # no longer selected, so a fix has to remove its row in the same commit.
 #
 # Three tab-separated fields:  skill  prompt (the fixture line, verbatim)  reason
-authorial-judgment	make this error message less generic so users understand what went wrong	the keyword "less generic" admits it; the trigger requires a piece of writing before that phrase
-improvement-miner	determine improvements to the onboarding flow	the keyword "mine improvements" matches inside "determine improvements"; the trigger has a left boundary to exclude exactly that, and the fixture's own comment says so
+#
+# No rows. The two found on 2026-10-08 (authorial-judgment through "less generic",
+# improvement-miner through "mine improvements" inside "determine improvements") were
+# fixed by deleting those keywords.
