@@ -1,0 +1,74 @@
+# Decisions on what the routing hook's keyword path admits (#310).
+#
+# Read by scripts/keyword-path-audit.sh, which measures every keyword in
+# config/default-triggers.json through the real hook and fails when this file and the
+# measurement disagree, in either direction. Regenerate the measurement with
+#   bash scripts/keyword-path-audit.sh < /dev/null
+#
+# One row for every keyword measured `keyword-only` or `inert`. A `covered` keyword has
+# no row. Five tab-separated fields:
+#   skill  keyword  class  decision  reason
+#
+# class     keyword-only  the keyword admits the skill and no trigger does
+#           inert         the keyword cannot fire: the hook skips a keyword under 6
+#                         characters, and compares it as written against a lowercased
+#                         prompt, so one holding a capital never matches
+# decision  recall  wanted: the same request as a trigger, in wording a trigger lacks
+#           gap     defeats a constraint a trigger or a fixture encodes; to be narrowed
+#           open    could be either; the owner's call. Every inert row is open: delete
+#                   it, or make it fire
+#
+# One kind of keyword gets no class and so no row: one the hook does not score when it is
+# the whole prompt (a greeting with a word or two after it, a leading slash) but which
+# fires inside a longer one. The audit exits 3 on it; it has to be reworded or removed.
+#
+# The decision column records a judgement. Nothing checks it except that it is one of the
+# three words; what is checked is that a row exists and its class is still true.
+#
+# Field evidence, 2026-10-08, one owner: 598 distinct typed prompts from transcripts that
+# label a prompt's origin (2026-09-05 to 2026-10-07). 9 contained any keyword. Removing
+# every keyword changed the selection on 2, both through `health check`: on one the
+# keyword alone selected incident-analysis, on the other its 20 points decided which
+# domain skill was kept. No other row below has a field observation for or against it.
+systematic-debugging	something is off	keyword-only	recall	symptom wording; the trigger is a flat word list and encodes no constraint this goes around
+systematic-debugging	not right	keyword-only	open	symptom wording, but it also sits inside "not right now"; a match is a process mandate
+systematic-debugging	doesn't make sense	keyword-only	recall	symptom wording; the trigger is a flat word list and encodes no constraint this goes around
+systematic-debugging	confused by	keyword-only	recall	symptom wording; the trigger is a flat word list and encodes no constraint this goes around
+systematic-debugging	stuck	inert	open	5 characters. Two typed prompts in the census ("is this stuck? ...") contained it and it did nothing
+brainstorming	best way to	keyword-only	recall	a question form the verb list lacks; no trigger constraint is bypassed. Whether a question should mandate a process skill is #333, not this file
+brainstorming	ideas for	keyword-only	recall	a question form the verb list lacks; no trigger constraint is bypassed. See the row above
+brainstorming	options for	keyword-only	recall	a question form the verb list lacks; no trigger constraint is bypassed. See the row above
+product-discovery	problem statement	keyword-only	recall	discovery vocabulary no trigger carries
+product-discovery	user needs	keyword-only	recall	discovery vocabulary no trigger carries
+incident-analysis	graceful shutdown	keyword-only	recall	the two words of the trigger's shutdown.*grace, in the order people write them
+incident-analysis	health check	keyword-only	gap	no trigger names a health check. The one field selection it caused was on a prompt describing another system's features, with no incident in it
+incident-analysis	ImagePullBackOff	inert	open	capitals. The trigger admits the lowercased phrase, so only the keyword's 20 points are lost
+incident-analysis	CreateContainerConfigError	inert	open	capitals. The trigger admits the lowercased phrase, so only the keyword's 20 points are lost
+incident-analysis	missing ConfigMap	inert	open	capitals, and no trigger admits the phrase: made to fire, it would be keyword-only
+incident-analysis	missing Secret	inert	open	capitals, and no trigger admits the phrase: made to fire, it would be keyword-only
+incident-analysis	FailedMount	inert	open	capitals. The trigger admits the lowercased phrase, so only the keyword's 20 points are lost
+incident-analysis	SLO burn rate	inert	open	capitals. The trigger admits the lowercased phrase, so only the keyword's 20 points are lost
+outcome-review	check metrics	keyword-only	open	generic: any request to look at a number. A match is a LEARN process mandate
+outcome-review	what did we learn	keyword-only	recall	the LEARN question itself; improvement-miner's fixture uses it as a decoy on its boundary with this skill
+outcome-review	learn from this	keyword-only	open	generic: fits a failed test as well as a shipped feature. A match is a LEARN process mandate
+outcome-review	review the results	keyword-only	open	generic: fits a test run or a query. A match is a LEARN process mandate
+outcome-review	metric results	keyword-only	open	generic. A match is a LEARN process mandate
+alert-hygiene	flapping alerts	keyword-only	recall	the trigger wants "alert" before the verb; this is the same pair in the order people write it
+alert-hygiene	tune alerts	keyword-only	recall	the trigger wants "alert" before the verb; this is the same pair in the order people write it
+alert-hygiene	suppress alerts	keyword-only	recall	the trigger wants "alert" before the verb; this is the same pair in the order people write it
+alert-hygiene	threshold tuning	keyword-only	recall	the trigger has threshold.*tune, which the -ing form does not match
+alert-hygiene	SLO alerting	inert	open	capitals. The trigger admits the lowercased phrase, so only the keyword's 20 points are lost
+skill-scaffold	create skill	keyword-only	recall	the same request as the trigger's new.?skill
+agent-safety-review	lethal trifecta	keyword-only	recall	the skill's own term; no trigger carries it
+agent-safety-review	YOLO mode	inert	open	capitals. The trigger admits the lowercased phrase, so only the keyword's 20 points are lost
+supply-chain-investigation	supply chain attack	keyword-only	recall	attack wording on its own; every trigger wants a second term with it (a package noun, an ecosystem, or "are we affected"), and the skill is described as triggering on attack language
+supply-chain-investigation	dependency compromise	keyword-only	recall	the reverse order of the trigger's compromised.*dependency
+supply-chain-investigation	typosquat	keyword-only	recall	the bare word; every trigger wants a second term with it. (#310's example "our dependency was typosquatted" is admitted by the fifth trigger without this keyword; the issue read only the first)
+authorial-judgment	blog post	keyword-only	gap	every trigger requires a writing verb or a topic marker around it; alone it admits any prompt about a blog feature. No field observation
+authorial-judgment	newsletter	keyword-only	gap	every trigger requires a writing verb or a topic marker around it; alone it admits any prompt about a newsletter feature. No field observation
+authorial-judgment	less generic	keyword-only	gap	the trigger requires a piece of writing before it; this selects a NO_MATCH line of the skill's own fixture (known-decoy-selections.tsv)
+authorial-judgment	more human	keyword-only	gap	the same trigger alternative as "less generic", and the same way around it. No fixture line and no field observation
+authorial-judgment	authorial voice	keyword-only	recall	the skill's own term; no trigger carries it
+authorial-judgment	essay	inert	open	5 characters, and no trigger admits the bare word: made to fire, it would be keyword-only
+authorial-judgment	op-ed	inert	open	5 characters, and no trigger admits the bare word: made to fire, it would be keyword-only
+authorial-judgment	sounds like AI	inert	open	capitals. The trigger admits the lowercased phrase, so only the keyword's 20 points are lost

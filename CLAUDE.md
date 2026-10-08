@@ -12,6 +12,7 @@ Claude Code plugin for automatic skill routing based on prompt intent and SDLC p
 | `bash tests/test-routing.sh < /dev/null` | Test skill routing engine |
 | `bash tests/test-registry.sh < /dev/null` | Test registry building and merging |
 | `bash tests/test-context.sh < /dev/null` | Test context formatting and phase composition |
+| `bash scripts/keyword-path-audit.sh < /dev/null` | Measure what the routing hook's keyword path admits, against the recorded decisions (0 agrees, 1 findings, 3 cannot-check; #310) |
 | `bash -n hooks/<name>.sh` | Syntax-check a hook (no execution) |
 | `SKILL_EXPLAIN=1 bash hooks/skill-activation-hook.sh < /dev/null` | Debug routing with explanation output |
 
@@ -19,7 +20,7 @@ Claude Code plugin for automatic skill routing based on prompt intent and SDLC p
 
 - **Two main hooks**: `session-start-hook.sh` builds the skill registry at session start; `skill-activation-hook.sh` scores and routes on every prompt.
 - **Registry**: Cached at `~/.claude/.skill-registry-cache.json`. Merged from `config/default-triggers.json` + plugin discoveries + `~/.claude/skill-config.json` overrides.
-- **Scoring**: Regex trigger match → base score + priority + name bonus + composition bonus → role-cap selection (max 1 process, 2 domain, 1 workflow).
+- **Scoring**: Regex trigger match, or a keyword substring match on its own → base score + priority + name bonus + composition bonus → role-cap selection (max 1 process, 2 domain, 1 workflow).
 - **Output**: JSON via `hookSpecificOutput` on stdout. Hooks fail-open (exit 0 on error).
 
 ## Skill-creation flow

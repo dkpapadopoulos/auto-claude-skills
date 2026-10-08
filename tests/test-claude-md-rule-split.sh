@@ -323,7 +323,7 @@ assert_equals "no bullet appears in two places" "0" "${_dupes}"
 _LINE_TARGET=200                 # docs: "target under 200 lines per CLAUDE.md file"
 _HARD_SKIP=4194304               # docs: loads "up to 4 MiB in full", skips a LARGER file
 _COMBINED_REAL_LIMIT=150000      # the product's warning threshold (total, all files)
-_COMBINED_BASELINE=172241  # RATCHET: today's exact total. Not a ceiling. Raised 171781 -> 172241 (+460) with the progress-truth fix: routing-state.md now states that composition state has two lists and which hook may write each, which is the rule anyone editing that state needs.
+_COMBINED_BASELINE=173886  # RATCHET: today's exact total. Not a ceiling. Raised 172241 -> 173886 (+1645) with #310: routing-state.md now says a keyword admits a skill independently of its triggers, names the audit that measures it and says what the audit cannot see (+1420), and CLAUDE.md gains that audit's Commands row and a clause in the scoring line (+225). The rule is path-scoped, so only the 225 are paid at session start.
 _PERFILE_ADVISORY_BYTES=40000    # #22364 states 40.0k CHARS; compared in bytes, so
                                  # approximate by ~0.6% here. Reported, never asserted.
 
