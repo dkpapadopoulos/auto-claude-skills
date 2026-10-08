@@ -7,8 +7,9 @@
 #       taken here by other means (so a run that measured nothing cannot read as clean)
 #   B*  what #310 is about, each as a pair with the unchanged tree: a keyword re-added
 #       beside a narrowed trigger (the prototype-lab history of PR #309), a trigger
-#       narrowed until a keyword is left admitting alone, a keyword that cannot fire, a
-#       decoy the keyword path selects, and a fix that leaves its ledger row behind
+#       narrowed until a keyword is left admitting alone, a keyword that cannot fire, the
+#       two keywords that selected a decoy of their own skill's fixture until they were
+#       deleted, and a known-decoy row that is not true
 #   C*  a ledger that has drifted from the measurement, one finding per injected fault
 #   D*  cannot-check is its own outcome, never 0 or 1: a hook that selects nothing or
 #       everything, a skill with no fixture or no MATCH line the hook selects, a keyword
@@ -175,37 +176,60 @@ assert_contains "B3 a short greeting word is reported inert, not refused" \
     "FINDING${TAB}unrecorded${TAB}deploy-gate${TAB}hello${TAB}measured inert" "${OUT}"
 assert_equals "B2/B3 five faults, five findings" "5" "$(_findings)"
 
-# B4. A decoy the keyword path selects is a finding unless it is listed as known ...
+# B4. A keyword that selects a NO_MATCH line of its skill's own fixture. "less generic"
+# shipped that way: the trigger had been tightened to require a piece of writing, the
+# skill's eval notes recorded the false positive as fixed, and the keyword went on
+# selecting it. Put the keyword back and the audit has to report both halves.
 _decoy="make this error message less generic so users understand what went wrong"
-_m="${TEST_TMPDIR}/b4-known.tsv"
-awk -F'\t' '!($1 == "authorial-judgment")' "${KNOWN}" > "${_m}"
-_changed "B4 the known row was removed from the copy" "${KNOWN}" "${_m}"
-_audit --skill authorial-judgment --known "${_m}"
+assert_not_contains "B4 precondition: authorial-judgment ships no \"less generic\" keyword" \
+    "ROW${TAB}authorial-judgment${TAB}less generic${TAB}" "${OUT_FULL}"
+_m="${TEST_TMPDIR}/b4.json"
+jq '(.skills[] | select(.name == "authorial-judgment") | .keywords) += ["less generic"]' "${CONFIG}" > "${_m}"
+_changed "B4 the keyword was added to the copy" "${CONFIG}" "${_m}"
+_audit --skill authorial-judgment --config "${_m}"
 assert_equals "B4 the audit fails" "1" "${RC}"
 assert_contains "B4 the selected decoy is reported, with the path that selected it" \
     "FINDING${TAB}decoy-selected${TAB}authorial-judgment${TAB}${_decoy}${TAB}a NO_MATCH line of its own fixture is selected (via keywords)" "${OUT}"
-assert_equals "B4 one fault, one finding" "1" "$(_findings)"
-# B5. ... and once the keyword is gone, both ledgers must give their rows back.
+assert_contains "B4 and the keyword is reported as admitting on its own, undecided" \
+    "FINDING${TAB}unrecorded${TAB}authorial-judgment${TAB}less generic${TAB}measured keyword-only" "${OUT}"
+assert_equals "B4 one fault, two findings" "2" "$(_findings)"
+
+# B5. The same through a missing word boundary. "mine improvements" measured alone is
+# covered, so the class check has nothing to say about it. Only the fixture line shows
+# that it matches inside "determine improvements", which the trigger's left boundary
+# exists to exclude.
+assert_not_contains "B5 precondition: improvement-miner ships no \"mine improvements\" keyword" \
+    "ROW${TAB}improvement-miner${TAB}mine improvements${TAB}" "${OUT_FULL}"
 _m="${TEST_TMPDIR}/b5.json"
-jq '(.skills[] | select(.name == "authorial-judgment") | .keywords) -= ["less generic"]' "${CONFIG}" > "${_m}"
-_changed "B5 the keyword was removed from the copy" "${CONFIG}" "${_m}"
+jq '(.skills[] | select(.name == "improvement-miner") | .keywords) += ["mine improvements"]' "${CONFIG}" > "${_m}"
+_changed "B5 the keyword was added to the copy" "${CONFIG}" "${_m}"
+_audit --skill improvement-miner --config "${_m}"
+assert_equals "B5 the audit fails" "1" "${RC}"
+assert_contains "B5 measured alone, the keyword is covered" \
+    "ROW${TAB}improvement-miner${TAB}mine improvements${TAB}covered" "${OUT}"
+assert_contains "B5 and the decoy it selects inside a longer word is still reported" \
+    "FINDING${TAB}decoy-selected${TAB}improvement-miner${TAB}determine improvements to the onboarding flow${TAB}a NO_MATCH line of its own fixture is selected (via keywords)" "${OUT}"
+assert_equals "B5 one fault, one finding" "1" "$(_findings)"
+
+# B5b. A known row has to be true: a line that is not selected, a line no fixture holds
+# and a row with a field missing are each reported.
 _k="${TEST_TMPDIR}/b5-known.tsv"
 {
     cat "${KNOWN}"
+    printf 'authorial-judgment\t%s\tinjected: this line is not selected\n' "${_decoy}"
     printf 'authorial-judgment\tinjected: no fixture has this line\tinjected\n'
     printf 'authorial-judgment\tinjected: a row with a field missing\n'
 } > "${_k}"
-_audit --skill authorial-judgment --config "${_m}" --known "${_k}"
-assert_equals "B5 the audit fails" "1" "${RC}"
-assert_contains "B5 the decoy is no longer selected, and its known row is reported stale" \
+_changed "B5b the known copy differs" "${KNOWN}" "${_k}"
+_audit --skill authorial-judgment --known "${_k}"
+assert_equals "B5b the audit fails" "1" "${RC}"
+assert_contains "B5b a known row for a line that is not selected is reported stale" \
     "FINDING${TAB}known-stale${TAB}authorial-judgment${TAB}${_decoy}${TAB}no longer selected" "${OUT}"
-assert_contains "B5 and so is the decision row for a keyword that no longer exists" \
-    "FINDING${TAB}ledger-stale${TAB}authorial-judgment${TAB}less generic${TAB}no such keyword in the config" "${OUT}"
-assert_contains "B5 a known row for a line no fixture holds is reported stale" \
+assert_contains "B5b a known row for a line no fixture holds is reported stale" \
     "FINDING${TAB}known-stale${TAB}authorial-judgment${TAB}injected: no fixture has this line${TAB}no such NO_MATCH line in the fixture" "${OUT}"
-assert_contains "B5 a known row with a field missing is reported" \
+assert_contains "B5b a known row with a field missing is reported" \
     "FINDING${TAB}known-malformed${TAB}-${TAB}-${TAB}" "${OUT}"
-assert_equals "B5 one fix and two injected rows, four findings" "4" "$(_findings)"
+assert_equals "B5b three injected rows, three findings" "3" "$(_findings)"
 
 # B6. A decoy selected for another reason is not laid at the keyword path's door.
 _fx="${TEST_TMPDIR}/b6-fixtures"; mkdir -p "${_fx}"

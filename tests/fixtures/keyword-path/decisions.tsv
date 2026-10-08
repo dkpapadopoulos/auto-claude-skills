@@ -66,8 +66,7 @@ supply-chain-investigation	dependency compromise	keyword-only	recall	the reverse
 supply-chain-investigation	typosquat	keyword-only	recall	the bare word; every trigger wants a second term with it. (#310's example "our dependency was typosquatted" is admitted by the fifth trigger without this keyword; the issue read only the first)
 authorial-judgment	blog post	keyword-only	gap	every trigger requires a writing verb or a topic marker around it; alone it admits any prompt about a blog feature. No field observation
 authorial-judgment	newsletter	keyword-only	gap	every trigger requires a writing verb or a topic marker around it; alone it admits any prompt about a newsletter feature. No field observation
-authorial-judgment	less generic	keyword-only	gap	the trigger requires a piece of writing before it; this selects a NO_MATCH line of the skill's own fixture (known-decoy-selections.tsv)
-authorial-judgment	more human	keyword-only	gap	the same trigger alternative as "less generic", and the same way around it. No fixture line and no field observation
+authorial-judgment	more human	keyword-only	gap	the trigger requires a piece of writing before it, as it did for "less generic", a keyword removed for selecting a fixture decoy. No fixture line and no field observation
 authorial-judgment	authorial voice	keyword-only	recall	the skill's own term; no trigger carries it
 authorial-judgment	essay	inert	open	5 characters, and no trigger admits the bare word: made to fire, it would be keyword-only
 authorial-judgment	op-ed	inert	open	5 characters, and no trigger admits the bare word: made to fire, it would be keyword-only

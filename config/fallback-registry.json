@@ -719,7 +719,6 @@
         "(improvement.miner|improvement.mining|(^|[^a-z])mine (the repo for|for) (improvement|evidence)|(^|[^a-z])mine improvements|what.{0,15}(should|could|can) we improve|what.{0,6}(is|s) worth (fixing|improving)|improvement (proposals|opportunit)|(sweep|scan|comb).{0,25}(repo|repository|codebase|backlog).{0,25}improvement)"
       ],
       "keywords": [
-        "mine improvements",
         "improvement miner",
         "run the improvement miner",
         "improvement mining",
@@ -931,7 +930,6 @@
         "op-ed",
         "newsletter",
         "sounds like AI",
-        "less generic",
         "more human",
         "authorial voice"
       ],
