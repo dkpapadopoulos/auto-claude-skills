@@ -158,7 +158,13 @@ echo "=== test-injection-budget.sh ==="
 # There is no "correct" value to assert instead. Nothing documents a budget for
 # hook output, and the native warning does not measure it, so the honest gate is
 # "this does not grow without someone saying so".
-_INJECTION_BASELINE=24855
+#
+# 24855 -> 24988 (2026-10-12): NOT a growth. 24855 was measured on a DIRTY
+# tree (the hook's PHASE REALITY line was absent); 24988 is the same hook on a
+# clean tree at the same commit. The git fixture below pins the clean state,
+# so the line is always rendered and its 133 bytes are in the baseline. The
+# per-shape bytes are 999 / 6683 / 7045 / 3794 / 4637 / 1830.
+_INJECTION_BASELINE=24988
 _MIN_SHAPES=6
 
 setup_test_env
@@ -170,6 +176,27 @@ if ! jq '.skills |= map(.available = true | .enabled = true)
          | .plugins |= (map(.available = true) // [])' \
        "${PROJECT_ROOT}/config/fallback-registry.json" > "${_REG}" 2>/dev/null; then
     _record_fail "registry build" "could not derive a test registry from config/fallback-registry.json"
+fi
+
+# --- deterministic git state (failure 12) -----------------------------------
+# The hook's PHASE REALITY rule B runs `git rev-list --count origin/main..HEAD`
+# and `git status --porcelain` against SKILL_PROJECT_ROOT and renders one line
+# ("No committed work on this branch ...") only when the checkout is 0 ahead
+# AND clean. Measured 2026-10-12 at one commit: 24988 on a clean main, 24855 on
+# any dirty tree -- the author's 10-04 branch, a worktree with edits, and main
+# while the suite itself was dirtying config/fallback-registry.json. The ratchet
+# was measuring the checkout's git state, which is why its pinned value could
+# not be reproduced and why it flipped mid-day with no commit.
+#
+# GIT_DIR/GIT_WORK_TREE take precedence over `git -C <dir>` discovery, so every
+# probe hands the hook THIS fixture (one commit, origin/main == HEAD, clean).
+# The line therefore renders deterministically and its cost is in the baseline.
+# The file reads (artifact globs, config) still go to PROJECT_ROOT as before.
+_GIT_FIX="$(mktemp -d "${TMPDIR:-/tmp}/injbudget-git.XXXXXX")"
+if ! ( cd "${_GIT_FIX}" && git init -q . && printf 'x\n' > f && git add f \
+       && git -c user.name=injbudget -c user.email=injbudget@test commit -q -m fixture \
+       && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1; then
+    _record_fail "git fixture" "could not build the fixed-state git fixture under ${_GIT_FIX}"
 fi
 
 # ---------------------------------------------------------------------------
@@ -213,7 +240,8 @@ _probe() {
     # writes a fourth file, and it rots SILENTLY -- the glob cannot.
     rm -f "${HOME}/.claude/".skill-*-"${_tok}" 2>/dev/null
     _out="$(jq -n --arg p "${_p}" '{"prompt":$p}' 2>/dev/null \
-        | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${HOOK}" 2>/dev/null)"
+        | GIT_DIR="${_GIT_FIX}/.git" GIT_WORK_TREE="${_GIT_FIX}" \
+          CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${HOOK}" 2>/dev/null)"
     _rc=$?
     # Empty stdout is LEGITIMATE -- the hook stays silent when nothing routes --
     # but a CRASHED hook is also empty, and on a silent prompt the real hook
@@ -312,7 +340,8 @@ _probe_text() {
     # writes a fourth file, and it rots SILENTLY -- the glob cannot.
     rm -f "${HOME}/.claude/".skill-*-"${_tok}" 2>/dev/null
     _out="$(jq -n --arg p "${_p}" '{"prompt":$p}' 2>/dev/null \
-        | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${HOOK}" 2>/dev/null)"
+        | GIT_DIR="${_GIT_FIX}/.git" GIT_WORK_TREE="${_GIT_FIX}" \
+          CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${HOOK}" 2>/dev/null)"
     _rc=$?
     [ "$(_classify "${_out}" "${_rc}")" = "MEASURE" ] || { [ -n "${_out}" ] || [ "${_rc}" -eq 0 ]; return; }
     _ctx="$(printf '%s' "${_out}" | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null)" || return 1
@@ -428,7 +457,8 @@ _probe_nowipe() {
     printf '%s' "${_tok}" > "${HOME}/.claude/.skill-session-token" 2>/dev/null || {
         printf 'UNMEASURABLE'; return; }
     _out="$(jq -n --arg p "${_p}" '{"prompt":$p}' 2>/dev/null \
-        | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${HOOK}" 2>/dev/null)"
+        | GIT_DIR="${_GIT_FIX}/.git" GIT_WORK_TREE="${_GIT_FIX}" \
+          CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${HOOK}" 2>/dev/null)"
     _rc=$?
     _v="$(_classify "${_out}" "${_rc}")"
     if [ "${_v}" != "MEASURE" ]; then printf '%s' "${_v}"; return; fi
@@ -570,6 +600,26 @@ if [ "${_here}" = "${_there}" ] && [ "${_here}" != "UNMEASURABLE" ] && [ "${_her
     _record_pass "cwd control: injection is invariant to the process CWD (${_here} bytes from both)"
 else
     _record_fail "cwd control" "injection differs by CWD (${_here} here vs ${_there} from /) -- SKILL_PROJECT_ROOT is not pinned, so the ratchet depends on where the suite was launched"
+fi
+
+# LEG 2h — GIT-STATE CONTROL (failure 12). Proves the fixture BINDS: the hook
+# must see the fixture's git state, not the checkout's. Clean fixture renders
+# the PHASE REALITY line; a dirtied fixture must drop it. Without GIT_DIR on the
+# probes this pair is identical (the hook reads the real checkout) and the cell
+# fails -- which is how it was red before the fix.
+# ---------------------------------------------------------------------------
+_gs_clean="$(_probe_text "${_wipe_prompt}" "git-clean")"
+: > "${_GIT_FIX}/dirty-marker"
+_gs_dirty="$(_probe_text "${_wipe_prompt}" "git-dirty")"
+rm -f "${_GIT_FIX}/dirty-marker"
+_gs_needle="No committed work on this branch"
+if [ -z "${_gs_clean}" ] || [ -z "${_gs_dirty}" ]; then
+    _record_fail "git-state control" "could not render the control prompt (clean=${#_gs_clean} dirty=${#_gs_dirty} chars)"
+elif printf '%s' "${_gs_clean}" | grep -qF "${_gs_needle}" \
+     && ! printf '%s' "${_gs_dirty}" | grep -qF "${_gs_needle}"; then
+    _record_pass "git-state control: PHASE REALITY renders on the clean fixture and not on the dirtied one, so the hook reads the fixture's git state"
+else
+    _record_fail "git-state control" "clean fixture has line: $(printf '%s' "${_gs_clean}" | grep -cF "${_gs_needle}"), dirtied fixture has line: $(printf '%s' "${_gs_dirty}" | grep -cF "${_gs_needle}") -- the hook is reading the CHECKOUT's git state, so the ratchet depends on whether this tree is clean and on its distance from origin/main"
 fi
 
 # ---------------------------------------------------------------------------
