@@ -192,7 +192,10 @@ fi
 # probe hands the hook THIS fixture (one commit, origin/main == HEAD, clean).
 # The line therefore renders deterministically and its cost is in the baseline.
 # The file reads (artifact globs, config) still go to PROJECT_ROOT as before.
-_GIT_FIX="$(mktemp -d "${TMPDIR:-/tmp}/injbudget-git.XXXXXX")"
+# Lives under TEST_TMPDIR so teardown_test_env reaps it; a mktemp outside it
+# leaked one repo per run (review finding).
+_GIT_FIX="${TEST_TMPDIR}/git-fixture"
+mkdir -p "${_GIT_FIX}"
 if ! ( cd "${_GIT_FIX}" && git init -q . && printf 'x\n' > f && git add f \
        && git -c user.name=injbudget -c user.email=injbudget@test commit -q -m fixture \
        && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1; then
@@ -620,6 +623,23 @@ elif printf '%s' "${_gs_clean}" | grep -qF "${_gs_needle}" \
     _record_pass "git-state control: PHASE REALITY renders on the clean fixture and not on the dirtied one, so the hook reads the fixture's git state"
 else
     _record_fail "git-state control" "clean fixture has line: $(printf '%s' "${_gs_clean}" | grep -cF "${_gs_needle}"), dirtied fixture has line: $(printf '%s' "${_gs_dirty}" | grep -cF "${_gs_needle}") -- the hook is reading the CHECKOUT's git state, so the ratchet depends on whether this tree is clean and on its distance from origin/main"
+fi
+
+# 2h-ii — the same pair through _probe, the function the RATCHET measures with.
+# The text cell above only proves _probe_text carries the fixture; if GIT_DIR
+# were dropped from _probe alone the ratchet would drift while 2h stayed green
+# (review finding). The byte delta here must equal the text delta above.
+_gb_clean="$(_probe "${_wipe_prompt}" "git-clean-b")"
+: > "${_GIT_FIX}/dirty-marker"
+_gb_dirty="$(_probe "${_wipe_prompt}" "git-dirty-b")"
+rm -f "${_GIT_FIX}/dirty-marker"
+_gs_text_delta=$(( $(_ctx_bytes "${_gs_clean}") - $(_ctx_bytes "${_gs_dirty}") ))
+if [ "${_gb_clean}" = "UNMEASURABLE" ] || [ "${_gb_dirty}" = "UNMEASURABLE" ]; then
+    _record_fail "git-state control (bytes)" "could not measure one of the two probes"
+elif [ "${_gs_text_delta}" -gt 0 ] && [ $(( _gb_clean - _gb_dirty )) -eq "${_gs_text_delta}" ]; then
+    _record_pass "git-state control (bytes): _probe sees the fixture too (clean ${_gb_clean} - dirty ${_gb_dirty} = ${_gs_text_delta} bytes, the PHASE REALITY line)"
+else
+    _record_fail "git-state control (bytes)" "_probe measured ${_gb_clean} clean vs ${_gb_dirty} dirty (delta $(( _gb_clean - _gb_dirty ))) but the text pair differs by ${_gs_text_delta} -- the measuring path does not carry the fixture, so the ratchet still reads the checkout's git state"
 fi
 
 # ---------------------------------------------------------------------------
