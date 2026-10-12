@@ -2,17 +2,28 @@
 # compact-recovery-prompt-hook.sh — UserPromptSubmit prompt-carrier for
 # post-compaction state recovery. Added when, around Claude Code ~2.1.179,
 # AUTO compaction stopped emitting SessionStart(source=compact) (see
-# openspec/changes/compact-recovery-prompt-carrier). That premise is no longer
-# the common case: ~/.claude/.compact-events.log shows SessionStart(compact)
-# pairing with auto compactions again (measured 2026-10-12: Sep 2026 11 of
-# 11; Oct 9 of 10, and this carrier recovered the tenth at the next prompt,
-# 78 minutes later). So this hook is a BACKSTOP for the compactions the
+# openspec/changes/archive/2026-07-16-compact-recovery-prompt-carrier). That
+# premise is no longer the common case: ~/.claude/.compact-events.log shows
+# SessionStart(compact) pairing with compactions again (snapshot 2026-10-12:
+# Sep 2026 11 of 11 compactions, all auto; Oct 9 of 10 compactions, 8 auto +
+# 2 manual, and this carrier recovered the tenth at the next prompt, 78
+# minutes later). So this hook is a BACKSTOP for the compactions the
 # SessionStart path misses, roughly 1 in 20, not the primary path. PreCompact
 # arms a per-token marker; this hook re-injects state on the NEXT prompt and
 # consumes the marker. When SessionStart(compact) fires first it consumes the
-# marker — no double injection. Retirement rule: three consecutive months with
-# carrier=0 in `scripts/compaction-pairing.sh` (a carrier recovery fires only
-# when SessionStart did not, so that count is the misses); until then it stays.
+# marker — no double injection.
+#
+# Retirement rule: three consecutive months in which
+# `scripts/compaction-pairing.sh` reports carrier=0 AND exits 0 with zero
+# pending; until then this hook stays. Both halves are needed because
+# carrier= is only a LOWER BOUND on SessionStart misses: this hook exits
+# before writing its log line when the render block is empty, and consumes
+# a marker older than 24h silently (the stale-marker check), and in both cases
+# the compaction stays open in the reader, which is what the pending/unpaired
+# half catches. It can also OVERCOUNT: compact-recovery-hook.sh consumes the
+# marker only when its token resolves, so a SessionStart that fired but could
+# not resolve its token leaves the marker here and the next prompt logs a
+# "miss" that was not one.
 #
 # Fail-open: every failure exits 0 silently. Common path (no marker for
 # any session) is ONE glob test — no stdin read, no jq fork.

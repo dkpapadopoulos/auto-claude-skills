@@ -13,7 +13,7 @@ Claude Code plugin for automatic skill routing based on prompt intent and SDLC p
 | `bash tests/test-registry.sh < /dev/null` | Test registry building and merging |
 | `bash tests/test-context.sh < /dev/null` | Test context formatting and phase composition |
 | `bash scripts/keyword-path-audit.sh < /dev/null` | Measure what the routing hook's keyword path admits, against the recorded decisions (0 agrees, 1 findings, 3 cannot-check; #310) |
-| `bash scripts/compaction-pairing.sh` | Per-month compactions vs recoveries and any compaction with none (0 paired, 1 unpaired, 3 cannot-check); three months of `carrier=0` retires the prompt carrier |
+| `bash scripts/compaction-pairing.sh` | Per-month compactions vs recoveries and any compaction with none (0 paired, 1 unpaired or unrecognised line, 3 cannot-check); three consecutive months of `carrier=0` with zero pending retires the prompt carrier |
 | `bash -n hooks/<name>.sh` | Syntax-check a hook (no execution) |
 | `SKILL_EXPLAIN=1 bash hooks/skill-activation-hook.sh < /dev/null` | Debug routing with explanation output |
 
