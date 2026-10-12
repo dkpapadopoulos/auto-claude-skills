@@ -184,8 +184,15 @@ echo "=== test-injection-budget.sh ==="
 # condition plus the Skill(...) that owns the procedure (the procedure moved
 # into that skill), and the INTENT EXTRACTION directive was shortened (its
 # "the underlying need" clause is kept: a scenario eval pins it).
-# Per-shape bytes now 964 / 5141 / 6404 / 3153 / 4460 / 1795.
-_INJECTION_BASELINE=21917
+# Per-shape bytes then 964 / 5141 / 6404 / 3153 / 4460 / 1795.
+#
+# 21917 -> 22379 (2026-10-12, #297): a deliberate growth. The two gating
+# milestones (requesting-code-review, verification-before-completion) now say
+# on their own line that git push is denied until the Skill has been invoked
+# on this branch, while the guard would deny. +154 bytes per shape that
+# renders a chain, on the three chained shapes.
+# Per-shape bytes now 964 / 5295 / 6558 / 3153 / 4614 / 1795.
+_INJECTION_BASELINE=22379
 _MIN_SHAPES=6
 
 setup_test_env
