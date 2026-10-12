@@ -29,16 +29,22 @@ _HINT_MAX=480
 # totals after the cut (before: DESIGN 2581, REVIEW 1307, PLAN 1118, SHIP 895).
 # Growth fails; an unbanked reduction fails; move a constant only in the commit
 # that moves it and say why.
-_DESIGN_PIN=1459
-_REVIEW_PIN=665
+_DESIGN_PIN=1465
+_REVIEW_PIN=666
 _PLAN_PIN=750
 _SHIP_PIN=720
+# DISCOVER, DEBUG and LEARN too: no MEASURE shape in test-injection-budget.sh
+# is a DISCOVER prompt, so without a pin PERSIST DISCOVERY could regrow to the
+# ceiling unseen (review finding).
+_DISCOVER_PIN=328
+_DEBUG_PIN=436
+_LEARN_PIN=241
 
 _bytes() { ( LC_ALL=C LANG=C; printf '%s' "${#1}" ); }
 
 # --- 1. every hint text is under the ceiling and names a Skill ---------------
 _n=0; _over=0; _noskill=0; _report=""
-while IFS=$'\x1f' read -r _phase _idx _len _text; do
+while IFS=$'\x1f' read -r _phase _idx _text; do
     [ -z "${_phase}" ] && continue
     _n=$((_n + 1))
     _b="$(_bytes "${_text}")"
@@ -57,7 +63,7 @@ while IFS=$'\x1f' read -r _phase _idx _len _text; do
         esac
     fi
 done <<EOF
-$(jq -r '.phase_compositions | to_entries[] | .key as $p | (.value.hints // []) | to_entries[] | [$p, (.key|tostring), (.value.text|length|tostring), .value.text] | join("\u001f")' "${CFG}" 2>/dev/null)
+$(jq -r '.phase_compositions | to_entries[] | .key as $p | (.value.hints // []) | to_entries[] | [$p, (.key|tostring), .value.text] | join("\u001f")' "${CFG}" 2>/dev/null)
 EOF
 if [ "${_n}" -ge 20 ]; then
     _record_pass "hint floor: ${_n} phase hints read from config (>= 20)"
@@ -76,8 +82,12 @@ else
 fi
 
 # --- 2. per-phase sums --------------------------------------------------------
-_sum() { jq -r --arg p "$1" '[.phase_compositions[$p].hints[]?.text | length] | add // 0' "${CFG}" 2>/dev/null; }
-for _pair in "DESIGN:${_DESIGN_PIN}" "REVIEW:${_REVIEW_PIN}" "PLAN:${_PLAN_PIN}" "SHIP:${_SHIP_PIN}"; do
+# utf8bytelength, not length: `length` counts codepoints and the arrow in
+# DESIGN→PLAN is three bytes (review finding; the per-hint cell already counted
+# bytes, so the two cells disagreed by 6 on DESIGN).
+_sum() { jq -r --arg p "$1" '[.phase_compositions[$p].hints[]?.text | utf8bytelength] | add // 0' "${CFG}" 2>/dev/null; }
+for _pair in "DESIGN:${_DESIGN_PIN}" "REVIEW:${_REVIEW_PIN}" "PLAN:${_PLAN_PIN}" "SHIP:${_SHIP_PIN}" \
+             "DISCOVER:${_DISCOVER_PIN}" "DEBUG:${_DEBUG_PIN}" "LEARN:${_LEARN_PIN}"; do
     _p="${_pair%%:*}"; _pin="${_pair#*:}"
     _s="$(_sum "${_p}")"
     case "${_s}" in ''|*[!0-9]*) _s=-1 ;; esac
@@ -142,6 +152,13 @@ if [ "${_sd_over}" = "0" ]; then
     _record_pass "spec-driven rewrites stay <= ${_HINT_MAX} bytes"
 else
     _record_fail "spec-driven ceiling" "${_sd_over} rewritten hint(s) over ${_HINT_MAX} bytes"
+fi
+# The owner rule applies to the rewritten hints too, not only the config's (review finding).
+_sd_noowner="$(jq -r '[.phase_compositions.DESIGN.hints[]?, .phase_compositions.PLAN.hints[]? | .text | select(utf8bytelength >= 300) | select((contains("Skill(") or contains("{{PLUGIN_ROOT}}")) | not)] | length' "${HOME}/.claude/.skill-registry-cache.json" 2>/dev/null)"
+if [ "${_sd_noowner}" = "0" ]; then
+    _record_pass "spec-driven rewrites of 300+ bytes name a Skill(...) or plugin script"
+else
+    _record_fail "spec-driven owner rule" "${_sd_noowner} rewritten hint(s) of 300+ bytes name no owner"
 fi
 teardown_test_env
 

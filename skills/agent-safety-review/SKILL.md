@@ -64,15 +64,11 @@ guidance, not a veto.
 
 ## Autonomy levels
 
-The DESIGN-phase hint `AUTONOMY CHECK` points here; the rungs are the table in
-Step 2b. During DESIGN, if the solution is an agent that acts on its own, name
-its intended level (`advise` / `recommend` / `execute-reversible` /
-`execute-irreversible · unattended`). From `execute-reversible` up, if
-proportional oversight is NOT designed in (per-run approval, a HITL checkpoint,
-manifest-plus-dry-run review, or a bounded and reversible blast radius), help the
-user design that oversight before leaving DESIGN. Autonomy without proportional
-control is a liability, not power. Judge from the actual design; this is
-guidance, not a gate.
+The DESIGN-phase hint `AUTONOMY CHECK` points here. The rungs, the oversight
+test and the advisory rule are Step 2b above; at DESIGN time apply them to the
+proposed design rather than to a built system, and when the rule fires help the
+user design the oversight in before leaving DESIGN. Judge from the actual
+design; this is guidance, not a gate.
 
 ## Step 3: Recommend Mitigation (if lethal trifecta)
 

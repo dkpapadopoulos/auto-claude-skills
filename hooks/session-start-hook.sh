@@ -935,7 +935,7 @@ if [ -n "$_preset_name" ] && [ "$_preset_name" != "null" ] && [ -f "$_preset_fil
     DEFAULT_JSON="$(printf '%s' "${DEFAULT_JSON}" | jq '
       (.phase_compositions.DESIGN.hints // []) |= map(
         if (.text // "" | test("PERSIST DESIGN")) then
-          .text = "PERSIST DESIGN (spec-driven): After brainstorming approval, create `openspec/changes/<feature-slug>/` with proposal.md (Why, What Changes, Capabilities, Impact), design.md (Architecture, Trade-offs, Dissenting views, Decisions) and specs/<capability-slug>/spec.md (2-4 GIVEN/WHEN/THEN scenarios); then in ONE Bash call: bash '\''{{PLUGIN_ROOT}}/scripts/persist-state.sh'\'' upsert-change \"$SLUG\" \"\" \"\" \"$CAPABILITY_SLUG\" \"\"."
+          .text = "PERSIST DESIGN (spec-driven): On approval, create `openspec/changes/<feature-slug>/` with proposal.md (Why, What Changes, Capabilities, Impact), design.md (Architecture, Trade-offs, Dissenting views, Decisions) and specs/<capability-slug>/spec.md (RFC 2119 keywords, 2-4 GIVEN/WHEN/THEN scenarios); warn visibly (NEW CAPABILITY) when adding a capability; then in ONE Bash call: bash '\''{{PLUGIN_ROOT}}/scripts/persist-state.sh'\'' upsert-change \"$SLUG\" \"\" \"\" \"$CAPABILITY_SLUG\" \"\"."
         elif (.text // "" | test("DESIGN.PLAN CONTRACT")) then
           .text = "DESIGN\u2192PLAN CONTRACT (spec-driven): Before PLAN, `openspec/changes/<feature-slug>/` MUST hold proposal.md (Capabilities section), design.md (Architecture, explicit out-of-scope) and specs/<capability-slug>/spec.md (2-4 GIVEN/WHEN/THEN scenarios), COMMITTED so teammates see the intent."
         else . end
