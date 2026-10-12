@@ -57,10 +57,12 @@ if [ -n "$_SESSION_TOKEN" ]; then
         > "${HOME}/.claude/.skill-compact-pending-${_SESSION_TOKEN}" 2>/dev/null || true
     # Sticky repeat (#333): after a compaction the earlier display of a chain step may be
     # gone from the model's context, so the record of it is dropped and each step is shown
-    # once more. It is dropped HERE because this is the only hook that fires for both
-    # manual and auto compaction: SessionStart(compact) no longer fires for auto, so
-    # removing it only in compact-recovery-hook.sh left it in place for the common case
-    # (found in review). Removed, never truncated: truncating writes through a link.
+    # once more. It is dropped HERE because this is the only hook that fires for every
+    # compaction, manual and auto: SessionStart(compact) misses roughly 1 auto
+    # compaction in 20 (measured 2026-10-12 in ~/.claude/.compact-events.log; see
+    # scripts/compaction-pairing.sh), so removing it only in compact-recovery-hook.sh
+    # left it in place for those (found in review). Removed, never truncated:
+    # truncating writes through a link.
     rm -f "${HOME}/.claude/.sticky-repeat-shown-${_SESSION_TOKEN}" 2>/dev/null || true
 fi
 
