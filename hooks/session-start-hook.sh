@@ -501,9 +501,34 @@ ${_rp_pn}@${_rp_mk}|"}"
             fi
         fi
     fi
-    _rp_ver="$(ls -1 "$1" 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)"
-    if [ -n "${_rp_ver}" ]; then
-        _RESOLVED="$1${_rp_ver}/"
+    # Highest semver DIRECTORY, compared numerically per component. This used
+    # to be `ls | grep | sort | tail` -- four forks per plugin, 38 plugins
+    # per pass, two passes (measured 2026-10-12: 114 of the 621 forks in one
+    # session start). Accepts exactly three non-empty digit runs like the old
+    # regex, but DIRECTORIES only (the old `ls` also matched a file named like
+    # a version and then resolved to a directory that did not exist), and each
+    # component must fit a 64-bit integer for `[ -gt ]`; `sort -n` had no such
+    # ceiling. Comparison is decimal, as `sort -n` was.
+    _rp_best=""; _rp_b1=-1; _rp_b2=-1; _rp_b3=-1
+    for _rp_d in "$1"*/; do
+        [ -d "${_rp_d}" ] || continue
+        _rp_v="${_rp_d%/}"; _rp_v="${_rp_v##*/}"
+        case "${_rp_v}" in
+            *[!0-9.]*|.*|*.|*..*) continue ;;
+        esac
+        _rp_1="${_rp_v%%.*}"; _rp_r="${_rp_v#*.}"
+        [ "${_rp_r}" = "${_rp_v}" ] && continue          # no dot at all
+        _rp_2="${_rp_r%%.*}"; _rp_3="${_rp_r#*.}"
+        [ "${_rp_3}" = "${_rp_r}" ] && continue          # only one dot
+        case "${_rp_3}" in *.*) continue ;; esac          # more than two dots
+        if [ "${_rp_1}" -gt "${_rp_b1}" ] \
+           || { [ "${_rp_1}" -eq "${_rp_b1}" ] && [ "${_rp_2}" -gt "${_rp_b2}" ]; } \
+           || { [ "${_rp_1}" -eq "${_rp_b1}" ] && [ "${_rp_2}" -eq "${_rp_b2}" ] && [ "${_rp_3}" -gt "${_rp_b3}" ]; }; then
+            _rp_best="${_rp_v}"; _rp_b1="${_rp_1}"; _rp_b2="${_rp_2}"; _rp_b3="${_rp_3}"
+        fi
+    done
+    if [ -n "${_rp_best}" ]; then
+        _RESOLVED="$1${_rp_best}/"
         return 0
     fi
     [ -d "$1skills" ] && return 0
@@ -527,7 +552,7 @@ for _mkt_dir in "${HOME}/.claude/plugins/cache"/*/; do
     [ -d "${_mkt_dir}" ] || continue
     for _plugin_dir in "${_mkt_dir}"*/; do
         [ -d "${_plugin_dir}" ] || continue
-        _pname="$(basename "${_plugin_dir}")"
+        _pname="${_plugin_dir%/}"; _pname="${_pname##*/}"
         # Skip self (bundled skills handled separately in Step 4b)
         [ "${_pname}" = "auto-claude-skills" ] && continue
 
@@ -539,7 +564,7 @@ for _mkt_dir in "${HOME}/.claude/plugins/cache"/*/; do
         if [ -d "${_resolved}skills" ]; then
             for _smd in "${_resolved}skills"/*/SKILL.md; do
                 [ -f "${_smd}" ] || continue
-                _sname="$(basename "$(dirname "${_smd}")")"
+                _sname="${_smd%/*}"; _sname="${_sname##*/}"
                 EXTERNAL_DISCOVERED="${EXTERNAL_DISCOVERED}${_sname}|Skill(${_pname}:${_sname})
 "
             done
@@ -555,7 +580,7 @@ PLUGIN_DISCOVERED=""
 if [ -d "${PLUGIN_SKILLS_DIR}" ]; then
     for skill_md in "${PLUGIN_SKILLS_DIR}"/*/SKILL.md; do
         [ -f "${skill_md}" ] || continue
-        skill_name="$(basename "$(dirname "${skill_md}")")"
+        skill_name="${skill_md%/*}"; skill_name="${skill_name##*/}"
         PLUGIN_DISCOVERED="${PLUGIN_DISCOVERED}${skill_name}|Skill(auto-claude-skills:${skill_name})
 "
     done
@@ -569,7 +594,7 @@ USER_DISCOVERED=""
 if [ -d "${USER_SKILLS_DIR}" ]; then
     for skill_md in "${USER_SKILLS_DIR}"/*/SKILL.md; do
         [ -f "${skill_md}" ] || continue
-        skill_name="$(basename "$(dirname "${skill_md}")")"
+        skill_name="${skill_md%/*}"; skill_name="${skill_name##*/}"
         # Skip if already discovered as a plugin-bundled skill
         if printf '%s' "${PLUGIN_DISCOVERED}" | grep -q "^${skill_name}|"; then
             continue
@@ -596,7 +621,7 @@ for _mkt_dir in "${HOME}/.claude/plugins/cache"/*/; do
     [ -d "${_mkt_dir}" ] || continue
     for _plugin_dir in "${_mkt_dir}"*/; do
         [ -d "${_plugin_dir}" ] || continue
-        _pname="$(basename "${_plugin_dir}")"
+        _pname="${_plugin_dir%/}"; _pname="${_pname##*/}"
         [ "${_pname}" = "auto-claude-skills" ] && continue
         _resolve_plugin_dir "${_plugin_dir}"
         _resolved="${_RESOLVED}"
@@ -608,7 +633,8 @@ for _mkt_dir in "${HOME}/.claude/plugins/cache"/*/; do
             for _smd in "${_resolved}skills"/*/SKILL.md; do
                 [ -f "${_smd}" ] || continue
                 _FM_FILES="${_FM_FILES} ${_smd}"
-                _FM_NAMES="${_FM_NAMES}$(basename "$(dirname "${_smd}")")
+                _fm_n="${_smd%/*}"; _fm_n="${_fm_n##*/}"
+                _FM_NAMES="${_FM_NAMES}${_fm_n}
 "
             done
         fi
@@ -619,7 +645,8 @@ if [ -d "${PLUGIN_SKILLS_DIR}" ]; then
     for _smd in "${PLUGIN_SKILLS_DIR}"/*/SKILL.md; do
         [ -f "${_smd}" ] || continue
         _FM_FILES="${_FM_FILES} ${_smd}"
-        _FM_NAMES="${_FM_NAMES}$(basename "$(dirname "${_smd}")")
+        _fm_n="${_smd%/*}"; _fm_n="${_fm_n##*/}"
+        _FM_NAMES="${_FM_NAMES}${_fm_n}
 "
     done
 fi
@@ -628,7 +655,8 @@ if [ -d "${USER_SKILLS_DIR}" ]; then
     for _smd in "${USER_SKILLS_DIR}"/*/SKILL.md; do
         [ -f "${_smd}" ] || continue
         _FM_FILES="${_FM_FILES} ${_smd}"
-        _FM_NAMES="${_FM_NAMES}$(basename "$(dirname "${_smd}")")
+        _fm_n="${_smd%/*}"; _fm_n="${_fm_n##*/}"
+        _FM_NAMES="${_FM_NAMES}${_fm_n}
 "
     done
 fi
@@ -660,9 +688,9 @@ if [ -n "${_SR_FILES}" ]; then
         _SR_TRIGGERS_MAP="$(jq -cn --argjson a "${_SR_TRIGGERS_MAP}" --argjson b "${_sr_map}" '$a * $b' 2>/dev/null)"
         [ -z "${_SR_TRIGGERS_MAP}" ] && _SR_TRIGGERS_MAP="{}"
         if [[ "${_sr_drop}" =~ ^[0-9]+$ ]] && [ "${_sr_drop}" -gt 0 ]; then
-            _sr_label="$(basename "$(dirname "${_srf}")")"
+            _sr_label="${_srf%/*}"; _sr_label="${_sr_label##*/}"
             case "${_sr_label}" in
-                [0-9]*.[0-9]*) _sr_label="$(basename "$(dirname "$(dirname "${_srf}")")")" ;;
+                [0-9]*.[0-9]*) _sr_label="${_srf%/*}"; _sr_label="${_sr_label%/*}"; _sr_label="${_sr_label##*/}" ;;
             esac
             printf '[skill-rules] %s: dropped %s PCRE-only/invalid intentPattern(s)\n' \
                 "${_sr_label}" "${_sr_drop}" >&2
@@ -1054,7 +1082,7 @@ for _mkt_dir in "${HOME}/.claude/plugins/cache"/*/; do
     [ -d "${_mkt_dir}" ] || continue
     for _plugin_dir in "${_mkt_dir}"*/; do
         [ -d "${_plugin_dir}" ] || continue
-        _pname="$(basename "${_plugin_dir}")"
+        _pname="${_plugin_dir%/}"; _pname="${_pname##*/}"
 
         # Skip known/curated/already-discovered plugins
         _skip=0
@@ -1087,22 +1115,24 @@ KNEOF
         fi
         [ -z "${_pjson}" ] && continue
 
-        # Collect skill names as newline-separated string (no jq per item)
+        # Collect skill names as newline-separated string (no jq, no basename per item)
         _skill_names=""
         if [ -d "${_plugin_root}skills" ]; then
             for _smd in "${_plugin_root}skills"/*/SKILL.md; do
                 [ -f "${_smd}" ] || continue
-                _skill_names="${_skill_names}$(basename "$(dirname "${_smd}")")
+                _sk_n="${_smd%/*}"; _sk_n="${_sk_n##*/}"
+                _skill_names="${_skill_names}${_sk_n}
 "
             done
         fi
 
-        # Collect command names with "/" prefix bash-side (no jq per item)
+        # Collect command names with "/" prefix bash-side (no jq, no basename per item)
         _cmd_names=""
         if [ -d "${_plugin_root}commands" ]; then
             for _cmd in "${_plugin_root}commands"/*.md; do
                 [ -f "${_cmd}" ] || continue
-                _cmd_names="${_cmd_names}/$(basename "${_cmd}" .md)
+                _cmd_n="${_cmd##*/}"; _cmd_n="${_cmd_n%.md}"
+                _cmd_names="${_cmd_names}/${_cmd_n}
 "
             done
         fi
@@ -1112,7 +1142,8 @@ KNEOF
         if [ -d "${_plugin_root}agents" ]; then
             for _agent in "${_plugin_root}agents"/*.md; do
                 [ -f "${_agent}" ] || continue
-                _agent_names="${_agent_names}$(basename "${_agent}" .md)
+                _ag_n="${_agent##*/}"; _ag_n="${_ag_n%.md}"
+                _agent_names="${_agent_names}${_ag_n}
 "
             done
         fi
@@ -1178,31 +1209,68 @@ fi
 # install" diagnostic at session-start telling the user exactly which binary to install.
 _has_lsp_plugin=false
 _lsp_partial=""   # "<plugin-name>|<missing-cmd-csv>" entries, newline-separated
+# ONE jq over every manifest, not one per manifest: measured 2026-10-12, this
+# loop issued 108 jq forks (two per manifest) at ~6.6 ms each, the largest
+# single contributor to a 2.8 s session-start against a 200 ms budget. Rows are
+# "<manifest>\t<name>\t<command>", grouped by manifest exactly as the per-file
+# loop grouped them. A manifest that fails to parse makes the batched call exit
+# non-zero and stop at that file; the per-file fallback below then preserves
+# the old isolation for that rare case at the old cost.
+_lsp_manifests=""
 for _pjson in "${HOME}/.claude/plugins/cache"/*/*/.claude-plugin/plugin.json \
               "${HOME}/.claude/plugins/cache"/*/*/*/.claude-plugin/plugin.json; do
     [ -f "${_pjson}" ] || continue
-    # Extract non-null .lspServers.*.command values, newline-separated (empty if no lspServers).
-    _lsp_cmds="$(jq -r '(.lspServers // {}) | to_entries[] | .value.command // empty' "${_pjson}" 2>/dev/null)"
-    [ -z "${_lsp_cmds}" ] && continue
-    _plugin_name="$(jq -r '.name // "unknown"' "${_pjson}" 2>/dev/null)"
-    _missing_for_plugin=""
-    _any_resolved=0
-    while IFS= read -r _cmd; do
-        [ -z "${_cmd}" ] && continue
-        if command -v "${_cmd}" >/dev/null 2>&1; then
-            _any_resolved=1
-            _has_lsp_plugin=true
-        else
-            _missing_for_plugin="${_missing_for_plugin}${_missing_for_plugin:+,}${_cmd}"
-        fi
-    done <<LSPEOF
-${_lsp_cmds}
-LSPEOF
-    if [ "${_any_resolved}" -eq 0 ] && [ -n "${_missing_for_plugin}" ]; then
+    _lsp_manifests="${_lsp_manifests}${_lsp_manifests:+
+}${_pjson}"
+done
+# Fields are joined by the repo's US separator (\x1f), not TAB: TAB is IFS
+# whitespace, so `read` collapses consecutive tabs and an empty name field
+# would shift the command into the name slot and drop the row (review finding).
+_LSP_ROWS_FILTER='input_filename as $f | (.name // "unknown") as $n
+    | (.lspServers // {}) | to_entries[] | "\($f)\u001f\($n)\u001f\(.value.command // "")"'
+_lsp_jq_all() { jq -r "${_LSP_ROWS_FILTER}" "$@" 2>/dev/null; }
+_lsp_rows=""
+if [ -n "${_lsp_manifests}" ]; then
+    _lsp_oifs="${IFS-$' \t\n'}"; IFS='
+'; set -f
+    # shellcheck disable=SC2086  # newline-split on purpose; globbing off
+    _lsp_rows="$(_lsp_jq_all ${_lsp_manifests})" || {
+        # Fallback: isolate the unparseable manifest by going per file.
+        _lsp_rows=""
+        for _pjson in ${_lsp_manifests}; do
+            _lsp_one="$(_lsp_jq_all "${_pjson}")" || continue
+            _lsp_rows="${_lsp_rows}${_lsp_rows:+
+}${_lsp_one}"
+        done
+    }
+    set +f; IFS="${_lsp_oifs}"
+fi
+_lsp_cur=""; _any_resolved=0; _missing_for_plugin=""; _plugin_name=""
+_lsp_flush() {
+    if [ -n "${_lsp_cur}" ] && [ "${_any_resolved}" -eq 0 ] && [ -n "${_missing_for_plugin}" ]; then
         _lsp_partial="${_lsp_partial}${_lsp_partial:+
 }${_plugin_name}|${_missing_for_plugin}"
     fi
-done
+}
+_lsp_us="$(printf '\037')"
+while IFS="${_lsp_us}" read -r _lsp_file _lsp_name _cmd; do
+    [ -z "${_lsp_file}" ] && continue
+    if [ "${_lsp_file}" != "${_lsp_cur}" ]; then
+        _lsp_flush
+        _lsp_cur="${_lsp_file}"; _plugin_name="${_lsp_name}"
+        _any_resolved=0; _missing_for_plugin=""
+    fi
+    [ -z "${_cmd}" ] && continue
+    if command -v "${_cmd}" >/dev/null 2>&1; then
+        _any_resolved=1
+        _has_lsp_plugin=true
+    else
+        _missing_for_plugin="${_missing_for_plugin}${_missing_for_plugin:+,}${_cmd}"
+    fi
+done <<LSPEOF
+${_lsp_rows}
+LSPEOF
+_lsp_flush
 
 # -----------------------------------------------------------------
 # Step 8e: Detect OpenSpec capabilities (workspace commands + surface)
@@ -1212,7 +1280,8 @@ _opsx_cmds=""
 if [ -d "${_WORKSPACE_ROOT}/.claude/commands/opsx" ]; then
     for _cmd in "${_WORKSPACE_ROOT}/.claude/commands/opsx"/*.md; do
         [ -f "${_cmd}" ] || continue
-        _opsx_cmds="${_opsx_cmds}${_opsx_cmds:+,}/opsx:$(basename "${_cmd}" .md)"
+        _opsx_n="${_cmd##*/}"; _opsx_n="${_opsx_n%.md}"
+        _opsx_cmds="${_opsx_cmds}${_opsx_cmds:+,}/opsx:${_opsx_n}"
     done
 fi
 
