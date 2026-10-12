@@ -12,11 +12,15 @@
 # superpowers chain already uses. The per-phase totals are CEILINGS: growth
 # fails and needs a reason in the commit that raises the constant; a reduction
 # passes and the constant is lowered when someone next touches the file. They
-# were equality ratchets for one day (PR #349); the 2026-10-12 value review
-# found three of six PRs re-pinning a constant introduced hours earlier, and
-# that re-pin tax is paid in owner review time for a number no user sees. The
-# injection budget (_INJECTION_BASELINE) stays an equality ratchet: it is the
-# one total a user pays on every prompt.
+# were equality ratchets from PR #349 until the ratchet-ceilings change; the
+# 2026-10-12 value review found the equality pins on INTERNAL counts taxing
+# later PRs with re-pins for numbers no user sees (the fork count was re-pinned
+# by PR #351 hours after PR #348 introduced it; the injection baseline moved
+# five times across #349 and #350). These pins themselves moved only within
+# #349, so this conversion is prospective: same shape, same tax expected. The
+# two totals a user pays stay equality ratchets: the injection budget
+# (_INJECTION_BASELINE, every prompt) and the instruction-file total
+# (_COMBINED_BASELINE, every session start).
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"

@@ -11,8 +11,9 @@
 # machine-dependent; the count is not, so the count is what is pinned. It is a
 # CEILING: growth fails and needs a reason in the commit that raises it; a
 # reduction passes and the constant is lowered when convenient. It was an
-# equality ratchet for one day (PR #348) and was re-pinned by PR #351 the same
-# day; the 2026-10-12 value review kept equality for _INJECTION_BASELINE only.
+# equality ratchet from PR #348 and was re-pinned by PR #351 the same day; the
+# 2026-10-12 value review kept equality only for the two totals a user pays
+# (_INJECTION_BASELINE per prompt, _COMBINED_BASELINE per session start).
 #
 # The fixture holds what the hot loops iterate over: two marketplace plugins,
 # each with a plugin.json carrying lspServers (one resolvable command, one
