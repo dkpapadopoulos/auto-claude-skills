@@ -215,24 +215,56 @@ fi
 # missed the one that was load-bearing). The marker loop appends one note to those two
 # while they are unmet. Render only: the state write and the guard are untouched (D3, D5).
 echo "== D: deny consequence =="
-GATE_NOTE="GATE: git push is denied until this Skill is invoked"
+GATE_NOTE="GATE: git push is denied until this Skill has been invoked on this branch"
 line_for() { printf '%s' "${LAST}" | grep -E "Step [0-9]+: Skill\([^)]*$1\)" | head -1; }
 new_session d1
 say "${BUILD}"; say ok; say ok; say ok; say ok; say ok; say ok
 assert_equals "D0: the walk has reached the review step" "requesting-code-review" "$(printf '%s' "${SCHED}" | awk '{print $NF}')"
 assert_contains "D1: the unmet review step states the push consequence" "${GATE_NOTE}" "$(line_for requesting-code-review)"
 assert_contains "D1: the unmet verification step states it too" "${GATE_NOTE}" "$(line_for verification-before-completion)"
+# D2 guards against vacuity first: an empty line would satisfy assert_not_contains.
+assert_contains "D2: the non-gating lines are present to inspect" "Step 2" "$(line_for writing-plans)"
 assert_not_contains "D2: an inferred non-gating step does not" "${GATE_NOTE}" "$(line_for writing-plans)"
 assert_not_contains "D2: nor the next non-gating step" "${GATE_NOTE}" "$(line_for openspec-ship)"
+# D3: the plan asked for a byte comparison of the state file; it carries updated_at,
+# so bytes differ on every write by construction. List equality plus the absence of
+# the note's text is the honest substitute.
 assert_equals "D3: display only: the state lists are what P1 recorded" '[] ["brainstorming","writing-plans","executing-plans"]' "$(completed) $(assumed)"
 assert_not_contains "D3: the state file carries no note text" "GATE" "$(cat "${STATE}")"
 returned superpowers:requesting-code-review; say ok
 assert_not_contains "D4: a gating step that really returned drops the note" "${GATE_NOTE}" "$(line_for requesting-code-review)"
 assert_contains "D4: while verification, still unmet, keeps it" "${GATE_NOTE}" "$(line_for verification-before-completion)"
+# D5 re-asserts G1 on this shape; the protection against a leaked note is D3's grep.
 new_session d5; seed_verdict
 say "${BUILD}"; say ok; say ok; say ok; say ok; say ok; say ok
 out="$(gate)"
 assert_contains "D5: the guard's decision is unchanged by the note (still deny on unmet review)" '"deny"' "${out:-<empty>}"
+# D6: the #254 shape itself: a session's FIRST prompt anchors at SHIP, so every earlier
+# step, the gating ones included, renders [DONE?] (inferred, never evidence) and the note
+# must still be there. (After a build prompt the anchor stays at brainstorming and a later
+# "ship it" renders them [LATER]; that shape is D1.)
+new_session d6
+say "ship it"
+assert_equals "D6: a SHIP-anchored prompt renders the review step as inferred" "DONE?" "$(marker requesting-code-review)"
+assert_contains "D6: and the inferred gating step still carries the note" "${GATE_NOTE}" "$(line_for requesting-code-review)"
+# D7: the note must agree with the GUARD, whose notion of "met" includes the branch
+# ledger (the cross-session carrier). A prior session's real returns land in the
+# ledger under this HOME; a fresh session (new token, empty .completed) on the same
+# repo and branch must not be told the push is denied when the guard allows it.
+new_session d7; seed_verdict
+say "${BUILD}"; returned superpowers:requesting-code-review; returned superpowers:verification-before-completion
+# A fresh session is a new TRANSCRIPT: the hook derives its token from the transcript
+# path, so the token variable alone changes nothing. Same HOME, same repo, same branch.
+TOK="session-t2"; TP="${H}/t2.jsonl"; : > "${TP}"
+STATE="${H}/.claude/.skill-composition-state-${TOK}"; SIGNAL="${H}/.claude/.skill-last-invoked-${TOK}"; SCHED=""
+say "${BUILD}"; say ok; say ok; say ok; say ok; say ok; say ok
+assert_equals "D7: the fresh session's own list holds no returns" "[]" "$(completed)"
+out="$(gate)"
+assert_not_contains "D7: the guard allows on the ledger" '"deny"' "${out:-<empty>}"
+assert_not_contains "D7: so the review line carries no deny claim" "${GATE_NOTE}" "$(line_for requesting-code-review)"
+assert_not_contains "D7: nor the verification line" "${GATE_NOTE}" "$(line_for verification-before-completion)"
+assert_contains "D7: control: the review line itself rendered" "requesting-code-review" "$(line_for requesting-code-review)"
+TOK="session-t"
 
 cd "${PROJECT_ROOT}" || true
 teardown_test_env

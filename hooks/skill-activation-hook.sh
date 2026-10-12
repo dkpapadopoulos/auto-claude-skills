@@ -1549,11 +1549,32 @@ EOF
         # whose absence costs nothing (#297, from the #254 incident: the agent
         # learned to ignore the markers and missed the load-bearing one). Say so
         # on the line while the step is unmet. Render only: no state, no gate.
+        #
+        # "Unmet" is the GUARD's notion, not this session's: the guard also
+        # accepts the branch ledger, the cross-session carrier, so a resumed
+        # session on an already-reviewed branch has an empty .completed while
+        # the push is allowed. Showing the note there would be a false deny
+        # claim in the mandatory channel, the very thing #297 exists to end
+        # (review finding). The ledger directory is resolved ONCE per chain
+        # render (branch_ledger_key: three git forks plus shasum), and only when
+        # a gating step is unmet; a lib that fails to load leaves the note on,
+        # which errs toward the claim the guard would make without the ledger.
         _gate_note=""
         if [[ "$_marker" != "DONE" ]]; then
           case "$_cname" in
             requesting-code-review|verification-before-completion)
-              _gate_note=" -- GATE: git push is denied until this Skill is invoked" ;;
+              if [[ -z "${_GATE_LEDGER_DIR+x}" ]]; then
+                _GATE_LEDGER_DIR=""
+                if ! command -v branch_ledger_dir >/dev/null 2>&1; then
+                  . "${PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" 2>/dev/null || true
+                fi
+                if command -v branch_ledger_dir >/dev/null 2>&1; then
+                  _GATE_LEDGER_DIR="$(branch_ledger_dir "${_PROJECT_ROOT}" 2>/dev/null)" || _GATE_LEDGER_DIR=""
+                fi
+              fi
+              if [[ -z "$_GATE_LEDGER_DIR" ]] || [[ ! -f "${_GATE_LEDGER_DIR}/${_cname}" ]]; then
+                _gate_note=" -- GATE: git push is denied until this Skill has been invoked on this branch"
+              fi ;;
           esac
         fi
         _chain_lines="${_chain_lines}
