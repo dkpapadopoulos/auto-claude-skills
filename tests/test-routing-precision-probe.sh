@@ -544,6 +544,10 @@ count_only "${D}" 2026-10-13 >/dev/null
 assert_contains "C3: the closing date (A4) closes it whatever the count" "collection: CLOSED (closing date 2026-10-13 reached with 5 rows" "$(cat "${D}/status.txt")"
 count_only "${D}" 2026-11-16 >/dev/null
 assert_contains "C3: the original closing date is of course still closed" "collection: CLOSED (closing date 2026-10-13 reached" "$(cat "${D}/status.txt")"
+D="${TEST_TMPDIR}/c-zero"; mk_rows "${D}" 0
+count_only "${D}" 2026-10-13 >/dev/null
+assert_contains "C3: a date close with no would-hide row says there is nothing to label" "collection: CLOSED (closing date 2026-10-13 reached with 0 rows the rule would hide). Nothing to label." "$(cat "${D}/status.txt")"
+D="${TEST_TMPDIR}/c-date"   # C4 and C5 below read the five-row fixture
 python3 "${PROBE}/rows.py" --shadow-log "${D}/shadow.jsonl" --since 2026-10-06T00:00:00Z --projects "${D}/projects" --count-only --rows "${D}/r.jsonl" --key "${D}/k.jsonl" > /dev/null 2>&1
 assert_equals "C4: --count-only with an output path is refused (exit 2), and writes nothing" "2 no" "$? $([ -e "${D}/r.jsonl" ] && echo yes || echo no)"
 python3 "${PROBE}/rows.py" --shadow-log "${D}/shadow.jsonl" --since 2026-10-06T00:00:00Z --projects "${D}/projects" > /dev/null 2>&1
