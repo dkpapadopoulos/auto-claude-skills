@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": "",
+  "plan_path": "docs/plans/2026-10-12-plugin-state-remediation-plan.md",
+  "spec_path": "docs/plans/2026-10-12-brief-review-prioritization-design.md",
+  "sp_plan_path": "docs/plans/2026-10-12-plugin-state-remediation-plan.md",
+  "sp_spec_path": "docs/plans/2026-10-12-brief-review-prioritization-design.md",
+  "change_slug": "plugin-state-remediation",
+  "capability_slug": "skill-routing",
+  "source_branch": "docs/openspec-archive-remediation",
+  "base_commit": "63484ba7e9d3907b18539f6e82db8c5bdcc8cdd1",
+  "openspec_surface": "none",
+  "archived_at": "2026-10-12T18:08:15Z"
+}
