@@ -8,9 +8,11 @@
 # `bash -x` trace attributed it to 621 forks at 3-7 ms each: 108 jq calls from
 # the LSP plugin.json loop (one per manifest), 114 ls/grep/sort calls from the
 # semver resolver, ~240 basename/dirname pairs in the discovery loops. Time is
-# machine-dependent; the count is not, so the count is the ratchet. Same
-# convention as _INJECTION_BASELINE: growth fails, an unbanked reduction fails,
-# the constant moves only in the commit that moves it.
+# machine-dependent; the count is not, so the count is what is pinned. It is a
+# CEILING: growth fails and needs a reason in the commit that raises it; a
+# reduction passes and the constant is lowered when convenient. It was an
+# equality ratchet for one day (PR #348) and was re-pinned by PR #351 the same
+# day; the 2026-10-12 value review kept equality for _INJECTION_BASELINE only.
 #
 # The fixture holds what the hot loops iterate over: two marketplace plugins,
 # each with a plugin.json carrying lspServers (one resolvable command, one
@@ -24,7 +26,7 @@ HOOK="${PROJECT_ROOT}/hooks/session-start-hook.sh"
 
 echo "=== test-session-start-fork-budget.sh ==="
 
-# RATCHET (see header). Measured 2026-10-12 on this fixture, traced from
+# CEILING (see header). Measured 2026-10-12 on this fixture, traced from
 # TEST_TMPDIR: 30 after the fork removals (27 jq, 1 grep, 1 dirname, 1 awk),
 # from 177 before them (66 basename, 61 dirname, 35 jq, 6 grep, 4 sort, 4 ls,
 # 1 awk). The remaining jq calls are one per build step over the whole
@@ -94,12 +96,10 @@ _by_cmd="$(grep -oE '^\++F: (jq|basename|dirname|ls|grep|sort|awk) ' "${_TRACE}"
 
 if [ "${_forks}" -lt 0 ]; then
     _record_fail "fork ratchet" "could not count forks in ${_TRACE}"
-elif [ "${_forks}" -eq "${_SS_FORK_BASELINE}" ]; then
-    _record_pass "fork ratchet: ${_forks} jq/basename/dirname/ls/grep/sort/awk forks (ratchet holds) [${_by_cmd}]"
-elif [ "${_forks}" -gt "${_SS_FORK_BASELINE}" ]; then
-    _record_fail "fork ratchet" "grew to ${_forks} forks from ${_SS_FORK_BASELINE} (+$((_forks - _SS_FORK_BASELINE))) [${_by_cmd}]. Each fork is 3-7 ms on macOS against a 200 ms budget. Batch the jq, use parameter expansion for basename/dirname, or raise the constant in the SAME commit and say why."
+elif [ "${_forks}" -le "${_SS_FORK_BASELINE}" ]; then
+    _record_pass "fork ceiling: ${_forks} jq/basename/dirname/ls/grep/sort/awk forks (ceiling ${_SS_FORK_BASELINE}) [${_by_cmd}]"
 else
-    _record_fail "fork ratchet" "shrank to ${_forks} forks from ${_SS_FORK_BASELINE} (-$((_SS_FORK_BASELINE - _forks))) [${_by_cmd}]. Good -- lower _SS_FORK_BASELINE to ${_forks} in the same commit so the reduction is banked."
+    _record_fail "fork ceiling" "grew to ${_forks} forks over the ${_SS_FORK_BASELINE} ceiling (+$((_forks - _SS_FORK_BASELINE))) [${_by_cmd}]. Each fork is 3-7 ms on macOS against a 200 ms budget. Batch the jq, use parameter expansion for basename/dirname, or raise the constant in the SAME commit and say why."
 fi
 
 # --- behaviour the removals must preserve ------------------------------------
