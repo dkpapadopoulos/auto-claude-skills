@@ -39,7 +39,8 @@ and a config-schema change that would have bought nothing.
 ## Judgement
 
 124ms on a `UserPromptSubmit` hook is not user-perceptible — model latency exceeds it by
-orders of magnitude. `CLAUDE.md` states the budget as "~50ms", and the hook was already
+orders of magnitude. `CLAUDE.md` stated the budget as "~50ms" when this was written (since
+2026-10-13 it carries the measured 172 ms median beside that target), and the hook was already
 over it at 103ms before this branch. This branch adds 21ms on top. Recorded as an explicit
 acceptance rather than a later discovery; the fixed-overhead finding is the lead worth
 following if anyone wants the budget back.

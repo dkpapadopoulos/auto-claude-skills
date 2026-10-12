@@ -66,7 +66,7 @@ done
 # fixed, one level up. Derive the runner from the repo's OWN .verify.yml at
 # TEST time and assert membership. Test-time derivation is deliberate and does
 # NOT violate the spec's MUST NOT, which constrains the PreToolUse predicate:
-# the cost that forbids is a YAML parse on a ~50ms hot path, not here.
+# the cost that forbids is a YAML parse on the per-call PreToolUse hot path, not here.
 #
 # Two round-3 defects are fixed here, and both produced a FALSE RED -- an
 # assertion of drift where none happened, which is worse than useless because

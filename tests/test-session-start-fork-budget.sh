@@ -39,7 +39,7 @@ echo "=== test-session-start-fork-budget.sh ==="
 # One extra parse (jq plus awk) and one jq to combine the two maps; all three
 # are per build, not per item. NOT counted here: when a skill-rules.json exists
 # the Step 5c fold runs one more jq (it is applied to both maps); this fixture
-# ships none, so that cost is unmeasured by this ratchet.
+# ships none, so that cost is unmeasured by this ceiling.
 _SS_FORK_BASELINE=33
 # Floor on the trace itself: an empty or truncated trace would count 0 forks
 # and read as the best possible result. The real trace is tens of thousands of
@@ -96,7 +96,7 @@ case "${_forks}" in ''|*[!0-9]*) _forks=-1 ;; esac
 _by_cmd="$(grep -oE '^\++F: (jq|basename|dirname|ls|grep|sort|awk) ' "${_TRACE}" | awk '{print $2}' | sort | uniq -c | sort -rn | tr '\n' ';')"
 
 if [ "${_forks}" -lt 0 ]; then
-    _record_fail "fork ratchet" "could not count forks in ${_TRACE}"
+    _record_fail "fork ceiling" "could not count forks in ${_TRACE}"
 elif [ "${_forks}" -le "${_SS_FORK_BASELINE}" ]; then
     _record_pass "fork ceiling: ${_forks} jq/basename/dirname/ls/grep/sort/awk forks (ceiling ${_SS_FORK_BASELINE}) [${_by_cmd}]"
 else

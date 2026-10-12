@@ -503,8 +503,9 @@ diff_touches_routing() {
 # that path. Acceptable because the entry is advisory-only and a repo with that
 # file almost certainly means it as its runner; a repo that does not can ignore
 # one line of text. Deriving the runner from `.verify.yml` instead was rejected:
-# it puts a YAML parse on the PreToolUse hot path (~50ms budget) to remove a
-# false positive that costs nothing.
+# it puts a YAML parse on the PreToolUse hot path (a per-call cost; the sibling
+# activation hook already measures a ~170 ms median) to remove a false positive
+# that costs nothing.
 # Consumed ONLY by the advisory path — this list must never join a fail-closed
 # deny (design D1, evaluator-surface-advisory).
 _EVALUATOR_SURFACES="hooks/openspec-guard.sh hooks/skill-gate.sh hooks/lib/verdict.sh hooks/lib/branch-ledger.sh hooks/lib/git-command.sh hooks/lib/session-token.sh hooks/lib/phase-evidence.sh hooks/lib/phase-attest.sh hooks/skill-completion-hook.sh .verify.yml scripts/verify-and-record.sh skills/project-verification/scripts/gate-gaming-check.sh tests/run-tests.sh"

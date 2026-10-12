@@ -103,6 +103,10 @@ for _pair in "DESIGN:${_DESIGN_PIN}" "REVIEW:${_REVIEW_PIN}" "PLAN:${_PLAN_PIN}"
     case "${_s}" in ''|*[!0-9]*) _s=-1 ;; esac
     if [ "${_s}" -lt 0 ]; then
         _record_fail "${_p} hint total" "could not sum the hint bytes for ${_p}"
+    elif [ "${_s}" -eq 0 ]; then
+        # A ceiling lets a reduction pass; a phase summing to ZERO is not a reduction but a
+        # vanished phase (hints deleted, or the phase key renamed so `add // 0` saw nothing).
+        _record_fail "${_p} hint total" "no hint text found for ${_p}: a phase at zero bytes is a vanished phase or a renamed key, not a reduction"
     elif [ "${_s}" -le "${_pin}" ]; then
         _record_pass "${_p} hints total ${_s} bytes (ceiling ${_pin})"
     else
