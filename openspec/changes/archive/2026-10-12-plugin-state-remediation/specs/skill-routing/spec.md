@@ -16,7 +16,7 @@ Each `phase_compositions.<PHASE>.hints[].text` SHALL be at most 480 bytes; a hin
 
 ### Requirement: An unmet gating milestone states its consequence
 
-When the composition chain renders `requesting-code-review` or `verification-before-completion` with any marker other than `[DONE]`, the line SHALL state that `git push` is denied until that Skill is invoked. Non-gating steps MUST NOT carry the suffix. The suffix MUST NOT change any state file or any gate decision.
+When the composition chain renders `requesting-code-review` or `verification-before-completion` with any marker other than `[DONE]`, and the branch ledger does not already record that Skill as invoked on the current branch, the line SHALL state that `git push` is denied until that Skill has been invoked on this branch. The ledger SHALL be consulted at most once per render. Non-gating steps MUST NOT carry the suffix. The suffix MUST NOT change any state file or any gate decision.
 
 #### Scenario: Review step not yet invoked
 
@@ -25,7 +25,7 @@ When the composition chain renders `requesting-code-review` or `verification-bef
 
 ### Requirement: External plugins cannot rewrite config-owned topology
 
-At registry build, frontmatter from an external-marketplace plugin's `SKILL.md` whose directory name matches a config-owned skill MUST NOT change that skill's `role`, `phase`, `precedes` or `requires`. It MAY still supply `triggers` and `priority`. Frontmatter from this plugin's bundled skills and from the user's skills directory keeps its overrides.
+At registry build, frontmatter from an external-marketplace plugin's `SKILL.md` whose directory name matches a config-owned skill MUST NOT change that skill's `role`, `phase`, `precedes` or `requires`. It MAY still supply `triggers` and `priority`, and `skill-rules.json` triggers for that name SHALL still reach it through the external tier. An external skill whose directory name the config does not own keeps its own topology. Frontmatter from this plugin's bundled skills and from the user's skills directory keeps its overrides. (`invoke` and `available` are not covered: they remain last-wins, recorded as a residual in PR #351.)
 
 #### Scenario: Planted external skill
 
