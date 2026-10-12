@@ -2785,10 +2785,10 @@ Brainstorming MUST build on this confirmed intent and out-of-scope boundary — 
     _expand_precondition_plugin_root
     _IE_PS="'${_cprecond}'"
     SKILL_LINES="${SKILL_LINES}
-INTENT EXTRACTION: If your ask is underspecified (missing one or more of who/why/success-criteria/constraints), do NOT propose approaches, designs, or options yet. First converge with the user on the real goal — the underlying need, not just the literal request. Then, as soon as the user has given you enough to act on, you MUST — BEFORE proposing ANY approach, design, or option — emit this convergence block verbatim and stop for confirmation:
+INTENT EXTRACTION: If the ask is underspecified (who / why / success criteria / constraints missing), converge with the user on the real goal, the underlying need rather than the literal request, BEFORE proposing any approach; then emit and stop for confirmation:
   **Confirmed intent:** <one line capturing who/why/success>
   **Out-of-scope:** <what this is explicitly NOT>
-Only AFTER the user confirms that block may you propose approaches. Then persist it in ONE Bash call: \`bash ${_IE_PS} set-intent \"<confirmed intent> :: out-of-scope: <...>\"\` — the script resolves the session token internally (issue #157), so you author only the intent text. SKIP this pass entirely if the ask is already fully specified, is mechanical (rename/typo/file-move), or an approved discovery brief already covers intent."
+After confirmation, persist it in ONE Bash call: \`bash ${_IE_PS} set-intent \"<confirmed intent> :: out-of-scope: <...>\"\`. Skip when the ask is fully specified, mechanical, or covered by an approved discovery brief."
     [[ -n "${SKILL_EXPLAIN:-}" ]] && echo "[skill-hook]   [intent-extraction] emitted directive (no intent, no brief)" >&2
   fi
 fi

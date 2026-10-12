@@ -1239,7 +1239,7 @@
           "when": "installed"
         },
         {
-          "text": "PERSIST DISCOVERY: After product-discovery completes and the user approves the brief, save it to `docs/plans/YYYY-MM-DD-<slug>-discovery.md`. Then run, in ONE Bash call (shell state does not persist between tool calls): bash '{{PLUGIN_ROOT}}/scripts/persist-state.sh' set-discovery-path \"$SLUG\" \"$DISCOVERY_PATH\" to set discovery_path in session state — the script resolves the session token internally (issue #157).",
+          "text": "PERSIST DISCOVERY: After the user approves the discovery brief, save it to `docs/plans/YYYY-MM-DD-<slug>-discovery.md`, then in ONE Bash call: bash '{{PLUGIN_ROOT}}/scripts/persist-state.sh' set-discovery-path \"$SLUG\" \"$DISCOVERY_PATH\".",
           "when": "always"
         }
       ]
@@ -1277,19 +1277,19 @@
           "when": "installed AND prompt matches (prevent|block|guard|rule)"
         },
         {
-          "text": "DESIGN→PLAN CONTRACT: Before transitioning from DESIGN to PLAN, the design output MUST include: (1) **Capabilities affected** — list every subsystem/module this touches, (2) **Explicit out-of-scope** — what this change does NOT do, (3) **Acceptance scenarios** — 2-4 GIVEN/WHEN/THEN scenarios that define success. Save the design output to `docs/plans/YYYY-MM-DD-<slug>-design.md`.",
+          "text": "DESIGN→PLAN CONTRACT: Before PLAN, the design output MUST name (1) Capabilities affected, (2) Explicit out-of-scope, (3) 2-4 GIVEN/WHEN/THEN Acceptance scenarios, saved to `docs/plans/YYYY-MM-DD-<slug>-design.md`.",
           "when": "always"
         },
         {
-          "text": "PERSIST DESIGN: After brainstorming (or design-debate) completes, save the design artifact to `docs/plans/YYYY-MM-DD-<slug>-design.md` with sections: Problem, Capabilities Affected, Out-of-Scope, Approach, Acceptance Scenarios, Decision. Then run, in ONE Bash call (shell state does not persist between tool calls): bash '{{PLUGIN_ROOT}}/scripts/persist-state.sh' upsert-change \"$SLUG\" \"\" \"\" \"\" \"$DESIGN_PATH\" to set design_path in session state — the script resolves the session token internally (issue #157).",
+          "text": "PERSIST DESIGN: After brainstorming, save the design to `docs/plans/YYYY-MM-DD-<slug>-design.md` (Problem, Capabilities Affected, Out-of-Scope, Approach, Acceptance Scenarios, Decision), then in ONE Bash call: bash '{{PLUGIN_ROOT}}/scripts/persist-state.sh' upsert-change \"$SLUG\" \"\" \"\" \"\" \"$DESIGN_PATH\".",
           "when": "always"
         },
         {
-          "text": "EVAL STRATEGY: Before leaving DESIGN, classify how this feature is verified — ask the user if it is unclear. If it has probabilistic/AI/LLM/agent behavior (outputs cannot be exact-matched): plan an eval SET, not just unit tests — smoke + adversarial/safety subsets (jailbreak, injection, safety-routing-suppression), a pinned judge model+version, never-delete cases (deprecate with a dated rationale), and a pre-registered safety-stop (halt condition + who can call it); author the safety subset and have it failing (red) before implementation. If it is deterministic: standard test-driven-development plus the acceptance scenarios above are the bar. Safety dimensions are hard pass/fail gates, never averaged into a quality blend. See Skill(auto-claude-skills:runtime-validation) for running eval packs.",
+          "text": "EVAL STRATEGY: Before leaving DESIGN, classify verification — ask the user if it is unclear. Probabilistic/LLM/agent behavior needs an eval SET with adversarial/safety subsets failing (red) before implementation; deterministic needs TDD plus the acceptance scenarios. Procedure: Skill(auto-claude-skills:runtime-validation) § Eval strategy at DESIGN.",
           "when": "always"
         },
         {
-          "text": "AUTONOMY CHECK: During DESIGN, if the solution is an agentic/AI system that acts on its own, classify its intended autonomy level — advise (proposes; human acts) / recommend (human approves each action) / execute-reversible (acts; effects bounded and undoable) / execute-irreversible·unattended (hard-to-reverse, or runs with no per-run human checkpoint). If the level is execute-reversible or higher AND proportional oversight is NOT designed in (per-run approval, HITL, manifest+dry-run review, or a bounded/reversible blast radius), help the user design that oversight in before leaving DESIGN — autonomy without proportional control is a liability, not power. Judge from the actual design; this is guidance, not a gate.",
+          "text": "AUTONOMY CHECK: If the design is an agent that acts on its own, name its autonomy level (advise / recommend / execute-reversible / execute-irreversible) and, from execute-reversible up, design proportional oversight before leaving DESIGN: autonomy without proportional control is a liability, not power. Levels and oversight patterns: Skill(auto-claude-skills:agent-safety-review) § Autonomy levels; this is guidance, not a gate.",
           "when": "always"
         }
       ]
@@ -1310,11 +1310,11 @@
           "when": "always"
         },
         {
-          "text": "VERTICAL SLICES: Decompose by behavior, not by layer. Prefer thin end-to-end slices — each task touches all layers (data -> logic -> interface) and is independently testable — over file-disjoint horizontal layers (all schema, then all APIs, then all UI), which delay integration feedback. Each slice should deliver one observable behavior, paired with a failing test first. When sizing tasks for agent-team-execution, slice by behavior so parallel tasks stay end-to-end rather than horizontal.",
+          "text": "VERTICAL SLICES: Decompose by behavior, not by layer: each task is a thin end-to-end slice (data -> logic -> interface), independently testable, paired with a failing test first; slice the same way when sizing for agent-team-execution.",
           "when": "always"
         },
         {
-          "text": "SCOPE MANIFEST: Each task's **Files:** block (Create/Modify/Test/Delete entries with exact backticked repo-relative paths) doubles as the machine-checked scope manifest. Optionally add `- Allow: ` entries (backticked globs) for legitimate extras. REVIEW runs `{{PLUGIN_ROOT}}/scripts/scope-conformance.sh` against these entries; undeclared touched files surface as advisory violations.",
+          "text": "SCOPE MANIFEST: Each task's **Files:** block (backticked repo-relative Create/Modify/Test/Delete paths, optional `- Allow: ` globs) is the scope manifest. REVIEW runs `{{PLUGIN_ROOT}}/scripts/scope-conformance.sh` against it; undeclared touched files are advisory violations.",
           "when": "always"
         }
       ]
@@ -1407,7 +1407,7 @@
           "when": "installed"
         },
         {
-          "text": "ADVERSARIAL REVIEW: In addition to standard code review, evaluate these governance checks: (1) Does any change weaken or remove an existing safety gate, HITL requirement, or approval step? (2) Does any change expand autonomous action scope (new outbound actions, broader permissions, reduced human oversight)? (3) Does any change modify hook behavior, permission settings, or composition routing in ways that reduce guardrails? (4) Does any change add `dangerouslyDisableSandbox`, `--no-verify`, `force`, or equivalent bypass patterns? (5) Does any change touch files in `hooks/` or `config/` that govern skill routing or phase enforcement? (6) If any answer is YES: flag as a blocking governance finding with specific file:line evidence. (7) Does the resulting change have >=2 lethal-trifecta fields (private_data, untrusted_input, outbound_action), or add a missing leg to an existing >=2-field flow? If so, invoke Skill(auto-claude-skills:agent-safety-review) and treat unmitigated and unacknowledged lethal-trifecta risk as a blocking governance finding (the user may still explicitly accept the risk).",
+          "text": "ADVERSARIAL REVIEW: Ask whether the change weakens a safety gate, HITL requirement or approval step; widens autonomous scope or permissions; adds `dangerouslyDisableSandbox`, `--no-verify` or `force`; or touches routing in hooks/ or config/. Any YES is a blocking governance finding with file:line. Checklist: Skill(auto-claude-skills:agent-team-review) § Adversarial review checklist; >=2 lethal-trifecta fields need Skill(auto-claude-skills:agent-safety-review).",
           "when": "always"
         },
         {
@@ -1498,11 +1498,11 @@
         },
         {
           "plugin": "atlassian",
-          "text": "JIRA PR TITLE: If the branch name carries a Jira ID (feature/PROJ-123 -> PROJ-123), fetch the ticket's exact subject via the Atlassian MCP (getJiraIssue) and title the PR '<JIRA-ID>: <subject>'. If no Jira ID is present, skip — don't fabricate one.",
+          "text": "JIRA PR TITLE: If the branch name carries a Jira ID (feature/PROJ-123 -> PROJ-123), fetch the ticket subject via the Atlassian MCP (getJiraIssue) and title the PR '<JIRA-ID>: <subject>'; with no Jira ID, skip.",
           "when": "installed"
         },
         {
-          "text": "CAPTURE KNOWLEDGE: If this work surfaced a durable, team-relevant, non-obvious learning (a gotcha, decision, convention, or runbook a teammate's agent would benefit from), consider Skill(auto-claude-skills:capture-knowledge) to record it into the committed .claude/knowledge/ base (human-gated at write). Skip if nothing durable emerged or the fact is routine / repo-derivable.",
+          "text": "CAPTURE KNOWLEDGE: If this work surfaced a durable, non-obvious, team-relevant learning, consider Skill(auto-claude-skills:capture-knowledge) (human-gated write to the committed .claude/knowledge/ base); skip routine or repo-derivable facts.",
           "when": "always"
         }
       ]
@@ -1528,7 +1528,7 @@
           "when": "always"
         },
         {
-          "text": "CAPTURE KNOWLEDGE: If this debug session surfaced a non-obvious root-cause gotcha worth sharing with teammates' agents, consider Skill(auto-claude-skills:capture-knowledge) to record it into the committed .claude/knowledge/ base (human-gated at write). Skip for routine fixes.",
+          "text": "CAPTURE KNOWLEDGE: If this work surfaced a durable, non-obvious, team-relevant learning, consider Skill(auto-claude-skills:capture-knowledge) (human-gated write to the committed .claude/knowledge/ base); skip routine or repo-derivable facts.",
           "when": "always"
         }
       ]
@@ -1551,7 +1551,7 @@
       ],
       "hints": [
         {
-          "text": "CAPTURE KNOWLEDGE: If this work surfaced a durable, team-relevant, non-obvious learning (a gotcha, decision, convention, or runbook a teammate's agent would benefit from), consider Skill(auto-claude-skills:capture-knowledge) to record it into the committed .claude/knowledge/ base (human-gated at write). Skip if nothing durable emerged or the fact is routine / repo-derivable.",
+          "text": "CAPTURE KNOWLEDGE: If this work surfaced a durable, non-obvious, team-relevant learning, consider Skill(auto-claude-skills:capture-knowledge) (human-gated write to the committed .claude/knowledge/ base); skip routine or repo-derivable facts.",
           "when": "always"
         }
       ]

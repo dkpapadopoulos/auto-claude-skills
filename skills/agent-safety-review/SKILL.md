@@ -62,6 +62,14 @@ Stay **silent** when oversight is strong (a reviewed manifest, a required
 approval, or reversible/bounded effects already supply the control). This is
 guidance, not a veto.
 
+## Autonomy levels
+
+The DESIGN-phase hint `AUTONOMY CHECK` points here. The rungs, the oversight
+test and the advisory rule are Step 2b above; at DESIGN time apply them to the
+proposed design rather than to a built system, and when the rule fires help the
+user design the oversight in before leaving DESIGN. Judge from the actual
+design; this is guidance, not a gate.
+
 ## Step 3: Recommend Mitigation (if lethal trifecta)
 
 The primary mitigation is **blast-radius control** — cutting at least one leg of the trifecta. Improved detection scores are NOT proof of safety.

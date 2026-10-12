@@ -434,6 +434,16 @@ rm -rf "${VALIDATION_TMPDIR}"
 
 Ad-hoc test scripts are ephemeral and never committed. Screenshots and validation artifacts persist in `tests/artifacts/validation/` for post-review inspection but are gitignored.
 
+## Eval strategy at DESIGN
+
+The DESIGN-phase hint `EVAL STRATEGY` points here. Before leaving DESIGN, classify how the feature is verified; ask the user if it is unclear.
+
+- **Probabilistic, AI, LLM or agent behaviour** (outputs cannot be exact-matched): plan an eval SET, not just unit tests. It holds a smoke subset; adversarial and safety subsets (jailbreak, injection, safety-routing suppression); a pinned judge model and version; never-delete cases (deprecate with a dated rationale instead); and a pre-registered safety stop naming the halt condition and who can call it. Author the safety subset first and have it failing (red) before implementation.
+- **Deterministic behaviour**: standard test-driven development plus the design's acceptance scenarios are the bar.
+- **Safety dimensions are hard pass/fail gates**, never averaged into a quality blend.
+
+Run eval packs through this skill (Step 2 derives scenarios from specs and evals; Step 3 executes them).
+
 ## Verification
 
 Before claiming the change works, confirm -- from observed output, not inference:

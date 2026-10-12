@@ -963,14 +963,14 @@ if [ -n "$_preset_name" ] && [ "$_preset_name" != "null" ] && [ -f "$_preset_fil
     DEFAULT_JSON="$(printf '%s' "${DEFAULT_JSON}" | jq '
       (.phase_compositions.DESIGN.hints // []) |= map(
         if (.text // "" | test("PERSIST DESIGN")) then
-          .text = "PERSIST DESIGN (spec-driven): Create `openspec/changes/<feature-slug>/proposal.md`, `openspec/changes/<feature-slug>/design.md`, and `openspec/changes/<feature-slug>/specs/<capability-slug>/spec.md` upfront after brainstorming approval. Sections in proposal: Why, What Changes, Capabilities (Added/Modified), Impact. Sections in design: Architecture, Trade-offs, Dissenting views, Decisions. Spec file uses RFC 2119 UPPERCASE keywords and 2-4 GIVEN/WHEN/THEN acceptance scenarios. Then run, in ONE Bash call: bash '\''{{PLUGIN_ROOT}}/scripts/persist-state.sh'\'' upsert-change \"$SLUG\" \"\" \"\" \"$CAPABILITY_SLUG\" \"\" to set change_slug + capability_slug in session state — the script resolves the session token internally (issue #157), so you author only the slug and capability. If introducing a new capability, emit a visible NEW CAPABILITY warning for user review."
+          .text = "PERSIST DESIGN (spec-driven): On approval, create `openspec/changes/<feature-slug>/` with proposal.md (Why, What Changes, Capabilities, Impact), design.md (Architecture, Trade-offs, Dissenting views, Decisions) and specs/<capability-slug>/spec.md (RFC 2119 keywords, 2-4 GIVEN/WHEN/THEN scenarios); warn visibly (NEW CAPABILITY) when adding a capability; then in ONE Bash call: bash '\''{{PLUGIN_ROOT}}/scripts/persist-state.sh'\'' upsert-change \"$SLUG\" \"\" \"\" \"$CAPABILITY_SLUG\" \"\"."
         elif (.text // "" | test("DESIGN.PLAN CONTRACT")) then
-          .text = "DESIGN\u2192PLAN CONTRACT (spec-driven): Before transitioning from DESIGN to PLAN, the `openspec/changes/<feature-slug>/` folder MUST contain: (1) proposal.md with Capabilities section listing every subsystem touched, (2) design.md with Architecture and explicit out-of-scope, (3) specs/<capability-slug>/spec.md with 2-4 GIVEN/WHEN/THEN acceptance scenarios. These files are COMMITTED so teammates see in-progress design intent via git."
+          .text = "DESIGN\u2192PLAN CONTRACT (spec-driven): Before PLAN, `openspec/changes/<feature-slug>/` MUST hold proposal.md (Capabilities section), design.md (Architecture, explicit out-of-scope) and specs/<capability-slug>/spec.md (2-4 GIVEN/WHEN/THEN scenarios), COMMITTED so teammates see the intent."
         else . end
       ) |
       (.phase_compositions.PLAN.hints // []) |= map(
         if (.text // "" | test("CARRY SCENARIOS")) then
-          .text = "CARRY SCENARIOS (spec-driven): Read acceptance scenarios from `openspec/changes/<feature-slug>/specs/<capability-slug>/spec.md` and carry them into the plan as verification criteria. Save the plan to `docs/plans/YYYY-MM-DD-<slug>-plan.md` (local task breakdown, gitignored)."
+          .text = "CARRY SCENARIOS (spec-driven): Read the acceptance scenarios from `openspec/changes/<feature-slug>/specs/<capability-slug>/spec.md` into the plan as verification criteria; save the plan to `docs/plans/YYYY-MM-DD-<slug>-plan.md` (local, gitignored)."
         else . end
       )
     ')"
