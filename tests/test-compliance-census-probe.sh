@@ -142,7 +142,7 @@ assert_contains "C5: and its mandate is counted" "mandates rendered: 4" "$(cat "
 echo "== C6: gating invocations =="
 RC="$(run --since 2026-10-20T00:00:00Z --until 2026-10-21T00:00:00Z --today 2026-10-21)"
 assert_contains "C6: an unrouted verification-before-completion is counted" "gating invocations in typed turns: routed=0 unrouted=1" "$(cat "${OUT}/run.txt")"
-assert_contains "C6: block bytes are reported" "block bytes:" "$(cat "${OUT}/run.txt")"
+assert_contains "C6: block bytes are reported as numbers" "block bytes: median=" "$(cat "${OUT}/run.txt")"
 
 echo "== C7-C8: cannot check and instrument fault =="
 RC="$(run --since 2026-10-25T00:00:00Z --until 2026-10-26T00:00:00Z --today 2026-10-26)"
@@ -233,6 +233,66 @@ assert_equals "C15: exits 0" "0" "${RC}"
 assert_contains "C15: the full-format mandate is counted" "mandates rendered: 1" "$(cat "${OUT}/full.txt")"
 assert_contains "C15: as requesting-code-review, obeyed in-turn" "by skill: requesting-code-review mandates=1 in-turn=1 later=0" "$(cat "${OUT}/full.txt")"
 assert_contains "C15: the prose line naming MUST INVOKE is not a second mandate" "obeyed in-turn: 1" "$(cat "${OUT}/full.txt")"
+
+echo "== C16: collection closes at EXACTLY close-at mandates, by time =="
+# s1 holds 3 mandates (09:01, 09:02, 09:07); s2's (10:01) is admitted by lowering the floor and is the 4th in time.
+RC="$(run --since 2026-10-20T00:00:00Z --today 2026-10-21 --close-at 3 --min-version 3.95.3)"
+assert_contains "C16: all four are counted in the table" "mandates rendered: 4" "$(cat "${OUT}/run.txt")"
+assert_contains "C16: but the window closes at the third mandate by time" "collection: CLOSED (by count: 3 of 3 mandates; 1 later mandate not read)" "$(cat "${OUT}/run.txt")"
+assert_contains "C16: and the verdict is over the first three only" "verdict: 1 obeyed in-turn of 3 mandates" "$(cat "${OUT}/run.txt")"
+
+echo "== C17: a close by date does not count mandates after the cap =="
+PROJD="${TEST_TMPDIR}/projects-date"; mkdir -p "${PROJD}/p1"
+S8="${PROJD}/p1/s8.jsonl"; : > "${S8}"
+ctx   "${S8}" s0 ""  "2026-10-20T09:00:00Z" SessionStart "${START}"
+uu    "${S8}" u1 s0  "2026-10-20T09:01:00Z" "please build the exporter now" human
+ctx   "${S8}" a1 u1  "2026-10-20T09:01:01Z" UserPromptSubmit "${BLOCK}"
+say   "${S8}" x1 a1  "2026-10-20T09:01:10Z" "Later."
+S9="${PROJD}/p1/s9.jsonl"; : > "${S9}"
+ctx   "${S9}" s0 ""  "2026-11-12T09:00:00Z" SessionStart "${START}"
+uu    "${S9}" u1 s0  "2026-11-12T09:01:00Z" "please build another exporter" human
+ctx   "${S9}" a1 u1  "2026-11-12T09:01:01Z" UserPromptSubmit "${BLOCK}"
+skill "${S9}" x1 a1  "2026-11-12T09:01:10Z" "superpowers:brainstorming"
+RC="$(python3 "${CENSUS}" --projects "${PROJD}" --control 0/23 --since 2026-10-20T00:00:00Z --today 2026-11-13 > "${OUT}/date.txt" 2>&1; echo $?)"
+assert_equals "C17: exits 0" "0" "${RC}"
+assert_contains "C17: the post-cap session is outside the window" "mandates rendered: 1" "$(cat "${OUT}/date.txt")"
+assert_contains "C17: closed by date" "collection: CLOSED (by date 2026-11-09; 1 of 46 mandates)" "$(cat "${OUT}/date.txt")"
+assert_contains "C17: and the post-cap obedience is not in the verdict" "verdict: 0 obeyed in-turn of 1 mandates" "$(cat "${OUT}/date.txt")"
+
+echo "== C18: a tool result between the prompt and the invocation does not end the turn =="
+PROJT="${TEST_TMPDIR}/projects-toolresult"; mkdir -p "${PROJT}/p1"
+S10="${PROJT}/p1/s10.jsonl"; : > "${S10}"
+ctx   "${S10}" s0 ""  "2026-10-20T09:00:00Z" SessionStart "${START}"
+uu    "${S10}" u1 s0  "2026-10-20T09:01:00Z" "please build the exporter now" human
+ctx   "${S10}" a1 u1  "2026-10-20T09:01:01Z" UserPromptSubmit "${BLOCK}"
+jq -nc '{type:"assistant",uuid:"x1",parentUuid:"a1",timestamp:"2026-10-20T09:01:05Z",message:{role:"assistant",content:[{type:"tool_use",id:"b1",name:"Bash",input:{command:"ls"}}]}}' >> "${S10}"
+jq -nc '{type:"user",uuid:"r1",parentUuid:"x1",timestamp:"2026-10-20T09:01:06Z",message:{role:"user",content:[{type:"tool_result",tool_use_id:"b1",content:[{type:"text",text:"README.md"}]}]}}' >> "${S10}"
+skill "${S10}" x2 r1  "2026-10-20T09:01:10Z" "superpowers:brainstorming"
+RC="$(python3 "${CENSUS}" --projects "${PROJT}" --control 0/23 --since 2026-10-20T00:00:00Z --today 2026-10-21 > "${OUT}/toolresult.txt" 2>&1; echo $?)"
+assert_equals "C18: exits 0" "0" "${RC}"
+assert_contains "C18: the invocation after the tool result is in-turn" "obeyed in-turn: 1" "$(cat "${OUT}/toolresult.txt")"
+
+echo "== C19: routed means the block's verdict line names the skill, not any prose mention =="
+PROJR="${TEST_TMPDIR}/projects-routed"; mkdir -p "${PROJR}/p1"
+S11="${PROJR}/p1/s11.jsonl"; : > "${S11}"
+PROSE_MENTION="SKILL ACTIVATION (1 skills | Build New)
+Process: brainstorming -> Skill(superpowers:brainstorming)
+Remember verification-before-completion exists, as prose only.
+Evaluate: **Phase: [DESIGN]** | brainstorming MUST INVOKE"
+ctx   "${S11}" s0 ""  "2026-10-20T09:00:00Z" SessionStart "${START}"
+uu    "${S11}" u1 s0  "2026-10-20T09:01:00Z" "please build the exporter now" human
+ctx   "${S11}" a1 u1  "2026-10-20T09:01:01Z" UserPromptSubmit "${PROSE_MENTION}"
+skill "${S11}" x1 a1  "2026-10-20T09:01:10Z" "superpowers:verification-before-completion"
+RC="$(python3 "${CENSUS}" --projects "${PROJR}" --control 0/23 --since 2026-10-20T00:00:00Z --today 2026-10-21 > "${OUT}/routed.txt" 2>&1; echo $?)"
+assert_contains "C19: a gating skill named only in prose is unrouted" "gating invocations in typed turns: routed=0 unrouted=1" "$(cat "${OUT}/routed.txt")"
+
+echo "== C20: an unreadable transcript is counted, not silently skipped =="
+PROJU="${TEST_TMPDIR}/projects-unreadable"; mkdir -p "${PROJU}/p1"
+cp "${S1}" "${PROJU}/p1/ok.jsonl"
+mkdir -p "${PROJU}/p1/dir.jsonl"
+RC="$(python3 "${CENSUS}" --projects "${PROJU}" --control 0/23 --since 2026-10-20T00:00:00Z --until 2026-10-21T00:00:00Z --today 2026-10-21 > "${OUT}/unreadable.txt" 2>&1; echo $?)"
+assert_equals "C20: still exits 0 when another transcript could be read" "0" "${RC}"
+assert_contains "C20: and the unreadable one is counted" "transcripts unreadable: 1" "$(cat "${OUT}/unreadable.txt")"
 
 echo "== C12: compiles =="
 python3 -m py_compile "${CENSUS}" 2>/dev/null

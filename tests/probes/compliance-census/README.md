@@ -38,12 +38,19 @@ is not itself good**; the census only settles whether display can move behaviour
   wrapper. A tool result, a skill-load meta entry (`Base directory for this skill: ...`) or a
   sidechain entry does not end a turn. **Obeyed later**: anywhere later in the session.
 - **Gating invocations**: `requesting-code-review` and `verification-before-completion`
-  invoked in a typed turn; routed when that turn's block names the skill, unrouted otherwise.
+  invoked in a typed turn; routed when that turn's block lists the skill on its verdict line
+  (mandated or `YES/NO`), unrouted otherwise, including a skill named only in prose or no
+  block at all.
+- **Obeyed later** is per mandate and can overlap another prompt's in-turn count: one
+  invocation can be in-turn for prompt B and "later" for an earlier prompt A that mandated
+  the same skill. The primary (in-turn) has no such overlap; "later" is a side column.
 - **Version floor**: a session counts only when its SessionStart hook output or a skill-load
   entry names an installed plugin at or above `--min-version` (default 3.95.8). Below the
   floor, or no evidence, is counted out separately and never assumed current. A session
   keeps the build it started on, so the floor is what keeps pre-cut renders out of the
-  post-cut count.
+  post-cut count. The FIRST version evidenced in a transcript is the session's version; a
+  resumed session that later evidences a newer build is still judged by its first, which can
+  only exclude it (shrinking n), never admit a pre-cut render.
 
 ## Baseline reproduction (the control), read 2026-10-12 with this instrument
 
@@ -59,7 +66,7 @@ window is pre-cut by date):
 | mandates rendered | 35 | 23 |
 | obeyed in-turn | **2** (both requesting-code-review) | 0 "in-window" |
 | obeyed later in session | 1 | not reported |
-| gating invocations in typed turns | routed 5, unrouted 0 | 11 unrouted, scope unstated |
+| gating invocations in typed turns | routed 3, unrouted 2 | 11 unrouted, scope unstated |
 | block bytes, median / mean | 5,121 / 5,492 | 5,121 / 5,526 |
 
 The block counts and the median agree; the mandate count does not: the doc counted 23, this
@@ -71,15 +78,18 @@ does not reproduce either (every prompt-bearing entry of every source in that wi
 were never written down. **The registered control is therefore this instrument's own read,
 2 obeyed of 35**, so that the census compares one instrument with itself. Robustness column,
 four weeks 2026-09-14 to 10-12, every version: 573 typed prompts, 471 with a block, 320
-mandates, 20 obeyed in-turn (6.3%), 50 later, 111 blocks unpaired (older transcript shapes
-and skill-load inputs); consistent with the week.
+mandates, 20 obeyed in-turn (6.3%), 50 later, gating routed 15 unrouted 18, 111 blocks
+unpaired (older transcript shapes and skill-load inputs); consistent with the week.
 
 ## Registration
 
-- **Window**: from `2026-10-12T00:00:00Z`, closed by **count**: when 46 mandates have been
-  rendered on typed prompts in sessions at or above the floor, or on `2026-11-09`, whichever
-  is first. By count, not by date, because the cut is display-only and mandates per prompt
-  are unchanged by construction; only the owner's prompting volume moves the count.
+- **Window**: from `2026-10-12T00:00:00Z`, closed by **count**: at the 46th mandate rendered
+  on a typed prompt in a session at or above the floor, by time, or on `2026-11-09`,
+  whichever is first. By count, not by date, because the cut is display-only and mandates per
+  prompt are unchanged by construction; only the owner's prompting volume moves the count.
+  **Exactly 46**: a read made after the 46th mandate reads the first 46 by time and reports
+  how many later ones it did not read, so the result cannot depend on when the owner reads
+  (optional stopping). A close by date caps the window at the cap date even when read later.
 - **Control**: 2 obeyed of 35 (above).
 - **Primary**: obeyed in-turn over mandates rendered, k of n. One-sided exact Fisher tail of
   the table [[k, n-k], [2, 33]], printed by `census.py` when the window closes.
@@ -97,7 +107,7 @@ and skill-load inputs); consistent with the week.
     reported and the same two thresholds apply: p < 0.05, and k of 2 or fewer. A window that
     closes with **zero** mandates is cannot-check (exit 3), never a verdict.
 - **What this can detect**: with a 6% control and n = 46, only a rise to roughly one obeyed
-  mandate in five is significant. A smaller real effect reads as "no evidence". That is the
+  mandate in four (10 of 46 is 22%) is significant. A smaller real effect reads as "no evidence". That is the
   bar the owner's volume affords without labels, and it is stated here so a null is not
   oversold.
 - **Side columns, reported and not tested**: routed vs unrouted gating invocations; obeyed
@@ -118,9 +128,10 @@ python3 "$P/census.py" --self-test-p 9 46       # p=0.0669
 python3 "$P/census.py" --since 2026-10-05T00:00:00Z --until 2026-10-12T00:00:00Z --min-version 0.0.0 --close-at 1
 ```
 
-Exit 0 counted; 2 unreadable input, bad usage, or an instrument fault (blocks exist in the
-window and none pairs with any input); 3 cannot check (no transcript, no counted session with
-a typed prompt in the window, or a window that closed with no mandate). A verdict is never an
+Exit 0 counted; 2 unreadable projects directory, bad usage, or an instrument fault (blocks
+exist in the window and none pairs with any input); 3 cannot check (no transcript, no counted
+session with a typed prompt in the window, or a window that closed with no mandate). A single
+transcript that cannot be read is counted (`transcripts unreadable`) and skipped. A verdict is never an
 exit code. Output is counts and skill names only; no prompt text is ever printed, so the
 output may be pasted into an issue.
 

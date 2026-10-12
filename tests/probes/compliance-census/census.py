@@ -19,24 +19,29 @@ Reads the owner's own Claude Code transcripts (top-level sessions only,
                            a skill-load meta entry or a sidechain entry does not end a turn)
   obeyed later             the same, anywhere later in the session
   gating invocations       requesting-code-review / verification-before-completion invoked in
-                           a typed turn: "routed" when that turn's block names the skill,
-                           "unrouted" otherwise (including no block at all)
+                           a typed turn: "routed" when that turn's block lists the skill on
+                           its verdict line, "unrouted" otherwise (prose mentions, or no
+                           block at all)
   version floor            a session counts only when its SessionStart hook output or a
                            skill-load entry names an installed plugin version at or above
                            --min-version; sessions below it, or with no evidence, are counted
                            out separately and never assumed current
 
-Collection is registered by COUNT: it closes when --close-at mandates have been rendered in
-the window, or on --cap-date, whichever is first (README.md is the pre-registration). While
-open, the last line says so and no verdict is printed. When closed, the verdict line carries
+Collection is registered by COUNT: it closes at the --close-at'th mandate by time, or on
+--cap-date, whichever is first (README.md is the pre-registration). While open, the last
+line says so and no verdict is printed. When closed by count, the verdict reads exactly the
+first --close-at mandates and reports how many later ones it did not read; when closed by
+date, the window is capped at the cap date even when read later. The verdict line carries
 the one-sided exact Fisher tail of the observed in-turn count against --control (K/N, the
 baseline week), and the registered reading rule. A window that closes with zero mandates is
 cannot-check (exit 3), never a verdict.
 
-Exit codes: 0 counted; 2 unreadable input, bad usage, or an instrument fault (blocks exist in
-the window and not one pairs with any input: the transcript format has changed, and zeros
-would read as "nobody obeyed"); 3 cannot check (no transcript, or no session at or above the
-floor with a typed prompt in the window). A verdict is never an exit code.
+Exit codes: 0 counted; 2 unreadable projects directory, bad usage, or an instrument fault
+(blocks exist in the window and not one pairs with any input: the transcript format has
+changed, and zeros would read as "nobody obeyed"); 3 cannot check (no transcript, or no
+session at or above the floor with a typed prompt in the window). A single transcript that
+cannot be read is counted ("transcripts unreadable") and skipped. A verdict is never an exit
+code.
 
 Usage:
   census.py --since ISO8601 [--until ISO8601] [--projects DIR] [--min-version X.Y.Z]
@@ -131,6 +136,19 @@ def mandates_of(block):
     return out
 
 
+ROUTED_RE = re.compile(r"(?<![A-Za-z0-9-])([a-z][a-z0-9-]*) (?:MUST INVOKE|YES/NO|INVOKE WHEN)")
+
+
+def routed_names(block):
+    """Every skill the block's verdict line lists, mandated or not. A skill named only in
+    prose elsewhere in the block was not routed."""
+    out = set()
+    for line in block.splitlines():
+        if VERDICT_RE.match(line):
+            out.update(ROUTED_RE.findall(line))
+    return out
+
+
 def skill_uses(entry):
     if entry.get("type") != "assistant":
         return []
@@ -195,18 +213,20 @@ def pair_block(index, by_uuid, entries, prompts):
 
 def census(projects, since, until, min_version):
     paths = sorted(glob.glob(os.path.join(projects, "*", "*.jsonl")))
-    c = {"transcripts read": 0, "sessions counted": 0, "sessions below version floor": 0,
-         "sessions with unknown version": 0, "typed prompts": 0, "typed prompts with a block": 0,
-         "inputs with a block that are not typed prompts": 0, "blocks unpaired": 0,
-         "mandates rendered": 0, "obeyed in-turn": 0, "obeyed later in session": 0,
+    c = {"transcripts read": 0, "transcripts unreadable": 0, "sessions counted": 0,
+         "sessions below version floor": 0, "sessions with unknown version": 0, "typed prompts": 0,
+         "typed prompts with a block": 0, "inputs with a block that are not typed prompts": 0,
+         "blocks unpaired": 0, "mandates rendered": 0, "obeyed in-turn": 0, "obeyed later in session": 0,
          "routed": 0, "unrouted": 0}
     by_skill = {}
     sizes = []
+    mandates = []           # (timestamp, skill, obeyed in-turn) for every mandate, across sessions
     blocks_in_window = 0
     for path in paths:
         try:
             entries, version = read_session(path)
         except OSError:
+            c["transcripts unreadable"] += 1
             continue
         c["transcripts read"] += 1
         prompts = [prompt_of(e) for e in entries]
@@ -258,17 +278,19 @@ def census(projects, since, until, min_version):
                     row = by_skill.setdefault(name, [0, 0, 0])
                     row[0] += 1
                     c["mandates rendered"] += 1
+                    mandates.append((stamps[i] or 0.0, name, name in in_turn))
                     if name in in_turn:
                         row[1] += 1
                         c["obeyed in-turn"] += 1
                     elif name in later:
                         row[2] += 1
                         c["obeyed later in session"] += 1
+            listed = routed_names(block) if block is not None else set()
             for name in in_turn:
                 if name in GATED:
-                    key = "routed" if block is not None and name in block else "unrouted"
-                    c[key] += 1
-    return c, by_skill, sizes, blocks_in_window
+                    c["routed" if name in listed else "unrouted"] += 1
+    mandates.sort(key=lambda m: m[0])
+    return c, by_skill, sizes, blocks_in_window, mandates
 
 
 def main():
@@ -316,9 +338,19 @@ def main():
         print(f"cannot read projects directory: {args.projects}", file=sys.stderr)
         return 2
 
-    c, by_skill, sizes, blocks_in_window = census(args.projects, since, until, min_version)
-    print(f"window: {args.since} to {args.until or 'open'}; version floor {args.min_version}")
-    for key in ("transcripts read", "sessions counted", "sessions below version floor", "sessions with unknown version"):
+    # Closing by date caps the window at the cap date: a read after it must not count what
+    # was rendered later, or the result would depend on when the owner happened to read.
+    by_date = today >= args.cap_date
+    cap_ts = ts_of(args.cap_date + "T00:00:00+00:00")
+    if by_date and cap_ts is not None and (until is None or until > cap_ts):
+        until = cap_ts
+    c, by_skill, sizes, blocks_in_window, mandates = census(args.projects, since, until, min_version)
+    until_text = args.until or "open"
+    if by_date:
+        until_text = f"{args.cap_date} (cap date reached)"
+    print(f"window: {args.since} to {until_text}; version floor {args.min_version}")
+    for key in ("transcripts read", "transcripts unreadable", "sessions counted", "sessions below version floor",
+                "sessions with unknown version"):
         print(f"{key}: {c[key]}")
     if c["transcripts read"] == 0 or c["sessions counted"] == 0:
         print("cannot check: no session at or above the version floor has a typed prompt in the window")
@@ -339,19 +371,25 @@ def main():
         row = by_skill[name]
         print(f"by skill: {name} mandates={row[0]} in-turn={row[1]} later={row[2]}")
 
-    n, k = c["mandates rendered"], c["obeyed in-turn"]
-    by_date = today >= args.cap_date
-    if n == 0 and by_date:
+    total = c["mandates rendered"]
+    if total == 0 and by_date:
         print(f"cannot check: the window closed on {args.cap_date} with no mandate rendered; "
               "a verdict over zero mandates is not a verdict")
         return 3
-    if n >= args.close_at:
-        print(f"collection: CLOSED (by count: {n} of {args.close_at} mandates)")
+    if total >= args.close_at:
+        # The window closed at the close-at'th mandate by time. Anything rendered after it is
+        # reported in the table above and never read: reading it would be optional stopping.
+        read = mandates[:args.close_at]
+        unread = total - len(read)
+        tail = f"; {unread} later mandate{'s' if unread != 1 else ''} not read" if unread else ""
+        print(f"collection: CLOSED (by count: {len(read)} of {args.close_at} mandates{tail})")
     elif by_date:
-        print(f"collection: CLOSED (by date {args.cap_date}; {n} of {args.close_at} mandates)")
+        read = mandates
+        print(f"collection: CLOSED (by date {args.cap_date}; {total} of {args.close_at} mandates)")
     else:
-        print(f"collection: OPEN ({n} of {args.close_at} mandates; closes at {args.close_at} or on {args.cap_date}). Do not read a verdict yet.")
+        print(f"collection: OPEN ({total} of {args.close_at} mandates; closes at {args.close_at} or on {args.cap_date}). Do not read a verdict yet.")
         return 0
+    n, k = len(read), sum(1 for m in read if m[2])
     p = one_sided_p(k, n, control[0], control[1])
     if p < 0.05:
         reading = "display moves behaviour; keep the display path and PR #350's line only if routed gating invocations rose"
