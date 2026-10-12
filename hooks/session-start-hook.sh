@@ -504,8 +504,11 @@ ${_rp_pn}@${_rp_mk}|"}"
     # Highest semver DIRECTORY, compared numerically per component. This used
     # to be `ls | grep | sort | tail` -- four forks per plugin, 38 plugins
     # per pass, two passes (measured 2026-10-12: 114 of the 621 forks in one
-    # session start). Same acceptance as the old regex (exactly three
-    # non-empty digit runs); `[ -gt ]` compares as decimal like `sort -n` did.
+    # session start). Accepts exactly three non-empty digit runs like the old
+    # regex, but DIRECTORIES only (the old `ls` also matched a file named like
+    # a version and then resolved to a directory that did not exist), and each
+    # component must fit a 64-bit integer for `[ -gt ]`; `sort -n` had no such
+    # ceiling. Comparison is decimal, as `sort -n` was.
     _rp_best=""; _rp_b1=-1; _rp_b2=-1; _rp_b3=-1
     for _rp_d in "$1"*/; do
         [ -d "${_rp_d}" ] || continue
@@ -1220,12 +1223,15 @@ for _pjson in "${HOME}/.claude/plugins/cache"/*/*/.claude-plugin/plugin.json \
     _lsp_manifests="${_lsp_manifests}${_lsp_manifests:+
 }${_pjson}"
 done
+# Fields are joined by the repo's US separator (\x1f), not TAB: TAB is IFS
+# whitespace, so `read` collapses consecutive tabs and an empty name field
+# would shift the command into the name slot and drop the row (review finding).
 _LSP_ROWS_FILTER='input_filename as $f | (.name // "unknown") as $n
-    | (.lspServers // {}) | to_entries[] | "\($f)\t\($n)\t\(.value.command // "")"'
+    | (.lspServers // {}) | to_entries[] | "\($f)\u001f\($n)\u001f\(.value.command // "")"'
 _lsp_jq_all() { jq -r "${_LSP_ROWS_FILTER}" "$@" 2>/dev/null; }
 _lsp_rows=""
 if [ -n "${_lsp_manifests}" ]; then
-    _lsp_oifs="${IFS}"; IFS='
+    _lsp_oifs="${IFS-$' \t\n'}"; IFS='
 '; set -f
     # shellcheck disable=SC2086  # newline-split on purpose; globbing off
     _lsp_rows="$(_lsp_jq_all ${_lsp_manifests})" || {
@@ -1246,8 +1252,8 @@ _lsp_flush() {
 }${_plugin_name}|${_missing_for_plugin}"
     fi
 }
-_lsp_tab="$(printf '\t')"
-while IFS="${_lsp_tab}" read -r _lsp_file _lsp_name _cmd; do
+_lsp_us="$(printf '\037')"
+while IFS="${_lsp_us}" read -r _lsp_file _lsp_name _cmd; do
     [ -z "${_lsp_file}" ] && continue
     if [ "${_lsp_file}" != "${_lsp_cur}" ]; then
         _lsp_flush

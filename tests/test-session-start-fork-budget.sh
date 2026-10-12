@@ -24,12 +24,12 @@ HOOK="${PROJECT_ROOT}/hooks/session-start-hook.sh"
 
 echo "=== test-session-start-fork-budget.sh ==="
 
-# RATCHET (see header). Measured 2026-10-12 on this fixture: 36 after the fork
-# removals (32 jq, 2 grep, 1 dirname, 1 awk), from 177 before them (66
-# basename, 61 dirname, 35 jq, 6 grep, 4 sort, 4 ls, 1 awk). The
-# remaining jq calls are one per build step over the whole registry, not one
-# per discovered item; the next cut is batching those.
-_SS_FORK_BASELINE=36
+# RATCHET (see header). Measured 2026-10-12 on this fixture, traced from
+# TEST_TMPDIR: 30 after the fork removals (27 jq, 1 grep, 1 dirname, 1 awk),
+# from 177 before them (66 basename, 61 dirname, 35 jq, 6 grep, 4 sort, 4 ls,
+# 1 awk). The remaining jq calls are one per build step over the whole
+# registry, not one per discovered item; the next cut is batching those.
+_SS_FORK_BASELINE=30
 # Floor on the trace itself: an empty or truncated trace would count 0 forks
 # and read as the best possible result. The real trace is tens of thousands of
 # lines; this floor only has to reject "nothing ran".
@@ -54,10 +54,15 @@ mkdir -p "${HOME}/.claude/skills/acs-fb-user"
 printf '%s\n' '---' 'name: acs-fb-user' 'description: User' '---' '# U' > "${HOME}/.claude/skills/acs-fb-user/SKILL.md"
 
 # --- one traced run -----------------------------------------------------------
+# From TEST_TMPDIR, not the checkout: the hook also reads the WORKSPACE it is
+# launched in (its .claude-plugin/plugin.json via PWD, .claude/knowledge/index.md
+# via `git rev-parse`), and those reads fork. Traced from the repo root the
+# count was 36; from elsewhere 34 (review finding). The fixture, not the
+# checkout, is what this file pins.
 _TRACE="${TEST_TMPDIR}/trace.txt"
 _OUT="${TEST_TMPDIR}/out.txt"
-printf '{}' | PS4='+F: ' CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" _SKILL_TEST_MODE=1 \
-    bash -x "${HOOK}" > "${_OUT}" 2> "${_TRACE}"
+( cd "${TEST_TMPDIR}" && PS4='+F: ' CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" _SKILL_TEST_MODE=1 \
+    bash -x "${HOOK}" > "${_OUT}" 2> "${_TRACE}" < /dev/null )
 _rc=$?
 _trace_lines="$(wc -l < "${_TRACE}" | tr -d ' ')"
 case "${_trace_lines}" in ''|*[!0-9]*) _trace_lines=0 ;; esac
@@ -122,6 +127,38 @@ if [ "${_lsp}" = "true" ]; then
     _record_pass "lsp capability: a resolvable lspServers command flips lsp=true"
 else
     _record_fail "lsp capability" "expected lsp=true (toolkit's command 'sh' resolves); got '${_lsp}'"
+fi
+
+# --- partial-install diagnostic, including an EMPTY plugin name -------------
+# A second run with the resolvable plugin removed, so no command resolves and
+# the "LSP (partial install)" line renders. A third manifest carries
+# `"name": ""`: the batched rows once used TAB as the field separator, and
+# `read` collapses consecutive tabs, so the empty name shifted the command into
+# the name slot and the row was dropped silently (review finding). The old
+# per-file loop processed it with an empty name; this pins that it still does.
+rm -rf "${_tb}"
+_eb="${HOME}/.claude/plugins/cache/acme/emptyname"
+mkdir -p "${_eb}/1.0.0/skills/acs-fb-empty" "${_eb}/1.0.0/.claude-plugin"
+printf '%s\n' '---' 'name: acs-fb-empty' 'description: E' '---' '# E' > "${_eb}/1.0.0/skills/acs-fb-empty/SKILL.md"
+printf '%s\n' '{"name":"","lspServers":{"e":{"command":"acs-fb-also-missing-binary"}}}' > "${_eb}/1.0.0/.claude-plugin/plugin.json"
+_OUT2="${TEST_TMPDIR}/out2.txt"
+( cd "${TEST_TMPDIR}" && CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" _SKILL_TEST_MODE=1 \
+    bash "${HOOK}" > "${_OUT2}" 2>/dev/null < /dev/null )
+_ctx2="$(jq -r '.hookSpecificOutput.additionalContext // ""' "${_OUT2}" 2>/dev/null)"
+if printf '%s' "${_ctx2}" | grep -qF "LSP (partial install)"; then
+    _record_pass "partial-install diagnostic renders when no lspServers command resolves"
+else
+    _record_fail "partial-install diagnostic" "no 'LSP (partial install)' line in the hook output"
+fi
+if printf '%s' "${_ctx2}" | grep -qF "widget needs acs-fb-definitely-missing-binary"; then
+    _record_pass "partial-install diagnostic names the plugin and its missing binary"
+else
+    _record_fail "partial-install diagnostic (named plugin)" "$(printf '%s' "${_ctx2}" | grep -F 'LSP (partial' | cut -c1-200)"
+fi
+if printf '%s' "${_ctx2}" | grep -qF "acs-fb-also-missing-binary"; then
+    _record_pass "a manifest with an empty name still contributes its missing binary (no field collapse)"
+else
+    _record_fail "empty-name manifest" "its missing binary is absent from: $(printf '%s' "${_ctx2}" | grep -F 'LSP (partial' | cut -c1-200)"
 fi
 
 teardown_test_env
