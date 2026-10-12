@@ -176,14 +176,63 @@ assert_equals "C10: 6 of 46 against 0/23" "p=0.0781" "$(python3 "${CENSUS}" --se
 assert_equals "C10: 0 of 46 is p=1" "p=1.0000" "$(python3 "${CENSUS}" --self-test-p 0 46 --control 0/23 2>/dev/null | grep -o 'p=[0-9.]*')"
 RC="$(python3 "${CENSUS}" --self-test-p 7 46 --control nonsense > "${OUT}/badctl.txt" 2>&1; echo $?)"
 assert_equals "C10: a malformed control exits 2" "2" "${RC}"
-assert_contains "C10: the registered default control is this instrument's own baseline read, 1 of 24" "against 1/24" \
+assert_contains "C10: the registered default control is this instrument's own baseline read, 2 of 35" "against 2/35" \
     "$(python3 "${CENSUS}" --self-test-p 7 46 2>/dev/null)"
-assert_contains "C10: the registered default control appears in the pre-registration" "1 obeyed of 24" "$(cat "${PROBE}/README.md")"
+assert_contains "C10: the registered default control appears in the pre-registration" "2 obeyed of 35" "$(cat "${PROBE}/README.md")"
 
 echo "== C11: counts only =="
 RC="$(run --since 2026-10-20T00:00:00Z --until 2026-10-21T00:00:00Z --today 2026-10-21)"
 assert_not_contains "C11: no prompt text in the output" "please build the exporter now" "$(cat "${OUT}/run.txt")"
 assert_not_contains "C11: no prompt text in the output (2)" "another exporter for the ledger" "$(cat "${OUT}/run.txt")"
+
+echo "== C13: a window that closes with no mandate is cannot-check, never a verdict =="
+PROJZ="${TEST_TMPDIR}/projects-zero"; mkdir -p "${PROJZ}/p1"
+S5="${PROJZ}/p1/s5.jsonl"; : > "${S5}"
+ctx   "${S5}" s0 ""  "2026-10-20T09:00:00Z" SessionStart "${START}"
+uu    "${S5}" u1 s0  "2026-10-20T09:01:00Z" "hello there" human
+say   "${S5}" x1 u1  "2026-10-20T09:01:10Z" "Hello."
+RC="$(python3 "${CENSUS}" --projects "${PROJZ}" --control 0/23 --since 2026-10-20T00:00:00Z --today 2026-11-10 > "${OUT}/zero.txt" 2>&1; echo $?)"
+assert_equals "C13: zero mandates at the cap date exits 3" "3" "${RC}"
+assert_contains "C13: and says cannot check" "cannot check" "$(cat "${OUT}/zero.txt")"
+assert_not_contains "C13: and prints no verdict" "verdict:" "$(cat "${OUT}/zero.txt")"
+
+echo "== C14: a skill-load meta entry does not end the turn =="
+PROJM="${TEST_TMPDIR}/projects-meta"; mkdir -p "${PROJM}/p1"
+S6="${PROJM}/p1/s6.jsonl"; : > "${S6}"
+ctx   "${S6}" s0 ""  "2026-10-20T09:00:00Z" SessionStart "${START}"
+uu    "${S6}" u1 s0  "2026-10-20T09:01:00Z" "please build the exporter now" human
+ctx   "${S6}" a1 u1  "2026-10-20T09:01:01Z" UserPromptSubmit "${BLOCK}"
+say   "${S6}" x1 a1  "2026-10-20T09:01:05Z" "Loading the skill."
+jq -nc '{type:"user",uuid:"m1",parentUuid:"x1",timestamp:"2026-10-20T09:01:06Z",isMeta:true,message:{role:"user",content:"Base directory for this skill: /x/cache/acsm/auto-claude-skills/3.95.8/skills/brainstorming\n# Brainstorming"}}' >> "${S6}"
+skill "${S6}" x2 m1  "2026-10-20T09:01:10Z" "superpowers:brainstorming"
+RC="$(python3 "${CENSUS}" --projects "${PROJM}" --control 0/23 --since 2026-10-20T00:00:00Z --today 2026-10-21 > "${OUT}/meta.txt" 2>&1; echo $?)"
+assert_equals "C14: exits 0" "0" "${RC}"
+assert_contains "C14: the invocation after the skill-load entry is in-turn" "obeyed in-turn: 1" "$(cat "${OUT}/meta.txt")"
+assert_contains "C14: and not later" "obeyed later in session: 0" "$(cat "${OUT}/meta.txt")"
+
+echo "== C15: the FULL block format (first prompt, 3+ skills) renders its verdict line without Evaluate: =="
+HF="${TEST_TMPDIR}/home-full"; mkdir -p "${HF}/.claude"
+cp "${H}/.claude/.skill-registry-cache.json" "${HF}/.claude/.skill-registry-cache.json"
+TPF="${PROJ}/p1/seed-full.jsonl"
+jq -nc '{type:"user",timestamp:"2026-10-20T09:00:00Z",origin:{kind:"human"},message:{role:"user",content:"fix the flaky deploy and review the incident, then plan the rollout"}}' > "${TPF}"
+FULL_BLOCK="$(jq -nc --arg t "${TPF}" '{prompt:"fix the flaky deploy and review the incident, then plan the rollout", transcript_path:$t}' \
+    | env HOME="${HF}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" ACS_STICKY_REPEAT=off /bin/bash "${HOOK}" 2>/dev/null \
+    | jq -r '.hookSpecificOutput.additionalContext // ""')"
+rm -f "${TPF}"
+assert_contains "C15 control: the real hook rendered the full format" "**Phase: [PHASE]** |" "${FULL_BLOCK}"
+assert_not_contains "C15 control: whose verdict line carries no Evaluate: prefix" "Evaluate:" "${FULL_BLOCK}"
+assert_contains "C15 control: and it mandates requesting-code-review" "requesting-code-review MUST INVOKE" "${FULL_BLOCK}"
+PROJF="${TEST_TMPDIR}/projects-full"; mkdir -p "${PROJF}/p1"
+S7="${PROJF}/p1/s7.jsonl"; : > "${S7}"
+ctx   "${S7}" s0 ""  "2026-10-20T09:00:00Z" SessionStart "${START}"
+uu    "${S7}" u1 s0  "2026-10-20T09:01:00Z" "fix the flaky deploy and review the incident, then plan the rollout" human
+ctx   "${S7}" a1 u1  "2026-10-20T09:01:01Z" UserPromptSubmit "${FULL_BLOCK}"
+skill "${S7}" x1 a1  "2026-10-20T09:01:10Z" "superpowers:requesting-code-review"
+RC="$(python3 "${CENSUS}" --projects "${PROJF}" --control 0/23 --since 2026-10-20T00:00:00Z --today 2026-10-21 > "${OUT}/full.txt" 2>&1; echo $?)"
+assert_equals "C15: exits 0" "0" "${RC}"
+assert_contains "C15: the full-format mandate is counted" "mandates rendered: 1" "$(cat "${OUT}/full.txt")"
+assert_contains "C15: as requesting-code-review, obeyed in-turn" "by skill: requesting-code-review mandates=1 in-turn=1 later=0" "$(cat "${OUT}/full.txt")"
+assert_contains "C15: the prose line naming MUST INVOKE is not a second mandate" "obeyed in-turn: 1" "$(cat "${OUT}/full.txt")"
 
 echo "== C12: compiles =="
 python3 -m py_compile "${CENSUS}" 2>/dev/null

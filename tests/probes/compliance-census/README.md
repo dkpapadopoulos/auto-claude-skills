@@ -27,11 +27,16 @@ is not itself good**; the census only settles whether display can move behaviour
   containing `SKILL ACTIVATION`, paired to the input it answered by walking `parentUuid`
   (as `tests/probes/real-prompt-replay/routed.py` does). A block paired to a non-typed input
   (a notification, a peer message, a headless prompt) is counted out, not in the denominator.
-- **Mandate**: each distinct `<skill> MUST INVOKE` on a block line starting with `Evaluate:`.
-  The same words in prose elsewhere are not a mandate.
+  A block whose chain reaches no entry, or reaches a skill-load meta entry, is "unpaired".
+- **Mandate**: each distinct `<skill> MUST INVOKE` on the block's verdict line. That line is
+  `Evaluate: **Phase: [X]** | ...` in the hook's compact formats and `**Phase: [PHASE]** | ...`
+  with no prefix in the full format it renders on a session's first prompt when three or
+  more skills route. The same words in prose elsewhere ("Process skills marked MUST INVOKE
+  are mandatory") are not a mandate. Both shapes are pinned against the real hook's output.
 - **Obeyed in-turn**: a `Skill` tool_use whose bare name equals the mandate, after the prompt
   and before the next text input of any source: a prompt, a queued prompt, or a notification
-  wrapper. A tool result does not end a turn. **Obeyed later**: anywhere later in the session.
+  wrapper. A tool result, a skill-load meta entry (`Base directory for this skill: ...`) or a
+  sidechain entry does not end a turn. **Obeyed later**: anywhere later in the session.
 - **Gating invocations**: `requesting-code-review` and `verification-before-completion`
   invoked in a typed turn; routed when that turn's block names the skill, unrouted otherwise.
 - **Version floor**: a session counts only when its SessionStart hook output or a skill-load
@@ -50,20 +55,24 @@ window is pre-cut by date):
 | sessions with a typed prompt | 14 | 102 sessions of any kind |
 | typed prompts | 62 | "366 typed human turns" |
 | typed prompts with a block | 51 | 55 human blocks |
-| blocks on non-typed inputs | 9 | 9 on peer input |
-| mandates rendered | 24 | 23 |
-| obeyed in-turn | **1** (requesting-code-review) | 0 "in-window" |
-| obeyed later in session | 2 | not reported |
-| gating invocations in typed turns | routed 2, unrouted 0 | 11 unrouted, scope unstated |
+| blocks on non-typed inputs / unpaired | 3 / 9 | 9 on peer input |
+| mandates rendered | 35 | 23 |
+| obeyed in-turn | **2** (both requesting-code-review) | 0 "in-window" |
+| obeyed later in session | 1 | not reported |
+| gating invocations in typed turns | routed 5, unrouted 0 | 11 unrouted, scope unstated |
 | block bytes, median / mean | 5,121 / 5,492 | 5,121 / 5,526 |
 
-The block counts and the median agree exactly; the typed-prompt count does not (every
-prompt-bearing entry of every source in that window is 217: 65 human, 87 headless `sdk`, 65
-unlabelled), and the doc's in-window rule and gating scope were never written down. **The
-registered control is therefore this instrument's own read, 1 obeyed of 24**, so that the
-census compares one instrument with itself. Robustness column, four weeks 2026-09-14 to
-10-12, every version: 573 typed prompts, 471 with a block, 267 mandates, 13 obeyed in-turn
-(4.9%), 46 later, 74 blocks unpaired (older transcript shapes); consistent with the week.
+The block counts and the median agree; the mandate count does not: the doc counted 23, this
+instrument 35, because a first prompt that routes three or more skills renders the verdict
+line without the `Evaluate:` prefix and a reader anchored on that prefix misses every such
+mandate (the first cut of this instrument did; a reviewer caught it). The typed-prompt count
+does not reproduce either (every prompt-bearing entry of every source in that window is 217:
+65 human, 87 headless `sdk`, 65 unlabelled), and the doc's in-window rule and gating scope
+were never written down. **The registered control is therefore this instrument's own read,
+2 obeyed of 35**, so that the census compares one instrument with itself. Robustness column,
+four weeks 2026-09-14 to 10-12, every version: 573 typed prompts, 471 with a block, 320
+mandates, 20 obeyed in-turn (6.3%), 50 later, 111 blocks unpaired (older transcript shapes
+and skill-load inputs); consistent with the week.
 
 ## Registration
 
@@ -71,22 +80,23 @@ census compares one instrument with itself. Robustness column, four weeks 2026-0
   rendered on typed prompts in sessions at or above the floor, or on `2026-11-09`, whichever
   is first. By count, not by date, because the cut is display-only and mandates per prompt
   are unchanged by construction; only the owner's prompting volume moves the count.
-- **Control**: 1 obeyed of 24 (above).
+- **Control**: 2 obeyed of 35 (above).
 - **Primary**: obeyed in-turn over mandates rendered, k of n. One-sided exact Fisher tail of
-  the table [[k, n-k], [1, 23]], printed by `census.py` when the window closes.
+  the table [[k, n-k], [2, 33]], printed by `census.py` when the window closes.
 - **Reading rule**, fixed before any post-cut read (tails from `--self-test-p`):
-  - p < 0.05, which at n = 46 is **11 or more obeyed** (p = 0.034; 10 of 46 is p = 0.051 and
+  - p < 0.05, which at n = 46 is **10 or more obeyed** (p = 0.041; 9 of 46 is p = 0.067 and
     reads as inconclusive): display moves behaviour. Keep the display path; PR #350's gate
     line survives only if routed gating invocations rose against the baseline.
-  - **k of 0 to 2**: no evidence that display moves behaviour (the control's own rate). Close
-    the display path as a cost-saving only; no further display proposals, the dropped
-    newsletter hints included; the next cut removes per-phase hint prose entirely (with the
-    #356 REMOVED delta).
-  - **3 to 10 of 46**: inconclusive. Extend once by one week, then read again; a second
+  - **k of 0 to 2**: no evidence that display moves behaviour (at or below the control's own
+    rate). Close the display path as a cost-saving only; no further display proposals, the
+    dropped newsletter hints included; the next cut removes per-phase hint prose entirely
+    (with the #356 REMOVED delta).
+  - **3 to 9 of 46**: inconclusive. Extend once by one week, then read again; a second
     inconclusive read is "no evidence".
   - If the cap date closes the window with n below 46, the exact p for the observed k of n is
-    reported and the same two thresholds apply: p < 0.05, and k of 2 or fewer.
-- **What this can detect**: with a 4% control and n = 46, only a rise to roughly one obeyed
+    reported and the same two thresholds apply: p < 0.05, and k of 2 or fewer. A window that
+    closes with **zero** mandates is cannot-check (exit 3), never a verdict.
+- **What this can detect**: with a 6% control and n = 46, only a rise to roughly one obeyed
   mandate in five is significant. A smaller real effect reads as "no evidence". That is the
   bar the owner's volume affords without labels, and it is stated here so a null is not
   oversold.
@@ -102,16 +112,17 @@ P=tests/probes/compliance-census
 # While open: counts and "collection: OPEN"; it prints no verdict.
 python3 "$P/census.py" --since 2026-10-12T00:00:00Z
 # The registered tails, without data:
-python3 "$P/census.py" --self-test-p 11 46      # p=0.0338 against the default control 1/24
-python3 "$P/census.py" --self-test-p 10 46      # p=0.0514
+python3 "$P/census.py" --self-test-p 10 46      # p=0.0414 against the default control 2/35
+python3 "$P/census.py" --self-test-p 9 46       # p=0.0669
 # The control itself, re-derivable at any time:
 python3 "$P/census.py" --since 2026-10-05T00:00:00Z --until 2026-10-12T00:00:00Z --min-version 0.0.0 --close-at 1
 ```
 
 Exit 0 counted; 2 unreadable input, bad usage, or an instrument fault (blocks exist in the
-window and none pairs with any input); 3 cannot check (no transcript, or no counted session
-with a typed prompt in the window). A verdict is never an exit code. Output is counts only;
-no prompt text is ever printed, so the output may be pasted into an issue.
+window and none pairs with any input); 3 cannot check (no transcript, no counted session with
+a typed prompt in the window, or a window that closed with no mandate). A verdict is never an
+exit code. Output is counts and skill names only; no prompt text is ever printed, so the
+output may be pasted into an issue.
 
 ## Known limits, stated before the data
 
@@ -123,9 +134,12 @@ no prompt text is ever printed, so the output may be pasted into an issue.
   and still be one turn; a notification cuts a turn short. Both apply to the control too.
 - The version floor reads evidence the harness writes; a session whose SessionStart output
   was not recorded is counted out, which can only shrink n.
-- Blocks whose `parentUuid` chain reaches no entry are counted as unpaired (74 of the
-  four-week read, 3 of the control week, 0 since 2026-10-12); a window where every block is
-  unpaired is reported as an instrument fault, not as zero obedience.
+- Blocks whose `parentUuid` chain reaches no entry, or a skill-load meta input, are counted
+  as unpaired (111 of the four-week read, 9 of the control week, 0 since 2026-10-12); a
+  window where every block is unpaired is reported as an instrument fault, not as zero
+  obedience. A window with typed prompts and no block at all is not treated as a fault,
+  because a prompt that routes nothing renders no block; it reads as zero mandates and, at
+  the cap, as cannot-check.
 
 ## Amendment log
 

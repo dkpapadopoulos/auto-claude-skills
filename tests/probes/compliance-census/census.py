@@ -9,13 +9,14 @@ Reads the owner's own Claude Code transcripts (top-level sessions only,
   blocks                   the activation hook's UserPromptSubmit hook_additional_context
                            attachment containing "SKILL ACTIVATION", paired to the input it
                            answered by walking parentUuid (as real-prompt-replay/routed.py does)
-  mandates                 each distinct "<skill> MUST INVOKE" on a block line that starts
-                           with "Evaluate:" (the line the hook renders its verdict on; the
+  mandates                 each distinct "<skill> MUST INVOKE" on the block's verdict line:
+                           "Evaluate: **Phase: [X]** | ..." in the compact formats, or
+                           "**Phase: [PHASE]** | ..." in the full first-prompt format (the
                            same words in prose elsewhere are not a mandate)
   obeyed in-turn           a Skill tool_use whose bare name equals the mandate, in the entries
                            after the prompt and before the next text input of ANY source: a
-                           prompt, a queued prompt, or a notification wrapper (a tool result
-                           does not end a turn)
+                           prompt, a queued prompt, or a notification wrapper (a tool result,
+                           a skill-load meta entry or a sidechain entry does not end a turn)
   obeyed later             the same, anywhere later in the session
   gating invocations       requesting-code-review / verification-before-completion invoked in
                            a typed turn: "routed" when that turn's block names the skill,
@@ -29,7 +30,8 @@ Collection is registered by COUNT: it closes when --close-at mandates have been 
 the window, or on --cap-date, whichever is first (README.md is the pre-registration). While
 open, the last line says so and no verdict is printed. When closed, the verdict line carries
 the one-sided exact Fisher tail of the observed in-turn count against --control (K/N, the
-baseline week), and the registered reading rule.
+baseline week), and the registered reading rule. A window that closes with zero mandates is
+cannot-check (exit 3), never a verdict.
 
 Exit codes: 0 counted; 2 unreadable input, bad usage, or an instrument fault (blocks exist in
 the window and not one pairs with any input: the transcript format has changed, and zeros
@@ -58,12 +60,17 @@ from extract import iter_entries, prompt_of, text_of  # noqa: E402
 from routed import install_version  # noqa: E402
 
 MANDATE_RE = re.compile(r"(?<![A-Za-z0-9-])([a-z][a-z0-9-]*) MUST INVOKE")
+# The hook's verdict line: "Evaluate: **Phase: [X]** | ..." in the compact formats, and
+# "  **Phase: [PHASE]** | ..." (no prefix) in the full format it renders on a session's
+# first prompt when three or more skills route. Prose elsewhere in the block also says
+# "MUST INVOKE" ("Process skills marked MUST INVOKE are mandatory") and is never a mandate.
+VERDICT_RE = re.compile(r"^\s*(?:Evaluate:\s*)?\*\*Phase: \[")
 VERSION_RE = re.compile(r"/auto-claude-skills/(\d+\.\d+\.\d+)(?=/|\s|$)")
 GATED = ("requesting-code-review", "verification-before-completion")
 DEFAULT_MIN_VERSION = "3.95.8"      # first build carrying PR #349 (the cut) and PR #350
 DEFAULT_CLOSE_AT = 46               # pre-registered: mandates rendered, not days
 DEFAULT_CAP_DATE = "2026-11-09"     # pre-registered cap, four weeks from the data start
-DEFAULT_CONTROL = "1/24"            # this instrument's read of 2026-10-05..10-12, every version: 1 of 24
+DEFAULT_CONTROL = "2/35"            # this instrument's read of 2026-10-05..10-12, every version: 2 of 35
 
 
 def ts_of(value):
@@ -117,7 +124,7 @@ def block_text(entry):
 def mandates_of(block):
     out = []
     for line in block.splitlines():
-        if line.startswith("Evaluate:"):
+        if VERDICT_RE.match(line):
             for name in MANDATE_RE.findall(line):
                 if name not in out:
                     out.append(name)
@@ -157,8 +164,10 @@ def read_session(path):
 def is_text_input(entry):
     """A user entry carrying text (a prompt, or a wrapper the extractor skips, such as a
     notification), as opposed to a tool result. Walking stops at either; only the first
-    is an input a block can have answered."""
-    if entry.get("type") != "user":
+    is an input a block can have answered. A meta entry (the harness injecting a skill
+    body: "Base directory for this skill: ...") or a sidechain entry is not an input and
+    does not end a turn."""
+    if entry.get("type") != "user" or entry.get("isMeta") or entry.get("isSidechain"):
         return False
     msg = entry.get("message")
     return text_of(msg.get("content") if isinstance(msg, dict) else msg) is not None
@@ -332,6 +341,10 @@ def main():
 
     n, k = c["mandates rendered"], c["obeyed in-turn"]
     by_date = today >= args.cap_date
+    if n == 0 and by_date:
+        print(f"cannot check: the window closed on {args.cap_date} with no mandate rendered; "
+              "a verdict over zero mandates is not a verdict")
+        return 3
     if n >= args.close_at:
         print(f"collection: CLOSED (by count: {n} of {args.close_at} mandates)")
     elif by_date:
