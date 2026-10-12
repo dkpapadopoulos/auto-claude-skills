@@ -727,14 +727,25 @@ if [ -n "${_SR_FILES}" ]; then
         fi
     done
     if [ "${_SR_TRIGGERS_MAP}" != "{}" ]; then
-        FRONTMATTER_MAP="$(printf '%s' "${FRONTMATTER_MAP}" | jq -c --argjson add "${_SR_TRIGGERS_MAP}" '
-            reduce ($add | to_entries[]) as $e (.;
-                if ((.[$e.key].triggers // []) | length) == 0 and (($e.value | length) > 0)
-                then .[$e.key] = ((.[$e.key] // {}) + {triggers: $e.value})
-                else . end
-            )
-        ' 2>/dev/null)" || FRONTMATTER_MAP="${FRONTMATTER_MAP}"
+        # _sr_apply <map> — add skill-rules triggers to entries that have none.
+        _sr_apply() {
+            local _out
+            _out="$(printf '%s' "$1" | jq -c --argjson add "${_SR_TRIGGERS_MAP}" '
+                reduce ($add | to_entries[]) as $e (.;
+                    if ((.[$e.key].triggers // []) | length) == 0 and (($e.value | length) > 0)
+                    then .[$e.key] = ((.[$e.key] // {}) + {triggers: $e.value})
+                    else . end
+                )
+            ' 2>/dev/null)" || _out="$1"
+            printf '%s' "${_out:-$1}"
+        }
+        FRONTMATTER_MAP="$(_sr_apply "${FRONTMATTER_MAP}")"
         [ -z "${FRONTMATTER_MAP}" ] && FRONTMATTER_MAP="{}"
+        # skill-rules.json ships with EXTERNAL plugins, so the external tier
+        # must carry these triggers too: Step 6 reads the tiers, not the
+        # combined map, and triggers are a field it accepts from that tier.
+        FRONTMATTER_MAP_EXT="$(_sr_apply "${FRONTMATTER_MAP_EXT}")"
+        [ -z "${FRONTMATTER_MAP_EXT}" ] && FRONTMATTER_MAP_EXT="{}"
     fi
 fi
 

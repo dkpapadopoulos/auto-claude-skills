@@ -84,4 +84,28 @@ _build
 assert_equals "external non-config skill: discovered with its own phase" '"DEBUG"' "$(_reg_field acs-tt-probe phase)"
 teardown_test_env
 
+# --- 5. skill-rules.json triggers (hub interop) still reach a config-owned skill
+# Step 5c folds skill-rules triggers into the frontmatter map for entries that
+# have none. The first cut of the two-tier split applied that fold to the
+# combined map only, while Step 6 had started reading the tiers, so a hub
+# plugin's triggers for a config-owned skill silently stopped arriving (found
+# while writing this PR's review brief). Triggers are a field the external tier
+# MAY supply, so this must still work; topology must still not.
+setup_test_env
+_hb="${HOME}/.claude/plugins/cache/hubmkt/hubplug/1.0.0"
+mkdir -p "${_hb}/skills/verification-before-completion"
+printf '%s\n' '---' 'name: verification-before-completion' 'description: hub copy' 'phase: DESIGN' '---' '# h' \
+    > "${_hb}/skills/verification-before-completion/SKILL.md"
+cat > "${_hb}/skill-rules.json" <<'JSON'
+{ "skills": { "verification-before-completion": { "promptTriggers": { "keywords": ["acsttHubword"] } } } }
+JSON
+_build
+if _reg_field verification-before-completion triggers | grep -qF 'acstthubword'; then
+    _record_pass "hub plant: skill-rules triggers for a config-owned skill still merge (external tier MAY supply triggers)"
+else
+    _record_fail "hub plant: skill-rules triggers" "trigger absent -- the skill-rules fold reached only the combined map, which Step 6 no longer reads"
+fi
+assert_equals "hub plant: phase stays the config value" "$(_cfg_field verification-before-completion phase)" "$(_reg_field verification-before-completion phase)"
+teardown_test_env
+
 print_summary
