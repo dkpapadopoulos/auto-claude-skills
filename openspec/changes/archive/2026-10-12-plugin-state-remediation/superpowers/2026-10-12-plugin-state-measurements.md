@@ -72,7 +72,8 @@ measured facts above say it was right to.
 Files run 191, passed 190, failed 1 (test-injection-budget.sh: injection ratchet). Runner exit 1.
 assert-suite-complete: COMPLETE BUT FAILED (exit 2). test-attestation-measurement.sh: 38/38 in-suite.
 The run dirtied config/fallback-registry.json (restored with a named checkout). Run 2 launched for a
-second flake sample; result appended when available.
+second flake sample; result appended when available. (Archive note: run 2's result was never appended;
+the RESOLVED section below superseded it, and the union-suite run before the merges was 195/195.)
 
 ## RESOLVED 2026-10-12 (same day): the 133 bytes are the PHASE REALITY line
 The activation hook renders "No committed work on this branch (0 commits ahead of origin/main, clean tree)" only when the checkout is 0 ahead AND clean (hooks/skill-activation-hook.sh rule B, git run against SKILL_PROJECT_ROOT). 24,988 = clean tree, 24,855 = dirty tree, same commit. Found by diffing the normalised "ship it" dump from a clean scratch worktree against a dirty one. Fix: tests/test-injection-budget.sh passes GIT_DIR/GIT_WORK_TREE for a fixed fixture repo on every probe, with a dirty-fixture control cell (PR 1 of plugin-state-remediation). The "invariant to seven variables" paragraph above is correct as far as it goes; git state was the eighth.
