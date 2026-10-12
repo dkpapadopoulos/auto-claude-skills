@@ -27,6 +27,7 @@ development data, because any fix will be written while looking at them.
 | `intent-routing/intent_probe.py` | deterministic, free, no model call | **yes** — via `tests/test-routing-probe-regression.sh` |
 | `native-contracts/conformance.py` | **paid and non-deterministic** — launches a real model against a budget | **no, deliberately** |
 | instrument tests for both classifiers | deterministic, free, provider stubbed | **yes** — via `tests/test-probe-instrument-tests.sh` |
+| `compliance-census/census.py` | deterministic, free, reads local transcripts, prints counts only | **yes** — via `tests/test-compliance-census-probe.sh` (its README is the pre-registration) |
 
 The native runner is explicitly invoked, with a budget and retained evidence. Its
 results can move without any product change, so it must never gate the normal suite:
