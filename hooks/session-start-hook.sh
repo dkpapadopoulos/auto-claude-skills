@@ -612,8 +612,20 @@ ALL_DISCOVERED="${EXTERNAL_DISCOVERED}${PLUGIN_DISCOVERED}${USER_DISCOVERED}"
 # -----------------------------------------------------------------
 # Step 5b: Extract frontmatter from all discovered SKILL.md files
 # -----------------------------------------------------------------
-_FM_FILES=""
+# Two tiers of frontmatter (#304). The map is keyed on a skill directory's
+# BASENAME with no plugin namespacing, so an EXTERNAL marketplace plugin that
+# ships skills/verification-before-completion/SKILL.md claims that config-owned
+# skill's entry. Its role/phase/precedes/requires then rewrote the composition
+# chain on disk (measured; the global fail-closed gate still denied, so it was
+# never a push bypass, but the chain the model was shown was wrong). External
+# entries are therefore collected separately so the merge in Step 6 can refuse
+# those four topology keys for a config-owned name while still taking triggers
+# and priority. This plugin's bundled skills and the user's own skills keep
+# every override: they are the local tiers.
+_FM_FILES=""        # local tiers: bundled + user
 _FM_NAMES=""
+_FM_FILES_EXT=""    # external marketplace tier
+_FM_NAMES_EXT=""
 _SR_FILES=""
 
 # Scan all external plugins (same traversal as unified scanner in Step 3)
@@ -632,9 +644,9 @@ for _mkt_dir in "${HOME}/.claude/plugins/cache"/*/; do
         if [ -d "${_resolved}skills" ]; then
             for _smd in "${_resolved}skills"/*/SKILL.md; do
                 [ -f "${_smd}" ] || continue
-                _FM_FILES="${_FM_FILES} ${_smd}"
+                _FM_FILES_EXT="${_FM_FILES_EXT} ${_smd}"
                 _fm_n="${_smd%/*}"; _fm_n="${_fm_n##*/}"
-                _FM_NAMES="${_FM_NAMES}${_fm_n}
+                _FM_NAMES_EXT="${_FM_NAMES_EXT}${_fm_n}
 "
             done
         fi
@@ -661,16 +673,34 @@ if [ -d "${USER_SKILLS_DIR}" ]; then
     done
 fi
 
-FRONTMATTER_MAP="{}"
-if [ -n "${_FM_FILES}" ]; then
-    _fm_raw="$(_parse_frontmatter ${_FM_FILES})"
-    if [ -n "${_fm_raw}" ]; then
-        FRONTMATTER_MAP="$(printf '%s' "${_FM_NAMES}" | jq -Rn --argjson objs "[$(printf '%s' "${_fm_raw}" | tr $'\x1f' ',')]" '
-            [inputs | select(. != "")] as $names |
-            [range(0; [$names | length, ($objs | length)] | min) as $i |
-                {($names[$i]): $objs[$i]}] | add // {}
-        ')" || FRONTMATTER_MAP="{}"
-    fi
+# _fm_build_map <files> <names> — {name: frontmatter} for one tier; "{}" when
+# the tier is empty or unparseable. One jq per non-empty tier.
+_fm_build_map() {
+    local _files="$1" _names="$2" _raw _map
+    [ -z "${_files}" ] && { printf '{}'; return 0; }
+    # shellcheck disable=SC2086  # paths are space-joined on purpose, as before
+    _raw="$(_parse_frontmatter ${_files})"
+    [ -z "${_raw}" ] && { printf '{}'; return 0; }
+    _map="$(printf '%s' "${_names}" | jq -Rn --argjson objs "[$(printf '%s' "${_raw}" | tr $'\x1f' ',')]" '
+        [inputs | select(. != "")] as $names |
+        [range(0; [$names | length, ($objs | length)] | min) as $i |
+            {($names[$i]): $objs[$i]}] | add // {}
+    ' 2>/dev/null)" || _map="{}"
+    printf '%s' "${_map:-\{\}}"
+}
+FRONTMATTER_MAP_EXT="$(_fm_build_map "${_FM_FILES_EXT}" "${_FM_NAMES_EXT}")"
+FRONTMATTER_MAP_LOCAL="$(_fm_build_map "${_FM_FILES}" "${_FM_NAMES}")"
+# Combined view, local over external, same last-wins shape as the old single
+# map (external plugins, then bundled, then user). Consumers that key on a NAME
+# the config does not own (Step 5c skill-rules, discovered-skill metadata) read
+# this; Step 6 reads the two tiers separately.
+if [ "${FRONTMATTER_MAP_EXT}" = "{}" ]; then
+    FRONTMATTER_MAP="${FRONTMATTER_MAP_LOCAL}"
+elif [ "${FRONTMATTER_MAP_LOCAL}" = "{}" ]; then
+    FRONTMATTER_MAP="${FRONTMATTER_MAP_EXT}"
+else
+    FRONTMATTER_MAP="$(jq -cn --argjson e "${FRONTMATTER_MAP_EXT}" --argjson l "${FRONTMATTER_MAP_LOCAL}" '$e + $l' 2>/dev/null)" || FRONTMATTER_MAP="{}"
+    [ -z "${FRONTMATTER_MAP}" ] && FRONTMATTER_MAP="{}"
 fi
 
 # -----------------------------------------------------------------
@@ -724,11 +754,18 @@ fi
 
 # Three-tier merge: frontmatter overrides > default-triggers > generic defaults
 if [ -n "${DEFAULT_JSON}" ]; then
+    # Every skill here is CONFIG-OWNED. A local-tier entry (bundled or user)
+    # overrides wholesale, as before. An external-tier entry may supply
+    # triggers and priority only: role, phase, precedes and requires drive the
+    # composition chain the push gate reads, and an external SKILL.md named
+    # after a config skill must not rewrite it (#304).
     SKILLS_JSON="$(printf '%s' "${DEFAULT_JSON}" | jq \
         --argjson imap "${INVOKE_MAP}" \
-        --argjson fmap "${FRONTMATTER_MAP}" '
+        --argjson fmloc "${FRONTMATTER_MAP_LOCAL}" \
+        --argjson fmext "${FRONTMATTER_MAP_EXT}" '
         [.skills[] | . as $skill |
-            ($fmap[$skill.name] // {}) as $fm |
+            ($fmloc[$skill.name]
+             // (($fmext[$skill.name] // {}) | del(.role, .phase, .precedes, .requires))) as $fm |
             (if ($fm.triggers // null) then {triggers: $fm.triggers} else {} end) as $ft |
             (if ($fm.role // null) then {role: $fm.role} else {} end) as $fr |
             (if ($fm.phase // null) then {phase: $fm.phase} else {} end) as $fp |

@@ -29,7 +29,13 @@ echo "=== test-session-start-fork-budget.sh ==="
 # from 177 before them (66 basename, 61 dirname, 35 jq, 6 grep, 4 sort, 4 ls,
 # 1 awk). The remaining jq calls are one per build step over the whole
 # registry, not one per discovered item; the next cut is batching those.
-_SS_FORK_BASELINE=30
+#
+# 30 -> 33 (2026-10-12, #304): a deliberate growth. Frontmatter is now parsed
+# as two tiers (external marketplace; bundled plus user) so the merge can refuse
+# an external SKILL.md's role/phase/precedes/requires for a config-owned name.
+# One extra parse (jq plus awk) and one jq to combine the two maps; all three
+# are per build, not per item.
+_SS_FORK_BASELINE=33
 # Floor on the trace itself: an empty or truncated trace would count 0 forks
 # and read as the best possible result. The real trace is tens of thousands of
 # lines; this floor only has to reject "nothing ran".
