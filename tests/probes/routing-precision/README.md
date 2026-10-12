@@ -67,7 +67,12 @@ python3 "$P/rows.py" --shadow-log "$LOG" --since "$FREEZE" --count-only
 
 The last line says `collection: OPEN` or `collection: CLOSED`. It writes nothing and reads no
 label. While it says OPEN, stop here: do not build rows for labelling, do not label, do not
-score. It closes at 60 rows the rule would hide, or on 2026-11-16.
+score. It closes at 60 rows the rule would hide, or on the closing date. **Amendment A4
+(2026-10-13) closed collection on 2026-10-13 with zero would-hide rows**: in 69 records since
+the freeze, one was a trigger-free short reply inside an armed chain; every other short reply
+carried a trigger verb and was excluded by the rule's own definition. Stage A is closed as a
+null with no labelling spent; the shadow writes stay in the hook until a separate change
+removes them. Nothing below needs to be run unless the rule is re-registered as a new version.
 
 **2. Build the rows**, into a private directory outside any repository:
 

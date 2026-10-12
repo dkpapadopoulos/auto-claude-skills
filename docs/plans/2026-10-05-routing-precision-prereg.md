@@ -313,3 +313,40 @@ the commit that makes these changes and `rule_version` is 3.
   That is a change to what is mandated, with an unmeasured effect on whether review and
   verification still get invoked, and it is left to the owner. If it is made, it takes a
   new version and restarts stage A.
+
+**A4 — 2026-10-13, after 69 records and before any label.** Stage A collection is closed on
+2026-10-13, instead of at 60 would-hide rows or on 2026-11-16, as a null result. No label was
+ever made and none is owed.
+
+- *What the records say.* `rows.py --count-only` over the real shadow directory since the
+  freeze (installed 3.94.5 on 2026-10-07): 69 records; 22 not displayed (another suppression);
+  14 with no typed prompt in the join window (11 of them non-human inputs); 30 typed rows in
+  9 sessions; would-hide rows: 0. Across all 68 version-3 records, `sticky` is true in 1 and
+  `already_shown` in 14, never both.
+- *Why.* Every one of the 30 typed rows selected its process skill by its own words. The
+  owner's short replies carry trigger verbs: "continue when codex is done" and "keep going,
+  finish PR 5 and 6" match executing-plans; "merge PR 263 and 264" and "go ahead, branch and
+  open the PR" match requesting-code-review's `pr`; "yes, make the skill change" matches
+  brainstorming's verb alternation. The rule excludes these on purpose ("It does not touch
+  mandates a prompt earns by its own words"), and `_STICKY_SKILL` is set only when no
+  process skill scored, so `sticky: false` is correct for all 30. The one trigger-free short
+  reply in an armed chain since the freeze was a first display (`already_shown: false`).
+- *The instrument is not at fault.* The real hook in an isolated HOME: a fresh-session "go"
+  selects nothing and writes no record; after "build a new exporter for the report module"
+  arms a chain, a second "go" records `sticky: true, already_shown: true, would_hide: true`,
+  and a later "ok" records requesting-code-review `sticky: true`. The population the rule
+  targets, a trigger-free short reply inside an armed chain, produced one record in six days.
+  Sixty would-hide rows could not accrue before 2026-11-16; waiting would have spent five more
+  weeks of hot-path writes to reach the same null.
+- *The gap to the development figure.* The 92 of 451 bare-reply mandates measured before the
+  freeze (#333, 2026-10-05) are not explained here. That census ran on builds before #337 and
+  #338 and may have counted re-displays the current chain walk no longer produces, or inputs
+  the current reader classifies as non-human. It was not re-derived.
+- *What changes.* `rows.py` `CLOSE_ON` becomes 2026-10-13 so `--count-only` says CLOSED; the
+  README says why. Nothing else: the rule, `rule_version` 3, the scorer and the trial reader
+  are untouched. The shadow writes stay in `hooks/skill-activation-hook.sh` until a separate
+  hook change removes them, since a hook change needs its own review.
+- *What this does and does not decide.* Stage A is closed as a null for the rule as frozen.
+  It says nothing about mandates a prompt earns by its own words, which are 14 of the 30
+  typed rows (`already_shown: true`) and the main subject of #333; a rule over those would be
+  a new rule, version 4, with its own registration. Stage B is not run.

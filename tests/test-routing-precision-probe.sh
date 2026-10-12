@@ -506,7 +506,9 @@ printf '%s\n' '{"schema_version":1,"rule_version":3,"ts":"2026-11-01T10:00:20Z",
 assert_equals "T10: a trial record whose session is not a string exits 2, never a reading" "2" "$(trial "${D}")"
 
 # --- C: is collection closed? (rows.py --count-only) -----------------------------------
-# Stage A is scored ONCE, after collection closes at 60 would-hide rows or on 2026-11-16.
+# Stage A is scored ONCE, after collection closes at 60 would-hide rows or on the closing date.
+# The closing date was 2026-11-16; amendment A4 (2026-10-13) closed collection early, so the
+# date is 2026-10-13 and every "still OPEN" cell below uses a day before it.
 # --count-only is how that is checked without writing a prompt or reading a label.
 echo "== C: collection status =="
 mk_rows() {   # <dir> <number of sessions, each with one would-hide row>
@@ -526,7 +528,7 @@ for i in range(n):
 open(f"{d}/shadow.jsonl", "w").write("".join(json.dumps(r) + "\n" for r in log))
 PY
 }
-count_only() { python3 "${PROBE}/rows.py" --shadow-log "$1/shadow.jsonl" --since 2026-10-06T00:00:00Z --projects "$1/projects" --count-only --today "${2:-2026-10-21}" > "$1/status.txt" 2>&1; echo $?; }
+count_only() { python3 "${PROBE}/rows.py" --shadow-log "$1/shadow.jsonl" --since 2026-10-06T00:00:00Z --projects "$1/projects" --count-only --today "${2:-2026-10-12}" > "$1/status.txt" 2>&1; echo $?; }
 D="${TEST_TMPDIR}/c-59"; mk_rows "${D}" 59
 assert_equals "C1: --count-only exits 0" "0" "$(count_only "${D}")"
 assert_contains "C1: 59 would-hide rows before the closing date is OPEN" "collection: OPEN (59 of 60 rows the rule would hide" "$(cat "${D}/status.txt")"
@@ -536,15 +538,17 @@ D="${TEST_TMPDIR}/c-60"; mk_rows "${D}" 60
 count_only "${D}" >/dev/null
 assert_contains "C2: the sixtieth would-hide row closes collection" "collection: CLOSED (60 rows the rule would hide" "$(cat "${D}/status.txt")"
 D="${TEST_TMPDIR}/c-date"; mk_rows "${D}" 5
-count_only "${D}" 2026-11-15 >/dev/null
+count_only "${D}" 2026-10-12 >/dev/null
 assert_contains "C3: the day before the closing date is still OPEN" "collection: OPEN (5 of 60" "$(cat "${D}/status.txt")"
+count_only "${D}" 2026-10-13 >/dev/null
+assert_contains "C3: the closing date (A4) closes it whatever the count" "collection: CLOSED (closing date 2026-10-13 reached with 5 rows" "$(cat "${D}/status.txt")"
 count_only "${D}" 2026-11-16 >/dev/null
-assert_contains "C3: the closing date closes it whatever the count" "collection: CLOSED (closing date 2026-11-16 reached with 5 rows" "$(cat "${D}/status.txt")"
+assert_contains "C3: the original closing date is of course still closed" "collection: CLOSED (closing date 2026-10-13 reached" "$(cat "${D}/status.txt")"
 python3 "${PROBE}/rows.py" --shadow-log "${D}/shadow.jsonl" --since 2026-10-06T00:00:00Z --projects "${D}/projects" --count-only --rows "${D}/r.jsonl" --key "${D}/k.jsonl" > /dev/null 2>&1
 assert_equals "C4: --count-only with an output path is refused (exit 2), and writes nothing" "2 no" "$? $([ -e "${D}/r.jsonl" ] && echo yes || echo no)"
 python3 "${PROBE}/rows.py" --shadow-log "${D}/shadow.jsonl" --since 2026-10-06T00:00:00Z --projects "${D}/projects" > /dev/null 2>&1
 assert_equals "C4: without --count-only the output paths are still required (exit 2)" "2" "$?"
-python3 "${PROBE}/rows.py" --shadow-log "${D}/shadow.jsonl" --since 2026-10-06T00:00:00Z --projects "${D}/projects" --rows "${OUT}/c-r.jsonl" --key "${OUT}/c-k.jsonl" --today 2026-10-21 > "${D}/full.txt" 2>&1
+python3 "${PROBE}/rows.py" --shadow-log "${D}/shadow.jsonl" --since 2026-10-06T00:00:00Z --projects "${D}/projects" --rows "${OUT}/c-r.jsonl" --key "${OUT}/c-k.jsonl" --today 2026-10-12 > "${D}/full.txt" 2>&1
 assert_equals "C5: the ordinary run still writes its rows, and reports the same status line" "5 yes" \
     "$(grep -c . "${OUT}/c-r.jsonl") $(grep -qF 'collection: OPEN (5 of 60' "${D}/full.txt" && echo yes || echo no)"
 
