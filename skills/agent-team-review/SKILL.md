@@ -628,6 +628,30 @@ Task tool (general-purpose):
     - A finding is suggestion if it could be made safer but isn't actively dangerous
 ```
 
+## Adversarial review checklist
+
+The REVIEW-phase hint `ADVERSARIAL REVIEW` points here. In addition to standard
+code review, evaluate these governance checks against the change:
+
+1. Does any change weaken or remove an existing safety gate, HITL requirement,
+   or approval step?
+2. Does any change expand autonomous action scope (new outbound actions, broader
+   permissions, reduced human oversight)?
+3. Does any change modify hook behaviour, permission settings, or composition
+   routing in ways that reduce guardrails?
+4. Does any change add `dangerouslyDisableSandbox`, `--no-verify`, `force`, or an
+   equivalent bypass pattern?
+5. Does any change touch files in `hooks/` or `config/` that govern skill routing
+   or phase enforcement?
+6. If any answer is YES: flag it as a blocking governance finding with specific
+   file:line evidence.
+7. Does the resulting change have two or more lethal-trifecta fields
+   (`private_data`, `untrusted_input`, `outbound_action`), or add a missing leg
+   to an existing two-field flow? If so, invoke
+   `Skill(auto-claude-skills:agent-safety-review)` and treat unmitigated,
+   unacknowledged lethal-trifecta risk as a blocking governance finding. The
+   user may still explicitly accept the risk.
+
 ## Red Flags
 
 - **Silent drop:** a reviewer went idle or errored and the round was reported as complete without its lens. Coverage counts reports delivered, not agents spawned — an undelivered lens is an uncovered lens. Chase it per Protocol §3; if it still does not deliver, name the gap and record `could-not-review` rather than approving around it.

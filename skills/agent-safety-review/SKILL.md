@@ -62,6 +62,18 @@ Stay **silent** when oversight is strong (a reviewed manifest, a required
 approval, or reversible/bounded effects already supply the control). This is
 guidance, not a veto.
 
+## Autonomy levels
+
+The DESIGN-phase hint `AUTONOMY CHECK` points here; the rungs are the table in
+Step 2b. During DESIGN, if the solution is an agent that acts on its own, name
+its intended level (`advise` / `recommend` / `execute-reversible` /
+`execute-irreversible · unattended`). From `execute-reversible` up, if
+proportional oversight is NOT designed in (per-run approval, a HITL checkpoint,
+manifest-plus-dry-run review, or a bounded and reversible blast radius), help the
+user design that oversight before leaving DESIGN. Autonomy without proportional
+control is a liability, not power. Judge from the actual design; this is
+guidance, not a gate.
+
 ## Step 3: Recommend Mitigation (if lethal trifecta)
 
 The primary mitigation is **blast-radius control** — cutting at least one leg of the trifecta. Improved detection scores are NOT proof of safety.

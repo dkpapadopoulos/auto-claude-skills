@@ -2,12 +2,12 @@
 
 ### Requirement: Phase hints name the owning skill and stay short
 
-Each `phase_compositions.<PHASE>.hints[].text` SHALL be at most 240 bytes, SHALL name the `Skill(...)` that owns the procedure it refers to, and SHALL state the condition under which that skill is invoked. The full procedure MUST live in the owning skill's `SKILL.md`.
+Each `phase_compositions.<PHASE>.hints[].text` SHALL be at most 480 bytes; a hint of 300 bytes or more SHALL name the `Skill(...)` or plugin script that owns the procedure it refers to, and SHALL state the condition under which it applies. The full procedure MUST live in the owning skill's `SKILL.md`. The per-phase byte totals (DESIGN, PLAN, REVIEW, SHIP) SHALL be pinned as ratchets in `tests/test-phase-hint-brevity.sh` and MUST move only in the commit that moves them. (The first draft said 240 bytes; the spec-driven PERSIST DESIGN hint carries the three-file layout the model must reproduce, and that list is the content, so the ceiling is 480.)
 
 #### Scenario: A DESIGN block is rendered
 
 - **WHEN** the activation hook renders the DESIGN phase hints
-- **THEN** every hint is at most 240 bytes and contains `Skill(`, and the EVAL STRATEGY and AUTONOMY CHECK procedures are present in full in `skills/runtime-validation/SKILL.md` and `skills/agent-safety-review/SKILL.md`
+- **THEN** every hint is at most 480 bytes, every hint of 300 bytes or more contains `Skill(` or a plugin script, and the EVAL STRATEGY, AUTONOMY CHECK and ADVERSARIAL REVIEW procedures are present in full in `skills/runtime-validation/SKILL.md`, `skills/agent-safety-review/SKILL.md` and `skills/agent-team-review/SKILL.md`
 
 #### Scenario: Hint content changes
 

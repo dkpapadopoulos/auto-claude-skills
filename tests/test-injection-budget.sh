@@ -178,8 +178,13 @@ echo "=== test-injection-budget.sh ==="
 # tree (the hook's PHASE REALITY line was absent); 24988 is the same hook on a
 # clean tree at the same commit. The git fixture below pins the clean state,
 # so the line is always rendered and its 133 bytes are in the baseline. The
-# per-shape bytes are 999 / 6683 / 7045 / 3794 / 4637 / 1830.
-_INJECTION_BASELINE=24988
+# per-shape bytes were 999 / 6683 / 7045 / 3794 / 4637 / 1830.
+#
+# 24988 -> 21849 (2026-10-12, same day): the phase hints were cut to a
+# condition plus the Skill(...) that owns the procedure (the procedure moved
+# into that skill), and the INTENT EXTRACTION directive was shortened.
+# Per-shape bytes now 964 / 5073 / 6404 / 3153 / 4460 / 1795.
+_INJECTION_BASELINE=21849
 _MIN_SHAPES=6
 
 setup_test_env
