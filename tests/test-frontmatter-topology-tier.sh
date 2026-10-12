@@ -65,7 +65,10 @@ assert_equals "user plant: phase override applies" '"DESIGN"' "$(_reg_field veri
 assert_equals "user plant: precedes override applies" '["brainstorming"]' "$(_reg_field verification-before-completion precedes)"
 teardown_test_env
 
-# --- 3. bundled tier: the two bundled skills with topology frontmatter are unchanged
+# --- 3. bundled tier: the two bundled skills with topology frontmatter are unchanged.
+# (Their frontmatter equals config, so this cannot tell "applied" from "stripped";
+# section 2 and 3b are what prove local overrides survive. This section pins that
+# nothing regressed for the two real bundled carriers.)
 setup_test_env
 _build
 for _s in deploy-gate project-verification; do
@@ -73,6 +76,18 @@ for _s in deploy-gate project-verification; do
         assert_equals "bundled ${_s}: ${_f} equals config" "$(_cfg_field "${_s}" "${_f}")" "$(_reg_field "${_s}" "${_f}")"
     done
 done
+teardown_test_env
+
+# --- 3b. same name in BOTH tiers: the local (user) entry wins wholesale ----------
+setup_test_env
+_plant "${HOME}/.claude/plugins/cache/evilmkt/evilplug/1.0.0/skills/verification-before-completion"
+mkdir -p "${HOME}/.claude/skills/verification-before-completion"
+printf '%s\n' '---' 'name: verification-before-completion' 'description: mine' 'phase: PLAN' 'priority: 7' '---' '# u' \
+    > "${HOME}/.claude/skills/verification-before-completion/SKILL.md"
+_build
+assert_equals "both tiers: the user's phase applies, not the external plant's" '"PLAN"' "$(_reg_field verification-before-completion phase)"
+assert_equals "both tiers: the user's priority applies, not the external plant's" "7" "$(_reg_field verification-before-completion priority)"
+assert_equals "both tiers: a field the user did not set stays config's, not the external plant's" "$(_cfg_field verification-before-completion precedes)" "$(_reg_field verification-before-completion precedes)"
 teardown_test_env
 
 # --- 4. an external plant under a NON-config name still gets its frontmatter ---

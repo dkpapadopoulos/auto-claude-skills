@@ -34,7 +34,9 @@ echo "=== test-session-start-fork-budget.sh ==="
 # as two tiers (external marketplace; bundled plus user) so the merge can refuse
 # an external SKILL.md's role/phase/precedes/requires for a config-owned name.
 # One extra parse (jq plus awk) and one jq to combine the two maps; all three
-# are per build, not per item.
+# are per build, not per item. NOT counted here: when a skill-rules.json exists
+# the Step 5c fold runs one more jq (it is applied to both maps); this fixture
+# ships none, so that cost is unmeasured by this ratchet.
 _SS_FORK_BASELINE=33
 # Floor on the trace itself: an empty or truncated trace would count 0 forks
 # and read as the best possible result. The real trace is tens of thousands of

@@ -685,8 +685,14 @@ _fm_build_map() {
         [inputs | select(. != "")] as $names |
         [range(0; [$names | length, ($objs | length)] | min) as $i |
             {($names[$i]): $objs[$i]}] | add // {}
-    ' 2>/dev/null)" || _map="{}"
-    printf '%s' "${_map:-\{\}}"
+    ' 2>/dev/null)" || {
+        # Fail open to an empty tier, but say so: a silent {} here drops every
+        # override in the tier (review finding).
+        printf '[session-start] frontmatter tier did not parse; its overrides are ignored this session\n' >&2
+        _map="{}"
+    }
+    [ -z "${_map}" ] && _map="{}"
+    printf '%s' "${_map}"
 }
 FRONTMATTER_MAP_EXT="$(_fm_build_map "${_FM_FILES_EXT}" "${_FM_NAMES_EXT}")"
 FRONTMATTER_MAP_LOCAL="$(_fm_build_map "${_FM_FILES}" "${_FM_NAMES}")"
