@@ -1544,8 +1544,20 @@ EOF
         fi
 
         _step=$((_idx + 1))
+        # The two gating milestones are the only steps whose absence makes
+        # openspec-guard.sh deny a push, and they rendered exactly like steps
+        # whose absence costs nothing (#297, from the #254 incident: the agent
+        # learned to ignore the markers and missed the load-bearing one). Say so
+        # on the line while the step is unmet. Render only: no state, no gate.
+        _gate_note=""
+        if [[ "$_marker" != "DONE" ]]; then
+          case "$_cname" in
+            requesting-code-review|verification-before-completion)
+              _gate_note=" -- GATE: git push is denied until this Skill is invoked" ;;
+          esac
+        fi
         _chain_lines="${_chain_lines}
-  [${_marker}] Step ${_step}: ${_cinvoke} -- ${_cdesc}"
+  [${_marker}] Step ${_step}: ${_cinvoke} -- ${_cdesc}${_gate_note}"
         # Render an optional per-skill `precondition` ONLY under the CURRENT step.
         # This places conditional routing in the mandatory channel the model obeys
         # (the same guidance as an advisory hint gets 0/5 uptake). One jq fork, and

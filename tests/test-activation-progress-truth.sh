@@ -208,6 +208,32 @@ else
     _record_fail "V1: the recovery renderer produced text" "no output from ${RENDER}"
 fi
 
+# --- D: an unmet gating step says what it costs (#297) -------------------------------------
+# requesting-code-review and verification-before-completion are the only two steps whose
+# absence makes openspec-guard.sh deny a push, and they rendered exactly like steps whose
+# absence costs nothing (the #254 incident: the agent learned to ignore the markers and
+# missed the one that was load-bearing). The marker loop appends one note to those two
+# while they are unmet. Render only: the state write and the guard are untouched (D3, D5).
+echo "== D: deny consequence =="
+GATE_NOTE="GATE: git push is denied until this Skill is invoked"
+line_for() { printf '%s' "${LAST}" | grep -E "Step [0-9]+: Skill\([^)]*$1\)" | head -1; }
+new_session d1
+say "${BUILD}"; say ok; say ok; say ok; say ok; say ok; say ok
+assert_equals "D0: the walk has reached the review step" "requesting-code-review" "$(printf '%s' "${SCHED}" | awk '{print $NF}')"
+assert_contains "D1: the unmet review step states the push consequence" "${GATE_NOTE}" "$(line_for requesting-code-review)"
+assert_contains "D1: the unmet verification step states it too" "${GATE_NOTE}" "$(line_for verification-before-completion)"
+assert_not_contains "D2: an inferred non-gating step does not" "${GATE_NOTE}" "$(line_for writing-plans)"
+assert_not_contains "D2: nor the next non-gating step" "${GATE_NOTE}" "$(line_for openspec-ship)"
+assert_equals "D3: display only: the state lists are what P1 recorded" '[] ["brainstorming","writing-plans","executing-plans"]' "$(completed) $(assumed)"
+assert_not_contains "D3: the state file carries no note text" "GATE" "$(cat "${STATE}")"
+returned superpowers:requesting-code-review; say ok
+assert_not_contains "D4: a gating step that really returned drops the note" "${GATE_NOTE}" "$(line_for requesting-code-review)"
+assert_contains "D4: while verification, still unmet, keeps it" "${GATE_NOTE}" "$(line_for verification-before-completion)"
+new_session d5; seed_verdict
+say "${BUILD}"; say ok; say ok; say ok; say ok; say ok; say ok
+out="$(gate)"
+assert_contains "D5: the guard's decision is unchanged by the note (still deny on unmet review)" '"deny"' "${out:-<empty>}"
+
 cd "${PROJECT_ROOT}" || true
 teardown_test_env
 print_summary
