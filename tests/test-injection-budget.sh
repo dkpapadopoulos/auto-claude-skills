@@ -16,9 +16,10 @@
 # product-internals probe, and it is labelled as reasoning deliberately. What
 # IS measured here is the size of that output.
 #
-# TEN HARNESS DEFECTS, in the order found. Four before review, six in review.
-# The pattern is the point: every one produced a confident wrong number that
-# read as a clean pass.
+# TWELVE HARNESS DEFECTS, in the order found. Four before review, six in review,
+# one in a later review (11), one found when the ratchet went red on a clean
+# main with no commit in between (12). The pattern is the point: every one
+# produced a confident wrong number that read as a clean pass.
 #
 #   1. The hook is STATEFUL. Measured against THIS harness's registry, probing
 #      one token five times: `review this PR before I merge it` gives
@@ -118,6 +119,20 @@
 #      fixture repo was rejected, because it would trade a stated precondition
 #      for a baseline nobody can relate to this repo.
 #
+#  12. The total is a function of the CHECKOUT'S GIT STATE. The hook's PHASE
+#      REALITY rule B runs `git rev-list --count origin/main..HEAD` and
+#      `git status --porcelain` against SKILL_PROJECT_ROOT and renders a
+#      133-byte line only when the tree is 0 ahead AND clean. Measured at one
+#      commit: 24988 on a clean main, 24855 on any dirty tree -- the author's
+#      branch when the constant was pinned, a worktree with edits, and main
+#      while the suite itself was dirtying config/fallback-registry.json. So
+#      the pinned value was irreproducible on the pinning machine and the
+#      ratchet flipped mid-day with no commit. Unlike defect 11 this IS
+#      engineered around: every probe hands the hook a fixture repo in a fixed
+#      state through GIT_DIR/GIT_WORK_TREE (one helper, one site), and leg 2h
+#      dirties the fixture and asserts the line disappears through BOTH the
+#      text and the measuring path. File reads still go to the real checkout.
+#
 # Not a defect in this file but worth knowing, since it is an environmental
 # input that silences the plugin entirely: with `SHELLOPTS=errexit` exported,
 # the hook dies mid-run, emits nothing, and routing disappears -- total 0. The
@@ -158,7 +173,13 @@ echo "=== test-injection-budget.sh ==="
 # There is no "correct" value to assert instead. Nothing documents a budget for
 # hook output, and the native warning does not measure it, so the honest gate is
 # "this does not grow without someone saying so".
-_INJECTION_BASELINE=24855
+#
+# 24855 -> 24988 (2026-10-12): NOT a growth. 24855 was measured on a DIRTY
+# tree (the hook's PHASE REALITY line was absent); 24988 is the same hook on a
+# clean tree at the same commit. The git fixture below pins the clean state,
+# so the line is always rendered and its 133 bytes are in the baseline. The
+# per-shape bytes are 999 / 6683 / 7045 / 3794 / 4637 / 1830.
+_INJECTION_BASELINE=24988
 _MIN_SHAPES=6
 
 setup_test_env
@@ -171,6 +192,43 @@ if ! jq '.skills |= map(.available = true | .enabled = true)
        "${PROJECT_ROOT}/config/fallback-registry.json" > "${_REG}" 2>/dev/null; then
     _record_fail "registry build" "could not derive a test registry from config/fallback-registry.json"
 fi
+
+# --- deterministic git state (failure 12) -----------------------------------
+# The hook's PHASE REALITY rule B runs `git rev-list --count origin/main..HEAD`
+# and `git status --porcelain` against SKILL_PROJECT_ROOT and renders one line
+# ("No committed work on this branch ...") only when the checkout is 0 ahead
+# AND clean. Measured 2026-10-12 at one commit: 24988 on a clean main, 24855 on
+# any dirty tree -- the author's 10-04 branch, a worktree with edits, and main
+# while the suite itself was dirtying config/fallback-registry.json. The ratchet
+# was measuring the checkout's git state, which is why its pinned value could
+# not be reproduced and why it flipped mid-day with no commit.
+#
+# GIT_DIR/GIT_WORK_TREE take precedence over `git -C <dir>` discovery, so every
+# probe hands the hook THIS fixture (one commit, origin/main == HEAD, clean).
+# The line therefore renders deterministically and its cost is in the baseline.
+# The file reads (artifact globs, config) still go to PROJECT_ROOT as before.
+# Lives under TEST_TMPDIR so teardown_test_env reaps it; a mktemp outside it
+# leaked one repo per run (review finding).
+_GIT_FIX="${TEST_TMPDIR}/git-fixture"
+mkdir -p "${_GIT_FIX}"
+# GIT_CONFIG_NOSYSTEM keeps /etc/gitconfig (gpgsign, hooksPath) out of the
+# build; an inherited GIT_DIR/GIT_WORK_TREE would make `git init .` initialise
+# somewhere else, so both are cleared for the build.
+if ! ( cd "${_GIT_FIX}" && env -u GIT_DIR -u GIT_WORK_TREE GIT_CONFIG_NOSYSTEM=1 \
+         sh -c 'git init -q . && printf "x\n" > f && git add f \
+                && git -c user.name=injbudget -c user.email=injbudget@test commit -q -m fixture \
+                && git update-ref refs/remotes/origin/main HEAD' ) >/dev/null 2>&1; then
+    _record_fail "git fixture" "could not build the fixed-state git fixture under ${_GIT_FIX}"
+fi
+
+# ONE site for the hook's environment, used by every probe function below, so
+# dropping the fixture from one probe is not possible (review finding: with the
+# env repeated per probe, removing it from the ratchet's own probe left the
+# text control green while the ratchet drifted).
+_run_hook() {   # stdin: payload JSON
+    GIT_DIR="${_GIT_FIX}/.git" GIT_WORK_TREE="${_GIT_FIX}" \
+        CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${HOOK}" 2>/dev/null
+}
 
 # ---------------------------------------------------------------------------
 # LEG 1 — REGISTRY FLOOR. Without this every other cell can pass having
@@ -212,8 +270,7 @@ _probe() {
     # the injection 7065 -> 6032 bytes. An enumeration rots the moment the hook
     # writes a fourth file, and it rots SILENTLY -- the glob cannot.
     rm -f "${HOME}/.claude/".skill-*-"${_tok}" 2>/dev/null
-    _out="$(jq -n --arg p "${_p}" '{"prompt":$p}' 2>/dev/null \
-        | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${HOOK}" 2>/dev/null)"
+    _out="$(jq -n --arg p "${_p}" '{"prompt":$p}' 2>/dev/null | _run_hook)"
     _rc=$?
     # Empty stdout is LEGITIMATE -- the hook stays silent when nothing routes --
     # but a CRASHED hook is also empty, and on a silent prompt the real hook
@@ -311,8 +368,7 @@ _probe_text() {
     # the injection 7065 -> 6032 bytes. An enumeration rots the moment the hook
     # writes a fourth file, and it rots SILENTLY -- the glob cannot.
     rm -f "${HOME}/.claude/".skill-*-"${_tok}" 2>/dev/null
-    _out="$(jq -n --arg p "${_p}" '{"prompt":$p}' 2>/dev/null \
-        | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${HOOK}" 2>/dev/null)"
+    _out="$(jq -n --arg p "${_p}" '{"prompt":$p}' 2>/dev/null | _run_hook)"
     _rc=$?
     [ "$(_classify "${_out}" "${_rc}")" = "MEASURE" ] || { [ -n "${_out}" ] || [ "${_rc}" -eq 0 ]; return; }
     _ctx="$(printf '%s' "${_out}" | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null)" || return 1
@@ -427,8 +483,7 @@ _probe_nowipe() {
     local _p="$1" _tok="injbudget-$2" _out _ctx _rc _v
     printf '%s' "${_tok}" > "${HOME}/.claude/.skill-session-token" 2>/dev/null || {
         printf 'UNMEASURABLE'; return; }
-    _out="$(jq -n --arg p "${_p}" '{"prompt":$p}' 2>/dev/null \
-        | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${HOOK}" 2>/dev/null)"
+    _out="$(jq -n --arg p "${_p}" '{"prompt":$p}' 2>/dev/null | _run_hook)"
     _rc=$?
     _v="$(_classify "${_out}" "${_rc}")"
     if [ "${_v}" != "MEASURE" ]; then printf '%s' "${_v}"; return; fi
@@ -570,6 +625,43 @@ if [ "${_here}" = "${_there}" ] && [ "${_here}" != "UNMEASURABLE" ] && [ "${_her
     _record_pass "cwd control: injection is invariant to the process CWD (${_here} bytes from both)"
 else
     _record_fail "cwd control" "injection differs by CWD (${_here} here vs ${_there} from /) -- SKILL_PROJECT_ROOT is not pinned, so the ratchet depends on where the suite was launched"
+fi
+
+# LEG 2h — GIT-STATE CONTROL (failure 12). Proves the fixture BINDS: the hook
+# must see the fixture's git state, not the checkout's. Clean fixture renders
+# the PHASE REALITY line; a dirtied fixture must drop it. Without GIT_DIR on the
+# probes this pair is identical (the hook reads the real checkout) and the cell
+# fails -- which is how it was red before the fix.
+# ---------------------------------------------------------------------------
+_gs_clean="$(_probe_text "${_wipe_prompt}" "git-clean")"
+: > "${_GIT_FIX}/dirty-marker"
+_gs_dirty="$(_probe_text "${_wipe_prompt}" "git-dirty")"
+rm -f "${_GIT_FIX}/dirty-marker"
+_gs_needle="No committed work on this branch"
+if [ -z "${_gs_clean}" ] || [ -z "${_gs_dirty}" ]; then
+    _record_fail "git-state control" "could not render the control prompt (clean=${#_gs_clean} dirty=${#_gs_dirty} chars)"
+elif printf '%s' "${_gs_clean}" | grep -qF "${_gs_needle}" \
+     && ! printf '%s' "${_gs_dirty}" | grep -qF "${_gs_needle}"; then
+    _record_pass "git-state control: PHASE REALITY renders on the clean fixture and not on the dirtied one, so the hook reads the fixture's git state"
+else
+    _record_fail "git-state control" "clean fixture has line: $(printf '%s' "${_gs_clean}" | grep -cF "${_gs_needle}"), dirtied fixture has line: $(printf '%s' "${_gs_dirty}" | grep -cF "${_gs_needle}") -- the hook is reading the CHECKOUT's git state, so the ratchet depends on whether this tree is clean and on its distance from origin/main"
+fi
+
+# 2h-ii — the same pair through _probe, the function the RATCHET measures with.
+# The text cell above only proves _probe_text carries the fixture; if GIT_DIR
+# were dropped from _probe alone the ratchet would drift while 2h stayed green
+# (review finding). The byte delta here must equal the text delta above.
+_gb_clean="$(_probe "${_wipe_prompt}" "git-clean-b")"
+: > "${_GIT_FIX}/dirty-marker"
+_gb_dirty="$(_probe "${_wipe_prompt}" "git-dirty-b")"
+rm -f "${_GIT_FIX}/dirty-marker"
+_gs_text_delta=$(( $(_ctx_bytes "${_gs_clean}") - $(_ctx_bytes "${_gs_dirty}") ))
+if [ "${_gb_clean}" = "UNMEASURABLE" ] || [ "${_gb_dirty}" = "UNMEASURABLE" ]; then
+    _record_fail "git-state control (bytes)" "could not measure one of the two probes"
+elif [ "${_gs_text_delta}" -gt 0 ] && [ $(( _gb_clean - _gb_dirty )) -eq "${_gs_text_delta}" ]; then
+    _record_pass "git-state control (bytes): _probe sees the fixture too (clean ${_gb_clean} - dirty ${_gb_dirty} = ${_gs_text_delta} bytes, the PHASE REALITY line)"
+else
+    _record_fail "git-state control (bytes)" "_probe measured ${_gb_clean} clean vs ${_gb_dirty} dirty (delta $(( _gb_clean - _gb_dirty ))) but the text pair differs by ${_gs_text_delta} -- the measuring path does not carry the fixture, so the ratchet still reads the checkout's git state"
 fi
 
 # ---------------------------------------------------------------------------
