@@ -2785,7 +2785,7 @@ Brainstorming MUST build on this confirmed intent and out-of-scope boundary — 
     _expand_precondition_plugin_root
     _IE_PS="'${_cprecond}'"
     SKILL_LINES="${SKILL_LINES}
-INTENT EXTRACTION: If the ask is underspecified (who / why / success criteria / constraints missing), converge on the real goal BEFORE proposing any approach, then emit and stop for confirmation:
+INTENT EXTRACTION: If the ask is underspecified (who / why / success criteria / constraints missing), converge with the user on the real goal, the underlying need rather than the literal request, BEFORE proposing any approach; then emit and stop for confirmation:
   **Confirmed intent:** <one line capturing who/why/success>
   **Out-of-scope:** <what this is explicitly NOT>
 After confirmation, persist it in ONE Bash call: \`bash ${_IE_PS} set-intent \"<confirmed intent> :: out-of-scope: <...>\"\`. Skip when the ask is fully specified, mechanical, or covered by an approved discovery brief."

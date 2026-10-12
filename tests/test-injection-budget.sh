@@ -180,11 +180,12 @@ echo "=== test-injection-budget.sh ==="
 # so the line is always rendered and its 133 bytes are in the baseline. The
 # per-shape bytes were 999 / 6683 / 7045 / 3794 / 4637 / 1830.
 #
-# 24988 -> 21849 (2026-10-12, same day): the phase hints were cut to a
+# 24988 -> 21917 (2026-10-12, same day): the phase hints were cut to a
 # condition plus the Skill(...) that owns the procedure (the procedure moved
-# into that skill), and the INTENT EXTRACTION directive was shortened.
-# Per-shape bytes now 964 / 5073 / 6404 / 3153 / 4460 / 1795.
-_INJECTION_BASELINE=21849
+# into that skill), and the INTENT EXTRACTION directive was shortened (its
+# "the underlying need" clause is kept: a scenario eval pins it).
+# Per-shape bytes now 964 / 5141 / 6404 / 3153 / 4460 / 1795.
+_INJECTION_BASELINE=21917
 _MIN_SHAPES=6
 
 setup_test_env
