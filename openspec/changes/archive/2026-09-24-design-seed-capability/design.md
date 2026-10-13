@@ -481,16 +481,24 @@ document.
 v1 never ran. No arm executed, no artifact was produced, no judge was asked, so
 there are no v1 results and nothing to pool or discard. v2 replaces v1 outright.
 
-> **Correction, 2026-10-13.** The paragraph above is false. It is left standing
-> so that the correction is visible beside it. v1 ran once, on 2026-09-20, on
-> the branch `design-seed-pilot-impl`: both arms executed, two artifacts were
-> produced and two judge responses were recorded. That branch was never merged,
-> and the branch this registration was written on shares only the
-> pre-registration commit `14e02a5` with it. The run is recorded in "The v1 run
-> of 2026-09-20" at the end of this document. What survives of the paragraph:
-> v2 does replace v1, and by v1's own rule ("Anything changed after results are
-> seen makes this v2, and v1 results are not pooled with it") the one v1 result
-> is not pooled with anything recorded under v2 or v3.
+> **Correction, 2026-10-13.** The paragraph above is not true of the pilot as a
+> whole. It is left standing so that the correction is visible beside it.
+> Before it was written, one seeded/comparator pair had been built and judged
+> under the 2026-09-18 pre-registration: the arms were launched on 2026-09-20
+> and two judge responses were recorded on 2026-09-21, on the branch
+> `design-seed-pilot-impl`. That branch was never merged, and neither main nor
+> the branch this registration was written on contains those commits.
+>
+> There is a reading on which the paragraph holds, and it is stated here so the
+> correction is not read as more than it is. The seven-dimension rubric that
+> this registration replaces was first committed in Dion on 2026-09-23
+> (`01a4568`), and no arm was ever scored on it. The earlier run used a
+> separate eight-dimension rubric. The branch's own record does not settle the
+> label either: its pre-launch amendment of 2026-09-20 declares itself "v2" and
+> says no v1 results exist, while its later entries call the same run "the v1
+> result". This document therefore calls it "the 2026-09-20 run". It is
+> recorded at the end of this document, and it is not pooled with anything
+> recorded under v2 or v3.
 
 ### Why
 
@@ -813,8 +821,9 @@ added** — v2-6 registered the three outcomes as the result precisely to stop a
 aggregate rule being chosen once the pattern was visible.
 
 > **Note, 2026-10-13.** The sentence above counts the three v3 pairs. One
-> further pair was run under v1 on 2026-09-20 and favoured the seeded arm. It is
-> not pooled with these three. See "The v1 run of 2026-09-20" at the end of this
+> earlier pair, launched on 2026-09-20 under the 2026-09-18 pre-registration on
+> an unmerged branch, was scored higher for the seeded arm by both judges. It is
+> not pooled with these three. See "The run of 2026-09-20" at the end of this
 > document.
 
 **What this does not support.** Not "the seed makes UI worse". The run produced
@@ -899,10 +908,11 @@ tracked as #298 (replication with an instrument that can see what the seed
 governs) and #299 (the styleguide gap the pilot exposed independently of the
 comparison).
 
-## The v1 run of 2026-09-20 (recorded here 2026-10-13)
+## The run of 2026-09-20 (recorded here 2026-10-13)
 
-Registration v2 above says v1 never ran. It did, once. This section records
-that run from its own preserved record. Nothing here was re-run or re-judged.
+Registration v2 above says no arm had executed. One pair had, on an unmerged
+branch. This section records that run from its own preserved record. Nothing
+was re-run or re-judged to write it.
 
 ### Where the record is
 
@@ -911,32 +921,55 @@ origin, 23 commits after the pre-registration commit `14e02a5`. It never had a
 pull request. The record is under
 `openspec/changes/design-seed-capability/pilot/` on that branch: the frozen
 rubric, brief, budget and disclosures, `HASHES.md`, and under `results/` the
-adjudication (`RESULT.md`), both judge responses verbatim, the label mapping,
-both artifacts, the captures, the arm prompts and edits, and
-`protocol-amendments.md`. Dion base commit: `a6475eb`.
+adjudication (`RESULT.md`), both judge responses, the label mapping, both
+artifacts, the captures, the arm prompts and edits, `arm-consumption.md`,
+`pre-launch-measurements.md`, `capture-notes.md`, `pre-judging-decisions.md`
+and `protocol-amendments.md`. Dion base commit: `a6475eb`.
 
-**That branch is the only copy.** Nothing from it is carried into this
-document except the figures below. If the branch is deleted, the source of
-this section is no longer reachable.
+Nothing from that branch is carried into this document except the figures
+below. The origin branch is the only remote copy. One local branch,
+`docs-pilot-v2-registration`, sits one commit above it and so also holds the
+record.
 
-### What was run
+### What it was run under
 
-One seeded/comparator pair, under the 2026-09-18 pre-registration as it stood
-on that branch. The branch amended the registration in `d13ae391` and
-`dc108b0b`, both dated 2026-09-20 and both earlier in its history than
-`795fa1f9`, the commit that records the arms' run. Its rubric has eight
-dimensions, R1 to R8, each scored out of 4, for a total of 32. Registration v2
-above counts seven dimensions in the rubric it replaced. The two copies of v1
-diverged after `14e02a5`, and the run used the branch's copy.
+One seeded/comparator pair, under the 2026-09-18 pre-registration as amended
+on that branch before launch. The amendment is in `d13ae391` and `dc108b0b`,
+both dated 2026-09-20 and both ancestors of `795fa1f9`, the commit that
+records the arms' run. `pilot/HASHES.md` declares that amendment "v2" and says
+of it: "No v1 results are being discarded, because none exist." It corrected
+one hash row, moved the Dion base, and changed how arms were started: as
+headless `claude -p` sessions with user-level plugins disabled, where the
+registration had named subagents. `HASHES.md` states that the frozen rubric,
+brief, budget and disclosures were byte-identical across it.
 
-The label mapping was written at 2026-09-20T20:41:19Z. Judging was two
-consultations to `codex` with the presentation order reversed, recorded on
-2026-09-21.
+The branch's later entries call the same run "the v1 result". The labels
+disagree, which is why this document names the run by its date.
+
+The rubric is `pilot/rubric.md` on the branch: eight dimensions, R1 to R8,
+each scored out of 4, for a total of 32. It is not the seven-dimension rubric
+that Registration v2 above replaces. That one is a Dion file first committed
+on 2026-09-23 (`01a4568`), after this run, and the two were written
+separately.
+
+The arms were launched on 2026-09-20 and the label mapping was written at
+2026-09-20T20:41:19Z. Judging was two consultations to `codex` with the
+presentation order reversed, sent on 2026-09-21.
+
+The judging rules are in `results/pre-judging-decisions.md`, which says they
+were "Written after the arms ran and before any judge saw anything" and that
+they "are **not** pre-registered". Two of them bear on the result. Each
+artifact was shown to the judges as one image, where the registration called
+for a matched light and dark pair, because the two captures of each artifact
+were identical. And the verdict is the judge's own overall preference. Both
+judges report viewing the comparator in a dark appearance and the seeded
+artifact in a light one.
 
 ### Result
 
-Pre-registered outcome 1 on the screen comparison, and outcome 5 on the
-process gates.
+`RESULT.md` reports pre-registered outcome 1 on the screen comparison, and
+outcome 5 on the process gates. That split is the branch's own: registered
+outcome 1 requires the process gates to be satisfied, and gate (a) was not.
 
 | | comparator (arm C) | seeded (arm S) |
 |---|---|---|
@@ -968,9 +1001,13 @@ required process gates were satisfied" struck because (a) failed:
 > comparator run. This single pair does not distinguish a repeatable workflow
 > advantage from generation variation.
 
+`RESULT.md` attaches this to the claim, "as part of the claim rather than as a
+footnote": the procedure did not exercise arm S's declared dark theme, and arm
+S did not satisfy the adaptation-documentation gate.
+
 ### Disposition at the time
 
-Recorded on the branch on 2026-09-21 as the owner's decision: held open, not
+Recorded on the branch on 2026-09-21 as "Decided by the user": held open, not
 archived, pending a second pair. Running the instrument had exposed three
 defects. Two of them (the adaptation criterion, and a capture procedure that
 reported OS-preference conditions as theme states) required protocol changes,
@@ -978,30 +1015,43 @@ so a second pair would be a new registration and not poolable with this one.
 
 ### How this reads beside the v3 result
 
-- **It is not pooled with v3 and no aggregate is produced.** Across both
-  registrations four pairs were run: one under v1, which favoured the seeded
-  arm, and three under v3, of which two favoured the comparator and one was
-  inconclusive. The v1 pair and the v3 pairs were scored on different
+- **It is not pooled with v3 and no aggregate is produced.** The records show
+  four pairs: this one, which both judges scored higher for the seeded arm,
+  and three under v3, of which two favoured the comparator and one was
+  inconclusive. This pair and the v3 pairs were scored on different
   instruments, so the four are not one sample.
 - **It does not license "the seed makes UI better"**, for the reason the claim
   itself gives: one pair cannot separate a workflow effect from generation
   variance, which v3 then observed directly.
 - **It bounds "none favoured the arm with it"** to the three v3 pairs, which is
   what the note beside that sentence now says.
-- **The citation weakness recorded above may apply to it.** "Rubric citation
-  provenance" in the v1 section found no independent source for hierarchy,
-  readability and consistency in this document's copy of the rubric, where
-  they are numbered R5 to R7. On the branch those three are R4 to R6 and cite
-  "Independent reviewer's stated criterion". That citation was not re-checked
-  for this record. Those three dimensions carry 2 of judge 1's 6 points and 1
-  of judge 2's 5.
+- **Most of the difference sits on dimensions with no host-repository
+  source.** The pre-registration's Rubric section lists four qualities as
+  independently stated: visual hierarchy, readability, consistency, and honest
+  handling of missing information. On the branch those are R4 to R7, and each
+  cites "Independent reviewer's stated criterion". R8 cites "This pilot". The
+  "Rubric citation provenance" entry above found no independent source for
+  the first three in the later rubric, where they are numbered R5 to R7.
+  Whether the branch's citation has one was not checked for this record, and
+  the rubric does not name the reviewer. R4 to R7 carry 4 of judge 1's 6
+  points and 3 of judge 2's 5. With R8 it is 5 of 6 and 4 of 5. Only R3, at
+  one point from each judge, cites the host repository.
+- **Registration v2's other finding was not checked against this rubric
+  either**: that the choice of dimensions mirrored the seed styleguide's
+  section headings.
 
 ### What is not established
 
-Why Registration v2 said v1 never ran. The commit graph shows only that the
-branch v2 was written on does not contain the run's commits.
+- Why Registration v2 was written without this run. The commit graph shows
+  only that the branch it was written on does not contain the run's commits.
+  The run's own branch carries a near-identical sentence, quoted above, written
+  before its arms were launched.
+- That the two judge files are the judges' output unedited. They are the only
+  copies.
+- That no other pair was ever run. The count of four is what these records
+  show.
 
-A separate branch, `docs-pilot-v2-registration` (`24c4fadd`, 2026-09-22,
-never pushed), registers a "v2" that applies this run's protocol amendments.
-It is not the v2 of this document. It adds one commit, to the design document
-only, and records no run.
+A separate branch, `docs-pilot-v2-registration` (`24c4fadd`, 2026-09-22),
+registers a "v2" that applies this run's protocol amendments. It is not the v2
+of this document. It adds one commit, to the design document only, and records
+no run. It exists locally and is not on origin.
