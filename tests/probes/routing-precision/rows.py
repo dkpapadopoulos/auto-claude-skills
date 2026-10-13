@@ -30,7 +30,11 @@ Both files hold prompt text. A path inside a git repository, or one git cannot v
 is refused (exit 2). Prints counts only.
 
 COLLECTION STATUS. The pre-registration closes stage A when 60 rows the rule would hide
-have been recorded, or on 2026-11-16, whichever is first, and stage A is scored ONCE. With
+have been recorded, or on the closing date, whichever is first, and stage A is scored ONCE.
+The closing date was 2026-11-16; amendment A4 (2026-10-13) closed collection on 2026-10-13
+with zero would-hide rows, because the population the rule targets did not occur. The hook
+keeps writing records after that date and this reader has no upper bound, so counts read
+later are larger than the amendment's figures of record. With
 --count-only nothing is written: the same rows are built, the counts are printed, and the
 last line says whether collection is OPEN or CLOSED. That is the check to run before
 labelling; it reads no label and prints no prompt.
@@ -54,7 +58,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import RULE_VERSION, join, open_private, read_session, read_shadow, rec_ts, refuse_repo_path, transcript_for, ts_of  # noqa: E402
 
 CLOSE_AT_HIDDEN_ROWS = 60     # pre-registered: collection closes at this many would-hide rows
-CLOSE_ON = "2026-11-16"       # or on this date, whichever is first
+CLOSE_ON = "2026-10-13"       # or on this date, whichever is first (was 2026-11-16; amendment A4 closed early)
 TAIL = 1500        # characters of the previous assistant message
 EARLIER = 8        # earlier typed prompts shown, most recent last
 EACH = 500         # characters of each earlier prompt
@@ -185,6 +189,8 @@ def main():
     hidden = sum(1 for k in keys if k["would_hide"])
     if hidden >= CLOSE_AT_HIDDEN_ROWS:
         print(f"collection: CLOSED ({hidden} rows the rule would hide; closes at {CLOSE_AT_HIDDEN_ROWS}). Label and score once.")
+    elif today >= CLOSE_ON and hidden == 0:
+        print(f"collection: CLOSED (closing date {CLOSE_ON} reached with 0 rows the rule would hide). Nothing to label.")
     elif today >= CLOSE_ON:
         print(f"collection: CLOSED (closing date {CLOSE_ON} reached with {hidden} rows the rule would hide). Label and score once.")
     else:
