@@ -5,9 +5,12 @@ A descriptive, zero-label companion to census.py. For every typed prompt in the 
 routing block mandates --skill (the same readers, pairing and turn boundary as census.py),
 every trigger regex of that skill from config/default-triggers.json is run over the
 lowercased prompt text, as the hook does (`[[ "$P" =~ $trigger ]]` on the lowercased
-prompt). Each alternative that matches is named by its matched text with the non-letter
-edges removed: the bare verb for the alternation trigger ("build"), the phrase for the others
-("how should", "set up", "strateg" for a stem). A prompt can carry several; `sole` counts
+prompt, rescanning from one past each hit, and rejecting a hit interior to a word on both
+sides, as `_score_skills` does). Each trigger is split into its top-level alternatives first,
+and an alternative that matches is named by its OWN source text in the config: the bare verb
+for the word list ("build"), `set.?up`, `how.(should|would|could)`, `check.*(code|changes|diff)`.
+Never by what it matched: the matched span of a wildcard alternative is prompt text, which
+this tool must not print. A prompt can carry several; `sole` counts
 prompts where exactly one alternative matched across all of the skill's triggers, which is
 the population a deletion of that alternative would actually change. A mandate whose prompt
 matches no alternative was not earned by the prompt's own words (chain injection, the
@@ -45,25 +48,141 @@ from extract import prompt_of  # noqa: E402
 DEFAULT_CONFIG = os.path.normpath(os.path.join(HERE, "..", "..", "..", "config", "default-triggers.json"))
 
 
+LEAD = "(^|[^a-z])"
+TAIL = "($|[^a-z])"
+EDGE = re.compile(r"[a-z0-9_.]")   # the hook's word characters for the interior-hit rule
+
+
+def split_top(src):
+    """Split a regex source on `|` at parenthesis depth 0 (brackets and escapes respected)."""
+    parts, depth, cur, i = [], 0, [], 0
+    while i < len(src):
+        ch = src[i]
+        if ch == "\\" and i + 1 < len(src):
+            cur.append(src[i:i + 2]); i += 2; continue
+        if ch == "[":
+            j = src.find("]", i + 2)
+            j = len(src) - 1 if j < 0 else j
+            cur.append(src[i:j + 1]); i = j + 1; continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        if ch == "|" and depth == 0:
+            parts.append("".join(cur)); cur = []
+        else:
+            cur.append(ch)
+        i += 1
+    parts.append("".join(cur))
+    return parts
+
+
+def strip_outer(src):
+    """The inside of one group that wraps the whole source, else None."""
+    if not (src.startswith("(") and src.endswith(")")):
+        return None
+    depth = 0
+    for i, ch in enumerate(src):
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0 and i != len(src) - 1:
+                return None
+    return src[1:-1]
+
+
+def expand(src):
+    """(name, regex source) for every top-level alternative of one trigger.
+
+    Two shapes exist in the config: an outer group of alternatives, some of which carry their
+    own boundary scaffolding (`(^|[^a-z])review`), and a scaffolded word list
+    (`(^|[^a-z])(build|create|...)($|[^a-z])`), whose list is expanded with the scaffolding
+    kept on each word. A trigger of neither shape is one alternative. The name is the
+    alternative's own source text with the scaffolding and one wrapping group removed, so a
+    wildcard alternative such as `check.*(code|changes|diff)` names ITSELF, never what it
+    matched: the matched span of a wildcard is prompt text."""
+    inner = strip_outer(src)
+    if inner is not None:
+        parts = split_top(inner)
+        if len(parts) > 1:
+            return [(alt_name(p), p) for p in parts]
+    depth, start = 0, -1
+    for i, ch in enumerate(src):
+        if ch == "(":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0 and start >= 0:
+                body = src[start + 1:i]
+                parts = split_top(body)
+                if len(parts) > 1 and all(re.fullmatch(r"[a-z]+", p) for p in parts):
+                    prefix, suffix = src[:start], src[i + 1:]
+                    return [(p, prefix + p + suffix) for p in parts]
+                start = -1
+    return [(alt_name(src), src)]
+
+
+def alt_name(alt):
+    name = alt
+    if name.startswith(LEAD):
+        name = name[len(LEAD):]
+    if name.endswith(TAIL):
+        name = name[:-len(TAIL)]
+    inner = strip_outer(name)
+    return inner if inner else name
+
+
 def load_triggers(path, skill):
-    """The skill's trigger regexes, compiled; None when the skill is unknown; [] when it has none."""
+    """[(name, compiled regex)] for every alternative of the skill's triggers; None when the
+    skill is unknown; [] when it has no trigger. DOTALL because bash ERE's `.` crosses newlines."""
     with open(path, encoding="utf-8") as src:
         cfg = json.load(src)
     for entry in cfg.get("skills") or []:
         if isinstance(entry, dict) and entry.get("name") == skill:
-            return [re.compile(t) for t in (entry.get("triggers") or []) if isinstance(t, str)]
+            out = []
+            for trig in entry.get("triggers") or []:
+                if isinstance(trig, str):
+                    out.extend((n, re.compile(s, re.DOTALL)) for n, s in expand(trig))
+            return out
     return None
+
+
+def hits(rx, text):
+    """Whether the alternative matches the text the way the hook credits it: rescanning from
+    one past each hit, as `_score_skills` does, and rejecting a hit that is interior to a word
+    on BOTH sides (`hang` inside "changes"); a hit touching a word edge on either side counts."""
+    pos = 0
+    while pos <= len(text):
+        m = rx.search(text, pos)
+        if m is None:
+            return False
+        a, b = m.start(), m.end()
+        # A scaffolded alternative (`(^|[^a-z])new($|[^a-z])`) matches its boundary characters
+        # too; they are an assertion about the word's edges, not part of the hit, so the edge
+        # rule is applied to the word inside them (the hook never evaluates one alternative
+        # of a word list on its own, so this is the only reading under which "build new"
+        # credits "new" the way the whole trigger credits it).
+        while a < b and not re.match(r"[a-z0-9]", text[a]):
+            a += 1
+        while b > a and not re.match(r"[a-z0-9]", text[b - 1]):
+            b -= 1
+        if a == b:
+            pos = m.start() + 1
+            continue
+        left_ok = a == 0 or not EDGE.match(text[a - 1])
+        right_ok = b >= len(text) or not EDGE.match(text[b])
+        if left_ok or right_ok:
+            return True
+        pos = m.start() + 1
+    return False
 
 
 def alternatives(patterns, text):
     """Names of every trigger alternative matching the lowercased text."""
-    names = set()
-    for rx in patterns:
-        for m in rx.finditer(text):
-            name = re.sub(r"^[^a-z]+|[^a-z]+$", "", m.group(0))
-            if name:
-                names.add(name)
-    return names
+    return {name for name, rx in patterns if hits(rx, text)}
 
 
 def census(projects, since, until, min_version, skill, patterns):
