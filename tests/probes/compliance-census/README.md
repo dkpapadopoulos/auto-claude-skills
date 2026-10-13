@@ -166,8 +166,9 @@ prompts where exactly one
 alternative matched, the population a deletion of that alternative would change. A mandate
 matching no alternative was earned by chain injection, the keyword path or a name mention and
 is reported as unattributed. It decides nothing: whether a mandate was warranted needs labels,
-and the 652-prompt gold set from the frontier audit is gone (only its counts survive). Any
-deletion study is a new, separately registered experiment.
+and the frontier audit's labels over its 652-prompt gold set are gone (the prompts came from
+real transcripts and could be re-extracted; the labels lived in a session scratchpad and
+would have to be made again). Any deletion study is a new, separately registered experiment.
 
 Read 2026-10-13 over four weeks (2026-09-15 to 10-13, every version, 63 sessions, 576 typed
 prompts). Brainstorming, 94 mandates, 65 with exactly one alternative, 8 unattributed:
@@ -186,12 +187,15 @@ prompts). Brainstorming, 94 mandates, 65 with exactly one alternative, 8 unattri
 | seven others | 13 | 0 | 1 | 0 |
 
 "new" and "make" are 32 of the 65 sole matches and were followed by the skill in the same
-turn zero times; the design words carry the same-turn invocations. requesting-code-review,
+turn zero times, while the design words carry the same-turn invocations; read that as a
+description of where the mandates come from, not as a ranking of what to delete, because
+same-turn invocation is a weak proxy for "warranted" (the census above found display rarely
+moves behaviour at all) and a verb's absence from the in-turn column says nothing about the
+work orders it correctly routed. requesting-code-review,
 149 mandates: `pr` 52 (48 sole, 4 in-turn), `review` 28 (22 sole, 1 in-turn),
 `check.*(code|changes|diff)` 4, `lint` 3, 69 unattributed (chain-injected; 30 followed later
-in the session). Same-turn invocation is a
-weak proxy for "warranted" (the census above says display rarely moves behaviour at all), so
-these are descriptive counts, not a ranking of what to delete.
+in the session). The requesting-code-review rows sum past the attributed prompts (87
+alternative hits over 80 attributed prompts) because a prompt can match two alternatives.
 
 ## Amendment log
 

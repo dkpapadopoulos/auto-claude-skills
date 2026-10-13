@@ -15,8 +15,11 @@
 #   V7  the hook's edge rule: a hit interior to a word on both sides ("predesignated") is not
 #       a match; a multi-line prompt matches across the newline as bash ERE does
 #
-# The routing block is written by the REAL activation hook; the entries around it use the
-# shapes tests/test-real-prompt-replay.sh pins.
+# The routing block TEXT is written by the REAL activation hook (one brainstorming block, one
+# requesting-code-review block); its placement on the other prompts is simulated, since the
+# hook renders no block for a prompt under five characters such as "ok" and the chain
+# injection that mandates a step on such a prompt needs an armed chain. The entries around
+# the blocks use the shapes tests/test-real-prompt-replay.sh pins.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
