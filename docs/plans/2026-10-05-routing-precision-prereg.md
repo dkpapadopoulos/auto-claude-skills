@@ -1,10 +1,13 @@
 # Pre-registration — routing precision: stop repeating a chain step's mandate on a prompt that asked for nothing
 
-Issue #333. **Frozen by the latest commit that changes this file** (see the amendment log
-at the foot: the freeze has been replaced three times, each time before any row existed). That commit's
-timestamp is the boundary: everything observed before it is development data and may not
-be used to judge the rule. Changes after it go in the amendment log, with the reason,
-before the data they affect is looked at.
+Issue #333. **Frozen at commit `06e3964d` (A3, 2026-10-06T13:26:35+02:00).** Until A4 this
+line said "frozen by the latest commit that changes this file", and the freeze was replaced
+three times, each time before any row existed. A4 (2026-10-13) is the first amendment made
+after rows exist, so the freeze is pinned here by sha and **later amendments do not move
+it**: the A3 timestamp is the boundary, everything observed before it is development data and
+may not be used to judge the rule, and everything after it is the data A4 reads. Changes
+after the freeze go in the amendment log, with the reason, before the data they affect is
+looked at, or, as A4 does, stating plainly that they were made after looking.
 
 ## What is being tested
 
@@ -79,7 +82,8 @@ author, so their agreement is corroboration, not validation. The owner labels 20
 blind, drawn at random from the rows both labellers decided.
 
 **Stopping, fixed now.** Collection closes when 60 rows the rule would hide have been
-recorded, or on 2026-11-16, whichever is first. Scored once, by
+recorded, or on 2026-11-16, whichever is first (changed post hoc by A4 to 2026-10-13, for
+futility, with the reasoning stated there). Scored once, by
 `tests/probes/routing-precision/score.py`, whose `THRESHOLDS` are the values below.
 
 | | Condition | Fails to |
@@ -191,7 +195,7 @@ stage B supplies.
 The same reviewer then said REVERT on the implementation twice, for defects in how the
 rule's marker and record were read and written, and KEEP on the third cut. The defects,
 the fixes and the one it left open are in
-`openspec/changes/sticky-repeat-display/design.md`.
+`openspec/changes/archive/2026-10-06-sticky-repeat-display/design.md` (archived after #337).
 
 ## Known threats, stated before the data
 
@@ -199,7 +203,7 @@ the fixes and the one it left open are in
 - **Volume.** Development rows arrived in bursts (84 in September, 8 in the first days of
   October). Either stage may close on its date first and be inconclusive.
 - **The plugin may change during collection.** Rows count only while the record's
-  `rule_version` is 1.
+  `rule_version` is 3 (1 when this was written; raised by A2 and A3).
 - **The join** from a record to its prompt is by session and time. Records that do not join
   are counted and printed.
 - **Same-family labellers**; twenty owner labels is a small calibration.
@@ -313,3 +317,59 @@ the commit that makes these changes and `rule_version` is 3.
   That is a change to what is mandated, with an unmeasured effect on whether review and
   verification still get invoked, and it is left to the owner. If it is made, it takes a
   new version and restarts stage A.
+
+**A4 — 2026-10-13, after 71 records and before any label; a post-hoc change to a fixed
+stopping rule.** Stage A collection is closed on 2026-10-13, instead of at 60 would-hide rows
+or on 2026-11-16, for futility: the rule's population has not occurred and cannot reach the
+count in the remaining five weeks at the observed rate. In the registered vocabulary the
+outcome is INCONCLUSIVE under K0 (fewer than 40 hidden rows; `score.py`), not PASS and not
+STOP; "closed" here means collection stopped, and no score is computed. This amendment was
+written after the records below were read, which the header's own rule forbids for a change
+that could favour the rule; it cannot favour the rule, because it closes stage A without a
+pass, and the header now pins the freeze at A3 so this edit does not move it. No label was
+ever made and none is owed.
+
+- *What the records say.* `rows.py --count-only` over the real shadow directory since the
+  freeze (installed 3.94.5 on 2026-10-07), records through `ts` 2026-10-12T21:19:52Z: 71
+  records, all rule version 3; 24 not displayed (another suppression); 14 with no typed prompt
+  in the join window (11 with no prompt of any origin in the window, 2 human prompts whose
+  text starts with `<`, 1 headless `sdk`); 30 typed rows in 9 sessions; would-hide rows: 0.
+  Across all 71 records `sticky` is true in 1 and `already_shown` in 16 (8 of the 47 displayed
+  records; 7 of the 30 typed rows), never both. The hook keeps writing after the closing date,
+  so a later `--count-only` shows larger counts; the figures of record are these. The 11
+  displayed records that join no prompt of any origin within the 15-second window are a join
+  miss of unknown cause and an open question about the reader; they do not move the
+  would-hide count, which is 0 over all 71 raw records independent of the join.
+- *Why.* Every one of the 30 typed rows selected its process skill by its own words. The
+  owner's short replies carry trigger verbs: "continue when codex is done" and "keep going,
+  finish PR 5 and 6" match executing-plans; "merge PR 263 and 264" and "go ahead, branch and
+  open the PR" match requesting-code-review's `pr`; "yes, make the skill change" matches
+  brainstorming's verb alternation. The rule excludes these on purpose ("It does not touch
+  mandates a prompt earns by its own words"), and `_STICKY_SKILL` is set only when no
+  process skill scored, so `sticky: false` is correct for all 30. The one trigger-free short
+  reply in an armed chain since the freeze (2026-10-08, requesting-code-review) was a first
+  display (`already_shown: false`).
+- *The flag is computed when the population occurs.* The real hook in an isolated HOME: a fresh-session "go"
+  selects nothing and writes no record; after "build a new exporter for the report module"
+  arms a chain, a second "go" records `sticky: true, already_shown: true, would_hide: true`,
+  and a later "ok" records requesting-code-review `sticky: true`. The population the rule
+  targets, a trigger-free short reply inside an armed chain, produced one record in six days,
+  and a would-hide row needs a second such reply on the same chain. At one target record
+  per six days, the 40 hidden rows K0 needs cannot be reached by 2026-11-16, let alone the
+  60 that close collection; waiting would have spent five more weeks of hot-path writes on a
+  stage that scores INCONCLUSIVE either way.
+- *The gap to the development figure.* The development table counted 92 would-hide rows
+  among 451 mandated blocks on typed prompts before the freeze (#333, 2026-10-05); that gap
+  to zero is not explained here. That census ran on builds before #337 and
+  #338 and may have counted re-displays the current chain walk no longer produces, or inputs
+  the current reader classifies as non-human. It was not re-derived.
+- *What changes.* `rows.py` `CLOSE_ON` becomes 2026-10-13 so `--count-only` says CLOSED; the
+  README says why. Nothing else: the rule, `rule_version` 3, the scorer and the trial reader
+  are untouched. The shadow writes stay in `hooks/skill-activation-hook.sh` until a separate
+  hook change removes them, since a hook change needs its own review.
+- *What this does and does not decide.* Stage A is closed, INCONCLUSIVE, for the rule as
+  frozen.
+  It says nothing about mandates a prompt earns by its own words; the repeats among them are
+  7 of the 30 typed rows (`already_shown: true`: requesting-code-review 4, brainstorming 2,
+  executing-plans 1), and they are the main subject of #333; a rule over those would be a new
+  rule, version 4, with its own registration. Stage B is not run.
