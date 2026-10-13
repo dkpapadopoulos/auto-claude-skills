@@ -152,6 +152,42 @@ output may be pasted into an issue.
   because a prompt that routes nothing renders no block; it reads as zero mandates and, at
   the cap, as cannot-check.
 
+## Companion: verb attribution census (`verbs.py`), descriptive, not registered
+
+`verbs.py --skill <name> --since ISO` says WHICH trigger alternative earned each mandate of a
+skill on typed prompts, using the same readers, pairing and turn boundary as `census.py`.
+Each of the skill's trigger regexes from `config/default-triggers.json` runs over the
+lowercased prompt as the hook does; a matching alternative is named by its matched text with
+the non-letter edges removed ("build", "how should", "set up", a stem such as "strateg", or
+the matched span of a wildcard alternative). `sole` counts prompts where exactly one
+alternative matched, the population a deletion of that alternative would change. A mandate
+matching no alternative was earned by chain injection, the keyword path or a name mention and
+is reported as unattributed. It decides nothing: whether a mandate was warranted needs labels,
+and the 652-prompt gold set from the frontier audit is gone (only its counts survive). Any
+deletion study is a new, separately registered experiment.
+
+Read 2026-10-13 over four weeks (2026-09-15 to 10-13, every version, 63 sessions, 576 typed
+prompts). Brainstorming, 94 mandates, 64 with exactly one alternative, 8 unattributed:
+
+| alternative | mandates | sole | in-turn | later |
+|---|---|---|---|---|
+| new | 24 | 18 | 0 | 0 |
+| design | 19 | 6 | 5 | 0 |
+| approach | 15 | 7 | 2 | 0 |
+| make | 15 | 14 | 0 | 2 |
+| create | 12 | 3 | 3 | 0 |
+| add | 10 | 6 | 2 | 0 |
+| build | 9 | 5 | 3 | 0 |
+| start | 8 | 4 | 2 | 0 |
+| nine others | 19 | 1 | 2 | 0 |
+
+"new" and "make" are 32 of the 64 sole matches and were followed by the skill in the same
+turn zero times; the design words carry the same-turn invocations. requesting-code-review,
+149 mandates: "pr" 52 (48 sole, 4 in-turn), "review" 27 (24 sole, 1 in-turn), 70
+unattributed (chain-injected; 30 followed later in the session). Same-turn invocation is a
+weak proxy for "warranted" (the census above says display rarely moves behaviour at all), so
+these are descriptive counts, not a ranking of what to delete.
+
 ## Amendment log
 
 (none)
