@@ -1312,10 +1312,11 @@ EOF
 # inline copy would break. Mutating the escape must fail that file.
 #
 # It mutates the caller's variable rather than echoing, because the CURRENT-step
-# site is the ~50ms hot path and a command substitution there is a fork.
+# site is the per-prompt hot path (measured median ~170 ms, 2026-10-12) and a
+# command substitution there is a fork.
 _expand_precondition_plugin_root() {
   if [[ -n "$_cprecond" && "$_cprecond" == *'{{PLUGIN_ROOT}}'* ]]; then
-    # POSIX single-quote escaping, fork-free (this is the ~50ms hot
+    # POSIX single-quote escaping, fork-free (this is the per-prompt hot
     # path). Inside double quotes `\'` is NOT an escape — it is a
     # backslash followed by a quote — so the replacement is assembled
     # from explicit single-character variables. Getting this wrong
@@ -1722,8 +1723,8 @@ _render_driver_precondition() {
   fi
 
   # ONE jq call for the driver name plus that skill's invoke and precondition.
-  # It runs only on this path — where no anchor resolved — so the ~50ms
-  # activation budget is unaffected on the chain path.
+  # It runs only on this path — where no anchor resolved — so the per-prompt
+  # activation cost (measured median ~170 ms) is unaffected on the chain path.
   #
   # `gsub` is deliberately not used to flatten the text: a jq built without the
   # regex library raises on it, which would read here as an unparseable

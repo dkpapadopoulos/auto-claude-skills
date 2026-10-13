@@ -48,7 +48,7 @@ Six canonical homes for project context. Read this before guessing where docs li
 ## Style
 
 - Bash 3.2 compatible (macOS `/bin/bash`). No associative arrays.
-- 200ms session-start hook budget. Activation hook is faster (~50ms). Minimize jq forks — batch into single calls.
+- Session-start hook budget is stated as 200ms; measured 2026-10-12 it takes ~1.6 s with twelve plugins (2,531 to 1,624 ms across PR #348). The activation hook runs on every prompt: measured 2026-10-12 at a 172 ms median on one prompt (20 runs) and 178 ms on a chained render (a separate 15-run measurement), against a stated target of ~50 ms. Treat both stated numbers as targets, not facts. Minimize jq forks — batch into single calls.
 - Field separator: `\x1f` (US). Intra-field delimiter: `\x01` (SOH). Never `\n` inside fields.
 - Commit messages: `<type>: <description>` (fix, feat, docs, test, refactor).
 - When editing files, never replace full content if only a section needs changing. Preserve existing data in YAML/JSON files. Use targeted edits, not full-file rewrites.

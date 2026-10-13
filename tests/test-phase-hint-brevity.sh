@@ -9,8 +9,18 @@
 # 30% of the bytes (mean block 4,860 B; DESIGN hints alone 2,581 B), while 0 of
 # 23 MUST INVOKE mandates in that week were obeyed. The procedure a hint used to
 # inline is read when the model invokes the skill, which is the shape the
-# superpowers chain already uses. Ceilings are RATCHETS in spirit: lowering one
-# is banked in the same commit; raising one needs a reason in the commit.
+# superpowers chain already uses. The per-phase totals are CEILINGS: growth
+# fails and needs a reason in the commit that raises the constant; a reduction
+# passes and the constant is lowered when someone next touches the file. They
+# were equality ratchets from PR #349 until the ratchet-ceilings change; the
+# 2026-10-12 value review found the equality pins on INTERNAL counts taxing
+# later PRs with re-pins for numbers no user sees (the fork count was re-pinned
+# by PR #351 hours after PR #348 introduced it; the injection baseline moved
+# five times across #349 and #350). These pins themselves moved only within
+# #349, so this conversion is prospective: same shape, same tax expected. The
+# two totals a user pays stay equality ratchets: the injection budget
+# (_INJECTION_BASELINE, every prompt) and the instruction-file total
+# (_COMBINED_BASELINE, every session start).
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -25,10 +35,10 @@ echo "=== test-phase-hint-brevity.sh ==="
 # spec-driven PERSIST DESIGN hint carries the three-file layout the model must
 # reproduce, and that list IS the content. Everything else sits well under it.
 _HINT_MAX=480
-# Per-phase sums (bytes), default preset: RATCHETS pinned to the measured
-# totals after the cut (before: DESIGN 2581, REVIEW 1307, PLAN 1118, SHIP 895).
-# Growth fails; an unbanked reduction fails; move a constant only in the commit
-# that moves it and say why.
+# Per-phase sums (bytes), default preset: CEILINGS set at the measured totals
+# after the cut (before: DESIGN 2581, REVIEW 1307, PLAN 1118, SHIP 895).
+# Growth fails; raise a constant only in the commit that grows the text and say
+# why. A reduction passes; lower the constant when convenient.
 _DESIGN_PIN=1465
 _REVIEW_PIN=666
 _PLAN_PIN=750
@@ -91,12 +101,16 @@ for _pair in "DESIGN:${_DESIGN_PIN}" "REVIEW:${_REVIEW_PIN}" "PLAN:${_PLAN_PIN}"
     _p="${_pair%%:*}"; _pin="${_pair#*:}"
     _s="$(_sum "${_p}")"
     case "${_s}" in ''|*[!0-9]*) _s=-1 ;; esac
-    if [ "${_s}" -eq "${_pin}" ]; then
-        _record_pass "${_p} hints total ${_s} bytes (ratchet holds)"
-    elif [ "${_s}" -gt "${_pin}" ]; then
-        _record_fail "${_p} hint total" "grew to ${_s} bytes from ${_pin} (+$((_s - _pin))). This text reaches every ${_p}-phase prompt in every installing repo. Shorten it, or raise the pin in the SAME commit and say why."
+    if [ "${_s}" -lt 0 ]; then
+        _record_fail "${_p} hint total" "could not sum the hint bytes for ${_p}"
+    elif [ "${_s}" -eq 0 ]; then
+        # A ceiling lets a reduction pass; a phase summing to ZERO is not a reduction but a
+        # vanished phase (hints deleted, or the phase key renamed so `add // 0` saw nothing).
+        _record_fail "${_p} hint total" "no hint text found for ${_p}: a phase at zero bytes is a vanished phase or a renamed key, not a reduction"
+    elif [ "${_s}" -le "${_pin}" ]; then
+        _record_pass "${_p} hints total ${_s} bytes (ceiling ${_pin})"
     else
-        _record_fail "${_p} hint total" "shrank to ${_s} bytes from ${_pin} (-$((_pin - _s))). Good -- lower the pin to ${_s} in the same commit so the reduction is banked."
+        _record_fail "${_p} hint total" "grew to ${_s} bytes over the ${_pin} ceiling (+$((_s - _pin))). This text reaches every ${_p}-phase prompt in every installing repo. Shorten it, or raise the ceiling in the SAME commit and say why."
     fi
 done
 
