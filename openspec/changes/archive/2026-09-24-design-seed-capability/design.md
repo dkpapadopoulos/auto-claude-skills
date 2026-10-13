@@ -481,6 +481,17 @@ document.
 v1 never ran. No arm executed, no artifact was produced, no judge was asked, so
 there are no v1 results and nothing to pool or discard. v2 replaces v1 outright.
 
+> **Correction, 2026-10-13.** The paragraph above is false. It is left standing
+> so that the correction is visible beside it. v1 ran once, on 2026-09-20, on
+> the branch `design-seed-pilot-impl`: both arms executed, two artifacts were
+> produced and two judge responses were recorded. That branch was never merged,
+> and the branch this registration was written on shares only the
+> pre-registration commit `14e02a5` with it. The run is recorded in "The v1 run
+> of 2026-09-20" at the end of this document. What survives of the paragraph:
+> v2 does replace v1, and by v1's own rule ("Anything changed after results are
+> seen makes this v2, and v1 results are not pooled with it") the one v1 result
+> is not pooled with anything recorded under v2 or v3.
+
 ### Why
 
 Two defects in v1's instrument, both verified rather than argued. Three of seven
@@ -801,6 +812,11 @@ favoured the arm with it. No overall verdict is produced, and none may be
 added** — v2-6 registered the three outcomes as the result precisely to stop an
 aggregate rule being chosen once the pattern was visible.
 
+> **Note, 2026-10-13.** The sentence above counts the three v3 pairs. One
+> further pair was run under v1 on 2026-09-20 and favoured the seeded arm. It is
+> not pooled with these three. See "The v1 run of 2026-09-20" at the end of this
+> document.
+
 **What this does not support.** Not "the seed makes UI worse". The run produced
 its own evidence of generation variance: R3 scored 3/3 in pair 1, 0/0 in pair
 2, and split in pair 3 — the same arm type both included and omitted the
@@ -882,3 +898,110 @@ be insensitive to the treatment rather than measuring it absent. Follow-ups are
 tracked as #298 (replication with an instrument that can see what the seed
 governs) and #299 (the styleguide gap the pilot exposed independently of the
 comparison).
+
+## The v1 run of 2026-09-20 (recorded here 2026-10-13)
+
+Registration v2 above says v1 never ran. It did, once. This section records
+that run from its own preserved record. Nothing here was re-run or re-judged.
+
+### Where the record is
+
+Branch `design-seed-pilot-impl`, head `5bc1f6cc`, present locally and on
+origin, 23 commits after the pre-registration commit `14e02a5`. It never had a
+pull request. The record is under
+`openspec/changes/design-seed-capability/pilot/` on that branch: the frozen
+rubric, brief, budget and disclosures, `HASHES.md`, and under `results/` the
+adjudication (`RESULT.md`), both judge responses verbatim, the label mapping,
+both artifacts, the captures, the arm prompts and edits, and
+`protocol-amendments.md`. Dion base commit: `a6475eb`.
+
+**That branch is the only copy.** Nothing from it is carried into this
+document except the figures below. If the branch is deleted, the source of
+this section is no longer reachable.
+
+### What was run
+
+One seeded/comparator pair, under the 2026-09-18 pre-registration as it stood
+on that branch. The branch amended the registration in `d13ae391` and
+`dc108b0b`, both dated 2026-09-20 and both earlier in its history than
+`795fa1f9`, the commit that records the arms' run. Its rubric has eight
+dimensions, R1 to R8, each scored out of 4, for a total of 32. Registration v2
+above counts seven dimensions in the rubric it replaced. The two copies of v1
+diverged after `14e02a5`, and the run used the branch's copy.
+
+The label mapping was written at 2026-09-20T20:41:19Z. Judging was two
+consultations to `codex` with the presentation order reversed, recorded on
+2026-09-21.
+
+### Result
+
+Pre-registered outcome 1 on the screen comparison, and outcome 5 on the
+process gates.
+
+| | comparator (arm C) | seeded (arm S) |
+|---|---|---|
+| judge 1 (C shown first) | 20/32 | 26/32 |
+| judge 2 (S shown first) | 20/32 | 25/32 |
+
+Where the difference fell, seeded minus comparator, read from the two judge
+responses:
+
+| | R1 | R2 | R3 | R4 | R5 | R6 | R7 | R8 | total |
+|---|---|---|---|---|---|---|---|---|---|
+| judge 1 | 0 | 0 | +1 | +1 | +1 | 0 | +2 | +1 | +6 |
+| judge 2 | 0 | 0 | +1 | 0 | +1 | 0 | +2 | +1 | +5 |
+
+R7 is the handling of an empty collection or an absent section, R3 is
+invention or inference beyond the supplied data, and R8 is fidelity to it.
+R4 to R6 are visual hierarchy, readability of dense values and consistency.
+
+Process gates, scored separately as registered: (b) freeze boundary passed;
+(a) adaptation failed, because arm S recorded neither an adaptation nor an
+explicit statement that none was needed. `RESULT.md` records that failure as
+missing evidence and not as evidence of deficient adaptation.
+
+The claim it licensed, in the pre-registered wording, with the clause "and the
+required process gates were satisfied" struck because (a) failed:
+
+> On this task, fixture, model configuration and resource cap, the
+> seeded-adoption run received a higher blinded rubric score than the
+> comparator run. This single pair does not distinguish a repeatable workflow
+> advantage from generation variation.
+
+### Disposition at the time
+
+Recorded on the branch on 2026-09-21 as the owner's decision: held open, not
+archived, pending a second pair. Running the instrument had exposed three
+defects. Two of them (the adaptation criterion, and a capture procedure that
+reported OS-preference conditions as theme states) required protocol changes,
+so a second pair would be a new registration and not poolable with this one.
+
+### How this reads beside the v3 result
+
+- **It is not pooled with v3 and no aggregate is produced.** Across both
+  registrations four pairs were run: one under v1, which favoured the seeded
+  arm, and three under v3, of which two favoured the comparator and one was
+  inconclusive. The v1 pair and the v3 pairs were scored on different
+  instruments, so the four are not one sample.
+- **It does not license "the seed makes UI better"**, for the reason the claim
+  itself gives: one pair cannot separate a workflow effect from generation
+  variance, which v3 then observed directly.
+- **It bounds "none favoured the arm with it"** to the three v3 pairs, which is
+  what the note beside that sentence now says.
+- **The citation weakness recorded above may apply to it.** "Rubric citation
+  provenance" in the v1 section found no independent source for hierarchy,
+  readability and consistency in this document's copy of the rubric, where
+  they are numbered R5 to R7. On the branch those three are R4 to R6 and cite
+  "Independent reviewer's stated criterion". That citation was not re-checked
+  for this record. Those three dimensions carry 2 of judge 1's 6 points and 1
+  of judge 2's 5.
+
+### What is not established
+
+Why Registration v2 said v1 never ran. The commit graph shows only that the
+branch v2 was written on does not contain the run's commits.
+
+A separate branch, `docs-pilot-v2-registration` (`24c4fadd`, 2026-09-22,
+never pushed), registers a "v2" that applies this run's protocol amendments.
+It is not the v2 of this document. It adds one commit, to the design document
+only, and records no run.
