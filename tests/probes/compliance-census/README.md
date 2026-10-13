@@ -152,6 +152,51 @@ output may be pasted into an issue.
   because a prompt that routes nothing renders no block; it reads as zero mandates and, at
   the cap, as cannot-check.
 
+## Companion: verb attribution census (`verbs.py`), descriptive, not registered
+
+`verbs.py --skill <name> --since ISO` says WHICH trigger alternative earned each mandate of a
+skill on typed prompts, using the same readers, pairing and turn boundary as `census.py`.
+Each of the skill's trigger regexes from `config/default-triggers.json` is split into its
+top-level alternatives, and each alternative runs over the lowercased prompt as the hook does
+(rescanning from one past each hit; a hit interior to a word on both sides is not a match;
+`.` crosses newlines as in bash ERE). A matching alternative is named by its own source text
+in the config ("build", `set.?up`, `how.(should|would|could)`, `check.*(code|changes|diff)`),
+never by what it matched, because a wildcard's matched span is prompt text. `sole` counts
+prompts where exactly one
+alternative matched, the population a deletion of that alternative would change. A mandate
+matching no alternative was earned by chain injection, the keyword path or a name mention and
+is reported as unattributed. It decides nothing: whether a mandate was warranted needs labels,
+and the frontier audit's labels over its 652-prompt gold set are gone (the prompts came from
+real transcripts and could be re-extracted; the labels lived in a session scratchpad and
+would have to be made again). Any deletion study is a new, separately registered experiment.
+
+Read 2026-10-13 over four weeks (2026-09-15 to 10-13, every version, 63 sessions, 576 typed
+prompts). Brainstorming, 94 mandates, 65 with exactly one alternative, 8 unattributed:
+
+| alternative | mandates | sole | in-turn | later |
+|---|---|---|---|---|
+| new | 24 | 18 | 0 | 0 |
+| design | 19 | 6 | 5 | 0 |
+| approach | 15 | 7 | 2 | 0 |
+| make | 15 | 14 | 0 | 2 |
+| create | 12 | 3 | 3 | 0 |
+| add | 10 | 6 | 2 | 0 |
+| build | 9 | 5 | 3 | 0 |
+| start | 8 | 4 | 2 | 0 |
+| set.?up | 4 | 2 | 0 | 0 |
+| seven others | 13 | 0 | 1 | 0 |
+
+"new" and "make" are 32 of the 65 sole matches and were followed by the skill in the same
+turn zero times, while the design words carry the same-turn invocations; read that as a
+description of where the mandates come from, not as a ranking of what to delete, because
+same-turn invocation is a weak proxy for "warranted" (the census above found display rarely
+moves behaviour at all) and a verb's absence from the in-turn column says nothing about the
+work orders it correctly routed. requesting-code-review,
+149 mandates: `pr` 52 (48 sole, 4 in-turn), `review` 28 (22 sole, 1 in-turn),
+`check.*(code|changes|diff)` 4, `lint` 3, 69 unattributed (chain-injected; 30 followed later
+in the session). The requesting-code-review rows sum past the attributed prompts (87
+alternative hits over 80 attributed prompts) because a prompt can match two alternatives.
+
 ## Amendment log
 
 (none)
