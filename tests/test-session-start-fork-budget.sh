@@ -97,6 +97,11 @@ _by_cmd="$(grep -oE '^\++F: (jq|basename|dirname|ls|grep|sort|awk) ' "${_TRACE}"
 
 if [ "${_forks}" -lt 0 ]; then
     _record_fail "fork ceiling" "could not count forks in ${_TRACE}"
+elif [ "${_forks}" -eq 0 ]; then
+    # A ceiling lets a reduction pass; zero is not a reduction. The hook cannot build a
+    # registry without a single jq fork, so zero means the trace missed the run or the
+    # command names changed, and passing it as "under the ceiling" would hide that.
+    _record_fail "fork ceiling" "zero forks counted in ${_TRACE}: the trace did not capture the hook's run, or the fork command names changed; not a reduction"
 elif [ "${_forks}" -le "${_SS_FORK_BASELINE}" ]; then
     _record_pass "fork ceiling: ${_forks} jq/basename/dirname/ls/grep/sort/awk forks (ceiling ${_SS_FORK_BASELINE}) [${_by_cmd}]"
 else
