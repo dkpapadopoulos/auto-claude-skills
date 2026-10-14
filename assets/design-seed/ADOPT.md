@@ -117,7 +117,9 @@ This was tried once, on 2026-10-13, against that type as it was that day, workin
 the type's own format notes. A design system was published, with its tokens and with
 components built from the reference page's CSS, and one slide deck was made with it. No
 artifact of the Design type was made. All 45 tokens went in with their values unchanged,
-the 23 dark-theme values included. Three things did not carry over as they are:
+the 23 dark-theme values included. (Since then, #361 added `--surface-inverse` and changed
+`--value-missing` and `--border-strong`, so a system published that day is behind this
+seed.) Three things did not carry over as they are:
 
 - **`tokens.json` is the wrong shape for it.** The type groups tokens by family, each
   family a list of `{name, value, usage}` entries, with a colour's light and dark values

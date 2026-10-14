@@ -144,12 +144,19 @@ _contrast() {
       BEGIN { x = lum(a); y = lum(b); if (x < y) { t = x; x = y; y = t }
               r = (x + 0.05) / (y + 0.05); printf "%.4f %s", r, (r >= f + 0) ? "yes" : "no" }'
 }
-# A dark-theme token absent from the dark block inherits its light value, as in CSS.
+# _tok_val <theme> <name> prints the value. A dark-theme token absent from the dark block
+# inherits its light value, as in CSS, and then prints "<value> inherited" so the cell can
+# say so: a deleted dark override is an honest pass, but it should not be a silent one.
 _tok_val() {
     _v="$(_css_tokens | awk -F'|' -v t="$1" -v n="$2" '$1 == t && $2 == n { print $3 }')"
-    [ -z "${_v}" ] && _v="$(_css_tokens | awk -F'|' -v n="$2" '$1 == "light" && $2 == n { print $3 }')"
+    if [ -z "${_v}" ]; then
+        _v="$(_css_tokens | awk -F'|' -v n="$2" '$1 == "light" && $2 == n { print $3 }')"
+        [ -n "${_v}" ] && [ "$1" != light ] && _v="${_v} inherited"
+    fi
     printf '%s' "${_v}"
 }
+# One hex colour on one line; a token defined twice comes back as two lines.
+_is_hex() { [ "$(printf '%s\n' "$1" | wc -l | tr -d ' ')" = 1 ] && printf '%s' "$1" | grep -qE '^#[0-9a-fA-F]{6}$'; }
 # Controls, independently computed: two that must pass, two just under 4.5 that must
 # fail (the second prints as 4.50 when rounded to two places), and one whose channel is
 # in sRGB's linear segment, which every token channel lies above.
@@ -163,13 +170,15 @@ for _theme in light dark; do
         set -- ${_pair}
         for _bgn in --surface-page --surface-raised --surface-sunken; do
             _fg="$(_tok_val "${_theme}" "$1")"; _bg="$(_tok_val "${_theme}" "${_bgn}")"
-            if printf '%s' "${_fg}" | grep -qE '^#[0-9a-fA-F]{6}$' \
-               && printf '%s' "${_bg}" | grep -qE '^#[0-9a-fA-F]{6}$'; then
+            _note=""
+            case "${_fg} ${_bg}" in *" inherited"*) _note=", a value inherited from light" ;; esac
+            _fg="${_fg% inherited}"; _bg="${_bg% inherited}"
+            if _is_hex "${_fg}" && _is_hex "${_bg}"; then
                 _res="$(_contrast "${_fg}" "${_bg}" "$2")"
             else
-                _res="unmeasurable (${_fg:-absent} on ${_bg:-absent}) no"
+                _res="unmeasurable ($(printf '%s' "${_fg:-absent}" | tr '\n' ',') on $(printf '%s' "${_bg:-absent}" | tr '\n' ',')) no"
             fi
-            assert_equals "${_theme}: $1 on ${_bgn} meets $2:1 (measured ${_res% *})" "yes" "${_res##* }"
+            assert_equals "${_theme}: $1 on ${_bgn} meets $2:1 (measured ${_res% *}${_note})" "yes" "${_res##* }"
         done
     done
 done
