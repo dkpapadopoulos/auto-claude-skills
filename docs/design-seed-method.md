@@ -4,9 +4,14 @@ How to get a good interface out of Claude, and keep it good as it grows. Five st
 seed (`../assets/design-seed/`, resolved from this file — see its `ADOPT.md`) is step 0's
 output; this document is the rest.
 
-It needs **no** external design-system connector. If you have Claude Design and the
-`DesignSync` MCP tool, step 2 can happen there instead — the artefacts are the same files
-either way, which is the point: the filesystem is the contract, never the connector.
+It needs **no** external design-system connector. Claude Design is a separate, optional
+lane that builds on an adopted `design/` rather than replacing a step of this method: a
+design system can be built from those files and published there, and "Taking it to
+Claude Design" in `../assets/design-seed/ADOPT.md` records what one attempt carried over
+and what it did not. The `DesignSync` tool is not a way to do step 2. As read on 2026-10-13, its own
+description limits it to syncing an existing component library into a design-system
+project and says never to use it to make a design. Whether or not you publish there, the
+files in the repo are the contract, never the connector.
 
 ## 0. Foundations, once per project
 
