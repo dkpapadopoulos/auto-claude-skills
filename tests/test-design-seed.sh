@@ -107,10 +107,16 @@ assert_equals "reference page contains no raw hex colour" "0" \
 # same page would teach the mix the styleguide forbids. The exemption is held to that
 # reason: the token must still exist and the styleguide must still name it. Using it in
 # the page makes this cell fail, which is the prompt to drop the exemption.
+# Comments are stripped first: a token named in a comment has no reader.
 _tok_names="$(_css_tokens | cut -d'|' -f2 | sort -u)"
+_ref_code="$(perl -0777 -pe 's{/\*.*?\*/}{}gs; s{<!--.*?-->}{}gs' "${SEED}/reference.html")"
+assert_contains "control: comment stripping keeps the page's declarations" \
+    "var(--surface-page)" "${_ref_code}"
+assert_not_contains "control: comment stripping removes the page's comments" \
+    "Dependency-free on purpose" "${_ref_code}"
 _unref=""
 for _n in ${_tok_names}; do
-    grep -qF "var(${_n})" "${SEED}/reference.html" || _unref="${_unref}${_unref:+ }${_n}"
+    printf '%s' "${_ref_code}" | grep -qF "var(${_n})" || _unref="${_unref}${_unref:+ }${_n}"
 done
 assert_equals "every token but the alternative density is referenced by reference.html" \
     "--row-comfortable" "${_unref}"
@@ -121,35 +127,50 @@ assert_contains "the exempt density is a documented choice in the styleguide" \
 
 # --- Scenario: the default colours meet the usual WCAG 2 contrast floors (#361) -------
 # Contrast is outside token-lint.sh's scope for an adopter's CSS (styleguide.md), but the
-# seed's OWN defaults are fixed values this file can measure. Text the page renders in
-# --value-missing needs 4.5:1 on both surfaces it sits on; --border-strong is the button
-# boundary, so it needs 3:1 against the button fill and the page around it.
+# seed's OWN defaults are fixed values this file can measure. A role must work on every
+# surface, so each is measured on all three: --value-missing is text (4.5:1) and
+# --border-strong is a control boundary (3:1). Values come from tokens.css, the source of
+# truth, not from its mirror.
+#
+# _contrast <fg> <bg> <floor> prints "<ratio to 4 places> <yes|no>". The decision is made
+# on the UNROUNDED ratio: WCAG does not round, and comparing a printed 4.50 passed a
+# 4.496:1 pair (found in review).
 _contrast() {
-    awk -v a="$1" -v b="$2" '
+    awk -v a="$1" -v b="$2" -v f="$3" '
       function hx(s, i) { return index("0123456789abcdef", tolower(substr(s, i, 1))) - 1 }
       function ch(s, i,  c) { c = (hx(s, i) * 16 + hx(s, i + 1)) / 255
                               return c <= 0.04045 ? c / 12.92 : exp(2.4 * log((c + 0.055) / 1.055)) }
       function lum(s) { return 0.2126 * ch(s, 2) + 0.7152 * ch(s, 4) + 0.0722 * ch(s, 6) }
       BEGIN { x = lum(a); y = lum(b); if (x < y) { t = x; x = y; y = t }
-              printf "%.2f", (x + 0.05) / (y + 0.05) }'
+              r = (x + 0.05) / (y + 0.05); printf "%.4f %s", r, (r >= f + 0) ? "yes" : "no" }'
 }
-# Controls: the calculator itself, against two published reference ratios.
-assert_equals "contrast control: black on white is 21.00" "21.00" "$(_contrast '#000000' '#ffffff')"
-assert_equals "contrast control: #777777 on white is 4.48 (just under 4.5)" "4.48" "$(_contrast '#777777' '#ffffff')"
+# A dark-theme token absent from the dark block inherits its light value, as in CSS.
+_tok_val() {
+    _v="$(_css_tokens | awk -F'|' -v t="$1" -v n="$2" '$1 == t && $2 == n { print $3 }')"
+    [ -z "${_v}" ] && _v="$(_css_tokens | awk -F'|' -v n="$2" '$1 == "light" && $2 == n { print $3 }')"
+    printf '%s' "${_v}"
+}
+# Controls, independently computed: two that must pass, two just under 4.5 that must
+# fail (the second prints as 4.50 when rounded to two places), and one whose channel is
+# in sRGB's linear segment, which every token channel lies above.
+assert_equals "contrast control: black on white" "21.0000 yes" "$(_contrast '#000000' '#ffffff' 4.5)"
+assert_equals "contrast control: #757575 on white passes 4.5" "4.6075 yes" "$(_contrast '#757575' '#ffffff' 4.5)"
+assert_equals "contrast control: #777777 on white fails 4.5" "4.4781 no" "$(_contrast '#777777' '#ffffff' 4.5)"
+assert_equals "contrast control: #767776 on white (4.496) fails 4.5" "4.4962 no" "$(_contrast '#767776' '#ffffff' 4.5)"
+assert_equals "contrast control: linear segment, #050505 on black" "1.0304 yes" "$(_contrast '#050505' '#000000' 1)"
 for _theme in light dark; do
-    for _pair in "--value-missing --surface-page 4.5" "--value-missing --surface-raised 4.5" \
-                 "--border-strong --surface-raised 3" "--border-strong --surface-page 3"; do
+    for _pair in "--value-missing 4.5" "--border-strong 3"; do
         set -- ${_pair}
-        _fg="$(jq -r --arg t "${_theme}" --arg n "$1" '.[$t][$n] // empty' "${SEED}/tokens.json")"
-        _bg="$(jq -r --arg t "${_theme}" --arg n "$2" '.[$t][$n] // empty' "${SEED}/tokens.json")"
-        if ! printf '%s\n%s\n' "${_fg}" "${_bg}" | grep -qvE '^#[0-9a-fA-F]{6}$' \
-           && [ -n "${_fg}" ] && [ -n "${_bg}" ]; then
-            _r="$(_contrast "${_fg}" "${_bg}")"
-            _ok="$(awk -v r="${_r}" -v f="$3" 'BEGIN { print (r >= f) ? "yes" : "no" }')"
-        else
-            _r="unmeasurable (${_fg:-absent} on ${_bg:-absent})"; _ok="no"
-        fi
-        assert_equals "${_theme}: $1 on $2 meets $3:1 (measured ${_r})" "yes" "${_ok}"
+        for _bgn in --surface-page --surface-raised --surface-sunken; do
+            _fg="$(_tok_val "${_theme}" "$1")"; _bg="$(_tok_val "${_theme}" "${_bgn}")"
+            if printf '%s' "${_fg}" | grep -qE '^#[0-9a-fA-F]{6}$' \
+               && printf '%s' "${_bg}" | grep -qE '^#[0-9a-fA-F]{6}$'; then
+                _res="$(_contrast "${_fg}" "${_bg}" "$2")"
+            else
+                _res="unmeasurable (${_fg:-absent} on ${_bg:-absent}) no"
+            fi
+            assert_equals "${_theme}: $1 on ${_bgn} meets $2:1 (measured ${_res% *})" "yes" "${_res##* }"
+        done
     done
 done
 
