@@ -48,6 +48,7 @@
   --surface-page: #fbfaf8;
   --surface-raised: #ffffff;
   --surface-sunken: #f2f0ec;
+  --surface-inverse: #1b1a17;
 
   /* ---- role: text ---- */
   --text-primary: #1b1a17;
@@ -57,13 +58,13 @@
 
   /* ---- role: line ---- */
   --border-subtle: #e4e0d8;
-  --border-strong: #c8c2b6;
+  --border-strong: #948871;
   --focus-ring: #2f5d50;
 
   /* ---- role: value (numbers carry meaning; missing is not zero) ---- */
   --value-positive: #1f6f4a;
   --value-negative: #a33224;
-  --value-missing: #8b857a;
+  --value-missing: #726c63;
 
   /* ---- role: status ---- */
   --status-ok-fg: #17503a;
@@ -82,6 +83,7 @@
   --surface-page: #16151a;
   --surface-raised: #1e1d23;
   --surface-sunken: #121116;
+  --surface-inverse: #ece9e3;
 
   --text-primary: #ece9e3;
   --text-secondary: #a8a296;
@@ -89,12 +91,12 @@
   --text-numeric: #ece9e3;
 
   --border-subtle: #2e2c33;
-  --border-strong: #46434c;
+  --border-strong: #6c6775;
   --focus-ring: #7fc0a9;
 
   --value-positive: #6cc295;
   --value-negative: #e88a7d;
-  --value-missing: #7d7871;
+  --value-missing: #8a857d;
 
   --status-ok-fg: #a6dcc0;
   --status-ok-bg: #1b3329;

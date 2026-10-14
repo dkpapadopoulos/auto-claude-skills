@@ -67,7 +67,7 @@ dense; if your product is neither, change it:
 - **Colour:** edit the role values in `tokens.css` (both themes). Keep the role *names* —
   everything references them.
 - **Density:** pick one row height and delete the other.
-- **Type:** the scale is six sizes on purpose. Replace the families before you add sizes.
+- **Type:** the scale is five sizes on purpose. Replace the families before you add sizes.
 - **Reference page:** once you have a real screen, make **that** your reference and delete
   `reference.html`. A page showing your own product beats a generic one.
 
@@ -117,7 +117,9 @@ This was tried once, on 2026-10-13, against that type as it was that day, workin
 the type's own format notes. A design system was published, with its tokens and with
 components built from the reference page's CSS, and one slide deck was made with it. No
 artifact of the Design type was made. All 45 tokens went in with their values unchanged,
-the 23 dark-theme values included. Three things did not carry over as they are:
+the 23 dark-theme values included. (Since then, #361 added `--surface-inverse` and changed
+`--value-missing` and `--border-strong`, so a system published that day is behind this
+seed.) Three things did not carry over as they are:
 
 - **`tokens.json` is the wrong shape for it.** The type groups tokens by family, each
   family a list of `{name, value, usage}` entries, with a colour's light and dark values

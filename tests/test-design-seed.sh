@@ -100,6 +100,95 @@ assert_contains "reference: exercises the dark theme" 'data-theme' "${_ref}"
 assert_equals "reference page contains no raw hex colour" "0" \
     "$(grep -c -E '#[0-9a-fA-F]{3,8}[;, )]' "${SEED}/reference.html" | tr -d ' ')"
 
+# --- Scenario: every token has a reader (#361) ----------------------------------------
+# The method doc says an unreferenced token is a maintenance cost with no reader, so the
+# reference page uses every token but one. --row-comfortable is the alternative density
+# (styleguide: pick ONE row height per surface), so using it beside --row-compact on the
+# same page would teach the mix the styleguide forbids. The exemption is held to that
+# reason: the token must still exist and the styleguide must still name it. Using it in
+# the page makes this cell fail, which is the prompt to drop the exemption.
+# Comments are stripped first: a token named in a comment has no reader.
+_tok_names="$(_css_tokens | cut -d'|' -f2 | sort -u)"
+_ref_code="$(perl -0777 -pe 's{/\*.*?\*/}{}gs; s{<!--.*?-->}{}gs' "${SEED}/reference.html")"
+assert_contains "control: comment stripping keeps the page's declarations" \
+    "var(--surface-page)" "${_ref_code}"
+assert_not_contains "control: comment stripping removes the page's comments" \
+    "Dependency-free on purpose" "${_ref_code}"
+_unref=""
+for _n in ${_tok_names}; do
+    printf '%s' "${_ref_code}" | grep -qF "var(${_n})" || _unref="${_unref}${_unref:+ }${_n}"
+done
+assert_equals "every token but the alternative density is referenced by reference.html" \
+    "--row-comfortable" "${_unref}"
+assert_equals "the token population is not vacuous (>=40 names)" "yes" \
+    "$([ "$(printf '%s\n' "${_tok_names}" | grep -c -- '^--')" -ge 40 ] && echo yes || echo no)"
+assert_contains "the exempt density is a documented choice in the styleguide" \
+    "--row-comfortable" "$(cat "${SEED}/styleguide.md")"
+
+# --- Scenario: the default colours meet the usual WCAG 2 contrast floors (#361) -------
+# Contrast is outside token-lint.sh's scope for an adopter's CSS (styleguide.md), but the
+# seed's OWN defaults are fixed values this file can measure. A role must work on every
+# surface, so each is measured on all three: --value-missing is text (4.5:1) and
+# --border-strong is a control boundary (3:1). Values come from tokens.css, the source of
+# truth, not from its mirror.
+#
+# _contrast <fg> <bg> <floor> prints "<ratio to 4 places> <yes|no>". The decision is made
+# on the UNROUNDED ratio: WCAG does not round, and comparing a printed 4.50 passed a
+# 4.496:1 pair (found in review).
+_contrast() {
+    awk -v a="$1" -v b="$2" -v f="$3" '
+      function hx(s, i) { return index("0123456789abcdef", tolower(substr(s, i, 1))) - 1 }
+      function ch(s, i,  c) { c = (hx(s, i) * 16 + hx(s, i + 1)) / 255
+                              return c <= 0.04045 ? c / 12.92 : exp(2.4 * log((c + 0.055) / 1.055)) }
+      function lum(s) { return 0.2126 * ch(s, 2) + 0.7152 * ch(s, 4) + 0.0722 * ch(s, 6) }
+      BEGIN { x = lum(a); y = lum(b); if (x < y) { t = x; x = y; y = t }
+              r = (x + 0.05) / (y + 0.05); printf "%.4f %s", r, (r >= f + 0) ? "yes" : "no" }'
+}
+# _tok_val <theme> <name> prints the value. A dark-theme token absent from the dark block
+# inherits its light value, as in CSS, and then prints "<value> inherited" so the cell can
+# say so: a deleted dark override is an honest pass, but it should not be a silent one.
+_tok_val() {
+    _v="$(_css_tokens | awk -F'|' -v t="$1" -v n="$2" '$1 == t && $2 == n { print $3 }')"
+    if [ -z "${_v}" ]; then
+        _v="$(_css_tokens | awk -F'|' -v n="$2" '$1 == "light" && $2 == n { print $3 }')"
+        [ -n "${_v}" ] && [ "$1" != light ] && _v="${_v} inherited"
+    fi
+    printf '%s' "${_v}"
+}
+# One hex colour on one line; a token defined twice comes back as two lines.
+_is_hex() { [ "$(printf '%s\n' "$1" | wc -l | tr -d ' ')" = 1 ] && printf '%s' "$1" | grep -qE '^#[0-9a-fA-F]{6}$'; }
+# The seed has no duplicate token, so without these nothing would notice the line count
+# going: grep -q alone accepts a two-line value when either line matches (found in review).
+assert_equals "hex control: one colour on one line is measurable" "yes" \
+    "$(_is_hex '#aaaaaa' && echo yes || echo no)"
+assert_equals "hex control: a token defined twice (two hex lines) is not" "no" \
+    "$(_is_hex "$(printf '#aaaaaa\n#bbbbbb')" && echo yes || echo no)"
+# Controls, independently computed: two that must pass, two just under 4.5 that must
+# fail (the second prints as 4.50 when rounded to two places), and one whose channel is
+# in sRGB's linear segment, which every token channel lies above.
+assert_equals "contrast control: black on white" "21.0000 yes" "$(_contrast '#000000' '#ffffff' 4.5)"
+assert_equals "contrast control: #757575 on white passes 4.5" "4.6075 yes" "$(_contrast '#757575' '#ffffff' 4.5)"
+assert_equals "contrast control: #777777 on white fails 4.5" "4.4781 no" "$(_contrast '#777777' '#ffffff' 4.5)"
+assert_equals "contrast control: #767776 on white (4.496) fails 4.5" "4.4962 no" "$(_contrast '#767776' '#ffffff' 4.5)"
+assert_equals "contrast control: linear segment, #050505 on black" "1.0304 yes" "$(_contrast '#050505' '#000000' 1)"
+for _theme in light dark; do
+    for _pair in "--value-missing 4.5" "--border-strong 3"; do
+        set -- ${_pair}
+        for _bgn in --surface-page --surface-raised --surface-sunken; do
+            _fg="$(_tok_val "${_theme}" "$1")"; _bg="$(_tok_val "${_theme}" "${_bgn}")"
+            _note=""
+            case "${_fg} ${_bg}" in *" inherited"*) _note=", a value inherited from light" ;; esac
+            _fg="${_fg% inherited}"; _bg="${_bg% inherited}"
+            if _is_hex "${_fg}" && _is_hex "${_bg}"; then
+                _res="$(_contrast "${_fg}" "${_bg}" "$2")"
+            else
+                _res="unmeasurable ($(printf '%s' "${_fg:-absent}" | tr '\n' ',') on $(printf '%s' "${_bg:-absent}" | tr '\n' ',')) no"
+            fi
+            assert_equals "${_theme}: $1 on ${_bgn} meets $2:1 (measured ${_res% *}${_note})" "yes" "${_res##* }"
+        done
+    done
+done
+
 # --- Scenario: a literal matching a token value is still a violation ----------------
 _tok_primary="$(jq -r '.light["--text-primary"]' "${SEED}/tokens.json")"
 assert_contains "the violation fixture uses a literal equal to --text-primary" \
@@ -249,6 +338,13 @@ assert_contains "adoption records the preset name" "quiet-dense" "${_adopt}"
 assert_contains "adoption points the project's agent instructions at the guide" "AGENTS.md" "${_adopt}"
 assert_contains "adoption tells the agent to run the lint" "token-lint.sh" "${_adopt}"
 assert_contains "using the default unchanged is stated as supported" "supported outcome" "${_adopt}"
+# ADOPT.md states the size of the type scale in words; hold the word to the file (#361).
+_nsizes="$(grep -cE '^[[:space:]]*--text-[a-z]+:[[:space:]]*[0-9]+px;' "${SEED}/tokens.css")"
+case "${_nsizes}" in
+    4) _nword=four ;; 5) _nword=five ;; 6) _nword=six ;; 7) _nword=seven ;; *) _nword="(${_nsizes} sizes: extend this table)" ;;
+esac
+assert_contains "ADOPT.md's type-scale count matches tokens.css (${_nsizes} sizes)" \
+    "the scale is ${_nword} sizes" "${_adopt}"
 
 # --- Scenario: DESIGN hint renders without adding a routed skill --------------------
 for cfg in config/default-triggers.json config/fallback-registry.json; do
