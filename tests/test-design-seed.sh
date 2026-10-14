@@ -100,6 +100,59 @@ assert_contains "reference: exercises the dark theme" 'data-theme' "${_ref}"
 assert_equals "reference page contains no raw hex colour" "0" \
     "$(grep -c -E '#[0-9a-fA-F]{3,8}[;, )]' "${SEED}/reference.html" | tr -d ' ')"
 
+# --- Scenario: every token has a reader (#361) ----------------------------------------
+# The method doc says an unreferenced token is a maintenance cost with no reader, so the
+# reference page uses every token but one. --row-comfortable is the alternative density
+# (styleguide: pick ONE row height per surface), so using it beside --row-compact on the
+# same page would teach the mix the styleguide forbids. The exemption is held to that
+# reason: the token must still exist and the styleguide must still name it. Using it in
+# the page makes this cell fail, which is the prompt to drop the exemption.
+_tok_names="$(_css_tokens | cut -d'|' -f2 | sort -u)"
+_unref=""
+for _n in ${_tok_names}; do
+    grep -qF "var(${_n})" "${SEED}/reference.html" || _unref="${_unref}${_unref:+ }${_n}"
+done
+assert_equals "every token but the alternative density is referenced by reference.html" \
+    "--row-comfortable" "${_unref}"
+assert_equals "the token population is not vacuous (>=40 names)" "yes" \
+    "$([ "$(printf '%s\n' "${_tok_names}" | grep -c -- '^--')" -ge 40 ] && echo yes || echo no)"
+assert_contains "the exempt density is a documented choice in the styleguide" \
+    "--row-comfortable" "$(cat "${SEED}/styleguide.md")"
+
+# --- Scenario: the default colours meet the usual WCAG 2 contrast floors (#361) -------
+# Contrast is outside token-lint.sh's scope for an adopter's CSS (styleguide.md), but the
+# seed's OWN defaults are fixed values this file can measure. Text the page renders in
+# --value-missing needs 4.5:1 on both surfaces it sits on; --border-strong is the button
+# boundary, so it needs 3:1 against the button fill and the page around it.
+_contrast() {
+    awk -v a="$1" -v b="$2" '
+      function hx(s, i) { return index("0123456789abcdef", tolower(substr(s, i, 1))) - 1 }
+      function ch(s, i,  c) { c = (hx(s, i) * 16 + hx(s, i + 1)) / 255
+                              return c <= 0.04045 ? c / 12.92 : exp(2.4 * log((c + 0.055) / 1.055)) }
+      function lum(s) { return 0.2126 * ch(s, 2) + 0.7152 * ch(s, 4) + 0.0722 * ch(s, 6) }
+      BEGIN { x = lum(a); y = lum(b); if (x < y) { t = x; x = y; y = t }
+              printf "%.2f", (x + 0.05) / (y + 0.05) }'
+}
+# Controls: the calculator itself, against two published reference ratios.
+assert_equals "contrast control: black on white is 21.00" "21.00" "$(_contrast '#000000' '#ffffff')"
+assert_equals "contrast control: #777777 on white is 4.48 (just under 4.5)" "4.48" "$(_contrast '#777777' '#ffffff')"
+for _theme in light dark; do
+    for _pair in "--value-missing --surface-page 4.5" "--value-missing --surface-raised 4.5" \
+                 "--border-strong --surface-raised 3" "--border-strong --surface-page 3"; do
+        set -- ${_pair}
+        _fg="$(jq -r --arg t "${_theme}" --arg n "$1" '.[$t][$n] // empty' "${SEED}/tokens.json")"
+        _bg="$(jq -r --arg t "${_theme}" --arg n "$2" '.[$t][$n] // empty' "${SEED}/tokens.json")"
+        if ! printf '%s\n%s\n' "${_fg}" "${_bg}" | grep -qvE '^#[0-9a-fA-F]{6}$' \
+           && [ -n "${_fg}" ] && [ -n "${_bg}" ]; then
+            _r="$(_contrast "${_fg}" "${_bg}")"
+            _ok="$(awk -v r="${_r}" -v f="$3" 'BEGIN { print (r >= f) ? "yes" : "no" }')"
+        else
+            _r="unmeasurable (${_fg:-absent} on ${_bg:-absent})"; _ok="no"
+        fi
+        assert_equals "${_theme}: $1 on $2 meets $3:1 (measured ${_r})" "yes" "${_ok}"
+    done
+done
+
 # --- Scenario: a literal matching a token value is still a violation ----------------
 _tok_primary="$(jq -r '.light["--text-primary"]' "${SEED}/tokens.json")"
 assert_contains "the violation fixture uses a literal equal to --text-primary" \
@@ -249,6 +302,13 @@ assert_contains "adoption records the preset name" "quiet-dense" "${_adopt}"
 assert_contains "adoption points the project's agent instructions at the guide" "AGENTS.md" "${_adopt}"
 assert_contains "adoption tells the agent to run the lint" "token-lint.sh" "${_adopt}"
 assert_contains "using the default unchanged is stated as supported" "supported outcome" "${_adopt}"
+# ADOPT.md states the size of the type scale in words; hold the word to the file (#361).
+_nsizes="$(grep -cE '^[[:space:]]*--text-[a-z]+:[[:space:]]*[0-9]+px;' "${SEED}/tokens.css")"
+case "${_nsizes}" in
+    4) _nword=four ;; 5) _nword=five ;; 6) _nword=six ;; 7) _nword=seven ;; *) _nword="(${_nsizes} sizes: extend this table)" ;;
+esac
+assert_contains "ADOPT.md's type-scale count matches tokens.css (${_nsizes} sizes)" \
+    "the scale is ${_nword} sizes" "${_adopt}"
 
 # --- Scenario: DESIGN hint renders without adding a routed skill --------------------
 for cfg in config/default-triggers.json config/fallback-registry.json; do

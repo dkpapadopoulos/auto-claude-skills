@@ -67,7 +67,7 @@ dense; if your product is neither, change it:
 - **Colour:** edit the role values in `tokens.css` (both themes). Keep the role *names* —
   everything references them.
 - **Density:** pick one row height and delete the other.
-- **Type:** the scale is six sizes on purpose. Replace the families before you add sizes.
+- **Type:** the scale is five sizes on purpose. Replace the families before you add sizes.
 - **Reference page:** once you have a real screen, make **that** your reference and delete
   `reference.html`. A page showing your own product beats a generic one.
 
