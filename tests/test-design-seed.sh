@@ -157,6 +157,12 @@ _tok_val() {
 }
 # One hex colour on one line; a token defined twice comes back as two lines.
 _is_hex() { [ "$(printf '%s\n' "$1" | wc -l | tr -d ' ')" = 1 ] && printf '%s' "$1" | grep -qE '^#[0-9a-fA-F]{6}$'; }
+# The seed has no duplicate token, so without these nothing would notice the line count
+# going: grep -q alone accepts a two-line value when either line matches (found in review).
+assert_equals "hex control: one colour on one line is measurable" "yes" \
+    "$(_is_hex '#aaaaaa' && echo yes || echo no)"
+assert_equals "hex control: a token defined twice (two hex lines) is not" "no" \
+    "$(_is_hex "$(printf '#aaaaaa\n#bbbbbb')" && echo yes || echo no)"
 # Controls, independently computed: two that must pass, two just under 4.5 that must
 # fail (the second prints as 4.50 when rounded to two places), and one whose channel is
 # in sRGB's linear segment, which every token channel lies above.
