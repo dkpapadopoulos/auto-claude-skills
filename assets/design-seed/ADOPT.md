@@ -110,13 +110,14 @@ awk '/^:root \{/{b="light";next} /^:root\[data-theme="dark"\] \{/{b="dark";next}
 ## Taking it to Claude Design
 
 Optional, and nothing in this plugin does it for you. If your Claude account offers Claude
-Design's **Design System** artifact type, an adopted seed can be published as one. Your own
-files stay the source of truth.
+Design's **Design System** artifact type, a design system can be built from an adopted seed
+and published there. Your own files stay the source of truth.
 
 This was tried once, on 2026-10-13, against that type as it was that day, working from
-the type's own format notes: a design system was published and one slide deck was made
-with it. No design was tried. All 45 tokens went in with their values unchanged, the 23
-dark-theme values included. Three things did not carry over as they are:
+the type's own format notes. A design system was published, with its tokens and with
+components built from the reference page's CSS, and one slide deck was made with it. No
+artifact of the Design type was made. All 45 tokens went in with their values unchanged,
+the 23 dark-theme values included. Three things did not carry over as they are:
 
 - **`tokens.json` is the wrong shape for it.** The type groups tokens by family, each
   family a list of `{name, value, usage}` entries, with a colour's light and dark values
@@ -124,14 +125,17 @@ dark-theme values included. Three things did not carry over as they are:
   name-to-value map per theme, so it has to be converted, and each entry has a `usage`
   field this file has no equivalent for.
 - **Sizes, weights and line heights had no family of their own there.** They went in
-  twice: as type styles, and as plain value lists, meant to keep a custom property behind
-  the reference page's `var(--text-sm)`. Whether they do was not checked.
-- **By the Slides type's notes, a deck could take the colours and little else.** Those
-  notes allow no `var()`, set a 24px minimum text size and accept only Google, uploaded or
-  basic fonts, and a deck installs only a system's tokens, fonts and pictures. So role
-  indirection, the type scale and both font families would stop at the deck's edge, and
-  the reference page's classes would not transfer at all.
+  twice: as type styles, and as plain value lists, in the hope that a `--text-sm` custom
+  property would still exist for the reference page to use. Whether one does was not
+  checked.
+- **By the Slides type's notes, a deck could take the colours and little else, and only as
+  literal values.** Those notes allow inline styles only and no `var()`, so role
+  indirection and the reference page's classes would not transfer. They set a 24px minimum
+  text size, which four of the five sizes in the type scale are below. They accept only
+  Google, uploaded or basic fonts. Whether the seed's system font stacks count as basic was
+  not checked.
 
-Treat this as one dated observation, not a description of the type: its format is
-versioned and may have changed since. Neither published artifact, the design system or the
-deck, was inspected on screen; both were checked against the format notes only.
+Treat this as one dated observation, not a description of the type: it may have changed
+since. Neither published artifact, the design system or the deck, was seen rendered. The
+token values were checked by comparing the published file with this seed's; everything
+else here rests on the types' format notes.
