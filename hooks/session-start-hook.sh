@@ -33,7 +33,11 @@ if ! command -v cozempic >/dev/null 2>&1; then
     done
 fi
 if command -v cozempic >/dev/null 2>&1; then
-    cozempic init >/dev/null 2>&1 || true
+    # Detached, every fd redirected (#369). Waited on, a first run on a fresh
+    # HOME blocked SessionStart for 23 s (measured, cozempic 1.8.39: its update
+    # check); an inherited stdout would block it the same way, because Claude
+    # Code reads this hook's stdout to EOF. Nothing below needs init finished.
+    cozempic init </dev/null >/dev/null 2>&1 &
 else
     printf '[session-start] cozempic not found. Install with: pip install cozempic\n' >&2
 fi
