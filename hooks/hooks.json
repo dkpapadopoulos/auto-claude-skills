@@ -73,6 +73,16 @@
         ]
       },
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/push-resurrect-advisory.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": "^Skill$",
         "hooks": [
           {
