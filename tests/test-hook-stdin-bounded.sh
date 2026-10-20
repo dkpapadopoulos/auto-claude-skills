@@ -86,12 +86,13 @@ test_session_start_is_bounded() {
 
 test_session_start_does_not_wait_on_cozempic() {
     # #369. A slow `cozempic init` must neither hold the hook open nor hold its
-    # stdout: Claude Code reads a hook's stdout to EOF, so a detached child that
-    # inherited it would stall SessionStart exactly as waiting on it would. The
-    # `$( )` capture is what makes the second failure visible — it waits for EOF.
+    # stdout or stderr: Claude Code reads a hook's output to EOF, so a detached
+    # child that inherited either would stall SessionStart exactly as waiting on
+    # it would. The `$( )` capture, with stderr folded in, is what makes those
+    # failures visible — it waits for EOF on both.
     local r
     _STUB_PATH="${_STUBS}/slow"
-    r="$(_run_against_fifo /bin/bash -c '_o="$(/bin/bash "$1")"; exit 0' _ \
+    r="$(_run_against_fifo /bin/bash -c '_o="$(/bin/bash "$1" 2>&1)"; exit 0' _ \
         "${PROJECT_ROOT}/hooks/session-start-hook.sh")"
     _STUB_PATH="${_STUBS}/fast"
     if [ -s "${_STUBS}/slow.pids" ]; then
@@ -99,8 +100,8 @@ test_session_start_does_not_wait_on_cozempic() {
     else
         r="cannot-check (the slow cozempic stub never ran)"
     fi
-    [ "${r}" = "terminated" ] && _record_pass "session-start does not wait on, or hand its stdout to, a slow cozempic init" \
-        || _record_fail "session-start does not wait on, or hand its stdout to, a slow cozempic init" "got '${r}'"
+    [ "${r}" = "terminated" ] && _record_pass "session-start does not wait on, or hand its stdout or stderr to, a slow cozempic init" \
+        || _record_fail "session-start does not wait on, or hand its stdout or stderr to, a slow cozempic init" "got '${r}'"
 }
 
 test_activation_is_bounded() {
