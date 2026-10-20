@@ -48,9 +48,9 @@ FAILED_NAMES=""
 # config/fallback-registry.json one byte short (measured 2026-09-29 and
 # 2026-10-20), waiting for the next `git add -A`. The tree's state is taken
 # before and after every file, and the file after which it differs FAILS, so
-# the culprit is the one named. Something else editing the tree during a run is
-# blamed on whichever file was running; editing during a gate run already
-# spoils the run, so that is reported rather than guessed around.
+# the culprit is the one named. The runner cannot tell a test's write from
+# something else editing the tree meanwhile (another session, an editor save),
+# so the message names both causes; either one spoils the run as a gate.
 #
 # State = the status lines AND a checksum of the diff against HEAD: a file that
 # was modified before the run and is changed again keeps its status line, and a
@@ -105,7 +105,7 @@ for test_file in ${test_files}; do
         after_sum="$(tree_sum)"
         if [ "${after_status}" != "${before_status}" ] || [ "${after_sum}" != "${before_sum}" ]; then
             file_ok=0
-            echo "FAIL (runner): ${name} changed the tracked tree and did not restore it:"
+            echo "FAIL (runner): the tracked tree changed while ${name} ran (the test, or a concurrent edit):"
             printf '%s\n' "${after_status}" | while IFS= read -r line; do
                 [ -n "${line}" ] || continue
                 case "

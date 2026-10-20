@@ -56,6 +56,11 @@ rc="$(_run "${D}")"
 assert_equals "a test that strips a tracked file's newline fails the run" "1" "${rc}"
 assert_contains "the sentinel reports one failed file" "files=2 passed=1 failed=1 status=fail" "$(_sentinel "${D}")"
 assert_contains "the culprit is named" "test-a-strips.sh" "$(grep -F 'Failed:' "${D}/run.log")"
+# The runner cannot tell a test's write from a concurrent edit (another session,
+# an IDE save), so the message must not claim the test did it.
+assert_contains "the message says the tree changed WHILE the file ran" \
+    "the tracked tree changed while test-a-strips.sh ran" "$(cat "${D}/run.log")"
+assert_contains "the message names the other possible cause" "concurrent edit" "$(cat "${D}/run.log")"
 assert_contains "the changed path is named" "config/data.json" "$(cat "${D}/run.log")"
 assert_not_contains "the next, clean file is not blamed" "test-b-clean.sh" "$(grep -F 'Failed:' "${D}/run.log")"
 
@@ -100,6 +105,9 @@ _test "${N}" "a-noop" ':'
 rc="$(GIT_CEILING_DIRECTORIES="${W}" _run "${N}")"
 assert_equals "no git checkout: the run still passes" "0" "${rc}"
 assert_contains "no git checkout: says the tree check could not run" "cannot check" "$(cat "${N}/run.log")"
-assert_contains "no git checkout: sentinel is still the last line" "ACS-RUN-TESTS-COMPLETE" "$(_sentinel "${N}")"
+# Through the supported reader, not the sentinel literal: test-suite-completion.sh
+# requires that no other test file spells the sentinel out.
+bash "${SCRIPT_DIR}/../scripts/assert-suite-complete.sh" "${N}/run.log" >/dev/null 2>&1
+assert_equals "no git checkout: the log still reads as complete and passing" "0" "$?"
 
 print_summary
