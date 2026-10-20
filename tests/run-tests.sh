@@ -43,6 +43,26 @@ PASSED_FILES=0
 FAILED_FILES=0
 FAILED_NAMES=""
 
+# Tracked-tree check (#367). A test that rewrites a tracked file and does not
+# restore it byte for byte used to pass unnoticed: a full green run left
+# config/fallback-registry.json one byte short (measured 2026-09-29 and
+# 2026-10-20), waiting for the next `git add -A`. The tree's state is taken
+# before and after every file, and the file after which it differs FAILS, so
+# the culprit is the one named. Something else editing the tree during a run is
+# blamed on whichever file was running; editing during a gate run already
+# spoils the run, so that is reported rather than guessed around.
+#
+# State = the status lines AND a checksum of the diff against HEAD: a file that
+# was modified before the run and is changed again keeps its status line, and a
+# verification run before committing is exactly that dirty-tree case. Untracked
+# files are not the tracked tree and are ignored.
+# Regression: tests/test-suite-tree-unchanged.sh
+TREE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+tree_status() { git -C "${TREE_ROOT}" status --porcelain --untracked-files=no 2>/dev/null; }
+tree_sum() { git -C "${TREE_ROOT}" diff HEAD --no-ext-diff --binary 2>/dev/null | cksum; }
+TREE_CHECK=on
+git -C "${TREE_ROOT}" rev-parse --verify -q HEAD >/dev/null 2>&1 || TREE_CHECK=off
+
 # Discover test files (excluding test-helpers.sh itself)
 test_files=""
 for f in "${SCRIPT_DIR}"/test-*.sh; do
@@ -63,13 +83,46 @@ echo "============================================"
 echo "  auto-claude-skills test runner"
 echo "============================================"
 echo ""
+if [ "${TREE_CHECK}" = off ]; then
+    echo "NOTE: ${TREE_ROOT} is not a git checkout with a commit, so this run cannot check"
+    echo "      that tests leave the tracked tree unchanged (#367)."
+    echo ""
+fi
 
 for test_file in ${test_files}; do
     name="$(basename "${test_file}")"
     echo "--- Running: ${name} ---"
     TOTAL_FILES=$((TOTAL_FILES + 1))
 
-    if bash "${test_file}"; then
+    if [ "${TREE_CHECK}" = on ]; then
+        before_status="$(tree_status)"
+        before_sum="$(tree_sum)"
+    fi
+    file_ok=0
+    bash "${test_file}" && file_ok=1
+    if [ "${TREE_CHECK}" = on ]; then
+        after_status="$(tree_status)"
+        after_sum="$(tree_sum)"
+        if [ "${after_status}" != "${before_status}" ] || [ "${after_sum}" != "${before_sum}" ]; then
+            file_ok=0
+            echo "FAIL (runner): ${name} changed the tracked tree and did not restore it:"
+            printf '%s\n' "${after_status}" | while IFS= read -r line; do
+                [ -n "${line}" ] || continue
+                case "
+${before_status}
+" in
+                    *"
+${line}
+"*) ;;
+                    *) echo "    ${line}" ;;
+                esac
+            done
+            [ "${after_status}" = "${before_status}" ] \
+                && echo "    (an already-modified file's content changed; status lines are unchanged)"
+        fi
+    fi
+
+    if [ "${file_ok}" -eq 1 ]; then
         PASSED_FILES=$((PASSED_FILES + 1))
     else
         FAILED_FILES=$((FAILED_FILES + 1))
