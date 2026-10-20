@@ -50,38 +50,137 @@ _DIR="$(command_git_subject_dir "${_CMD}")"
 [ -n "${_DIR}" ] || _DIR="."
 git -C "${_DIR}" rev-parse --git-dir >/dev/null 2>&1 || exit 0
 
-_B="$(command_push_ref "${_CMD}")"
-if [ -z "${_B}" ]; then
-    _B="$(git -C "${_DIR}" symbolic-ref -q --short HEAD 2>/dev/null)" || exit 0
-fi
-[ -n "${_B}" ] || exit 0
-git -C "${_DIR}" show-ref --verify -q "refs/heads/${_B}" 2>/dev/null || exit 0
+# The remote and the refspec are the ones the COMMAND names: positional 1 and
+# 2 of the push segment, `--repo` standing in for a missing positional 1. The
+# word walk follows command_push_ref's, which reports only the refspec's
+# source half and so cannot answer "which remote, which destination".
+_POS1=""; _POS2=""; _REPO=""
+_SEGS="$(_gc_split_segments "${_CMD}")"
+_OLDIFS="$IFS"
+IFS="${_GC_SEP}"
+for _SEG in ${_SEGS}; do
+    IFS="${_OLDIFS}"
+    if [ "$(_gc_segment_git_sub "${_SEG}")" = "push" ]; then
+        # shellcheck disable=SC2086
+        set -- ${_SEG}
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                '('|'{') shift ;;
+                '('*|'{'*) _U="$(_gc_strip_openers "$1")"; shift; set -- "${_U}" "$@"; break ;;
+                *) break ;;
+            esac
+        done
+        while [ "$#" -gt 0 ]; do
+            case "$1" in env) shift ;; [A-Za-z_]*=*) shift ;; *) break ;; esac
+        done
+        case "${1:-}" in git|*/git) shift ;; *) IFS="${_GC_SEP}"; continue ;; esac
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                -C|-c|--git-dir|--work-tree|--namespace)
+                    if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                -*) shift ;;
+                *) break ;;
+            esac
+        done
+        [ "$#" -gt 0 ] && shift   # drop `push`
+        _N=0
+        while [ "$#" -gt 0 ]; do
+            _gc_strip_closers_var "$1"
+            if _gc_redir_kind_var "${_GC_W}"; then
+                if [ "${_GC_REDIR}" = "bare" ] && [ "$#" -ge 2 ]; then shift 2; else shift; fi
+                continue
+            fi
+            case "${_GC_W}" in
+                '') shift ;;
+                --repo=*) _REPO="${_GC_W#--repo=}"; shift ;;
+                --repo) _REPO="${2:-}"; if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                -o|--push-option|--receive-pack|--exec)
+                    if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                -*) shift ;;
+                *)
+                    _N=$((_N + 1))
+                    [ "${_N}" -eq 1 ] && _POS1="${_GC_W}"
+                    [ "${_N}" -eq 2 ] && _POS2="${_GC_W}"
+                    shift ;;
+            esac
+        done
+        break
+    fi
+    IFS="${_GC_SEP}"
+done
+IFS="${_OLDIFS}"
 
-_REMOTE="$(git -C "${_DIR}" config "branch.${_B}.remote" 2>/dev/null)"
+_CUR="$(git -C "${_DIR}" symbolic-ref -q --short HEAD 2>/dev/null)"
+if [ -z "${_POS2}" ]; then
+    # No refspec: the current branch, to its upstream's name under
+    # push.default=upstream and to its own name otherwise.
+    [ -n "${_CUR}" ] || exit 0
+    _SRC="${_CUR}"; _DST="${_CUR}"
+    if [ "$(git -C "${_DIR}" config push.default 2>/dev/null)" = "upstream" ]; then
+        _M="$(git -C "${_DIR}" config "branch.${_CUR}.merge" 2>/dev/null)"
+        case "${_M}" in refs/heads/?*) _DST="${_M#refs/heads/}" ;; esac
+    fi
+else
+    _R="${_POS2#+}"
+    case "${_R}" in
+        *:*) _SRC="${_R%%:*}"; _DST="${_R#*:}" ;;
+        *)   _SRC="${_R}"; _DST="" ;;
+    esac
+    [ "${_SRC}" = "HEAD" ] && _SRC="${_CUR}"
+    _SRC="${_SRC#refs/heads/}"
+    [ -n "${_DST}" ] || _DST="${_SRC}"
+    case "${_DST}" in
+        refs/heads/*) _DST="${_DST#refs/heads/}" ;;
+        refs/*|HEAD) exit 0 ;;
+    esac
+fi
+[ -n "${_DST}" ] || exit 0
+
+# Remote: as git resolves it — the command's, else the branch's pushRemote,
+# remote.pushDefault, its upstream remote, then origin. A URL is not a
+# configured remote and has no tracking state to compare, so it is skipped.
+_REMOTE="${_POS1:-${_REPO}}"
+if [ -z "${_REMOTE}" ] && [ -n "${_SRC}" ]; then
+    _REMOTE="$(git -C "${_DIR}" config "branch.${_SRC}.pushRemote" 2>/dev/null)"
+fi
+[ -n "${_REMOTE}" ] || _REMOTE="$(git -C "${_DIR}" config remote.pushDefault 2>/dev/null)"
+if [ -z "${_REMOTE}" ] && [ -n "${_SRC}" ]; then
+    _REMOTE="$(git -C "${_DIR}" config "branch.${_SRC}.remote" 2>/dev/null)"
+fi
 [ -n "${_REMOTE}" ] || _REMOTE="origin"
 [ "${_REMOTE}" != "." ] || exit 0
 git -C "${_DIR}" remote get-url "${_REMOTE}" >/dev/null 2>&1 || exit 0
 
+# Was the destination on that remote before?
 _SEEN=""
-if [ "$(git -C "${_DIR}" config "branch.${_B}.merge" 2>/dev/null)" = "refs/heads/${_B}" ] \
-    && [ "$(git -C "${_DIR}" config "branch.${_B}.remote" 2>/dev/null)" = "${_REMOTE}" ]; then
-    _SEEN="its upstream is ${_REMOTE}/${_B}"
+if [ -n "${_SRC}" ] \
+    && [ "$(git -C "${_DIR}" config "branch.${_SRC}.merge" 2>/dev/null)" = "refs/heads/${_DST}" ] \
+    && [ "$(git -C "${_DIR}" config "branch.${_SRC}.remote" 2>/dev/null)" = "${_REMOTE}" ]; then
+    _SEEN="the upstream of ${_SRC} is ${_REMOTE}/${_DST}"
 fi
-if git -C "${_DIR}" show-ref --verify -q "refs/remotes/${_REMOTE}/${_B}" 2>/dev/null; then
+if git -C "${_DIR}" show-ref --verify -q "refs/remotes/${_REMOTE}/${_DST}" 2>/dev/null; then
     [ -n "${_SEEN}" ] && _SEEN="${_SEEN}, and " || true
-    _SEEN="${_SEEN}a remote-tracking ref ${_REMOTE}/${_B} exists locally"
+    _SEEN="${_SEEN}a remote-tracking ref ${_REMOTE}/${_DST} exists locally"
 fi
 [ -n "${_SEEN}" ] || exit 0
+_B="${_DST}"
 
 # Ask the remote, bounded: macOS has no timeout(1). No prompt may block it.
 _TMP="$(mktemp -d "${TMPDIR:-/tmp}/acs-resurrect.XXXXXX" 2>/dev/null)" || exit 0
 trap 'rm -rf "${_TMP}"' EXIT
 (
-    GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes}" \
-        git -C "${_DIR}" ls-remote --heads "${_REMOTE}" "refs/heads/${_B}" \
+    export GIT_TERMINAL_PROMPT=0
+    # Only when the user has configured no ssh of their own: GIT_SSH_COMMAND
+    # outranks core.sshCommand, so setting it unconditionally would replace a
+    # per-repo identity (`ssh -i <key>`) and authenticate as the wrong account.
+    if [ -z "${GIT_SSH_COMMAND:-}" ] && [ -z "${GIT_SSH:-}" ] \
+        && [ -z "$(git -C "${_DIR}" config core.sshCommand 2>/dev/null)" ]; then
+        export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=4"
+    fi
+    git -C "${_DIR}" ls-remote --heads "${_REMOTE}" "refs/heads/${_B}" \
         > "${_TMP}/out" 2>/dev/null
     echo "$?" > "${_TMP}/rc"
-) < /dev/null &
+) < /dev/null 2>/dev/null &
 _PID=$!
 _LIMIT="${ACS_PUSH_REMOTE_TIMEOUT:-5}"
 case "${_LIMIT}" in ''|*[!0-9]*) _LIMIT=5 ;; esac
@@ -93,6 +192,7 @@ done
 _MSG=""
 if [ ! -s "${_TMP}/rc" ]; then
     pkill -P "${_PID}" 2>/dev/null; kill "${_PID}" 2>/dev/null
+    wait "${_PID}" 2>/dev/null
     _MSG="could not check whether ${_REMOTE}/${_B} still exists (no answer from the remote within ${_LIMIT} s). This branch was pushed there before (${_SEEN}); if its PR has been merged, this push recreates it."
 elif [ "$(cat "${_TMP}/rc")" != "0" ]; then
     _MSG="could not check whether ${_REMOTE}/${_B} still exists (git ls-remote failed). This branch was pushed there before (${_SEEN}); if its PR has been merged, this push recreates it."

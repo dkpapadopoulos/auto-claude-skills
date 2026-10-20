@@ -178,6 +178,89 @@ test_detached_head_bare_push() {
     assert_equals "detached HEAD bare push: no output" "" "${out}"
 }
 
+# --- The remote and destination are the ones the COMMAND names (review I1) ---
+
+# _add_fork <dir> — a second bare remote `fork` that holds `feat`
+_add_fork() {
+    _g init -q --bare "$1/fork.git"
+    _g -C "$1/work" remote add fork "$1/fork.git"
+    _g -C "$1/work" push -q fork feat 2>/dev/null
+}
+
+test_push_to_other_remote_is_not_blamed_on_upstream() {
+    local d out
+    d="$(_fixture otherremote)"
+    _add_fork "${d}"
+    _g -C "${d}/remote.git" branch -q -D feat
+    out="$(_run "${d}/work" "git push fork feat")"
+    assert_equals "push to a remote that has the branch: no output" "" "${out}"
+}
+
+test_renamed_destination_is_not_the_source() {
+    local d out
+    d="$(_fixture renamed)"
+    _g -C "${d}/remote.git" branch -q -D feat
+    out="$(_run "${d}/work" "git push origin feat:other")"
+    assert_equals "src:dst push to a new name: no output" "" "${out}"
+}
+
+test_head_colon_dst_checks_dst() {
+    local d ctx
+    d="$(_fixture headdst)"
+    _g -C "${d}/remote.git" branch -q -D feat
+    _g -C "${d}/work" switch -q -c wip
+    ctx="$(_ctx "$(_run "${d}/work" "git push origin HEAD:feat")")"
+    assert_contains "HEAD:feat is checked as feat" "origin/feat" "${ctx}"
+}
+
+test_named_remote_overrides_upstream_remote() {
+    # feat tracks fork, which deleted it; the command pushes to origin, which
+    # still has it.
+    local d out
+    d="$(_fixture namedremote)"
+    _add_fork "${d}"
+    _g -C "${d}/work" branch -q --set-upstream-to=fork/feat feat
+    _g -C "${d}/fork.git" branch -q -D feat
+    out="$(_run "${d}/work" "git push origin feat")"
+    assert_equals "named remote still has the branch: no output" "" "${out}"
+}
+
+test_bare_push_follows_push_remote() {
+    local d out
+    d="$(_fixture pushremote)"
+    _add_fork "${d}"
+    _g -C "${d}/work" config branch.feat.pushRemote fork
+    _g -C "${d}/remote.git" branch -q -D feat
+    out="$(_run "${d}/work" "git push")"
+    assert_equals "bare push goes to pushRemote, which has the branch: no output" "" "${out}"
+}
+
+test_repo_flag_names_the_remote() {
+    local d out
+    d="$(_fixture repoflag)"
+    _add_fork "${d}"
+    _g -C "${d}/remote.git" branch -q -D feat
+    out="$(_run "${d}/work" "git push --repo=fork")"
+    assert_equals "--repo=fork, which has the branch: no output" "" "${out}"
+}
+
+# --- The user's own ssh configuration is used (review I2) ---
+test_core_ssh_command_is_respected() {
+    local d marker
+    d="$(_fixture sshcmd)"
+    marker="${d}/ssh-was-called"
+    printf '#!/bin/sh\ntouch "%s"\nexit 1\n' "${marker}" > "${d}/fake-ssh"
+    chmod +x "${d}/fake-ssh"
+    _g -C "${d}/work" config core.sshCommand "${d}/fake-ssh"
+    _g -C "${d}/work" remote set-url origin "ssh://example.invalid/x.git"
+    ( unset GIT_SSH_COMMAND GIT_SSH; _run "${d}/work" "git push origin feat" >/dev/null )
+    if [ -e "${marker}" ]; then
+        _record_pass "the remote query uses the repo's core.sshCommand"
+    else
+        _record_fail "the remote query uses the repo's core.sshCommand" "core.sshCommand was never run"
+    fi
+}
+
 test_fail_open_on_garbage() {
     local out rc
     out="$(printf 'not json' | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "${HOOK}" 2>/dev/null)"; rc=$?
@@ -198,6 +281,13 @@ test_deletion_push_is_ignored
 test_non_push_commands
 test_subject_dir_from_dash_c
 test_detached_head_bare_push
+test_push_to_other_remote_is_not_blamed_on_upstream
+test_renamed_destination_is_not_the_source
+test_head_colon_dst_checks_dst
+test_named_remote_overrides_upstream_remote
+test_bare_push_follows_push_remote
+test_repo_flag_names_the_remote
+test_core_ssh_command_is_respected
 test_fail_open_on_garbage
 
 assert_test_functions_wired "${BASH_SOURCE[0]}"
