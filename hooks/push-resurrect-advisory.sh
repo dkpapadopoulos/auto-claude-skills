@@ -216,8 +216,12 @@ case "${_LIMIT}" in ''|*[!0-9]*) _LIMIT=5 ;; esac
 # hooks.json allows this hook 10 s; past that the harness kills it and the
 # advisory is lost without a word.
 [ "${#_LIMIT}" -le 1 ] && [ "${_LIMIT}" -le 8 ] || _LIMIT=8
+# The poll count alone is not a time limit: on a loaded machine each poll takes
+# longer than 0.2 s. SECONDS counts whole seconds since this hook started, so
+# the second bound stops the wait once 8 s of the hook's run have passed,
+# leaving room for the kill and the output before the 10 s timeout.
 _I=0
-while [ ! -s "${_TMP}/rc" ] && [ "${_I}" -lt $(( _LIMIT * 5 )) ]; do
+while [ ! -s "${_TMP}/rc" ] && [ "${_I}" -lt $(( _LIMIT * 5 )) ] && [ "${SECONDS}" -lt 8 ]; do
     sleep 0.2; _I=$(( _I + 1 ))
 done
 

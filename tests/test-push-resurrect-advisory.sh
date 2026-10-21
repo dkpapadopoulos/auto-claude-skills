@@ -250,18 +250,45 @@ _ssh_alive_after_timeout() {
 }
 
 test_timeout_leaves_no_ssh_behind() {
-    # On a timeout the hook killed git, but git's ssh child (one level further
-    # down, two when core.sshCommand needs a shell) kept running, reparented,
-    # for as long as the remote took to answer. The whole tree must go.
+    # On a timeout the hook killed git, but git's ssh child kept running,
+    # reparented, for as long as the remote took to answer. The whole tree must
+    # go. `stub; true` is a command the shell git starts cannot exec in place,
+    # so the stub is a level deeper: git, sh, stub. (A plain `stub -o x` is
+    # exec'd by that sh and is git's child again.)
     local d
     d="$(_fixture orphan)"
-    printf '#!/bin/sh\necho $$ > "%s"\nexec sleep 30\n' "${d}/ssh.pid" > "${d}/slow-ssh"
+    printf '#!/bin/sh\necho $$ > "%s"\nexec /bin/sleep 30\n' "${d}/ssh.pid" > "${d}/slow-ssh"
     chmod +x "${d}/slow-ssh"
     assert_equals "timeout: the ssh git ran is killed with it" "gone" \
         "$(_ssh_alive_after_timeout "${d}" "${d}/slow-ssh")"
     rm -f "${d}/ssh.pid"
-    assert_equals "timeout: an ssh behind core.sshCommand's shell is killed too" "gone" \
-        "$(_ssh_alive_after_timeout "${d}" "${d}/slow-ssh -o BatchMode=yes")"
+    assert_equals "timeout: an ssh behind a shell core.sshCommand needs is killed too" "gone" \
+        "$(_ssh_alive_after_timeout "${d}" "${d}/slow-ssh; true")"
+}
+
+test_wait_is_bounded_by_the_clock() {
+    # The wait counted polls, not seconds, so anything that slowed each poll
+    # (a loaded machine) stretched it past the hook's 10 s timeout and the
+    # advisory was lost. Here every `sleep` the hook runs takes half a second,
+    # so 25 polls at the default 5 s would take 12.5 s.
+    local d t0 took ctx
+    d="$(_fixture clock)"
+    mkdir -p "${d}/slowbin"
+    printf '#!/bin/sh\nexec /bin/sleep 0.5\n' > "${d}/slowbin/sleep"
+    printf '#!/bin/sh\necho $$ > "%s"\nexec /bin/sleep 30\n' "${d}/ssh.pid" > "${d}/slow-ssh"
+    chmod +x "${d}/slowbin/sleep" "${d}/slow-ssh"
+    _g -C "${d}/work" config core.sshCommand "${d}/slow-ssh"
+    _g -C "${d}/work" remote set-url origin "ssh://example.invalid/x.git"
+    t0="${SECONDS}"
+    ctx="$(_ctx "$(PATH="${d}/slowbin:${PATH}" _run "${d}/work" "git push origin feat")")"
+    took=$(( SECONDS - t0 ))
+    [ -s "${d}/ssh.pid" ] && kill "$(cat "${d}/ssh.pid")" 2>/dev/null
+    assert_contains "slow polls: still reports could not check" "could not check" "${ctx}"
+    if [ "${took}" -lt 10 ]; then
+        _record_pass "slow polls: the hook returns inside its 10 s timeout"
+    else
+        _record_fail "slow polls: the hook returns inside its 10 s timeout" "took ${took} s"
+    fi
 }
 
 test_detached_head_bare_push() {
@@ -379,6 +406,7 @@ test_foreign_repo_config_is_never_run
 test_quoted_words_are_unquoted
 test_remote_wait_is_capped_below_the_hook_timeout
 test_timeout_leaves_no_ssh_behind
+test_wait_is_bounded_by_the_clock
 test_detached_head_bare_push
 test_push_to_other_remote_is_not_blamed_on_upstream
 test_renamed_destination_is_not_the_source
