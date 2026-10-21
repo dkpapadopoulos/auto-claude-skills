@@ -25,6 +25,9 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 HOOK="${PROJECT_ROOT}/hooks/push-resurrect-advisory.sh"
 T="$(mktemp -d "${TMPDIR:-/tmp}/acs-resurrect.XXXXXX")"
+# The developer's own git config (a global remote.pushDefault, push.default or
+# insteadOf) must not change what a cell measures.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 trap 'rm -rf "${T}"' EXIT
 
 _g() { git -c user.name=t -c user.email=t@t -c init.defaultBranch=main -c advice.detachedHead=false "$@"; }
@@ -162,11 +165,75 @@ test_non_push_commands() {
 }
 
 test_subject_dir_from_dash_c() {
+    # From another worktree of the same repository: the directory the command
+    # names is accepted only when it shares the session's --git-common-dir.
     local d ctx
     d="$(_fixture dashc)"
     _g -C "${d}/remote.git" branch -q -D feat
-    ctx="$(_ctx "$(_run "${T}" "git -C ${d}/work push origin feat")")"
+    _g -C "${d}/work" worktree add -q "${d}/wt" main 2>/dev/null
+    ctx="$(_ctx "$(_run "${d}/wt" "git -C ${d}/work push origin feat")")"
     assert_contains "git -C <dir> push is checked in <dir>" "origin/feat" "${ctx}"
+}
+
+test_foreign_repo_config_is_never_run() {
+    # SECURITY. git runs programs a repository's own config names (here
+    # remote.origin.uploadpack), and this hook runs BEFORE the user approves the
+    # command. A directory the command names is used only when it is a worktree
+    # of the session's own repository, the rule openspec-guard.sh applies (#219).
+    # Control: from inside that repository the same program does run, so the
+    # harness can see an executed config program.
+    local d other marker c out
+    d="$(_fixture foreign)"
+    _g -C "${d}/remote.git" branch -q -D feat
+    marker="${d}/uploadpack-ran"
+    printf '#!/bin/sh\ntouch "%s"\nexit 1\n' "${marker}" > "${d}/up.sh"
+    chmod +x "${d}/up.sh"
+    _g -C "${d}/work" config remote.origin.uploadpack "${d}/up.sh"
+    other="${T}/other-session"
+    _g init -q "${other}"
+    for c in "git -C ${d}/work push origin feat" "cd ${d}/work && git push origin feat"; do
+        out="$(_run "${other}" "${c}")"
+        assert_equals "a push naming another repository: no output (${c%% *} form)" "" "${out}"
+    done
+    if [ -e "${marker}" ]; then
+        _record_fail "a push naming another repository never runs that repository's config programs" \
+            "remote.origin.uploadpack ran"
+    else
+        _record_pass "a push naming another repository never runs that repository's config programs"
+    fi
+    _run "${d}/work" "git push origin feat" >/dev/null
+    if [ -e "${marker}" ]; then
+        _record_pass "from inside the repository its uploadpack does run (control)"
+    else
+        _record_fail "from inside the repository its uploadpack does run (control)" \
+            "never ran — the cell above cannot tell a refused directory from a never-run program"
+    fi
+}
+
+test_quoted_words_are_unquoted() {
+    # git-command.sh strips one layer of quotes from a refspec; the walk here
+    # must too, or a quoted form looks up branch."feat" and says nothing.
+    local d c
+    d="$(_fixture quoted)"
+    _g -C "${d}/remote.git" branch -q -D feat
+    for c in 'git push origin "feat"' "git push origin 'feat'" 'git push "origin" feat'; do
+        assert_contains "quoted form is checked: ${c}" "origin/feat" "$(_ctx "$(_run "${d}/work" "${c}")")"
+    done
+}
+
+test_remote_wait_is_capped_below_the_hook_timeout() {
+    # hooks.json gives this hook 10 s. A larger ACS_PUSH_REMOTE_TIMEOUT would let
+    # the harness kill it mid-wait, which drops the advisory silently.
+    local d pidf ctx
+    d="$(_fixture cap)"
+    pidf="${d}/ssh.pid"
+    printf '#!/bin/sh\necho $$ > "%s"\nexec sleep 30\n' "${pidf}" > "${d}/slow-ssh"
+    chmod +x "${d}/slow-ssh"
+    _g -C "${d}/work" config core.sshCommand "${d}/slow-ssh"
+    _g -C "${d}/work" remote set-url origin "ssh://example.invalid/x.git"
+    ctx="$(_ctx "$(ACS_PUSH_REMOTE_TIMEOUT=60 _run "${d}/work" "git push origin feat")")"
+    [ -s "${pidf}" ] && kill "$(cat "${pidf}")" 2>/dev/null
+    assert_contains "ACS_PUSH_REMOTE_TIMEOUT above 8 is capped at 8 s" "within 8 s" "${ctx}"
 }
 
 test_detached_head_bare_push() {
@@ -280,6 +347,9 @@ test_first_push_asks_nothing
 test_deletion_push_is_ignored
 test_non_push_commands
 test_subject_dir_from_dash_c
+test_foreign_repo_config_is_never_run
+test_quoted_words_are_unquoted
+test_remote_wait_is_capped_below_the_hook_timeout
 test_detached_head_bare_push
 test_push_to_other_remote_is_not_blamed_on_upstream
 test_renamed_destination_is_not_the_source

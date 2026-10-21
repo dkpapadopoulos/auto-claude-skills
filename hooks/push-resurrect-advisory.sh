@@ -19,6 +19,10 @@
 # files drive it against the real checkout, so a network-backed leg there would
 # make them depend on the remote state of whatever branch the suite runs on —
 # the environment coupling #369 removed from another test.
+#
+# Only the FIRST push segment of a compound command is checked, matching
+# command_git_subject_dir; `git push origin main && git push origin feat` is
+# judged on `main` alone.
 
 _PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 
@@ -46,9 +50,25 @@ command_invokes_git_write "${_CMD}" push || exit 0
 # A deletion, --all/--mirror/--tags or several refspecs has no single branch.
 command_push_subject_is_partial "${_CMD}" && exit 0
 
+# SECURITY: the command text is model-authored, and git runs programs that a
+# repository's own config names (remote.<name>.uploadpack, core.sshCommand)
+# while this hook runs, BEFORE the user approves the command. A directory the
+# command names is used only when it is a worktree of the session's own
+# repository (same canonical --git-common-dir), the rule openspec-guard.sh
+# applies to its subject (#219). Anything else is skipped, never guessed.
+_common_dir() {
+    local c
+    c="$(git -C "$1" rev-parse --git-common-dir 2>/dev/null)" || return 0
+    case "${c}" in '') return 0 ;; /*) ;; *) c="$1/${c}" ;; esac
+    ( cd "${c}" 2>/dev/null && pwd -P )
+}
+_HERE="$(_common_dir .)"
+[ -n "${_HERE}" ] || exit 0
 _DIR="$(command_git_subject_dir "${_CMD}")"
 [ -n "${_DIR}" ] || _DIR="."
-git -C "${_DIR}" rev-parse --git-dir >/dev/null 2>&1 || exit 0
+if [ "${_DIR}" != "." ] && [ "$(_common_dir "${_DIR}")" != "${_HERE}" ]; then
+    exit 0
+fi
 
 # The remote and the refspec are the ones the COMMAND names: positional 1 and
 # 2 of the push segment, `--repo` standing in for a missing positional 1. The
@@ -90,17 +110,26 @@ for _SEG in ${_SEGS}; do
                 if [ "${_GC_REDIR}" = "bare" ] && [ "$#" -ge 2 ]; then shift 2; else shift; fi
                 continue
             fi
-            case "${_GC_W}" in
+            # One layer of quotes off, as git-command.sh does for a refspec.
+            _a="${_GC_W}"
+            _a="${_a%\"}"; _a="${_a#\"}"; _a="${_a%\'}"; _a="${_a#\'}"
+            case "${_a}" in
                 '') shift ;;
-                --repo=*) _REPO="${_GC_W#--repo=}"; shift ;;
-                --repo) _REPO="${2:-}"; if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+                --repo=*)
+                    _REPO="${_a#--repo=}"
+                    _REPO="${_REPO%\"}"; _REPO="${_REPO#\"}"; _REPO="${_REPO%\'}"; _REPO="${_REPO#\'}"
+                    shift ;;
+                --repo)
+                    _REPO="${2:-}"
+                    _REPO="${_REPO%\"}"; _REPO="${_REPO#\"}"; _REPO="${_REPO%\'}"; _REPO="${_REPO#\'}"
+                    if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
                 -o|--push-option|--receive-pack|--exec)
                     if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
                 -*) shift ;;
                 *)
                     _N=$((_N + 1))
-                    [ "${_N}" -eq 1 ] && _POS1="${_GC_W}"
-                    [ "${_N}" -eq 2 ] && _POS2="${_GC_W}"
+                    [ "${_N}" -eq 1 ] && _POS1="${_a}"
+                    [ "${_N}" -eq 2 ] && _POS2="${_a}"
                     shift ;;
             esac
         done
@@ -184,6 +213,9 @@ trap 'rm -rf "${_TMP}"' EXIT
 _PID=$!
 _LIMIT="${ACS_PUSH_REMOTE_TIMEOUT:-5}"
 case "${_LIMIT}" in ''|*[!0-9]*) _LIMIT=5 ;; esac
+# hooks.json allows this hook 10 s; past that the harness kills it and the
+# advisory is lost without a word.
+[ "${#_LIMIT}" -le 1 ] && [ "${_LIMIT}" -le 8 ] || _LIMIT=8
 _I=0
 while [ ! -s "${_TMP}/rc" ] && [ "${_I}" -lt $(( _LIMIT * 5 )) ]; do
     sleep 0.2; _I=$(( _I + 1 ))
