@@ -107,6 +107,41 @@ _test "${D}" "a-stages" 'printf "x\n" >> "$D/config/data.json"; git -C "$D" add 
 rc="$(_run "${D}")"
 assert_equals "a test that leaves a change staged fails the run" "1" "${rc}"
 
+# --- HEAD is part of the state: a commit with no content change still moves it
+D="$(_repo commits)"
+_test "${D}" "a-commits" 'git -C "$D" -c user.name=t -c user.email=t@t commit -q --allow-empty -m x'
+rc="$(_run "${D}")"
+assert_equals "a test that commits (even an empty commit) fails the run" "1" "${rc}"
+
+# --- session-start regenerates config/fallback-registry.json whenever it is out
+# of date with default-triggers.json, and many test files run it against the
+# checkout, so after a routing edit the first of them rewrote the file and was
+# blamed for it. The runner regenerates it once, before any snapshot, and says
+# so. The stand-in hook below does what session-start's step 10c does: derive
+# the file, unless _SKILL_TEST_MODE is set.
+D="$(_repo regen)"
+mkdir -p "${D}/hooks"
+printf '{}\n' > "${D}/config/fallback-registry.json"
+printf '#!/bin/bash\n[ -n "${_SKILL_TEST_MODE:-}" ] || cp "$CLAUDE_PLUGIN_ROOT/config/data.json" "$CLAUDE_PLUGIN_ROOT/config/fallback-registry.json"\nexit 0\n' \
+    > "${D}/hooks/session-start-hook.sh"
+_g -C "${D}" add hooks config
+_g -C "${D}" commit -q -m hook
+_test "${D}" "a-runs-hook" 'CLAUDE_PLUGIN_ROOT="$D" bash "$D/hooks/session-start-hook.sh" < /dev/null'
+rc="$(_run "${D}")"
+assert_equals "an out-of-date fallback that session-start regenerates blames no test file" "0" "${rc}"
+assert_contains "the runner says it regenerated the fallback, which needs committing" \
+    "config/fallback-registry.json" "$(grep -A2 -F 'NOTE' "${D}/run.log")"
+_g -C "${D}" add config
+_g -C "${D}" commit -q -m regenerated
+rc="$(_run "${D}")"
+assert_equals "an in-sync fallback passes" "0" "${rc}"
+assert_not_contains "an in-sync fallback: no regeneration note" "fallback-registry" "$(cat "${D}/run.log")"
+# The regeneration must not hide the original #367 defect in that same file.
+_test "${D}" "b-strips-fallback" 'o="$(cat "$D/config/fallback-registry.json")"; printf "%s" "$o" > "$D/config/fallback-registry.json"'
+rc="$(_run "${D}")"
+assert_equals "a test that strips the fallback's newline still fails the run" "1" "${rc}"
+assert_contains "and is the one named" "test-b-strips-fallback.sh" "$(grep -F 'Failed:' "${D}/run.log")"
+
 # --- outside a git checkout the check says it could not run and does not fail
 N="${W}/nogit"
 mkdir -p "${N}/tests"

@@ -67,16 +67,42 @@ FAILED_NAMES=""
 # something else editing the tree meanwhile (another session, an editor save),
 # so the message names both causes; either one spoils the run as a gate.
 #
-# State = the status lines AND a checksum of the diff against HEAD: a file that
-# was modified before the run and is changed again keeps its status line, and a
-# verification run before committing is exactly that dirty-tree case. Untracked
-# files are not the tracked tree and are ignored.
+# State = the status lines AND a checksum of HEAD plus the diff against it: a
+# file that was modified before the run and is changed again keeps its status
+# line, and a verification run before committing is exactly that dirty-tree
+# case; a commit or branch switch can leave both unchanged, so HEAD is in it.
+# Untracked files are not the tracked tree and are ignored.
 # Regression: tests/test-suite-tree-unchanged.sh
 TREE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 tree_status() { git -C "${TREE_ROOT}" status --porcelain --untracked-files=no 2>/dev/null; }
-tree_sum() { git -C "${TREE_ROOT}" diff HEAD --no-ext-diff --binary 2>/dev/null | cksum; }
+tree_sum() {
+    { git -C "${TREE_ROOT}" rev-parse -q --verify HEAD
+      git -C "${TREE_ROOT}" diff HEAD --no-ext-diff --binary; } 2>/dev/null | cksum
+}
 TREE_CHECK=on
 git -C "${TREE_ROOT}" rev-parse --verify -q HEAD >/dev/null 2>&1 || TREE_CHECK=off
+
+# The fallback registry. hooks/session-start-hook.sh regenerates the tracked
+# config/fallback-registry.json whenever it is out of date with
+# config/default-triggers.json (its step 10c, skipped under _SKILL_TEST_MODE),
+# and many test files run that hook against this checkout. So after a routing
+# edit the first of them rewrote the file, and the check above failed THAT
+# file for it. The runner runs the hook once here, before any snapshot, so the
+# regeneration is the runner's own and is announced. A stub `claude` keeps the
+# hook's Serena auto-register step, the other step test mode skips, off the
+# real CLI.
+FALLBACK_REGENERATED=""
+FB_FILE="${TREE_ROOT}/config/fallback-registry.json"
+FB_HOOK="${TREE_ROOT}/hooks/session-start-hook.sh"
+if [ "${TREE_CHECK}" = on ] && [ -n "${STUB_BIN}" ] && [ -f "${FB_FILE}" ] && [ -f "${FB_HOOK}" ]; then
+    mkdir -p "${STUB_BIN}/fb-bin" "${STUB_BIN}/fb-home"
+    printf '#!/bin/sh\nexit 0\n' > "${STUB_BIN}/fb-bin/claude"
+    chmod +x "${STUB_BIN}/fb-bin/claude"
+    fb_before="$(cksum < "${FB_FILE}")"
+    HOME="${STUB_BIN}/fb-home" PATH="${STUB_BIN}/fb-bin:${PATH}" CLAUDE_PLUGIN_ROOT="${TREE_ROOT}" \
+        _SKILL_TEST_MODE= bash "${FB_HOOK}" > /dev/null 2>&1
+    [ "$(cksum < "${FB_FILE}")" = "${fb_before}" ] || FALLBACK_REGENERATED=yes
+fi
 
 # Discover test files (excluding test-helpers.sh itself)
 test_files=""
@@ -101,6 +127,11 @@ echo ""
 if [ "${TREE_CHECK}" = off ]; then
     echo "NOTE: ${TREE_ROOT} is not a git checkout with a commit, so this run cannot check"
     echo "      that tests leave the tracked tree unchanged (#367)."
+    echo ""
+fi
+if [ -n "${FALLBACK_REGENERATED}" ]; then
+    echo "NOTE: config/fallback-registry.json was out of date with config/default-triggers.json,"
+    echo "      so it was regenerated before any test ran. Commit it with the routing change."
     echo ""
 fi
 
