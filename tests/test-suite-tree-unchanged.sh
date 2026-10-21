@@ -84,6 +84,16 @@ _test "${D}" "a-rewrites" 'printf "{\"a\": 3}\n" > "$D/config/data.json"'
 rc="$(_run "${D}")"
 assert_equals "changing an already-modified tracked file fails the run" "1" "${rc}"
 
+# --- an already-modified file reverted: its status line disappears, and the
+# message must still name it (the first cut printed only lines that appeared)
+D="$(_repo revert)"
+printf '{"a": 2}\n' > "${D}/config/data.json"
+_test "${D}" "a-reverts" 'git -C "$D" checkout -q -- config/data.json'
+rc="$(_run "${D}")"
+assert_equals "reverting an already-modified tracked file fails the run" "1" "${rc}"
+assert_contains "the reverted path is named in the runner's message" "config/data.json" \
+    "$(sed -n '/the tracked tree changed while/,/^---/p' "${D}/run.log")"
+
 # --- a dirty tree the tests leave alone passes
 D="$(_repo dirtyok)"
 printf '{"a": 2}\n' > "${D}/config/data.json"

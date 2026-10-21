@@ -117,6 +117,19 @@ ${line}
                     *) echo "    ${line}" ;;
                 esac
             done
+            # A line that DISAPPEARED is a change too: a file modified before
+            # the run and reverted (or committed) during it.
+            printf '%s\n' "${before_status}" | while IFS= read -r line; do
+                [ -n "${line}" ] || continue
+                case "
+${after_status}
+" in
+                    *"
+${line}
+"*) ;;
+                    *) echo "    ${line}  (no longer reported: reverted or committed)" ;;
+                esac
+            done
             [ "${after_status}" = "${before_status}" ] \
                 && echo "    (an already-modified file's content changed; status lines are unchanged)"
         fi
