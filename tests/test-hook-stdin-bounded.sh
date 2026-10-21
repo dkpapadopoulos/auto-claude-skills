@@ -106,6 +106,8 @@ test_session_start_does_not_wait_on_cozempic() {
     _STUB_PATH="${_STUBS}/fast"
     if [ -s "${_STUBS}/slow.pids" ]; then
         kill $(cat "${_STUBS}/slow.pids") 2>/dev/null
+        # Emptied, so the EXIT trap cannot later signal a pid since reused.
+        : > "${_STUBS}/slow.pids"
     else
         r="cannot-check (the slow cozempic stub never ran)"
     fi
@@ -144,7 +146,7 @@ test_empty_stdin_does_not_become_an_early_exit() {
     # into the work it exists to do; converting "no payload" into an early exit
     # would skip registry building, which is worse than the hang.
     local rc _h
-    _h="$(mktemp -d)"
+    _h="$(mktemp -d "${_STUBS}/home-XXXXXX")"
     HOME="${_h}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" PATH="${_STUBS}/fast:${PATH}" \
         /bin/bash "${PROJECT_ROOT}/hooks/session-start-hook.sh" < /dev/null >/dev/null 2>&1
     rc=$?
