@@ -117,7 +117,10 @@ run_with_fifo_stdin() {
     sleep 600 > "${fifo}" &
     holder=$!
 
-    bash "${dir}/run-tests.sh" < "${fifo}" > "${log}" 2>&1 &
+    # TMPDIR inside the fixture: a watchdog-killed runner cannot remove its
+    # temp files, so they must sit where cleanup will.
+    mkdir -p "${dir}/tmp"
+    TMPDIR="${dir}/tmp" bash "${dir}/run-tests.sh" < "${fifo}" > "${log}" 2>&1 &
     suite=$!
 
     elapsed=0
@@ -195,6 +198,11 @@ if build_fixture "${STRIPPED}" "yes"; then
     result="$(run_with_fifo_stdin "${STRIPPED}" "${WATCHDOG_SECS}")"
     assert_equals "without the guard the same runner hangs (harness detects the bug)" \
         "hung" "${result}"
+    # The watchdog's SIGKILL skips the runner's EXIT trap, so its cozempic stub
+    # dir (#369) survives. It must land inside WORK, which cleanup removes,
+    # not in the caller's TMPDIR, where one per suite run used to pile up.
+    _stubs_here="$(ls -d "${STRIPPED}/tmp"/acs-run-stubs.* 2>/dev/null | wc -l | tr -d ' ')"
+    assert_equals "the killed runner's stub dir is inside the test's own work dir" "1" "${_stubs_here}"
 else
     _record_fail "stripped fixture builds" "could not build ${STRIPPED}"
 fi
