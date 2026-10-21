@@ -87,22 +87,17 @@ git -C "${TREE_ROOT}" rev-parse --verify -q HEAD >/dev/null 2>&1 || TREE_CHECK=o
 # config/default-triggers.json (its step 10c, skipped under _SKILL_TEST_MODE),
 # and many test files run that hook against this checkout. So after a routing
 # edit the first of them rewrote the file, and the check above failed THAT
-# file for it. The runner runs the hook once here, before any snapshot, so the
-# regeneration is the runner's own and is announced. A stub `claude` keeps the
-# hook's Serena auto-register step, the other step test mode skips, off the
-# real CLI.
+# file for it. The runner runs the hook once, after the header and before any
+# snapshot, so the regeneration is the runner's own and no test is blamed. The
+# run still FAILS when it changed the file: the committed fallback is out of
+# date, and a pass would record a clean verdict for that commit while the sync
+# test in test-registry.sh, which reads the regenerated copy, cannot fail. A stub
+# `claude` keeps the hook's Serena auto-register step, the other step test mode
+# skips, off the real CLI.
 FALLBACK_REGENERATED=""
 FB_FILE="${TREE_ROOT}/config/fallback-registry.json"
 FB_HOOK="${TREE_ROOT}/hooks/session-start-hook.sh"
-if [ "${TREE_CHECK}" = on ] && [ -n "${STUB_BIN}" ] && [ -f "${FB_FILE}" ] && [ -f "${FB_HOOK}" ]; then
-    mkdir -p "${STUB_BIN}/fb-bin" "${STUB_BIN}/fb-home"
-    printf '#!/bin/sh\nexit 0\n' > "${STUB_BIN}/fb-bin/claude"
-    chmod +x "${STUB_BIN}/fb-bin/claude"
-    fb_before="$(cksum < "${FB_FILE}")"
-    HOME="${STUB_BIN}/fb-home" PATH="${STUB_BIN}/fb-bin:${PATH}" CLAUDE_PLUGIN_ROOT="${TREE_ROOT}" \
-        _SKILL_TEST_MODE= bash "${FB_HOOK}" > /dev/null 2>&1
-    [ "$(cksum < "${FB_FILE}")" = "${fb_before}" ] || FALLBACK_REGENERATED=yes
-fi
+FB_REASON="config/fallback-registry.json was out of date with config/default-triggers.json at the start of the run; it has been regenerated. Commit it with the routing change and run again."
 
 # Discover test files (excluding test-helpers.sh itself)
 test_files=""
@@ -129,9 +124,19 @@ if [ "${TREE_CHECK}" = off ]; then
     echo "      that tests leave the tracked tree unchanged (#367)."
     echo ""
 fi
-if [ -n "${FALLBACK_REGENERATED}" ]; then
-    echo "NOTE: config/fallback-registry.json was out of date with config/default-triggers.json,"
-    echo "      so it was regenerated before any test ran. Commit it with the routing change."
+if [ "${TREE_CHECK}" = on ] && [ -n "${STUB_BIN}" ] && [ -f "${FB_FILE}" ] && [ -f "${FB_HOOK}" ]; then
+    echo "Checking config/fallback-registry.json against config/default-triggers.json ..."
+    mkdir -p "${STUB_BIN}/fb-bin" "${STUB_BIN}/fb-home"
+    printf '#!/bin/sh\nexit 0\n' > "${STUB_BIN}/fb-bin/claude"
+    chmod +x "${STUB_BIN}/fb-bin/claude"
+    fb_before="$(cksum < "${FB_FILE}")"
+    HOME="${STUB_BIN}/fb-home" PATH="${STUB_BIN}/fb-bin:${PATH}" CLAUDE_PLUGIN_ROOT="${TREE_ROOT}" \
+        _SKILL_TEST_MODE= bash "${FB_HOOK}" > /dev/null 2>&1
+    [ "$(cksum < "${FB_FILE}")" = "${fb_before}" ] || FALLBACK_REGENERATED=yes
+    if [ -n "${FALLBACK_REGENERATED}" ]; then
+        echo "FAIL (runner): ${FB_REASON}"
+        echo "      The tests still run; this run will fail."
+    fi
     echo ""
 fi
 
@@ -200,9 +205,11 @@ printf "  Files passed: %d\n" "${PASSED_FILES}"
 printf "  Files failed: %d\n" "${FAILED_FILES}"
 echo "============================================"
 
-if [ "${FAILED_FILES}" -gt 0 ]; then
+if [ "${FAILED_FILES}" -gt 0 ] || [ -n "${FALLBACK_REGENERATED}" ]; then
     echo ""
-    echo "Failed: ${FAILED_NAMES}"
+    [ -n "${FAILED_NAMES}" ] && echo "Failed: ${FAILED_NAMES}"
+    # Last, so a verdict's short excerpt of this log keeps it.
+    [ -n "${FALLBACK_REGENERATED}" ] && echo "Failed (runner): ${FB_REASON}"
     emit_completion_sentinel fail
     exit 1
 fi

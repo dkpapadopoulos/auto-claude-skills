@@ -116,9 +116,13 @@ assert_equals "a test that commits (even an empty commit) fails the run" "1" "${
 # --- session-start regenerates config/fallback-registry.json whenever it is out
 # of date with default-triggers.json, and many test files run it against the
 # checkout, so after a routing edit the first of them rewrote the file and was
-# blamed for it. The runner regenerates it once, before any snapshot, and says
-# so. The stand-in hook below does what session-start's step 10c does: derive
-# the file, unless _SKILL_TEST_MODE is set.
+# blamed for it. The runner regenerates it once, before any snapshot, so no test
+# file is blamed. The run still FAILS: the committed fallback is out of date,
+# and a pass would let a clean verdict be recorded for that commit while the
+# sync test in test-registry.sh, which reads the regenerated copy, could not
+# fail. The reason is repeated last, where a verdict's short excerpt keeps it.
+# The stand-in hook below does what session-start's step 10c does: derive the
+# file, unless _SKILL_TEST_MODE is set.
 D="$(_repo regen)"
 mkdir -p "${D}/hooks"
 printf '{}\n' > "${D}/config/fallback-registry.json"
@@ -128,14 +132,22 @@ _g -C "${D}" add hooks config
 _g -C "${D}" commit -q -m hook
 _test "${D}" "a-runs-hook" 'CLAUDE_PLUGIN_ROOT="$D" bash "$D/hooks/session-start-hook.sh" < /dev/null'
 rc="$(_run "${D}")"
-assert_equals "an out-of-date fallback that session-start regenerates blames no test file" "0" "${rc}"
-assert_contains "the runner says it regenerated the fallback, which needs committing" \
-    "config/fallback-registry.json" "$(grep -A2 -F 'NOTE' "${D}/run.log")"
+assert_equals "an out-of-date committed fallback fails the run" "1" "${rc}"
+assert_contains "out-of-date fallback: the sentinel says fail with no test file failed" \
+    "failed=0 status=fail" "$(_sentinel "${D}")"
+assert_not_contains "out-of-date fallback: no test file is blamed" "test-a-runs-hook.sh" \
+    "$(grep -F 'Failed:' "${D}/run.log")"
+assert_contains "out-of-date fallback: the reason is in the last lines, naming the file" \
+    "config/fallback-registry.json" "$(tail -4 "${D}/run.log")"
+bash "${SCRIPT_DIR}/../scripts/assert-suite-complete.sh" "${D}/run.log" >/dev/null 2>&1
+assert_equals "out-of-date fallback: the supported reader says complete and FAILED" "2" "$?"
+assert_contains "out-of-date fallback: left regenerated, ready to commit" "\"a\": 1" \
+    "$(cat "${D}/config/fallback-registry.json")"
 _g -C "${D}" add config
 _g -C "${D}" commit -q -m regenerated
 rc="$(_run "${D}")"
 assert_equals "an in-sync fallback passes" "0" "${rc}"
-assert_not_contains "an in-sync fallback: no regeneration note" "fallback-registry" "$(cat "${D}/run.log")"
+assert_not_contains "an in-sync fallback: no regeneration failure" "out of date" "$(cat "${D}/run.log")"
 # The regeneration must not hide the original #367 defect in that same file.
 _test "${D}" "b-strips-fallback" 'o="$(cat "$D/config/fallback-registry.json")"; printf "%s" "$o" > "$D/config/fallback-registry.json"'
 rc="$(_run "${D}")"
