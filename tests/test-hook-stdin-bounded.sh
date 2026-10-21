@@ -29,7 +29,16 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck source=tests/test-helpers.sh
 . "${SCRIPT_DIR}/test-helpers.sh"
 
-_STUBS="$(mktemp -d /tmp/acs-stdin-stubs-XXXXXX)"
+# Everything this file makes lives under one dir in the caller's TMPDIR, and the
+# EXIT trap (which bash also runs on SIGTERM) removes it and any slow stub still
+# sleeping. A run killed partway used to leave its dirs in a hard-coded /tmp.
+# Regression: tests/test-hook-stdin-bounded-cleanup.sh
+_STUBS=""
+trap 'if [ -n "${_STUBS}" ]; then
+    [ -s "${_STUBS}/slow.pids" ] && kill $(cat "${_STUBS}/slow.pids") 2>/dev/null
+    rm -rf "${_STUBS}"
+fi' EXIT
+_STUBS="$(mktemp -d "${TMPDIR:-/tmp}/acs-stdin-stubs-XXXXXX")"
 mkdir -p "${_STUBS}/fast" "${_STUBS}/slow"
 printf '#!/bin/sh\nexit 0\n' > "${_STUBS}/fast/cozempic"
 # Records its pid so the cell can reap it, then outlives the watchdog.
@@ -40,7 +49,7 @@ _STUB_PATH="${_STUBS}/fast"
 # _run_against_fifo <command...> -> prints "hung" or "terminated"
 _run_against_fifo() {
     local _work _fifo _holder _runner _i=0 _res
-    _work="$(mktemp -d /tmp/acs-stdin-XXXXXX)"
+    _work="$(mktemp -d "${_STUBS}/run-XXXXXX")"
     _fifo="${_work}/in"
     mkfifo "${_fifo}" 2>/dev/null || { echo "cannot-check"; rm -rf "${_work}"; return; }
     # Holds the write end open so readers never see EOF.
@@ -163,5 +172,4 @@ test_payload_still_parses
 test_empty_stdin_does_not_become_an_early_exit
 test_no_unbounded_cat_remains
 
-rm -rf "${_STUBS}"
 print_summary
