@@ -221,9 +221,19 @@ while [ ! -s "${_TMP}/rc" ] && [ "${_I}" -lt $(( _LIMIT * 5 )) ]; do
     sleep 0.2; _I=$(( _I + 1 ))
 done
 
+# _kill_tree <pid> — kills the pid and everything under it, children first.
+# Killing git alone left its ssh (a grandchild, or deeper when core.sshCommand
+# needs a shell) running, reparented, until the remote answered. Children are
+# listed before their parent dies, since afterwards they no longer name it.
+_kill_tree() {
+    local c
+    for c in $(pgrep -P "$1" 2>/dev/null); do _kill_tree "${c}"; done
+    kill "$1" 2>/dev/null
+}
+
 _MSG=""
 if [ ! -s "${_TMP}/rc" ]; then
-    pkill -P "${_PID}" 2>/dev/null; kill "${_PID}" 2>/dev/null
+    _kill_tree "${_PID}"
     wait "${_PID}" 2>/dev/null
     _MSG="could not check whether ${_REMOTE}/${_B} still exists (no answer from the remote within ${_LIMIT} s). This branch was pushed there before (${_SEEN}); if its PR has been merged, this push recreates it."
 elif [ "$(cat "${_TMP}/rc")" != "0" ]; then

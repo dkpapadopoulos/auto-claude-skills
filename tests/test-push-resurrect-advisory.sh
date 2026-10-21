@@ -236,6 +236,34 @@ test_remote_wait_is_capped_below_the_hook_timeout() {
     assert_contains "ACS_PUSH_REMOTE_TIMEOUT above 8 is capped at 8 s" "within 8 s" "${ctx}"
 }
 
+# _ssh_alive_after_timeout <dir> <sshCommand> -> "alive" or "gone": whether the
+# ssh git started is still running once the hook has given up on it.
+_ssh_alive_after_timeout() {
+    local d="$1" pidf="$1/ssh.pid" pid i=0
+    _g -C "${d}/work" config core.sshCommand "$2"
+    _g -C "${d}/work" remote set-url origin "ssh://example.invalid/x.git"
+    ACS_PUSH_REMOTE_TIMEOUT=1 _run "${d}/work" "git push origin feat" > /dev/null
+    pid="$(cat "${pidf}" 2>/dev/null)"
+    [ -n "${pid}" ] || { printf 'no-ssh'; return; }
+    while kill -0 "${pid}" 2>/dev/null && [ "${i}" -lt 10 ]; do sleep 0.1; i=$(( i + 1 )); done
+    if kill -0 "${pid}" 2>/dev/null; then printf 'alive'; kill "${pid}" 2>/dev/null; else printf 'gone'; fi
+}
+
+test_timeout_leaves_no_ssh_behind() {
+    # On a timeout the hook killed git, but git's ssh child (one level further
+    # down, two when core.sshCommand needs a shell) kept running, reparented,
+    # for as long as the remote took to answer. The whole tree must go.
+    local d
+    d="$(_fixture orphan)"
+    printf '#!/bin/sh\necho $$ > "%s"\nexec sleep 30\n' "${d}/ssh.pid" > "${d}/slow-ssh"
+    chmod +x "${d}/slow-ssh"
+    assert_equals "timeout: the ssh git ran is killed with it" "gone" \
+        "$(_ssh_alive_after_timeout "${d}" "${d}/slow-ssh")"
+    rm -f "${d}/ssh.pid"
+    assert_equals "timeout: an ssh behind core.sshCommand's shell is killed too" "gone" \
+        "$(_ssh_alive_after_timeout "${d}" "${d}/slow-ssh -o BatchMode=yes")"
+}
+
 test_detached_head_bare_push() {
     local d out
     d="$(_fixture detached)"
@@ -350,6 +378,7 @@ test_subject_dir_from_dash_c
 test_foreign_repo_config_is_never_run
 test_quoted_words_are_unquoted
 test_remote_wait_is_capped_below_the_hook_timeout
+test_timeout_leaves_no_ssh_behind
 test_detached_head_bare_push
 test_push_to_other_remote_is_not_blamed_on_upstream
 test_renamed_destination_is_not_the_source
