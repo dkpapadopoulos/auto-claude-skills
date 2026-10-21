@@ -18,6 +18,21 @@ exec < /dev/null
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# A stub `cozempic` first on PATH for every file (#369). session-start-hook.sh
+# starts `cozempic init` detached when one is installed; on the fresh HOME most
+# tests give it, a real one ran 23 s and outlived the test, and CI has none, so
+# no file may depend on what is installed. tests/test-helpers.sh::setup_test_env
+# stubs it too, for a file run on its own; several files run session-start
+# without setup_test_env, hence this.
+# Regression: tests/test-setup-env-cozempic-stub.sh
+STUB_BIN="$(mktemp -d "${TMPDIR:-/tmp}/acs-run-stubs.XXXXXX")" || STUB_BIN=""
+if [ -n "${STUB_BIN}" ]; then
+    printf '#!/bin/sh\nexit 0\n' > "${STUB_BIN}/cozempic"
+    chmod +x "${STUB_BIN}/cozempic"
+    export PATH="${STUB_BIN}:${PATH}"
+    trap 'rm -rf "${STUB_BIN}"' EXIT
+fi
+
 # Completion sentinel (#263). The summary block below is shape-identical to the
 # one tests/test-helpers.sh::print_summary emits at the end of EVERY individual
 # test file — same frame, same four-space padding, one word apart. So a reader
@@ -127,7 +142,7 @@ ${after_status}
                     *"
 ${line}
 "*) ;;
-                    *) echo "    ${line}  (no longer reported: reverted or committed)" ;;
+                    *) echo "    ${line}  (this status line is gone or changed)" ;;
                 esac
             done
             [ "${after_status}" = "${before_status}" ] \

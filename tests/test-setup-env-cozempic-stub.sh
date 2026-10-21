@@ -45,12 +45,12 @@ test_session_start_under_setup_env_never_runs_the_installed_cozempic() {
     (
         PATH="${W}/real-bin:${PATH}"
         setup_test_env
-        ACS_ARM=stubbed CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "${HOOK}" < /dev/null > /dev/null 2>&1
+        ACS_ARM=stubbed _SKILL_TEST_MODE=1 CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "${HOOK}" < /dev/null > /dev/null 2>&1
         teardown_test_env
     )
     (
         _h="${W}/control-home"; mkdir -p "${_h}"
-        ACS_ARM=control HOME="${_h}" PATH="${W}/real-bin:${PATH}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        ACS_ARM=control _SKILL_TEST_MODE=1 HOME="${_h}" PATH="${W}/real-bin:${PATH}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
             /bin/bash "${HOOK}" < /dev/null > /dev/null 2>&1
     )
     local i=0
@@ -89,8 +89,35 @@ test_repeated_setup_keeps_one_stub_dir_on_path() {
     assert_equals "three setups leave one stub directory on PATH, and teardown removes it" "1 0" "${n}"
 }
 
+test_runner_shadows_cozempic_for_every_file() {
+    # Several files run session-start on a fresh HOME of their own without
+    # setup_test_env (found in review), so the runner stubs cozempic for every
+    # file it runs. Driven through a COPY of the real runner; the control runs
+    # the same test file directly, proving the recorder sees the call.
+    local d="${W}/runner"
+    mkdir -p "${d}/tests"
+    cp "${SCRIPT_DIR}/run-tests.sh" "${d}/tests/run-tests.sh"
+    printf '#!/usr/bin/env bash\nACS_ARM="$1" cozempic init\nexit 0\n' > "${d}/tests/test-calls.sh"
+    PATH="${W}/real-bin:${PATH}" GIT_CEILING_DIRECTORIES="${W}" \
+        bash "${d}/tests/run-tests.sh" > "${W}/runner.log" 2>&1
+    PATH="${W}/real-bin:${PATH}" bash "${d}/tests/test-calls.sh" direct
+    if grep -q '^direct init' "${MARK}" 2>/dev/null; then
+        _record_pass "the recorder sees a test file's cozempic call when run directly (control)"
+    else
+        _record_fail "the recorder sees a test file's cozempic call when run directly (control)" \
+            "no call recorded — the next cell is vacuous"
+    fi
+    if grep -q '^? init' "${MARK}" 2>/dev/null; then
+        _record_fail "under run-tests.sh no test file reaches the installed cozempic" \
+            "recorded: $(grep '^? ' "${MARK}" | tr '\n' ';')"
+    else
+        _record_pass "under run-tests.sh no test file reaches the installed cozempic"
+    fi
+}
+
 test_setup_env_shadows_an_installed_cozempic
 test_session_start_under_setup_env_never_runs_the_installed_cozempic
+test_runner_shadows_cozempic_for_every_file
 test_repeated_setup_keeps_one_stub_dir_on_path
 
 assert_test_functions_wired "${BASH_SOURCE[0]}"
