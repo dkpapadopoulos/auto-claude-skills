@@ -205,8 +205,15 @@ case "${STATUS}" in
         exit "${EX_PASS}"
         ;;
     fail)
-        printf 'COMPLETE BUT FAILED: %s test files ran, %s failed (%s).\n' \
-            "${FILES}" "${FAILED}" "${LOG}"
+        if [ "${FAILED}" -eq 0 ]; then
+            # tests/run-tests.sh fails a run itself when the committed fallback
+            # registry is out of date, with no test file failed.
+            printf 'COMPLETE BUT FAILED: %s test files ran and none failed, but the runner failed the run; its reason is in the last lines of %s.\n' \
+                "${FILES}" "${LOG}"
+        else
+            printf 'COMPLETE BUT FAILED: %s test files ran, %s failed (%s).\n' \
+                "${FILES}" "${FAILED}" "${LOG}"
+        fi
         exit "${EX_FAILED}"
         ;;
     none)

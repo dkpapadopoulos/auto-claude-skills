@@ -94,10 +94,19 @@ git -C "${TREE_ROOT}" rev-parse --verify -q HEAD >/dev/null 2>&1 || TREE_CHECK=o
 # test in test-registry.sh, which reads the regenerated copy, cannot fail. A stub
 # `claude` keeps the hook's Serena auto-register step, the other step test mode
 # skips, off the real CLI.
+#
+# A run that changes nothing is not enough on its own: a second run without
+# committing finds the file already regenerated and passed on the same stale
+# commit. So in a checkout, a fallback that differs from its committed copy
+# while default-triggers.json does not (the fallback is derived from it alone)
+# fails too. A run verifying an uncommitted routing edit has both files changed
+# and is not affected; one verifying an uncommitted change to the generator
+# itself is, until it is committed.
 FALLBACK_REGENERATED=""
 FB_FILE="${TREE_ROOT}/config/fallback-registry.json"
 FB_HOOK="${TREE_ROOT}/hooks/session-start-hook.sh"
 FB_REASON="config/fallback-registry.json was out of date with config/default-triggers.json at the start of the run; it has been regenerated. Commit it with the routing change and run again."
+FB_REASON_HEAD="config/fallback-registry.json differs from its committed copy while config/default-triggers.json does not, so the committed fallback is out of date (an earlier run regenerated it). Commit it and run again."
 
 # Discover test files (excluding test-helpers.sh itself)
 test_files=""
@@ -124,18 +133,34 @@ if [ "${TREE_CHECK}" = off ]; then
     echo "      that tests leave the tracked tree unchanged (#367)."
     echo ""
 fi
-if [ "${TREE_CHECK}" = on ] && [ -n "${STUB_BIN}" ] && [ -f "${FB_FILE}" ] && [ -f "${FB_HOOK}" ]; then
-    echo "Checking config/fallback-registry.json against config/default-triggers.json ..."
-    mkdir -p "${STUB_BIN}/fb-bin" "${STUB_BIN}/fb-home"
-    printf '#!/bin/sh\nexit 0\n' > "${STUB_BIN}/fb-bin/claude"
-    chmod +x "${STUB_BIN}/fb-bin/claude"
-    fb_before="$(cksum < "${FB_FILE}")"
-    HOME="${STUB_BIN}/fb-home" PATH="${STUB_BIN}/fb-bin:${PATH}" CLAUDE_PLUGIN_ROOT="${TREE_ROOT}" \
-        _SKILL_TEST_MODE= bash "${FB_HOOK}" > /dev/null 2>&1
-    [ "$(cksum < "${FB_FILE}")" = "${fb_before}" ] || FALLBACK_REGENERATED=yes
-    if [ -n "${FALLBACK_REGENERATED}" ]; then
-        echo "FAIL (runner): ${FB_REASON}"
-        echo "      The tests still run; this run will fail."
+if [ -f "${FB_FILE}" ] && [ -f "${FB_HOOK}" ]; then
+    if [ -z "${STUB_BIN}" ]; then
+        echo "NOTE: could not check config/fallback-registry.json against config/default-triggers.json"
+        echo "      (no scratch dir for the stub the check needs)."
+    else
+        echo "Checking config/fallback-registry.json against config/default-triggers.json ..."
+        mkdir -p "${STUB_BIN}/fb-bin" "${STUB_BIN}/fb-home"
+        printf '#!/bin/sh\nexit 0\n' > "${STUB_BIN}/fb-bin/claude"
+        chmod +x "${STUB_BIN}/fb-bin/claude"
+        fb_before="$(cksum < "${FB_FILE}")"
+        HOME="${STUB_BIN}/fb-home" PATH="${STUB_BIN}/fb-bin:${PATH}" CLAUDE_PLUGIN_ROOT="${TREE_ROOT}" \
+            _SKILL_TEST_MODE= bash "${FB_HOOK}" > /dev/null 2>&1
+        [ "$(cksum < "${FB_FILE}")" = "${fb_before}" ] || FALLBACK_REGENERATED=yes
+        if [ -z "${FALLBACK_REGENERATED}" ] && [ "${TREE_CHECK}" = on ]; then
+            # git diff --quiet: 0 same, 1 differs, anything else unknown.
+            git -C "${TREE_ROOT}" diff --quiet HEAD -- config/default-triggers.json 2>/dev/null
+            fb_trig=$?
+            git -C "${TREE_ROOT}" diff --quiet HEAD -- config/fallback-registry.json 2>/dev/null
+            fb_fb=$?
+            if [ "${fb_trig}" -eq 0 ] && [ "${fb_fb}" -eq 1 ]; then
+                FALLBACK_REGENERATED=yes
+                FB_REASON="${FB_REASON_HEAD}"
+            fi
+        fi
+        if [ -n "${FALLBACK_REGENERATED}" ]; then
+            echo "FAIL (runner): ${FB_REASON}"
+            echo "      The tests still run; this run will fail."
+        fi
     fi
     echo ""
 fi

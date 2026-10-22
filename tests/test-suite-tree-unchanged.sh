@@ -122,12 +122,16 @@ assert_equals "a test that commits (even an empty commit) fails the run" "1" "${
 # sync test in test-registry.sh, which reads the regenerated copy, could not
 # fail. The reason is repeated last, where a verdict's short excerpt keeps it.
 # The stand-in hook below does what session-start's step 10c does: derive the
-# file, unless _SKILL_TEST_MODE is set.
+# file from default-triggers.json, unless _SKILL_TEST_MODE is set.
+_fb_repo_files() {
+    mkdir -p "$1/hooks" "$1/config"
+    printf '{"t": 1}\n' > "$1/config/default-triggers.json"
+    printf '{}\n' > "$1/config/fallback-registry.json"
+    printf '#!/bin/bash\n[ -n "${_SKILL_TEST_MODE:-}" ] || cp "$CLAUDE_PLUGIN_ROOT/config/default-triggers.json" "$CLAUDE_PLUGIN_ROOT/config/fallback-registry.json"\nexit 0\n' \
+        > "$1/hooks/session-start-hook.sh"
+}
 D="$(_repo regen)"
-mkdir -p "${D}/hooks"
-printf '{}\n' > "${D}/config/fallback-registry.json"
-printf '#!/bin/bash\n[ -n "${_SKILL_TEST_MODE:-}" ] || cp "$CLAUDE_PLUGIN_ROOT/config/data.json" "$CLAUDE_PLUGIN_ROOT/config/fallback-registry.json"\nexit 0\n' \
-    > "${D}/hooks/session-start-hook.sh"
+_fb_repo_files "${D}"
 _g -C "${D}" add hooks config
 _g -C "${D}" commit -q -m hook
 _test "${D}" "a-runs-hook" 'CLAUDE_PLUGIN_ROOT="$D" bash "$D/hooks/session-start-hook.sh" < /dev/null'
@@ -137,17 +141,44 @@ assert_contains "out-of-date fallback: the sentinel says fail with no test file 
     "failed=0 status=fail" "$(_sentinel "${D}")"
 assert_not_contains "out-of-date fallback: no test file is blamed" "test-a-runs-hook.sh" \
     "$(grep -F 'Failed:' "${D}/run.log")"
+assert_contains "out-of-date fallback: the reason is printed before the first test file runs" \
+    "FAIL (runner): config/fallback-registry.json" "$(sed -n '1,/^--- Running:/p' "${D}/run.log")"
 assert_contains "out-of-date fallback: the reason is in the last lines, naming the file" \
     "config/fallback-registry.json" "$(tail -4 "${D}/run.log")"
-bash "${SCRIPT_DIR}/../scripts/assert-suite-complete.sh" "${D}/run.log" >/dev/null 2>&1
+reader="$(bash "${SCRIPT_DIR}/../scripts/assert-suite-complete.sh" "${D}/run.log" 2>/dev/null)"
 assert_equals "out-of-date fallback: the supported reader says complete and FAILED" "2" "$?"
-assert_contains "out-of-date fallback: left regenerated, ready to commit" "\"a\": 1" \
+# "1 test files ran, 0 failed" alone reads as a contradiction.
+assert_contains "out-of-date fallback: the reader says the runner failed the run" "the runner" "${reader}"
+assert_contains "out-of-date fallback: left regenerated, ready to commit" "\"t\": 1" \
     "$(cat "${D}/config/fallback-registry.json")"
+# Run 1 regenerated the file and left it uncommitted, so run 2 found it already
+# in sync and passed on the same stale commit, and a passing verdict could be
+# recorded for it. default-triggers.json as committed with a fallback that is
+# not means the committed pair disagrees, however many runs came before.
+rc="$(_run "${D}")"
+assert_equals "run again without committing: still fails" "1" "${rc}"
+bash "${SCRIPT_DIR}/../scripts/assert-suite-complete.sh" "${D}/run.log" >/dev/null 2>&1
+assert_equals "run again without committing: the supported reader says FAILED" "2" "$?"
+assert_contains "run again without committing: the reason names the committed copy" \
+    "committed" "$(tail -4 "${D}/run.log")"
 _g -C "${D}" add config
 _g -C "${D}" commit -q -m regenerated
 rc="$(_run "${D}")"
 assert_equals "an in-sync fallback passes" "0" "${rc}"
 assert_not_contains "an in-sync fallback: no regeneration failure" "out of date" "$(cat "${D}/run.log")"
+# Control: a run that verifies a routing edit before it is committed. The first
+# run regenerates the fallback and fails; once both files carry the edit, the
+# committed pair is not what is being judged, and the run passes.
+printf '{"t": 2}\n' > "${D}/config/default-triggers.json"
+rc="$(_run "${D}")"
+assert_equals "uncommitted routing edit: the run that regenerates the fallback fails" "1" "${rc}"
+rc="$(_run "${D}")"
+assert_equals "uncommitted routing edit: once the fallback carries it too, the run passes" "0" "${rc}"
+_g -C "${D}" checkout -q -- config
+# No scratch dir for the stub `claude`: the check cannot run, and says so.
+rc="$(TMPDIR="${W}/no-such-dir" _run "${D}")"
+assert_contains "no scratch dir: says the fallback could not be checked" \
+    "could not check config/fallback-registry.json" "$(cat "${D}/run.log")"
 # The regeneration must not hide the original #367 defect in that same file.
 _test "${D}" "b-strips-fallback" 'o="$(cat "$D/config/fallback-registry.json")"; printf "%s" "$o" > "$D/config/fallback-registry.json"'
 rc="$(_run "${D}")"
@@ -166,5 +197,14 @@ assert_contains "no git checkout: says the tree check could not run" "cannot che
 # requires that no other test file spells the sentinel out.
 bash "${SCRIPT_DIR}/../scripts/assert-suite-complete.sh" "${N}/run.log" >/dev/null 2>&1
 assert_equals "no git checkout: the log still reads as complete and passing" "0" "$?"
+# The fallback check needs no git: without it, the first test file to run
+# session-start regenerated a stale fallback and the sync test could not fail.
+N="${W}/nogit-fallback"
+mkdir -p "${N}/tests"
+cp "${RUNNER}" "${N}/tests/run-tests.sh"
+_fb_repo_files "${N}"
+_test "${N}" "a-noop" ':'
+rc="$(GIT_CEILING_DIRECTORIES="${W}" _run "${N}")"
+assert_equals "no git checkout: an out-of-date fallback still fails the run" "1" "${rc}"
 
 print_summary
