@@ -284,11 +284,26 @@ test_wait_is_bounded_by_the_clock() {
     took=$(( SECONDS - t0 ))
     [ -s "${d}/ssh.pid" ] && kill "$(cat "${d}/ssh.pid")" 2>/dev/null
     assert_contains "slow polls: still reports could not check" "could not check" "${ctx}"
+    # The wait ended at the clock bound, not after the 5 s of polls it names.
+    assert_not_contains "slow polls: does not claim the 5 s poll limit ran out" "within 5 s" "${ctx}"
+    assert_contains "slow polls: names the 8 s bound that ended the wait" "within 8 s" "${ctx}"
     if [ "${took}" -lt 10 ]; then
         _record_pass "slow polls: the hook returns inside its 10 s timeout"
     else
         _record_fail "slow polls: the hook returns inside its 10 s timeout" "took ${took} s"
     fi
+}
+
+test_inherited_seconds_does_not_skip_the_wait() {
+    # bash takes SECONDS from its environment, so an exported value of 8 or more
+    # ended the wait before it began, and every check read "could not check".
+    local d payload ctx
+    d="$(_fixture seconds)"
+    _g -C "${d}/remote.git" branch -q -D feat
+    payload="$(jq -n --arg c "git push origin feat" '{tool_name:"Bash",tool_input:{command:$c}}')"
+    ctx="$(_ctx "$(cd "${d}/work" && printf '%s' "${payload}" \
+        | env SECONDS=100 CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "${HOOK}" 2>/dev/null)")"
+    assert_contains "an inherited SECONDS does not cut the wait short" "RECREATE" "${ctx}"
 }
 
 test_detached_head_bare_push() {
@@ -407,6 +422,7 @@ test_quoted_words_are_unquoted
 test_remote_wait_is_capped_below_the_hook_timeout
 test_timeout_leaves_no_ssh_behind
 test_wait_is_bounded_by_the_clock
+test_inherited_seconds_does_not_skip_the_wait
 test_detached_head_bare_push
 test_push_to_other_remote_is_not_blamed_on_upstream
 test_renamed_destination_is_not_the_source

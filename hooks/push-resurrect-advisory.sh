@@ -26,6 +26,13 @@
 
 _PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 
+# bash takes SECONDS from its environment; an inherited value would cut the
+# remote wait below short or skip it. Reset, it counts from this hook's start.
+SECONDS=0
+# hooks.json allows this hook 10 s; past that the harness kills it and the
+# advisory is lost without a word. The remote wait ends by this many seconds.
+_BUDGET=8
+
 # Bounded read (#188): a FIFO or socket on fd 0 is not a TTY, and `cat` would
 # wait forever for an EOF that never arrives.
 _INPUT="$(
@@ -213,17 +220,18 @@ trap 'rm -rf "${_TMP}"' EXIT
 _PID=$!
 _LIMIT="${ACS_PUSH_REMOTE_TIMEOUT:-5}"
 case "${_LIMIT}" in ''|*[!0-9]*) _LIMIT=5 ;; esac
-# hooks.json allows this hook 10 s; past that the harness kills it and the
-# advisory is lost without a word.
-[ "${#_LIMIT}" -le 1 ] && [ "${_LIMIT}" -le 8 ] || _LIMIT=8
+[ "${#_LIMIT}" -le 1 ] && [ "${_LIMIT}" -le "${_BUDGET}" ] || _LIMIT="${_BUDGET}"
 # The poll count alone is not a time limit: on a loaded machine each poll takes
 # longer than 0.2 s. SECONDS counts whole seconds since this hook started, so
-# the second bound stops the wait once 8 s of the hook's run have passed,
-# leaving room for the kill and the output before the 10 s timeout.
+# the second bound stops the wait once _BUDGET seconds of the hook's run have
+# passed, leaving room for the kill and the output before the 10 s timeout.
 _I=0
-while [ ! -s "${_TMP}/rc" ] && [ "${_I}" -lt $(( _LIMIT * 5 )) ] && [ "${SECONDS}" -lt 8 ]; do
+while [ ! -s "${_TMP}/rc" ] && [ "${_I}" -lt $(( _LIMIT * 5 )) ] && [ "${SECONDS}" -lt "${_BUDGET}" ]; do
     sleep 0.2; _I=$(( _I + 1 ))
 done
+# The bound that ended the wait, for the message.
+_WAITED="${_LIMIT} s"
+[ "${SECONDS}" -ge "${_BUDGET}" ] && _WAITED="${_BUDGET} s of this hook starting"
 
 # _kill_tree <pid> — kills the pid and everything under it, children first.
 # Killing git alone left its ssh (a grandchild, or deeper when core.sshCommand
@@ -239,7 +247,7 @@ _MSG=""
 if [ ! -s "${_TMP}/rc" ]; then
     _kill_tree "${_PID}"
     wait "${_PID}" 2>/dev/null
-    _MSG="could not check whether ${_REMOTE}/${_B} still exists (no answer from the remote within ${_LIMIT} s). This branch was pushed there before (${_SEEN}); if its PR has been merged, this push recreates it."
+    _MSG="could not check whether ${_REMOTE}/${_B} still exists (no answer from the remote within ${_WAITED}). This branch was pushed there before (${_SEEN}); if its PR has been merged, this push recreates it."
 elif [ "$(cat "${_TMP}/rc")" != "0" ]; then
     _MSG="could not check whether ${_REMOTE}/${_B} still exists (git ls-remote failed). This branch was pushed there before (${_SEEN}); if its PR has been merged, this push recreates it."
 elif [ ! -s "${_TMP}/out" ]; then
