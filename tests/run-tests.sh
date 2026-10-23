@@ -25,10 +25,16 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # stubs it too, for a file run on its own; several files run session-start
 # without setup_test_env, hence this.
 # Regression: tests/test-setup-env-cozempic-stub.sh
+# A stub `claude` as well (#372): one green run called the installed CLI 119
+# times from 16 files, mostly session-start's Serena registration writing CLI
+# state into each test's HOME. A file that needs its own `claude` puts one
+# first on PATH, as tests/test-registry.sh does.
+# Regression: tests/test-suite-isolation.sh
 STUB_BIN="$(mktemp -d "${TMPDIR:-/tmp}/acs-run-stubs.XXXXXX")" || STUB_BIN=""
 if [ -n "${STUB_BIN}" ]; then
     printf '#!/bin/sh\nexit 0\n' > "${STUB_BIN}/cozempic"
-    chmod +x "${STUB_BIN}/cozempic"
+    printf '#!/bin/sh\nexit 0\n' > "${STUB_BIN}/claude"
+    chmod +x "${STUB_BIN}/cozempic" "${STUB_BIN}/claude"
     export PATH="${STUB_BIN}:${PATH}"
     trap 'rm -rf "${STUB_BIN}"' EXIT
 fi
