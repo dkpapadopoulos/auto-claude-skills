@@ -190,7 +190,24 @@ test_runner_survives_a_leftover_it_cannot_remove() {
         "$(ls -A "${outer}" | tr '\n' ' ')"
 }
 
+test_tmp_leakers_use_tmpdir_and_clean_up() {
+    # Found in review: these two made dirs under a hard-coded /tmp, which the
+    # runner's TMPDIR check cannot see, and never removed them (five a run).
+    # Snapshotting /tmp here would race other sessions' runs, so the cell pins
+    # the templates and requires an empty private TMPDIR afterwards.
+    local f t
+    for f in test-branch-ledger.sh test-completion-ledger-crediting.sh; do
+        assert_equals "${f} has no mktemp template under a hard-coded /tmp" "0" \
+            "$(grep -c -E 'mktemp[^"]*"?/tmp/' "${SCRIPT_DIR}/${f}" | tr -d ' ')"
+        t="${W}/tmp-${f%.sh}"; mkdir -p "${t}"
+        TMPDIR="${t}" bash "${SCRIPT_DIR}/${f}" < /dev/null > "${W}/${f}.tmp.log" 2>&1
+        assert_equals "${f} passes with a private TMPDIR" "0" "$?"
+        assert_equals "${f} leaves nothing in TMPDIR" "" "$(ls -A "${t}" | tr '\n' ' ')"
+    done
+}
+
 test_files_leave_the_starting_home_untouched
+test_tmp_leakers_use_tmpdir_and_clean_up
 test_runner_gives_each_file_a_home_of_its_own
 test_runner_survives_a_leftover_it_cannot_remove
 test_runner_names_a_file_that_leaves_tmpdir_entries
