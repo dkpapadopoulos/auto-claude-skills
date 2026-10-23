@@ -152,7 +152,47 @@ test_runner_names_a_file_that_leaves_tmpdir_entries() {
         "$(ls -A "${outer}" | tr '\n' ' ')"
 }
 
+test_runner_gives_each_file_a_home_of_its_own() {
+    # A copy of the real runner started with a stand-in for the user's HOME:
+    # the first file writes into HOME, the second fails if it can see that.
+    local d="${W}/home-runner" h="${W}/runner-home"
+    mkdir -p "${d}/tests" "${h}" "${W}/home-runner-tmp"
+    cp "${SCRIPT_DIR}/run-tests.sh" "${d}/tests/run-tests.sh"
+    printf '#!/usr/bin/env bash\nmkdir -p "${HOME}/.claude" && echo x > "${HOME}/.claude/written"\nexit 0\n' \
+        > "${d}/tests/test-a-writes-home.sh"
+    printf '#!/usr/bin/env bash\n[ ! -e "${HOME}/.claude/written" ]\n' > "${d}/tests/test-b-sees-fresh-home.sh"
+    HOME="${h}" TMPDIR="${W}/home-runner-tmp" GIT_CEILING_DIRECTORIES="${W}" \
+        bash "${d}/tests/run-tests.sh" > "${W}/home-runner.log" 2>&1
+    assert_equals "the runner's files write nothing into the HOME it was started with" "" \
+        "$(cd "${h}" && find . -mindepth 1 | tr '\n' ' ')"
+    assert_contains "each file gets a fresh HOME (the second file passes)" "files=2 passed=2 failed=0 status=pass" \
+        "$(tail -1 "${W}/home-runner.log")"
+}
+
+test_runner_survives_a_leftover_it_cannot_remove() {
+    # The first file leaves a dir it made unreadable; the second leaks a plain
+    # one and must still be named, and nothing may outlive the run.
+    local d="${W}/locked-runner" outer="${W}/locked-tmp"
+    mkdir -p "${d}/tests" "${outer}"
+    cp "${SCRIPT_DIR}/run-tests.sh" "${d}/tests/run-tests.sh"
+    printf '#!/usr/bin/env bash\nt="$(mktemp -d "${TMPDIR:-/tmp}/locked.XXXXXX")"\nmkdir "${t}/in"\nchmod 000 "${t}/in" "${t}"\nexit 0\n' \
+        > "${d}/tests/test-a-locks.sh"
+    printf '#!/usr/bin/env bash\nmktemp -d "${TMPDIR:-/tmp}/acs-test.XXXXXXXX" > /dev/null\nexit 0\n' \
+        > "${d}/tests/test-b-leaks.sh"
+    TMPDIR="${outer}" GIT_CEILING_DIRECTORIES="${W}" \
+        bash "${d}/tests/run-tests.sh" > "${W}/locked-runner.log" 2>&1
+    assert_contains "the file that locked its leftover is named" \
+        "FAIL (runner): test-a-locks.sh left these in TMPDIR" "$(cat "${W}/locked-runner.log")"
+    assert_contains "a later file is still checked" \
+        "FAIL (runner): test-b-leaks.sh left these in TMPDIR" "$(cat "${W}/locked-runner.log")"
+    chmod -R u+rwx "${outer}" 2>/dev/null
+    assert_equals "nothing outlives the run, the locked dir included" "" \
+        "$(ls -A "${outer}" | tr '\n' ' ')"
+}
+
 test_files_leave_the_starting_home_untouched
+test_runner_gives_each_file_a_home_of_its_own
+test_runner_survives_a_leftover_it_cannot_remove
 test_runner_names_a_file_that_leaves_tmpdir_entries
 test_probe_files_leave_nothing_in_tmpdir
 test_setup_env_shadows_an_installed_claude
