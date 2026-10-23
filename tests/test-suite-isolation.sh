@@ -3,10 +3,11 @@
 # TMPDIR it gives itself (#372).
 #
 # Measured 2026-10-23 on one full green run: session-start ran against the real
-# HOME twice (tests/test-mcp-connection-probe.sh), rewriting the real
-# ~/.claude/.skill-registry-cache.json from the checkout; the installed `claude`
-# CLI ran 119 times from 16 files; and six acs-test.* dirs were left in TMPDIR,
-# 781 of them accumulated since 2026-10-08. Every run was green.
+# HOME (tests/test-mcp-connection-probe.sh twice, tests/test-security-scanner.sh
+# once), rewriting the real ~/.claude/.skill-registry-cache.json from the
+# checkout; the installed `claude` CLI ran 119 times from 16 files; and six
+# acs-test.* dirs were left in TMPDIR. On 2026-10-22, 781 of those had
+# accumulated since 2026-10-08. Every run was green.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -17,20 +18,23 @@ echo "=== test-suite-isolation.sh ==="
 W="$(mktemp -d "${TMPDIR:-/tmp}/acs-isolation.XXXXXX")"
 trap 'rm -rf "${W}"' EXIT
 
-test_mcp_probe_file_leaves_the_starting_home_untouched() {
-    # The file is started with a stand-in for the user's HOME; a stub `claude`
-    # that prints nothing keeps its end-to-end cell on the announced skip.
-    local h="${W}/probe-home" b="${W}/probe-bin"
-    mkdir -p "${h}" "${b}"
+test_files_leave_the_starting_home_untouched() {
+    # Each file is started with a stand-in for the user's HOME, run on its own
+    # (the runner's private HOME does not cover that); a stub `claude` that
+    # prints nothing keeps the probe's end-to-end cell on the announced skip.
+    # These two are the ones measured writing there, by hand and in review.
+    local f h b="${W}/probe-bin" rc left
+    mkdir -p "${b}"
     printf '#!/bin/sh\nexit 0\n' > "${b}/claude"
     chmod +x "${b}/claude"
-    HOME="${h}" PATH="${b}:${PATH}" bash "${SCRIPT_DIR}/test-mcp-connection-probe.sh" \
-        < /dev/null > "${W}/probe.log" 2>&1
-    local rc=$?
-    assert_equals "test-mcp-connection-probe.sh passes under a stand-in HOME" "0" "${rc}"
-    local left
-    left="$(cd "${h}" && find . -mindepth 1 2>/dev/null | head -5 | tr '\n' ' ')"
-    assert_equals "test-mcp-connection-probe.sh writes nothing into the HOME it was started with" "" "${left}"
+    for f in test-mcp-connection-probe.sh test-security-scanner.sh; do
+        h="${W}/home-${f%.sh}"; mkdir -p "${h}"
+        HOME="${h}" PATH="${b}:${PATH}" bash "${SCRIPT_DIR}/${f}" < /dev/null > "${W}/${f}.home.log" 2>&1
+        rc=$?
+        assert_equals "${f} passes under a stand-in HOME" "0" "${rc}"
+        left="$(cd "${h}" && find . -mindepth 1 2>/dev/null | head -5 | tr '\n' ' ')"
+        assert_equals "${f} writes nothing into the HOME it was started with" "" "${left}"
+    done
 }
 
 # An "installed" claude that records each call, and a serena, so session-start's
@@ -148,7 +152,7 @@ test_runner_names_a_file_that_leaves_tmpdir_entries() {
         "$(ls -A "${outer}" | tr '\n' ' ')"
 }
 
-test_mcp_probe_file_leaves_the_starting_home_untouched
+test_files_leave_the_starting_home_untouched
 test_runner_names_a_file_that_leaves_tmpdir_entries
 test_probe_files_leave_nothing_in_tmpdir
 test_setup_env_shadows_an_installed_claude
