@@ -206,7 +206,18 @@ test_tmp_leakers_use_tmpdir_and_clean_up() {
     done
 }
 
+test_mcp_probe_names_a_stub_claude_in_its_skip() {
+    # Under the runner, `claude` is the runner's stub, so the end-to-end cell
+    # always skips; its message must say why rather than blame serena.
+    local b="${W}/acs-run-stubs.fake"
+    mkdir -p "${b}"
+    printf '#!/bin/sh\nexit 0\n' > "${b}/claude"; chmod +x "${b}/claude"
+    PATH="${b}:${PATH}" bash "${SCRIPT_DIR}/test-mcp-connection-probe.sh" < /dev/null > "${W}/stub-skip.log" 2>&1
+    assert_contains "the skip names the test stub" "is a test stub" "$(grep -F 'SKIP' "${W}/stub-skip.log")"
+}
+
 test_files_leave_the_starting_home_untouched
+test_mcp_probe_names_a_stub_claude_in_its_skip
 test_tmp_leakers_use_tmpdir_and_clean_up
 test_runner_gives_each_file_a_home_of_its_own
 test_runner_survives_a_leftover_it_cannot_remove
