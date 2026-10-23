@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+# tests/test-suite-tree-unchanged.sh — #367
+#
+# A full run of the suite left config/fallback-registry.json modified on a green
+# run (measured 2026-09-29 and again 2026-10-20: one byte, the trailing newline).
+# The cause was a test that saved the file through `$(cat)` and restored it with
+# `printf '%s'`. Nothing reported it: a suite that changes tracked files read as
+# a clean pass, and the change waited to be swept into the next `git add -A`.
+#
+# tests/run-tests.sh now takes the tracked tree's state before and after every
+# test file and fails the file after which it differs. These cells drive a COPY
+# of the real runner (never a hand-written one) inside throwaway git repos.
+#
+# The state is content, not only `git status`: a file that was already modified
+# when the run started and is changed again keeps the same status line, so a
+# status-only check would miss exactly the dirty-tree case a verification run
+# before committing produces.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tests/test-helpers.sh
+. "${SCRIPT_DIR}/test-helpers.sh"
+
+RUNNER="${SCRIPT_DIR}/run-tests.sh"
+W="$(mktemp -d "${TMPDIR:-/tmp}/acs-tree-unchanged.XXXXXX")"
+trap 'rm -rf "${W}"' EXIT
+
+_g() { git -c user.name=t -c user.email=t@t -c init.defaultBranch=main "$@"; }
+
+# _repo <name> — a git repo with a tracked config/data.json (ending in a
+# newline) and a copy of the real runner under tests/.
+_repo() {
+    local d="${W}/$1"
+    mkdir -p "${d}/tests" "${d}/config"
+    printf '{"a": 1}\n' > "${d}/config/data.json"
+    cp "${RUNNER}" "${d}/tests/run-tests.sh"
+    _g init -q "${d}"
+    _g -C "${d}" add -A
+    _g -C "${d}" commit -q -m init
+    printf '%s' "${d}"
+}
+
+# _test <repo> <name> <body> — writes tests/test-<name>.sh
+_test() {
+    printf '#!/usr/bin/env bash\nD="$(cd "$(dirname "$0")/.." && pwd)"\n%s\nexit 0\n' "$3" \
+        > "$1/tests/test-$2.sh"
+}
+
+_run() { bash "$1/tests/run-tests.sh" > "$1/run.log" 2>&1; echo "$?"; }
+_sentinel() { tail -1 "$1/run.log"; }
+
+# --- the defect, reproduced exactly: save via $(cat), restore via printf '%s'
+D="$(_repo strip)"
+_test "${D}" "a-strips" 'o="$(cat "$D/config/data.json")"; printf "%s" "$o" > "$D/config/data.json"'
+_test "${D}" "b-clean" ':'
+rc="$(_run "${D}")"
+assert_equals "a test that strips a tracked file's newline fails the run" "1" "${rc}"
+assert_contains "the sentinel reports one failed file" "files=2 passed=1 failed=1 status=fail" "$(_sentinel "${D}")"
+assert_contains "the culprit is named" "test-a-strips.sh" "$(grep -F 'Failed:' "${D}/run.log")"
+# The runner cannot tell a test's write from a concurrent edit (another session,
+# an IDE save), so the message must not claim the test did it.
+assert_contains "the message says the tree changed WHILE the file ran" \
+    "the tracked tree changed while test-a-strips.sh ran" "$(cat "${D}/run.log")"
+assert_contains "the message names the other possible cause" "concurrent edit" "$(cat "${D}/run.log")"
+assert_contains "the changed path is named" "config/data.json" "$(cat "${D}/run.log")"
+assert_not_contains "the next, clean file is not blamed" "test-b-clean.sh" "$(grep -F 'Failed:' "${D}/run.log")"
+
+# --- control: a test that changes the file and restores it byte for byte
+D="$(_repo restore)"
+_test "${D}" "a-restores" 'cp "$D/config/data.json" "$D/bak"; printf "x" >> "$D/config/data.json"; cp "$D/bak" "$D/config/data.json"; rm -f "$D/bak"'
+rc="$(_run "${D}")"
+assert_equals "a byte-exact restore passes" "0" "${rc}"
+assert_contains "byte-exact restore: sentinel says pass" "status=pass" "$(_sentinel "${D}")"
+
+# --- control: untracked files are not the tracked tree
+D="$(_repo untracked)"
+_test "${D}" "a-untracked" 'printf "x" > "$D/scratch.txt"'
+rc="$(_run "${D}")"
+assert_equals "creating an untracked file passes" "0" "${rc}"
+
+# --- an already-modified file changed again: status line identical, content not
+D="$(_repo dirty)"
+printf '{"a": 2}\n' > "${D}/config/data.json"
+_test "${D}" "a-rewrites" 'printf "{\"a\": 3}\n" > "$D/config/data.json"'
+rc="$(_run "${D}")"
+assert_equals "changing an already-modified tracked file fails the run" "1" "${rc}"
+
+# --- an already-modified file reverted: its status line disappears, and the
+# message must still name it (the first cut printed only lines that appeared)
+D="$(_repo revert)"
+printf '{"a": 2}\n' > "${D}/config/data.json"
+_test "${D}" "a-reverts" 'git -C "$D" checkout -q -- config/data.json'
+rc="$(_run "${D}")"
+assert_equals "reverting an already-modified tracked file fails the run" "1" "${rc}"
+assert_contains "the reverted path is named in the runner's message" "config/data.json" \
+    "$(sed -n '/the tracked tree changed while/,/^---/p' "${D}/run.log")"
+
+# --- a dirty tree the tests leave alone passes
+D="$(_repo dirtyok)"
+printf '{"a": 2}\n' > "${D}/config/data.json"
+_test "${D}" "a-noop" ':'
+rc="$(_run "${D}")"
+assert_equals "a tree dirty before the run and untouched by it passes" "0" "${rc}"
+
+# --- staging counts: the index is part of the tracked tree
+D="$(_repo staged)"
+_test "${D}" "a-stages" 'printf "x\n" >> "$D/config/data.json"; git -C "$D" add config/data.json; git -C "$D" checkout -q -- config/data.json'
+rc="$(_run "${D}")"
+assert_equals "a test that leaves a change staged fails the run" "1" "${rc}"
+
+# --- HEAD is part of the state: a commit with no content change still moves it
+D="$(_repo commits)"
+_test "${D}" "a-commits" 'git -C "$D" -c user.name=t -c user.email=t@t commit -q --allow-empty -m x'
+rc="$(_run "${D}")"
+assert_equals "a test that commits (even an empty commit) fails the run" "1" "${rc}"
+
+# --- session-start regenerates config/fallback-registry.json whenever it is out
+# of date with default-triggers.json, and many test files run it against the
+# checkout, so after a routing edit the first of them rewrote the file and was
+# blamed for it. The runner regenerates it once, before any snapshot, so no test
+# file is blamed. The run still FAILS: the committed fallback is out of date,
+# and a pass would let a clean verdict be recorded for that commit while the
+# sync test in test-registry.sh, which reads the regenerated copy, could not
+# fail. The reason is repeated last, where a verdict's short excerpt keeps it.
+# The stand-in hook below does what session-start's step 10c does: derive the
+# file from default-triggers.json, unless _SKILL_TEST_MODE is set.
+_fb_repo_files() {
+    mkdir -p "$1/hooks" "$1/config"
+    printf '{"t": 1}\n' > "$1/config/default-triggers.json"
+    printf '{}\n' > "$1/config/fallback-registry.json"
+    printf '#!/bin/bash\n[ -n "${_SKILL_TEST_MODE:-}" ] || cp "$CLAUDE_PLUGIN_ROOT/config/default-triggers.json" "$CLAUDE_PLUGIN_ROOT/config/fallback-registry.json"\nexit 0\n' \
+        > "$1/hooks/session-start-hook.sh"
+}
+D="$(_repo regen)"
+_fb_repo_files "${D}"
+_g -C "${D}" add hooks config
+_g -C "${D}" commit -q -m hook
+_test "${D}" "a-runs-hook" 'CLAUDE_PLUGIN_ROOT="$D" bash "$D/hooks/session-start-hook.sh" < /dev/null'
+rc="$(_run "${D}")"
+assert_equals "an out-of-date committed fallback fails the run" "1" "${rc}"
+assert_contains "out-of-date fallback: the sentinel says fail with no test file failed" \
+    "failed=0 status=fail" "$(_sentinel "${D}")"
+assert_not_contains "out-of-date fallback: no test file is blamed" "test-a-runs-hook.sh" \
+    "$(grep -F 'Failed:' "${D}/run.log")"
+assert_contains "out-of-date fallback: the reason is printed before the first test file runs" \
+    "FAIL (runner): config/fallback-registry.json" "$(sed -n '1,/^--- Running:/p' "${D}/run.log")"
+assert_contains "out-of-date fallback: the reason is in the last lines, naming the file" \
+    "config/fallback-registry.json" "$(tail -4 "${D}/run.log")"
+reader="$(bash "${SCRIPT_DIR}/../scripts/assert-suite-complete.sh" "${D}/run.log" 2>/dev/null)"
+assert_equals "out-of-date fallback: the supported reader says complete and FAILED" "2" "$?"
+# "1 test files ran, 0 failed" alone reads as a contradiction.
+assert_contains "out-of-date fallback: the reader says the runner failed the run" "the runner" "${reader}"
+assert_contains "out-of-date fallback: left regenerated, ready to commit" "\"t\": 1" \
+    "$(cat "${D}/config/fallback-registry.json")"
+# Run 1 regenerated the file and left it uncommitted, so run 2 found it already
+# in sync and passed on the same stale commit, and a passing verdict could be
+# recorded for it. default-triggers.json as committed with a fallback that is
+# not means the committed pair disagrees, however many runs came before.
+rc="$(_run "${D}")"
+assert_equals "run again without committing: still fails" "1" "${rc}"
+bash "${SCRIPT_DIR}/../scripts/assert-suite-complete.sh" "${D}/run.log" >/dev/null 2>&1
+assert_equals "run again without committing: the supported reader says FAILED" "2" "$?"
+assert_contains "run again without committing: the reason names the committed copy" \
+    "committed" "$(tail -4 "${D}/run.log")"
+_g -C "${D}" add config
+_g -C "${D}" commit -q -m regenerated
+rc="$(_run "${D}")"
+assert_equals "an in-sync fallback passes" "0" "${rc}"
+assert_not_contains "an in-sync fallback: no regeneration failure" "out of date" "$(cat "${D}/run.log")"
+# Control: a run that verifies a routing edit before it is committed. The first
+# run regenerates the fallback and fails; once both files carry the edit, the
+# committed pair is not what is being judged, and the run passes.
+printf '{"t": 2}\n' > "${D}/config/default-triggers.json"
+rc="$(_run "${D}")"
+assert_equals "uncommitted routing edit: the run that regenerates the fallback fails" "1" "${rc}"
+rc="$(_run "${D}")"
+assert_equals "uncommitted routing edit: once the fallback carries it too, the run passes" "0" "${rc}"
+_g -C "${D}" checkout -q -- config
+# No scratch dir for the stub `claude`: the check cannot run, and says so.
+rc="$(TMPDIR="${W}/no-such-dir" _run "${D}")"
+assert_contains "no scratch dir: says the fallback could not be checked" \
+    "could not check config/fallback-registry.json" "$(cat "${D}/run.log")"
+# The regeneration must not hide the original #367 defect in that same file.
+_test "${D}" "b-strips-fallback" 'o="$(cat "$D/config/fallback-registry.json")"; printf "%s" "$o" > "$D/config/fallback-registry.json"'
+rc="$(_run "${D}")"
+assert_equals "a test that strips the fallback's newline still fails the run" "1" "${rc}"
+assert_contains "and is the one named" "test-b-strips-fallback.sh" "$(grep -F 'Failed:' "${D}/run.log")"
+
+# --- outside a git checkout the check says it could not run and does not fail
+N="${W}/nogit"
+mkdir -p "${N}/tests"
+cp "${RUNNER}" "${N}/tests/run-tests.sh"
+_test "${N}" "a-noop" ':'
+rc="$(GIT_CEILING_DIRECTORIES="${W}" _run "${N}")"
+assert_equals "no git checkout: the run still passes" "0" "${rc}"
+assert_contains "no git checkout: says the tree check could not run" "cannot check" "$(cat "${N}/run.log")"
+# Through the supported reader, not the sentinel literal: test-suite-completion.sh
+# requires that no other test file spells the sentinel out.
+bash "${SCRIPT_DIR}/../scripts/assert-suite-complete.sh" "${N}/run.log" >/dev/null 2>&1
+assert_equals "no git checkout: the log still reads as complete and passing" "0" "$?"
+# The fallback check needs no git: without it, the first test file to run
+# session-start regenerated a stale fallback and the sync test could not fail.
+N="${W}/nogit-fallback"
+mkdir -p "${N}/tests"
+cp "${RUNNER}" "${N}/tests/run-tests.sh"
+_fb_repo_files "${N}"
+_test "${N}" "a-noop" ':'
+rc="$(GIT_CEILING_DIRECTORIES="${W}" _run "${N}")"
+assert_equals "no git checkout: an out-of-date fallback still fails the run" "1" "${rc}"
+
+print_summary

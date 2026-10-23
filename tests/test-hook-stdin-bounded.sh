@@ -16,22 +16,46 @@
 # harness has stopped testing what it claims and every cell below is vacuous.
 #
 # macOS has no `timeout(1)`, so the watchdog is inline (Bash 3.2).
+#
+# COZEMPIC IS STUBBED (#369). session-start-hook.sh runs `cozempic init` when it
+# is on PATH, and on a fresh HOME — which every cell here uses — a real install
+# measured 23 s (its first-run update check) against the 8 s watchdog, so the
+# session-start cell read 'hung' on any machine with cozempic and passed on CI,
+# which has none. Every hook run gets a stub first on PATH; the slow-stub cell
+# below is the one that measures what a slow cozempic does to the hook.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck source=tests/test-helpers.sh
 . "${SCRIPT_DIR}/test-helpers.sh"
 
+# Everything this file makes lives under one dir in the caller's TMPDIR, and the
+# EXIT trap (which bash also runs on SIGTERM) removes it and any slow stub still
+# sleeping. A run killed partway used to leave its dirs in a hard-coded /tmp.
+# Regression: tests/test-hook-stdin-bounded-cleanup.sh
+_STUBS=""
+trap 'if [ -n "${_STUBS}" ]; then
+    [ -s "${_STUBS}/slow.pids" ] && kill $(cat "${_STUBS}/slow.pids") 2>/dev/null
+    rm -rf "${_STUBS}"
+fi' EXIT
+_STUBS="$(mktemp -d "${TMPDIR:-/tmp}/acs-stdin-stubs-XXXXXX")"
+mkdir -p "${_STUBS}/fast" "${_STUBS}/slow"
+printf '#!/bin/sh\nexit 0\n' > "${_STUBS}/fast/cozempic"
+# Records its pid so the cell can reap it, then outlives the watchdog.
+printf '#!/bin/sh\necho $$ >> "%s/slow.pids"\nexec sleep 20\n' "${_STUBS}" > "${_STUBS}/slow/cozempic"
+chmod +x "${_STUBS}/fast/cozempic" "${_STUBS}/slow/cozempic"
+_STUB_PATH="${_STUBS}/fast"
+
 # _run_against_fifo <command...> -> prints "hung" or "terminated"
 _run_against_fifo() {
     local _work _fifo _holder _runner _i=0 _res
-    _work="$(mktemp -d /tmp/acs-stdin-XXXXXX)"
+    _work="$(mktemp -d "${_STUBS}/run-XXXXXX")"
     _fifo="${_work}/in"
     mkfifo "${_fifo}" 2>/dev/null || { echo "cannot-check"; rm -rf "${_work}"; return; }
     # Holds the write end open so readers never see EOF.
     sleep 30 > "${_fifo}" &
     _holder=$!
-    HOME="${_work}/home" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+    HOME="${_work}/home" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" PATH="${_STUB_PATH}:${PATH}" \
         "$@" < "${_fifo}" > "${_work}/out" 2>&1 &
     _runner=$!
     while [ "${_i}" -lt 8 ]; do
@@ -69,6 +93,28 @@ test_session_start_is_bounded() {
         || _record_fail "session-start-hook terminates on a never-EOF FIFO" "got '${r}'"
 }
 
+test_session_start_does_not_wait_on_cozempic() {
+    # #369. A slow `cozempic init` must neither hold the hook open nor hold its
+    # stdout or stderr: Claude Code reads a hook's output to EOF, so a detached
+    # child that inherited either would stall SessionStart exactly as waiting on
+    # it would. The `$( )` capture, with stderr folded in, is what makes those
+    # failures visible — it waits for EOF on both.
+    local r
+    _STUB_PATH="${_STUBS}/slow"
+    r="$(_run_against_fifo /bin/bash -c '_o="$(/bin/bash "$1" 2>&1)"; exit 0' _ \
+        "${PROJECT_ROOT}/hooks/session-start-hook.sh")"
+    _STUB_PATH="${_STUBS}/fast"
+    if [ -s "${_STUBS}/slow.pids" ]; then
+        kill $(cat "${_STUBS}/slow.pids") 2>/dev/null
+        # Emptied, so the EXIT trap cannot later signal a pid since reused.
+        : > "${_STUBS}/slow.pids"
+    else
+        r="cannot-check (the slow cozempic stub never ran)"
+    fi
+    [ "${r}" = "terminated" ] && _record_pass "session-start does not wait on, or hand its stdout or stderr to, a slow cozempic init" \
+        || _record_fail "session-start does not wait on, or hand its stdout or stderr to, a slow cozempic init" "got '${r}'"
+}
+
 test_activation_is_bounded() {
     local r; r="$(_run_against_fifo /bin/bash "${PROJECT_ROOT}/hooks/skill-activation-hook.sh")"
     [ "${r}" = "terminated" ] && _record_pass "skill-activation-hook terminates on a never-EOF FIFO" \
@@ -99,10 +145,12 @@ test_empty_stdin_does_not_become_an_early_exit() {
     # FAIL-OPEN. A timeout must yield an empty payload and let the hook carry on
     # into the work it exists to do; converting "no payload" into an early exit
     # would skip registry building, which is worse than the hang.
-    local rc
-    HOME="$(mktemp -d)" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+    local rc _h
+    _h="$(mktemp -d "${_STUBS}/home-XXXXXX")"
+    HOME="${_h}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" PATH="${_STUBS}/fast:${PATH}" \
         /bin/bash "${PROJECT_ROOT}/hooks/session-start-hook.sh" < /dev/null >/dev/null 2>&1
     rc=$?
+    rm -rf "${_h}"
     [ "${rc}" -eq 0 ] && _record_pass "empty stdin still exits 0 (fail-open preserved)" \
         || _record_fail "empty stdin still exits 0" "exit was ${rc}"
 }
@@ -119,6 +167,7 @@ test_no_unbounded_cat_remains() {
 
 test_harness_actually_blocks
 test_session_start_is_bounded
+test_session_start_does_not_wait_on_cozempic
 test_activation_is_bounded
 test_completion_is_bounded
 test_payload_still_parses

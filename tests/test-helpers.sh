@@ -30,11 +30,32 @@ setup_test_env() {
     export HOME="${TEST_HOME}"
     export CLAUDE_PLUGIN_ROOT="${TEST_HOME}/.claude"
 
+    # A stub `cozempic` first on PATH (#369). session-start-hook.sh starts
+    # `cozempic init` detached when one is installed, and on this fresh HOME a
+    # real one ran 23 s, outliving the test. A previous call's stub dir is
+    # removed from PATH first, so per-cell setups do not stack dead entries.
+    # Regression: tests/test-setup-env-cozempic-stub.sh
+    _acs_drop_stub_path
+    mkdir -p "${TEST_TMPDIR}/stub-bin"
+    printf '#!/bin/sh\nexit 0\n' > "${TEST_TMPDIR}/stub-bin/cozempic"
+    chmod +x "${TEST_TMPDIR}/stub-bin/cozempic"
+    _ACS_STUB_BIN="${TEST_TMPDIR}/stub-bin"
+    export PATH="${_ACS_STUB_BIN}:${PATH}"
+
     export TEST_TMPDIR TEST_HOME TEST_PLUGIN_CACHE TEST_USER_SKILLS
     export TEST_REGISTRY_CACHE TEST_USER_CONFIG
 }
 
+_acs_drop_stub_path() {
+    [ -n "${_ACS_STUB_BIN:-}" ] || return 0
+    case "${PATH}" in
+        "${_ACS_STUB_BIN}:"*) PATH="${PATH#"${_ACS_STUB_BIN}:"}" ;;
+    esac
+    _ACS_STUB_BIN=""
+}
+
 teardown_test_env() {
+    _acs_drop_stub_path
     if [ -n "${TEST_TMPDIR:-}" ] && [ -d "${TEST_TMPDIR}" ]; then
         rm -rf "${TEST_TMPDIR}"
     fi

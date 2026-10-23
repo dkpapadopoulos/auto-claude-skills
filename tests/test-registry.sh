@@ -2087,11 +2087,14 @@ test_test_mode_does_not_mutate_fallback() {
     # _SKILL_TEST_MODE, this canary survives. If not, it gets overwritten.
     local fallback="${PROJECT_ROOT}/config/fallback-registry.json"
     local canary="CANARY-$(date +%s)-$$"
-    local original_content=""
-    [ -f "${fallback}" ] && original_content="$(cat "${fallback}")"
+    # Back up and restore with cp, byte for byte (#367). A `$(cat)` copy strips
+    # the trailing newline, and restoring it with printf '%s' left this tracked
+    # file one byte short after every full run.
+    local backup="${TEST_TMPDIR}/fallback-registry.backup"
+    cp "${fallback}" "${backup}"
 
     # Inject canary as a JSON comment-like field
-    printf '%s' "${original_content}" | jq --arg c "${canary}" '. + {_test_canary: $c}' > "${fallback}"
+    jq --arg c "${canary}" '. + {_test_canary: $c}' "${backup}" > "${fallback}"
 
     local sp_dir="${HOME}/.claude/plugins/cache/claude-plugins-official/superpowers/1.0.0/skills"
     mkdir -p "${sp_dir}/test-skill"
@@ -2110,7 +2113,7 @@ SKILLEOF
     assert_equals "fallback not mutated by test run" "${canary}" "${canary_after}"
 
     # Restore original content
-    printf '%s' "${original_content}" > "${fallback}"
+    cp "${backup}" "${fallback}"
 
     teardown_test_env
 }

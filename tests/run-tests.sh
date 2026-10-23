@@ -18,6 +18,21 @@ exec < /dev/null
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# A stub `cozempic` first on PATH for every file (#369). session-start-hook.sh
+# starts `cozempic init` detached when one is installed; on the fresh HOME most
+# tests give it, a real one ran 23 s and outlived the test, and CI has none, so
+# no file may depend on what is installed. tests/test-helpers.sh::setup_test_env
+# stubs it too, for a file run on its own; several files run session-start
+# without setup_test_env, hence this.
+# Regression: tests/test-setup-env-cozempic-stub.sh
+STUB_BIN="$(mktemp -d "${TMPDIR:-/tmp}/acs-run-stubs.XXXXXX")" || STUB_BIN=""
+if [ -n "${STUB_BIN}" ]; then
+    printf '#!/bin/sh\nexit 0\n' > "${STUB_BIN}/cozempic"
+    chmod +x "${STUB_BIN}/cozempic"
+    export PATH="${STUB_BIN}:${PATH}"
+    trap 'rm -rf "${STUB_BIN}"' EXIT
+fi
+
 # Completion sentinel (#263). The summary block below is shape-identical to the
 # one tests/test-helpers.sh::print_summary emits at the end of EVERY individual
 # test file — same frame, same four-space padding, one word apart. So a reader
@@ -43,6 +58,56 @@ PASSED_FILES=0
 FAILED_FILES=0
 FAILED_NAMES=""
 
+# Tracked-tree check (#367). A test that rewrites a tracked file and does not
+# restore it byte for byte used to pass unnoticed: a full green run left
+# config/fallback-registry.json one byte short (measured 2026-09-29 and
+# 2026-10-20), waiting for the next `git add -A`. The tree's state is taken
+# before and after every file, and the file after which it differs FAILS, so
+# the culprit is the one named. The runner cannot tell a test's write from
+# something else editing the tree meanwhile (another session, an editor save),
+# so the message names both causes; either one spoils the run as a gate.
+#
+# State = the status lines AND a checksum of HEAD plus the diff against it: a
+# file that was modified before the run and is changed again keeps its status
+# line, and a verification run before committing is exactly that dirty-tree
+# case; a commit or branch switch can leave both unchanged, so HEAD is in it.
+# Untracked files are not the tracked tree and are ignored.
+# Regression: tests/test-suite-tree-unchanged.sh
+TREE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+tree_status() { git -C "${TREE_ROOT}" status --porcelain --untracked-files=no 2>/dev/null; }
+tree_sum() {
+    { git -C "${TREE_ROOT}" rev-parse -q --verify HEAD
+      git -C "${TREE_ROOT}" diff HEAD --no-ext-diff --binary; } 2>/dev/null | cksum
+}
+TREE_CHECK=on
+git -C "${TREE_ROOT}" rev-parse --verify -q HEAD >/dev/null 2>&1 || TREE_CHECK=off
+
+# The fallback registry. hooks/session-start-hook.sh regenerates the tracked
+# config/fallback-registry.json whenever it is out of date with
+# config/default-triggers.json (its step 10c, skipped under _SKILL_TEST_MODE),
+# and many test files run that hook against this checkout. So after a routing
+# edit the first of them rewrote the file, and the check above failed THAT
+# file for it. The runner runs the hook once, after the header and before any
+# snapshot, so the regeneration is the runner's own and no test is blamed. The
+# run still FAILS when it changed the file: the committed fallback is out of
+# date, and a pass would record a clean verdict for that commit while the sync
+# test in test-registry.sh, which reads the regenerated copy, cannot fail. A stub
+# `claude` keeps the hook's Serena auto-register step, the other step test mode
+# skips, off the real CLI.
+#
+# A run that changes nothing is not enough on its own: a second run without
+# committing finds the file already regenerated and passed on the same stale
+# commit. So in a checkout, a fallback that differs from its committed copy
+# while default-triggers.json does not (the fallback is derived from it alone)
+# fails too. A run verifying an uncommitted routing edit has both files changed
+# and is not affected; one verifying an uncommitted change to the generator
+# itself is, until it is committed.
+FALLBACK_REGENERATED=""
+FB_FILE="${TREE_ROOT}/config/fallback-registry.json"
+FB_HOOK="${TREE_ROOT}/hooks/session-start-hook.sh"
+FB_REASON="config/fallback-registry.json was out of date with config/default-triggers.json at the start of the run; it has been regenerated. Commit it with the routing change and run again."
+FB_REASON_HEAD="config/fallback-registry.json differs from its committed copy while config/default-triggers.json does not, so the committed fallback is out of date (an earlier run regenerated it). Commit it and run again."
+
 # Discover test files (excluding test-helpers.sh itself)
 test_files=""
 for f in "${SCRIPT_DIR}"/test-*.sh; do
@@ -63,13 +128,90 @@ echo "============================================"
 echo "  auto-claude-skills test runner"
 echo "============================================"
 echo ""
+if [ "${TREE_CHECK}" = off ]; then
+    echo "NOTE: ${TREE_ROOT} is not a git checkout with a commit, so this run cannot check"
+    echo "      that tests leave the tracked tree unchanged (#367)."
+    echo ""
+fi
+if [ -f "${FB_FILE}" ] && [ -f "${FB_HOOK}" ]; then
+    if [ -z "${STUB_BIN}" ]; then
+        echo "NOTE: could not check config/fallback-registry.json against config/default-triggers.json"
+        echo "      (no scratch dir for the stub the check needs)."
+    else
+        echo "Checking config/fallback-registry.json against config/default-triggers.json ..."
+        mkdir -p "${STUB_BIN}/fb-bin" "${STUB_BIN}/fb-home"
+        printf '#!/bin/sh\nexit 0\n' > "${STUB_BIN}/fb-bin/claude"
+        chmod +x "${STUB_BIN}/fb-bin/claude"
+        fb_before="$(cksum < "${FB_FILE}")"
+        HOME="${STUB_BIN}/fb-home" PATH="${STUB_BIN}/fb-bin:${PATH}" CLAUDE_PLUGIN_ROOT="${TREE_ROOT}" \
+            _SKILL_TEST_MODE= bash "${FB_HOOK}" > /dev/null 2>&1
+        [ "$(cksum < "${FB_FILE}")" = "${fb_before}" ] || FALLBACK_REGENERATED=yes
+        if [ -z "${FALLBACK_REGENERATED}" ] && [ "${TREE_CHECK}" = on ]; then
+            # git diff --quiet: 0 same, 1 differs, anything else unknown.
+            git -C "${TREE_ROOT}" diff --quiet HEAD -- config/default-triggers.json 2>/dev/null
+            fb_trig=$?
+            git -C "${TREE_ROOT}" diff --quiet HEAD -- config/fallback-registry.json 2>/dev/null
+            fb_fb=$?
+            if [ "${fb_trig}" -eq 0 ] && [ "${fb_fb}" -eq 1 ]; then
+                FALLBACK_REGENERATED=yes
+                FB_REASON="${FB_REASON_HEAD}"
+            fi
+        fi
+        if [ -n "${FALLBACK_REGENERATED}" ]; then
+            echo "FAIL (runner): ${FB_REASON}"
+            echo "      The tests still run; this run will fail."
+        fi
+    fi
+    echo ""
+fi
 
 for test_file in ${test_files}; do
     name="$(basename "${test_file}")"
     echo "--- Running: ${name} ---"
     TOTAL_FILES=$((TOTAL_FILES + 1))
 
-    if bash "${test_file}"; then
+    if [ "${TREE_CHECK}" = on ]; then
+        before_status="$(tree_status)"
+        before_sum="$(tree_sum)"
+    fi
+    file_ok=0
+    bash "${test_file}" && file_ok=1
+    if [ "${TREE_CHECK}" = on ]; then
+        after_status="$(tree_status)"
+        after_sum="$(tree_sum)"
+        if [ "${after_status}" != "${before_status}" ] || [ "${after_sum}" != "${before_sum}" ]; then
+            file_ok=0
+            echo "FAIL (runner): the tracked tree changed while ${name} ran (the test, or a concurrent edit):"
+            printf '%s\n' "${after_status}" | while IFS= read -r line; do
+                [ -n "${line}" ] || continue
+                case "
+${before_status}
+" in
+                    *"
+${line}
+"*) ;;
+                    *) echo "    ${line}" ;;
+                esac
+            done
+            # A line that DISAPPEARED is a change too: a file modified before
+            # the run and reverted (or committed) during it.
+            printf '%s\n' "${before_status}" | while IFS= read -r line; do
+                [ -n "${line}" ] || continue
+                case "
+${after_status}
+" in
+                    *"
+${line}
+"*) ;;
+                    *) echo "    ${line}  (this status line is gone or changed)" ;;
+                esac
+            done
+            [ "${after_status}" = "${before_status}" ] \
+                && echo "    (an already-modified file's content changed; status lines are unchanged)"
+        fi
+    fi
+
+    if [ "${file_ok}" -eq 1 ]; then
         PASSED_FILES=$((PASSED_FILES + 1))
     else
         FAILED_FILES=$((FAILED_FILES + 1))
@@ -88,9 +230,11 @@ printf "  Files passed: %d\n" "${PASSED_FILES}"
 printf "  Files failed: %d\n" "${FAILED_FILES}"
 echo "============================================"
 
-if [ "${FAILED_FILES}" -gt 0 ]; then
+if [ "${FAILED_FILES}" -gt 0 ] || [ -n "${FALLBACK_REGENERATED}" ]; then
     echo ""
-    echo "Failed: ${FAILED_NAMES}"
+    [ -n "${FAILED_NAMES}" ] && echo "Failed: ${FAILED_NAMES}"
+    # Last, so a verdict's short excerpt of this log keeps it.
+    [ -n "${FALLBACK_REGENERATED}" ] && echo "Failed (runner): ${FB_REASON}"
     emit_completion_sentinel fail
     exit 1
 fi
