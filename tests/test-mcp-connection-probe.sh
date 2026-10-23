@@ -26,6 +26,12 @@ echo "=== test-mcp-connection-probe.sh ==="
 
 HOOK="${PROJECT_ROOT}/hooks/session-start-hook.sh"
 FIX="${PROJECT_ROOT}/tests/fixtures/mcp-list/real-output.txt"
+
+# The hook writes under ~/.claude (the registry cache, built from this checkout)
+# and ~/.cozempic_installed, so it gets a HOME of its own, never the one this
+# file was started with (#372). Regression: tests/test-suite-isolation.sh
+HOOK_HOME="$(mktemp -d "${TMPDIR:-/tmp}/acs-mcpprobe.XXXXXX")"
+trap 'rm -rf "${HOOK_HOME}"' EXIT
 assert_file_exists "session-start hook exists" "${HOOK}"
 assert_file_exists "real-producer mcp-list fixture exists" "${FIX}"
 
@@ -98,7 +104,7 @@ for _case in "serena:CONNECTED" "forgetful:CONNECTED" "gcp-observability:NOT"; d
 done
 
 # --- the env gate still defaults OFF (behaviour must not have widened) --------
-_off="$(_SKILL_TEST_MODE=1 bash "${HOOK}" < /dev/null 2>&1 | LC_ALL=C grep -o 'serena_connected=[a-z]*' | head -1)"
+_off="$(HOME="${HOOK_HOME}" _SKILL_TEST_MODE=1 bash "${HOOK}" < /dev/null 2>&1 | LC_ALL=C grep -o 'serena_connected=[a-z]*' | head -1)"
 assert_equals "with SERENA_CONNECTION_CHECK unset the flag stays false" "serena_connected=false" "${_off}"
 
 # --- END TO END, announced-skip when the precondition is absent ---------------
@@ -109,7 +115,13 @@ if ! command -v claude >/dev/null 2>&1; then
 elif ! claude mcp list 2>/dev/null | LC_ALL=C grep -q '^serena: '; then
     echo "  SKIP (announced): no serena entry in \`claude mcp list\` — end-to-end cell not run"
 else
-    _live="$(_SKILL_TEST_MODE=1 SERENA_CONNECTION_CHECK=1 bash "${HOOK}" < /dev/null 2>&1 \
+    # The probe must still read the live MCP config, so the hook's `claude` is a
+    # shim running the installed CLI (a read-only `mcp list`) with the real HOME.
+    mkdir -p "${HOOK_HOME}/shim"
+    printf '#!/bin/sh\nHOME=%q exec %q "$@"\n' "${HOME}" "$(command -v claude)" > "${HOOK_HOME}/shim/claude"
+    chmod +x "${HOOK_HOME}/shim/claude"
+    _live="$(HOME="${HOOK_HOME}" PATH="${HOOK_HOME}/shim:${PATH}" _SKILL_TEST_MODE=1 SERENA_CONNECTION_CHECK=1 \
+             bash "${HOOK}" < /dev/null 2>&1 \
              | LC_ALL=C grep -o 'serena_connected=[a-z]*' | head -1)"
     _expect=serena_connected=false
     if claude mcp list 2>/dev/null | LC_ALL=C grep '^serena: ' | LC_ALL=C grep -qF 'Connected'; then
