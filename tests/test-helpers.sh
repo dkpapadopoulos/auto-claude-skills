@@ -35,10 +35,15 @@ setup_test_env() {
     # real one ran 23 s, outliving the test. A previous call's stub dir is
     # removed from PATH first, so per-cell setups do not stack dead entries.
     # Regression: tests/test-setup-env-cozempic-stub.sh
+    # A stub `claude` too (#372): session-start's Serena registration runs
+    # `claude mcp list` and `claude mcp add` when serena is installed, and the
+    # real CLI wrote its first-start state into the test's HOME.
+    # Regression: tests/test-suite-isolation.sh
     _acs_drop_stub_path
     mkdir -p "${TEST_TMPDIR}/stub-bin"
     printf '#!/bin/sh\nexit 0\n' > "${TEST_TMPDIR}/stub-bin/cozempic"
-    chmod +x "${TEST_TMPDIR}/stub-bin/cozempic"
+    printf '#!/bin/sh\nexit 0\n' > "${TEST_TMPDIR}/stub-bin/claude"
+    chmod +x "${TEST_TMPDIR}/stub-bin/cozempic" "${TEST_TMPDIR}/stub-bin/claude"
     _ACS_STUB_BIN="${TEST_TMPDIR}/stub-bin"
     export PATH="${_ACS_STUB_BIN}:${PATH}"
 

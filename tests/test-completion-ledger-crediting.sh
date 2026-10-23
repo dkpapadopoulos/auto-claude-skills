@@ -9,7 +9,11 @@ HOOK="${PROJECT_ROOT}/hooks/skill-completion-hook.sh"
 
 # Sandbox HOME; transcript basename "t" -> token "session-t".
 _OLDHOME="$HOME"
-export HOME="$(mktemp -d /tmp/cl-home-XXXXXX)"
+# Under TMPDIR and removed on exit (#372); it used to stay in /tmp for good.
+# The trap names it by its own variable, never by HOME, which may be restored.
+_CLHOME="$(mktemp -d "${TMPDIR:-/tmp}/cl-home-XXXXXX")" || exit 1
+export HOME="${_CLHOME}"
+trap 'rm -rf "${_CLHOME}"' EXIT
 mkdir -p "$HOME/.claude"
 _TPATH="$HOME/t.jsonl"; touch "$_TPATH"
 _TOK="session-t"

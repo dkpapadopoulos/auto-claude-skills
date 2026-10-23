@@ -46,6 +46,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - No identity check ships, and nothing fails on an unmodified seed: adopting the default as-is is the point, and a byte-diff would have penalised it. Adoption records provenance and points the project's own agent instructions at the guide.
 
 ### Fixed
+- **The test suite no longer reaches outside the HOME and TMPDIR it gives itself (#372)** (`tests/run-tests.sh`, `tests/test-helpers.sh`, eight test files; `tests/test-suite-isolation.sh`). Measured 2026-10-23 on one full green run:
+  - **Real HOME:** `test-mcp-connection-probe.sh` (twice) and `test-security-scanner.sh` (once, found in review) ran session-start with the user's HOME, rewriting the real `~/.claude/.skill-registry-cache.json` from the checkout on every run.
+  - **Real `claude` CLI:** it ran 119 times from 16 files, almost all of it session-start's Serena registration (`claude mcp list`, `claude mcp add --scope user serena`), writing the CLI's first-start state into each test's fake HOME.
+  - **Leaks:** six `acs-test.*` dirs a run were left in TMPDIR (781 by 2026-10-22), and five more under a hard-coded `/tmp` (87 there today).
+  - **The fixes:**
+    - The two files give the hook a HOME of its own.
+    - `setup_test_env` and the runner put a stub `claude` first on PATH, beside the existing stub `cozempic`. Under the runner the probe's end-to-end cell now always skips, with a message that says so; run the file on its own for the live check.
+    - The runner gives every file a new HOME and TMPDIR under one run dir and removes it at the end. A file that leaves anything in its TMPDIR fails, with the entries listed.
+    - The leaking cells tear down. Five cells that ran in a HOME a previous cell's teardown had deleted (teardown leaves `HOME` set) now set up their own.
+  - **Limits:** a process a file leaves running that writes later is blamed on a later file or on nothing. About a hundred `mktemp` calls in tests still hard-code `/tmp` and are not seen; none of them was measured leaking.
+  - **Result:** in the full run, the real `claude` was called 0 times and no new `acs-*` entry appeared in the user's TMPDIR.
 - **A push that would recreate a branch deleted after its PR merged now gets a warning first (#368)** (`hooks/push-resurrect-advisory.sh`, `hooks/hooks.json`; `tests/test-push-resurrect-advisory.sh`). Merging a PR on GitHub deletes its head branch. A later push of the local branch then recreates it, reported only as `* [new branch]`. This happened three times (2026-08-29, and twice on 2026-10-03), each while follow-up work went to a branch whose PR had just merged.
   - **When it fires:** before such a push, a new PreToolUse Bash hook checks whether the branch was on the remote before, judged by its upstream or a remote-tracking ref, and whether the remote still has it.
   - **Which remote and branch it checks:** the ones the command names. The remote comes from the first positional or `--repo`. For a bare push it follows git's order: the branch's `pushRemote`, then `remote.pushDefault`, then its upstream remote, then `origin`. The branch is the refspec's destination, so `HEAD:feat` is checked as `feat` and `feat:other` as `other`; `push.default=upstream` is honoured. A URL remote or a destination outside `refs/heads/` is skipped.

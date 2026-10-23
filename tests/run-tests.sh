@@ -25,13 +25,37 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # stubs it too, for a file run on its own; several files run session-start
 # without setup_test_env, hence this.
 # Regression: tests/test-setup-env-cozempic-stub.sh
+# A stub `claude` as well (#372): one green run called the installed CLI 119
+# times from 16 files, mostly session-start's Serena registration writing CLI
+# state into each test's HOME. A file that needs its own `claude` puts one
+# first on PATH, as tests/test-registry.sh does.
+# Regression: tests/test-suite-isolation.sh
 STUB_BIN="$(mktemp -d "${TMPDIR:-/tmp}/acs-run-stubs.XXXXXX")" || STUB_BIN=""
 if [ -n "${STUB_BIN}" ]; then
     printf '#!/bin/sh\nexit 0\n' > "${STUB_BIN}/cozempic"
-    chmod +x "${STUB_BIN}/cozempic"
+    printf '#!/bin/sh\nexit 0\n' > "${STUB_BIN}/claude"
+    chmod +x "${STUB_BIN}/cozempic" "${STUB_BIN}/claude"
     export PATH="${STUB_BIN}:${PATH}"
-    trap 'rm -rf "${STUB_BIN}"' EXIT
 fi
+
+# A HOME and a TMPDIR of its own for every file (#372), both new, under one
+# run dir that goes at the end.
+# - HOME: test-mcp-connection-probe.sh and test-security-scanner.sh ran
+#   session-start with the user's HOME, rewriting the real
+#   ~/.claude/.skill-registry-cache.json from the checkout on every run.
+# - TMPDIR: setup_test_env and many files make scratch dirs there, and one a
+#   file failed to remove stayed in the user's TMPDIR for good: six a run, 781
+#   acs-test.* dirs on 2026-10-22, with every run green. Anything left in a
+#   file's TMPDIR FAILS that file, with the entries listed.
+# Limits: a process a file leaves running that writes later is blamed on a
+# later file or on nothing; and a test that hard-codes /tmp instead of
+# ${TMPDIR:-/tmp} is not seen (snapshotting all of /tmp would blame tests for
+# other processes' files).
+# Regression: tests/test-suite-isolation.sh
+RUN_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/acs-run.XXXXXX")" || RUN_ROOT=""
+# A test may leave a dir it made unreadable; rm -rf needs it writable again.
+drop_dir() { [ -n "$1" ] && [ -e "$1" ] || return 0; chmod -R u+rwx "$1" 2>/dev/null; rm -rf "$1"; }
+trap 'rm -rf "${STUB_BIN}"; drop_dir "${RUN_ROOT}"' EXIT
 
 # Completion sentinel (#263). The summary block below is shape-identical to the
 # one tests/test-helpers.sh::print_summary emits at the end of EVERY individual
@@ -133,6 +157,11 @@ if [ "${TREE_CHECK}" = off ]; then
     echo "      that tests leave the tracked tree unchanged (#367)."
     echo ""
 fi
+if [ -z "${RUN_ROOT}" ]; then
+    echo "NOTE: could not make a dir for this run, so files use the inherited HOME and"
+    echo "      TMPDIR, and what they leave in TMPDIR is not checked (#372)."
+    echo ""
+fi
 if [ -f "${FB_FILE}" ] && [ -f "${FB_HOOK}" ]; then
     if [ -z "${STUB_BIN}" ]; then
         echo "NOTE: could not check config/fallback-registry.json against config/default-triggers.json"
@@ -175,7 +204,22 @@ for test_file in ${test_files}; do
         before_sum="$(tree_sum)"
     fi
     file_ok=0
-    bash "${test_file}" && file_ok=1
+    file_home="${RUN_ROOT:+${RUN_ROOT}/home.${TOTAL_FILES}}"
+    file_tmp="${RUN_ROOT:+${RUN_ROOT}/tmp.${TOTAL_FILES}}"
+    if [ -n "${RUN_ROOT}" ] && mkdir -m 700 "${file_home}" "${file_tmp}" 2>/dev/null; then
+        HOME="${file_home}" TMPDIR="${file_tmp}" bash "${test_file}" && file_ok=1
+        left="$(ls -A "${file_tmp}" 2>/dev/null)"
+        if [ -n "${left}" ]; then
+            file_ok=0
+            echo "FAIL (runner): ${name} left these in TMPDIR (a scratch dir it did not remove, or a process still writing):"
+            printf '%s\n' "${left}" | while IFS= read -r line; do echo "    ${line}"; done
+        fi
+        drop_dir "${file_home}"
+        drop_dir "${file_tmp}"
+    else
+        [ -z "${RUN_ROOT}" ] || echo "NOTE: could not make ${name} a HOME and TMPDIR of its own; it runs with the inherited ones, unchecked (#372)."
+        bash "${test_file}" && file_ok=1
+    fi
     if [ "${TREE_CHECK}" = on ]; then
         after_status="$(tree_status)"
         after_sum="$(tree_sum)"

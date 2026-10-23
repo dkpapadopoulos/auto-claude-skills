@@ -27,8 +27,12 @@ assert_not_contains() {
 # ── Test: security_capabilities appears in session-start output ──
 test_security_capabilities_in_output() {
   echo "--- test_security_capabilities_in_output ---"
-  local output
-  output="$(bash hooks/session-start-hook.sh 2>/dev/null)" || true
+  local output home
+  # The hook writes under ~/.claude, so it gets a HOME of its own, never the one
+  # this file was started with (#372). Regression: tests/test-suite-isolation.sh
+  home="$(mktemp -d "${TMPDIR:-/tmp}/acs-secscan.XXXXXX")" || return 1
+  output="$(HOME="${home}" bash hooks/session-start-hook.sh < /dev/null 2>/dev/null)" || true
+  rm -rf "${home}"
   assert_contains "session-start emits security tools" "Security tools:" "$output"
   assert_contains "session-start emits semgrep capability" "semgrep=" "$output"
   assert_contains "session-start emits trivy capability" "trivy=" "$output"
