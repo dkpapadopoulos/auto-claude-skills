@@ -122,7 +122,33 @@ test_probe_files_leave_nothing_in_tmpdir() {
     done
 }
 
+test_runner_names_a_file_that_leaves_tmpdir_entries() {
+    # A copy of the real runner over two files: the first leaves a scratch dir,
+    # the second cleans up after itself and must not be blamed.
+    local d="${W}/leak-runner" outer="${W}/outer-tmp"
+    mkdir -p "${d}/tests" "${outer}"
+    cp "${SCRIPT_DIR}/run-tests.sh" "${d}/tests/run-tests.sh"
+    printf '#!/usr/bin/env bash\nmktemp -d "${TMPDIR:-/tmp}/acs-test.XXXXXXXX" > /dev/null\nexit 0\n' \
+        > "${d}/tests/test-a-leaks.sh"
+    printf '#!/usr/bin/env bash\nt="$(mktemp -d "${TMPDIR:-/tmp}/acs-test.XXXXXXXX")"\nrm -rf "${t}"\nexit 0\n' \
+        > "${d}/tests/test-b-cleans.sh"
+    TMPDIR="${outer}" GIT_CEILING_DIRECTORIES="${W}" \
+        bash "${d}/tests/run-tests.sh" > "${W}/leak-runner.log" 2>&1
+    local rc=$?
+    assert_equals "a file that leaves a TMPDIR entry fails the run" "1" "${rc}"
+    assert_contains "the sentinel counts one failed file" "files=2 passed=1 failed=1 status=fail" \
+        "$(grep -F 'ACS-RUN-TESTS-COMPLETE' "${W}/leak-runner.log")"
+    assert_contains "the leaking file is named, with what it left" \
+        "FAIL (runner): test-a-leaks.sh left these in TMPDIR" "$(cat "${W}/leak-runner.log")"
+    assert_contains "the leftover entry is listed" "    acs-test." "$(cat "${W}/leak-runner.log")"
+    assert_not_contains "the file that cleans up is not blamed" "test-b-cleans.sh left" \
+        "$(cat "${W}/leak-runner.log")"
+    assert_equals "the run leaves nothing in the TMPDIR it was started with" "" \
+        "$(ls -A "${outer}" | tr '\n' ' ')"
+}
+
 test_mcp_probe_file_leaves_the_starting_home_untouched
+test_runner_names_a_file_that_leaves_tmpdir_entries
 test_probe_files_leave_nothing_in_tmpdir
 test_setup_env_shadows_an_installed_claude
 test_session_start_under_setup_env_never_runs_the_installed_claude

@@ -36,8 +36,18 @@ if [ -n "${STUB_BIN}" ]; then
     printf '#!/bin/sh\nexit 0\n' > "${STUB_BIN}/claude"
     chmod +x "${STUB_BIN}/cozempic" "${STUB_BIN}/claude"
     export PATH="${STUB_BIN}:${PATH}"
-    trap 'rm -rf "${STUB_BIN}"' EXIT
 fi
+
+# A TMPDIR of the run's own (#372). setup_test_env and many files make scratch
+# dirs under TMPDIR, and one a file failed to remove stayed in the user's TMPDIR
+# for good: six a run, 781 acs-test.* dirs accumulated since 2026-10-08, with
+# every run green. Each file now runs with this dir as its TMPDIR; anything left
+# in it afterwards FAILS that file, is listed, and is removed so the next file
+# is not blamed; the dir goes at the end. A process a file leaves running that
+# writes later is blamed on a later file.
+# Regression: tests/test-suite-isolation.sh
+RUN_TMP="$(mktemp -d "${TMPDIR:-/tmp}/acs-run-tmp.XXXXXX")" || RUN_TMP=""
+trap 'rm -rf "${STUB_BIN}" "${RUN_TMP}"' EXIT
 
 # Completion sentinel (#263). The summary block below is shape-identical to the
 # one tests/test-helpers.sh::print_summary emits at the end of EVERY individual
@@ -139,6 +149,11 @@ if [ "${TREE_CHECK}" = off ]; then
     echo "      that tests leave the tracked tree unchanged (#367)."
     echo ""
 fi
+if [ -z "${RUN_TMP}" ]; then
+    echo "NOTE: could not make a TMPDIR for this run, so files use the inherited one and"
+    echo "      what they leave in it is not checked (#372)."
+    echo ""
+fi
 if [ -f "${FB_FILE}" ] && [ -f "${FB_HOOK}" ]; then
     if [ -z "${STUB_BIN}" ]; then
         echo "NOTE: could not check config/fallback-registry.json against config/default-triggers.json"
@@ -181,7 +196,19 @@ for test_file in ${test_files}; do
         before_sum="$(tree_sum)"
     fi
     file_ok=0
-    bash "${test_file}" && file_ok=1
+    if [ -n "${RUN_TMP}" ]; then
+        TMPDIR="${RUN_TMP}" bash "${test_file}" && file_ok=1
+        left="$(ls -A "${RUN_TMP}" 2>/dev/null)"
+        if [ -n "${left}" ]; then
+            file_ok=0
+            echo "FAIL (runner): ${name} left these in TMPDIR (a scratch dir it did not remove, or a process still writing):"
+            printf '%s\n' "${left}" | while IFS= read -r line; do echo "    ${line}"; done
+            rm -rf "${RUN_TMP}"
+            mkdir -m 700 "${RUN_TMP}" 2>/dev/null || RUN_TMP=""
+        fi
+    else
+        bash "${test_file}" && file_ok=1
+    fi
     if [ "${TREE_CHECK}" = on ]; then
         after_status="$(tree_status)"
         after_sum="$(tree_sum)"
