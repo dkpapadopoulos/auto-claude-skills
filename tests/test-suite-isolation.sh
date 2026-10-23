@@ -136,8 +136,9 @@ test_runner_names_a_file_that_leaves_tmpdir_entries() {
         bash "${d}/tests/run-tests.sh" > "${W}/leak-runner.log" 2>&1
     local rc=$?
     assert_equals "a file that leaves a TMPDIR entry fails the run" "1" "${rc}"
+    # The sentinel is the log's last line; test files never name it (#263).
     assert_contains "the sentinel counts one failed file" "files=2 passed=1 failed=1 status=fail" \
-        "$(grep -F 'ACS-RUN-TESTS-COMPLETE' "${W}/leak-runner.log")"
+        "$(tail -1 "${W}/leak-runner.log")"
     assert_contains "the leaking file is named, with what it left" \
         "FAIL (runner): test-a-leaks.sh left these in TMPDIR" "$(cat "${W}/leak-runner.log")"
     assert_contains "the leftover entry is listed" "    acs-test." "$(cat "${W}/leak-runner.log")"
