@@ -7286,6 +7286,9 @@ _install_rv_registry_from_config() {
 
 test_perf_overlay_routing() {
     echo "-- test: perf overlay routing --"
+    # Without its own setup this cell wrote the previous cell's deleted HOME
+    # back into TMPDIR, and its teardown had nothing to remove (#372).
+    setup_test_env
     _install_rv_registry_from_config
 
     local ctx

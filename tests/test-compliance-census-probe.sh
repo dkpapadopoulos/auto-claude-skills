@@ -37,6 +37,7 @@ if ! command -v jq >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
 fi
 
 setup_test_env
+trap teardown_test_env EXIT
 export PYTHONDONTWRITEBYTECODE=1
 H="${TEST_TMPDIR}/home"; mkdir -p "${H}/.claude"
 PROJ="${TEST_TMPDIR}/projects"; mkdir -p "${PROJ}/p1"

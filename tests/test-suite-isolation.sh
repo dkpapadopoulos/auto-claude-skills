@@ -110,7 +110,20 @@ test_runner_shadows_claude_for_every_file() {
     fi
 }
 
+test_probe_files_leave_nothing_in_tmpdir() {
+    # Each called setup_test_env once at the top and never tore it down.
+    local f t left
+    for f in test-verb-attribution-probe.sh test-compliance-census-probe.sh; do
+        t="${W}/tmp-${f%.sh}"; mkdir -p "${t}"
+        TMPDIR="${t}" bash "${SCRIPT_DIR}/${f}" < /dev/null > "${W}/${f}.log" 2>&1
+        assert_equals "${f} passes with a private TMPDIR" "0" "$?"
+        left="$(ls -A "${t}" | tr '\n' ' ')"
+        assert_equals "${f} leaves nothing in TMPDIR" "" "${left}"
+    done
+}
+
 test_mcp_probe_file_leaves_the_starting_home_untouched
+test_probe_files_leave_nothing_in_tmpdir
 test_setup_env_shadows_an_installed_claude
 test_session_start_under_setup_env_never_runs_the_installed_claude
 test_runner_shadows_claude_for_every_file
