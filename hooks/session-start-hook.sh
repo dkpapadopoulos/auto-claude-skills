@@ -103,8 +103,10 @@ if [ -n "${_HOOK_STDIN}" ] && command -v jq >/dev/null 2>&1; then
     _HOOK_TRANSCRIPT="$(printf '%s' "${_HOOK_STDIN}" | jq -r '.transcript_path // empty' 2>/dev/null)" || _HOOK_TRANSCRIPT=""
     # .cwd is consumed by the drift canary (Step 6a-ter); .source (startup /
     # resume / clear / compact) decides whether the announce line is emitted.
-    # Both come from one jq fork, split on \x1f (not IFS whitespace).
-    _hs_pair="$(printf '%s' "${_HOOK_STDIN}" | jq -r '[(.cwd // ""), (.source // "")] | join("\u001f")' 2>/dev/null)" || _hs_pair=""
+    # Both come from one jq fork, split on \x1f (not IFS whitespace). Each is
+    # coerced to text so a non-string field cannot fail the join, and cwd's
+    # trailing newlines are trimmed as the former `$(jq ...)` did.
+    _hs_pair="$(printf '%s' "${_HOOK_STDIN}" | jq -r '[(.cwd // "" | if type == "string" then . else tojson end | sub("\n+$"; "")), (.source // "" | if type == "string" then . else tojson end)] | join("\u001f")' 2>/dev/null)" || _hs_pair=""
     _HOOK_CWD="${_hs_pair%%$'\x1f'*}"
     case "${_hs_pair}" in *$'\x1f'*) _HOOK_SOURCE="${_hs_pair#*$'\x1f'}" ;; esac
 fi

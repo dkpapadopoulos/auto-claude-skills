@@ -521,6 +521,19 @@ test_mandatory_line_skipped_on_compact() {
         | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)"
     assert_contains "no source: MANDATORY line kept" "MANDATORY: Before any other output" "${ctx}"
 
+    local _src
+    for _src in resume clear compact2 Compact; do
+        ctx="$(printf '{"session_id":"t-%s","source":"%s"}' "${_src}" "${_src}" | run_hook \
+            | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)"
+        assert_contains "source=${_src}: MANDATORY line kept" "MANDATORY: Before any other output" "${ctx}"
+    done
+
+    # A non-string field must not cost the status line or the cwd split.
+    ctx="$(printf '{"session_id":"t-obj","cwd":{"x":1},"source":"compact"}' | run_hook \
+        | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)"
+    assert_contains "object cwd: status line kept" "skills active" "${ctx}"
+    assert_not_contains "object cwd: compact still recognised" "MANDATORY: Before any other output" "${ctx}"
+
     teardown_test_env
 }
 
