@@ -14,7 +14,7 @@ Separately, the panel adjudicator was closed INCONCLUSIVE on 2026-10-25 because 
 - **Equivalent review skills** credit REVIEW: `code-review`, `review-pr`, `security-review`, alongside today's four.
 - **A returned reviewer whose reviewed commit covers the pushed changes** credits REVIEW status.
 - **Shadow records are stamped at push time** with the payload `session_id`, the push `tool_use_id`, the Claude Code and plugin versions; the REVIEW record also gets `review_coverage` and `review_witness`. A schema bump on all three legs; the REVIEW leg's predicate is also bumped (2 → 3), because the credit above widens the population it fires on.
-- **The REVIEW reader reports an evidence-miss rate**: the share of would-block episodes in which covering review evidence existed. Diagnostic only.
+- **The REVIEW reader reports an evidence-miss rate**: the share of would-block episodes in which an allowlisted reviewer returned on a commit covering the push (owner decision, 2026-10-25). Invocations never count. Diagnostic only, and a lower bound on one kind of false block.
 
 ## Capabilities
 

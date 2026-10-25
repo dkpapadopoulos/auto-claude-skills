@@ -70,17 +70,30 @@ The push gate MUST accept as REVIEW evidence a successful return, or a typed
 slash command naming an installed skill or a Claude Code built-in command, of
 `requesting-code-review`, `subagent-driven-development`,
 `agent-team-execution`, `agent-team-review`, `code-review`, `review-pr` or
-`security-review`, with or without a plugin prefix. The list MUST be defined
-once and read by the routing hook, the completion hook and the guard. If that
-definition cannot be read, the guard MUST fall back to the four names credited
-before this change, never to accepting any name. A prompt that is a task
-notification or a cross-session message MUST NOT be read as a typed command.
+`security-review`, with or without a plugin prefix. A typed command MUST be the
+prompt's first token; the same command later in the prompt MUST NOT credit. A
+typed built-in (`code-review`, `security-review`, bare) MUST credit only when
+the Claude Code version read from `AI_AGENT` is 2.1.308 or later, because an
+unknown slash command reaches the hook identically; a missing, unparseable or
+older version MUST give no built-in credit. The list MUST be defined once and
+read by the routing hook, the completion hook, the guard,
+`hooks/lib/phase-evidence.sh` and `scripts/gate-status.sh`. If that definition
+cannot be read, each reader MUST fall back to the four names credited before
+this change, never to accepting any name, and the routing hook MUST give no
+typed credit. A prompt that is a task notification or a cross-session message
+MUST NOT be read as a typed command.
 
 #### Scenario: A typed /code-review satisfies REVIEW
 
-- **GIVEN** a branch with no REVIEW evidence and the standard chain
-- **WHEN** the owner types `/code-review` and the agent then runs `git push`
+- **GIVEN** a branch with no REVIEW evidence, the standard chain, and Claude Code 2.1.308 or later
+- **WHEN** the owner types `/code-review` as the prompt's first token and the agent then runs `git push`
 - **THEN** the push gate MUST NOT deny for missing REVIEW
+
+#### Scenario: A typed built-in on an older or unknown Claude Code credits nothing
+
+- **GIVEN** a branch with no REVIEW evidence and `AI_AGENT` absent, unparseable, or naming a version before 2.1.308
+- **WHEN** the owner types `/code-review` and the agent then runs `git push`
+- **THEN** no REVIEW evidence MUST be recorded and the push gate MUST deny for missing REVIEW
 
 #### Scenario: A task notification naming a review skill credits nothing
 
