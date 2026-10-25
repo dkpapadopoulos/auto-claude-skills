@@ -550,11 +550,20 @@ EOF
     return 0
 }
 
+# cmd_rate_episodes — every _episodes row, unchanged (tab-separated). _episodes
+# is already would-block-only and v2-only, so this is the rate population.
+# stdout carries only those rows.
+cmd_rate_episodes() {
+    _episodes
+    return 0
+}
+
 _usage() {
     cat <<USAGE
 usage: $0 <command>
 
   --status                      episode-level readout and the pre-registered band
+  --rate-episodes               TSV of the episodes the rate is computed over
   --next                        oldest unadjudicated record, with how to label it
   --adjudicate <record_id> --verdict true_catch|false_block|unknown [--reason <text>]
 
@@ -569,6 +578,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --status)     _CMD=status ;;
         --next)       _CMD=next ;;
+        --rate-episodes) _CMD=rate_episodes ;;
         --adjudicate) _CMD=adjudicate; shift; _RID="${1:-}" ;;
         --verdict)    shift; _VERDICT="${1:-}" ;;
         --reason)     shift; _REASON="${1:-}" ;;
@@ -580,6 +590,7 @@ done
 case "${_CMD}" in
     status)     cmd_status ;;
     next)       cmd_next ;;
+    rate_episodes) cmd_rate_episodes ;;
     adjudicate) cmd_adjudicate "${_RID}" "${_VERDICT}" "${_REASON}" ;;
     *)          _usage >&2; exit 1 ;;
 esac

@@ -564,6 +564,23 @@ EOF
     return 0
 }
 
+# cmd_rate_episodes — the rate population, one tab-separated _episodes row per
+# episode whose _episode_wb is "yes" (the same membership cmd_status counts).
+# stdout carries ONLY those rows; consumers parse it. Re-split on \x1f as
+# cmd_status does, then re-joined with tabs: a tab IFS read would collapse an
+# empty branch.
+cmd_rate_episodes() {
+    local _eid _repo _branch _tok _ids _row
+    while IFS="$(printf '\037')" read -r _eid _repo _branch _tok _ids; do
+        [ -z "${_eid:-}" ] && continue
+        [ "$(_episode_wb "${_ids}")" = "yes" ] || continue
+        printf '%s\t%s\t%s\t%s\t%s\n' "${_eid}" "${_repo}" "${_branch}" "${_tok}" "${_ids}"
+    done <<EOF_EPS
+$(_episodes | tr '\t' '\037')
+EOF_EPS
+    return 0
+}
+
 _usage() {
     cat <<'HELP'
 shadow-adjudicate.sh — label IMPLEMENT-leg shadow records and report the rate.
@@ -572,6 +589,7 @@ shadow-adjudicate.sh — label IMPLEMENT-leg shadow records and report the rate.
   <record_id> --verdict <v> --reason "<why>"
                                record a verdict: true_catch | false_block | unknown
   --status                     episodes, exclusions, rate, band, distance to floor
+  --rate-episodes              TSV of the would-block episodes --status rates over
 
 Diagnostic only. Exits 0 for observational commands. Never wire the output of
 --status into an enforcement decision: the push gate is the only decider.
@@ -585,6 +603,7 @@ case "${1:-}" in
     --source-only) return 0 2>/dev/null ;;
     --next)        cmd_next; exit $? ;;
     --status)      cmd_status; exit $? ;;
+    --rate-episodes) cmd_rate_episodes; exit $? ;;
     -h|--help)     _usage; exit 0 ;;
     "")            _usage; exit 1 ;;
     *)
