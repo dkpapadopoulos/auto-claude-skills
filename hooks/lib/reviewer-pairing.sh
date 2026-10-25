@@ -32,8 +32,8 @@
 #
 # Sourced by HOOKS only (both are `#!/bin/bash`), never from a model Bash turn,
 # so the zsh-compatibility constraints that bind `session-token.sh` and
-# `phase-attest.sh` do not apply here. If that ever changes, re-read CLAUDE.md's
-# "the Bash tool is NOT bash" gotcha before touching this file.
+# `phase-attest.sh` do not apply here. If that ever changes, re-read the
+# sourced-lib bullet in .claude/rules/shell-portability.md before touching this file.
 #
 # Every function is fail-open and best-effort: on any error the pairing simply
 # does not resolve, the milestone is not recorded, and the caller continues.

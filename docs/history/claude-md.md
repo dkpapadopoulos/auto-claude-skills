@@ -3,7 +3,7 @@
 Narrative moved out of the repo-root `CLAUDE.md` so that the always-loaded file keeps
 only what a model must follow at write time. Nothing loads this file; it exists so the
 history is not lost. Each section reproduces the original unit **verbatim** (as of
-commit `a9e8f753`), names the test that now guards the behaviour it described, and
+commit `a9e8f753`), names the test, if any, that now guards the behaviour it described, and
 says where its surviving instruction lives. Every section was moved in the commit
 `docs: CLAUDE.md keeps its instructions and moves test-guarded history to docs/history`
 (the commit that created this file: `git log --diff-filter=A -- docs/history/claude-md.md`).
