@@ -54,8 +54,6 @@ Autofix: exact old→new edit; suggestion severity only; omit unless all four el
 
 **`Autofix:` marks mechanically certain trivia, additive to `Suggestion:` and never replacing it.** Eligible only when all four hold: the fix is a single exact text transformation stateable precisely; it is essentially certain to be correct and complete; it touches only code this diff introduced or changed; it has zero behavioural ambiguity. Only `suggestion`-severity findings may carry it — `blocking` and `warning` findings never carry the bypass and keep the full return-to-IMPLEMENT path, even when a reviewer attaches the line.
 
-The lead's own report format follows §6.
-
 ## Protocol
 
 ### 1. Preparation
@@ -82,7 +80,7 @@ Each reviewer gets:
 
 **Claim-withheld dispatch:** reviewers receive the artifact and the contract only — diff, files changed, design doc, plan, acceptance spec. Never include the implementer's self-summary, claims of correctness, or completion notes in a reviewer prompt: handing a reviewer the implementer's conclusion biases it toward agreement.
 
-**Before spawning, Read `references/reviewer-prompts.md`** and send each lens its prompt verbatim, filling only the `{…}` Context fields; a reviewer sees no other copy of its rules. With `org_hub=true`, follow that file's org-hub step first.
+**Before spawning, Read `references/reviewer-prompts.md`** and paste each lens its prompt verbatim, Delivery Contract and Scope included, filling only the `{…}` Context fields; never point a reviewer at the file instead. With `org_hub=true`, follow that file's org-hub step first.
 
 ### 3. Parallel Review
 
@@ -104,12 +102,12 @@ The list stops at two entries deliberately. Broader provenance categories — no
 that §4 and the Evidence rule protect, which is the hole those rules exist to close. Do
 not extend this table without re-reading both.
 
-**PAIRED — this table is the LEAD's copy; the reviewer's copy ships in the spawn templates** (each lens's `## Scope` block). Read `references/scope-copies.md` before editing either.
+**PAIRED — this table is the LEAD's copy; the reviewer's copy ships in the spawn templates**. Read `references/scope-copies.md` before editing either.
 
 **Trivial is not the same as droppable.** A finding small enough to fix in one line is
 still reported; these two categories are about *ownership*, not size.
 
-**Authorship guard.** Authored the change under review in this context? Follow `### Authorship guard (§3)` after §6: say so, call it convention-checking, keep each finding's earned severity, record `--self-authored`.
+**Authorship guard** (full text after §6). If this context wrote the change: say so, call the pass convention-checking, keep each finding's earned severity, record `--self-authored`.
 
 **Collect the reports — they do not arrive on their own.** A background reviewer in this
 harness signals idle with no findings attached, because its final text is a return value,
@@ -147,8 +145,8 @@ After collecting the reports per §3 — including any lens recorded as uncovere
 1. Group findings by severity (blocking → warning → suggestion)
 2. Deduplicate overlapping findings
 3. **Severity floor.** Drop `quality`- and `spec`-category `suggestion`-severity findings that do not map to a capability named in the design doc, and demote any `quality`/`spec` `blocking` finding whose `Evidence` lacks an observable failure path to `warning`. **Never drop or demote `security` or `governance` findings on these bases** — those catch unplanned risks no design doc anticipated, and may rest on structural criteria (e.g. removing or weakening a safety constraint) rather than a runnable failure path. This curbs the bot-asymptote nit accretion (advisory findings that accumulate every round without ever being actionable). Defer `Autofix:`-carrying suggestions to step 4 — the floor decides them only if validation strips the routing.
-4. **Autofix validation — the token never self-certifies.** This validation IS the finding's adjudication — a mechanical edit has no manipulable causal variable, so per §4a it is disposed on its own terms. In order:
-   Its six steps follow §6 (`### Autofix validation, in order`); apply them to every `Autofix:` line.
+4. **Autofix validation — the token never self-certifies.** This validation IS the finding's adjudication — a mechanical edit has no manipulable causal variable, so per §4a it is disposed on its own terms.
+   Its six steps follow §6 (`### Autofix validation, in order`): validate every line; apply none without per-item user approval.
 5. Adjudicate per §4a every finding you are about to accept or reject at `blocking` or `warning` — a `suggestion` needs one only if you intend to action it
 6. Present unified report to user
 
@@ -183,7 +181,7 @@ Both directions are in scope:
 - **Before rejecting** a finding that "failed to reproduce": show the paired control. Absent it, you have not refuted the finding, you have only failed to trigger it — say that instead.
 - **Before accepting** a finding: the same pairing. A finding accepted without a control that flips is a guess with a file:line attached, and the test it motivates will pass whether or not the code is fixed.
 
-**A pair that does not flip is not, on its own, proof of falsity.** It has three candidate explanations and you must name which one you are asserting: the claim is false; the intervention was incomplete (you removed less than the claim describes); or the preconditions were not met (a masking gate, the wrong config, the wrong subject). The second and third are experiment failures, and reporting them as "refuted" is the original 2026-08-12 mistake wearing a control.
+**A pair that does not flip is not, on its own, proof of falsity.** It has three candidate explanations and you must name which one you are asserting: the claim is false; the intervention was incomplete (you removed less than the claim describes); or the preconditions were not met (a masking gate, the wrong config, the wrong subject). The second and third are experiment failures, and reporting them as "refuted" is the original 2026-08-12 mistake wearing a control (Read `references/adjudication-example.md` before calling one refuted).
 
 **So a non-flip decides "false" only once the other two are ruled out, and the way you rule them out is a POSITIVE CONTROL.** Run, in the same harness, a variable you already know does flip. If the harness demonstrably detects that one and not yours, "the claim is false" is the surviving explanation; if it detects neither, you have learned nothing about either.
 
@@ -200,7 +198,7 @@ Escalation when the pairing is not obtainable — a fault that needs credentials
 
 **Isolation is mandatory and is not optional politeness.** Run every reproduction in a detached worktree, never in the shared working tree. Adjudication injects faults on purpose; doing that where a concurrent session or a running suite can see it corrupts other people's work and, on this repo's own push gate, measures a tree nobody is pushing. Never write to the shared working tree while adjudicating.
 
-Before any reproduction, Read `references/adjudication-worktree.md` and run its commands: detached worktree at `{head_sha}`, uncommitted work carried with `git diff HEAD` (never `{base_sha}`), needed untracked files copied, worktree removed after.
+Before any reproduction, Read `references/adjudication-worktree.md` and run it: detached worktree at `{head_sha}`, uncommitted work carried with `git diff HEAD` (never `{base_sha}`), needed untracked files copied, worktree removed after.
 
 **Record the pairing, not just the verdict.** Each finding adjudicated *by pairing* carries one line: what was changed, what the with-run decided, what the without-run decided, and — on a rejection — the positive control that proves the harness could have detected it. A structural finding decided by reading has no pair and records the constraint it removes instead; do not manufacture a pairing line for it. A verdict with no pairing recorded is indistinguishable from an unexamined one, which is exactly the doubt-theater signal §Red Flags is looking for. Conversely, an open `could-not-reproduce` finding is **not** a dismissal, so do not count it as one when judging the doubt-theater pattern in §Red Flags: that pattern is systematic NON-ACTIONING across rounds, and an item explicitly routed to the user as unresolved has been actioned — into the open column, where the user can see it.
 
@@ -411,7 +409,7 @@ Read each when its condition holds; never send a reviewer prompt or run an adjud
 
 | File | Read it |
 |---|---|
-| `references/reviewer-prompts.md` | Before spawning reviewers (§2): the four lens prompts, sent verbatim, and the org-hub lens step when `org_hub=true`. |
+| `references/reviewer-prompts.md` | Before spawning reviewers (§2): the four lens prompts, each pasted verbatim into its reviewer's prompt (never a pointer to this file), and the org-hub lens step when `org_hub=true`. |
 | `references/adjudication-worktree.md` | Before any §4a reproduction: the detached-worktree commands. |
 | `references/adjudication-example.md` | Before calling a finding refuted because its §4a pair did not flip: the 2026-08-12 worked failure. |
 | `references/scope-copies.md` | Before editing the do-not-flag table or any lens's `## Scope` block. |

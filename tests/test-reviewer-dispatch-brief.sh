@@ -349,6 +349,14 @@ assert_contains "lead: reviewer worktrees are reaped" \
 SPAWN_BLOCK="$(awk '/^### 2\. Spawn Reviewers/{f=1;next} f && /^### /{exit} f' "${SKILL}")"
 assert_contains "lead: §2 reads the prompts file before spawning" \
     "Before spawning, Read \`references/reviewer-prompts.md\`" "${SPAWN_BLOCK}"
+# PASTED, never delegated: a reviewer reads only its own prompt (#204), and a
+# §6 Mode A reviewer gets only the review bundle, so a pointer to this file
+# makes the Delivery Contract and Scope conditional on the reviewer opening it
+# (observed: a lead told all four reviewers to read their section instead).
+assert_contains "lead: §2 pastes each prompt whole, contract and scope included" \
+    "paste each lens its prompt verbatim, Delivery Contract and Scope included" "${SPAWN_BLOCK}"
+assert_contains "lead: §2 forbids pointing a reviewer at the file" \
+    "never point a reviewer at the file instead" "${SPAWN_BLOCK}"
 
 # --- Verification cites the mechanism --------------------------------------
 # spec.md requires the outcome assertion to reference Protocol §3 rather than

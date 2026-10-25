@@ -100,6 +100,8 @@ assert_contains "§4a sends the lead to the worktree commands before any reprodu
     'Before any reproduction, Read `references/adjudication-worktree.md`' "${SECTION_4A}"
 assert_contains "§4a restates the carry rule: git diff HEAD, never base" \
     'carried with `git diff HEAD` (never `{base_sha}`)' "${SECTION_4A}"
+assert_contains "§4a gives the 2026-08-12 mistake its referent, with when to Read it" \
+    '(Read `references/adjudication-example.md` before calling one refuted)' "${SECTION_4A}"
 assert_contains "worktree commands check out the reviewed head detached" \
     'git worktree add --detach "$WT" {head_sha}' "${WORKTREE_TEXT}"
 assert_contains "worktree commands carry uncommitted work from HEAD" \
@@ -109,16 +111,29 @@ assert_contains "worktree commands carry uncommitted work from HEAD" \
 # Claude Code re-attaches an invoked skill cut to its first ~20,000 characters,
 # and this SKILL.md is still larger than that, so the FINDING contract, §4a and
 # §5 must sit wholly inside the first 19,500 bytes (the re-attach budget). Each
-# section ends where the next heading of the same or a higher level begins.
+# section ends where the next heading of the same or a higher level begins. A
+# `# comment` inside a fenced code block is not a heading: without the fence
+# toggle a fenced shell comment in §5 ended it early and the cell passed with
+# §5 really ending 2,000 bytes past the cut.
 REATTACH_BYTES=19500
+# _section_end <heading-prefix> <level> [file] — byte offset where the section ends.
 _section_end() {
     LC_ALL=C awk -v h="$1" -v lv="$2" '
-        f && match($0, /^#+ /) && RLENGTH - 1 <= lv { print n; done = 1; exit }
+        /^[[:space:]]*```/ { fence = !fence }
+        f && !fence && match($0, /^#+ /) && RLENGTH - 1 <= lv { print n; done = 1; exit }
         !f && index($0, h) == 1 { f = 1 }
         { n += length($0) + 1 }
         END { if (f && !done) print n }
-    ' "${SKILL}"
+    ' "${3:-${SKILL}}"
 }
+# Control: a fenced `# comment` inside a section does not end it. The expected
+# end is the next real heading's byte offset, read independently with grep -b.
+_fence_doc="$(mktemp)"
+printf '%s\n' '# T' '' '### 5. X' 'text' '```bash' '# a shell comment' 'echo hi' '```' 'more' '### 6. Y' 'tail' > "${_fence_doc}"
+_fence_want="$(grep -b -m1 '^### 6\. Y' "${_fence_doc}" | cut -d: -f1)"
+assert_equals "control: a fenced # comment does not end a section early" \
+    "${_fence_want}" "$(_section_end '### 5. ' 3 "${_fence_doc}")"
+rm -f "${_fence_doc}"
 while IFS='|' read -r _h _lv _label; do
     [ -n "${_h}" ] || continue
     _end="$(_section_end "${_h}" "${_lv}")"

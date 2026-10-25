@@ -1,6 +1,6 @@
 # agent-team-review — reviewer spawn templates
 
-Read at SKILL.md §2 before spawning reviewers, on every run: send each lens its prompt verbatim. The org-hub step applies only when session-start shows `org_hub=true`. The lead-side rules (claim-withheld dispatch, collection, the FINDING contract) stay in SKILL.md. Moved verbatim from SKILL.md.
+Read at SKILL.md §2 before spawning reviewers, on every run: paste each lens's whole prompt below, Delivery Contract and Scope included, verbatim into that reviewer's prompt — a reviewer reads only its own prompt, so never point it at this file instead. The org-hub step applies only when session-start shows `org_hub=true`. The lead-side rules (claim-withheld dispatch, collection, the FINDING contract) stay in SKILL.md. Moved verbatim from SKILL.md.
 
 ## Reviewer Spawn Templates
 
