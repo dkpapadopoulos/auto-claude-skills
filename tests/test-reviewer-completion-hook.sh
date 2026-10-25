@@ -584,7 +584,12 @@ fi
 # Anchored on a CALL, `$(review_reviewer_covers `: the bare name also appears
 # in the guard's `command -v review_reviewer_covers` load probe, which would
 # satisfy a bare-name grep with the call deleted (Task 5 review, Minor 1).
-if grep -qF '$(review_reviewer_covers ' "${_O2_GUARD}" 2>/dev/null; then
+# ONE function, called by the real cell AND its red control below, so the
+# control measures the check itself, not a re-typed copy of its pattern.
+_o2_calls_lib() {   # <file> — 0 iff it calls review_reviewer_covers
+    grep -qF '$(review_reviewer_covers ' "$1" 2>/dev/null
+}
+if _o2_calls_lib "${_O2_GUARD}"; then
     _record_pass "(o2) the guard reads it through review_reviewer_covers"
 else
     _record_fail "(o2) the guard reads it through review_reviewer_covers" "no call found"
@@ -601,7 +606,7 @@ fi
 sed 's/\$(review_reviewer_covers /$(some_other_reader /' "${_O2_GUARD}" > "${_O2_TMP}"
 if cmp -s "${_O2_GUARD}" "${_O2_TMP}"; then
     _record_fail "(o2) red control: the call check sees a swapped-out call" "the swap changed nothing"
-elif grep -qF '$(review_reviewer_covers ' "${_O2_TMP}" 2>/dev/null; then
+elif _o2_calls_lib "${_O2_TMP}"; then
     _record_fail "(o2) red control: the call check sees a swapped-out call" "still satisfied without the call"
 else
     _record_pass "(o2) red control: the call check sees a swapped-out call"
