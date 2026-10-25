@@ -621,7 +621,7 @@ rm -f "${_O2_TMP}"
 # this loop is what forces that.
 _SS="${PROJECT_ROOT}/hooks/session-start-hook.sh"
 _GCOK=1
-for _k in dispatch complete saturated; do
+for _k in dispatch complete start saturated; do
     grep -q "name '\.skill-reviewer-${_k}-\*'" "$_SS" 2>/dev/null || _GCOK=0
     grep -q "! -name \"\.skill-reviewer-${_k}-\${_SESSION_TOKEN}\"" "$_SS" 2>/dev/null || _GCOK=0
 done
@@ -699,7 +699,7 @@ fi
 # hooks without erroring, so it is pinned here rather than left to memory.
 _LASTFN="$(grep -o '^[a-z_][a-z_]*() {' "${PROJECT_ROOT}/hooks/lib/reviewer-pairing.sh" | tail -1 | sed 's/() {//')"
 _SOK=1
-for _h in reviewer-completion-hook reviewer-evidence-hook; do
+for _h in reviewer-completion-hook reviewer-evidence-hook reviewer-start-hook; do
     grep -q "command -v ${_LASTFN} >/dev/null 2>&1" "${PROJECT_ROOT}/hooks/${_h}.sh" 2>/dev/null || _SOK=0
 done
 if [ -n "${_LASTFN}" ] && [ "$_SOK" -eq 1 ]; then

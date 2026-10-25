@@ -20,6 +20,18 @@
 # dispatches — that was the first cut, and it recorded `reviewer-ran` with no
 # `reviewer-returned` for a foreground reviewer.
 #
+# A THIRD hook supplies the reviewed commit, not a half of the join:
+#
+#   reviewer-start-hook.sh      SubagentStart                records HEAD as the
+#                                                            subagent starts
+#
+# That ordering means a foreground PostToolUse(Agent) reads HEAD AFTER the
+# reviewer finished, so its HEAD can name commits nothing reviewed (ruling F3,
+# review-credit-from-evidence). SubagentStart fires before the subagent works,
+# for either mode, so its HEAD is the commit the reviewer was pointed at. Both
+# join sides take the reviewed sha from reviewer_pairing_reviewed_sha, which
+# prefers that start record and never substitutes a later HEAD.
+#
 # FORMAT CHANGE SAFETY: both halves store "<agent_id> <ledger_key>". A record
 # written in the earlier one-field format has an empty second field, so the key
 # readers return nothing and the join degrades to a MISS — never to a false
@@ -56,7 +68,7 @@
 _reviewer_pairing_file() {
     local kind="${1:-}" sid="${2:-}"
     [ -n "$kind" ] && [ -n "$sid" ] || return 1
-    case "$kind" in dispatch|complete|saturated) ;; *) return 1 ;; esac
+    case "$kind" in dispatch|complete|start|saturated) ;; *) return 1 ;; esac
     case "$sid" in
         *[!A-Za-z0-9._-]*|.|..) return 1 ;;
     esac
@@ -289,6 +301,49 @@ reviewer_pairing_dispatch_arm() {
         allowlist|description) printf '%s' "$out" ;;
         *) return 1 ;;
     esac
+}
+
+# reviewer_pairing_note_start <session_id> <agent_id> <ledger_key> <sha>
+# Records "this subagent started, on this branch, at this commit". Written by
+# reviewer-start-hook.sh on SubagentStart for EVERY subagent, like the
+# completion half: the start event carries no `description`, so it cannot run
+# the dispatch hook's classifier, and recording it is not a credit (the
+# dispatch half still has to classify the agent). Line: "<aid> <key> <sha|->".
+# A non-hex sha (an unborn repo, an unreadable HEAD) is stored as `-`.
+reviewer_pairing_note_start() {
+    local sid="${1:-}" aid="${2:-}" key="${3:-}" sha="${4:-}" f
+    [ -n "$aid" ] && [ -n "$key" ] || return 1
+    case "$aid" in *[!A-Za-z0-9._-]*) return 1 ;; esac
+    case "$key" in *[!A-Za-z0-9._-]*) return 1 ;; esac
+    case "$sha" in ''|*[!0-9a-fA-F]*) sha="-" ;; esac
+    f="$(_reviewer_pairing_file start "$sid")" || return 1
+    _reviewer_pairing_append "$f" "${aid} ${key} ${sha}" "$sid" start
+}
+
+# reviewer_pairing_start_sha <session_id> <agent_id> <ledger_key> — prints the
+# HEAD recorded when this agent STARTED, or nothing (return 1). Only a start
+# record made on the SAME branch key counts: a start on another branch names a
+# commit of a branch the join is not about. `-` and absent both return 1.
+reviewer_pairing_start_sha() {
+    local sid="${1:-}" aid="${2:-}" key="${3:-}" f out
+    [ -n "$aid" ] && [ -n "$key" ] || return 1
+    case "$aid" in *[!A-Za-z0-9._-]*) return 1 ;; esac
+    case "$key" in *[!A-Za-z0-9._-]*) return 1 ;; esac
+    f="$(_reviewer_pairing_file start "$sid")" || return 1
+    [ -f "$f" ] || return 1
+    out="$(awk -v a="$aid" -v k="$key" '$1==a {if ($2==k) print $3; exit}' "$f" 2>/dev/null)" || return 1
+    case "$out" in ''|*[!0-9a-fA-F]*) return 1 ;; esac
+    printf '%s' "$out"
+}
+
+# reviewer_pairing_reviewed_sha <session_id> <agent_id> <ledger_key> — the
+# commit a reviewer was pointed at: the start record's HEAD, else the sha its
+# dispatch record holds, else nothing (return 1; the caller records `-`).
+# Never a HEAD read now: on a foreground dispatch "now" is after the reviewer
+# finished, and that HEAD can cover commits nothing reviewed (ruling F3).
+reviewer_pairing_reviewed_sha() {
+    reviewer_pairing_start_sha "${1:-}" "${2:-}" "${3:-}" && return 0
+    reviewer_pairing_dispatch_sha "${1:-}" "${2:-}"
 }
 
 # reviewer_pairing_complete_key <session_id> <agent_id> — prints the ledger key

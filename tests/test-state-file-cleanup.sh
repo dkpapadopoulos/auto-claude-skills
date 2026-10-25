@@ -172,10 +172,12 @@ STALE_PAIR="${HOME}/.claude/.skill-reviewer-dispatch-session-deadbeef-old"
 STALE_DONE="${HOME}/.claude/.skill-reviewer-complete-session-deadbeef-old"
 printf 'a1b2c3 deadkey\n' > "${STALE_PAIR}"
 printf 'a1b2c3\n' > "${STALE_DONE}"
-backdate "${STALE_PAIR}"; backdate "${STALE_DONE}"
+STALE_START="${HOME}/.claude/.skill-reviewer-start-session-deadbeef-old"
+printf 'a1b2c3 deadkey -\n' > "${STALE_START}"
+backdate "${STALE_PAIR}"; backdate "${STALE_DONE}"; backdate "${STALE_START}"
 run_hook
 TOK="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null)"
-if [ -f "${STALE_PAIR}" ] || [ -f "${STALE_DONE}" ]; then
+if [ -f "${STALE_PAIR}" ] || [ -f "${STALE_DONE}" ] || [ -f "${STALE_START}" ]; then
     _record_fail "C6a: stale dead-token pairing halves pruned" "still present"
 else
     _record_pass "C6a: stale dead-token pairing halves pruned"
@@ -186,9 +188,11 @@ CUR_PAIR="${HOME}/.claude/.skill-reviewer-dispatch-${TOK}"
 CUR_DONE="${HOME}/.claude/.skill-reviewer-complete-${TOK}"
 printf 'a1b2c3 curkey\n' > "${CUR_PAIR}"
 printf 'a1b2c3\n' > "${CUR_DONE}"
-backdate "${CUR_PAIR}"; backdate "${CUR_DONE}"   # stale mtime, but it's the ACTIVE token
+CUR_START="${HOME}/.claude/.skill-reviewer-start-${TOK}"
+printf 'a1b2c3 curkey -\n' > "${CUR_START}"
+backdate "${CUR_PAIR}"; backdate "${CUR_DONE}"; backdate "${CUR_START}"   # stale mtime, but it's the ACTIVE token
 run_hook
-if [ -f "${CUR_PAIR}" ] && [ -f "${CUR_DONE}" ]; then
+if [ -f "${CUR_PAIR}" ] && [ -f "${CUR_DONE}" ] && [ -f "${CUR_START}" ]; then
     _record_pass "C6b: current-session pairing halves preserved despite stale mtime"
 else
     _record_fail "C6b: current-session pairing halves preserved despite stale mtime" "deleted"

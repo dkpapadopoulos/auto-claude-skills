@@ -63,10 +63,17 @@ _run_dispatch() {    # agent_id description [subagent_type]
     _dispatch_payload "$1" "$2" "$_SID" "${3:-general-purpose}" \
         | ( cd "${_CWD}" && CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "${DISPATCH_HOOK}" ) >/dev/null 2>&1
 }
+_run_start() {       # agent_id ; SubagentStart (documented fields)
+    jq -n --arg ai "$1" --arg sid "$_SID" \
+      '{hook_event_name:"SubagentStart", session_id:$sid, agent_id:$ai, agent_type:"pr-review-toolkit:code-reviewer",
+        transcript_path:"/nonexistent/parent.jsonl"}' \
+        | ( cd "${_CWD}" && CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "${PROJECT_ROOT}/hooks/reviewer-start-hook.sh" ) >/dev/null 2>&1
+}
 _dispatch_file() { printf '%s' "${HOME}/.claude/.skill-reviewer-dispatch-session-${_SID}"; }
 _reset() {
     rm -rf "$HOME"/.claude/.skill-branch-ledger-*
     rm -f "$HOME"/.claude/.skill-reviewer-dispatch-* "$HOME"/.claude/.skill-reviewer-complete-* "$HOME"/.claude/.skill-reviewer-saturated-*
+    rm -f "$HOME"/.claude/.skill-reviewer-start-*
     _CWD="$_REPO"
 }
 _head() { git -C "${1:-$_REPO}" rev-parse HEAD 2>/dev/null; }
@@ -108,12 +115,29 @@ else
     assert_equals "A1 background order: sha is the dispatch HEAD" "$_D1" "$(_lsha)"
 fi
 
+# Foreground: PostToolUse(Agent) fires AFTER SubagentStop, so its HEAD is the
+# completion HEAD. The reviewed commit comes from SubagentStart
+# (reviewer-start-hook.sh); a commit lands between start and completion so the
+# two HEADs differ. This cell used to assert the completion HEAD here (final
+# review I2) — tests/test-reviewer-start-sha.sh holds the end-to-end cells.
 _reset
-_run_completion "a2-fg" "Findings: 0"
 _D2="$(_head)"
+_run_start "a2-fg"
+_commit "$_REPO"
+_run_completion "a2-fg" "Findings: 0"
 _run_dispatch "a2-fg" "Task 4: add the parser" "pr-review-toolkit:code-reviewer"
 assert_equals "A2 foreground order: tag is arm=allowlist" "arm=allowlist" "$(_tag)"
-assert_equals "A2 foreground order: sha is the dispatch HEAD" "$_D2" "$(_lsha)"
+if [ "$_D2" = "$(_head)" ]; then
+    _record_fail "A2 foreground order: sha is the start HEAD" "harness did not move HEAD — cell proves nothing"
+else
+    assert_equals "A2 foreground order: sha is the start HEAD, not the completion HEAD" "$_D2" "$(_lsha)"
+fi
+# A2b foreground with no start record: `-` (F3), never the completion HEAD.
+_reset
+_run_completion "a2b-fg" "Findings: 0"
+_run_dispatch "a2b-fg" "Task 4: add the parser" "pr-review-toolkit:code-reviewer"
+assert_equals "A2b foreground order, no start record: tag is arm=allowlist" "arm=allowlist" "$(_tag)"
+assert_equals "A2b foreground order, no start record: sha is -" "-" "$(_lsha)"
 
 # ===========================================================================
 # A3 the description arm, both orders

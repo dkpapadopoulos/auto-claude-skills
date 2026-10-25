@@ -107,7 +107,10 @@ The push gate MUST accept the branch ledger's `reviewer-returned` milestone as
 REVIEW evidence only when (a) the reviewer was matched by the allowlisted
 `subagent_type` arm of the reviewer classifier, recorded in the milestone, and
 (b) the commit it records is an ancestor of the command's subject and no
-material source file changed between them. A `reviewer-returned` at a commit
+material source file changed between them. The recorded commit MUST be HEAD as
+the reviewer started, in either dispatch order, and MUST NOT be a HEAD read
+after the reviewer finished; when no such commit is known it MUST be recorded as
+unknown, which never credits. A `reviewer-returned` at a commit
 with material changes since, or one without a recorded allowlisted match, MUST
 NOT credit. Every reader of REVIEW status MUST apply the same rule.
 
@@ -128,6 +131,13 @@ NOT credit. Every reader of REVIEW status MUST apply the same rule.
 - **GIVEN** a `reviewer-returned` milestone at an earlier commit, followed by a commit changing a material source file
 - **WHEN** the agent runs `git push`
 - **THEN** the push gate MUST deny for missing REVIEW
+
+#### Scenario: A commit made while the reviewer ran is not covered, in either order
+
+- **GIVEN** an allowlisted reviewer dispatched at commit S0, and a commit changing a material source file made before the reviewer finished
+- **WHEN** the reviewer's completion and dispatch hooks fire in the background order (dispatch first) or the foreground order (completion first) and the agent then runs `git push`
+- **THEN** the milestone MUST record S0 and the push gate MUST deny for missing REVIEW
+- **AND** the same reviewer with no commit made while it ran MUST credit in both orders
 
 ### Requirement: Shadow records carry harness ids, versions and review coverage
 

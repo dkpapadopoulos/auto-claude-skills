@@ -158,8 +158,9 @@ if [ "${_DKEY}" != "${_KEY}" ]; then
     exit 0
 fi
 
-# The recorded sha is the DISPATCH-time commit, passed explicitly — NOT HEAD at
-# call time. This is the one place the "SHA-bound for free" wording inherited
+# The recorded sha is the commit the reviewer was pointed at, passed explicitly —
+# NOT HEAD at call time: the HEAD reviewer-start-hook.sh recorded on
+# SubagentStart, else the dispatch record's sha (reviewer_pairing_reviewed_sha). This is the one place the "SHA-bound for free" wording inherited
 # from the dispatch hook would be wrong: a backgrounded reviewer finishes while
 # the session keeps committing, so HEAD here can name a tree the reviewer never
 # read, and ledger records are consumed with HEAD-or-ancestor acceptance — an
@@ -198,7 +199,7 @@ fi
 # second surface it does not know exists. The IMPLEMENT shadow corpus settled
 # the same trade the same way: "raw command text is never written;
 # transcript_path is the adjudication pointer."
-_DSHA="$(reviewer_pairing_dispatch_sha "${_SID}" "${_AID}")" || _DSHA="-"
+_DSHA="$(reviewer_pairing_reviewed_sha "${_SID}" "${_AID}" "${_KEY}")" || _DSHA="-"
 _DARM="$(reviewer_pairing_dispatch_arm "${_SID}" "${_AID}")" || _DARM=""
 branch_ledger_record "reviewer-returned" "" "${_DSHA:--}" "${_DARM:+arm=${_DARM}}" 2>/dev/null || true
 

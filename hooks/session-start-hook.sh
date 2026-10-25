@@ -184,6 +184,7 @@ find "${HOME}/.claude" -maxdepth 1 \
        -o -name '.skill-compact-pending-*' \
        -o -name '.skill-invocation-evidence-*' -o -name '.skill-phase-attest-*' \
        -o -name '.skill-reviewer-dispatch-*' -o -name '.skill-reviewer-complete-*' \
+       -o -name '.skill-reviewer-start-*' \
        -o -name '.skill-reviewer-saturated-*' -o -name '.skill-egress-*' \
        -o -name '.sticky-repeat-shown-*' \) \
     -mtime +"${_STATE_RETENTION_DAYS}" \
@@ -194,6 +195,7 @@ find "${HOME}/.claude" -maxdepth 1 \
     ! -name ".skill-phase-attest-${_SESSION_TOKEN}" \
     ! -name ".skill-reviewer-dispatch-${_SESSION_TOKEN}" \
     ! -name ".skill-reviewer-complete-${_SESSION_TOKEN}" \
+    ! -name ".skill-reviewer-start-${_SESSION_TOKEN}" \
     ! -name ".skill-reviewer-saturated-${_SESSION_TOKEN}" \
     ! -name ".sticky-repeat-shown-${_SESSION_TOKEN}" \
     ! -name ".skill-egress-*-${_SESSION_TOKEN}.*" \

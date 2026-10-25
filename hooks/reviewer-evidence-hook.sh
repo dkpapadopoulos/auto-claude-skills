@@ -226,8 +226,19 @@ if [ "${_PAIR_OK}" = "true" ] && [ -n "${_AGENT_ID}" ]; then
     # session is free to check out something else meanwhile.
     _PAIR_KEY="$(branch_ledger_key 2>/dev/null)" || _PAIR_KEY=""
     if [ -n "${_PAIR_KEY}" ]; then
-        # HALF ONE, written BEFORE reading the other half.
+        # The dispatch record's sha, the fallback when SubagentStart left no
+        # record (reviewer_pairing_reviewed_sha prefers that record on both join
+        # sides). HEAD now is the dispatch commit ONLY while this agent has not
+        # completed: a background dispatch reaches here at spawn, a FOREGROUND
+        # one only after the reviewer finished (~30ms after SubagentStop,
+        # measured), when HEAD may hold commits it never read. So HEAD is read
+        # BEFORE the completion check, and a completed agent stores `-`
+        # (ruling F3), never HEAD.
         _PAIR_SHA="$(git rev-parse HEAD 2>/dev/null)" || _PAIR_SHA=""
+        if reviewer_pairing_complete_key "${_SID}" "${_AGENT_ID}" >/dev/null 2>&1; then
+            _PAIR_SHA=""
+        fi
+        # HALF ONE, written BEFORE reading the other half.
         reviewer_pairing_note_dispatch "${_SID}" "${_AGENT_ID}" "${_PAIR_KEY}" "${_PAIR_SHA}" "${_REV_ARM}" || true
         # HALF TWO: did this agent already finish, on THIS branch? (foreground
         # ordering). The key comparison is not symmetry for its own sake — a
@@ -238,12 +249,14 @@ if [ "${_PAIR_OK}" = "true" ] && [ -n "${_AGENT_ID}" ]; then
         # control; pinned by a cell.
         _COMP_KEY="$(reviewer_pairing_complete_key "${_SID}" "${_AGENT_ID}")" || _COMP_KEY=""
         if [ -n "${_COMP_KEY}" ] && [ "${_COMP_KEY}" = "${_PAIR_KEY}" ]; then
-            # Stamp the commit that was REVIEWED. On this path they coincide (we
-            # are at dispatch time), but passing it explicitly keeps both credit
-            # paths writing the same fact rather than relying on that coincidence.
-            # An unreadable HEAD is recorded as `-`, matching the completion
-            # path: an empty sha would make branch_ledger_record resolve HEAD.
-            branch_ledger_record "reviewer-returned" "" "${_PAIR_SHA:--}" "arm=${_REV_ARM}" 2>/dev/null || true
+            # Stamp the commit that was REVIEWED. On this path the reviewer has
+            # ALREADY FINISHED (the foreground order), so HEAD now is not that
+            # commit: it is the start record's HEAD, or the dispatch record's
+            # sha, read through the same lib call the completion hook makes so
+            # both credit paths write the same fact. Neither available is `-`:
+            # an empty sha would make branch_ledger_record resolve HEAD.
+            _RSHA="$(reviewer_pairing_reviewed_sha "${_SID}" "${_AGENT_ID}" "${_PAIR_KEY}")" || _RSHA=""
+            branch_ledger_record "reviewer-returned" "" "${_RSHA:--}" "arm=${_REV_ARM}" 2>/dev/null || true
         fi
     fi
 fi
