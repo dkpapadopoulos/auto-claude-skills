@@ -511,18 +511,22 @@ real-vs-theatre question no value of n can reach.
 - Rotation, retention, or pruning policy beyond "none in v1".
 - The push-gate capture log's schema.
 
-## Amendment 2026-10-25 — the panel successor window was not registered
+## Amendment 2026-10-25 — the panel adjudicator was not registered
 
-A successor window for this leg, adjudicated by a model panel
-(`openspec/changes/archive/2026-10-25-shadow-panel-adjudication/`), was built
-and then closed INCONCLUSIVE **before registration**, by a rule fixed before
-its numbers were seen: a leg is registered only if at most 10% of its cohort is
-likely to be judged `unknown`. Measured 2026-10-24 for this leg: **62.2%**.
-No judge was called and no cohort was registered.
+A model panel was built to replace the human adjudicator for this window
+(`openspec/changes/archive/2026-10-25-shadow-panel-adjudication/`). It was closed INCONCLUSIVE **before registration**, by a rule
+approved before its numbers were seen: a leg is registered only if at most 10%
+of its cohort is likely to be judged `unknown`. Measured 2026-10-24 for this
+leg: **62.2%**. No real episode was judged.
 
-The cause is evidence decay, not the panel: compaction rewrites a session's
-transcript while it runs, and retention deletes it within weeks, so the facts a
-label rests on are gone before anyone can judge them. The leg stays advisory
-**by decision**; the deny-flip is not authorised. A successor should capture
-the gate's evidence at decision time rather than reconstruct it from
-transcripts (see the archived design's Outcome section).
+The cause is compaction: in 23 of the 37 cohort episodes, every surviving copy
+of the session begins at a compaction marker, so the history that would show
+whether an implementation skill ran is gone (16 of the 23 come from one long
+session).
+
+Nothing in this window changes. It stays as the sections above leave it:
+open, labels count only when human-claimed, horizon unknown pending
+re-estimate. The deny-flip criterion is not met and the leg stays advisory. A
+successor adjudicator should capture the gate's evidence at decision time
+rather than reconstruct it from transcripts (see the archived design's Outcome
+section).

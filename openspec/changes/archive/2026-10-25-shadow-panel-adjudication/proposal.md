@@ -1,5 +1,7 @@
 # Proposal: a model panel adjudicates the IMPLEMENT and REVIEW shadow corpora
 
+> **Not shipped.** Archived 2026-10-25 without applying its spec: both legs were closed INCONCLUSIVE before registration. See design.md, "Outcome 2026-10-25".
+
 ## Why
 
 Both shadow legs of the push gate record would-block events so a pre-registered

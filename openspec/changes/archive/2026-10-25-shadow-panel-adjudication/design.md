@@ -434,51 +434,67 @@ authorised from the completed subset.
 - Packet section budgets inside 6,000 bytes.
 - The control scenario scripts, within the families above.
 
-## Outcome 2026-10-25 — both windows closed INCONCLUSIVE before registration
+## Outcome 2026-10-25 — not registered: both legs closed INCONCLUSIVE before registration
 
-Nothing was frozen or registered, and no judge was ever called on a real or a
-control item. The rule in §3a, fixed before its numbers were seen, closed both
-legs.
+Nothing was frozen or registered. No real episode was judged and the control
+qualifying round never ran; the judges were run only on a few pilot control
+packets while the controls were being authored. The rule in §3a, approved
+before its numbers were seen, closed both legs.
 
 **Measured** (cohort snapshots of 2026-10-24, cap 16,000, N 40, SEARCH on,
-decision 11 applied). An item counts as likely `unknown` when its push was not
-found (P), or when no decisive event is visible in SEARCH or BEFORE and SEARCH
-did not reach the session's first line (U).
+decision 11 applied; `task-S4` measurement). An item counts as likely
+`unknown` when its push was not found in the transcript (P), or when no
+decisive event is visible in SEARCH or BEFORE and SEARCH did not reach the
+session's first line (U). "Decisive" uses the narrow kinds: the gate's own
+evidence (the implementation-skill call or `phase_attest`; a reviewer
+dispatch, review skill or recorded verdict).
 
 | leg | kept | P | decisive event visible | absence established | U | likely `unknown` |
 |---|---|---|---|---|---|---|
 | IMPLEMENT | 37 | 0 | 0 | 14 | 23 | **62.2%** |
 | REVIEW | 130 | 12 | 96–107 | 6–12 | 5–10 | **13.1–16.9%** |
 
-The REVIEW range spans the two SEARCH matcher versions measured. With every
-decisive match shown, REVIEW's floor is 11.5%: the 12 episodes whose push could
-not be located are 9.2% on their own.
+The REVIEW range spans the two SEARCH matcher versions measured.
 
-**Why no packet could fix it.** Every one of the 23 IMPLEMENT U items has a
-first surviving line that is a compaction marker in every copy (16 of them are
-one long session), and no surviving compaction summary names the
-implementation skills. Before this window, the same evidence had already been
-cut by window size (§3a, decision 10). The evidence that decides these labels
-is gone by the time anyone can judge it: compaction rewrites the transcript
-during the session, and retention deletes it within weeks.
+**Why, per leg.**
+
+- **IMPLEMENT: compaction.** In all 23 U items, every surviving copy of the
+  session begins at a compaction marker, and no surviving compaction summary
+  names an implementation skill. They cluster: 16 of the 23 come from one
+  long session. No packet design can show history that compaction deleted.
+  In the earlier window-only measurement (before SEARCH), 97% were likely
+  `unknown`.
+- **REVIEW: mostly the instrument.** The 12 P items (9.2%) are episodes whose
+  push the locator could not find although earlier history survives (locator
+  gaps under decision 8). Of the 10 U items at the later matcher version, 7
+  exist only because SEARCH drops matches past its budget; the broadened
+  matchers crowd decisive matches out. With every match shown, REVIEW would
+  be at 11.5% under the narrow kinds, two items over the cap.
+- **Retention contributed nothing** to either rate: episodes already lost by
+  age left the cohort before measurement (decision 8).
 
 **Consequences.**
 
-- Both legs stay advisory **by decision**. The deny-flip is not authorised.
-  The predecessor windows were already closed as null results on 2026-09-23.
+- **IMPLEMENT:** the panel adjudicator is not registered, so the window in
+  `implement-shadow-event` stands as it was: open, human-claimed labels only,
+  horizon unknown pending re-estimate. The deny-flip criterion is not met and
+  the leg stays advisory.
+- **REVIEW:** the successor window is not registered. The first window was
+  closed as a null result on 2026-09-23, so no REVIEW window is open. The leg
+  stays advisory, as decided then.
 - The instrument is not merged. It stays, reviewed and tested, on the
-  unmerged branch `feat/shadow-panel-adjudication` (at `dbd06f6c`), as
-  reference for a successor. The `--rate-episodes` reader option is the one
-  piece merged.
+  unmerged branch `feat/shadow-panel-adjudication` (at `dbd06f6c`). The
+  `--rate-episodes` reader option is the one piece merged.
 - Defects found and not fixed, because nothing will run on them: the search
   can report reaching the session start while overflow hides reviewer
   dispatches (10 of 12 REVIEW "absence established" items); the broadened
-  summary matchers crowd decisive matches out; `controls._SECTION_RE` does
-  not know SEARCH; the 80 controls were accepted at 6,000 bytes without SEARCH.
+  matchers crowd decisive matches out; `controls._SECTION_RE` does not know
+  SEARCH; the 80 controls were accepted at 6,000 bytes without SEARCH.
 
 **What a successor needs.** Capture the evidence when the gate decides,
 rather than reconstructing it from transcripts afterwards: what the gate
 checked, what it found, and what it would have told the agent, written beside
-the shadow record at decision time. A panel would then need no transcript, no
-compaction rule and no search, and the 9.2% of REVIEW episodes whose push
-could not be located would not exist.
+the shadow record at decision time. That removes all three causes above:
+compaction, the push locator and the search budget. A REVIEW-only panel on a
+fixed locator and overflow policy might also clear the cap; that would be a
+new registration, not this one.
