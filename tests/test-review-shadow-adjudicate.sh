@@ -1215,4 +1215,19 @@ case "${_os7}" in
     *) _record_fail "F7 ...and by --status, which shares the precheck" "got: ${_os7}" ;;
 esac
 
+# F9 (final review M4) the SIDECAR's unparseable count, `_adj_unparsed`, takes the
+# same LC_ALL=C: under a UTF-8 locale `grep -c .` skipped an invalid-UTF-8 line,
+# so the total and the parsed count agreed and the corrupt line counted 0.
+# NOTE: nothing in the script calls `_adj_unparsed` today (measured: one
+# definition, zero callers, at the branch base and on main), so this cell drives
+# the real definition EXTRACTED from the script, under the locale F7 found.
+_F9="${TMP}/f9-adj.jsonl"
+printf '%s\n' '{"record_id":"ok1","verdict":"true_catch","claimant":"human"}' > "${_F9}"
+printf '\377\376\n' >> "${_F9}"
+_f9_def="$(sed -n '/^_adj_unparsed() {/,/^}/p' "${SUT}")"
+if [ -n "${_f9_def}" ]; then _record_pass "F9 setup: _adj_unparsed extracted from the script"
+else _record_fail "F9 setup: _adj_unparsed extracted from the script" "definition not found"; fi
+_of9="$( ( eval "${_f9_def}"; ADJ_LOG="${_F9}"; LC_ALL="${_U8:-C}"; export LC_ALL; _adj_unparsed ) 2>/dev/null)"
+assert_equals "F9 an invalid-UTF-8 sidecar line counts as unparseable (${_U8:-C})" "1" "${_of9}"
+
 print_summary

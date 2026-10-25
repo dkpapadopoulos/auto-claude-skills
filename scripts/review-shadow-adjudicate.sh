@@ -208,7 +208,10 @@ _adjudicated_ids() {
 _adj_unparsed() {
     [ -f "${ADJ_LOG}" ] || { printf '0'; return 0; }
     local _t _p
-    _t="$(grep -c . "${ADJ_LOG}" 2>/dev/null | tr -d '[:space:]')"
+    # LC_ALL=C, as in _corpus_precheck: in a UTF-8 locale `.` does not match an
+    # invalid byte, so a corrupt line was counted neither as a line nor as
+    # unparseable.
+    _t="$(LC_ALL=C grep -c . "${ADJ_LOG}" 2>/dev/null | tr -d '[:space:]')"
     _p="$(jq -R -r 'fromjson? // empty | 1' "${ADJ_LOG}" 2>/dev/null | grep -c . | tr -d '[:space:]')"
     printf '%s' "$(( ${_t:-0} - ${_p:-0} ))"
 }
