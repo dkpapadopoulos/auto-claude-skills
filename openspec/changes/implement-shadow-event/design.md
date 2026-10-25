@@ -510,3 +510,19 @@ real-vs-theatre question no value of n can reach.
   reference.
 - Rotation, retention, or pruning policy beyond "none in v1".
 - The push-gate capture log's schema.
+
+## Amendment 2026-10-25 — the panel successor window was not registered
+
+A successor window for this leg, adjudicated by a model panel
+(`openspec/changes/archive/2026-10-25-shadow-panel-adjudication/`), was built
+and then closed INCONCLUSIVE **before registration**, by a rule fixed before
+its numbers were seen: a leg is registered only if at most 10% of its cohort is
+likely to be judged `unknown`. Measured 2026-10-24 for this leg: **62.2%**.
+No judge was called and no cohort was registered.
+
+The cause is evidence decay, not the panel: compaction rewrites a session's
+transcript while it runs, and retention deletes it within weeks, so the facts a
+label rests on are gone before anyone can judge them. The leg stays advisory
+**by decision**; the deny-flip is not authorised. A successor should capture
+the gate's evidence at decision time rather than reconstruct it from
+transcripts (see the archived design's Outcome section).

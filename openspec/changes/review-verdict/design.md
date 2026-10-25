@@ -223,3 +223,19 @@ One honest exception to that heading, stated rather than buried: the floor's **d
 Also worth recording, because it is what makes the version bump cheap rather than merely principled: since **zero episodes were ever adjudicated**, discarding the 199 older records destroys no measurement value at all. Only unlabeled supply is lost.
 
 At the observed rate the floor is reachable again in roughly a week and a half of ordinary work, which is why a corpus nobody can vouch for is not worth keeping.
+
+## Amendment 2026-10-25 — the panel successor window was not registered
+
+A successor window for this leg, adjudicated by a model panel
+(`openspec/changes/archive/2026-10-25-shadow-panel-adjudication/`), was built
+and then closed INCONCLUSIVE **before registration**, by a rule fixed before
+its numbers were seen: a leg is registered only if at most 10% of its cohort is
+likely to be judged `unknown`. Measured 2026-10-24 for this leg: **13.1–16.9% (floor 11.5%)**.
+No judge was called and no cohort was registered.
+
+The cause is evidence decay, not the panel: compaction rewrites a session's
+transcript while it runs, and retention deletes it within weeks, so the facts a
+label rests on are gone before anyone can judge them. The leg stays advisory
+**by decision**; the deny-flip is not authorised. A successor should capture
+the gate's evidence at decision time rather than reconstruct it from
+transcripts (see the archived design's Outcome section).
