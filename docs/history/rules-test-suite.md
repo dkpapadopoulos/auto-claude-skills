@@ -9,6 +9,8 @@ not lost. Each section reproduces the original unit **verbatim** (as of commit
 says where its surviving instruction lives. Every section was moved in the commit
 `docs: test-suite rule keeps its instructions and moves test-guarded history to docs/history`
 (the commit that created this file: `git log --diff-filter=A -- docs/history/rules-test-suite.md`).
+Review corrections to the notes (not to the quoted originals) followed in
+`docs: test-suite rule claims only what is pinned; canary clause corrected`.
 
 ## Preamble: "Path-scoped rule, split out of the repo-root `CLAUDE.md` ..."
 
@@ -44,13 +46,19 @@ Moved in: the commit named above. Guards:
   former live instance `test_no_stderr_without_explain` is invoked at
   `tests/test-routing.sh` line 3692. The zero-definitions floor
   (`tests/test-helpers.sh` lines 274-277) has no fixture of its own, so the general
-  rule "a needle-matching guard needs a floor" stays in the rule.
+  rule "a guard comparing two sets must check both differences and needs a floor"
+  stays in the rule.
 
 Still in force: two bullets in the rule, "A capped `gh` query ..." and "A test file's
 bare call list ...". Dropped as history: the two limits' values, the no-live-instance
 count (1 eval hit, 3 of 200 ledger runs), "123/123 green" from four undefined names, the
-20-files count, the 496/500 counter story, the drift-canary clause and the
-mutation-verification note.
+20-files count, the 496/500 counter story and the mutation-verification note.
+Removed because false: "and trips the drift canary". The installed-plugin drift canary
+(`hooks/session-start-hook.sh` lines 927-965) runs only when the session's cwd is the
+plugin's own source repo, and its checksum manifest (line 957) does not include
+`mine-evidence.sh`, so editing the cached script in a target repo can never trip it.
+The same claim in the comment at `mine-evidence.sh` lines 292-300 was corrected in the
+review-fix commit.
 
 Original text:
 
@@ -65,15 +73,18 @@ needle count is pinned at 25), lines 76-85 (every needle in
 `skills/agent-team-review/SKILL.md`; the needles cover the pair rule, the
 masking-gate mechanism, both directions, `could-not-reproduce` keeping its severity,
 the detached worktree, `git diff HEAD`, untracked files, the scope exception, the
-oracle, the non-flip's three explanations, the comparable positive control, and the
-open finding constraining the verdict), lines 90-91 (step 4 of Lead Synthesis routes
-to §4a), lines 100-105 (the seeded set keeps 3 REAL and 3 FALSE cells, states its
-measured provenance, and names the REAL-1 clause in its bar). The default-config
-confounder, "sourced by the guard is not gates", and the memorisable-set caveat are
-written in `tests/fixtures/agent-team-review/adjudication/seeded-findings.md`. Not
-guarded by any test, so kept as instruction text in the rule: feed assertion loops
-from a heredoc or glob, never a pipe; a needle-fixture gate needs a second authority
-and a count floor; keep the §4a scope exception.
+oracle, the non-flip's three explanations, the comparable positive control, and a
+`blocking` open finding constraining the verdict), lines 90-91 (step 4 of Lead
+Synthesis routes to §4a), lines 100-105 (the seeded set keeps 3 REAL and 3 FALSE cells,
+states its measured provenance, and names the REAL-1 clause in its bar). NOT pinned by
+any needle or assertion, though written in SKILL.md: a `warning`-severity open finding
+is `suggestions_only` at most (§5), and the reproduction worktree is reaped (§4a). The
+default-config confounder, "sourced by the guard is not gates", and the memorisable-set
+caveat are prose in `tests/fixtures/agent-team-review/adjudication/seeded-findings.md`,
+not asserted. Not guarded by any test, so kept as instruction text in the rule: keep
+assertion loops in the current shell (a redirect or a glob `for`, never a pipe); a
+needle-fixture gate needs a second authority and a count floor; keep the §4a scope
+exception; and the rule names the three unpinned sub-clauses above.
 
 Still in force: the procedure itself in `skills/agent-team-review/SKILL.md` §4a and
 §5, and the shortened "Review adjudication (#205)" bullet in the rule.
