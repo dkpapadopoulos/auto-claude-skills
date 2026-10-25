@@ -35,8 +35,9 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 # Batch transcript + is_error + acs_source + skill name into ONE jq fork (was
 # two) — \x1f-joined, controlled fields only, skill name LAST. `acs_source` is
-# set only by the routing hook's typed-slash synthetic payload ("typed-slash");
-# it selects telemetry, never evidence.
+# a top-level payload field the harness's own PostToolUse payload does not
+# carry; its planned producer is the routing hook's typed-slash synthetic
+# payload ("typed-slash"). It selects telemetry, never evidence.
 _FIELDS="$(printf '%s' "${_INPUT}" | jq -r '[.transcript_path // "", (.tool_response.is_error // false | tostring), (.acs_source // "" | tostring), (.tool_input.name // .tool_input.skill // "")] | join("\u001f")' 2>/dev/null)" || _FIELDS=""
 _TRANSCRIPT="${_FIELDS%%$'\x1f'*}"
 _REST="${_FIELDS#*$'\x1f'}"
@@ -128,19 +129,26 @@ _record_gating_milestone() {
 # hook's typed-slash credit) must read or match that list, and the guard keeps
 # the same four-name fallback hardcoded. A third gated milestone must be added
 # in all of them.
+# Sourced INSIDE a function (#192): the `. lib && command -v` form covers only
+# the source's own status, and a command failing inside the lib would trip
+# `trap 'exit 0' ERR` and lose every milestone below. Bash 3.2 does not inherit
+# the ERR trap into a function without `set -E` (same rationale as the guard's
+# `_guard_load`), so a faulting lib degrades to the fallback list instead.
+_load_credited() { . "${_PLUGIN_ROOT}/hooks/lib/credited-skills.sh" 2>/dev/null && command -v credited_review_skill >/dev/null 2>&1; }
 _CREDITED_OK=false
-. "${_PLUGIN_ROOT}/hooks/lib/credited-skills.sh" 2>/dev/null && command -v credited_review_skill >/dev/null 2>&1 && _CREDITED_OK=true || true
+_load_credited && _CREDITED_OK=true || true
 case "${_BARE}" in
     requesting-code-review|verification-before-completion)
         _record_gating_milestone "${_BARE}" ;;
     *)
-        # subagent-driven-development's review mandate lives in the EXTERNAL
-        # superpowers plugin ("review after each task" in its SKILL.md) — not
-        # verifiable from this repo; re-check if superpowers drops that step.
-        # The two agent-team-* skills are owned here (skills/<name>/SKILL.md).
         if [ "${_CREDITED_OK}" = "true" ]; then
             credited_review_skill "${_BARE}" && _record_gating_milestone "requesting-code-review"
         else
+            # Fallback: the three review-embedding proxies.
+            # subagent-driven-development's review mandate lives in the EXTERNAL
+            # superpowers plugin ("review after each task" in its SKILL.md) — not
+            # verifiable from this repo; re-check if superpowers drops that step.
+            # The two agent-team-* skills are owned here (skills/<name>/SKILL.md).
             case "${_BARE}" in
                 subagent-driven-development|agent-team-execution|agent-team-review)
                     _record_gating_milestone "requesting-code-review" ;;

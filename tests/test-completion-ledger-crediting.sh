@@ -132,47 +132,94 @@ for _pc in "${_PC_MISSING}" "${_PC_EMPTY}"; do
     done
 done
 
+# (e2) a lib that FAILS A COMMAND while being sourced (#192 shape: `false` at
+# its head or tail). The guarded one-line source covers only the source's own
+# status; a command failing inside the lib trips the hook's `trap 'exit 0' ERR`
+# unless the source is contained in a function. The fallback four and the
+# literal gating milestones must still record. Tail shape: every function is
+# defined but the source returns 1, so the lib counts as NOT loaded and
+# code-review must not credit. (Head shape: the source returns 0 with every
+# function defined, so the lib legitimately loads; no code-review assertion.)
+_PC_TRAPH="${_CLHOME}/plugin-trap-head"; _PC_TRAPT="${_CLHOME}/plugin-trap-tail"
+for _d in "${_PC_TRAPH}" "${_PC_TRAPT}"; do
+    mkdir -p "${_d}" && cp -R "${PROJECT_ROOT}/hooks" "${_d}/hooks"
+done
+{ printf 'false\n'; cat "${PROJECT_ROOT}/hooks/lib/credited-skills.sh"; } > "${_PC_TRAPH}/hooks/lib/credited-skills.sh"
+printf 'false\n' >> "${_PC_TRAPT}/hooks/lib/credited-skills.sh"
+if [ "$(head -n 1 "${_PC_TRAPH}/hooks/lib/credited-skills.sh")" = "false" ] \
+   && [ "$(tail -n 1 "${_PC_TRAPT}/hooks/lib/credited-skills.sh")" = "false" ]; then
+    _record_pass "(e2) faulting-lib copies built as intended"
+else
+    _record_fail "(e2) faulting-lib copies built as intended" "copy setup wrong"
+fi
+for _pc in "${_PC_TRAPH}" "${_PC_TRAPT}"; do
+    _lbl="false-at-head"; [ "${_pc}" = "${_PC_TRAPT}" ] && _lbl="false-at-tail"
+    for _skill in agent-team-review subagent-driven-development agent-team-execution requesting-code-review; do
+        _clear_ledger; _run_completion "${_skill}" name "" "${_pc}"
+        _expect_review "(e2) lib ${_lbl}: ${_skill} still credits REVIEW" yes
+    done
+    _clear_ledger; _run_completion "verification-before-completion" name "" "${_pc}"
+    if branch_ledger_has "verification-before-completion" "${PROJECT_ROOT}"; then
+        _record_pass "(e2) lib ${_lbl}: verification-before-completion still records"
+    else
+        _record_fail "(e2) lib ${_lbl}: verification-before-completion still records" "ledger lacks it"
+    fi
+done
+_clear_ledger; _run_completion "code-review" name "" "${_PC_TRAPT}"
+_expect_review "(e2) lib false-at-tail: code-review records NOTHING (lib not loaded)" no
+
 # (f) acs_source "typed-slash" skips ONLY the advisory-lens telemetry line;
-# every evidence write (ledger, invocation record, sha sidecar, .completed)
-# equals a Skill return's.
+# every evidence write (REVIEW ledger, invocation record, sha sidecar,
+# .completed, per-chain-step ledger) equals a Skill return's. Run for
+# requesting-code-review and for agent-team-review: the latter is a chain step
+# whose own name is NOT a gating milestone, so only the per-chain-step ledger
+# write can record `agent-team-review` — a typed-slash exit placed above that
+# write turns its cell red.
 _STATE_F="$HOME/.claude/.skill-composition-state-${_TOK}"
 _INVOC_F="$HOME/.claude/.skill-invocation-evidence-${_TOK}"
 _SHA_F="$HOME/.claude/.skill-invocation-evidence-sha-${_TOK}"
 _TLOG="$HOME/.claude/.advisory-lens-log.jsonl"
 _tlines() { if [ -f "${_TLOG}" ]; then wc -l < "${_TLOG}" | tr -d '[:space:]'; else echo 0; fi; }
-# _typed_case <label> <acs_source> <expected telemetry delta>
+# _typed_case <label> <acs_source> <expected telemetry delta> <subject skill>
 _typed_case() {
-    local _before _after
+    local _before _after _s="$4" _l="$1 [$4]"
     _clear_ledger; rm -f "${_INVOC_F}" "${_SHA_F}"
-    printf '%s' '{"chain":["requesting-code-review"],"current_index":0,"completed":[]}' > "${_STATE_F}"
+    jq -nc --arg s "${_s}" '{"chain":[$s],"current_index":0,"completed":[]}' > "${_STATE_F}"
     _before="$(_tlines)"
-    _run_completion "requesting-code-review" skill "$2"
+    _run_completion "${_s}" skill "$2"
     _after="$(_tlines)"
-    _expect_review "(f) $1: ledger records requesting-code-review" yes
-    if jq -e 'index("requesting-code-review") != null' "${_INVOC_F}" >/dev/null 2>&1; then
-        _record_pass "(f) $1: invocation evidence contains requesting-code-review"
+    _expect_review "(f) ${_l}: ledger records requesting-code-review" yes
+    if branch_ledger_has "${_s}" "${PROJECT_ROOT}"; then
+        _record_pass "(f) ${_l}: per-chain-step ledger records ${_s}"
     else
-        _record_fail "(f) $1: invocation evidence contains requesting-code-review" "missing from ${_INVOC_F}"
+        _record_fail "(f) ${_l}: per-chain-step ledger records ${_s}" "ledger lacks ${_s}"
     fi
-    if grep -q '^requesting-code-review [0-9a-f]\{40\}$' "${_SHA_F}" 2>/dev/null; then
-        _record_pass "(f) $1: sha sidecar records requesting-code-review"
+    if jq -e --arg s "${_s}" 'index($s) != null' "${_INVOC_F}" >/dev/null 2>&1; then
+        _record_pass "(f) ${_l}: invocation evidence contains ${_s}"
     else
-        _record_fail "(f) $1: sha sidecar records requesting-code-review" "no sidecar line"
+        _record_fail "(f) ${_l}: invocation evidence contains ${_s}" "missing from ${_INVOC_F}"
     fi
-    if jq -e '(.completed // []) | index("requesting-code-review") != null' "${_STATE_F}" >/dev/null 2>&1; then
-        _record_pass "(f) $1: .completed gains requesting-code-review"
+    if grep -q "^${_s} [0-9a-f]\{40\}\$" "${_SHA_F}" 2>/dev/null; then
+        _record_pass "(f) ${_l}: sha sidecar records ${_s}"
     else
-        _record_fail "(f) $1: .completed gains requesting-code-review" "not in .completed"
+        _record_fail "(f) ${_l}: sha sidecar records ${_s}" "no sidecar line"
+    fi
+    if jq -e --arg s "${_s}" '(.completed // []) | index($s) != null' "${_STATE_F}" >/dev/null 2>&1; then
+        _record_pass "(f) ${_l}: .completed gains ${_s}"
+    else
+        _record_fail "(f) ${_l}: .completed gains ${_s}" "not in .completed"
     fi
     if [ "$(( _after - _before ))" -eq "$3" ]; then
-        _record_pass "(f) $1: telemetry gains $3 line(s)"
+        _record_pass "(f) ${_l}: telemetry gains $3 line(s)"
     else
-        _record_fail "(f) $1: telemetry gains $3 line(s)" "gained $(( _after - _before ))"
+        _record_fail "(f) ${_l}: telemetry gains $3 line(s)" "gained $(( _after - _before ))"
     fi
 }
-_typed_case "typed-slash" "typed-slash" 0
-_typed_case "control, no acs_source" "" 1
-_typed_case "near-miss acs_source typed-slash-x" "typed-slash-x" 1
+for _subj in requesting-code-review agent-team-review; do
+    _typed_case "typed-slash" "typed-slash" 0 "${_subj}"
+    _typed_case "control, no acs_source" "" 1 "${_subj}"
+    _typed_case "near-miss acs_source typed-slash-x" "typed-slash-x" 1 "${_subj}"
+done
 printf '%s' '{"chain":[],"current_index":0,"completed":[]}' > "${_STATE_F}"
 
 # (g) verification-before-completion records its own milestone, never REVIEW.
