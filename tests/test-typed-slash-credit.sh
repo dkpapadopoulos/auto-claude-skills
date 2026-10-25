@@ -651,4 +651,58 @@ else _record_fail "U6 control kind 'prompt': credits" "nothing recorded"; fi
 _r="$( ( set -uo pipefail; . "${LIB}" && typed_slash_credit && _typed_slash_name ""; echo "rc=$?" ) 2>&1)"
 assert_equals "U7 no-arg calls are set -u clean" "rc=1" "${_r}"
 
+# I: two credited REVIEW names (subagent-driven-development, agent-team-execution) are
+# also IMPLEMENT-slot names, so a typed one writes invocation evidence the push guard's
+# IMPLEMENT leg (Check 0) accepts, the same as a Skill return. That changes which pushes
+# become IMPLEMENT shadow records, hence IMPLEMENT_SHADOW_PREDICATE_VERSION 6. Both arms,
+# REAL activation hook then REAL guard, on a push whose diff touches material source,
+# with REVIEW and VERIFY in the ledger so only the IMPLEMENT leg is in question:
+#   I1 typed /superpowers:subagent-driven-development -> no advisory, no record
+#   I2 typed /superpowers:executing-plans (not a credited REVIEW name) -> still a record
+_I_SAVED_REPO="${REPO}"
+REPO="$(cd "$(mktemp -d "${TEST_TMPDIR}/irepo.XXXXXX")" && pwd -P)"
+( cd "${REPO}" && git init -q && git config user.email t@example.com && git config user.name t \
+  && echo '# f' > README.md && git add README.md && git commit -qm init && git branch -M main \
+  && git checkout -qb feat/impl && mkdir -p src && echo "print('x')" > src/app.py \
+  && git add src/app.py && git commit -qm "feat: material" ) >/dev/null 2>&1
+REG_IMPL="${TEST_TMPDIR}/reg-impl.json"
+"${REAL_JQ}" '.skills += [
+    {name:"subagent-driven-development", invoke:"Skill(superpowers:subagent-driven-development)", available:true, enabled:true},
+    {name:"executing-plans", invoke:"Skill(superpowers:executing-plans)", available:true, enabled:true}]' \
+    "${REG}" > "${REG_IMPL}"
+_I_PV="$( ( . "${PROJECT_ROOT}/hooks/lib/implement-shadow.sh" && printf '%s' "${IMPLEMENT_SHADOW_PREDICATE_VERSION}" ) 2>/dev/null)"
+# _impl_arm <prompt> : fresh HOME, IMPLEMENT chain, REVIEW+VERIFY ledger, the typed turn,
+# then the push. Sets _I_PUSH and _I_RECS (one "<would_block>|<kind>|<pv>" per record).
+_impl_arm() {
+    _new_home "${REG_IMPL}"
+    printf '%s' '{"chain":["writing-plans","executing-plans","requesting-code-review","verification-before-completion"],"current_index":1,"completed":[]}' \
+        > "${HOME}/.claude/.skill-composition-state-${TOK}"
+    ( cd "${REPO}" && branch_ledger_record requesting-code-review "${REPO}" \
+        && branch_ledger_record verification-before-completion "${REPO}" ) >/dev/null 2>&1
+    export IMPLEMENT_SHADOW_LOG="${HOME}/impl-shadow.jsonl"
+    _turn "$1"
+    _I_PUSH="$(_push)"
+    _I_RECS="$("${REAL_JQ}" -r '"\(.would_block)|\(.impl_evidence_kind)|\(.predicate_version)"' \
+        "${IMPLEMENT_SHADOW_LOG}" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')"
+    unset IMPLEMENT_SHADOW_LOG
+}
+_impl_arm "/superpowers:subagent-driven-development docs/plans/x-plan.md"
+if [ -f "$(_INVOC)" ] && "${REAL_JQ}" -e 'index("subagent-driven-development") != null' "$(_INVOC)" >/dev/null 2>&1; then
+    _record_pass "I1 setup: typed SDD wrote subagent-driven-development to invocation evidence"
+else
+    _record_fail "I1 setup: typed SDD wrote subagent-driven-development to invocation evidence" "$(cat "$(_INVOC)" 2>/dev/null || echo '<none>')"
+fi
+assert_not_contains "I1 typed SDD: the push is not denied" '"deny"' "${_I_PUSH:-<empty>}"
+assert_not_contains "I1 typed SDD: no IMPLEMENT advisory" "IMPLEMENT:" "${_I_PUSH:-<empty>}"
+assert_equals "I1 typed SDD: no IMPLEMENT shadow record" "" "${_I_RECS}"
+_impl_arm "/superpowers:executing-plans docs/plans/x-plan.md"
+if [ -e "$(_INVOC)" ]; then _record_fail "I2 typed executing-plans: no invocation evidence" "$(cat "$(_INVOC)")"
+else _record_pass "I2 typed executing-plans: no invocation evidence"; fi
+assert_not_contains "I2 typed executing-plans: the push is not denied" '"deny"' "${_I_PUSH:-<empty>}"
+assert_contains "I2 typed executing-plans: the IMPLEMENT advisory fires" "IMPLEMENT:" "${_I_PUSH:-<empty>}"
+assert_equals "I2 typed executing-plans: one would-block record at the current predicate" \
+    "true|none|${_I_PV}" "${_I_RECS}"
+assert_equals "I2 the current IMPLEMENT predicate is 6" "6" "${_I_PV}"
+REPO="${_I_SAVED_REPO}"
+
 print_summary

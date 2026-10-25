@@ -135,8 +135,11 @@ Every IMPLEMENT, REVIEW and VERIFY shadow record written after this change MUST
 carry the hook payload's `session_id` and `tool_use_id`, the Claude Code version
 (empty when it cannot be read without a process), and the plugin version, under
 a schema bump. The REVIEW leg's predicate version MUST increase, because this
-change widens the population it fires on; the IMPLEMENT and VERIFY predicate
-versions MUST NOT change. Each REVIEW record MUST also
+change widens the population it fires on. The IMPLEMENT leg's predicate version
+MUST also increase, because a typed `subagent-driven-development` or
+`agent-team-execution` (credited REVIEW names that are also IMPLEMENT-slot
+names) now satisfies that leg, and records from before and after MUST NOT be
+pooled. The VERIFY predicate version MUST NOT change. Each REVIEW record MUST also
 carry `review_witness` and `review_coverage`, computed when the guard decides.
 The REVIEW reader's evidence-miss report MUST count as a miss only a
 would-block record whose witness is an allowlisted returned reviewer covering
@@ -150,3 +153,10 @@ lower bound on one kind of false block, not the registered false-block rate.
 - **WHEN** the reader runs with `--evidence-miss`
 - **THEN** that episode MUST be counted as an evidence miss
 - **AND** records from earlier predicate versions MUST be excluded from the count and reported as excluded
+
+#### Scenario: A typed credited name that is also an IMPLEMENT-slot name satisfies the IMPLEMENT leg
+
+- **GIVEN** a chain with `executing-plans`, a push whose diff touches material source, REVIEW and VERIFY in the branch ledger, and no IMPLEMENT evidence
+- **WHEN** the owner types `/superpowers:subagent-driven-development` as the prompt's first token and the agent then runs `git push`
+- **THEN** no IMPLEMENT advisory MUST be emitted and no IMPLEMENT shadow record MUST be written
+- **AND** when the owner instead types `/superpowers:executing-plans`, which is not a credited REVIEW name, the IMPLEMENT advisory MUST fire and a would-block IMPLEMENT shadow record MUST be written at the new predicate version

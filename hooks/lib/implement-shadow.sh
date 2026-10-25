@@ -57,7 +57,9 @@
 # "" — the four keys are always present on a schema-5 record, so "stamped
 # empty" and "written before stamping" stay distinguishable. A SCHEMA bump, not
 # a predicate bump: the fire condition, the episode key and the labels are
-# unchanged, so v5 records pool with v4 ones under predicate_version 5.
+# unchanged by the stamps. The same change does bump the predicate, for a
+# separate reason (typed slash credit, see v6 below), so every schema-5 record
+# carries predicate_version 6.
 IMPLEMENT_SHADOW_SCHEMA_VERSION=5
 # 2 (#161): merge-path material_source is now measured against the merged PR's
 # file list, not the branch-local delta. v1 merge records measured a different
@@ -98,7 +100,17 @@ IMPLEMENT_SHADOW_SCHEMA_VERSION=5
 # deletion-shaped commands recorded as content pushes) against a floor of 29 —
 # 0.9^12 = 0.282, nowhere near the 0.05 the rule needs, so nothing measurable
 # was discarded. v4 records MUST NOT be pooled with v5.
-IMPLEMENT_SHADOW_PREDICATE_VERSION=5
+# v6 (2026-10-25, review-credit-from-evidence): a TYPED credited REVIEW slash
+# command now writes invocation evidence through the real completion hook, and
+# two of those names (subagent-driven-development, agent-team-execution) are
+# also IMPLEMENT-slot names, so `_invoc_ok` accepts them here. A push after a
+# typed `/superpowers:subagent-driven-development` was a would-block record
+# before and is no record now: what a pooled episode means changed. A typed
+# name that is not a credited REVIEW name (executing-plans) still records.
+# Measured before taking it: 137 would-block and 96 non-blocking v5 records, and
+# no IMPLEMENT adjudication sidecar, so nothing labelled is discarded. v5
+# records MUST NOT be pooled with v6.
+IMPLEMENT_SHADOW_PREDICATE_VERSION=6
 
 # implement_shadow_record <action> <repo> <session_token> <transcript_path> <evidence_kind> <diff_base> <material_source> [would_block] [evidence_detail] [rev] [advisory_emitted]
 #   action: push | gh-merge

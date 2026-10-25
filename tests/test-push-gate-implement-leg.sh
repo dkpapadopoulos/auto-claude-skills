@@ -28,7 +28,7 @@ assert_equals "schema_version is 5" "5" "${IMPLEMENT_SHADOW_SCHEMA_VERSION}"
 # the session cwd — that changes WHEN the leg fires, so v2 records are no longer
 # poolable. Bumping this pin without bumping the constant, or vice versa, is the
 # mistake it exists to catch.
-assert_equals "predicate_version is 5 (#245 redirection parser + advisory_emitted)" "5" \
+assert_equals "predicate_version is 6 (review-credit-from-evidence: typed SDD/agent-team-execution credit)" "6" \
     "${IMPLEMENT_SHADOW_PREDICATE_VERSION}"
 
 implement_shadow_record push "${PROJECT_ROOT}" tok /tmp/t.jsonl none branch-local true
@@ -74,7 +74,7 @@ assert_equals "missing is distinguishable from cannot_check" "missing" \
     "$(jq -r '.impl_evidence_detail.ledger' "${IMPLEMENT_SHADOW_LOG}")"
 assert_equals "schema_version on a detailed record is 5" "5" \
     "$(jq -r '.schema_version' "${IMPLEMENT_SHADOW_LOG}")"
-assert_equals "predicate_version is 5 so v4 records are NOT pooled" "5" \
+assert_equals "predicate_version is 6 so v5 records are NOT pooled" "6" \
     "$(jq -r '.predicate_version' "${IMPLEMENT_SHADOW_LOG}")"
 
 # An omitted detail must be null, NOT a fabricated all-missing object. "not
@@ -298,7 +298,7 @@ assert_contains "record names the gate"        '"gate":"push-implement"' "${_rec
 assert_contains "record marks a would-block"   '"would_block":true'      "${_rec}"
 assert_contains "record carries action push"   '"action":"push"'         "${_rec}"
 assert_contains "record carries schema_version"    '"schema_version":5'    "${_rec}"
-assert_contains "record carries predicate_version" '"predicate_version":5' "${_rec}"
+assert_contains "record carries predicate_version" '"predicate_version":6' "${_rec}"
 assert_contains "record carries a record_id"   '"record_id":'            "${_rec}"
 assert_contains "record carries a ts"          '"ts":'                   "${_rec}"
 assert_contains "record carries the transcript pointer" '"transcript_path":' "${_rec}"
@@ -424,7 +424,7 @@ _rec="$(cat "$IMPLEMENT_SHADOW_LOG")"
 assert_equals "merge writes one record" "1" "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
 assert_contains "merge record names the PR as its subject" '"diff_base":"pr:7"' "${_rec}"
 assert_contains "merge record still marks material source"  '"material_source":true' "${_rec}"
-assert_contains "predicate_version bumped to 5 (#245)"        '"predicate_version":5' "${_rec}"
+assert_contains "predicate_version is 6 on a merge record"    '"predicate_version":6' "${_rec}"
 assert_not_contains "merge did not become a deny" "permissionDecision" "${out:-}"
 
 # Unresolvable PR -> unresolved, record still written, still no deny.
@@ -775,7 +775,7 @@ assert_equals "stamps: no other leg recorded, so no other site stamped first" "a
     "$([ -s "$HOME/stamp-vs.jsonl" ] && echo present || echo absent) $([ -s "$HOME/stamp-rs.jsonl" ] && echo present || echo absent)"
 assert_equals "stamps: exactly one record" "1" "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
 assert_equals "stamps: schema_version is 5" "5" "$(_sf .schema_version)"
-assert_equals "stamps: predicate_version is unchanged at 5" "5" "$(_sf .predicate_version)"
+assert_equals "stamps: predicate_version is 6" "6" "$(_sf .predicate_version)"
 assert_equals "stamps: session_id from the payload" "sess-1" "$(_sf .session_id)"
 assert_equals "stamps: tool_use_id from the payload" "toolu_01AbC" "$(_sf .tool_use_id)"
 assert_equals "stamps: cc_version parsed from AI_AGENT" "2.1.308" "$(_sf .cc_version)"
