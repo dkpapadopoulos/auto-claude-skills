@@ -36,6 +36,94 @@ The analysis runs straight through from data pull to final report. The frequency
 
 When an inference has less than high confidence (e.g., inferring a nightly batch from time-of-day concentration), state the inference and flag it inline: *"Inferred nightly batch from 100% h02 concentration — verify before applying mute window."* Do not gate the report on user confirmation.
 
+## Confidence Levels and Readiness
+
+Confidence determines evidence quality. Readiness determines action class. An item can be high-confidence but not Do Now-ready if it fails a gate requirement.
+
+| Confidence | Evidence Criteria | Readiness | Action Class |
+|------------|------------------|-----------|--------------|
+| High | Frequency + metric/structural evidence agree, or structural flaw unambiguous | PR-Ready (all gate requirements met) | Do Now |
+| High | Structural/measured evidence strong, but missing gate requirement (IaC location, owner, etc.) | Stage 1 (gate requirement resolution) | Investigate |
+| Medium | Frequency pattern only, no metric validation | Stage 1 (hypothesis validation) | Investigate |
+| High | Skill cannot determine intent — SLO redesign, ambiguous ownership, policy strategy | Decision Pending | Needs Decision |
+| Low | Data insufficient, inference from time-of-day alone, or evidence contradicts | Stage 1 | Investigate (with inline low-confidence flag) |
+
+**Confidence / Readiness vocabulary for Decision Summary:**
+- `High / PR-Ready` — Do Now items
+- `High / Stage 1` — Investigate items that are structurally proven or measured but failed a Do Now gate requirement
+- `Medium / Stage 1` — Investigate items based on heuristic evidence or requiring hypothesis validation
+- `High / Decision Pending` — Needs Decision items
+
+**Heuristic alone never qualifies for Do Now.** Evidence basis must be `measured` or `structural` to pass the Do Now gate.
+
+## Report Structure
+
+The report is grouped by action class (Do Now / Investigate / Needs Decision), not by confidence band. The Decision Summary appears early (BLUF) so an engineering lead can triage the top actions within 30 seconds. Detailed finding sections provide the execution-ready schemas below.
+
+### Do Now Gate — All Required
+
+An item qualifies for Do Now only if it has ALL of the following:
+
+1. Exact current -> proposed config diff with derivation for every proposed value
+2. Named target owner (not "unlabeled" or "service owner")
+3. Numeric, time-bounded Outcome DoD with both primary and guardrail metrics
+4. Pre-change evidence (measured or structural — **heuristic alone never qualifies for Do Now**)
+5. Rollback signal with a derived threshold (not arbitrary)
+6. IaC Location status of Confirmed, Likely, or Search Required
+
+If any are missing, the item drops to Investigate regardless of confidence level.
+
+### IaC Location Rules
+
+| Status | Meaning | Do Now eligible? |
+|--------|---------|-----------------|
+| **Confirmed** | Exact file path verified via repo tree walk (display_name match) | Yes |
+| **Likely** | Strong candidate path from metric/module name correlation, not exact display_name match | Yes |
+| **Search Required** | No match in IaC discovery, but repo tree link provided for manual search. Must include: (1) link to `tf/` directory in repo, (2) policy display_name as search hint, (3) exact replacement guidance | Yes |
+| **Unknown** | No IaC repos provided or discovery failed entirely | No — drops to Investigate |
+
+### Metric Families by Finding Type
+
+| Finding type | Primary metric | Guardrail metric |
+|---|---|---|
+| Noise tuning | Raw incidents or open-incident hours | Detection latency for real incidents |
+| auto_close fixes | Median open duration | N/A when change cannot hide signal |
+| Routing/ownership | Correct owner/channel coverage | No alert dropped during transition |
+| Orphaned alerts | Explicit close/remove/route decision | N/A |
+| Coverage gaps | Implementation milestone | N/A |
+
+Guardrail thresholds must be derived from evidence, not arbitrary. Guardrail = N/A only when the change cannot plausibly hide a real signal.
+
+Two finding-format rules are under `## Situational rules and steps`, after Key Terms: PromQL Change Spec Rules (exact current and proposed fragment, never blind copy-paste) and Contextual Action Links (one `**Links:**` line after `**Notification Reach:**` on every Do Now and Investigate finding, max 3, no URLs in `Policy ID` or `IaC Location`).
+
+### Two-Stage DoD Rules
+
+- Stage 1 closes on hypothesis confirmed/refuted + explicit next action documented
+- Stage 2 is a completely separate follow-up item with its own numeric, time-bounded outcome DoD
+- This prevents mixing discovery work with delivery work in a single ticket
+
+### Structurally Proven but Not-Yet-PR-Ready Items
+
+Items with structural or measured evidence that fail the Do Now gate (e.g., missing IaC location, missing owner) land in Investigate with their full evidence preserved. The `To Upgrade` field states exactly which gate requirement is missing. Stage 1 for these items is not hypothesis validation — it is resolving the missing gate requirement (e.g., "locate IaC path," "assign owner"). Once resolved, the item can be promoted to Do Now in the next report cycle or follow-up.
+
+### Needs Decision Rules
+
+- Deadline is advisory — the report does not auto-execute changes
+- Default Recommendation is guidance for the decision owner, not an ultimatum
+- Every Needs Decision item must have a named owner, not a generic role
+
+### Mandatory Needs Decision Triggers
+
+The following Needs Decision items are mandatory when their trigger condition is met:
+
+- **Silent Policy Cleanup:** If `silent_policy_total > 0` and `silent_policy_count / silent_policy_total > 0.5` (more than half of enabled policies had zero incidents in the analysis window), include a "Silent Policy Cleanup" Needs Decision item with exact counts from compute-clusters output.
+
+### Report templates and skeleton
+
+Before writing any finding, Read `references/report-templates.md` (the Do Now, Investigate and Needs Decision per-item templates and the link URL patterns) and fill every field the template carries; the Investigate template's Proposed Config Diff appears ONLY when evidence basis is `measured` or `structural` and a diff is derivable.
+
+Before writing the report, Read `references/report-skeleton.md` and follow it section by section. Its rules: Decision Summary early, capped at 8-12 rows, every non-empty category at least one row, the rest in priority order, with a note when there are more than 12; modeled impact never overrides measured baselines; one Systemic Issues section with Ownership/Routing Debt, Dead/Orphaned Config, Missing Coverage and Inventory Health, read from compute-clusters output, never computed ad-hoc; Do Now opens with the Global Implementation Standard (verify every mutated field in production); a Verification Scorecard row per Do Now item; "Not attempted" lists genuine blockers only.
+
 ## Tier Detection
 
 Run the shared observability preflight before data access:
@@ -103,279 +191,7 @@ Run pull-policies.py and pull-incidents.py with the validated project. Verify no
 - Total incidents in window
 - Policies by squad label
 
-#### Optional: SLO Config Enrichment
-
-After pulling policies and incidents, attempt to fetch SLO service definitions from GitHub. This is optional enrichment — the core analysis runs without it.
-
-**Preconditions:** `{github_org}` was provided in Stage 0 AND `gh` CLI is available AND authenticated (`gh auth status` succeeds). If any precondition fails, write fallback artifacts and skip.
-
-**Flow:**
-
-```bash
-REPO="${github_org}/monitoring"
-
-# Short-circuit if preconditions not met
-if [ -z "${github_org:-}" ]; then
-  echo '{"status":"unavailable","reason":"github_org_not_provided","count":0}' \
-    > "$WORK_DIR/slo-source-status.json"
-  echo '[]' > "$WORK_DIR/slo-services.json"
-elif ! command -v gh &>/dev/null || ! gh auth status &>/dev/null 2>&1; then
-  echo '{"status":"unavailable","reason":"gh_not_available","count":0}' \
-    > "$WORK_DIR/slo-source-status.json"
-  echo '[]' > "$WORK_DIR/slo-services.json"
-else
-  # Step 1: fetch (checked)
-  if ! gh api "repos/$REPO/contents/tf/slo-config.yaml" \
-       --jq '.content' > "$WORK_DIR/slo-raw-b64.txt" 2>"$WORK_DIR/slo-fetch-err.txt"; then
-    echo '{"status":"unavailable","reason":"fetch_failed","count":0}' \
-      > "$WORK_DIR/slo-source-status.json"
-    echo '[]' > "$WORK_DIR/slo-services.json"
-  # Step 2: decode (checked)
-  elif ! base64 -d < "$WORK_DIR/slo-raw-b64.txt" > "$WORK_DIR/slo-config.yaml" 2>/dev/null; then
-    echo '{"status":"unavailable","reason":"decode_failed","count":0}' \
-      > "$WORK_DIR/slo-source-status.json"
-    echo '[]' > "$WORK_DIR/slo-services.json"
-  # Step 3: extract service names (checked — Ruby stdlib YAML, no PyYAML)
-  elif ! ruby -ryaml -rjson -e '
-    cfg = YAML.safe_load(File.read(ARGV[0])) || {}
-    services = (cfg["services"] || []).map { |s| s["name"] }.compact
-      .map { |n| n.downcase.gsub(/[_.]/, "-").gsub(/-(prod|staging|pta)$/, "") }
-    File.write(ARGV[1], JSON.generate(services))
-    File.write(ARGV[2], JSON.generate({
-      status: services.empty? ? "empty" : "ok",
-      count: services.length
-    }))
-  ' "$WORK_DIR/slo-config.yaml" "$WORK_DIR/slo-services.json" \
-    "$WORK_DIR/slo-source-status.json" 2>"$WORK_DIR/slo-parse-err.txt"; then
-    echo '{"status":"unavailable","reason":"parse_failed","count":0}' \
-      > "$WORK_DIR/slo-source-status.json"
-    echo '[]' > "$WORK_DIR/slo-services.json"
-  fi
-  rm -f "$WORK_DIR/slo-raw-b64.txt"
-fi
-```
-
-**On-disk artifacts (always written, every branch):**
-- `slo-services.json` — normalized service name list or `[]`
-- `slo-source-status.json` — `{"status": "ok|empty|unavailable", "reason": "...", "count": N}`
-
-Names in `slo-services.json` are normalized with the same rules as `service_key` in compute-clusters.py: lowercase, strip environment suffixes (`-prod`, `-staging`, `-pta`), replace separators (`_`, `.`) with `-`.
-
-**Stage 1 report line addition:** `"{M} services with SLO definitions"` when status is `ok`, `"SLO config: {reason}"` otherwise.
-
-#### Optional: IaC Module Discovery
-
-After SLO enrichment, build a `display_name → file_path` mapping by walking the IaC repo tree via `gh api`. This replaces the previous `gh search code` approach, which returned zero results because GCP-generated policy IDs never appear in Terraform source.
-
-**Preconditions:** `{github_org}` and `{iac_repos}` were provided in Stage 0 AND `gh` is available AND authenticated. If any fail, write fallback and skip.
-
-**Why repo tree walk instead of `gh search code`:**
-- Policy IDs are assigned at `terraform apply` time — they do not exist in `.tf` files, so searching for them always returns 0 results
-- `gh search code` has a 10 req/min rate limit and frequently hits 403 on private orgs
-- `gh api` (used here) has a 5,000 req/hour limit and works reliably on private repos
-- The results are deterministic: if a `display_name` matches, the file path is confirmed
-
-**Flow:**
-
-For each repo in `{iac_repos}` that contains a `tf/` directory:
-
-```bash
-REPO="${github_org}/${iac_repo}"
-IAC_DIR="$WORK_DIR/iac-discovery"
-mkdir -p "$IAC_DIR"
-
-# Step 1: List module directories
-gh api "repos/$REPO/contents/tf/modules" --jq '.[].name' \
-  > "$IAC_DIR/module-names.txt" 2>/dev/null
-
-# Step 2: For each module, fetch the main TF file and extract display_name values
-python3 -c "
-import subprocess, json, re, os
-repo = '$REPO'
-iac_dir = '$IAC_DIR'
-modules = open(f'{iac_dir}/module-names.txt').read().strip().split('\n')
-mapping = {}
-for mod in modules:
-    # Try common TF file names in the module
-    for fname in ['main.tf', 'google_monitoring_alert_policy.tf', f'{mod}.tf']:
-        try:
-            result = subprocess.run(
-                ['gh', 'api', f'repos/{repo}/contents/tf/modules/{mod}/{fname}',
-                 '--jq', '.content'],
-                capture_output=True, text=True, timeout=10)
-            if result.returncode != 0:
-                continue
-            import base64
-            content = base64.b64decode(result.stdout.strip()).decode('utf-8')
-            # Extract display_name values from TF
-            for m in re.finditer(r'display_name\s*=\s*\"([^\"]+)\"', content):
-                dn = m.group(1)
-                # Skip condition display names (inside conditions {} blocks)
-                # Only keep top-level policy display_name
-                mapping[dn] = {
-                    'repo': repo,
-                    'module': mod,
-                    'file': f'tf/modules/{mod}/{fname}',
-                    'type': 'module_definition'
-                }
-            break  # Found file, stop trying alternatives
-        except Exception:
-            continue
-
-# Step 3: Also scan squad directories for module invocations
-try:
-    result = subprocess.run(
-        ['gh', 'api', f'repos/{repo}/contents/tf/squads', '--jq', '.[].name'],
-        capture_output=True, text=True, timeout=10)
-    squads = result.stdout.strip().split('\n') if result.returncode == 0 else []
-except Exception:
-    squads = []
-
-for squad in squads:
-    try:
-        result = subprocess.run(
-            ['gh', 'api', f'repos/{repo}/contents/tf/squads/{squad}',
-             '--jq', '.[].name'],
-            capture_output=True, text=True, timeout=10)
-        files = [f for f in result.stdout.strip().split('\n')
-                 if f.endswith('.tf')]
-    except Exception:
-        continue
-    for fname in files:
-        try:
-            result = subprocess.run(
-                ['gh', 'api',
-                 f'repos/{repo}/contents/tf/squads/{squad}/{fname}',
-                 '--jq', '.content'],
-                capture_output=True, text=True, timeout=10)
-            if result.returncode != 0:
-                continue
-            content = base64.b64decode(result.stdout.strip()).decode('utf-8')
-            for m in re.finditer(r'display_name\s*=\s*\"([^\"]+)\"', content):
-                dn = m.group(1)
-                mapping[dn] = {
-                    'repo': repo,
-                    'module': squad,
-                    'file': f'tf/squads/{squad}/{fname}',
-                    'type': 'squad_definition'
-                }
-        except Exception:
-            continue
-
-# Step 4: Scan root-level .tf files for module invocations
-try:
-    result = subprocess.run(
-        ['gh', 'api', f'repos/{repo}/contents/tf', '--jq', '.[].name'],
-        capture_output=True, text=True, timeout=10)
-    root_files = [f for f in result.stdout.strip().split('\n')
-                  if f.endswith('.tf')]
-except Exception:
-    root_files = []
-
-for fname in root_files:
-    try:
-        result = subprocess.run(
-            ['gh', 'api', f'repos/{repo}/contents/tf/{fname}',
-             '--jq', '.content'],
-            capture_output=True, text=True, timeout=10)
-        if result.returncode != 0:
-            continue
-        content = base64.b64decode(result.stdout.strip()).decode('utf-8')
-        # Extract module invocations: module \"name\" { source = \"./modules/X\"
-        for m in re.finditer(
-            r'module\s+\"([^\"]+)\"\s*\{[^}]*source\s*=\s*\"([^\"]+)\"',
-            content, re.DOTALL):
-            mod_name = m.group(1)
-            mod_source = m.group(2)
-            # Store invocation location for modules we already know about
-            mod_key = mod_source.split('/')[-1] if '/' in mod_source else mod_source
-            for dn, info in mapping.items():
-                if info['module'] == mod_key:
-                    info['invocation_file'] = f'tf/{fname}'
-    except Exception:
-        continue
-
-with open(f'{iac_dir}/iac-modules.json', 'w') as f:
-    json.dump(mapping, f, indent=2)
-with open(f'{iac_dir}/iac-status.json', 'w') as f:
-    json.dump({'status': 'ok' if mapping else 'empty',
-               'count': len(mapping)}, f)
-print(f'Discovered {len(mapping)} display_name → file_path mappings')
-"
-```
-
-**On-disk artifacts (always written):**
-- `iac-discovery/iac-modules.json` — `{display_name: {repo, module, file, type, invocation_file?}}`
-- `iac-discovery/iac-status.json` — `{"status": "ok|empty|unavailable", "count": N}`
-
-**Display-name matching rules:**
-- The PromQL `display_name` in TF often contains Terraform variable interpolations (e.g., `"[${var.cluster}] Mobile API HTTP 5xx Error Rate (critical)"`). Strip `${var.XXX}` to a regex-compatible `.*` and match against the policy's `display_name` from `policies.json`.
-- If a policy `display_name` matches multiple TF display_names (e.g., parameterized modules instantiated per-cluster), prefer the module definition file over squad files.
-
-**Fallback: repo-level search link.** When a policy `display_name` does not match any discovered TF file, generate a fallback link to the repo tree for manual search: `https://github.com/{org}/{repo}/tree/main/tf`. This is always more useful than a GitHub code search for a policy ID.
-
-#### Optional: Ownership Resolution via CODEOWNERS
-
-After IaC module discovery, resolve suggested owners for policies that lack a `squad` label by cross-referencing IaC file paths against CODEOWNERS.
-
-**Two-layer resolution:**
-
-1. **CODEOWNERS match (mechanical):** For each IaC file path in `iac-modules.json`, find the matching CODEOWNERS rule (last match wins, per git spec). This resolves policies whose module definition or invocation file has a specific CODEOWNERS entry. Typically resolves high-volume infrastructure alerts (pod restarts, message broker, MySQL, ingress, WAF).
-
-2. **Squad-directory inference (structural):** For policies defined or invoked from `tf/squads/{squad}/*.tf`, the squad directory itself implies ownership — even if the CODEOWNERS rule for that path is generic. A module invocation in `tf/squads/cosmos/recommendation_alerts.tf` means cosmos owns that alert regardless of whether CODEOWNERS maps `tf/squads/cosmos/*` to `@org/cosmos` or a generic owner. The squad directory name is the authoritative signal.
-
-**Flow:**
-
-```bash
-# Fetch CODEOWNERS (single gh api call)
-gh api "repos/$REPO/contents/CODEOWNERS" --jq '.content' 2>/dev/null \
-  | base64 -d > "$IAC_DIR/CODEOWNERS" 2>/dev/null
-```
-
-Then in Python:
-
-```python
-# Parse CODEOWNERS rules
-codeowner_rules = []  # [(glob_pattern, [owners])]
-for line in open(f'{iac_dir}/CODEOWNERS'):
-    line = line.strip()
-    if not line or line.startswith('#'):
-        continue
-    parts = line.split()
-    codeowner_rules.append((parts[0], [p for p in parts[1:] if p.startswith('@')]))
-
-def resolve_owner(filepath):
-    """Last matching CODEOWNERS rule wins (git spec)."""
-    matched = None
-    for pattern, owners in codeowner_rules:
-        # Convert CODEOWNERS glob to simple match
-        if fnmatch.fnmatch(filepath, pattern) or filepath.startswith(pattern.rstrip('*')):
-            matched = owners
-    return matched
-
-# For each entry in iac-modules.json:
-# 1. Check if file is in tf/squads/{squad}/ → squad name is the owner
-# 2. Else resolve via CODEOWNERS match on the file path
-# 3. Store as 'suggested_owner' in the mapping
-```
-
-**On-disk artifacts (appended to existing):**
-- `iac-discovery/iac-modules.json` — each entry gains `suggested_owner` field (team handle or null)
-- `iac-discovery/codeowners-status.json` — `{"status": "ok|unavailable", "rules": N}`
-
-**Owner resolution priority for report "Target Owner" field:**
-1. Policy's existing `squad` label (already set in TF via `user_labels`) — highest priority, use as-is
-2. Squad-directory inference from IaC file path (e.g., `tf/squads/cosmos/` → `@org/cosmos`)
-3. CODEOWNERS match on IaC file path (e.g., `tf/modules/message_broker_alerts/` → `@org/devops-codeowners`)
-4. No match → `⚠ assign`
-
-**Report integration:**
-- When `suggested_owner` is available and the policy has no squad label, use `suggested_owner` in the "Target Owner" field with a note: `{suggested_owner} (from CODEOWNERS)` or `{squad_name} (from squad directory)`
-- In the Systemic Issues > Ownership/Routing Debt section, report resolution coverage: `"{N}/{M} ownerless clusters resolved via CODEOWNERS/squad-directory inference"`
-
-**Stage 1 report line additions:**
-- `"{N} IaC module mappings discovered"` when status is `ok`, `"IaC discovery: {reason}"` otherwise
-- `"{N} CODEOWNERS rules loaded, {M} ownerless clusters resolved"` when CODEOWNERS available
+**Optional enrichment** (SLO config, IaC module discovery, CODEOWNERS ownership) runs next, in that order, each only when its preconditions hold (`{github_org}` given, `{iac_repos}` too for IaC and CODEOWNERS, and `gh` available and authenticated); otherwise write its fallback artifacts and skip it. Its steps are under `### Stage 1 optional enrichment`, after Key Terms.
 
 ### Stage 2: Compute Cluster Stats
 
@@ -406,16 +222,7 @@ For the **top 5 clusters by raw incidents** where the evidence basis would be "h
 
 **Step 1 — Map PromQL metric names to Cloud Monitoring equivalents.**
 
-Most PromQL conditions use metrics that ARE queryable via Cloud Monitoring under a mapped name:
-
-| PromQL pattern | Cloud Monitoring equivalent | Example |
-|---|---|---|
-| `kubernetes_io:METRIC_PATH` | `kubernetes.io/METRIC_PATH` | `kubernetes_io:container_restart_count` → `kubernetes.io/container/restart_count` |
-| `SERVICE_COM:METRIC` | `SERVICE.com/METRIC` | `dbinsights_googleapis_com:perquery_latencies` → `dbinsights.googleapis.com/perquery/latencies` |
-| `METRIC_NAME` (custom) | `prometheus.googleapis.com/METRIC_NAME/SUFFIX` | `jvm_threads_live_threads` → `prometheus.googleapis.com/jvm_threads_live_threads/gauge` |
-| `METRIC_NAME_count` (histogram _count) | `prometheus.googleapis.com/METRIC_NAME/histogram` | `http_server_duration_milliseconds_count` → `prometheus.googleapis.com/http_server_duration_milliseconds/histogram` (use `distributionValue.count` for request counts) |
-
-For custom Prometheus metrics, the suffix depends on the metric type: try `/gauge` first, then `/counter`, `/summary`, `/histogram` if no data returns. **Important:** When PromQL references `METRIC_count` (the `_count` component of a histogram), the Cloud Monitoring equivalent is the parent histogram type (`/histogram`), NOT a separate `_count` metric. The request count is in the `distributionValue.count` field of the distribution result. If none return data, list metric descriptors with `filter=metric.type = starts_with("prometheus.googleapis.com/METRIC_PREFIX")` to find the actual suffix.
+Before the first metric query, Read `references/metric-queries.md`: the PromQL to Cloud Monitoring mapping table and the suffix order to try (a histogram `_count` maps to the parent `/histogram` type, never a separate `_count` metric).
 
 **Label discovery from PromQL:** Cloud Monitoring labels don't always match what you'd guess. Read the PromQL query from `policies.json` to find the actual label names used. For example, `http_server_requests_seconds_count{container="hcs-gb"}` tells you the Cloud Monitoring filter needs `metric.labels.container = "hcs-gb"` — not `metric.labels.application` or `metric.labels.service`. Always check the PromQL before constructing filters. PromQL labels on the metric selector map to `metric.labels.X` in Cloud Monitoring.
 
@@ -440,25 +247,7 @@ When in doubt, use REDUCE_MAX for gauges and REDUCE_SUM for counters. Never omit
 
 Use MCP `list_time_series` (Tier 1) or REST API via temp-file pattern (Tier 2). Select aligner and reducer from the Mandatory Query Parameters table above based on the metric class.
 
-**Tier 2 query pattern** (uses session temp file per Behavioral Constraint 2):
-
-```bash
-WORK_DIR="${WORK_DIR:-$(mktemp -d /tmp/ah-XXXXXX)}"
-FILTER_FILE=$(mktemp "$WORK_DIR/ts-filter-XXXXXX.txt")
-cat > "$FILTER_FILE" << 'FILTER'
-metric.type = "prometheus.googleapis.com/jvm_threads_live_threads/gauge"
-AND metric.labels.container = "recommendation-service"
-AND resource.labels.cluster = "example-cluster-prod"
-FILTER
-
-TOKEN=$(gcloud auth print-access-token)
-FILTER_ENC=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(open(sys.argv[1]).read().strip().replace('\n', ' ')))" "$FILTER_FILE")
-
-# Note: REDUCE_MAX for gauges; use REDUCE_SUM for counters per the table above
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "https://monitoring.googleapis.com/v3/projects/$PROJECT/timeSeries?filter=$FILTER_ENC&interval.startTime=${START_TIME}&interval.endTime=${END_TIME}&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_MAX&aggregation.crossSeriesReducer=REDUCE_MAX&pageSize=100000" \
-  -o "$WORK_DIR/ts-result.json" ; rm -f "$FILTER_FILE"
-```
+The Tier 2 REST query template (filter in a `$WORK_DIR` temp file, all three aggregation parameters, `pageSize=100000`) is in `references/metric-queries.md`.
 
 Write results to `$WORK_DIR`, not to conversation context. Parse with `python3` one-liner to extract p50/p95.
 
@@ -487,45 +276,7 @@ If the metric type cannot be mapped, the query returns no data, the suffix is wr
 
 **Multi-query patterns** — these are NOT limitations, they are standard approaches. Use them:
 
-| Metric kind | Approach | Example |
-|---|---|---|
-| **CUMULATIVE DISTRIBUTION** (e.g., perquery latencies) | `ALIGN_DELTA` extracts the delta distribution per period. Read `distributionValue.mean` for average latency and `distributionValue.count` for query volume. | `dbinsights.googleapis.com/perquery/latencies` + ALIGN_DELTA daily → mean latency per day |
-| **Error rate ratios** (5xx / total) | Two queries: (1) filter by status label for errors, (2) unfiltered for total. Divide in Python. Write both results to `$WORK_DIR`. | Query with `metric.labels.status=starts_with("5")` for errors, without for total. Compute `error_count / total_count`. |
-| **High-cardinality counters** (e.g., 1,000+ containers) | Use `aggregation.crossSeriesReducer=REDUCE_SUM` to aggregate across all series. Gives total restart rate without enumerating each container. | `kubernetes.io/container/restart_count` + ALIGN_DELTA 1h + REDUCE_SUM → total restarts/hour across all containers |
-| **Histogram-based error rates** (e.g., `rate(metric_count{status=~"5.."}[5m])`) | When PromQL uses `_count` from a histogram metric (e.g., `http_server_duration_milliseconds_count`), the Cloud Monitoring equivalent is the `/histogram` type — NOT a separate `_count` metric. Query `prometheus.googleapis.com/METRIC_NAME/histogram` with `ALIGN_DELTA`. The `distributionValue.count` field gives the request count per period. For error-rate ratios: query with status label filter for 5xx (count = error volume), then without filter (count = total volume). Compute ratio from the two `count` sums. | `prometheus.googleapis.com/http_server_duration_milliseconds/histogram` + ALIGN_DELTA 1h → `distributionValue.count` per period. Two queries: with `http_status_code=~"5.."` for errors, without for total. |
-| **Custom PromQL with no Cloud Monitoring equivalent** | Rare — most Prometheus metrics map via `prometheus.googleapis.com/METRIC/SUFFIX`. Try `/gauge`, `/counter`, `/summary`, `/histogram` suffixes. If none return data, list metric descriptors with `starts_with` filter. | `metricDescriptors?filter=metric.type = starts_with("prometheus.googleapis.com/METRIC_PREFIX")` |
-
-**Tier 2 two-query ratio pattern** (error rate example):
-
-```bash
-WORK_DIR="${WORK_DIR:-$(mktemp -d /tmp/ah-XXXXXX)}"
-
-# Query 1: error count (5xx)
-FILTER_ERR=$(mktemp "$WORK_DIR/ts-err-XXXXXX.txt")
-cat > "$FILTER_ERR" << 'FILTER'
-metric.type = "prometheus.googleapis.com/http_server_requests_seconds_count/summary"
-AND metric.labels.status = starts_with("5")
-AND metric.labels.application = "SERVICE_NAME"
-FILTER
-# ... curl with crossSeriesReducer=REDUCE_SUM&pageSize=100000 to $WORK_DIR/ts-err-result.json
-
-# Query 2: total count
-FILTER_TOTAL=$(mktemp "$WORK_DIR/ts-total-XXXXXX.txt")
-cat > "$FILTER_TOTAL" << 'FILTER'
-metric.type = "prometheus.googleapis.com/http_server_requests_seconds_count/summary"
-AND metric.labels.application = "SERVICE_NAME"
-FILTER
-# ... curl with crossSeriesReducer=REDUCE_SUM&pageSize=100000 to $WORK_DIR/ts-total-result.json
-
-# Compute ratio
-python3 -c "
-import json
-err = sum(float(pt['value']['doubleValue']) for s in json.load(open('$WORK_DIR/ts-err-result.json')).get('timeSeries',[]) for pt in s['points'] if 'doubleValue' in pt.get('value',{}))
-total = sum(float(pt['value']['doubleValue']) for s in json.load(open('$WORK_DIR/ts-total-result.json')).get('timeSeries',[]) for pt in s['points'] if 'doubleValue' in pt.get('value',{}))
-print(f'error_rate={err/total*100:.2f}% ({err:.0f}/{total:.0f})') if total > 0 else print('no data')
-"
-rm -f "$FILTER_ERR" "$FILTER_TOTAL"
-```
+The patterns (cumulative distributions, error-rate ratios, high-cardinality counters, histogram-based error rates, custom PromQL) and the two-query ratio template are in `references/metric-queries.md`; check them before classifying any metric as "not attempted".
 
 If a multi-query approach is available but not executed (e.g., auth expired), state the approach and mark as "not attempted — auth expired" rather than claiming an API limitation.
 
@@ -576,6 +327,8 @@ For each service_key that IS in `slo-services.json` AND has noisy user-facing th
 ### Stage 5: Produce Report
 
 Write the final report as markdown using the Report Skeleton template below. Group findings by action class (Do Now / Investigate / Needs Decision), not by confidence band. Apply the Do Now Gate to determine which items qualify for the Do Now section. Items that fail the gate drop to Investigate regardless of confidence level.
+
+The Report Skeleton and the per-item templates are in `references/report-skeleton.md` and `references/report-templates.md`; Read both before writing (see Report Structure above).
 
 #### IaC Location Resolution via Module Discovery
 
@@ -698,51 +451,9 @@ Include a Definitions section in every report (after Methodology, before Action 
 | **Evidence basis** | Whether a numeric prescription is `measured` (from validated metric query with stated scope) or `heuristic` (rule of thumb — must be flagged for validation) |
 | **Open-incident hours** | Sum of all incident durations in the analysis window, measured in hours. Captures both volume and persistence of alert noise. |
 
-## Confidence Levels and Readiness
+## Situational rules and steps
 
-Confidence determines evidence quality. Readiness determines action class. An item can be high-confidence but not Do Now-ready if it fails a gate requirement.
-
-| Confidence | Evidence Criteria | Readiness | Action Class |
-|------------|------------------|-----------|--------------|
-| High | Frequency + metric/structural evidence agree, or structural flaw unambiguous | PR-Ready (all gate requirements met) | Do Now |
-| High | Structural/measured evidence strong, but missing gate requirement (IaC location, owner, etc.) | Stage 1 (gate requirement resolution) | Investigate |
-| Medium | Frequency pattern only, no metric validation | Stage 1 (hypothesis validation) | Investigate |
-| High | Skill cannot determine intent — SLO redesign, ambiguous ownership, policy strategy | Decision Pending | Needs Decision |
-| Low | Data insufficient, inference from time-of-day alone, or evidence contradicts | Stage 1 | Investigate (with inline low-confidence flag) |
-
-**Confidence / Readiness vocabulary for Decision Summary:**
-- `High / PR-Ready` — Do Now items
-- `High / Stage 1` — Investigate items that are structurally proven or measured but failed a Do Now gate requirement
-- `Medium / Stage 1` — Investigate items based on heuristic evidence or requiring hypothesis validation
-- `High / Decision Pending` — Needs Decision items
-
-**Heuristic alone never qualifies for Do Now.** Evidence basis must be `measured` or `structural` to pass the Do Now gate.
-
-## Report Structure
-
-The report is grouped by action class (Do Now / Investigate / Needs Decision), not by confidence band. The Decision Summary appears early (BLUF) so an engineering lead can triage the top actions within 30 seconds. Detailed finding sections provide the execution-ready schemas below.
-
-### Do Now Gate — All Required
-
-An item qualifies for Do Now only if it has ALL of the following:
-
-1. Exact current -> proposed config diff with derivation for every proposed value
-2. Named target owner (not "unlabeled" or "service owner")
-3. Numeric, time-bounded Outcome DoD with both primary and guardrail metrics
-4. Pre-change evidence (measured or structural — **heuristic alone never qualifies for Do Now**)
-5. Rollback signal with a derived threshold (not arbitrary)
-6. IaC Location status of Confirmed, Likely, or Search Required
-
-If any are missing, the item drops to Investigate regardless of confidence level.
-
-### IaC Location Rules
-
-| Status | Meaning | Do Now eligible? |
-|--------|---------|-----------------|
-| **Confirmed** | Exact file path verified via repo tree walk (display_name match) | Yes |
-| **Likely** | Strong candidate path from metric/module name correlation, not exact display_name match | Yes |
-| **Search Required** | No match in IaC discovery, but repo tree link provided for manual search. Must include: (1) link to `tf/` directory in repo, (2) policy display_name as search hint, (3) exact replacement guidance | Yes |
-| **Unknown** | No IaC repos provided or discovery failed entirely | No — drops to Investigate |
+Kept after the rules above so those survive a post-compaction cut; each is named where it applies.
 
 ### PromQL Change Spec Rules
 
@@ -750,318 +461,91 @@ If any are missing, the item drops to Investigate regardless of confidence level
 - **Complex edits** (multi-clause PromQL, aggregation changes): show full affected clause or precise change spec
 - Never rely on blind copy-paste as the standard; aim for exact replacement guidance
 
-### Metric Families by Finding Type
-
-| Finding type | Primary metric | Guardrail metric |
-|---|---|---|
-| Noise tuning | Raw incidents or open-incident hours | Detection latency for real incidents |
-| auto_close fixes | Median open duration | N/A when change cannot hide signal |
-| Routing/ownership | Correct owner/channel coverage | No alert dropped during transition |
-| Orphaned alerts | Explicit close/remove/route decision | N/A |
-| Coverage gaps | Implementation milestone | N/A |
-
-Guardrail thresholds must be derived from evidence, not arbitrary. Guardrail = N/A only when the change cannot plausibly hide a real signal.
-
 ### Contextual Action Links
 
 Every Do Now and Investigate finding gets one `**Links:**` line directly after `**Notification Reach:**`. No links in Decision Summary, Needs Decision, Verification Scorecard, or Evidence Ledger. Max 3 links per finding, separator ` · `.
 
-**Link construction** (see templates below for placement):
-
-| Label | URL pattern | When |
-|-------|-------------|------|
-| Open policy | `https://console.cloud.google.com/monitoring/alerting/policies/{id}?project={monitoring_project}` | Concrete policy ID available |
-| Open alert policies | `https://console.cloud.google.com/monitoring/alerting?project={monitoring_project}` | No concrete policy ID (fallback) |
-| View IaC | `https://github.com/{org}/{repo}/blob/main/{file_path}` | IaC Location is Confirmed or Likely (direct file link from Stage 1 module discovery) |
-| Browse IaC | `https://github.com/{org}/{repo}/tree/main/tf` | IaC Location is Search Required (link to TF directory for manual search) |
-| Incident history | `https://console.cloud.google.com/monitoring/alerting/incidents?project={monitoring_project}` | Investigate only: next step is reviewing firing/timing patterns |
-| Validate metric | `https://console.cloud.google.com/monitoring/metrics-explorer?project={monitoring_project}` | Investigate only: next step is metric validation AND report has enough query detail |
+The link URL patterns (Open policy, Open alert policies, View IaC, Browse IaC, Incident history, Validate metric) and when each applies are in `references/report-templates.md`.
 
 **Do Now:** Open policy + View IaC (or Browse IaC) (2 links). When an invocation file exists (threshold/label config separate from module definition), include both: View IaC (module) + View IaC (invocation) + Open policy (3 links).
 **Investigate:** Open policy + View/Browse IaC + optional contextual third link (max 3). Omit third link if it would require inventing missing query details.
 **Do not** embed URLs in `Policy ID` or `IaC Location` fields — keep those plain text.
 
-### Do Now Per-Item Template
+### Stage 1 optional enrichment
 
-```
-### {N}. {Action}: {policy_name} [High / PR-Ready]
+#### Optional: SLO Config Enrichment
 
-**Policy ID:** projects/{project}/alertPolicies/{id} | **Condition:** {condition_name}
-**Target Owner:** {current_label} -> {target_team}
-**Scope:** {projects affected}
-**Notification Reach:** {N} channels
-**Links:** [Open policy](https://console.cloud.google.com/monitoring/alerting/policies/{id}?project={project}) · [View IaC](https://github.com/{org}/{repo}/blob/main/{file_path})
+After pulling policies and incidents, attempt to fetch SLO service definitions from GitHub. This is optional enrichment — the core analysis runs without it.
 
-#### Current Policy Snapshot
-(Include fields relevant to the finding type. Not all fields apply to every finding.)
+**Preconditions:** `{github_org}` was provided in Stage 0 AND `gh` CLI is available AND authenticated (`gh auth status` succeeds). If any precondition fails, write fallback artifacts and skip.
 
-**For threshold/query changes:**
-**Threshold:** {comparison} {threshold_value} | eval: {eval_window_sec}s | auto_close: {auto_close_sec}s
-**Condition:** `{condition_filter_or_query_excerpt_60chars}`
+**Flow:** Read `references/slo-enrichment.md` and run its block as written: it short-circuits on each failed precondition and checks fetch, decode and parse in turn, writing the artifacts below on every branch.
 
-**For routing/ownership changes:**
-**Current Label:** squad={current} | **Current Channels:** {channel list or count}
+**On-disk artifacts (always written, every branch):**
+- `slo-services.json` — normalized service name list or `[]`
+- `slo-source-status.json` — `{"status": "ok|empty|unavailable", "reason": "...", "count": N}`
 
-**For all Do Now items:**
-**IaC Location:** [{Confirmed|Likely|Search Required}] {path or search guidance}
+Names in `slo-services.json` are normalized with the same rules as `service_key` in compute-clusters.py: lowercase, strip environment suffixes (`-prod`, `-staging`, `-pta`), replace separators (`_`, `.`) with `-`.
 
-**Situation:** {what is happening — 1-2 sentences}
-**Impact:** {why it matters — incident counts, duration, team effect}
+**Stage 1 report line addition:** `"{M} services with SLO definitions"` when status is `ok`, `"SLO config: {reason}"` otherwise.
 
-#### Configuration Diff & Derivation
-| Parameter | Current | Proposed | Derivation |
-|-----------|---------|----------|------------|
-| {param}   | {value} | {value}  | {why this value was chosen} |
+#### Optional: IaC Module Discovery
 
-**Pre-change Evidence:** {metric query result or structural proof with stated scope}
-**Evidence Basis:** {measured|structural} — {query text or reasoning}
+After SLO enrichment, build a `display_name → file_path` mapping by walking the IaC repo tree via `gh api`. This replaces the previous `gh search code` approach, which returned zero results because GCP-generated policy IDs never appear in Terraform source.
 
-**Outcome DoD:**
-- **Primary:** {numeric, time-bounded, aligned to finding type} (e.g., "raw incidents < 15 within 14d")
-- **Guardrail:** {what must NOT degrade} (e.g., "no genuine backlog > 1000 goes undetected")
+**Preconditions:** `{github_org}` and `{iac_repos}` were provided in Stage 0 AND `gh` is available AND authenticated. If any fail, write fallback and skip.
 
-**Rollback Signal:** {derived threshold + timeframe for revert}
-**Related:** {cross-references to other findings or systemic issues}
-```
+**Flow:** Read `references/iac-discovery.md` and run it for each repo in `{iac_repos}` that contains a `tf/` directory. It walks the repo tree with `gh api`, never `gh search code` (policy IDs are assigned at `terraform apply` and never appear in `.tf` source), and extracts `display_name` values from module, squad and root `.tf` files.
 
-### Investigate Per-Item Template
+**On-disk artifacts (always written):**
+- `iac-discovery/iac-modules.json` — `{display_name: {repo, module, file, type, invocation_file?}}`
+- `iac-discovery/iac-status.json` — `{"status": "ok|empty|unavailable", "count": N}`
 
-```
-### {N}. {investigation_title} [{High|Medium} / Stage 1]
+**Display-name matching rules:**
+- The PromQL `display_name` in TF often contains Terraform variable interpolations (e.g., `"[${var.cluster}] Mobile API HTTP 5xx Error Rate (critical)"`). Strip `${var.XXX}` to a regex-compatible `.*` and match against the policy's `display_name` from `policies.json`.
+- If a policy `display_name` matches multiple TF display_names (e.g., parameterized modules instantiated per-cluster), prefer the module definition file over squad files.
 
-**Policy ID:** projects/{project}/alertPolicies/{id}
-**Target Owner:** {team}
-**Scope:** {projects affected}
-**Notification Reach:** {N} channels
-**Links:** [Open policy](https://console.cloud.google.com/monitoring/alerting/policies/{id}?project={project}) · [View IaC](https://github.com/{org}/{repo}/blob/main/{file_path})
+**Fallback: repo-level search link.** When a policy `display_name` does not match any discovered TF file, generate a fallback link to the repo tree for manual search: `https://github.com/{org}/{repo}/tree/main/tf`. This is always more useful than a GitHub code search for a policy ID.
 
-**Situation:** {what is happening — 1-2 sentences}
-**Impact:** {why it matters — incident counts, team effect}
+#### Optional: Ownership Resolution via CODEOWNERS
 
-#### Proposed Config Diff (pending gate resolution)
-> Include this section ONLY when evidence basis is `measured` or `structural` AND a specific
-> config diff is derivable. Omit entirely for heuristic-only items.
+After IaC module discovery, resolve suggested owners for policies that lack a `squad` label by cross-referencing IaC file paths against CODEOWNERS.
 
-| Parameter | Current | Proposed | Derivation |
-|-----------|---------|----------|------------|
-| {param}   | {value} | {value}  | {why this value was chosen} |
+**Two-layer resolution:**
 
-**Gate Blocker:** {which Do Now gate requirement is missing}
-**To Upgrade:** {resolve blocker} → promotes to Do Now
+1. **CODEOWNERS match (mechanical):** For each IaC file path in `iac-modules.json`, find the matching CODEOWNERS rule (last match wins, per git spec). This resolves policies whose module definition or invocation file has a specific CODEOWNERS entry. Typically resolves high-volume infrastructure alerts (pod restarts, message broker, MySQL, ingress, WAF).
 
-**Evidence Basis:** {measured|structural|heuristic} — {current evidence}
-**Hypothesis:** {explicit, testable hypothesis}
+2. **Squad-directory inference (structural):** For policies defined or invoked from `tf/squads/{squad}/*.tf`, the squad directory itself implies ownership — even if the CODEOWNERS rule for that path is generic. A module invocation in `tf/squads/cosmos/recommendation_alerts.tf` means cosmos owns that alert regardless of whether CODEOWNERS maps `tf/squads/cosmos/*` to `@org/cosmos` or a generic owner. The squad directory name is the authoritative signal.
 
-**Stage 1 DoD (Discovery — this ticket):**
-- {specific diagnostic steps}
-- **Closes when:** hypothesis confirmed/refuted AND follow-up action documented as a separate item
-- **Timebox:** {N} days
+**Flow:** Read `references/codeowners-resolution.md` for the CODEOWNERS fetch and parser: the last matching rule wins, and a `tf/squads/{squad}/` path resolves to that squad first.
 
-**Stage 2 (Execution — spawned follow-up):**
-- **If confirmed:** {specific action with its own numeric outcome DoD}
-- **If refuted:** {alternative action or close with rationale}
-```
+**On-disk artifacts (appended to existing):**
+- `iac-discovery/iac-modules.json` — each entry gains `suggested_owner` field (team handle or null)
+- `iac-discovery/codeowners-status.json` — `{"status": "ok|unavailable", "rules": N}`
 
-### Two-Stage DoD Rules
+**Owner resolution priority for report "Target Owner" field:**
+1. Policy's existing `squad` label (already set in TF via `user_labels`) — highest priority, use as-is
+2. Squad-directory inference from IaC file path (e.g., `tf/squads/cosmos/` → `@org/cosmos`)
+3. CODEOWNERS match on IaC file path (e.g., `tf/modules/message_broker_alerts/` → `@org/devops-codeowners`)
+4. No match → `⚠ assign`
 
-- Stage 1 closes on hypothesis confirmed/refuted + explicit next action documented
-- Stage 2 is a completely separate follow-up item with its own numeric, time-bounded outcome DoD
-- This prevents mixing discovery work with delivery work in a single ticket
+**Report integration:**
+- When `suggested_owner` is available and the policy has no squad label, use `suggested_owner` in the "Target Owner" field with a note: `{suggested_owner} (from CODEOWNERS)` or `{squad_name} (from squad directory)`
+- In the Systemic Issues > Ownership/Routing Debt section, report resolution coverage: `"{N}/{M} ownerless clusters resolved via CODEOWNERS/squad-directory inference"`
 
-### Structurally Proven but Not-Yet-PR-Ready Items
+**Stage 1 report line additions:**
+- `"{N} IaC module mappings discovered"` when status is `ok`, `"IaC discovery: {reason}"` otherwise
+- `"{N} CODEOWNERS rules loaded, {M} ownerless clusters resolved"` when CODEOWNERS available
 
-Items with structural or measured evidence that fail the Do Now gate (e.g., missing IaC location, missing owner) land in Investigate with their full evidence preserved. The `To Upgrade` field states exactly which gate requirement is missing. Stage 1 for these items is not hypothesis validation — it is resolving the missing gate requirement (e.g., "locate IaC path," "assign owner"). Once resolved, the item can be promoted to Do Now in the next report cycle or follow-up.
+## Reference files
 
-### Needs Decision Per-Item Template
+Read each when its condition holds; never write a report section, a query or an enrichment step from memory.
 
-```
-### {N}. {decision_title} [High / Decision Pending]
-
-**Situation:** {what is happening — 1-2 sentences}
-**Impact:** {why it matters — incident counts, redundancy, team effect}
-
-**Decision Required:** {specific question that must be answered}
-**Named Decision Owner:** {person or role — not generic "product owner"}
-**Deadline:** {date — advisory, not auto-enforced}
-**Default Recommendation:** {what the report recommends if no decision is made}
-
-**Options:**
-- **If A:** {action with expected outcome}
-- **If B:** {action with expected outcome}
-```
-
-### Needs Decision Rules
-
-- Deadline is advisory — the report does not auto-execute changes
-- Default Recommendation is guidance for the decision owner, not an ultimatum
-- Every Needs Decision item must have a named owner, not a generic role
-
-### Mandatory Needs Decision Triggers
-
-The following Needs Decision items are mandatory when their trigger condition is met:
-
-- **Silent Policy Cleanup:** If `silent_policy_total > 0` and `silent_policy_count / silent_policy_total > 0.5` (more than half of enabled policies had zero incidents in the analysis window), include a "Silent Policy Cleanup" Needs Decision item with exact counts from compute-clusters output.
-
-### Report Skeleton
-
-```markdown
-# Alert Hygiene Analysis Report
-**Monitoring project:** {project} | **Window:** {days} days ending {date}
-
-## Executive Summary
-- {total_policies} policies ({enabled} enabled, {disabled} disabled), {total_incidents} raw incidents -> {total_episodes} episodes across {cluster_count} clusters
-- Baseline metrics: {open_incident_hours} open-incident hours, {routed_volume} routed incidents, {ownerless_count} ownerless alerts
-- Top findings (3-5 bullets with incident counts)
-- {do_now_count} Do Now actions, {investigate_count} investigations, {decision_count} needs decision
-- Modeled impact (estimated, scope: Do Now items only): {X} incidents reduced ({Y}%), {Z} open-incident hours reclaimed
-- Note: modeled impact must never override measured baseline metrics. Always label projections as estimated with scope and confidence.
-
-## Decision Summary
-Capped at 8-12 items. Each Finding is linked to detailed section via anchor. Every non-empty category gets at least 1 row. After minimum representation, remaining rows filled in global priority order: Do Now by impact, then Investigate by urgency, then Needs Decision by deadline.
-
-| Category | Finding (linked to detailed section) | Target Owner | Confidence / Readiness | Effort | Risk | Primary Expected Outcome | Next Action |
-|----------|---------|--------------|----------------------|--------|------|--------------------------|-------------|
-
-Primary Expected Outcome rules:
-- Do Now: primary success outcome aligned to finding type (incident reduction, median duration, owner coverage)
-- Investigate: Stage 1 closure result
-- Needs Decision: decision closure
-
-If more than 12 items total: *"Showing top {N} of {total} findings. See detailed sections below for complete list."*
-
-## Methodology
-- **Data source:** GCP Monitoring API (REST, paginated)
-- **Scripts:** pull-policies.py (inventory), pull-incidents.py (incidents), compute-clusters.py (clustering + enrichment)
-- **Analysis window:** {days} days ending {date}
-- **Dedupe window:** max(1800s, 2× evaluation interval) per cluster
-- **Noise score formula:** 0-10 composite: raw/episode ratio >5 (+3) or >2 (+1), median duration <15m (+2), retrigger <1h (+2), deploy-hour concentration (+1)
-- **Pattern classification:** flapping (ratio>3 AND raw>10), chronic (episodes≥5 AND duration>1h), recurring (episodes≥5 AND duration≤1h), burst (raw>10 AND episodes≤3), isolated (other)
-- **Evidence basis levels:** `measured` = metric time-series query with stated scope and result; `structural` = config flaw unambiguous from policy definition alone; `heuristic` = pattern-only inference, flagged for validation
-- **To reproduce:** Run the three scripts with same `--project` and `--days`, then apply Stage 3-5 reasoning from this skill
-
-## Definitions
-(Key Terms table from the skill — raw incidents, episodes, raw/episode ratio with severity bands, noise score, evidence basis, open-incident hours)
-
-| Term | Definition |
-|------|-----------|
-| **Open-incident hours** | Sum of all incident durations in the analysis window, measured in hours. Captures both volume and persistence of alert noise. |
-
-(Plus existing terms: raw incidents, episodes, raw/episode ratio, noise score, evidence basis)
-
-## Action Type Legend
-- **Tune the alert** — the alert is miscalibrated. Specific config changes listed.
-- **Fix the underlying issue** — the alert is correct. The service has a real problem.
-- **Redesign around SLO** — replace threshold alerting with burn-rate/error-budget alerting.
-- **Add/extend coverage** — a high-value blind spot exists.
-- **No action** — well-calibrated, low-frequency. Keep as-is.
-
-## Systemic Issues
-Thematic and non-exhaustive — surfaces structural debt patterns without duplicating detailed findings.
-
-### Ownership/Routing Debt
-- Unlabeled policies ranked by incident volume (source: `unlabeled_ranking` from compute-clusters output)
-- Misrouted alerts (e.g., prod alerts labeled as staging)
-- Resolution coverage from CODEOWNERS/squad-directory inference (source: `iac-discovery/iac-modules.json`)
-
-Top 10 policies without squad/team/owner label, ranked by total raw incidents:
-
-| # | Policy | Policy ID | Raw ({days}d) | Episodes | Channels | Suggested Owner |
-|---|--------|-----------|--------------|----------|----------|----------------|
-
-**Suggested Owner resolution:** Populate from the ownership resolution in Stage 1:
-1. If the policy's IaC file is in `tf/squads/{squad}/` → use the squad team handle (e.g., `@org/cosmos`)
-2. Else if CODEOWNERS matches the IaC file path → use the CODEOWNERS team (e.g., `@org/devops-codeowners`)
-3. Else → `⚠ assign`
-
-Include a coverage summary: *"{N}/{M} ownerless clusters ({X}% of ownerless raw incidents) resolved via CODEOWNERS/squad-directory inference."*
-
-### Dead/Orphaned Config
-Read from compute-clusters output — do not compute ad-hoc.
-
-**Zero-channel policies:** Read `zero_channel_policies` array. If non-empty, render table:
-
-| Policy | Policy ID | Raw ({days}d) | Squad |
-|--------|-----------|---------------|-------|
-
-If empty: *"No zero-channel policies found."*
-
-**Disabled-but-still-noisy:** Read `disabled_but_noisy_policies` array. If non-empty, render table with same columns. If empty: *"No disabled-but-noisy policies."*
-
-### Missing Coverage
-Coverage gaps from comparison of `metric_types_in_inventory` against Coverage Gap Checklist:
-
-| Gap | Action | Implementation | Rationale | Upstream Signal For |
-(last column cross-references existing clusters this gap would detect earlier)
-
-### Inventory Health
-Read from compute-clusters output — do not compute ad-hoc.
-
-- **Silent policy ratio:** `silent_policy_count` / `silent_policy_total` from compute-clusters output
-- **Condition type breakdown:** render `condition_type_breakdown` dict from compute-clusters output
-- **Enabled/disabled counts:** from Stage 1 policy pull (no change)
-
-## Actionable Findings: Do Now
-Items ordered by impact descending.
-
-**Global Implementation Standard:**
-For all Do Now items, the following standard applies:
-1. IaC PR is approved and merged
-2. Engineer confirms via GCP Monitoring Console that **every mutated field** matches the proposed config in production:
-   - For threshold/query changes: verify PromQL condition, thresholds, eval window, auto_close
-   - For routing/label changes: verify squad/team labels, notification channels
-   - For scope changes: verify project/resource selectors
-3. Confirm no accidental changes to fields outside the change spec (scope, channels, labels, conditions)
-4. Record merge date for 14-day outcome review
-
-Per-finding Immediate Verification is added only when the verification steps are non-obvious or high-risk (scope moves across projects, duplicate policy consolidation, multi-policy edits, channel rewiring).
-
-### 1. {Action}: {policy_name} [High / PR-Ready]
-(Do Now per-item template)
-
-## Actionable Findings: Investigate
-Items ordered by urgency.
-
-### 1. {investigation_title} [{High|Medium} / Stage 1]
-(Investigate per-item template with Two-Stage DoD)
-
-## Needs Decision
-Items ordered by deadline ascending.
-
-### 1. {decision_title} [High / Decision Pending]
-(Needs Decision per-item template)
-
-## Keep — No Action Required
-Brief section with 5-10 representative well-calibrated clusters and one-liner rationale for each (e.g., "fires <2x/14d, threshold well above baseline, correct routing"). Demonstrates the analysis evaluated the full inventory.
-
-## Verification Scorecard
-Rolled-up outcomes for all Do Now items. Re-run analysis in {days} days to verify.
-
-| Finding | Baseline | Target | Owner | Merge Date | Review Date | Primary Success Criteria | Guardrail | Confidence |
-|---------|----------|--------|-------|------------|-------------|--------------------------|-----------|------------|
-
-## Evidence Ledger / Reproduction
-Grouped by validation method. Reviewer action: `metric query` and `config inspection` items are audit-complete; `pattern analysis` items need reviewer judgment before applying.
-
-### Config inspection — provable from policy definition
-| Cluster | What was checked | Finding | Scope |
-
-### Metric query — validated against Cloud Monitoring time-series
-| Cluster | Query | Result | Finding |
-
-### Pattern analysis — inferred from incident frequency/timing, needs validation before applying
-| Cluster | Pattern observed | What would upgrade this | Scope |
-
-### Not attempted — specific blocker (auth expired, quota exhausted, metric not emitted)
-> This section is for genuine blockers only. Do NOT list metrics here when a multi-query approach exists
-> (e.g., histogram _count via /histogram type, error-rate ratios via two-query pattern).
-> Check the Multi-query patterns table in Stage 3b before classifying a metric as "not attempted".
-
-| Cluster | Blocker | What was tried |
-
-## Appendix: Frequency Table
-Full cluster table sorted by raw incidents: cluster key, raw, episodes, distinct resources, median duration, median retrigger, noise score, pattern, verdict, confidence.
-
-## Appendix: Evidence Coverage
-| Cluster | Metric Validated? | Evidence Basis | Sample Scope | Dedupe Window | Confidence |
-(lets reviewer see which recommendations rest on metric validation vs pattern-only inference)
-```
+| File | Read it |
+|---|---|
+| `references/slo-enrichment.md` | Stage 1, before SLO config enrichment. |
+| `references/iac-discovery.md` | Stage 1, before IaC module discovery. |
+| `references/codeowners-resolution.md` | Stage 1, before ownership resolution via CODEOWNERS. |
+| `references/metric-queries.md` | Stage 3b, before the first metric query. |
+| `references/report-templates.md` | Stage 5, before writing any finding or its Links line. |
+| `references/report-skeleton.md` | Stage 5, before writing the report. |
