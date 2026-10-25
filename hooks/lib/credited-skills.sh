@@ -38,6 +38,27 @@ credited_review_builtin() {
     return 1
 }
 
+# acs_cc_version — prints the Claude Code version parsed from AI_AGENT
+# (`claude-code_2-1-308_harness` -> `2.1.308`; the `_<suffix>` is optional), or
+# prints nothing when AI_AGENT is absent or not exactly that shape. Pure bash, no
+# fork of its own. Each component is 1-6 digits with no leading zero (bar `0`),
+# so a caller's `[ -gt ]`/`$(( ))` on it is total (no octal trap, no overflow).
+# Always returns 0: a capturing `$( )` must not trip a caller's ERR trap.
+acs_cc_version() {
+    local _v="${AI_AGENT:-}" _x _y _z _c
+    case "${_v}" in claude-code_*) ;; *) return 0 ;; esac
+    _v="${_v#claude-code_}"
+    _v="${_v%%_*}"
+    case "${_v}" in *-*-*-*) return 0 ;; *-*-*) ;; *) return 0 ;; esac
+    _x="${_v%%-*}"; _z="${_v##*-}"; _y="${_v#*-}"; _y="${_y%-*}"
+    for _c in "${_x}" "${_y}" "${_z}"; do
+        case "${_c}" in ''|*[!0-9]*|0?*) return 0 ;; esac
+        [ "${#_c}" -le 6 ] || return 0
+    done
+    printf '%s.%s.%s' "${_x}" "${_y}" "${_z}"
+    return 0
+}
+
 # review_sha_covers <sha> <subj_root> <subj_rev>
 #   0 covered   — <sha> is an ancestor of <subj_rev> and no material source
 #                 file differs between them

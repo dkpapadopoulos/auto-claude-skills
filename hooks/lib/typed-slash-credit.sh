@@ -16,14 +16,18 @@
 #   - the name must be a credited REVIEW name (credited-skills.sh). A typed
 #     verification-before-completion is never credited: VERIFY status is #301's
 #     live shadow population. credited-skills.sh unreadable => no typed credit;
-#   - the name must exist: a bare built-in (code-review, security-review) or an
-#     available entry in the session's skill registry. A typed missing name must
-#     not be cheaper than a Skill call to it, which errors and credits nothing.
+#   - the name must exist: a bare built-in (code-review, security-review) on a
+#     Claude Code >= 2.1.308 (AI_AGENT; an unknown slash command reaches this
+#     hook exactly like a real one, so the version is the built-in's only
+#     witness), or an available entry in the session's skill registry. A typed
+#     missing name must not be cheaper than a Skill call to it, which errors and
+#     credits nothing. Without acs_cc_version the built-in branch fails closed.
 #
 # Fork budget (preflight F5): nothing here runs on a prompt that does not start
 # with `/` (the caller's own regex gates it), and nothing forks until a credited
 # name has been recognised in pure bash. A slash prompt costs the caller's one
-# subshell; a credited one then at most two jq (registry check, payload) and
+# subshell; a credited one then a version capture (built-in names only), at
+# most two jq (registry check, payload) and
 # the completion hook, run synchronously, so its latency is the prompt's.
 #
 # The rule is the FIRST token: a prompt the person begins with a typed credited
@@ -67,17 +71,38 @@ _typed_slash_name() {
     printf '%s' "${_TS_NAME}"
 }
 
+# _typed_slash_builtin_cc_ok — 0 iff the running Claude Code (acs_cc_version,
+# credited-skills.sh) is at least 2.1.308. A built-in has no registry entry, and
+# on 2.1.308 an UNKNOWN slash command fires UserPromptSubmit with a payload
+# identical to a real one (controller probe, 2026-10-25), so the payload cannot
+# show the built-in exists; the version is the only witness. 2.1.308 is the
+# version the built-ins were observed on. Missing, malformed or older => 1.
+# Components are validated by acs_cc_version, so the comparisons are total.
+_typed_slash_builtin_cc_ok() {
+    local _v _x _y _z
+    _v="$(acs_cc_version)"
+    [ -n "${_v}" ] || return 1
+    _x="${_v%%.*}"; _z="${_v##*.}"; _y="${_v#*.}"; _y="${_y%.*}"
+    [ "${_x}" -gt 2 ] && return 0
+    [ "${_x}" -lt 2 ] && return 1
+    [ "${_y}" -gt 1 ] && return 0
+    [ "${_y}" -lt 1 ] && return 1
+    [ "${_z}" -ge 308 ]
+}
+
 # _typed_slash_installed <name> <registry_path> — 0 iff <name> is a bare
-# built-in, or the registry cache holds an available skill named <bare> (with a
-# typed prefix: whose invoke is exactly Skill(<prefix>:<bare>)), or an available
+# built-in on a Claude Code new enough to have it (_typed_slash_builtin_cc_ok),
+# or the registry cache holds an available skill named <bare> (with a typed
+# prefix: whose invoke is exactly Skill(<prefix>:<bare>)), or an available
 # plugin providing the command /<bare> (with a typed prefix: named <prefix>).
-# Missing or unparseable registry => 1 (built-ins still pass). One jq.
+# A built-in name that fails the version check still passes through a registry
+# entry. Missing or unparseable registry => only the built-in branch. One jq.
 _typed_slash_installed() {
     local _name="${1:-}" _reg="${2:-}" _bare _prefix=""
     [ -n "${_name}" ] || return 1
     _bare="${_name##*:}"
     case "${_name}" in *:*) _prefix="${_name%%:*}" ;; esac
-    if [ -z "${_prefix}" ] && credited_review_builtin "${_bare}"; then
+    if [ -z "${_prefix}" ] && credited_review_builtin "${_bare}" && _typed_slash_builtin_cc_ok; then
         return 0
     fi
     [ -n "${_reg}" ] && [ -f "${_reg}" ] || return 1

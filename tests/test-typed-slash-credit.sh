@@ -34,6 +34,8 @@
 #   F*  the lib's first-token rule refuses wrapped and mid-text commands on its own
 #   L*  a lib faulting at load or call leaves the hook at exit 0 with empty stdout
 #   W*  carriage return and (UTF-8) no-break space before the first token credit
+#   V*  a typed BUILT-IN credits only on Claude Code >= 2.1.308 (AI_AGENT); registry
+#       skills credit whatever the version
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -53,6 +55,10 @@ fi
 
 setup_test_env
 trap 'rm -rf "${TEST_TMPDIR}"' EXIT
+# Built-in typed credit requires Claude Code >= 2.1.308 read from AI_AGENT (cells V).
+# Pinned for the whole file so the cells do not depend on the caller's harness.
+AI_AGENT_OK="claude-code_2-1-308_harness"
+export AI_AGENT="${AI_AGENT_OK}"
 # shellcheck disable=SC1090
 . "${PROJECT_ROOT}/hooks/lib/branch-ledger.sh"
 
@@ -523,6 +529,59 @@ fi
 _new_home; _turn "${_NBSP}/code-review" "${PROJECT_ROOT}" LC_ALL=C
 if _has_review || [ -e "$(_INVOC)" ]; then _record_fail "W3 no-break space under LC_ALL=C: not whitespace, credits nothing" "recorded"
 else _record_pass "W3 no-break space under LC_ALL=C: not whitespace, credits nothing"; fi
+
+# V: a built-in has no registry entry, and on 2.1.308 an unknown slash command reaches the
+# hook exactly like a real one, so the Claude Code version (AI_AGENT) is the only witness
+# that /code-review and /security-review exist. >= 2.1.308 credits; anything else does not.
+_v_turn() {   # <AI_AGENT value | -unset-> <prompt> [registry]
+    _new_home "${3:-${REG}}"
+    if [ "$1" = "-unset-" ]; then unset AI_AGENT; else export AI_AGENT="$1"; fi
+    _turn "$2"
+    export AI_AGENT="${AI_AGENT_OK}"
+}
+for _a in claude-code_2-1-308_harness claude-code_2-1-309_harness claude-code_2-2-0_harness \
+          claude-code_3-0-0_harness claude-code_2-1-308; do
+    _v_turn "${_a}" "/code-review"
+    _expect_credit "V1 AI_AGENT=${_a}: /code-review" "code-review"
+done
+_v_turn claude-code_2-1-309_harness "/security-review"
+_expect_credit "V1 AI_AGENT=claude-code_2-1-309_harness: /security-review" "security-review"
+for _a in -unset- "" claude-code_2-1-307_harness claude-code_2-0-999_harness claude-code_1-9-999_harness \
+          garbage claude-code_ claude-code_2-1_harness claude-code_2-1-308-1_harness \
+          claude-code_02-1-308_harness claude-code_2-01-308_harness claude-code_2-1-0308_harness \
+          claude-code_2-1-9999999_harness claude-code_a-b-c_harness claude-code_2-1-3o8_harness \
+          other-agent_2-1-308_harness CLAUDE-CODE_2-1-308_harness; do
+    _v_turn "${_a}" "/code-review"
+    _expect_nothing "V2 AI_AGENT='${_a}': /code-review"
+done
+_v_turn claude-code_2-1-307_harness "/security-review"
+_expect_nothing "V2 AI_AGENT=claude-code_2-1-307_harness: /security-review"
+# Registry skills are unaffected by the version.
+for _a in -unset- garbage claude-code_2-1-307_harness; do
+    _v_turn "${_a}" "/superpowers:requesting-code-review"
+    _expect_credit "V3 AI_AGENT='${_a}': registry skill /superpowers:requesting-code-review" "requesting-code-review"
+    _v_turn "${_a}" "/pr-review-toolkit:review-pr"
+    _expect_credit "V3 AI_AGENT='${_a}': registry plugin command /pr-review-toolkit:review-pr" "review-pr"
+done
+# A built-in NAME that is also a registry command still credits through the registry.
+REG_CR_PLUGIN="${TEST_TMPDIR}/reg-cr-plugin.json"
+"${REAL_JQ}" '.plugins += [{name:"code-review", available:true, provides:{commands:["/code-review"]}}]' "${REG}" > "${REG_CR_PLUGIN}"
+_v_turn -unset- "/code-review" "${REG_CR_PLUGIN}"
+_expect_credit "V4 AI_AGENT unset, /code-review provided by an available plugin: credits" "code-review"
+_v_turn -unset- "/code-review:code-review" "${REG_CR_PLUGIN}"
+_expect_credit "V4 AI_AGENT unset, /code-review:code-review (plugin): credits" "code-review"
+# acs_cc_version itself (credited-skills.sh): one definition, reused by Task 7.
+_ccv() { ( . "${PROJECT_ROOT}/hooks/lib/credited-skills.sh" && AI_AGENT="$1" acs_cc_version; echo "|rc=$?" ); }
+assert_equals "V5 acs_cc_version claude-code_2-1-308_harness" "2.1.308|rc=0" "$(_ccv claude-code_2-1-308_harness)"
+assert_equals "V5 acs_cc_version claude-code_10-0-12" "10.0.12|rc=0" "$(_ccv claude-code_10-0-12)"
+assert_equals "V5 acs_cc_version 0 components" "0.0.0|rc=0" "$(_ccv claude-code_0-0-0_x)"
+for _a in "" garbage claude-code_2-1 claude-code_02-1-308 claude-code_2-1-1234567 claude-code_2--308 x_claude-code_2-1-308; do
+    assert_equals "V5 acs_cc_version '${_a}' prints nothing, returns 0" "|rc=0" "$(_ccv "${_a}")"
+done
+assert_equals "V5 acs_cc_version with AI_AGENT unset" "|rc=0" \
+    "$( ( unset AI_AGENT; . "${PROJECT_ROOT}/hooks/lib/credited-skills.sh" && acs_cc_version; echo "|rc=$?" ) )"
+assert_equals "V5 acs_cc_version is set -u clean with AI_AGENT unset" "|rc=0" \
+    "$( ( set -u; unset AI_AGENT; . "${PROJECT_ROOT}/hooks/lib/credited-skills.sh" && acs_cc_version; echo "|rc=$?" ) 2>&1)"
 
 # U: unit cells on the lib (each in a subshell; the lib sources nothing at load)
 _unit_name() { ( . "${LIB}" 2>/dev/null && _typed_slash_name "$1" ) 2>/dev/null; }
