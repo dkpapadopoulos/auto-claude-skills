@@ -204,12 +204,76 @@ review_reviewer_returned_sha "$_REPO" >/dev/null 2>&1
 assert_equals "A6 no milestone => 1" "1" "$?"
 
 ( cd "$_REPO" && branch_ledger_record "reviewer-returned" "" "$_H" "arm=allowlist" )
-( unset -f branch_ledger_tag; review_reviewer_returned_sha "$_REPO" ) >/dev/null 2>&1
-assert_equals "A6 branch_ledger_tag undefined => 1" "1" "$?"
-( unset -f branch_ledger_sha; review_reviewer_returned_sha "$_REPO" ) >/dev/null 2>&1
-assert_equals "A6 branch_ledger_sha undefined => 1" "1" "$?"
+( review_reviewer_returned_sha "$_REPO" ) >/dev/null 2>&1
+assert_equals "A6 control: the same record with the ledger lib loaded => 0" "0" "$?"
+( unset -f branch_ledger_sha_tag; review_reviewer_returned_sha "$_REPO" ) >/dev/null 2>&1
+assert_equals "A6 branch_ledger_sha_tag undefined => 1" "1" "$?"
 review_reviewer_returned_sha "" >/dev/null 2>&1
 assert_equals "A6 empty ledger root => 1" "1" "$?"
+
+# ===========================================================================
+# A12 the sha and the arm come from ONE ledger read (review I1)
+# ===========================================================================
+# branch_ledger_record replaces the milestone file atomically, so a reader that
+# derives the key and reads the line twice can straddle a concurrent overwrite
+# and pair record 1's arm=allowlist with record 2's sha. Made deterministic by
+# shimming branch_ledger_dir (every ledger read goes through it): on its SECOND
+# call it overwrites the milestone with an arm=description record at another
+# sha, standing in for a reviewer completing between two reads. A one-read
+# reader never makes a second call and sees record 1 whole; a two-read reader
+# returns record 2's sha as allowlisted. The cell is order-agnostic: it does not
+# depend on which accessor a reader calls first.
+_reset
+_H="$(_head)"
+_SHA2="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+( cd "$_REPO" && branch_ledger_record "reviewer-returned" "" "$_H" "arm=allowlist" )
+_REAL_DIR="$(branch_ledger_dir "$_REPO")"
+_CNT="${TEST_TMPDIR}/a12-dir-calls"
+: > "$_CNT"
+_A12="$(
+    branch_ledger_dir() {
+        local n; n="$(cat "$_CNT" 2>/dev/null)"; n="${n:-0}"; n=$((n + 1))
+        printf '%s' "$n" > "$_CNT"
+        if [ "$n" -ge 2 ]; then
+            printf '%s %s %s\n' "$_SHA2" "2026-01-01T00:00:00Z" "arm=description" > "${_REAL_DIR}/reviewer-returned"
+        fi
+        printf '%s' "$_REAL_DIR"
+    }
+    review_reviewer_returned_sha "$_REPO"; printf ' rc=%s' "$?"
+)"
+assert_not_contains "A12 never returns the overwriting description record's sha" "$_SHA2" "$_A12"
+assert_equals "A12 returns record 1 whole (sha + rc)" "${_H} rc=0" "$_A12"
+assert_equals "A12 the ledger key is derived once" "1" "$(cat "$_CNT" 2>/dev/null)"
+
+# A12b the accessor itself: one call yields both halves of one line.
+_reset
+( cd "$_REPO" && branch_ledger_record "reviewer-returned" "" "$_H" "arm=allowlist" )
+assert_equals "A12b branch_ledger_sha_tag prints '<sha> <tag>'" "${_H} arm=allowlist" \
+    "$(branch_ledger_sha_tag reviewer-returned "$_REPO")"
+( cd "$_REPO" && branch_ledger_record "reviewer-returned" "" "$_H" )
+assert_equals "A12b untagged line => '<sha> ' (empty tag)" "${_H} " \
+    "$(branch_ledger_sha_tag reviewer-returned "$_REPO")"
+printf '%s %s %s %s\n' "$_H" "2026-01-01T00:00:00Z" "arm=allowlist" "extra" > "${_REAL_DIR}/reviewer-returned"
+assert_equals "A12b four-field line => tag not trusted" "${_H} " \
+    "$(branch_ledger_sha_tag reviewer-returned "$_REPO")"
+review_reviewer_returned_sha "$_REPO" >/dev/null 2>&1
+assert_equals "A12b four-field allowlist line does not credit" "1" "$?"
+assert_equals "A12b missing milestone => nothing" "" "$(branch_ledger_sha_tag nosuch "$_REPO")"
+
+# ===========================================================================
+# A13 an uppercase sha is stored lowercase (review M3)
+# ===========================================================================
+_reset
+_HU="$(printf '%s' "$_H" | tr 'a-f' 'A-F')"
+if [ "$_HU" = "$_H" ]; then
+    _record_fail "A13 uppercase sha stored lowercase" "HEAD has no a-f digit — cell proves nothing"
+else
+    ( cd "$_REPO" && branch_ledger_record "reviewer-returned" "" "$_HU" "arm=allowlist" )
+    assert_equals "A13 uppercase sha stored lowercase" "$_H" "$(_lsha)"
+    assert_equals "A13 so the credit reader accepts it" "$_H" "$(review_reviewer_returned_sha "$_REPO" 2>/dev/null)"
+fi
+( cd "$_REPO" && branch_ledger_record "m13" "" "$_H" )
+assert_equals "A13 control: a lowercase sha is stored unchanged" "$_H" "$(branch_ledger_sha m13 "$_REPO")"
 
 # ===========================================================================
 # A7 review_reviewer_covers
@@ -332,8 +396,31 @@ assert_equals "A11 reviewer_pairing_note_mismatch is still reviewer-pairing.sh's
     "reviewer_pairing_note_mismatch" "$(_lastfn "${PROJECT_ROOT}/hooks/lib/reviewer-pairing.sh")"
 assert_equals "A11 review_reviewer_covers is credited-skills.sh's last definition" \
     "review_reviewer_covers" "$(_lastfn "${PROJECT_ROOT}/hooks/lib/credited-skills.sh")"
-_OUT="$(bash -u -c ". '${PROJECT_ROOT}/hooks/lib/credited-skills.sh'; review_reviewer_returned_sha; review_reviewer_covers; echo survived" 2>/dev/null </dev/null)"
-assert_contains "A11 new credited-skills functions are set -u clean" "survived" "$_OUT"
+# set -u under /bin/bash (3.2 on macOS) with a SEEDED ledger and real
+# arguments, so every new function runs its full body to a successful return,
+# not just its early `return 1` on empty input (review M2).
+_reset
+_H="$(_head)"
+_OUT="$(cd "$_REPO" && /bin/bash -u -c '
+    . "$1/hooks/lib/branch-ledger.sh"; . "$1/hooks/lib/reviewer-pairing.sh"; . "$1/hooks/lib/credited-skills.sh"
+    branch_ledger_record m11 "$2" "" "arm=allowlist"
+    branch_ledger_record reviewer-returned "$2" "$3" "arm=allowlist"
+    printf "tag=%s\n" "$(branch_ledger_tag m11 "$2")"
+    printf "st=%s\n" "$(branch_ledger_sha_tag reviewer-returned "$2")"
+    printf "ret=%s\n" "$(review_reviewer_returned_sha "$2")"
+    printf "cov=%s\n" "$(review_reviewer_covers "$2" "$2" HEAD)"
+    reviewer_pairing_note_dispatch "$4" a11-agent k11 "" allowlist
+    printf "arm=%s\n" "$(reviewer_pairing_dispatch_arm "$4" a11-agent)"
+    reviewer_pairing_dispatch_sha "$4" a11-agent; printf "dsha_rc=%s\n" "$?"
+    echo survived' _ "$PROJECT_ROOT" "$_REPO" "$_H" "$_SID" 2>&1 </dev/null)"
+assert_contains "A11 /bin/bash -u: completes" "survived" "$_OUT"
+assert_not_contains "A11 /bin/bash -u: no unbound variable" "unbound" "$_OUT"
+assert_contains "A11 /bin/bash -u: branch_ledger_record + branch_ledger_tag" "tag=arm=allowlist" "$_OUT"
+assert_contains "A11 /bin/bash -u: branch_ledger_sha_tag" "st=${_H} arm=allowlist" "$_OUT"
+assert_contains "A11 /bin/bash -u: review_reviewer_returned_sha full body" "ret=${_H}" "$_OUT"
+assert_contains "A11 /bin/bash -u: review_reviewer_covers full body" "cov=${_H}" "$_OUT"
+assert_contains "A11 /bin/bash -u: note_dispatch + dispatch_arm" "arm=allowlist" "$_OUT"
+assert_contains "A11 /bin/bash -u: dispatch_sha on '-'" "dsha_rc=1" "$_OUT"
 for _f in hooks/lib/branch-ledger.sh hooks/lib/reviewer-pairing.sh hooks/reviewer-evidence-hook.sh \
           hooks/reviewer-completion-hook.sh hooks/lib/credited-skills.sh; do
     if /bin/bash -n "${PROJECT_ROOT}/${_f}" 2>/dev/null; then _record_pass "A11 /bin/bash -n ${_f}"

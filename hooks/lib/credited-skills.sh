@@ -71,18 +71,21 @@ EOF
 #   (the reviewer was matched by the allowlisted subagent_type arm, not the
 #   description word) whose sha is 7-40 lowercase hex. Returns 1 and prints
 #   nothing otherwise: an empty root, branch-ledger.sh not loaded
-#   (branch_ledger_tag / branch_ledger_sha undefined — this lib sources nothing),
-#   no milestone, an untagged pre-arm milestone, `arm=description`, or a sha of
-#   `unknown` or `-` (dispatch-time commit not known; never a later HEAD).
-# The tag is read first, so only an allowlisted milestone pays for the sha read.
+#   (branch_ledger_sha_tag undefined — this lib sources nothing), no milestone,
+#   an untagged pre-arm milestone, `arm=description`, or a sha of `unknown` or
+#   `-` (dispatch-time commit not known; never a later HEAD).
+# The sha and the arm come from ONE read under ONE key derivation
+# (branch_ledger_sha_tag). Reading them separately can pair one record's
+# `arm=allowlist` with a concurrently written `arm=description` record's sha.
 review_reviewer_returned_sha() {
-    local _lroot="${1:-}" _tag _sha
+    local _lroot="${1:-}" _st _tag _sha
     [ -n "${_lroot}" ] || return 1
-    command -v branch_ledger_tag >/dev/null 2>&1 || return 1
-    command -v branch_ledger_sha >/dev/null 2>&1 || return 1
-    _tag="$(branch_ledger_tag reviewer-returned "${_lroot}" 2>/dev/null)" || return 1
+    command -v branch_ledger_sha_tag >/dev/null 2>&1 || return 1
+    _st="$(branch_ledger_sha_tag reviewer-returned "${_lroot}" 2>/dev/null)" || return 1
+    case "${_st}" in *" "*) ;; *) return 1 ;; esac
+    _sha="${_st%% *}"
+    _tag="${_st#* }"
     [ "${_tag}" = "arm=allowlist" ] || return 1
-    _sha="$(branch_ledger_sha reviewer-returned "${_lroot}" 2>/dev/null)" || return 1
     case "${_sha}" in
         ''|*[!0-9a-f]*) return 1 ;;
     esac

@@ -81,6 +81,10 @@ branch_ledger_record() {
         "") sha="$(git -C "${proj_root:-.}" rev-parse HEAD 2>/dev/null || true)" ;;
         -) sha="-" ;;
         *[!0-9a-fA-F]*) sha="unknown" ;;
+        # Stored lowercase: git prints lowercase, and the credit reader
+        # (credited-skills.sh) accepts only [0-9a-f]. One fork, and only for an
+        # uppercase input, which no current caller produces.
+        *[A-F]*) sha="$(printf '%s' "$sha_in" | tr 'A-F' 'a-f' 2>/dev/null)" || sha="unknown" ;;
         *) sha="$sha_in" ;;
     esac
     case "$tag" in *[!A-Za-z0-9=_-]*) tag="" ;; esac
@@ -102,22 +106,39 @@ branch_ledger_record() {
     return 0
 }
 
-# branch_ledger_tag <milestone> [<proj_root>] — prints the milestone's third
-# field (see branch_ledger_record), or nothing: no ledger, no milestone, a
-# two-field (untagged or pre-tag) line, a value outside the tag charset, or a
-# line with MORE than three fields (malformed, so no field of it is trusted).
-# Always returns 0, like branch_ledger_sha; callers compare the printed value.
-# `read` is a builtin, so this adds no fork beyond branch_ledger_dir's.
-branch_ledger_tag() {
+# branch_ledger_sha_tag <milestone> [<proj_root>] — prints "<sha> <tag>" taken
+# from ONE read of the milestone line under ONE key derivation, or nothing (no
+# ledger, no milestone, empty line). <tag> is empty for a two-field (untagged or
+# pre-tag) line, a value outside the tag charset, or a line with MORE than three
+# fields (malformed, so its tag is not trusted). <sha> is field 1 verbatim;
+# validating it is the caller's job. Always returns 0; callers parse the output.
+#
+# One read, not branch_ledger_tag + branch_ledger_sha: branch_ledger_record
+# replaces the file atomically, so two reads can straddle a concurrent
+# overwrite (or a branch switch between two key derivations) and pair one
+# record's tag with another record's sha — an `arm=allowlist` tag on an
+# `arm=description` reviewer's sha. A reader that decides on the PAIR must take
+# both from this function. `read` is a builtin: no fork beyond branch_ledger_dir's.
+branch_ledger_sha_tag() {
     local milestone="${1:-}" proj_root="${2:-}" dir _s _t _g _rest
     [ -n "$milestone" ] || return 0
     case "$milestone" in */*|*..*) return 0 ;; esac
     dir="$(branch_ledger_dir "$proj_root")" || return 0
     [ -n "$dir" ] && [ -f "${dir}/${milestone}" ] || return 0
-    IFS=' ' read -r _s _t _g _rest < "${dir}/${milestone}" 2>/dev/null || [ -n "${_g:-}" ] || return 0
-    [ -n "${_g:-}" ] && [ -z "${_rest:-}" ] || return 0
-    case "$_g" in *[!A-Za-z0-9=_-]*) return 0 ;; esac
-    printf '%s' "$_g"
+    IFS=' ' read -r _s _t _g _rest < "${dir}/${milestone}" 2>/dev/null || [ -n "${_s:-}" ] || return 0
+    [ -n "${_s:-}" ] || return 0
+    if [ -n "${_rest:-}" ]; then _g=""; fi
+    case "${_g:-}" in *[!A-Za-z0-9=_-]*) _g="" ;; esac
+    printf '%s %s' "$_s" "${_g:-}"
+}
+
+# branch_ledger_tag <milestone> [<proj_root>] — prints just the tag half of
+# branch_ledger_sha_tag, or nothing. Always returns 0. For a decision that also
+# needs the sha, call branch_ledger_sha_tag instead (see why above).
+branch_ledger_tag() {
+    local _st
+    _st="$(branch_ledger_sha_tag "${1:-}" "${2:-}")" || return 0
+    case "$_st" in *" "*) printf '%s' "${_st#* }" ;; esac
 }
 
 branch_ledger_has() {
