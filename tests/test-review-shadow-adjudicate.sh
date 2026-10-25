@@ -1022,7 +1022,7 @@ jq -c '.ts = ""' "${_E9b}" > "${_E9b}.tmp" 2>/dev/null && mv "${_E9b}.tmp" "${_E
 _o9b="$(_em "${_E9b}")"
 assert_equals "E9b a ts:\"\" record is not in N" "0" "$(_em_eps "${_o9b}")"
 case "${_o9b}" in
-    *"excluded: 1 record(s) at version ${PV} with no usable ts or record_id"*)
+    *"excluded: 1 record(s) at version ${PV} with no usable ts (cannot"*)
         _record_pass "E9b ...and is reported as excluded with its cause" ;;
     *) _record_fail "E9b ...and is reported as excluded with its cause" "got: ${_o9b}" ;;
 esac
@@ -1054,6 +1054,138 @@ case "${_o11}" in
     *permissionDecision*) _record_fail "E11 --evidence-miss emits no permissionDecision" "found one" ;;
     *"evidence misses:"*) _record_pass "E11 --evidence-miss emits no permissionDecision" ;;
     *) _record_fail "E11 --evidence-miss emits no permissionDecision" "no report at all: ${_o11}" ;;
+esac
+
+# ---------------------------------------------------------------------------
+# 25. Task 9 review, fix round 1.
+# ---------------------------------------------------------------------------
+# F1 (I1) only `covered` makes a returned reviewer a miss. `cannot-check` is
+# producer-reachable (the guard's first-present reviewer candidate), and a
+# "coverage is not uncovered" simplification counted it: 114/114 stayed green
+# while the rate read 2/3 on a corpus whose answer is 0/3. Inflation is the
+# direction that matters for a number meant to argue the gate false-blocks.
+_F1="${TMP}/emf1.jsonl"; rm -f "${_F1}"
+_em_rec "${_F1}" tok-f1a reviewer-returned cannot-check
+_em_rec "${_F1}" tok-f1b reviewer-returned none
+assert_equals "F1 reviewer-returned with cannot-check or none coverage is never a miss: 0/2" "0/2" \
+    "$(_em_rate "$(_em "${_F1}")")"
+
+# F2 (M1) the whole `excluded:` line on a corpus holding K, J, W and U rows, so
+# an exclusion cannot ALSO be reported as an unparseable line.
+_F2="${TMP}/emf2.jsonl"; _F2s="${TMP}/emf2s.jsonl"; rm -f "${_F2}" "${_F2s}"
+_em_rec "${_F2}" tok-f2a reviewer-returned covered
+_em_rec "${_F2s}" tok-f2b reviewer-returned covered
+jq -c '.predicate_version = (.predicate_version - 1)' "${_F2s}" >> "${_F2}" 2>/dev/null
+_em_rec "${_F2}" tok-f2c bogus covered
+jq -c '.would_block = "true"' "${_F2s}" >> "${_F2}" 2>/dev/null
+printf '%s\n' '{"record_id":"broken","ts":' >> "${_F2}"
+_of2="$(_em "${_F2}")"
+if printf '%s\n' "${_of2}" | grep -qxF "  excluded: 1 record(s) at other predicate versions; 1 record(s) at version ${PV} without a valid review_witness/review_coverage; 1 unparseable line(s)"; then
+    _record_pass "F2 the excluded line counts each K, J and U row once, and W rows are not unparseable"
+else
+    _record_fail "F2 the excluded line counts each K, J and U row once, and W rows are not unparseable" "got: ${_of2}"
+fi
+assert_equals "F2 ...and the population is the one valid record: 1/1" "1/1" "$(_em_rate "${_of2}")"
+
+# F3 (M2) a record_id not of the producer's shape is excluded with its cause.
+# The shape is 1-16 lowercase hex, not exactly 16: the producer's cksum
+# fallback writes a shorter all-digit id, and a real record must not be
+# excluded for it (CONTROL below).
+_F3="${TMP}/emf3.jsonl"; _F3s="${TMP}/emf3s.jsonl"; rm -f "${_F3}" "${_F3s}"
+_em_rec "${_F3s}" tok-f3 reviewer-returned covered
+jq -c '.record_id = "NOT-HEX"' "${_F3s}" > "${_F3}" 2>/dev/null
+_of3="$(_em "${_F3}")"
+assert_equals "F3 a record_id not of the producer's shape is not in N" "0" "$(_em_eps "${_of3}")"
+case "${_of3}" in
+    *"excluded: 1 record(s) at version ${PV} with a record_id not of the producer's shape"*)
+        _record_pass "F3 ...and is reported as excluded with its cause" ;;
+    *) _record_fail "F3 ...and is reported as excluded with its cause" "got: ${_of3}" ;;
+esac
+jq -c '.record_id = "123456789012"' "${_F3s}" > "${_F3}" 2>/dev/null
+assert_equals "F3 CONTROL: a cksum-fallback-shaped id (digits, <16) is counted: 1/1" "1/1" \
+    "$(_em_rate "$(_em "${_F3}")")"
+
+# F4 (M2) a record_id shared by records in two different episodes must not
+# inflate the count. Joined by id, the miss pair attached to BOTH episodes and
+# the rate read 2/2 where the answer is 1/2. Neither row is joinable by id, so
+# both are excluded with their cause; a third, clean episode keeps N > 0.
+_F4="${TMP}/emf4.jsonl"; _F4s="${TMP}/emf4s.jsonl"; rm -f "${_F4}" "${_F4s}"
+_em_rec "${_F4s}" tok-f4a invocation covered
+_em_rec "${_F4s}" tok-f4b reviewer-returned covered
+jq -c '.record_id = "aaaaaaaaaaaaaaaa"' "${_F4s}" > "${_F4}" 2>/dev/null
+_em_rec "${_F4}" tok-f4c invocation covered
+_of4="$(_em "${_F4}")"
+assert_equals "F4 a record_id shared across two episodes does not inflate misses: 0/1" "0/1" "$(_em_rate "${_of4}")"
+case "${_of4}" in
+    *"excluded: 2 record(s) at version ${PV} sharing a record_id with another record"*)
+        _record_pass "F4 ...and both rows are reported as excluded with their cause" ;;
+    *) _record_fail "F4 ...and both rows are reported as excluded with their cause" "got: ${_of4}" ;;
+esac
+# A byte-identical duplicate LINE is the same case: one record, never two.
+_F4d="${TMP}/emf4d.jsonl"; rm -f "${_F4d}"
+_em_rec "${_F4d}" tok-f4d reviewer-returned covered
+cat "${_F4d}" "${_F4d}" > "${_F4d}.tmp" && mv "${_F4d}.tmp" "${_F4d}"
+case "$(_em "${_F4d}")" in
+    *"would-block episodes: 1 (2 record(s))"*)
+        _record_fail "F4 a duplicated line is not counted as two records" "got: $(_em "${_F4d}")" ;;
+    *"excluded: 2 record(s) at version ${PV} sharing a record_id"*)
+        _record_pass "F4 a duplicated line is not counted as two records" ;;
+    *) _record_fail "F4 a duplicated line is not counted as two records" "got: $(_em "${_F4d}")" ;;
+esac
+
+# F5 (M2) an id containing a comma split into other records' ids, inflating
+# misses and driving the unplaced-record count NEGATIVE, which silently hid its
+# line. No count printed may ever be negative.
+_F5="${TMP}/emf5.jsonl"; _F5s="${TMP}/emf5s.jsonl"; rm -f "${_F5}" "${_F5s}"
+_em_rec "${_F5s}" tok-f5a reviewer-returned covered
+jq -c '.record_id = "aaaa"' "${_F5s}" > "${_F5}" 2>/dev/null
+rm -f "${_F5s}"; _em_rec "${_F5s}" tok-f5b invocation covered
+jq -c '.record_id = "aaaa,bbbb"' "${_F5s}" >> "${_F5}" 2>/dev/null
+_of5="$(_em "${_F5}")"
+assert_equals "F5 a comma-bearing id does not borrow another record's miss: 1/1" "1/1" "$(_em_rate "${_of5}")"
+case "${_of5}" in
+    *"excluded: 1 record(s) at version ${PV} with a record_id not of the producer's shape"*)
+        _record_pass "F5 ...the comma-bearing id is reported, not silently absorbed" ;;
+    *) _record_fail "F5 ...the comma-bearing id is reported, not silently absorbed" "got: ${_of5}" ;;
+esac
+if printf '%s\n' "${_of5}" | grep -qE '(: |; |\()-[0-9]'; then
+    _record_fail "F5 no count in the output is negative" "got: ${_of5}"
+else
+    _record_pass "F5 no count in the output is negative"
+fi
+
+# F6 (M3) the blind-spot note names all three witnesses an unknown-dispatch
+# reviewer can fall through to; `none` is the one indistinguishable from "no
+# reviewer", which is the point of the note.
+case "${_o1}" in
+    *"under the verdict, invocation or none witness"*)
+        _record_pass "F6 the blind-spot note names verdict, invocation or none" ;;
+    *) _record_fail "F6 the blind-spot note names verdict, invocation or none" "got: ${_o1}" ;;
+esac
+
+# F7 (M4) a line of invalid UTF-8 bytes is an unparseable line. `grep -c .` in
+# a UTF-8 locale does not match it, so it was neither a record nor counted.
+# The cell runs under a UTF-8 locale that reproduces the defect, chosen by
+# measurement, not by name.
+_F7="${TMP}/emf7.jsonl"; rm -f "${_F7}"
+_em_rec "${_F7}" tok-f7 reviewer-returned covered
+printf '\377\376\n' >> "${_F7}"
+_U8=""
+for _l in C.UTF-8 en_US.UTF-8 C.utf8 en_US.utf8; do
+    if [ "$(printf '\377\376\n' | LC_ALL="${_l}" grep -c . 2>/dev/null)" = "0" ]; then _U8="${_l}"; break; fi
+done
+[ -n "${_U8}" ] || echo "  NOTE: no UTF-8 locale here reproduces the invalid-byte miss -- F7 cannot go red on this host"
+_of7="$(LC_ALL="${_U8:-C}" REVIEW_SHADOW_LOG="${_F7}" REVIEW_ADJUDICATION_LOG="${TMP}/em-unused-adj.jsonl" \
+        /bin/bash "${SUT}" --evidence-miss 2>&1)"
+case "${_of7}" in
+    *"; 1 unparseable line(s)"*) _record_pass "F7 an invalid-UTF-8 line is counted as unparseable (--evidence-miss, ${_U8:-C})" ;;
+    *) _record_fail "F7 an invalid-UTF-8 line is counted as unparseable (--evidence-miss, ${_U8:-C})" "got: ${_of7}" ;;
+esac
+_os7="$(LC_ALL="${_U8:-C}" REVIEW_SHADOW_LOG="${_F7}" REVIEW_ADJUDICATION_LOG="${TMP}/em-unused-adj.jsonl" \
+        /bin/bash "${SUT}" --status 2>&1)"
+case "${_os7}" in
+    *"records : 2 line(s), 1 parsed, 1 unparseable"*) _record_pass "F7 ...and by --status, which shares the precheck" ;;
+    *) _record_fail "F7 ...and by --status, which shares the precheck" "got: ${_os7}" ;;
 esac
 
 print_summary

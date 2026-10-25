@@ -396,7 +396,9 @@ _corpus_precheck() {
     fi
 
     # PIPESTATUS[0], not the pipeline's status: `grep | tr` reports tr's.
-    _PC_LINES="$(grep -c . "${SHADOW_LOG}" 2>/dev/null)"; _rc=$?
+    # LC_ALL=C: in a UTF-8 locale `.` does not match an invalid byte, so a
+    # line of corrupt bytes was neither a record nor an unparseable line.
+    _PC_LINES="$(LC_ALL=C grep -c . "${SHADOW_LOG}" 2>/dev/null)"; _rc=$?
     _PC_LINES="$(printf '%s' "${_PC_LINES}" | tr -d '[:space:]')"
     # grep -c exits 1 on "no matching lines", which is a legitimate empty file;
     # anything above 1 is a real read error and must not be reported as zero.
@@ -576,13 +578,26 @@ EOF
 #
 # One jq pass tags every line, so the population and each exclusion come from
 # the same read: K other predicate, J version-matching but no valid
-# witness/coverage pair, W would_block not boolean true, U not a JSON object,
-# P the population row. Per F11 the record_id -> (witness, coverage) map is
-# built from the P rows FIRST and the grouped episodes are then joined to it,
-# so an episode is a miss if ANY member id maps to (reviewer-returned, covered).
+# witness/coverage pair, W would_block not boolean true, I a record_id not of
+# the producer's shape, U not a JSON object, P the population row. A second
+# awk pass re-tags as D every P row whose record_id another P row shares.
+# Per F11 the record_id -> (witness, coverage) map is then built from the P
+# rows FIRST and the grouped episodes are joined to it, so an episode is a
+# miss if ANY member id maps to (reviewer-returned, covered) -- exactly that
+# pair: `cannot-check` and `none` coverage are not "covered" and never count.
+#
+# Why I and D exist: the join is by id, and the grouper's member list is
+# comma-joined ids. A shared id attached one record's miss pair to a SECOND
+# episode (measured 2/2 where the answer is 1/2), a byte-identical duplicate
+# line counted as two records, and an id containing a comma split into other
+# records' ids -- inflating misses and driving the unplaced count negative,
+# which hid its line. None is producer-reachable (the id is hashed over a
+# nonce), so excluding them only costs a hand-edited corpus its rows. The
+# shape is 1-16 lowercase hex, NOT exactly 16: the producer's cksum fallback
+# writes a shorter all-digit id, and a real record must not be excluded.
 cmd_evidence_miss() {
     local _pv="${REQUIRED_PREDICATE_VERSION}" _rows _eps _counts _join
-    local _k=0 _j=0 _w=0 _p=0 _obj=0 _u=0 _n=0 _r=0 _m=0 _t=0
+    local _k=0 _j=0 _w=0 _i=0 _d=0 _p=0 _obj=0 _u=0 _n=0 _r=0 _m=0 _t=0
 
     echo "REVIEW evidence-miss (diagnostic only; predicate_version ${_pv} records only)"
     _corpus_precheck || return 0
@@ -598,15 +613,28 @@ cmd_evidence_miss() {
           elif ((.review_witness  | inv(["reviewer-returned","verdict","invocation","none"]))
             and (.review_coverage | inv(["covered","uncovered","cannot-check","none"]))) | not then "J"
           elif (((.would_block | type) == "boolean") and .would_block == true) | not then "W"
+          elif ((.record_id | type) != "string") or ((.record_id | test("^[0-9a-f]{1,16}$")) | not) then "I"
           else (["P", .repo, .branch, .session_token, .ts, .record_id,
                  .review_witness, .review_coverage] | map(cell) | @tsv)
-          end' "${SHADOW_LOG}" 2>/dev/null)"
+          end' "${SHADOW_LOG}" 2>/dev/null \
+        | awk -F'\t' '
+            { line[NR] = $0; if ($1 == "P") seen[$6]++ }
+            END {
+                for (x = 1; x <= NR; x++) {
+                    if (substr(line[x], 1, 2) == "P\t") {
+                        split(line[x], f, "\t")
+                        if (seen[f[6]] > 1) { print "D"; continue }
+                    }
+                    print line[x]
+                }
+            }')"
 
     _counts="$(printf '%s\n' "${_rows}" | awk -F'\t' '
-        $1 == "K" { k++ } $1 == "J" { j++ } $1 == "W" { w++ } $1 == "P" { p++ }
-        $1 == "K" || $1 == "J" || $1 == "W" || $1 == "P" { o++ }
-        END { print k+0, j+0, w+0, p+0, o+0 }')"
-    read -r _k _j _w _p _obj <<EOF
+        $1 == "K" { k++ } $1 == "J" { j++ } $1 == "W" { w++ } $1 == "I" { i++ }
+        $1 == "D" { d++ } $1 == "P" { p++ }
+        $1 != "U" && $1 != "" { o++ }
+        END { print k+0, j+0, w+0, i+0, d+0, p+0, o+0 }')"
+    read -r _k _j _w _i _d _p _obj <<EOF
 ${_counts}
 EOF
     # A parsed non-object is not a record, so it is reported with the lines
@@ -617,25 +645,22 @@ EOF
             | awk -F'\t' '$1 == "P" { print $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 }' \
             | shadow_group_episodes "${EPISODE_WINDOW_SEC}")"
 
-    # M rows (the map) precede E rows (the episodes) in one stream. A record_id
-    # seen twice keeps the miss pair if either row carries it.
+    # M rows (the map) precede E rows (the episodes) in one stream. Ids are
+    # unique among P rows by construction (D above), so each maps once.
     _join="$( { printf '%s\n' "${_rows}" | awk -F'\t' '$1 == "P" { print "M\t" $6 "\t" $7 "\t" $8 }'
                 printf '%s\n' "${_eps}"  | awk -F'\t' 'NF { print "E\t" $5 }'; } \
              | awk -F'\t' '
-                $1 == "M" {
-                    if (pair[$2] != "reviewer-returned\tcovered") pair[$2] = $3 "\t" $4
-                    next
-                }
+                $1 == "M" { pair[$2] = $3 "\t" $4; next }
                 $1 == "E" {
                     n++; c = split($2, ids, ","); r += c; hit = 0
-                    for (i = 1; i <= c; i++) if (pair[ids[i]] == "reviewer-returned\tcovered") hit = 1
+                    for (x = 1; x <= c; x++) if (pair[ids[x]] == "reviewer-returned\tcovered") hit = 1
                     m += hit
                 }
                 END { print n+0, r+0, m+0 }')"
     read -r _n _r _m <<EOF
 ${_join}
 EOF
-    # Population rows the grouper could not place (unusable ts, empty id).
+    # Population rows the grouper could not place (an unusable ts).
     _t=$(( _p - _r ))
 
     echo "  would-block episodes: ${_n} (${_r} record(s))"
@@ -649,12 +674,24 @@ EOF
     if [ "${_w}" -gt 0 ]; then
         echo "  excluded: ${_w} record(s) at version ${_pv} with would_block not boolean true"
     fi
+    if [ "${_i}" -gt 0 ]; then
+        echo "  excluded: ${_i} record(s) at version ${_pv} with a record_id not of the producer's shape (1-16 lowercase hex)"
+    fi
+    if [ "${_d}" -gt 0 ]; then
+        echo "  excluded: ${_d} record(s) at version ${_pv} sharing a record_id with another record (not joinable by id)"
+    fi
     if [ "${_t}" -gt 0 ]; then
-        echo "  excluded: ${_t} record(s) at version ${_pv} with no usable ts or record_id (cannot be placed in an episode)"
+        echo "  excluded: ${_t} record(s) at version ${_pv} with no usable ts (cannot be placed in an episode)"
+    fi
+    # Unreachable while ids are unique and comma-free, but never silent: a
+    # negative difference means the episodes hold ids the population does not,
+    # and the numbers above cannot be trusted.
+    if [ "${_t}" -lt 0 ] || [ "${_u}" -lt 0 ]; then
+        echo "  ERROR: record accounting is inconsistent (${_PC_LINES:-0} line(s), ${_obj} record(s), ${_p} in the population, ${_r} placed in episodes). Do not use the counts above."
     fi
     echo "  This is a LOWER BOUND on one kind of false block (a real review demonstrably occurred). It is NOT the registered false-block rate."
     echo "  review_witness cannot tell \"no reviewer\" from \"a reviewer whose dispatch commit was unknown\":"
-    echo "  the guard records the latter under the verdict or invocation witness, so it is never counted here."
+    echo "  the guard records the latter under the verdict, invocation or none witness, so it is never counted here."
     return 0
 }
 
