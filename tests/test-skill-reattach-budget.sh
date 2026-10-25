@@ -30,8 +30,7 @@ REATTACH_BUDGET_BYTES=19500
 REATTACH_PENDING="incident-analysis 83053
 alert-hygiene 65670
 agent-team-review 47871
-runtime-validation 23790
-openspec-ship 22289"
+runtime-validation 23790"
 
 # Owned skills at the time of writing; the real-tree cell fails below this.
 REATTACH_MIN_SKILLS=20

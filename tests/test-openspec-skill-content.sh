@@ -12,6 +12,12 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 . "${SCRIPT_DIR}/test-helpers.sh"
 
 SKILL_FILE="${PROJECT_ROOT}/skills/openspec-ship/SKILL.md"
+# The artifact templates moved verbatim out of SKILL.md to keep its core inside
+# the post-compaction re-attach budget (openspec change skill-reattach-budget).
+TEMPLATES_FILE="${PROJECT_ROOT}/skills/openspec-ship/references/artifact-templates.md"
+# Negative checks scan everything the model may read for this skill, so a
+# deprecated spelling cannot come back through a reference file.
+REFS_DIR="${PROJECT_ROOT}/skills/openspec-ship/references"
 
 echo "=== test-openspec-skill-content.sh ==="
 
@@ -24,7 +30,7 @@ test_no_deprecated_change_commands() {
     # Match "openspec change <verb>" but exclude the deprecation warning table
     # that explicitly documents what NOT to do (lines with "not `openspec change")
     local deprecated_uses
-    deprecated_uses="$(grep -n 'openspec change' "$SKILL_FILE" \
+    deprecated_uses="$(grep -n 'openspec change' "$SKILL_FILE" "$REFS_DIR"/*.md \
         | grep -v '(not `openspec change' \
         | grep -v 'deprecated' \
         | grep -v '^\-\-' || true)"
@@ -45,7 +51,7 @@ test_no_opsx_slash_commands() {
 
     # Exclude documentation references that explain what NOT to use
     local opsx_uses
-    opsx_uses="$(grep -n '/opsx:' "$SKILL_FILE" \
+    opsx_uses="$(grep -n '/opsx:' "$SKILL_FILE" "$REFS_DIR"/*.md \
         | grep -v 'not the base CLI' \
         | grep -v 'not `' || true)"
 
@@ -68,8 +74,8 @@ test_proposal_template_headers() {
 
     # Extract the proposal.md template block (between "**proposal.md**" and the next "**")
     local has_why has_what_changes
-    has_why="$(grep -c '^## Why' "$SKILL_FILE" || true)"
-    has_what_changes="$(grep -c '^## What Changes' "$SKILL_FILE" || true)"
+    has_why="$(grep -c '^## Why' "$TEMPLATES_FILE" || true)"
+    has_what_changes="$(grep -c '^## What Changes' "$TEMPLATES_FILE" || true)"
 
     assert_equals "proposal template has ## Why header" "1" "$has_why"
     assert_equals "proposal template has ## What Changes header" "1" "$has_what_changes"
@@ -83,8 +89,8 @@ test_no_old_proposal_headers() {
     echo "-- test: no old proposal headers --"
 
     local old_problem old_proposed
-    old_problem="$(grep -c '## Problem Statement' "$SKILL_FILE" || true)"
-    old_proposed="$(grep -c '## Proposed Solution' "$SKILL_FILE" || true)"
+    old_problem="$(cat "$SKILL_FILE" "$REFS_DIR"/*.md | grep -c '## Problem Statement' || true)"
+    old_proposed="$(cat "$SKILL_FILE" "$REFS_DIR"/*.md | grep -c '## Proposed Solution' || true)"
 
     assert_equals "no ## Problem Statement header" "0" "$old_problem"
     assert_equals "no ## Proposed Solution header" "0" "$old_proposed"
@@ -273,7 +279,7 @@ test_openspec_ship_session_token_resolution() {
     # regression written with backticks or without quotes is caught too. grep -E,
     # not a substring match: the fallback legitimately names the same path.
     local naked="absent"
-    grep -Eq 'TOKEN=[^|]*(\$\(|`)[[:space:]]*cat[[:space:]]+~?/?[^|]*\.skill-session-token' "${SKILL_FILE}" \
+    grep -Eq 'TOKEN=[^|]*(\$\(|`)[[:space:]]*cat[[:space:]]+~?/?[^|]*\.skill-session-token' "${SKILL_FILE}" "${REFS_DIR}"/*.md \
         && naked="present"
     assert_equals "ship: singleton only as fallback, never first assignment (#157)" \
         "absent" "$naked"
@@ -284,8 +290,33 @@ test_openspec_ship_session_token_resolution() {
     # symmetry test pinned this warning and its retirement must not drop it.
     assert_contains "ship: warns shell state does not persist between Bash calls (#157)" \
         "does not persist between" "$content"
+    # The Step 7a-bis block (set_hypotheses + mark_archived) moved to a reference
+    # file; it runs in its own Bash call, so it must still re-resolve there.
+    assert_contains "ship: hypotheses block re-resolves the token itself (#157)" \
+        "resolve_own_session_token" "$(cat "${REFS_DIR}/hypotheses.md" 2>/dev/null)"
 }
 test_openspec_ship_session_token_resolution
+
+# ---------------------------------------------------------------------------
+# References index: every references/*.md is named from SKILL.md, and every
+# references/*.md SKILL.md names exists. A file the core never names is never
+# Read; a name with no file sends the model to a dead path.
+# ---------------------------------------------------------------------------
+test_openspec_ship_references_index() {
+    echo "-- test: SKILL.md and references/ name each other --"
+    local f base named n=0
+    for f in "${REFS_DIR}"/*.md; do
+        [ -f "$f" ] || continue
+        n=$((n + 1))
+        base="$(basename "$f")"
+        assert_contains "ship: SKILL.md names references/${base}" "references/${base}" "$(cat "${SKILL_FILE}")"
+    done
+    assert_equals "ship: references/ holds the four moved files" "4" "$n"
+    for named in $(grep -oE 'references/[A-Za-z0-9_-]+\.md' "${SKILL_FILE}" | sort -u); do
+        assert_file_exists "ship: ${named} named in SKILL.md exists" "${PROJECT_ROOT}/skills/openspec-ship/${named}"
+    done
+}
+test_openspec_ship_references_index
 
 # ---------------------------------------------------------------------------
 # Summary
