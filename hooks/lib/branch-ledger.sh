@@ -43,8 +43,21 @@ branch_ledger_dir() {
 # records are consumed with HEAD-or-ancestor acceptance, so an over-late sha
 # silently covers commits nothing reviewed — the over-claim #181 removed from
 # verdicts. A caller that knows the real subject should pass it.
+#
+# <sha> may also be the literal `-`: "the subject commit is known to be
+# unknown". It is stored as-is, never resolved to HEAD — the reviewer hooks pass
+# it when the dispatch-time commit could not be read, because stamping a later
+# HEAD is exactly the over-late claim above. It is non-hex, so every sha reader
+# (branch_ledger_sha_is_branch_local, review_sha_covers) rejects it.
+#
+# <tag> is OPTIONAL and becomes a third field (`<sha> <ts> <tag>`) only when it
+# matches ^[A-Za-z0-9=_-]+$; anything else is DROPPED, never escaped, so a tag
+# can never add a field or a line. Omitted or dropped => byte-identical to the
+# two-field line every existing reader cuts by position. Read it back with
+# branch_ledger_tag. Today's only tags are the reviewer classifier's
+# `arm=allowlist` / `arm=description` on `reviewer-returned`.
 branch_ledger_record() {
-    local milestone="${1:-}" proj_root="${2:-}" sha_in="${3:-}" dir sha
+    local milestone="${1:-}" proj_root="${2:-}" sha_in="${3:-}" tag="${4:-}" dir sha ts
     [ -z "$milestone" ] && return 0
     dir="$(branch_ledger_dir "$proj_root")" || return 0
     [ -z "$dir" ] && return 0
@@ -66,16 +79,45 @@ branch_ledger_record() {
     # is this change's standing rule for a knowingly-unobservable guard.
     case "$sha_in" in
         "") sha="$(git -C "${proj_root:-.}" rev-parse HEAD 2>/dev/null || true)" ;;
+        -) sha="-" ;;
         *[!0-9a-fA-F]*) sha="unknown" ;;
         *) sha="$sha_in" ;;
     esac
+    case "$tag" in *[!A-Za-z0-9=_-]*) tag="" ;; esac
     mkdir -p "$dir" 2>/dev/null || return 0
+    ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" || ts=""
     # per-milestone file (no shared-JSON read-modify-write → no concurrent race);
-    # atomic write; content = "<sha> <utc-ts>"
-    printf '%s %s\n' "${sha:-unknown}" "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" \
-        > "${dir}/${milestone}.tmp.$$" 2>/dev/null \
-        && mv "${dir}/${milestone}.tmp.$$" "${dir}/${milestone}" 2>/dev/null || return 0
+    # atomic write; content = "<sha> <utc-ts>" or "<sha> <utc-ts> <tag>". A
+    # tagged line never carries an empty timestamp, which would shift the tag
+    # into field 2 for a whitespace-splitting reader.
+    if [ -n "$tag" ]; then
+        printf '%s %s %s\n' "${sha:-unknown}" "${ts:-unknown}" "$tag" \
+            > "${dir}/${milestone}.tmp.$$" 2>/dev/null \
+            && mv "${dir}/${milestone}.tmp.$$" "${dir}/${milestone}" 2>/dev/null || return 0
+    else
+        printf '%s %s\n' "${sha:-unknown}" "$ts" \
+            > "${dir}/${milestone}.tmp.$$" 2>/dev/null \
+            && mv "${dir}/${milestone}.tmp.$$" "${dir}/${milestone}" 2>/dev/null || return 0
+    fi
     return 0
+}
+
+# branch_ledger_tag <milestone> [<proj_root>] — prints the milestone's third
+# field (see branch_ledger_record), or nothing: no ledger, no milestone, a
+# two-field (untagged or pre-tag) line, a value outside the tag charset, or a
+# line with MORE than three fields (malformed, so no field of it is trusted).
+# Always returns 0, like branch_ledger_sha; callers compare the printed value.
+# `read` is a builtin, so this adds no fork beyond branch_ledger_dir's.
+branch_ledger_tag() {
+    local milestone="${1:-}" proj_root="${2:-}" dir _s _t _g _rest
+    [ -n "$milestone" ] || return 0
+    case "$milestone" in */*|*..*) return 0 ;; esac
+    dir="$(branch_ledger_dir "$proj_root")" || return 0
+    [ -n "$dir" ] && [ -f "${dir}/${milestone}" ] || return 0
+    IFS=' ' read -r _s _t _g _rest < "${dir}/${milestone}" 2>/dev/null || [ -n "${_g:-}" ] || return 0
+    [ -n "${_g:-}" ] && [ -z "${_rest:-}" ] || return 0
+    case "$_g" in *[!A-Za-z0-9=_-]*) return 0 ;; esac
+    printf '%s' "$_g"
 }
 
 branch_ledger_has() {

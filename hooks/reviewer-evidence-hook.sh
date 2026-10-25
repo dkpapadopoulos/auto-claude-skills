@@ -14,9 +14,12 @@
 # sees. A reviewer that spawns and then crashes, is stopped, goes idle, or
 # returns nothing is recorded identically to one that reviewed successfully.
 #
-# Diagnostic/advisory recorder ONLY. It emits nothing on stdout, sets no
-# permissionDecision, and every failure path exits 0 silently — a recorder
-# must never alter a gate decision. Deliberately NOT in _GATE_ENFORCE_LIBS.
+# A recorder: it emits nothing on stdout, sets no permissionDecision, and every
+# failure path exits 0 silently. It no longer only observes, though: its
+# `reviewer-returned` + `arm=allowlist` record credits REVIEW through
+# hooks/lib/credited-skills.sh (review_reviewer_covers). Still NOT in
+# _GATE_ENFORCE_LIBS, because the guard never sources this hook; a failure
+# here only removes credit, never adds it.
 #
 # Spec: openspec/changes/observed-dispatch-telemetry/
 # Bash 3.2 compatible.
@@ -84,17 +87,23 @@ case "${_TOOL}" in Task|Agent) ;; *) exit 0 ;; esac
 # whole string.
 #
 # The predicate is deliberately TIGHT (see the asymmetry note below). This
-# hook is diagnostic telemetry, not a gate (design.md D2) — but the error
+# hook is not a gate (design.md D2), and only the allowlist arm can credit
+# REVIEW (review-credit-from-evidence decision 3) — but the error
 # cost is still asymmetric: a MISSED review costs one un-upgraded telemetry
 # field, while a WRONGLY credited non-reviewer silently records a false
 # compliance signal into that same telemetry. Do not loosen this to catch
 # the occasional miss.
+#
+# _REV_ARM names WHICH arm matched and travels into the pairing record and the
+# `reviewer-returned` milestone. Only `allowlist` credits REVIEW
+# (credited-skills.sh): a description word is intent, not an identity.
 _IS_REVIEWER=false
+_REV_ARM=""
 case "${_SUBAGENT}" in
     pr-review-toolkit:code-reviewer|pr-review-toolkit:silent-failure-hunter|\
     pr-review-toolkit:pr-test-analyzer|pr-review-toolkit:comment-analyzer|\
     pr-review-toolkit:type-design-analyzer|feature-dev:code-reviewer)
-        _IS_REVIEWER=true ;;
+        _IS_REVIEWER=true; _REV_ARM=allowlist ;;
     general-purpose)
         # superpowers' own requesting-code-review dispatches general-purpose
         # from a reviewer template, so an allowlist alone would false-negative
@@ -144,7 +153,7 @@ case "${_SUBAGENT}" in
         # not add audit/inspect/check/critique keywords.
         case "${_DESC}" in
             *[Rr]eview|*[Rr]eview[!a-zA-Z]*)
-                _IS_REVIEWER=true ;;
+                _IS_REVIEWER=true; _REV_ARM=description ;;
         esac ;;
 esac
 [ "${_IS_REVIEWER}" = "true" ] || exit 0
@@ -219,7 +228,7 @@ if [ "${_PAIR_OK}" = "true" ] && [ -n "${_AGENT_ID}" ]; then
     if [ -n "${_PAIR_KEY}" ]; then
         # HALF ONE, written BEFORE reading the other half.
         _PAIR_SHA="$(git rev-parse HEAD 2>/dev/null)" || _PAIR_SHA=""
-        reviewer_pairing_note_dispatch "${_SID}" "${_AGENT_ID}" "${_PAIR_KEY}" "${_PAIR_SHA}" || true
+        reviewer_pairing_note_dispatch "${_SID}" "${_AGENT_ID}" "${_PAIR_KEY}" "${_PAIR_SHA}" "${_REV_ARM}" || true
         # HALF TWO: did this agent already finish, on THIS branch? (foreground
         # ordering). The key comparison is not symmetry for its own sake — a
         # membership test here was a measured false-credit path: an agent-id
@@ -232,7 +241,9 @@ if [ "${_PAIR_OK}" = "true" ] && [ -n "${_AGENT_ID}" ]; then
             # Stamp the commit that was REVIEWED. On this path they coincide (we
             # are at dispatch time), but passing it explicitly keeps both credit
             # paths writing the same fact rather than relying on that coincidence.
-            branch_ledger_record "reviewer-returned" "" "${_PAIR_SHA}" 2>/dev/null || true
+            # An unreadable HEAD is recorded as `-`, matching the completion
+            # path: an empty sha would make branch_ledger_record resolve HEAD.
+            branch_ledger_record "reviewer-returned" "" "${_PAIR_SHA:--}" "arm=${_REV_ARM}" 2>/dev/null || true
         fi
     fi
 fi

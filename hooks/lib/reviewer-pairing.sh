@@ -163,20 +163,34 @@ reviewer_pairing_saturated() {
 # the reviewer never saw: branch_ledger_record derives its key from the cwd at
 # CALL time, and a backgrounded reviewer completes while the parent session is
 # free to check out something else.
+#
+# <arm> is OPTIONAL: which classifier arm matched, `allowlist` (an allowlisted
+# subagent_type) or `description` (general-purpose + a review word). With a
+# valid arm the line is "<aid> <key> <sha|-> <arm>" — an empty sha is written
+# as `-` so the arm stays the FOURTH field. Any other arm value, or none, writes
+# today's "<aid> <key> <sha>" line byte-for-byte. The arm decides REVIEW credit
+# downstream (only `allowlist` credits, via credited-skills.sh), so an unknown
+# value is dropped rather than stored.
 reviewer_pairing_note_dispatch() {
-    local sid="${1:-}" aid="${2:-}" key="${3:-}" sha="${4:-}" f
+    local sid="${1:-}" aid="${2:-}" key="${3:-}" sha="${4:-}" arm="${5:-}" f
     [ -n "$aid" ] && [ -n "$key" ] || return 1
     case "$aid" in *[!A-Za-z0-9._-]*) return 1 ;; esac
     case "$key" in *[!A-Za-z0-9._-]*) return 1 ;; esac
     # Unreachable from the only producer (`git rev-parse HEAD`), so no test can
     # catch its removal — mutation-verified, 0 failures. Kept because it is the
     # FIRST of the two guards and the one that decides what reaches the ledger;
-    # blanking here means the reader falls back to HEAD, which is the older
-    # stamp, whereas a corrupt value reaching branch_ledger_record becomes the
-    # `unknown` sentinel instead. Recorded rather than presented as covered.
+    # blanking here means the completion side records `-` (never a later HEAD),
+    # whereas a corrupt value reaching branch_ledger_record becomes the
+    # `unknown` sentinel instead — both non-hex, both never credit. Recorded
+    # rather than presented as covered.
     case "$sha" in *[!0-9a-fA-F]*) sha="" ;; esac
     f="$(_reviewer_pairing_file dispatch "$sid")" || return 1
-    _reviewer_pairing_append "$f" "${aid} ${key} ${sha}" "$sid" dispatch
+    case "$arm" in
+        allowlist|description)
+            _reviewer_pairing_append "$f" "${aid} ${key} ${sha:--} ${arm}" "$sid" dispatch ;;
+        *)
+            _reviewer_pairing_append "$f" "${aid} ${key} ${sha}" "$sid" dispatch ;;
+    esac
 }
 
 # reviewer_pairing_note_complete <session_id> <agent_id> <ledger_key>
@@ -237,9 +251,11 @@ reviewer_pairing_dispatch_key() {
 # reviewer was dispatched against, or nothing.
 #
 # Empty is a legitimate answer, not an error: a record written before this field
-# existed has only two fields, and the caller then falls back to HEAD, i.e. the
-# behaviour from before. Degrading to the old, less precise stamp is correct for
-# a format change; fabricating a sha would not be.
+# existed has only two fields, and a record whose dispatch-time HEAD could not be
+# read stores `-`; both return 1 and print nothing. The caller must then record
+# the milestone's sha as `-` — NEVER fall back to HEAD at completion time, which
+# names a tree the reviewer may never have read (ruling F3, review-credit-from-
+# evidence). Fabricating a sha, including a late HEAD, is the wrong degradation.
 reviewer_pairing_dispatch_sha() {
     local sid="${1:-}" aid="${2:-}" f out
     [ -n "$aid" ] || return 1
@@ -248,7 +264,31 @@ reviewer_pairing_dispatch_sha() {
     [ -f "$f" ] || return 1
     out="$(awk -v a="$aid" '$1==a {print $3; exit}' "$f" 2>/dev/null)" || return 1
     [ -n "$out" ] || return 1
+    [ "$out" != "-" ] || return 1
     printf '%s' "$out"
+}
+
+# reviewer_pairing_dispatch_arm <session_id> <agent_id> — prints the classifier
+# arm recorded at dispatch (`allowlist` or `description`), or nothing (return 1)
+# for no record, a pre-arm three-field record, or any other fourth field. Same
+# first-match `$1==a` lookup as dispatch_key/dispatch_sha, so all three read the
+# SAME line.
+#
+# Defined BEFORE reviewer_pairing_note_mismatch on purpose: both hooks
+# source-probe the lib's LAST definition (cell (s) in
+# tests/test-reviewer-completion-hook.sh), so the probe still proves every
+# function above it, this one included, was defined.
+reviewer_pairing_dispatch_arm() {
+    local sid="${1:-}" aid="${2:-}" f out
+    [ -n "$aid" ] || return 1
+    case "$aid" in *[!A-Za-z0-9._-]*) return 1 ;; esac
+    f="$(_reviewer_pairing_file dispatch "$sid")" || return 1
+    [ -f "$f" ] || return 1
+    out="$(awk -v a="$aid" '$1==a {print $4; exit}' "$f" 2>/dev/null)" || return 1
+    case "$out" in
+        allowlist|description) printf '%s' "$out" ;;
+        *) return 1 ;;
+    esac
 }
 
 # reviewer_pairing_complete_key <session_id> <agent_id> — prints the ledger key

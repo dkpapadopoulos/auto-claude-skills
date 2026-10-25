@@ -31,10 +31,13 @@
 # whichever runs second completes the join. Do not "simplify" this back into a
 # one-directional lookup.
 #
-# Diagnostic/advisory recorder ONLY. It emits nothing on stdout, sets no
-# permissionDecision, and every failure path exits 0 silently — a recorder must
-# never alter a gate decision. Deliberately NOT in _GATE_ENFORCE_LIBS. No gate
-# reads `reviewer-returned` as of this change.
+# A recorder: it emits nothing on stdout, sets no permissionDecision, and every
+# failure path exits 0 silently. It no longer only observes, though: its
+# `reviewer-returned` + `arm=allowlist` record credits REVIEW through
+# hooks/lib/credited-skills.sh (review_reviewer_covers); an untagged (pre-arm)
+# or `arm=description` milestone never credits. Still NOT in _GATE_ENFORCE_LIBS,
+# because the guard never sources this hook; a failure here only removes
+# credit, never adds it.
 #
 # Spec: openspec/changes/reviewer-completion-evidence/
 # Bash 3.2 compatible.
@@ -164,8 +167,15 @@ fi
 # #181 removed from verdicts, and it would make this milestone LESS sha-accurate
 # than the `reviewer-ran` it is meant to strengthen.
 #
-# An absent dispatch sha (a record written before the field existed) falls back
-# to HEAD, i.e. the older, less precise behaviour — never to a fabricated value.
+# An absent dispatch sha (a record written before the field existed, or a
+# dispatch whose HEAD could not be read, stored as `-`) is recorded as `-` —
+# NEVER as HEAD at completion time, which is the over-late sha this paragraph
+# exists to forbid (ruling F3, review-credit-from-evidence). `-` is non-hex, so
+# no reader ever accepts it as covering anything.
+#
+# The classifier ARM recorded at dispatch rides along as the milestone's third
+# field (`arm=allowlist` / `arm=description`); a pre-arm dispatch record yields
+# no tag, so that milestone never credits REVIEW.
 #
 # Residual, stated: if HEAD moved between dispatch and completion this artifact
 # has no way to SAY so; it records the reviewed commit, which is the honest
@@ -188,7 +198,8 @@ fi
 # second surface it does not know exists. The IMPLEMENT shadow corpus settled
 # the same trade the same way: "raw command text is never written;
 # transcript_path is the adjudication pointer."
-_DSHA="$(reviewer_pairing_dispatch_sha "${_SID}" "${_AID}")" || _DSHA=""
-branch_ledger_record "reviewer-returned" "" "${_DSHA}" 2>/dev/null || true
+_DSHA="$(reviewer_pairing_dispatch_sha "${_SID}" "${_AID}")" || _DSHA="-"
+_DARM="$(reviewer_pairing_dispatch_arm "${_SID}" "${_AID}")" || _DARM=""
+branch_ledger_record "reviewer-returned" "" "${_DSHA:--}" "${_DARM:+arm=${_DARM}}" 2>/dev/null || true
 
 exit 0

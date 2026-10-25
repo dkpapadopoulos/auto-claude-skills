@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # credited-skills.sh — the one list of skills whose invocation or return is
-# credited as REVIEW evidence, and the one coverage rule that says whether a
-# reviewed sha still covers a subject commit.
+# credited as REVIEW evidence, the one coverage rule that says whether a
+# reviewed sha still covers a subject commit, and the one reader of the
+# branch ledger's `reviewer-returned` milestone for credit (allowlist arm only).
 #
 # Consumers: the routing typed-slash lib, the completion hook, the push guard,
 # phase-evidence.sh and gate-status.sh. Gate-enforcement lib: a failure to load
@@ -62,4 +63,45 @@ review_sha_covers() {
 ${_names}
 EOF
     return 0
+}
+
+# review_reviewer_returned_sha <ledger_root>
+#   Prints the reviewed sha and returns 0 iff the branch ledger keyed from
+#   <ledger_root> holds a `reviewer-returned` milestone tagged `arm=allowlist`
+#   (the reviewer was matched by the allowlisted subagent_type arm, not the
+#   description word) whose sha is 7-40 lowercase hex. Returns 1 and prints
+#   nothing otherwise: an empty root, branch-ledger.sh not loaded
+#   (branch_ledger_tag / branch_ledger_sha undefined — this lib sources nothing),
+#   no milestone, an untagged pre-arm milestone, `arm=description`, or a sha of
+#   `unknown` or `-` (dispatch-time commit not known; never a later HEAD).
+# The tag is read first, so only an allowlisted milestone pays for the sha read.
+review_reviewer_returned_sha() {
+    local _lroot="${1:-}" _tag _sha
+    [ -n "${_lroot}" ] || return 1
+    command -v branch_ledger_tag >/dev/null 2>&1 || return 1
+    command -v branch_ledger_sha >/dev/null 2>&1 || return 1
+    _tag="$(branch_ledger_tag reviewer-returned "${_lroot}" 2>/dev/null)" || return 1
+    [ "${_tag}" = "arm=allowlist" ] || return 1
+    _sha="$(branch_ledger_sha reviewer-returned "${_lroot}" 2>/dev/null)" || return 1
+    case "${_sha}" in
+        ''|*[!0-9a-f]*) return 1 ;;
+    esac
+    [ "${#_sha}" -ge 7 ] && [ "${#_sha}" -le 40 ] || return 1
+    printf '%s' "${_sha}"
+}
+
+# review_reviewer_covers <ledger_root> <subj_root> <subj_rev>
+#   Prints the reviewed sha and returns 0 iff review_reviewer_returned_sha
+#   succeeds AND review_sha_covers says that sha covers <subj_rev> in
+#   <subj_root>. Returns 1 and prints nothing otherwise — uncovered and
+#   cannot-check alike; a caller that must tell them apart calls
+#   review_sha_covers itself. The ledger root and the subject root are separate
+#   on purpose: ledger reads stay on the process-derived root (the writer keys on
+#   ITS cwd+branch), while coverage is measured against the command's subject.
+# Must stay the LAST definition in this file (pinned by tests/test-reviewer-arm.sh).
+review_reviewer_covers() {
+    local _lroot="${1:-}" _sroot="${2:-}" _srev="${3:-}" _sha
+    _sha="$(review_reviewer_returned_sha "${_lroot}")" || return 1
+    review_sha_covers "${_sha}" "${_sroot}" "${_srev}" || return 1
+    printf '%s' "${_sha}"
 }
