@@ -1,0 +1,48 @@
+# Design: REVIEW credit from evidence, and push-time stamping
+
+## Intent
+
+Stop denying pushes that were reviewed, by crediting the review evidence that already exists, and make every shadow record carry, at decision time, the facts a mechanical false-block rate needs. Owner decisions, 2026-10-25: approach 1 of three (credit and stamp; not a full witness log, not observation only); a mechanical rate, no judges.
+
+## Goals, non-goals, anti-goals
+
+- **Goals:** a typed review command, an equivalent review skill, or a returned reviewer covering the push satisfies REVIEW status; each shadow record names its session, push call, versions, and (REVIEW) whether covering review evidence existed; a reader reports the share of would-blocks with covering evidence.
+- **Non-goals:** a general witness log of every event; a `PostToolUse(Bash)` witness; an IMPLEMENT mechanical rate; changing the registered `true_catch` / `false_block` definitions; any deny flip.
+- **Anti-goals:** an allow path cheaper than today's (a mention, a quoted name, a notification or a forged one-line file must not credit more than they do now); any new fork on the common prompt path; recording prompt text, command text or reviewer output.
+
+## Approaches considered
+
+1. **Credit from existing evidence and stamp records at push time** — chosen. It fixes today's false denies with evidence ACS already writes, and puts the mechanical facts in the record that needs them.
+2. **A full append-only witness log read by the gates.** More history, but a hook on more tool calls and one more agent-writable file the gates would trust. Deferred until the records prove too thin.
+3. **Observation only.** Leaves today's false denies in place for four weeks to learn what the recon already shows.
+
+## Decisions
+
+1. **Typed slash credit goes through the completion hook, not a copy of it.** In `skill-activation-hook.sh`, before the `^[[:space:]]*/` early exit (`:396`), a pure-bash `case` recognises a prompt of kind `prompt` (not a task notification or cross-session message) whose first token, after optional leading whitespace, is `/` + optional `<plugin>:` + a credited REVIEW name. On a hit, and only then, it pipes a synthetic payload (`tool_name: "Skill"`, `tool_input.skill: <name as typed>`, the prompt payload's `session_id`, `transcript_path`, `cwd`, and `acs_source: "typed-slash"`) to `hooks/skill-completion-hook.sh`, synchronously, then exits as today. No fork when the prompt does not start with `/`.
+   - **Only REVIEW names.** A typed `verification-before-completion` is not credited: VERIFY STATUS is the population of #301's live shadow leg, and widening it is a separate decision.
+   - **The name must exist.** A typed name credits only if the skill is in the session's skill registry (`~/.claude/.skill-registry-cache.json`) or is a Claude Code built-in command (`code-review`, `security-review`). Today a Skill call to a missing skill errors and credits nothing; a typed missing name must not be cheaper.
+   - **Telemetry is not evidence.** The completion hook branches on `acs_source == "typed-slash"` only to skip the advisory-lens line (it measures a skill body loading through the Skill tool, which did not happen). Every evidence write is identical to a Skill return; `.completed` is still written only by the completion hook's process, as `routing-state.md` requires.
+2. **One list of credited REVIEW names**, in `hooks/lib/credited-skills.sh`, read by the routing hook, the completion hook and the guard: today's four (`requesting-code-review`, `subagent-driven-development`, `agent-team-execution`, `agent-team-review`) plus `code-review`, `review-pr` and `security-review`, compared after stripping a plugin prefix. If the lib cannot be read, the routing hook gives no typed credit and the completion hook and guard use today's four, hardcoded: failure narrows credit, never widens it.
+3. **A returned reviewer credits REVIEW status when it covers the push.** One helper, `_review_status_ok`, replaces the scattered REVIEW status checks and is used by every reader: the chain gate (`openspec-guard.sh:1137-1140`), the global fail-closed gate (`:1665-1681`), `scripts/gate-status.sh`, and `hooks/skill-gate.sh` via `phase_step_satisfied`, so a push and a later SHIP skill never disagree. Its new leg reads the branch ledger's `reviewer-returned` milestone, read like `_ledger_has` (key from the process root), and accepts it only when:
+   - the reviewer was matched by the **allowlisted `subagent_type` arm** of the classifier, not the description arm (a `general-purpose` agent whose description merely contains "review" does not credit). `reviewer-completion-hook.sh` records the matching arm in the milestone, so older milestones without it never credit;
+   - the recorded sha is an ancestor of the command's subject (`_SUBJ_REV`), and the files changed between them include no material source file (docs-only changes are covered), the delta rule used by `_diff_touches_material_source`. Not `review_verdict_covers_head`, which accepts any branch-local ancestor regardless of later changes.
+   The leg does not go through `_bridge_has`.
+4. **Stamping, and a predicate bump for REVIEW.** All three shadow records gain `session_id` (payload), `tool_use_id` (payload, the push call), `cc_version` (parsed from `AI_AGENT`, e.g. `claude-code_2-1-308_harness` → `2.1.308`, zero forks; empty when absent) and `acs_version` (`.claude-plugin/plugin.json`), as a schema bump. The REVIEW leg also gets a **predicate bump** (2 → 3): decisions 1-3 widen `_review_completed`, which is that leg's population, so records before and after must not pool (the rule in `push-gate-telemetry.md`: a change to what a pooled episode means is a predicate change). IMPLEMENT and VERIFY predicates are unchanged. The REVIEW record also gets:
+   - `review_witness`: the strongest covering evidence present at push time, in the order `reviewer-returned` (allowlisted, covering) > `verdict` (a clean verdict covering HEAD) > `invocation` (a Skill return or typed command; the two leave identical evidence and cannot be told apart) > `none`;
+   - `review_coverage`: `covered | uncovered | cannot-check | none` for that witness; an `invocation` known only from `.completed` (no sha) is `cannot-check`.
+5. **The evidence-miss rate** is computed by `scripts/review-shadow-adjudicate.sh --evidence-miss` over REVIEW records of predicate 3 only, reporting earlier records as excluded. A miss is a would-block record whose `review_witness` is `reviewer-returned` and whose `review_coverage` is `covered`: an allowlisted reviewer demonstrably finished on a commit covering the push, which is the registered false-block clause "a real review demonstrably did occur" (owner, 2026-10-25). Invocation witnesses never count as a miss, because #197 holds that an invocation is not review evidence. The output states that it is a lower bound on one kind of false block and not the registered false-block rate.
+6. **Gate obligations.** `hooks/lib/credited-skills.sh` is sourced by the guard, so it joins `_GATE_ENFORCE_LIBS` and gets a `_DEGRADED_MSG` note (its failure narrows credit to today's list, which the note says). `docs/enforcement-map.md` and `gate-status.sh` show the new leg.
+
+## Verification
+
+Deterministic, so TDD plus the spec scenarios. Every widening is tested in both arms (memory: fixing a false block can be a bypass): the case that should now pass, and the near-miss that must still deny — a mid-text mention, a task notification, an uncredited slash command, a `reviewer-returned` at an older sha with material changes since, an unreadable credited-skills lib.
+
+## Out of scope
+
+The full witness log, `PostToolUse(Bash)` and `PostToolUseFailure` witnessing, typed-slash credit for VERIFY, stamping at the STATUS deny sites, an IMPLEMENT mechanical rate, the `.phase-gate-events.log` format, and any change to the registered definitions or to the VERIFY leg's predicate.
+
+## Residual risks
+
+- **Credit stays forgeable by a same-user file write**, as today: the ledger is plain files. This change does not make that cheaper; it adds no file the guard trusts.
+- **A child `claude -p "/requesting-code-review"`** credits the branch ledger, exactly as a child session's Skill call does today. Binding credit to the payload `session_id` instead would close that and also break today's cross-session ledger carry; it is a separate decision.
+- **A typed `/code-review` is still invocation, not proof of work**, the same standing as today's Skill credit (#197). Decision 3 is the only work-evidence leg.
