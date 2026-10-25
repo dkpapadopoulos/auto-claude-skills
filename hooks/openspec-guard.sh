@@ -425,6 +425,24 @@ _PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 [ -f "${_GC_ROOT}/hooks/lib/verify-shadow.sh" ] && \
     _guard_load "${_GC_ROOT}/hooks/lib/verify-shadow.sh" || true
 
+# credited-skills.sh (review-credit-from-evidence, decisions 2, 3 and 6) — the
+# ONE list of REVIEW names the invocation-evidence leg credits, and the reader
+# behind the reviewer leg (_rr_ok). A gate-enforcement lib, so it is in
+# _GATE_ENFORCE_LIBS. Its failure NARROWS credit and never widens it: the
+# invocation leg falls back to the four names credited before the lib existed
+# and the reviewer leg is not consulted, so a broken load can only add a deny.
+# Probed on its LAST definition, so a load that stopped part way reads as "not
+# loaded". #137 form through _guard_load; #198 note below.
+_CREDITED_OK=false
+[ -f "${_PLUGIN_ROOT}/hooks/lib/credited-skills.sh" ] && \
+    _guard_load "${_PLUGIN_ROOT}/hooks/lib/credited-skills.sh" && \
+    command -v review_reviewer_covers >/dev/null 2>&1 && _CREDITED_OK=true || true
+[ "${_CREDITED_OK}" = "true" ] || _degraded_note "credited-skills.sh did not load from ${_PLUGIN_ROOT}, so REVIEW credit fell back to the four skills credited before it existed (requesting-code-review, subagent-driven-development, agent-team-execution, agent-team-review) and a returned reviewer was not consulted. This can only add a deny, never remove one."
+_REVIEW_NAMES="requesting-code-review subagent-driven-development agent-team-execution agent-team-review"
+if [ "${_CREDITED_OK}" = "true" ] && [ -n "${CREDITED_REVIEW_SKILLS:-}" ]; then
+    _REVIEW_NAMES="${CREDITED_REVIEW_SKILLS}"
+fi
+
 # _attest_remedy <step> — a COPY-PASTEABLE attestation command (#248).
 #
 # Messages used to name `phase_attest` either with no source line at all, or
@@ -1021,20 +1039,22 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # fragility or .completed's reset fragility. SAME resolved token
         # only: sibling tokens' files carry no repo/branch binding and would
         # over-accept another session's work. The review leg honors the
-        # review-embedding proxies — PAIRED with skill-completion-hook.sh's
-        # gating-milestone crediting case list.
+        # credited REVIEW names (_REVIEW_NAMES), single-sourced in
+        # hooks/lib/credited-skills.sh with the completion hook that writes
+        # this file; without the lib, the four names hardcoded where the lib
+        # is loaded. Both lists begin with requesting-code-review.
         _invoc_has() {
             local _f="${HOME}/.claude/.skill-invocation-evidence-${_SESSION_TOKEN}"
             [ -f "${_f}" ] || return 1
             command -v jq >/dev/null 2>&1 || return 1
             # type guard: index() on a JSON *string* is substring search, so a
             # corrupt scalar file merely containing the name would satisfy it.
+            # Elements are compared for EQUALITY against each listed name.
             case "$1" in
                 requesting-code-review)
-                    jq -e 'type=="array" and (index("requesting-code-review") != null
-                        or index("subagent-driven-development") != null
-                        or index("agent-team-execution") != null
-                        or index("agent-team-review") != null)' "${_f}" >/dev/null 2>&1 ;;
+                    jq -e --arg n "${_REVIEW_NAMES}" 'type=="array" and
+                        (($n | split(" ")) as $l | any(.[]; . as $e | $l | any(.[]; . == $e)))' \
+                        "${_f}" >/dev/null 2>&1 ;;
                 *)
                     jq -e --arg s "$1" 'type=="array" and (index($s) != null)' "${_f}" >/dev/null 2>&1 ;;
             esac
@@ -1063,7 +1083,7 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             case " ${_INVOC_NOTED} " in *" $1 "*) return 0 ;; esac
             _INVOC_NOTED="${_INVOC_NOTED} $1"
             case "$1" in requesting-code-review)
-                _names="$1 subagent-driven-development agent-team-execution agent-team-review" ;;
+                _names="${_REVIEW_NAMES}" ;;
             esac
             if [ -f "${_sf}" ] && [ "${_LEDGER_OK}" = "true" ] && [ -n "${_HEAD_SHA}" ] \
                && command -v branch_ledger_sha_is_branch_local >/dev/null 2>&1 \
@@ -1104,6 +1124,34 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }$1 accepted via cross-location branch-ledger evidence recorded at ${_bsha:-unknown} on this branch (issue #131 bridge). Rerun if later commits changed reviewed content."
             return 0
         }
+        # _rr_ok — the REVIEW reviewer leg (review-credit-from-evidence,
+        # decision 3): a reviewer subagent that RETURNED credits REVIEW status
+        # when its review covers the push. The branch ledger's
+        # `reviewer-returned` milestone is read ONLY through credited-skills.sh,
+        # which accepts the allowlisted subagent_type arm alone (a
+        # description-matched or untagged record never credits) and a sha that
+        # is an ancestor of the subject with no material source change since
+        # (review_sha_covers). The ledger read stays on the process-derived root
+        # (_proot), like every ledger leg (#219); coverage is measured on the
+        # subject (_SUBJ_ROOT/_SUBJ_REV). Deliberately NOT routed through
+        # _bridge_has: a reviewer recorded under another branch key never
+        # credits. Each site calls it LAST, only after every existing REVIEW leg
+        # missed, so it adds no fork to a path that passes today. Memoised: the
+        # chain block and the global gate both consult it and the advisory is
+        # appended once. Fails toward no credit (either lib not loaded, any git
+        # failure, a `-` sha).
+        _RR_DONE=false
+        _RR_SHA=""
+        _rr_ok() {
+            if [ "${_RR_DONE}" != "true" ]; then
+                _RR_DONE=true
+                [ "${_CREDITED_OK}" = "true" ] && [ "${_LEDGER_OK}" = "true" ] || return 1
+                _RR_SHA="$(review_reviewer_covers "${_proot}" "${_SUBJ_ROOT}" "${_SUBJ_REV}")" || _RR_SHA=""
+                [ -n "${_RR_SHA}" ] || return 1
+                _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }requesting-code-review accepted via a returned reviewer (allowlisted subagent type) recorded at ${_RR_SHA}, with no material change between it and the pushed commit."
+            fi
+            [ -n "${_RR_SHA}" ]
+        }
         # One exclusion rule, two subjects (#161). The push path measures the
         # branch-local delta; the merge path measures the merged PR's files.
         _names_touch_material_source() {
@@ -1138,6 +1186,7 @@ EOF
             _ledger_has "requesting-code-review" && _review_completed=true
             [ "${_review_completed}" = "false" ] && _invoc_ok "requesting-code-review" && _review_completed=true
             [ "${_review_completed}" = "false" ] && _bridge_has "requesting-code-review" && _review_completed=true
+            [ "${_review_completed}" = "false" ] && _rr_ok && _review_completed=true
             if [ "${_review_in_chain}" = "true" ] && [ "${_review_completed}" = "false" ]; then
                 _MSG="PUSH GATE — Expected: REVIEW → VERIFY → SHIP completed before push. Actual: requesting-code-review has not run on this chain. Do now: invoke Skill(superpowers:requesting-code-review), then retry the denied command."
                 _skill_available "requesting-code-review" || _MSG="${_MSG} ${_SETUP_HINT}"
@@ -1675,9 +1724,11 @@ EOF
             fi
             # Same-token invocation evidence, then the cross-location ledger
             # bridge (issue #131) — tried only after the primary legs miss.
+            # REVIEW then tries the returned-reviewer leg (_rr_ok), last.
             [ "${_g_review}" = "false" ] && _invoc_ok "requesting-code-review"         && _g_review=true
             [ "${_g_verify}" = "false" ] && _invoc_ok "verification-before-completion" && _g_verify=true
             [ "${_g_review}" = "false" ] && _bridge_has "requesting-code-review"         && _g_review=true
+            [ "${_g_review}" = "false" ] && _rr_ok && _g_review=true
             [ "${_g_verify}" = "false" ] && _bridge_has "verification-before-completion" && _g_verify=true
             # A clean verification verdict covering HEAD is SHA-bound, so it also
             # satisfies the verify leg. NOTE (#295): "stronger" is the wrong word

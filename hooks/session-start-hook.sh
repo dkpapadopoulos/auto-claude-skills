@@ -910,7 +910,7 @@ fi
 # Shared with the drift canary (Step 6a-ter) — extend this ONE list to cover a
 # new gate-enforcement lib in both canaries. Repo-relative literals, no spaces:
 # unquoted word-split expansion is intentional and Bash-3.2 safe.
-_GATE_ENFORCE_LIBS="hooks/lib/branch-ledger.sh hooks/lib/verdict.sh hooks/lib/git-command.sh hooks/lib/session-token.sh hooks/lib/phase-evidence.sh hooks/lib/phase-attest.sh"
+_GATE_ENFORCE_LIBS="hooks/lib/branch-ledger.sh hooks/lib/verdict.sh hooks/lib/git-command.sh hooks/lib/session-token.sh hooks/lib/phase-evidence.sh hooks/lib/phase-attest.sh hooks/lib/credited-skills.sh"
 for _cf in ${_GATE_ENFORCE_LIBS}; do
     if [ ! -f "${PLUGIN_ROOT}/${_cf}" ]; then
         _CANARY_BAD="${_CANARY_BAD}${_CANARY_BAD:+, }${_cf##*/} (missing)"

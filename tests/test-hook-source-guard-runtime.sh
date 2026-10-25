@@ -163,7 +163,7 @@ assert_equals "healthy control is stable across two runs" "${_HEALTHY}" "$(run)"
 # wherever losing that lib costs no decision (a deny swallows the advisory), so
 # naming the pair is both accurate and self-maintaining.
 # ---------------------------------------------------------------------------
-_LIBS="git-command.sh session-token.sh branch-ledger.sh verdict.sh phase-evidence.sh phase-attest.sh"
+_LIBS="git-command.sh session-token.sh branch-ledger.sh verdict.sh phase-evidence.sh phase-attest.sh credited-skills.sh"
 _FAULTS="fault-false.sh fault-command-not-found.sh fault-cmdsubst-cd.sh"
 
 # _assert_cell <label> <out> <absent-baseline>

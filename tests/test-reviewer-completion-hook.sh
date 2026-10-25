@@ -563,11 +563,37 @@ else
     _record_pass "(o1) not a gate-enforcement component"
 fi
 
-if grep -q 'reviewer-returned' "${PROJECT_ROOT}/hooks/openspec-guard.sh" 2>/dev/null; then
-    _record_fail "(o2) no gate reads reviewer-returned in this change" "openspec-guard.sh references it"
+# (o2) The guard reads the `reviewer-returned` milestone ONLY through
+# hooks/lib/credited-skills.sh (review_reviewer_covers), which applies the
+# allowlist-arm and coverage rules. A direct read — a ledger accessor or a
+# ledger path built on the same line as the milestone name — would skip both,
+# so a description-arm or stale reviewer could credit. The bare string may
+# appear (comments); a direct read may not. A red control runs the same
+# predicate over a copy carrying one direct read, so it cannot pass vacuously.
+_o2_direct_reads() {   # <file> — prints offending lines
+    grep -n 'reviewer-returned' "$1" 2>/dev/null \
+        | grep -E 'branch_ledger_|_ledger_has|_bridge_has|skill-branch-ledger|_invoc_(has|ok)'
+}
+_O2_GUARD="${PROJECT_ROOT}/hooks/openspec-guard.sh"
+_o2_bad="$(_o2_direct_reads "${_O2_GUARD}")"
+if [ -n "${_o2_bad}" ]; then
+    _record_fail "(o2) the guard never reads reviewer-returned except through the lib" "${_o2_bad}"
 else
-    _record_pass "(o2) no gate reads reviewer-returned in this change"
+    _record_pass "(o2) the guard never reads reviewer-returned except through the lib"
 fi
+if grep -q 'review_reviewer_covers ' "${_O2_GUARD}" 2>/dev/null; then
+    _record_pass "(o2) the guard reads it through review_reviewer_covers"
+else
+    _record_fail "(o2) the guard reads it through review_reviewer_covers" "no call found"
+fi
+_O2_TMP="$(mktemp "${TMPDIR:-/tmp}/o2-guard.XXXXXX")"
+{ cat "${_O2_GUARD}"; printf '%s\n' '_ledger_has "reviewer-returned" && _review_completed=true'; } > "${_O2_TMP}"
+if [ -n "$(_o2_direct_reads "${_O2_TMP}")" ]; then
+    _record_pass "(o2) red control: a direct ledger read of reviewer-returned is caught"
+else
+    _record_fail "(o2) red control: a direct ledger read of reviewer-returned is caught" "predicate missed it"
+fi
+rm -f "${_O2_TMP}"
 
 # --- (p) both pairing families are GC'd, each with its own exclusion --------
 # Behavioural pruning is asserted in tests/test-state-file-cleanup.sh. Here every
