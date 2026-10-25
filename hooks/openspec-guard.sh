@@ -1080,10 +1080,15 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         _IMPL_MSG=""
         # _ledger_has MILESTONE — returns 0 if ledger satisfies; accumulates stale
         # warning text in _STALE_MSG when the recorded SHA differs from HEAD.
+        # _LH_REVIEW_SHA keeps the own-ledger requesting-code-review sha this
+        # function already read, so the REVIEW shadow witness (below) can
+        # measure an invocation's coverage without a second ledger read.
+        _LH_REVIEW_SHA=""
         _ledger_has() {
             [ "${_LEDGER_OK}" = "true" ] || return 1
             branch_ledger_has "$1" || return 1
             local _ls; _ls="$(branch_ledger_sha "$1")"
+            case "$1" in requesting-code-review) _LH_REVIEW_SHA="${_ls}" ;; esac
             if [ -n "${_HEAD_SHA}" ] && [ -n "${_ls}" ] && [ "${_ls}" != "${_HEAD_SHA}" ]; then
                 _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }$1 stale: recorded at ${_ls}, HEAD is ${_HEAD_SHA}. Rerun if new commits changed reviewed content."
             fi
@@ -1217,6 +1222,85 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             fi
             [ -n "${_RR_SHA}" ]
         }
+        # _review_witness — sets _RW_WITNESS and _RW_COVERAGE for the REVIEW
+        # shadow record (review-credit-from-evidence, decision 4). Called ONLY
+        # where Check 1b is about to write that record, after _rv_clean and
+        # _rv_bound are known. Diagnostic: it decides nothing and never calls
+        # _ledger_has/_invoc_ok/_bridge_has/_rr_ok, which append advisories.
+        # Candidates, in order:
+        #   reviewer-returned  the allowlisted reviewer, read only through the
+        #                      lib (review_reviewer_returned_sha); coverage from
+        #                      review_sha_covers on the subject. When the
+        #                      reviewer leg already credited at Check 1
+        #                      (_RR_SHA set) it is covered with no fork.
+        #   verdict            a clean review verdict (_rv_clean); covered iff
+        #                      bound (_rv_bound). Never covered here in practice:
+        #                      a clean bound verdict writes no record.
+        #   invocation         REVIEW status was credited by an existing leg
+        #                      (.completed, ledger, invocation evidence, bridge),
+        #                      i.e. the reviewer leg never ran (_RR_DONE unset;
+        #                      Check 1 is its first caller). Coverage from the
+        #                      own-ledger sha (_LH_REVIEW_SHA), else cannot-check.
+        # The first candidate that is covered wins; else the first present;
+        # else none/none. A reviewer recorded with sha `-` is refused by the
+        # lib and so is not a candidate. Anything that cannot be computed is
+        # cannot-check or absent — never a dropped record.
+        _RW_WITNESS="none"
+        _RW_COVERAGE="none"
+        _review_witness() {
+            local _rsha="" _rrc=3 _cov="" _fw="" _fc="" _isha=""
+            _RW_WITNESS="none"; _RW_COVERAGE="none"
+            # (1) reviewer-returned
+            if [ "${_RR_DONE}" = "true" ] && [ -n "${_RR_SHA}" ]; then
+                _RW_WITNESS="reviewer-returned"; _RW_COVERAGE="covered"
+                return 0
+            fi
+            if [ "${_CREDITED_OK}" = "true" ] && [ "${_LEDGER_OK}" = "true" ]; then
+                _rsha="$(review_reviewer_returned_sha "${_proot}")" || _rsha=""
+                if [ -n "${_rsha}" ]; then
+                    _rrc=0
+                    review_sha_covers "${_rsha}" "${_SUBJ_ROOT}" "${_SUBJ_REV}" || _rrc=$?
+                    case "${_rrc}" in 0) _cov="covered" ;; 1) _cov="uncovered" ;; *) _cov="cannot-check" ;; esac
+                    if [ "${_cov}" = "covered" ]; then
+                        _RW_WITNESS="reviewer-returned"; _RW_COVERAGE="covered"
+                        return 0
+                    fi
+                    _fw="reviewer-returned"; _fc="${_cov}"
+                fi
+            fi
+            # (2) verdict
+            if [ "${_rv_clean:-false}" = "true" ]; then
+                if [ "${_rv_bound:-false}" = "true" ]; then
+                    _RW_WITNESS="verdict"; _RW_COVERAGE="covered"
+                    return 0
+                fi
+                [ -n "${_fw}" ] || { _fw="verdict"; _fc="uncovered"; }
+            fi
+            # (3) invocation
+            if [ "${_RR_DONE}" != "true" ]; then
+                _isha="${_LH_REVIEW_SHA}"
+                if [ -z "${_isha}" ] || [ "${_CREDITED_OK}" != "true" ]; then
+                    _cov="cannot-check"
+                else
+                    if [ "${_isha}" = "${_rsha}" ] && [ "${_rrc}" -le 2 ]; then
+                        :
+                    else
+                        _rrc=0
+                        review_sha_covers "${_isha}" "${_SUBJ_ROOT}" "${_SUBJ_REV}" || _rrc=$?
+                    fi
+                    case "${_rrc}" in 0) _cov="covered" ;; 1) _cov="uncovered" ;; *) _cov="cannot-check" ;; esac
+                fi
+                if [ "${_cov}" = "covered" ]; then
+                    _RW_WITNESS="invocation"; _RW_COVERAGE="covered"
+                    return 0
+                fi
+                [ -n "${_fw}" ] || { _fw="invocation"; _fc="${_cov}"; }
+            fi
+            if [ -n "${_fw}" ]; then
+                _RW_WITNESS="${_fw}"; _RW_COVERAGE="${_fc}"
+            fi
+            return 0
+        }
         # One exclusion rule, two subjects (#161). The push path measures the
         # branch-local delta; the merge path measures the merged PR's files.
         _names_touch_material_source() {
@@ -1332,9 +1416,11 @@ EOF
                             _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }REVIEW VERDICT: requesting-code-review was credited, but no review verdict covers this HEAD -- a Skill return is not evidence a review ran (#197). Record one with scripts/record-review-verdict.sh, or import a GitHub review with --from-github <pr>." ;;
                     esac
                     if command -v review_shadow_record >/dev/null 2>&1; then
+                        _shadow_stamp_prepare || true
+                        _review_witness || true
                         review_shadow_record "${_SESSION_TOKEN}" "${_SUBJ_ROOT}" "${_rv_reason}" \
                             "$( [ "${_gc_is_ghmerge}" = "true" ] && echo merge || echo push )" \
-                            "${_SUBJ_REV}" "${_TRANSCRIPT:-}" 2>/dev/null || true
+                            "${_SUBJ_REV}" "${_TRANSCRIPT:-}" "${_RW_WITNESS}" "${_RW_COVERAGE}" 2>/dev/null || true
                     fi
                 fi
             fi

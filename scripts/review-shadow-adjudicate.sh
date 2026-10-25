@@ -36,7 +36,7 @@ _ROOT="$(cd "$(dirname "${BASH_SOURCE:-$0}")/.." 2>/dev/null && pwd)"
 # producer while its reader stayed behind, `--status` reported 0 episodes with
 # live records counted "unpoolable" — indistinguishable from an empty corpus, on
 # the one instrument that must never fake that state.
-REQUIRED_PREDICATE_VERSION=2
+REQUIRED_PREDICATE_VERSION=3
 _rs_lib="${_ROOT}/hooks/lib/review-shadow.sh"
 if [ -f "${_rs_lib}" ]; then
     # shellcheck disable=SC1090
