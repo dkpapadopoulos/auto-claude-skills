@@ -200,7 +200,7 @@ and never hard-block REVIEW — same rationale as the Lighthouse overlay (screen
 environment-sensitive).
 
 Uses Playwright's built-in screenshot comparison (`toHaveScreenshot`) — no extra dependency.
-Baselines are **gitignored** artifacts under `tests/artifacts/validation/`, never committed:
+Baselines are **gitignored** artifacts under `tests/artifacts/validation/`, never committed.
 
 Read `references/visual-regression-overlay.md` and run its script: it routes Playwright's snapshots to the persistent `tests/artifacts/validation/visual-baselines/`, seeds a missing baseline, and otherwise reports `MATCH` or `CHANGED`.
 

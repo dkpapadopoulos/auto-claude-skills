@@ -1,6 +1,6 @@
 # runtime-validation — Lighthouse perf overlay script
 
-Read at SKILL.md Step 3 before running the Lighthouse perf overlay (a Lighthouse CLI was detected in Step 1). The overlay's rules (report-only, lab not field, what the report MUST state) stay in SKILL.md. Moved verbatim from SKILL.md.
+Read at SKILL.md Step 3 before running the Lighthouse perf overlay (a Lighthouse CLI was detected in Step 1 and a dev-server URL found). The overlay's rules (report-only, lab not field, what the report MUST state) stay in SKILL.md. Moved verbatim from SKILL.md.
 
 ```bash
 # Self-contained port probe — re-probe candidate ports to set PERF_URL.

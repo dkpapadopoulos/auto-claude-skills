@@ -38,6 +38,10 @@ assert_file_contains "report-only framing present" "report-only" "${SKILL_FILE}"
 # Session-scope honesty note + delegation to committed snapshots
 assert_file_contains "session-scoped honesty note" "session-scoped" "${SKILL_FILE}"
 assert_file_contains "delegates durable regression to committed snapshots" "committed" "${SKILL_FILE}"
+# The report section itself (openspec/specs/runtime-validation "Report carries the
+# session-scope caveat") now lives in the report template: pin its note there too.
+assert_file_contains "template section carries the session-scope note" "Session-scoped diffing, not cross-commit field regression" "${REPORT_FILE}"
+assert_file_contains "template section delegates to committed snapshots" "committed snapshots in the consumer's own suite" "${REPORT_FILE}"
 
 if [ "${TESTS_FAILED:-0}" -gt 0 ]; then exit 1; fi
 exit 0
