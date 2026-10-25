@@ -800,4 +800,260 @@ assert_equals "CONTROL: the pre-registered probabilities still yield a band" "DE
     "$( ( . "${PROJECT_ROOT}/hooks/lib/shadow-corpus.sh" 2>/dev/null
           ALPHA=0.05 DENY_P=0.10 ADVISORY_P=0.20 shadow_band 0 29 ) 2>/dev/null )"
 
+# ---------------------------------------------------------------------------
+# 23. The writer-absent fallback literal EQUALS the producer's constant.
+#     Section 2 checks only that it is numeric. Measured at Task 8's review:
+#     reverting the literal to 2 after the predicate-3 bump left this file and
+#     test-review-witness.sh fully green, while a lib-less checkout would then
+#     report every predicate-3 record as other-predicate -- the blackout class
+#     the reader's own comment warns about.
+# ---------------------------------------------------------------------------
+assert_equals "writer absent: the fallback literal equals the producer's constant" "${PV}" "${_fallback}"
+
+# ---------------------------------------------------------------------------
+# 24. --evidence-miss: over predicate-3 would-block EPISODES, those in which an
+#     allowlisted reviewer returned on a commit covering the push. Every
+#     predicate-3 record below comes from the REAL current producer, and every
+#     predicate-2 record from the REAL base producer, so no field name is
+#     retyped here: a rename in the writer turns E1 red.
+# ---------------------------------------------------------------------------
+_GIT() { git -c user.email=t@t -c user.name=t "$@"; }
+_EMR="${TMP}/em-repo"
+git init -q "${_EMR}" 2>/dev/null
+printf 'x\n' > "${_EMR}/f.txt"
+_GIT -C "${_EMR}" add f.txt >/dev/null 2>&1
+_GIT -C "${_EMR}" commit -q -m init >/dev/null 2>&1
+
+# _em_rec <log> <token> [<witness> <coverage>] -- the real current producer.
+_em_rec() {
+    local _log="$1" _tok="$2"
+    if [ $# -ge 4 ]; then
+        ( . "${WRITER}" 2>/dev/null
+          REVIEW_SHADOW_LOG="${_log}" review_shadow_record "${_tok}" "${_EMR}" "absent" "push" "HEAD" "" "$3" "$4" ) \
+          >/dev/null 2>&1
+    else
+        ( . "${WRITER}" 2>/dev/null
+          REVIEW_SHADOW_LOG="${_log}" review_shadow_record "${_tok}" "${_EMR}" "absent" "push" "HEAD" ) \
+          >/dev/null 2>&1
+    fi
+}
+_em() { _run "$1" "${TMP}/em-unused-adj.jsonl" --evidence-miss; }
+_em_eps()  { printf '%s\n' "$1" | sed -n 's/^  would-block episodes: \([0-9]*\) .*/\1/p'; }
+_em_miss() { printf '%s\n' "$1" | sed -n 's/^  evidence misses: \([0-9]*\) .*/\1/p'; }
+_em_rate() { printf '%s\n' "$1" | sed -n 's/^  rate: //p'; }
+
+# E1 round trip: reviewer-returned + covered is a miss.
+_E1="${TMP}/em1.jsonl"; rm -f "${_E1}"
+_em_rec "${_E1}" tok-e1 reviewer-returned covered
+if [ -s "${_E1}" ] && jq -e '.predicate_version' "${_E1}" >/dev/null 2>&1; then
+    _record_pass "E1 fixture: the real producer wrote a record"
+else
+    _record_fail "E1 fixture: the real producer wrote a record" "nothing at ${_E1} -- E-cells are vacuous"
+fi
+_o1="$(_em "${_E1}")"
+assert_equals "E1 reviewer-returned/covered: 1 would-block episode" "1" "$(_em_eps "${_o1}")"
+assert_equals "E1 reviewer-returned/covered: 1 evidence miss" "1" "$(_em_miss "${_o1}")"
+assert_equals "E1 rate 1/1" "1/1" "$(_em_rate "${_o1}")"
+case "${_o1}" in
+    *"REVIEW evidence-miss (diagnostic only; predicate_version ${PV} records only)"*)
+        _record_pass "E1 header names the adjudicable predicate version" ;;
+    *) _record_fail "E1 header names the adjudicable predicate version" "got: ${_o1}" ;;
+esac
+case "${_o1}" in
+    *"would-block episodes: 1 (1 record(s))"*) _record_pass "E1 the record count is reported beside N" ;;
+    *) _record_fail "E1 the record count is reported beside N" "got: ${_o1}" ;;
+esac
+
+# E2 invocation is never review evidence (#197), covered or not.
+_E2="${TMP}/em2.jsonl"; rm -f "${_E2}"
+_em_rec "${_E2}" tok-e2 invocation covered
+_o2="$(_em "${_E2}")"
+assert_equals "E2 invocation/covered: 1 would-block episode" "1" "$(_em_eps "${_o2}")"
+assert_equals "E2 invocation/covered: 0 evidence misses" "0" "$(_em_miss "${_o2}")"
+
+# E2b a verdict witness never counts either (only reviewer-returned does).
+_E2b="${TMP}/em2b.jsonl"; rm -f "${_E2b}"
+_em_rec "${_E2b}" tok-e2b verdict covered
+assert_equals "E2b verdict/covered: 0 evidence misses" "0" "$(_em_miss "$(_em "${_E2b}")")"
+
+# E3 a returned reviewer that does not cover the push is not a miss.
+_E3="${TMP}/em3.jsonl"; rm -f "${_E3}"
+_em_rec "${_E3}" tok-e3 reviewer-returned uncovered
+_o3="$(_em "${_E3}")"
+assert_equals "E3 reviewer-returned/uncovered: 0 of 1" "0/1" "$(_em_rate "${_o3}")"
+
+# E4 predicate-2 records from the REAL base producer. Pinned by BLOB id: this is
+# `git rev-parse 2a24c186:hooks/lib/review-shadow.sh`, byte-identical to main's
+# 5b3fcc00 (#294), so it stays reachable after this branch is squash-merged,
+# which 2a24c186 itself would not. Those records LACK review_witness and
+# review_coverage, which a predicate-3 lib with its constants moved back cannot
+# produce (it writes "none").
+_BASE_BLOB=d71dcd0c773721d4af8e404e5f5098bc62df0bda
+_BASE_WRITER="${TMP}/review-shadow-base.sh"
+if git -C "${PROJECT_ROOT}" cat-file blob "${_BASE_BLOB}" > "${_BASE_WRITER}" 2>/dev/null \
+   && grep -q '^REVIEW_SHADOW_PREDICATE_VERSION=2$' "${_BASE_WRITER}"; then
+    _E4="${TMP}/em4.jsonl"; rm -f "${_E4}"
+    for _t in tok-e4a tok-e4b; do
+        ( . "${_BASE_WRITER}" 2>/dev/null
+          REVIEW_SHADOW_LOG="${_E4}" review_shadow_record "${_t}" "${_EMR}" "absent" "push" "HEAD" ) \
+          >/dev/null 2>&1
+    done
+    assert_equals "E4 fixture: the base producer wrote 2 predicate-2 records without witness fields" "2" \
+        "$(jq -R -r 'fromjson? // empty | select(.predicate_version == 2 and (has("review_witness") | not)
+                     and (has("review_coverage") | not)) | 1' "${_E4}" 2>/dev/null | grep -c .)"
+    cat "${_E1}" >> "${_E4}"
+    _o4="$(_em "${_E4}")"
+    case "${_o4}" in
+        *"excluded: 2 record(s) at other predicate versions;"*)
+            _record_pass "E4 base-producer records are excluded as other-predicate, with a count" ;;
+        *) _record_fail "E4 base-producer records are excluded as other-predicate, with a count" "got: ${_o4}" ;;
+    esac
+    assert_equals "E4 rate stays 1/1 with the base records present" "1/1" "$(_em_rate "${_o4}")"
+else
+    # Visible, not silent: a shallow clone lacks the blob. Not recorded as a
+    # pass, and not a red cell (one red cell blocks every routing push).
+    echo "  NOTE: base producer blob ${_BASE_BLOB} unavailable (shallow clone?) -- E4 not run"
+fi
+
+# E5 a predicate-3 record without the fields, and ones carrying "invalid", are
+# excluded with their own cause and stay out of N. The field-less record is a
+# real producer record with the two fields deleted; the deletion is asserted to
+# have changed it, or the cell would pass on a no-op.
+_E5="${TMP}/em5.jsonl"; _E5raw="${TMP}/em5raw.jsonl"; rm -f "${_E5}" "${_E5raw}"
+_em_rec "${_E5raw}" tok-e5a reviewer-returned covered
+jq -c 'del(.review_witness, .review_coverage)' "${_E5raw}" > "${_E5}" 2>/dev/null
+if cmp -s "${_E5raw}" "${_E5}"; then
+    _record_fail "E5 fixture: deleting the witness fields changed the record" "identical -- E5 is vacuous"
+else
+    _record_pass "E5 fixture: deleting the witness fields changed the record"
+fi
+_em_rec "${_E5}" tok-e5b bogus covered
+assert_equals "E5 fixture: the producer records an out-of-vocabulary witness as invalid" "invalid" \
+    "$(tail -1 "${_E5}" | jq -r '.review_witness' 2>/dev/null)"
+_o5="$(_em "${_E5}")"
+case "${_o5}" in
+    *"2 record(s) at version ${PV} without a valid review_witness/review_coverage"*)
+        _record_pass "E5 field-less and invalid predicate-3 records are excluded with their cause" ;;
+    *) _record_fail "E5 field-less and invalid predicate-3 records are excluded with their cause" "got: ${_o5}" ;;
+esac
+assert_equals "E5 ...and they are not in N" "0" "$(_em_eps "${_o5}")"
+assert_equals "E5 ...and N=0 is never reported as a clean rate" "n/a (no would-block episodes)" "$(_em_rate "${_o5}")"
+# E5b an invalid COVERAGE with a valid witness is excluded the same way.
+_E5b="${TMP}/em5b.jsonl"; rm -f "${_E5b}"
+_em_rec "${_E5b}" tok-e5c reviewer-returned bogus
+case "$(_em "${_E5b}")" in
+    *"1 record(s) at version ${PV} without a valid"*) _record_pass "E5b an invalid coverage is excluded" ;;
+    *) _record_fail "E5b an invalid coverage is excluded" "got: $(_em "${_E5b}")" ;;
+esac
+
+# E6 one episode holding a miss and a non-miss record is a miss (ANY member);
+# a second episode with no miss makes it 1/2. Both orders of the mixed pair.
+_E6="${TMP}/em6.jsonl"; rm -f "${_E6}"
+_em_rec "${_E6}" tok-e6 invocation covered
+_em_rec "${_E6}" tok-e6 reviewer-returned covered
+_o6="$(_em "${_E6}")"
+assert_equals "E6 a mixed episode (non-miss first) is a miss: 1/1" "1/1" "$(_em_rate "${_o6}")"
+case "${_o6}" in
+    *"would-block episodes: 1 (2 record(s))"*) _record_pass "E6 the two records form ONE episode" ;;
+    *) _record_fail "E6 the two records form ONE episode" "got: ${_o6}" ;;
+esac
+_E6r="${TMP}/em6r.jsonl"; rm -f "${_E6r}"
+_em_rec "${_E6r}" tok-e6r reviewer-returned covered
+_em_rec "${_E6r}" tok-e6r invocation covered
+assert_equals "E6 a mixed episode (miss first) is a miss: 1/1" "1/1" "$(_em_rate "$(_em "${_E6r}")")"
+_em_rec "${_E6}" tok-e6-later verdict uncovered
+assert_equals "E6 a second episode without a miss: 1/2" "1/2" "$(_em_rate "$(_em "${_E6}")")"
+# The pairs above share one second, so the grouper orders their ids by the
+# random record_id and the miss is first or last by chance: a rule reading only
+# the anchor (or only the last member) passed them half the time. Restamp real
+# records a minute apart so the miss is deterministically NOT the anchor, then
+# deterministically NOT the last member.
+_E6t="${TMP}/em6t.jsonl"; _E6u="${TMP}/em6u.jsonl"; rm -f "${_E6t}" "${_E6u}"
+_em_rec "${_E6t}" tok-e6t invocation covered
+_em_rec "${_E6t}" tok-e6t reviewer-returned covered
+jq -c 'if .review_witness == "invocation" then .ts = "2026-10-25T10:00:00Z" else .ts = "2026-10-25T10:01:00Z" end' \
+    "${_E6t}" > "${_E6u}" 2>/dev/null
+assert_equals "E6t a miss that is not the episode's anchor still makes it a miss" "1/1" "$(_em_rate "$(_em "${_E6u}")")"
+jq -c 'if .review_witness == "invocation" then .ts = "2026-10-25T10:01:00Z" else .ts = "2026-10-25T10:00:00Z" end' \
+    "${_E6t}" > "${_E6u}" 2>/dev/null
+assert_equals "E6t a miss that is not the episode's last member still makes it a miss" "1/1" "$(_em_rate "$(_em "${_E6u}")")"
+
+# E7 the output says what the number is NOT, and names its blind spot.
+case "${_o1}" in
+    *"LOWER BOUND"*"NOT the registered false-block rate"*)
+        _record_pass "E7 output says LOWER BOUND and NOT the registered false-block rate" ;;
+    *) _record_fail "E7 output says LOWER BOUND and NOT the registered false-block rate" "got: ${_o1}" ;;
+esac
+case "${_o1}" in
+    *"cannot tell \"no reviewer\" from \"a reviewer whose dispatch commit was unknown\""*)
+        _record_pass "E7 output states the witness cannot tell no reviewer from an unknown dispatch commit" ;;
+    *) _record_fail "E7 output states the witness cannot tell no reviewer from an unknown dispatch commit" "got: ${_o1}" ;;
+esac
+
+# E8 would_block as the STRING "true" is not in the population.
+_E8="${TMP}/em8.jsonl"; rm -f "${_E8}"
+_em_rec "${_E8}" tok-e8a reviewer-returned covered
+jq -c '.would_block = "true"' "${_E8}" > "${_E8}.tmp" 2>/dev/null && mv "${_E8}.tmp" "${_E8}"
+_o8="$(_em "${_E8}")"
+assert_equals "E8 would_block:\"true\" (string) is excluded from N" "0" "$(_em_eps "${_o8}")"
+case "${_o8}" in
+    *"1 record(s) at version ${PV} with would_block not boolean true"*)
+        _record_pass "E8 ...and reported as excluded, not silently dropped" ;;
+    *) _record_fail "E8 ...and reported as excluded, not silently dropped" "got: ${_o8}" ;;
+esac
+
+# E9 a truncated line in the middle is counted, and later records still count.
+_E9="${TMP}/em9.jsonl"; rm -f "${_E9}"
+_em_rec "${_E9}" tok-e9a invocation covered
+printf '%s\n' '{"record_id":"broken","ts":' >> "${_E9}"
+_em_rec "${_E9}" tok-e9b reviewer-returned covered
+_o9="$(_em "${_E9}")"
+case "${_o9}" in
+    *"; 1 unparseable line(s)"*) _record_pass "E9 the truncated line is counted as unparseable" ;;
+    *) _record_fail "E9 the truncated line is counted as unparseable" "got: ${_o9}" ;;
+esac
+assert_equals "E9 records after the bad line still count: 1/2" "1/2" "$(_em_rate "${_o9}")"
+
+# E9b a population record the grouper cannot place (ts:"" -- producer-reachable
+# when `date` fails) is reported, never a silent gap between records and N.
+_E9b="${TMP}/em9b.jsonl"; rm -f "${_E9b}"
+_em_rec "${_E9b}" tok-e9c reviewer-returned covered
+jq -c '.ts = ""' "${_E9b}" > "${_E9b}.tmp" 2>/dev/null && mv "${_E9b}.tmp" "${_E9b}"
+_o9b="$(_em "${_E9b}")"
+assert_equals "E9b a ts:\"\" record is not in N" "0" "$(_em_eps "${_o9b}")"
+case "${_o9b}" in
+    *"excluded: 1 record(s) at version ${PV} with no usable ts or record_id"*)
+        _record_pass "E9b ...and is reported as excluded with its cause" ;;
+    *) _record_fail "E9b ...and is reported as excluded with its cause" "got: ${_o9b}" ;;
+esac
+
+# E10 an unreadable corpus is never reported as an empty one.
+_E10="${TMP}/em10.jsonl"; rm -f "${_E10}"
+_em_rec "${_E10}" tok-e10 reviewer-returned covered
+chmod 000 "${_E10}"
+_o10="$(_em "${_E10}")"
+chmod 600 "${_E10}"
+case "${_o10}" in
+    *"would-block episodes: 0"*) _record_fail "E10 an unreadable corpus does not print 0 episodes" "got: ${_o10}" ;;
+    *"NOT READABLE"*) _record_pass "E10 an unreadable corpus does not print 0 episodes" ;;
+    *) _record_fail "E10 an unreadable corpus does not print 0 episodes" "no unreadable message: ${_o10}" ;;
+esac
+# CONTROL: an ABSENT corpus is handled as --status handles it.
+case "$(_em "${TMP}/em-absent.jsonl")" in
+    *"(no corpus yet)"*) _record_pass "E10 CONTROL: an absent corpus says so" ;;
+    *) _record_fail "E10 CONTROL: an absent corpus says so" "got: $(_em "${TMP}/em-absent.jsonl")" ;;
+esac
+
+# E11 read-only and advisory: corpus and sidecar byte-identical, no decision.
+_E11A="${TMP}/em11-adj.jsonl"; printf '%s\n' '{"record_id":"x","verdict":"true_catch","claimant":"human"}' > "${_E11A}"
+_c_log="$(cksum < "${_E6}")"; _c_adj="$(cksum < "${_E11A}")"
+_o11="$(_run "${_E6}" "${_E11A}" --evidence-miss)"
+assert_equals "E11 the shadow log is byte-identical after --evidence-miss" "${_c_log}" "$(cksum < "${_E6}")"
+assert_equals "E11 the sidecar is byte-identical after --evidence-miss" "${_c_adj}" "$(cksum < "${_E11A}")"
+case "${_o11}" in
+    *permissionDecision*) _record_fail "E11 --evidence-miss emits no permissionDecision" "found one" ;;
+    *"evidence misses:"*) _record_pass "E11 --evidence-miss emits no permissionDecision" ;;
+    *) _record_fail "E11 --evidence-miss emits no permissionDecision" "no report at all: ${_o11}" ;;
+esac
+
 print_summary
