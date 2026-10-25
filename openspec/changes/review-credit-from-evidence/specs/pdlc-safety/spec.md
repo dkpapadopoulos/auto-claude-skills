@@ -136,4 +136,4 @@ lower bound on one kind of false block, not the registered false-block rate.
 - **GIVEN** a REVIEW shadow record with `would_block: true`, `review_witness: "reviewer-returned"` and `review_coverage: "covered"`
 - **WHEN** the reader runs with `--evidence-miss`
 - **THEN** that episode MUST be counted as an evidence miss
-- **AND** records from earlier schema versions MUST be excluded from the count and reported as excluded
+- **AND** records from earlier predicate versions MUST be excluded from the count and reported as excluded
