@@ -443,11 +443,12 @@ before its numbers were seen, closed both legs.
 
 **Measured** (cohort snapshots of 2026-10-24, cap 16,000, N 40, SEARCH on,
 decision 11 applied; `task-S4` measurement). An item counts as likely
-`unknown` when its push was not found in the transcript (P), or when no
+`unknown` when its push was not found in the transcript or any `.bak` copy (P), or when no
 decisive event is visible in SEARCH or BEFORE and SEARCH did not reach the
 session's first line (U). "Decisive" uses the narrow kinds: the gate's own
-evidence (the implementation-skill call or `phase_attest`; a reviewer
-dispatch, review skill or recorded verdict).
+evidence for IMPLEMENT (the implementation-skill call or `phase_attest`),
+and for REVIEW a reviewer dispatch, a review skill, a recorded verdict or a
+Codex review run.
 
 | leg | kept | P | decisive event visible | absence established | U | likely `unknown` |
 |---|---|---|---|---|---|---|
@@ -467,8 +468,10 @@ The REVIEW range spans the two SEARCH matcher versions measured.
 - **REVIEW: mostly the instrument.** The 12 P items (9.2%) are episodes whose
   push the locator could not find although earlier history survives (locator
   gaps under decision 8). Of the 10 U items at the later matcher version, 7
-  exist only because SEARCH drops matches past its budget; the broadened
-  matchers crowd decisive matches out. With every match shown, REVIEW would
+  exist only because SEARCH drops matches past its budget (U falls from 10
+  to 3 with every match shown); 5 of those 7 come from the broadened
+  matchers crowding decisive matches out, and 2 overflowed already before
+  the broadening. With every match shown, REVIEW would
   be at 11.5% under the narrow kinds, two items over the cap.
 - **Retention contributed nothing** to either rate: episodes already lost by
   age left the cohort before measurement (decision 8).

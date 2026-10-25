@@ -235,8 +235,9 @@ episode was judged.
 
 The cause is mostly the instrument, not lost evidence: 12 of 130 episodes
 (9.2%) had a push the locator could not find although earlier history
-survives, and most of the rest were search matches dropped past the packet's
-budget.
+survives, and with the broadened search matchers 7 of the 10 remaining
+likely-`unknown` episodes were search matches dropped past the packet's budget
+(2 of 5 before the broadening).
 
 No REVIEW window is open: the first was closed as a null result on 2026-09-23
 (above), and this successor was never registered. The leg stays advisory, as

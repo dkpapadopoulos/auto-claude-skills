@@ -1,5 +1,7 @@
 # Spec delta: pdlc-safety — panel adjudication of the shadow corpora
 
+> **Not shipped.** Archived 2026-10-25 without applying this delta: both legs were closed INCONCLUSIVE before registration.
+
 ## ADDED Requirements
 
 ### Requirement: A frozen cohort is the only population a panel decision describes
