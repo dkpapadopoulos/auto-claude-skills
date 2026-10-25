@@ -13,6 +13,16 @@ During REVIEW phase, after code changes are complete. Also invocable on explicit
 
 This skill proves the feature works in a realistic context — beyond "tests pass" to "the feature behaves correctly when exercised through its real interfaces."
 
+## Reference files
+
+Situational detail lives in `references/` in this skill's base directory. Read each file with the Read tool at the moment named; never run those scripts or write the report from memory.
+
+| File | Read it |
+|---|---|
+| `references/perf-overlay.md` | Step 3, before running the Lighthouse perf overlay (a Lighthouse CLI was detected and a dev-server URL found) |
+| `references/visual-regression-overlay.md` | Step 3, before running the visual-regression overlay (Playwright is available) |
+| `references/report-template.md` | Step 4, before writing the `## Validation Report` (every run) |
+
 ## Step 1: Detect Available Tools
 
 Run capability detection via Bash to determine what's available. Each path is independent — detect all three, then execute whichever paths have tools.
@@ -177,33 +187,7 @@ Check for AA contrast, ARIA landmarks, keyboard navigation, form labels, and alt
 tool was detected AND the port probe found a dev-server URL). **Report-only:** perf
 findings are advisory and do NOT enter the fix-rescan loop.
 
-```bash
-# Self-contained port probe — re-probe candidate ports to set PERF_URL.
-# (The Step 1 port probe echoes findings but does not export a variable;
-#  this block is self-contained so the overlay always has a URL to target.)
-PERF_URL=""
-for _port in 3000 5173 8000 8080; do
-  _code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 2 "http://localhost:${_port}/" 2>/dev/null)
-  if [ "${_code}" != "000" ] && [ -n "${_code}" ]; then
-    PERF_URL="http://localhost:${_port}/"
-    break
-  fi
-done
-
-# Self-gate: global lighthouse OR a local install in node_modules/.bin (checked directly,
-# no npx — so it never triggers a network download and is portable across npm versions).
-# A package.json-listed-but-uninstalled lighthouse correctly skips here.
-if [ -n "${PERF_URL}" ] && { command -v lighthouse >/dev/null 2>&1 || node_modules/.bin/lighthouse --version >/dev/null 2>&1; }; then
-  mkdir -p tests/artifacts/validation/
-  npx lighthouse "${PERF_URL}" --quiet --chrome-flags="--headless" \
-    --only-categories=performance --output=json --output-path=stdout 2>/dev/null \
-    | jq '{perf_score: (.categories.performance.score * 100 | floor),
-           lcp_ms: .audits["largest-contentful-paint"].numericValue,
-           cls:    .audits["cumulative-layout-shift"].numericValue,
-           tbt_ms: .audits["total-blocking-time"].numericValue}' \
-    | tee tests/artifacts/validation/lighthouse.json
-fi
-```
+Read `references/perf-overlay.md` and run its script: it re-probes the dev-server port to set `PERF_URL`, self-gates on an installed `lighthouse` (never an npx download), and writes `tests/artifacts/validation/lighthouse.json`.
 
 These are **Lighthouse lab** metrics from a single run, **not** field Core Web Vitals.
 The three field CWV are LCP, **INP**, and CLS; a lab run cannot measure INP, so TBT is
@@ -218,42 +202,7 @@ environment-sensitive).
 Uses Playwright's built-in screenshot comparison (`toHaveScreenshot`) — no extra dependency.
 Baselines are **gitignored** artifacts under `tests/artifacts/validation/`, never committed:
 
-```bash
-# Baselines: tests/artifacts/validation/visual-baselines/  (gitignored, persists across runs)
-# Actuals + diffs: tests/artifacts/validation/visual-runs/
-BASELINE_DIR="$(pwd)/tests/artifacts/validation/visual-baselines"
-mkdir -p "${BASELINE_DIR}" tests/artifacts/validation/visual-runs
-
-# Route Playwright's snapshots to the PERSISTENT baseline dir (default is a
-# <spec>-snapshots/ folder beside the spec — which here is the mktemp dir that
-# gets rm -rf'd, so baselines would never survive). snapshotPathTemplate fixes that.
-cat > "${VALIDATION_TMPDIR}/pw.config.ts" << EOCFG
-import { defineConfig } from '@playwright/test';
-export default defineConfig({
-  snapshotPathTemplate: '${BASELINE_DIR}/{arg}{ext}',
-  outputDir: '$(pwd)/tests/artifacts/validation/visual-runs',
-});
-EOCFG
-cat > "${VALIDATION_TMPDIR}/visual.spec.ts" << 'EOTEST'
-import { test, expect } from '@playwright/test';
-test('homepage visual', async ({ page }) => {
-  await page.goto(process.env.PERF_URL || 'http://localhost:3000/');
-  await page.waitForLoadState('networkidle');
-  await expect(page).toHaveScreenshot('homepage.png', { maxDiffPixelRatio: 0.02 });
-});
-EOTEST
-
-# argv array (not a string) so paths with spaces never word-split the invocation.
-PW=(npx playwright test --config "${VALIDATION_TMPDIR}/pw.config.ts" "${VALIDATION_TMPDIR}/visual.spec.ts")
-# First run: no baseline yet → seed it (BASELINE_MISSING/SEEDED, not pass/fail).
-# Later runs: the baseline persists in visual-baselines/ → diff → MATCH or CHANGED.
-if [ -z "$(ls -A "${BASELINE_DIR}" 2>/dev/null)" ]; then
-  "${PW[@]}" --update-snapshots 2>/dev/null \
-    && echo "visual: BASELINE_MISSING/SEEDED (baseline captured under visual-baselines/ — list in Coverage Gaps)"
-else
-  "${PW[@]}" 2>/dev/null && echo "visual: MATCH" || echo "visual: CHANGED (see diff under visual-runs/)"
-fi
-```
+Read `references/visual-regression-overlay.md` and run its script: it routes Playwright's snapshots to the persistent `tests/artifacts/validation/visual-baselines/`, seeds a missing baseline, and otherwise reports `MATCH` or `CHANGED`.
 
 A first run with no baseline reports `BASELINE_MISSING/SEEDED` and lists the scenario in
 Coverage Gaps — it is **not** a PASS or FAIL. Subsequent runs report `MATCH` or `CHANGED`.
@@ -336,67 +285,7 @@ No interactive validation tools detected. Verify manually:
 
 Present results with the heading `## Validation Report`. Same shape regardless of which paths executed — omit sections for paths that were not detected but always include Coverage Gaps and Manual Checks.
 
-```markdown
-## Validation Report
-
-### Browser Results (Playwright) — N scenarios
-| Scenario | Source | Result | Evidence |
-|----------|--------|--------|----------|
-| homepage-loads | eval-pack | PASS | screenshot: tests/artifacts/validation/home.png |
-| login-flow | intent-truth | FAIL | Expected redirect to /dashboard, got 404 |
-
-### API Results (curl @ localhost:PORT) — N scenarios
-| Endpoint | Source | Result | Evidence |
-|----------|--------|--------|----------|
-| GET /health | generic-smoke | PASS | HTTP 200, 12ms |
-| POST /api/auth/login | eval-pack | PASS | HTTP 200, valid JSON body |
-
-### CLI Results (./path/to/binary) — N scenarios
-| Command | Source | Result | Evidence |
-|---------|--------|--------|----------|
-| --help | generic-smoke | PASS | exit 0, usage text present |
-| process input.json | eval-pack | FAIL | exit 1, "missing field" error |
-
-### A11y Results (axe-core) — N checks
-| Check | Severity | Element | Issue |
-|-------|----------|---------|-------|
-| color-contrast | serious | .btn-primary | Contrast ratio 3.2:1 < 4.5:1 (AA) |
-| aria-label | moderate | nav > ul | Navigation landmark missing label |
-
-### Perf Results (Lighthouse — lab) — lab signals, NOT field CWV
-| Metric | Value | Band | Good / Needs-work / Poor |
-|--------|-------|------|--------------------------|
-| Perf score | 0–100 | … | ≥90 / 50–89 / <50 |
-| LCP (lab) | ms | … | <2.5s / 2.5–4.0s / >4.0s |
-| CLS (lab) | n | … | <0.1 / 0.1–0.25 / >0.25 |
-| TBT (lab) | ms | … | <200ms / 200–600ms / >600ms |
-
-> Lab signals from one dev-server URL. Field **INP is not measured** (TBT is its lab
-> proxy); production bundle, CDN/image delivery, per-route, and third-party effects are
-> out of scope. "Perf overlay ran" ≠ "Core Web Vitals covered."
-
-### Visual Regression Results (Playwright — report-only) — N captures
-| Capture | Source | Viewport | Result | Evidence |
-|---------|--------|----------|--------|----------|
-| homepage | generic-smoke | 1280x720 | MATCH | visual-runs/homepage.png |
-| checkout | intent-truth | 375x667 | CHANGED | diff: visual-runs/checkout-diff.png |
-
-> Session-scoped diffing, not cross-commit field regression. Baselines are gitignored and
-> committed snapshots in the consumer's own suite own durable regression. `BASELINE_MISSING/SEEDED`
-> on first run is neither pass nor fail — list the seeded capture in Coverage Gaps.
-
-### Coverage Gaps
-State each gap as a next action, not a passive note — a downstream agent or reviewer should be able to act on it without re-deriving what to do:
-- [Validate scenario X manually — it could not be auto-validated because <reason>]
-- [Install/enable <tool> to cover path Y, then re-run this scenario]
-- [Add an execution path for eval-pack scenario Z, or mark it out-of-scope with a reason]
-
-### Manual Checks Recommended
-Phrase each as an imperative the human can execute:
-- [Review <element/flow> by hand — requires human judgment (visual design, UX flow, business-logic correctness)]
-- [Test in <other browser engine> — only one engine was available this run]
-- [Load-test <path> to confirm performance characteristics under concurrency]
-```
+Read `references/report-template.md` before writing the report: it holds the exact table for each path (Browser, API, CLI, A11y, Perf, Visual Regression) and the Coverage Gaps and Manual Checks sections. Write each Coverage Gap as a next action and each Manual Check as an imperative the human can execute, never as a passive note.
 
 **Source column values:** `eval-pack` (from `tests/fixtures/evals/*.json`), `intent-truth` (from specs/plans), `generic-smoke` (auto-generated). A row whose Source is not one of these three values had its expectation derived from somewhere else — usually the implementation — and must be re-derived from a valid source tier or dropped (see Expectation Provenance).
 

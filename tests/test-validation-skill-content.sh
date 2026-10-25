@@ -19,6 +19,10 @@ setup_test_env
 # ---------------------------------------------------------------------------
 RV_SKILL="${PROJECT_ROOT}/skills/runtime-validation/SKILL.md"
 RV_CONTENT="$(cat "${RV_SKILL}")"
+# Situational detail lives in references/ (openspec/changes/skill-reattach-budget);
+# negative checks scan the core AND every reference, since the model reads both.
+RV_REFS_DIR="${PROJECT_ROOT}/skills/runtime-validation/references"
+RV_ALL_CONTENT="$(cat "${RV_SKILL}" "${RV_REFS_DIR}"/*.md)"
 
 # Frontmatter
 assert_contains "rv: has name frontmatter" "name: runtime-validation" "$RV_CONTENT"
@@ -42,10 +46,30 @@ assert_contains "rv: graceful degradation documented" "no interactive validation
 # ~/.skill-validation-ran-<token> that NO code ever read, using the forbidden
 # singleton-token incantation, under a false "checked by the SHIP phase gate"
 # claim. Pin it stays gone so it cannot be reintroduced.
-assert_not_contains "rv: dead session marker removed" "validation-ran" "$RV_CONTENT"
+assert_not_contains "rv: dead session marker removed" "validation-ran" "$RV_ALL_CONTENT"
 assert_contains "rv: unified report heading" "Validation Report" "$RV_CONTENT"
 assert_contains "rv: coverage gaps section" "Coverage Gaps" "$RV_CONTENT"
 assert_contains "rv: manual checks section" "Manual Checks" "$RV_CONTENT"
+# The report template itself moved to references/report-template.md.
+RV_REPORT_CONTENT="$(cat "${RV_REFS_DIR}/report-template.md" 2>/dev/null)"
+assert_contains "rv: template has report heading" "## Validation Report" "$RV_REPORT_CONTENT"
+assert_contains "rv: template has coverage gaps section" "### Coverage Gaps" "$RV_REPORT_CONTENT"
+assert_contains "rv: template has manual checks section" "### Manual Checks Recommended" "$RV_REPORT_CONTENT"
+assert_contains "rv: core points Step 4 at the template" 'Read `references/report-template.md` before writing the report' "$RV_CONTENT"
+
+# References index: every references/*.md is named from SKILL.md, and every
+# references/*.md SKILL.md names exists. A file the core never names is never Read.
+_rv_n=0
+for _f in "${RV_REFS_DIR}"/*.md; do
+    [ -f "${_f}" ] || continue
+    _rv_n=$((_rv_n + 1))
+    _base="$(basename "${_f}")"
+    assert_contains "rv: SKILL.md names references/${_base}" "references/${_base}" "$RV_CONTENT"
+done
+assert_equals "rv: references/ holds the three moved files" "3" "${_rv_n}"
+for _named in $(grep -oE 'references/[A-Za-z0-9_-]+\.md' "${RV_SKILL}" | sort -u); do
+    assert_file_exists "rv: named ${_named} exists" "${PROJECT_ROOT}/skills/runtime-validation/${_named}"
+done
 
 # Fix-rescan loop
 assert_contains "rv: fix-rescan loop" "Max 3" "$RV_CONTENT"

@@ -107,7 +107,9 @@ assert_contains "runtime-validation: safety-relevant paths section" "Safety-Rele
 assert_contains "runtime-validation: safety paths must be exercised" "MUST be exercised" "${RTV_CONTENT}"
 assert_contains "runtime-validation: eval scenarios append-only" "append-only" "${RTV_CONTENT}"
 # CLI scenario execution must not `eval` eval-pack-sourced command strings (shell-injection vector).
-assert_not_contains "runtime-validation: no eval of eval-pack command (injection)" 'eval "${cmd}"' "${RTV_CONTENT}"
+# Scans references/ too: a script moved there is still run by the model.
+assert_not_contains "runtime-validation: no eval of eval-pack command (injection)" 'eval "${cmd}"' \
+    "$(cat "${RTV_SKILL}" "${PROJECT_ROOT}/skills/runtime-validation/references"/*.md)"
 assert_contains "runtime-validation: eval-pack trust-boundary note" "TRUSTED committed fixtures" "${RTV_CONTENT}"
 
 # frontend-quality-rules: advisory routing to EXTERNAL Vercel skills must stay conditional,
