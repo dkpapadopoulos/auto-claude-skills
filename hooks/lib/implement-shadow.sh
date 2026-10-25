@@ -49,7 +49,16 @@
 # lost its certification produced a would_block record while shipping nothing.
 # Membership is now a recorded observation rather than an inference, which
 # retires that whole class instead of filtering one instance of it.
-IMPLEMENT_SHADOW_SCHEMA_VERSION=4
+# 5 (2026-10-25, review-credit-from-evidence decision 4): adds `session_id` and
+# `tool_use_id` (the hook payload's, i.e. the push call's), `cc_version` (from
+# AI_AGENT) and `acs_version` (the plugin manifest). The guard computes them
+# into the four SHADOW_STAMP_* globals (`_shadow_stamp_prepare`) and this
+# recorder only writes them; a stamp that could not be computed is written as
+# "" — the four keys are always present on a schema-5 record, so "stamped
+# empty" and "written before stamping" stay distinguishable. A SCHEMA bump, not
+# a predicate bump: the fire condition, the episode key and the labels are
+# unchanged, so v5 records pool with v4 ones under predicate_version 5.
+IMPLEMENT_SHADOW_SCHEMA_VERSION=5
 # 2 (#161): merge-path material_source is now measured against the merged PR's
 # file list, not the branch-local delta. v1 merge records measured a different
 # subject and MUST NOT be pooled with v2.
@@ -130,6 +139,10 @@ IMPLEMENT_SHADOW_PREDICATE_VERSION=5
 #              NOT a fabricated all-missing object: "not recorded" and "checked
 #              and absent" are different states and an adjudicator must be able
 #              to tell them apart.
+#   Stamps (schema 5) are read from SHADOW_STAMP_SESSION_ID,
+#              SHADOW_STAMP_TOOL_USE_ID, SHADOW_STAMP_CC_VERSION and
+#              SHADOW_STAMP_ACS_VERSION, not from positional arguments; unset
+#              reads as "".
 # Always returns 0. Compact JSONL (jq -cn) because this is a line format.
 implement_shadow_record() {
     command -v jq >/dev/null 2>&1 || return 0
@@ -190,6 +203,8 @@ implement_shadow_record() {
         --arg tok "${_tok}" --arg tp "${_tp}" --arg ev "${_ev}" --arg db "${_db}" \
         --argjson ms "${_ms}" --argjson wb "${_wb}" --arg ed "${_ed}" \
         --argjson ae "${_ae}" \
+        --arg sid "${SHADOW_STAMP_SESSION_ID:-}" --arg tuid "${SHADOW_STAMP_TOOL_USE_ID:-}" \
+        --arg ccv "${SHADOW_STAMP_CC_VERSION:-}" --arg acsv "${SHADOW_STAMP_ACS_VERSION:-}" \
         '{schema_version:$sv,record_id:$rid,ts:$ts,predicate_version:$pv,
           gate:"push-implement",would_block:$wb,action:$act,
           repo:$repo,branch:$branch,head_sha:$head,
@@ -205,7 +220,8 @@ implement_shadow_record() {
                       | if length == 0 then null else add end )
                end),
           advisory_emitted:$ae,
-          session_token:$tok,transcript_path:$tp}' \
+          session_token:$tok,transcript_path:$tp,
+          session_id:$sid,tool_use_id:$tuid,cc_version:$ccv,acs_version:$acsv}' \
         >> "${_log}" 2>/dev/null || return 0
     return 0
 }

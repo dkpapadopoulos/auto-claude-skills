@@ -443,6 +443,64 @@ if [ "${_CREDITED_OK}" = "true" ] && [ -n "${CREDITED_REVIEW_SKILLS:-}" ]; then
     _REVIEW_NAMES="${CREDITED_REVIEW_SKILLS}"
 fi
 
+# _shadow_stamp_prepare (review-credit-from-evidence, decision 4) — fills the
+# four stamps every shadow record carries: SHADOW_STAMP_SESSION_ID and
+# SHADOW_STAMP_TOOL_USE_ID (the hook payload's, i.e. the push call's),
+# SHADOW_STAMP_CC_VERSION (acs_cc_version, the ONE parser of AI_AGENT) and
+# SHADOW_STAMP_ACS_VERSION (this plugin's manifest). The recorders read the
+# globals; no recorder argument changed.
+#
+# Called ONLY inside a recorder's `command -v` branch, i.e. when a record is
+# about to be written, and idempotent, so a path that writes no record pays
+# nothing and a run writing several records pays once: one jq (payload and
+# manifest in a single fork) plus the $( ) around acs_cc_version. The guard's
+# first jq is deliberately not widened to carry the ids — every push would pay
+# for a field only a would-block record uses.
+#
+# Values are validated INSIDE jq, anchored on \A..\z (never ^..$, which
+# Oniguruma may treat as line anchors): an id must match [A-Za-z0-9._-]{1,128},
+# a version N.N.N with an optional [.+-] suffix. Anything else — absent,
+# non-string, over-long, path- or separator-bearing — becomes "". That also
+# makes the \x1f split below safe: no surviving value can contain the separator,
+# so a forged id cannot shift into the next field. Every failure (no jq answer,
+# unreadable or non-JSON manifest, unparseable payload) leaves the affected
+# stamp "", never blocks and never drops the record. Initialised here so an
+# inherited environment variable can never reach a record.
+_SHADOW_STAMPED=false
+SHADOW_STAMP_SESSION_ID=""
+SHADOW_STAMP_TOOL_USE_ID=""
+SHADOW_STAMP_CC_VERSION=""
+SHADOW_STAMP_ACS_VERSION=""
+_shadow_stamp_prepare() {
+    [ "${_SHADOW_STAMPED}" = "true" ] && return 0
+    _SHADOW_STAMPED=true
+    local _pj="${_PLUGIN_ROOT}/.claude-plugin/plugin.json" _st="" _sep=$'\x1f'
+    local _prog='def ok(re): if type == "string" and test(re) then . else "" end;
+        (fromjson? // null) as $p
+        | ($pj | fromjson? // null) as $m
+        | [ ($p | if type == "object" then .session_id  else null end | ok("\\A[A-Za-z0-9._-]{1,128}\\z")),
+            ($p | if type == "object" then .tool_use_id else null end | ok("\\A[A-Za-z0-9._-]{1,128}\\z")),
+            ($m | if type == "object" then .version     else null end
+                | ok("\\A[0-9]+\\.[0-9]+\\.[0-9]+([.+-][A-Za-z0-9.]+)?\\z")) ]
+        | join("\u001f")'
+    if [ -f "${_pj}" ] && [ -r "${_pj}" ]; then
+        _st="$(jq -Rrsj --rawfile pj "${_pj}" "${_prog}" <<< "${_INPUT:-}" 2>/dev/null)" || _st=""
+    else
+        _st="$(jq -Rrsj --arg pj "" "${_prog}" <<< "${_INPUT:-}" 2>/dev/null)" || _st=""
+    fi
+    case "${_st}" in
+        *"${_sep}"*"${_sep}"*)
+            SHADOW_STAMP_SESSION_ID="${_st%%"${_sep}"*}"
+            _st="${_st#*"${_sep}"}"
+            SHADOW_STAMP_TOOL_USE_ID="${_st%%"${_sep}"*}"
+            SHADOW_STAMP_ACS_VERSION="${_st#*"${_sep}"}" ;;
+    esac
+    if command -v acs_cc_version >/dev/null 2>&1; then
+        SHADOW_STAMP_CC_VERSION="$(acs_cc_version)" || SHADOW_STAMP_CC_VERSION=""
+    fi
+    return 0
+}
+
 # _attest_remedy <step> — a COPY-PASTEABLE attestation command (#248).
 #
 # Messages used to name `phase_attest` either with no source line at all, or
@@ -1429,6 +1487,7 @@ EOF
                     # guard on a deny, and recording there writes every denied
                     # event twice.
                     if [ "${PUSH_GATE_CAPTURE_REPLAY:-}" != "1" ] && command -v verify_shadow_record >/dev/null 2>&1; then
+                        _shadow_stamp_prepare || true
                         verify_shadow_record "${_SESSION_TOKEN}" "${_SUBJ_ROOT}" "${_vm_class}" "${_vm_reason}" \
                             "push" "${_SUBJ_REV}" "${_TRANSCRIPT:-}" "${_vm_material}" "${_vm_src}" "${_vm_gate}" 2>/dev/null || true
                     fi
@@ -1643,6 +1702,7 @@ EOF
                         # population a false-block rate is computed over.
                         _impl_ae=true
                         { [ "${_impl_material}" != "true" ] || [ "${_impl_recog_del}" = "true" ]; } && _impl_ae=false
+                        _shadow_stamp_prepare || true
                         implement_shadow_record "${_pe_action}" "${_SUBJ_ROOT}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" "${_impl_db}" "${_impl_material}" "true" "${_impl_detail}" "${_SUBJ_REV}" "${_impl_ae}" || true
                     fi
                 fi
@@ -1659,6 +1719,7 @@ EOF
                         # An attested episode emits no advisory either; it is already
                         # outside the rate via would_block:false, and recording the
                         # field honestly keeps the two membership signals consistent.
+                        _shadow_stamp_prepare || true
                         implement_shadow_record "${_pe_action}" "${_SUBJ_ROOT}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "attested" "${_impl_db}" "${_impl_material}" "false" "${_impl_detail}" "${_SUBJ_REV}" "false" || true
                     fi
                 fi
