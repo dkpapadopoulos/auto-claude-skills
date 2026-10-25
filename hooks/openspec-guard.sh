@@ -2087,6 +2087,22 @@ if [ -f "${_COMP_STATE}" ] && command -v jq >/dev/null 2>&1; then
         _guard_load "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" && \
             branch_ledger_has "requesting-code-review" && _in_completed=true
     fi
+    # Returned-reviewer leg (review-credit-from-evidence), LAST and only where
+    # the advisory would otherwise fire, so a path that is silent today gains
+    # no fork. A push or merge reuses the push gate's own leg (_rr_ok, memoised
+    # and measured on that command's subject), so this advisory cannot
+    # contradict the gate that just allowed it. Anything else (a commit) reads
+    # the process cwd's toplevel, HEAD, and that root's ledger key; an
+    # unresolvable root means not satisfied. No credited-skills.sh, no leg.
+    if [ "${_in_chain}" = "true" ] && [ "${_in_completed}" = "false" ] && [ "${_CREDITED_OK}" = "true" ]; then
+        if command -v _rr_ok >/dev/null 2>&1; then
+            _rr_ok && _in_completed=true
+        else
+            _ck4_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+            [ -n "${_ck4_root}" ] && \
+                review_reviewer_covers "${_ck4_root}" "${_ck4_root}" HEAD >/dev/null 2>&1 && _in_completed=true
+        fi
+    fi
     if [ "${_in_chain}" = "true" ] && [ "${_in_completed}" = "false" ]; then
         _review_ok=false
     fi
