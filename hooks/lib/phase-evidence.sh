@@ -14,7 +14,15 @@ _PHASE_EVID_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # requesting-code-review step reads (review-credit-from-evidence). A failed
 # load NARROWS: the step falls back to the four names credited before the lib
 # existed and no returned reviewer counts.
-[ -f "${_PHASE_EVID_DIR}/credited-skills.sh" ] && . "${_PHASE_EVID_DIR}/credited-skills.sh" 2>/dev/null || true
+# Sourced INSIDE a function (#192): skill-gate.sh sources this file bare under
+# `trap 'exit 0' ERR`, and the `&& … || true` form covers only the source's own
+# status — a command failing INSIDE the lib would trip that trap and turn every
+# skill-gate deny, for every step, into a silent allow. Bash 3.2 does not
+# inherit the ERR trap into a function without `set -E`, so a faulting lib
+# degrades here instead. Callers probe by function presence
+# (_phase_review_credited), never by this status.
+_phase_load_credited() { . "${_PHASE_EVID_DIR}/credited-skills.sh" 2>/dev/null; }
+[ -f "${_PHASE_EVID_DIR}/credited-skills.sh" ] && _phase_load_credited || true
 
 # Implementation-slot aliases: one canonical slot (codex #3).
 PHASE_IMPL_ALIASES="executing-plans subagent-driven-development agent-team-execution"

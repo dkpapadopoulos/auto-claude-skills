@@ -244,6 +244,43 @@ assert_equals "P3 invocation [receiving-code-review] => deny" "deny" "$(_sg_dec 
 teardown_test_env
 
 # ===========================================================================
+# P4: a credited-skills.sh that FAILS A COMMAND while being sourced must not
+# reach skill-gate's `trap 'exit 0' ERR` (#137/#192). skill-gate sources
+# phase-evidence.sh bare, so a top-level source of the lib there turns every
+# deny, for every step, into a silent allow. The lib's fault may only narrow.
+# ===========================================================================
+echo "--- P4: a faulting credited-skills.sh cannot silence skill-gate ---"
+_p3_fresh
+_SGCOPY="${TEST_TMPDIR}/plugin"
+mkdir -p "${_SGCOPY}"
+cp -R "${PROJECT_ROOT}/hooks" "${PROJECT_ROOT}/scripts" "${_SGCOPY}/"
+_sg_root() {  # <plugin-root> <skill>
+    : > "${HOME}/.claude/.phase-gate-events.log"
+    ( cd "${REPO}" && printf '{"tool_name":"Skill","tool_input":{"skill":"%s"},"transcript_path":"/tmp/proj/conv-X.jsonl"}' "$2" \
+        | CLAUDE_PLUGIN_ROOT="$1" SKILL_PROJECT_ROOT="${REPO}" /bin/bash "${GATE_HOOK}" 2>/dev/null )
+}
+_out="$(_sg_root "${_SGCOPY}" openspec-ship)"
+assert_equals "P4 control: the copied root denies with no evidence" "deny" "$(_sg_dec "${_out}")"
+for _fault in false _acs_no_such_command_xyz; do
+    awk -v f="${_fault}" 'NR==2{print f}1' "${PROJECT_ROOT}/hooks/lib/credited-skills.sh" \
+        > "${_SGCOPY}/hooks/lib/credited-skills.sh"
+    assert_contains "P4 fixture (${_fault}): the fault is in the lib" "${_fault}" \
+        "$(sed -n 2p "${_SGCOPY}/hooks/lib/credited-skills.sh")"
+    _out="$(_sg_root "${_SGCOPY}" openspec-ship)"
+    assert_equals "P4 lib runs '${_fault}' mid-file => still deny" "deny" "$(_sg_dec "${_out}")"
+    assert_contains "P4 lib runs '${_fault}' mid-file => the deny names requesting-code-review" \
+        "Step 'requesting-code-review'" "$(_sg_reason "${_out}")"
+    # A non-REVIEW step must keep denying too: the fault reached every step.
+    printf '{"chain":["brainstorming","writing-plans"],"completed":[]}\n' \
+        > "${HOME}/.claude/.skill-composition-state-${_TOK}"
+    _out="$(_sg_root "${_SGCOPY}" writing-plans)"
+    assert_equals "P4 lib runs '${_fault}' mid-file => a non-REVIEW step still denies" "deny" "$(_sg_dec "${_out}")"
+    printf '{"chain":["requesting-code-review","openspec-ship"],"completed":[]}\n' \
+        > "${HOME}/.claude/.skill-composition-state-${_TOK}"
+done
+teardown_test_env
+
+# ===========================================================================
 # G1/G2: scripts/gate-status.sh.
 # ===========================================================================
 _GS_TOK="session-gs-tok"
@@ -336,6 +373,40 @@ _out="$(_gs "${_COPY}")"
 assert_contains "G2 control: another missing lib keeps the generic warning" "FALL OPEN" "${_out}"
 teardown_test_env
 
+echo "--- G3: a control character inside the recorded sha is not credited ---"
+# The reader validates the RAW record (review_reviewer_covers rejects it), so
+# gate-status must too; scrubbing first deleted the character and showed a
+# forged 40-hex sha as covering.
+_g_fresh
+_ledger reviewer-returned "${C4}" "arm=allowlist"
+_rr_file="$( cd "${REPO}" && . "${LEDGER_LIB}" && printf '%s/reviewer-returned' "$(branch_ledger_dir "${REPO}")" )"
+_c4_head="$(printf '%s' "${C4}" | cut -c1-39)"; _c4_tail="$(printf '%s' "${C4}" | cut -c40)"
+printf '%s\001%s 2026-10-25T00:00:00Z arm=allowlist\n' "${_c4_head}" "${_c4_tail}" > "${_rr_file}"
+assert_equals "G3 fixture: the lib rejects the record" "1" \
+    "$( (cd "${REPO}" && . "${LEDGER_LIB}" && . "${PROJECT_ROOT}/hooks/lib/credited-skills.sh" && \
+        review_reviewer_covers "${REPO}" "${REPO}" HEAD >/dev/null 2>&1); printf '%s' "$?")"
+_out="$(_gs)"
+assert_not_contains "G3 control char in sha => no 'covers HEAD' claim" "covers HEAD" "$(_gs_line "${_out}")"
+assert_contains "G3 control char in sha => not credited" "not credited" "$(_gs_line "${_out}")"
+assert_contains "G3 control char in sha => row 2 WOULD DENY" "WOULD DENY" "$(_gs_row "${_out}" "2 chain REVIEW gate")"
+assert_contains "G3 control char in sha => row 5 names review" "requesting-code-review" "$(_gs_row "${_out}" "5 global fail-closed gate")"
+assert_equals "G3 the displayed line carries no control character" "0" \
+    "$(_gs_line "${_out}" | tr -d '\n' | LC_ALL=C grep -c '[[:cntrl:]]')"
+teardown_test_env
+
+echo "--- G4: --help keeps the numbered gate list whole and states the reviewer leg ---"
+_help="$(/bin/bash "${GATE_STATUS}" --help 2>/dev/null)"
+# The six numbered gates and their 33-space continuation lines form one block;
+# a line at any other indent inside it splits the list.
+assert_equals "G4 gates 1-6 are one uninterrupted block" "123456" \
+    "$(printf '%s\n' "${_help}" | awk '
+        /^  [1-6]\. /{ if (!s) s=1; if (s==1) printf "%s", substr($1,1,1); next }
+        s==1 && /^                                 [^ ]/{ next }
+        s==1{ s=2 }')"
+assert_contains "G4 --help states the reviewer leg" "returned allowlisted reviewer whose sha" "${_help}"
+assert_contains "G4 enforcement-map states the same leg" "returned allowlisted reviewer whose sha" \
+    "$(cat "${PROJECT_ROOT}/docs/enforcement-map.md")"
+
 # ===========================================================================
 # K1/K2: Check 4, the SHIP-phase REVIEW GUARD advisory.
 # ===========================================================================
@@ -416,6 +487,25 @@ assert_contains "K1b lib defines everything then returns 1 => not credited (REVI
 rm -f "${_KCOPY}/hooks/lib/credited-skills.sh"
 _out="$( cd "${REPO}" && printf '%s' "${_kp}" | CLAUDE_PLUGIN_ROOT="${_KCOPY}" /bin/bash "${GUARD}" 2>/dev/null )"
 assert_contains "K1b lib missing => covering reviewer not credited (REVIEW GUARD)" "${_RG}" "$(_k_ctx "${_out}")"
+teardown_test_env
+
+echo "--- K1c: a branch-ledger.sh that did not load does not feed Check 4's reviewer leg ---"
+# Same rule as the push gate's _rr_ok (which needs _LEDGER_OK): a ledger lib
+# that defines everything and then returns non-zero is NOT loaded, so the
+# reviewer leg on a commit must not consult it.
+_k_fresh
+_ledger reviewer-returned "${C4}" "arm=allowlist"
+_KCOPY="${TEST_TMPDIR}/plugin"
+mkdir -p "${_KCOPY}"
+cp -R "${PROJECT_ROOT}/hooks" "${PROJECT_ROOT}/scripts" "${PROJECT_ROOT}/config" "${_KCOPY}/"
+[ -d "${PROJECT_ROOT}/.claude-plugin" ] && cp -R "${PROJECT_ROOT}/.claude-plugin" "${_KCOPY}/"
+_kp="$(jq -nc '{"transcript_path":"/tmp/proj/conv-X.jsonl","tool_input":{"command":"git commit -m x"}}')"
+_out="$( cd "${REPO}" && printf '%s' "${_kp}" | CLAUDE_PLUGIN_ROOT="${_KCOPY}" /bin/bash "${GUARD}" 2>/dev/null )"
+assert_not_contains "K1c control: the copied root (ledger lib loads) credits" "${_RG}" "$(_k_ctx "${_out}")"
+printf 'return 1\n' >> "${_KCOPY}/hooks/lib/branch-ledger.sh"
+_out="$( cd "${REPO}" && printf '%s' "${_kp}" | CLAUDE_PLUGIN_ROOT="${_KCOPY}" /bin/bash "${GUARD}" 2>/dev/null )"
+assert_not_empty "K1c ledger lib returns 1: SHIP advisories still emitted" "$(_k_ctx "${_out}")"
+assert_contains "K1c ledger lib defines everything then returns 1 => REVIEW GUARD" "${_RG}" "$(_k_ctx "${_out}")"
 teardown_test_env
 
 echo "--- K2: Check 4 on a push agrees with the push gate ---"

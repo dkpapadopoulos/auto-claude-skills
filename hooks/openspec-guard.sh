@@ -2083,8 +2083,9 @@ if [ -f "${_COMP_STATE}" ] && command -v jq >/dev/null 2>&1; then
     jq -e '.completed | index("requesting-code-review")' "${_COMP_STATE}" >/dev/null 2>&1 && _in_completed=true
     # Ledger-aware (same OR as the push gate): a durable branch milestone counts as
     # completed, so this advisory does not contradict a ledger-satisfied push gate.
+    _ck4_ledger_ok=false
     if [ "${_in_completed}" = "false" ] && [ -f "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" ]; then
-        _guard_load "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" && \
+        _guard_load "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" && _ck4_ledger_ok=true && \
             branch_ledger_has "requesting-code-review" && _in_completed=true
     fi
     # Returned-reviewer leg (review-credit-from-evidence), LAST and only where
@@ -2093,11 +2094,13 @@ if [ -f "${_COMP_STATE}" ] && command -v jq >/dev/null 2>&1; then
     # and measured on that command's subject), so this advisory cannot
     # contradict the gate that just allowed it. Anything else (a commit) reads
     # the process cwd's toplevel, HEAD, and that root's ledger key; an
-    # unresolvable root means not satisfied. No credited-skills.sh, no leg.
+    # unresolvable root means not satisfied. No credited-skills.sh, no leg; and,
+    # as _rr_ok requires _LEDGER_OK, no leg on a branch-ledger.sh whose load
+    # above did not succeed.
     if [ "${_in_chain}" = "true" ] && [ "${_in_completed}" = "false" ] && [ "${_CREDITED_OK}" = "true" ]; then
         if command -v _rr_ok >/dev/null 2>&1; then
             _rr_ok && _in_completed=true
-        else
+        elif [ "${_ck4_ledger_ok}" = "true" ]; then
             _ck4_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
             [ -n "${_ck4_root}" ] && \
                 review_reviewer_covers "${_ck4_root}" "${_ck4_root}" HEAD >/dev/null 2>&1 && _in_completed=true

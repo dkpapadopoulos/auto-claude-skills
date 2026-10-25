@@ -40,12 +40,12 @@ The push gate (hooks/openspec-guard.sh) evaluates, in ORDER:
   5. global fail-closed gate     deny any agent push without a REVIEW record
                                  AND a VERIFY signal for this branch
                                  (ledger, .completed, or clean verdict @HEAD)
-  REVIEW evidence at gates 2 and 5 includes a returned allowlisted reviewer
-  whose sha covers the push.
   6. routing governance          deny pushes touching skills/|config/|hooks/
                                  in a routing repo without a clean verdict
                                  covering those changes
   gh pr merge / gh api merge traverse gates 2-5 like a push (audit F2).
+  Gates 2 and 5 also credit a returned allowlisted reviewer whose sha
+  covers the push as REVIEW evidence.
   REVIEW staleness (HEAD moved past the review SHA) is ADVISORY BY DESIGN —
   backtested 2026-07-15: every deny variant would have blocked 56-94% of
   clean merges and caught 0 defects (openspec/changes/gate-status/).
@@ -161,12 +161,17 @@ _rr_covers=false; _rr_val="none"
 if [ "${_CREDITED_OK}" != "true" ]; then
     _rr_val="not consulted (credited-skills.sh unavailable)"
 elif command -v branch_ledger_sha_tag >/dev/null 2>&1; then
-    _rr_st="$(branch_ledger_sha_tag reviewer-returned "${_proot}" 2>/dev/null | _scrub)" || _rr_st=""
+    # Validated RAW, scrubbed only for display: scrubbing first would delete a
+    # control character the lib's reader rejects, and show the result as
+    # covering (review M1). The tag is charset-filtered by branch_ledger_sha_tag,
+    # so only the sha can carry one.
+    _rr_st="$(branch_ledger_sha_tag reviewer-returned "${_proot}" 2>/dev/null)" || _rr_st=""
     case "${_rr_st}" in
         "") ;;
         *" arm=allowlist")
             _rr_sha="${_rr_st%% *}"
             review_sha_covers "${_rr_sha}" "${_proot}" HEAD; _rr_rc=$?
+            _rr_sha="$(printf '%s' "${_rr_sha}" | _scrub)"
             case "${_rr_rc}" in
                 0) _rr_val="@ ${_rr_sha} — covers HEAD"; _rr_covers=true ;;
                 1) _rr_val="@ ${_rr_sha} — does NOT cover HEAD (material change since, or not an ancestor)" ;;
