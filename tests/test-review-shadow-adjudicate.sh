@@ -1148,11 +1148,38 @@ case "${_of5}" in
         _record_pass "F5 ...the comma-bearing id is reported, not silently absorbed" ;;
     *) _record_fail "F5 ...the comma-bearing id is reported, not silently absorbed" "got: ${_of5}" ;;
 esac
+# Accounting must close. The negative-count grep alone could not fail: a
+# negative unplaced count was HIDDEN, never printed, so the cell was green under
+# every mutant (re-review). The inconsistency line is what a negative count now
+# prints, so its absence is the assertion that can go red.
+case "${_of5}" in
+    *"record accounting is inconsistent"*)
+        _record_fail "F5 record accounting closes (no inconsistency line)" "got: ${_of5}" ;;
+    *) _record_pass "F5 record accounting closes (no inconsistency line)" ;;
+esac
 if printf '%s\n' "${_of5}" | grep -qE '(: |; |\()-[0-9]'; then
     _record_fail "F5 no count in the output is negative" "got: ${_of5}"
 else
     _record_pass "F5 no count in the output is negative"
 fi
+
+# F8 the id shape is anchored at the END OF THE STRING. jq's `$` also matches
+# before a trailing newline, so "abcd\n" passed `^[0-9a-f]{1,16}$` (measured).
+_F8="${TMP}/emf8.jsonl"; _F8s="${TMP}/emf8s.jsonl"; rm -f "${_F8}" "${_F8s}"
+_em_rec "${_F8s}" tok-f8 reviewer-returned covered
+jq -c '.record_id = "abcd\n"' "${_F8s}" > "${_F8}" 2>/dev/null
+_of8="$(_em "${_F8}")"
+assert_equals "F8 a record_id with a trailing newline is not in N" "0" "$(_em_eps "${_of8}")"
+case "${_of8}" in
+    *"excluded: 1 record(s) at version ${PV} with a record_id not of the producer's shape"*)
+        _record_pass "F8 ...and is reported as excluded with its cause" ;;
+    *) _record_fail "F8 ...and is reported as excluded with its cause" "got: ${_of8}" ;;
+esac
+# CONTROL: the 16-hex maximum is still accepted, and 17 is not.
+jq -c '.record_id = "0123456789abcdef"' "${_F8s}" > "${_F8}" 2>/dev/null
+assert_equals "F8 CONTROL: a 16-hex id is counted" "1" "$(_em_eps "$(_em "${_F8}")")"
+jq -c '.record_id = "0123456789abcdef0"' "${_F8s}" > "${_F8}" 2>/dev/null
+assert_equals "F8 CONTROL: a 17-hex id is not counted" "0" "$(_em_eps "$(_em "${_F8}")")"
 
 # F6 (M3) the blind-spot note names all three witnesses an unknown-dispatch
 # reviewer can fall through to; `none` is the one indistinguishable from "no

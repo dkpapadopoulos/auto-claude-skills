@@ -593,7 +593,9 @@ EOF
 # records' ids -- inflating misses and driving the unplaced count negative,
 # which hid its line. None is producer-reachable (the id is hashed over a
 # nonce), so excluding them only costs a hand-edited corpus its rows. The
-# shape is 1-16 lowercase hex, NOT exactly 16: the producer's cksum fallback
+# shape is anchored with \A and \z, not ^ and $: jq's `$` also matches before
+# a trailing newline, so "abcd\n" passed. It is 1-16 lowercase hex, NOT
+# exactly 16: the producer's cksum fallback
 # writes a shorter all-digit id, and a real record must not be excluded.
 cmd_evidence_miss() {
     local _pv="${REQUIRED_PREDICATE_VERSION}" _rows _eps _counts _join
@@ -613,7 +615,7 @@ cmd_evidence_miss() {
           elif ((.review_witness  | inv(["reviewer-returned","verdict","invocation","none"]))
             and (.review_coverage | inv(["covered","uncovered","cannot-check","none"]))) | not then "J"
           elif (((.would_block | type) == "boolean") and .would_block == true) | not then "W"
-          elif ((.record_id | type) != "string") or ((.record_id | test("^[0-9a-f]{1,16}$")) | not) then "I"
+          elif ((.record_id | type) != "string") or ((.record_id | test("\\A[0-9a-f]{1,16}\\z")) | not) then "I"
           else (["P", .repo, .branch, .session_token, .ts, .record_id,
                  .review_witness, .review_coverage] | map(cell) | @tsv)
           end' "${SHADOW_LOG}" 2>/dev/null \
