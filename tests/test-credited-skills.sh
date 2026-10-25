@@ -48,7 +48,7 @@ test_c1_credited_names() {
 test_c2_near_misses() {
     local n
     . "${LIB}" 2>/dev/null
-    for n in verification-before-completion receiving-code-review code-reviewer review code-review-x xcode-review simplify executing-plans "" "requesting-code-review:"; do
+    for n in verification-before-completion receiving-code-review code-reviewer review code-review-x xcode-review simplify executing-plans "" "requesting-code-review:" "code-review review-pr" "agent-team-execution agent-team-review" " code-review" "code-review " "Code-Review" "code-review;x"; do
         credited_review_skill "$n" 2>/dev/null
         assert_equals "C2 near-miss '${n}' not credited" "1" "$?"
     done
@@ -94,6 +94,12 @@ test_c4_coverage() {
     assert_equals "C4 unknown 40-hex cannot-check" "2" "$?"
     review_sha_covers "$A" "/nonexistent" "$C" 2>/dev/null; assert_equals "C4 bad root cannot-check" "2" "$?"
     review_sha_covers "-x" "$R" "$C" 2>/dev/null; assert_equals "C4 option-shaped sha cannot-check" "2" "$?"
+    review_sha_covers "$(printf '%s' "$A" | tr a-f A-F)" "$R" "$B" 2>/dev/null
+    assert_equals "C4 uppercase sha cannot-check" "2" "$?"
+    review_sha_covers "abcdef0" "$R" "$B" 2>/dev/null; assert_equals "C4 unknown short sha cannot-check" "2" "$?"
+    review_sha_covers "$A" "$R" "no-such-rev" 2>/dev/null; assert_equals "C4 invalid non-empty rev cannot-check" "2" "$?"
+    review_sha_covers "$A" "$R" "--output=/tmp/x" 2>/dev/null; assert_equals "C4 option-shaped rev cannot-check" "2" "$?"
+    review_sha_covers "${A%"${A#???????}"}" "$R" "$B" 2>/dev/null; assert_equals "C4 unambiguous 7-char sha covered" "0" "$?"
     rc="$(review_sha_covers "$A" "$R" "$B" 2>&1)"
     assert_equals "C4 prints nothing" "" "$rc"
 }

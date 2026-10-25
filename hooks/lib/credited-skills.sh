@@ -17,6 +17,9 @@ CREDITED_REVIEW_SKILLS="requesting-code-review subagent-driven-development agent
 # over the scalar (zsh does not word-split it).
 credited_review_skill() {
     local _bare="${1:-}"
+    # Reject anything outside the plugin:name charset (whitespace included), so
+    # a multi-token string cannot match an adjacent list entry.
+    case "${_bare}" in *[!A-Za-z0-9._:-]*) return 1 ;; esac
     _bare="${_bare##*:}"
     [ -n "${_bare}" ] || return 1
     case " ${CREDITED_REVIEW_SKILLS} " in
