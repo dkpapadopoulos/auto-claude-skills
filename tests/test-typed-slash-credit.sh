@@ -21,7 +21,7 @@
 #   S8  uninstalled names record nothing (each with an installed control)
 #   S9  a typed /superpowers:verification-before-completion records no VERIFY milestone
 #   S10 credited-skills.sh unreadable: nothing, exit 0, empty stdout
-#   S11 fork cell: jq calls on non-slash / uncredited-slash prompts equal the BASE hook's
+#   S11 fork cell: jq calls on non-slash / uncredited-slash prompts equal the pre-change hook's
 #   S12 registry missing or corrupt: built-ins only
 #   S13 e2e: /code-review lets the push through; a mention does not
 #   S14 leading whitespace, a tab or a newline after the name still credit
@@ -35,7 +35,7 @@
 #   L*  a lib faulting at load or call leaves the hook at exit 0 with empty stdout
 #   W*  carriage return and (UTF-8) no-break space before the first token credit
 #   V*  a typed BUILT-IN credits only on Claude Code >= 2.1.308 (AI_AGENT); registry
-#       skills credit whatever the version
+#       skills credit whatever the version; without acs_cc_version only built-ins fail
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -347,20 +347,37 @@ _jq_calls() {
     _turn "$1" "$2" PATH="${SHIM}:${PATH}" JQ_COUNT_LOG="${_log}"
     wc -l < "${_log}" | tr -d ' '
 }
-# The counterfactual is the hook as it was BEFORE this change (BASE d8f84e7b), so a
-# mutant that adds a fork to the non-slash path -- on line 397's left side, say -- is
-# counted in one arm only. (Comparing against a lib-deleted copy of the CURRENT hook
-# could not see it: both arms would run the same line.)
-S11_BASE_REV="d8f84e7b"
+# The counterfactual is the hook as it was BEFORE this change, so a mutant that adds a
+# fork to the non-slash path -- on line 397's left side, say -- is counted in one arm
+# only. (Comparing against a lib-deleted copy of the CURRENT hook could not see it: both
+# arms would run the same line.) It is built from the CURRENT hook with the slash line
+# put back to the pre-change literal, NOT read from git history: a shallow clone or a
+# rewritten branch would turn a history read red, and one red test blocks every push.
 COPY_BASE="${TEST_TMPDIR}/root-base"
 mkdir -p "${COPY_BASE}" && cp -R "${COPY_STOCK}/hooks" "${COPY_STOCK}/config" "${COPY_BASE}/"
-if git -C "${PROJECT_ROOT}" show "${S11_BASE_REV}:hooks/skill-activation-hook.sh" \
-        > "${COPY_BASE}/hooks/skill-activation-hook.sh" 2>/dev/null \
-   && ! grep -q 'typed-slash-credit' "${COPY_BASE}/hooks/skill-activation-hook.sh" \
-   && grep -q 'typed-slash-credit' "${COPY_STOCK}/hooks/skill-activation-hook.sh"; then
-    _record_pass "S11 setup: base hook ${S11_BASE_REV} read; it predates typed credit, the stock copy has it"
+# The slash line is found by text unique to it ANYWHERE on the line (a literal `index`,
+# not a regex), so a fork prepended to it is swapped out with it and shows in the counts.
+# Values via ENVIRON, since awk -v would process backslash escapes. LIMIT: a fork added on
+# some OTHER line is copied into both arms and is not seen here; this pins line 397.
+S11_SLASH_MARK='hooks/lib/typed-slash-credit.sh" ]] && ('
+S11_OLD_LINE='[[ "$PROMPT" =~ ^[[:space:]]*/ ]] && exit 0'
+S11_MARK="${S11_SLASH_MARK}" S11_OLD="${S11_OLD_LINE}" awk '
+    index($0, ENVIRON["S11_MARK"]) > 0 { print ENVIRON["S11_OLD"]; n++; next }
+    { print }
+    END { print n + 0 > "/dev/stderr" }' \
+    "${COPY_STOCK}/hooks/skill-activation-hook.sh" \
+    > "${COPY_BASE}/hooks/skill-activation-hook.sh" 2> "${TEST_TMPDIR}/s11-subst-count"
+assert_equals "S11 setup: exactly one slash line was replaced in the baseline hook" "1" \
+    "$(tr -d ' \n' < "${TEST_TMPDIR}/s11-subst-count")"
+if ! cmp -s "${COPY_STOCK}/hooks/skill-activation-hook.sh" "${COPY_BASE}/hooks/skill-activation-hook.sh" \
+   && grep -qxF "${S11_OLD_LINE}" "${COPY_BASE}/hooks/skill-activation-hook.sh" \
+   && ! grep -qF "${S11_SLASH_MARK}" "${COPY_BASE}/hooks/skill-activation-hook.sh" \
+   && grep -qF "${S11_SLASH_MARK}" "${COPY_STOCK}/hooks/skill-activation-hook.sh" \
+   && [ "$(wc -l < "${COPY_BASE}/hooks/skill-activation-hook.sh")" = "$(wc -l < "${COPY_STOCK}/hooks/skill-activation-hook.sh")" ]; then
+    _record_pass "S11 setup: the baseline differs from the stock hook only by the pre-change slash line"
 else
-    _record_fail "S11 setup: base hook ${S11_BASE_REV} read" "cannot check: commit unreadable (shallow clone?) or copies wrong"
+    _record_fail "S11 setup: the baseline differs from the stock hook only by the pre-change slash line" \
+        "substitution did not apply, or the copies are wrong"
 fi
 for _p in "please refactor the parser" "fix the failing login test" "/simplify x"; do
     _with="$(_jq_calls "${_p}" "${COPY_STOCK}")"
@@ -370,7 +387,7 @@ for _p in "please refactor the parser" "fix the failing login test" "/simplify x
     else
         _record_fail "S11 setup: the shim counted jq calls for '${_p}'" "count '${_with}'"
     fi
-    assert_equals "S11 '${_p}': jq calls now == at base ${S11_BASE_REV}" "${_base}" "${_with}"
+    assert_equals "S11 '${_p}': jq calls now == with the pre-change slash line" "${_base}" "${_with}"
 done
 # The lib itself adds no jq to an uncredited slash command (kills a lib that forks first).
 assert_equals "S11 '/simplify x': jq calls with the lib == without it" \
@@ -570,6 +587,30 @@ _v_turn -unset- "/code-review" "${REG_CR_PLUGIN}"
 _expect_credit "V4 AI_AGENT unset, /code-review provided by an available plugin: credits" "code-review"
 _v_turn -unset- "/code-review:code-review" "${REG_CR_PLUGIN}"
 _expect_credit "V4 AI_AGENT unset, /code-review:code-review (plugin): credits" "code-review"
+# V6: without acs_cc_version the BUILT-IN branch fails closed and only it: a copied root
+# whose credited-skills.sh has that one function deleted. The capture then yields nothing
+# (command not found, silenced by the hook's subshell), so /code-review credits nothing,
+# while the registry plugin command /review-pr still credits. AI_AGENT is the good value.
+COPY_NOCCV="${TEST_TMPDIR}/root-noccv"
+mkdir -p "${COPY_NOCCV}" && cp -R "${COPY_STOCK}/hooks" "${COPY_STOCK}/config" "${COPY_NOCCV}/"
+awk '/^acs_cc_version\(\) \{/ { skip = 1 } skip && /^}/ { skip = 0; next } !skip { print }' \
+    "${COPY_STOCK}/hooks/lib/credited-skills.sh" > "${COPY_NOCCV}/hooks/lib/credited-skills.sh"
+if ! grep -q 'acs_cc_version()' "${COPY_NOCCV}/hooks/lib/credited-skills.sh" \
+   && grep -q 'acs_cc_version()' "${COPY_STOCK}/hooks/lib/credited-skills.sh" \
+   && ( . "${COPY_NOCCV}/hooks/lib/credited-skills.sh" && command -v credited_review_skill \
+        && command -v credited_review_builtin && command -v review_reviewer_covers \
+        && ! command -v acs_cc_version ) >/dev/null 2>&1; then
+    _record_pass "V6 setup: the copy lacks only acs_cc_version (other functions still load)"
+else
+    _record_fail "V6 setup: the copy lacks only acs_cc_version (other functions still load)" "copy wrong"
+fi
+_new_home; _turn "/code-review" "${COPY_NOCCV}"
+_expect_nothing "V6 acs_cc_version missing: built-in /code-review"
+_new_home; _turn "/review-pr" "${COPY_NOCCV}"
+_expect_credit "V6 acs_cc_version missing: registry /review-pr still credits" "review-pr"
+_new_home; _turn "/code-review" "${COPY_STOCK}"
+_expect_credit "V6 control: the stock copy credits built-in /code-review" "code-review"
+
 # acs_cc_version itself (credited-skills.sh): one definition, reused by Task 7.
 _ccv() { ( . "${PROJECT_ROOT}/hooks/lib/credited-skills.sh" && AI_AGENT="$1" acs_cc_version; echo "|rc=$?" ); }
 assert_equals "V5 acs_cc_version claude-code_2-1-308_harness" "2.1.308|rc=0" "$(_ccv claude-code_2-1-308_harness)"
