@@ -270,9 +270,10 @@ test_openspec_ship_session_token_resolution() {
         "hooks/lib/session-token.sh" "$content"
 
     # Every prose instruction must route through the resolver block, not tell
-    # the model to read the singleton directly.
+    # the model to read the singleton directly — in SKILL.md or any reference
+    # file the model reads for this skill.
     assert_not_contains "ship: no prose 'read the singleton for the token' (#157)" \
-        'Read `~/.claude/.skill-session-token`' "$content"
+        'Read `~/.claude/.skill-session-token`' "$(cat "${SKILL_FILE}" "${REFS_DIR}"/*.md)"
 
     # The singleton may only survive as the LAST-RESORT fallback (`... || cat ...`),
     # never as a primary `TOKEN=$(cat ...)` assignment — in ANY quoting style, so a
