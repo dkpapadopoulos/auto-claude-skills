@@ -79,7 +79,16 @@ EOF
         [ -f "${_f}" ] || continue
         _n=$((_n + 1))
         _name="$(basename "$(dirname "${_f}")")"
-        _bytes="$(wc -c < "${_f}" | tr -d ' ')"
+        _bytes="$(wc -c < "${_f}" 2>/dev/null | tr -d ' ')"
+        # The measured side is validated like the ceiling side: an unreadable
+        # file leaves _bytes empty, every `[ -gt ]` below then errors out, and
+        # the file would be reported by nothing while the loop still reaches
+        # CHECKED. 0 is a real size, so this is not _reattach_is_ceiling.
+        case "${_bytes}" in
+            ''|*[!0-9]*)
+                echo "VIOLATION: could not measure ${_f} (got '${_bytes}') — an unmeasured file cannot be shown to fit"
+                continue ;;
+        esac
         _ceil="$(printf '%s\n' "${_pending}" | awk -v n="${_name}" '$1 == n { print $2; exit }')"
         _reattach_is_ceiling "${_ceil}" || _ceil=""
         if [ -n "${_ceil}" ]; then
@@ -114,21 +123,80 @@ _scratch_skill() {
 _violations_of() { printf '%s\n' "$1" | grep '^VIOLATION: ' || true; }
 _checked_of() { printf '%s\n' "$1" | sed -n 's/^CHECKED //p'; }
 
-test_real_tree_fits_budget() {
-    local _out _v _n
-    _out="$(_reattach_violations "${PROJECT_ROOT}/skills" "${REATTACH_PENDING}" "${REATTACH_MIN_SKILLS}")"
-    _v="$(_violations_of "${_out}")"
-    _n="$(_checked_of "${_out}")"
-    # Gate on the sentinel's PRESENCE: a function that aborted partway prints
-    # no violations either, and must not read as clean.
+# _reattach_verdict <output> — the real-tree cell's decision, extracted so a
+# control can run it on a truncated output. Prints `PASS <n>` or `FAIL <why>`.
+# Gates on the sentinel's PRESENCE: a function that aborted partway prints no
+# violations either, and must not read as clean.
+_reattach_verdict() {
+    local _v _n
+    _v="$(_violations_of "$1")"
+    _n="$(_checked_of "$1")"
     if case "${_n}" in ''|*[!0-9]*) true ;; *) false ;; esac; then
-        _record_fail "owned skills fit the re-attach budget" \
-            "the check printed no CHECKED count ('${_n}') — it did not run to its end, so the absence of violations means nothing"
+        echo "FAIL the check printed no CHECKED count ('${_n}') — it did not run to its end, so the absence of violations means nothing"
     elif [ -n "${_v}" ]; then
-        _record_fail "owned skills fit the re-attach budget (${_n} checked)" "${_v}"
+        echo "FAIL (${_n} checked) ${_v}"
     else
-        _record_pass "owned skills fit the re-attach budget (${_n} checked, pending: $(printf '%s\n' "${REATTACH_PENDING}" | awk '{print $1}' | tr '\n' ' '))"
+        echo "PASS ${_n}"
     fi
+}
+
+test_real_tree_fits_budget() {
+    local _out _verdict
+    _out="$(_reattach_violations "${PROJECT_ROOT}/skills" "${REATTACH_PENDING}" "${REATTACH_MIN_SKILLS}")"
+    _verdict="$(_reattach_verdict "${_out}")"
+    case "${_verdict}" in
+        "PASS "*)
+            _record_pass "owned skills fit the re-attach budget (${_verdict#PASS } checked, pending: $(printf '%s\n' "${REATTACH_PENDING}" | awk '{print $1}' | tr '\n' ' '))" ;;
+        *)
+            _record_fail "owned skills fit the re-attach budget" "${_verdict#FAIL }" ;;
+    esac
+}
+
+test_control_truncated_output_fails_the_verdict() {
+    local _d="${TEST_TMPDIR}/truncated" _out _cut
+    _scratch_skill "${_d}" fits 1000
+    _out="$(_reattach_violations "${_d}" "" 1)"
+    # Same input, the output cut before its last line: no violations, no
+    # sentinel — what a check that stopped partway would leave behind.
+    _cut="$(printf '%s\n' "${_out}" | sed '$d')"
+    assert_equals "control: the complete output of a clean tree is a pass" \
+        "PASS 1" "$(_reattach_verdict "${_out}")"
+    assert_contains "red control: the same output without its CHECKED line fails" \
+        "FAIL the check printed no CHECKED count" "$(_reattach_verdict "${_cut}")"
+}
+
+# Mode-000 files are restored on any exit, so an aborted run cannot leave an
+# unreadable file behind for the TEST_TMPDIR cleanup.
+_REATTACH_LOCKED_DIR=""
+_reattach_unlock() {
+    [ -n "${_REATTACH_LOCKED_DIR}" ] || return 0
+    chmod 644 "${_REATTACH_LOCKED_DIR}"/*/SKILL.md 2>/dev/null
+    _REATTACH_LOCKED_DIR=""
+}
+
+test_control_unreadable_file_fails() {
+    local _d="${TEST_TMPDIR}/unreadable" _out
+    _scratch_skill "${_d}" pending-one 30000
+    _scratch_skill "${_d}" plain-one 30000
+    _REATTACH_LOCKED_DIR="${_d}"
+    trap _reattach_unlock EXIT
+    chmod 000 "${_d}/pending-one/SKILL.md" "${_d}/plain-one/SKILL.md"
+    if cat "${_d}/plain-one/SKILL.md" >/dev/null 2>&1; then
+        _reattach_unlock
+        _record_fail "red control: an unreadable SKILL.md is reported" \
+            "a mode-000 file is still readable here (running as root?), so this control cannot exercise the unmeasured path"
+        return
+    fi
+    _out="$(_reattach_violations "${_d}" "pending-one 40000" 1 2>&1)"
+    _reattach_unlock
+    assert_contains "red control: an unreadable pending SKILL.md is reported, not passed" \
+        "VIOLATION: could not measure ${_d}/pending-one/SKILL.md" "${_out}"
+    assert_contains "red control: an unreadable non-pending SKILL.md is reported, not passed" \
+        "VIOLATION: could not measure ${_d}/plain-one/SKILL.md" "${_out}"
+    assert_not_contains "control: no comparison ran on the unmeasured size" \
+        "integer expression expected" "${_out}"
+    assert_contains "control: the verdict on that output is a failure" \
+        "FAIL " "$(_reattach_verdict "${_out}")"
 }
 
 test_control_over_budget_fails_naming_file_and_size() {
@@ -221,6 +289,8 @@ test_control_empty_glob_fails_the_floor() {
 setup_test_env
 
 test_real_tree_fits_budget
+test_control_truncated_output_fails_the_verdict
+test_control_unreadable_file_fails
 test_control_over_budget_fails_naming_file_and_size
 test_control_pending_skill_that_grows_fails
 test_control_pending_skill_that_shrinks_must_lower_ceiling
