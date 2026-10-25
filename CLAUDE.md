@@ -69,21 +69,23 @@ Six canonical homes for project context. Read this before guessing where docs li
 ### Obligations that no rule file can deliver
 
 **Which actions load a path-scoped rule depends on the Claude Code version.** Measured
-2026-09-27/28 on CLI 2.1.274: the `Read` tool ONLY — not Bash `cat`/`sed`/`grep`, not
-`Write`, not Serena's readers (verified with a positive control on the identical file:
-`Read` loaded the rule, Serena loaded nothing); `Edit` delivered only because it
-requires a prior `Read`. Since then the changelog says 2.1.288 loads rules when `Write`
+2026-09-27 on CLI 2.1.274: the `Read` tool ONLY — not Bash `cat`/`sed`/`grep`, not
+`Write`; `Edit` delivered only because it requires a prior `Read`. Serena's readers
+loaded nothing (2026-09-28, version unrecorded; positive control on the identical file:
+`Read` loaded the rule). Since then the changelog says 2.1.288 loads rules when `Write`
 or `Edit` creates or changes a file in scope, and 2.1.293 on a single-file Bash
-`cat`/`head`/`tail`/`sed -n`/`grep`. Probed live 2026-10-23 on 2.1.304: a lone
-`sed -n` read loaded the rule; the same read inside a compound (`…; true`) or piped
-(`… | cat`) command loaded nothing. Serena and the `Write`/`Edit` change were not re-probed.
+`cat`/`head`/`tail`/`sed -n`/`grep`. Live probes, one trial each: a lone `sed -n` read
+loaded the rule on 2.1.304 (2026-10-23) and on 2.1.308; a compound read loaded none on
+2.1.304 (`…; true`) but did load on 2.1.308 (`…; true` and `cd … && …`); a piped read (`… | cat`)
+loaded none on either. Serena and the `Write`/`Edit` change were not re-probed.
 Two consequences, and both are why the list below is HERE rather than in a rule file.
 
 **(1) Read a governed file before editing it.** Before changing anything under
 `hooks/`, `config/`, `scripts/`, `tests/` or `skills/`, open it with `Read` — the one
-action measured to deliver its governing rule on every version tested. A compound or
-piped Bash read delivered none on 2.1.304, and editing via `sed -i`, a heredoc or a
-script was measured to deliver none on 2.1.274 and has not been re-measured. This deliberately overrides the general
+action that loaded its rule in every probe so far, and the one the changelog never
+narrowed. Which Bash reads deliver varies by version (above), and that editing via
+`sed -i`, a heredoc or a script delivers none was inferred on 2.1.274 from the Bash-read
+result, never measured. This deliberately overrides the general
 preference for Bash reads, for these paths only. Same for Serena: its symbol tools are
 right for *finding* things and deliver no rule, so Read the file before you change it.
 
