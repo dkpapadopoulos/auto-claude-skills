@@ -8,10 +8,12 @@
 # base-directory header and the frontmatter is stripped first, so a file of at
 # most 19,500 BYTES (bytes are at least characters) survives whole.
 #
-# Skills not yet split sit on a pending list with a ceiling measured at the
-# branch base. A ceiling may only fall: a pending skill that grows fails, and one
-# that drops under the budget while still listed fails too, so the list cannot
-# outlive the work it tracks.
+# Skills not yet split sit on a pending list whose ceiling is an EQUALITY
+# ratchet, like INCIDENT_SKILL_WORD_BASELINE: it must equal the file's current
+# byte size. A pending skill that grows fails; one that shrinks fails until its
+# ceiling is lowered in the same commit, so slack is never banked for regrowth;
+# and one that drops under the budget while still listed fails too, so the list
+# cannot outlive the work it tracks.
 #
 # Every cell below, the real-tree one included, calls the SAME check function;
 # the controls only change its inputs (a scratch skills dir, a scratch list).
@@ -25,8 +27,9 @@ echo "=== test-skill-reattach-budget.sh ==="
 
 REATTACH_BUDGET_BYTES=19500
 
-# One "<skill> <ceiling-bytes>" per line. Remove an entry in the same commit that
-# splits the skill; lower a ceiling whenever a skill shrinks; never raise one.
+# One "<skill> <ceiling-bytes>" per line, each ceiling equal to that SKILL.md's
+# current `wc -c`. Remove an entry in the same commit that splits the skill;
+# lower a ceiling in the same commit that shrinks the skill; never raise one.
 REATTACH_PENDING="incident-analysis 83053
 alert-hygiene 65670
 agent-team-review 47871
@@ -35,22 +38,38 @@ runtime-validation 23790"
 # Owned skills at the time of writing; the real-tree cell fails below this.
 REATTACH_MIN_SKILLS=20
 
+# _reattach_is_ceiling <value> — succeeds only for a count `[ -gt ]` can always
+# evaluate: digits only, no leading zero, at most 8 digits. An unbounded count
+# (20 digits) makes the comparison error out, and with no `set -e` that error
+# falls through as "not over" — a parse failure turned into a silent pass.
+_reattach_is_ceiling() {
+    case "${1:-}" in
+        ''|*[!0-9]*|0*|?????????*) return 1 ;;
+    esac
+    return 0
+}
+
 # _reattach_violations <skills-dir> <pending-list> <min-skills>
 #
 # Prints one `VIOLATION: ...` line per problem, nothing when clean, and a final
 # `CHECKED <n>`. Records nothing itself, so the controls can call it on scratch
 # input and assert on exactly what it reports.
 _reattach_violations() {
-    local _dir="$1" _pending="$2" _min="$3" _f _name _bytes _ceil _n=0 _line _pname _pceil
+    local _dir="$1" _pending="$2" _min="$3" _f _name _bytes _ceil _n=0 _line _pname _pceil _seen=" "
     # The list is validated before it is used: a ceiling that `[ -gt ]` cannot
     # evaluate makes the comparison error out and fall through as "not over".
     while IFS= read -r _line || [ -n "${_line}" ]; do
         [ -z "${_line}" ] && continue
         _pname="${_line%% *}"
         _pceil="${_line#* }"
-        case "${_pceil}" in
-            ''|*[!0-9]*|0*) echo "VIOLATION: pending entry '${_line}' has no valid byte ceiling" ;;
+        _reattach_is_ceiling "${_pceil}" || \
+            echo "VIOLATION: pending entry '${_line}' has no valid byte ceiling"
+        # A second line for the same skill would be ignored (the lookup below
+        # takes the first), so a stale duplicate could sit in the list unseen.
+        case "${_seen}" in
+            *" ${_pname} "*) echo "VIOLATION: pending entry '${_pname}' is listed more than once — keep one line" ;;
         esac
+        _seen="${_seen}${_pname} "
         [ -f "${_dir}/${_pname}/SKILL.md" ] || \
             echo "VIOLATION: pending entry '${_pname}' names no ${_dir}/${_pname}/SKILL.md — remove it from the pending list"
     done <<EOF
@@ -62,14 +81,14 @@ EOF
         _name="$(basename "$(dirname "${_f}")")"
         _bytes="$(wc -c < "${_f}" | tr -d ' ')"
         _ceil="$(printf '%s\n' "${_pending}" | awk -v n="${_name}" '$1 == n { print $2; exit }')"
-        case "${_ceil}" in
-            ''|*[!0-9]*|0*) _ceil="" ;;
-        esac
+        _reattach_is_ceiling "${_ceil}" || _ceil=""
         if [ -n "${_ceil}" ]; then
             if [ "${_bytes}" -gt "${_ceil}" ]; then
                 echo "VIOLATION: ${_f} is ${_bytes} bytes, over its pending ceiling of ${_ceil} — a pending skill may not grow"
             elif [ "${_bytes}" -le "${REATTACH_BUDGET_BYTES}" ]; then
                 echo "VIOLATION: ${_f} is ${_bytes} bytes, within the ${REATTACH_BUDGET_BYTES}-byte budget — remove it from the pending list"
+            elif [ "${_bytes}" -lt "${_ceil}" ]; then
+                echo "VIOLATION: ${_f} is ${_bytes} bytes, under its pending ceiling of ${_ceil} — lower the ceiling to ${_bytes}"
             fi
         elif [ "${_bytes}" -gt "${REATTACH_BUDGET_BYTES}" ]; then
             echo "VIOLATION: ${_f} is ${_bytes} bytes, over the ${REATTACH_BUDGET_BYTES}-byte re-attach budget"
@@ -100,7 +119,12 @@ test_real_tree_fits_budget() {
     _out="$(_reattach_violations "${PROJECT_ROOT}/skills" "${REATTACH_PENDING}" "${REATTACH_MIN_SKILLS}")"
     _v="$(_violations_of "${_out}")"
     _n="$(_checked_of "${_out}")"
-    if [ -n "${_v}" ]; then
+    # Gate on the sentinel's PRESENCE: a function that aborted partway prints
+    # no violations either, and must not read as clean.
+    if case "${_n}" in ''|*[!0-9]*) true ;; *) false ;; esac; then
+        _record_fail "owned skills fit the re-attach budget" \
+            "the check printed no CHECKED count ('${_n}') — it did not run to its end, so the absence of violations means nothing"
+    elif [ -n "${_v}" ]; then
         _record_fail "owned skills fit the re-attach budget (${_n} checked)" "${_v}"
     else
         _record_pass "owned skills fit the re-attach budget (${_n} checked, pending: $(printf '%s\n' "${REATTACH_PENDING}" | awk '{print $1}' | tr '\n' ' '))"
@@ -126,14 +150,42 @@ test_control_pending_skill_that_grows_fails() {
         "is 47900 bytes, over its pending ceiling of 47871" "${_out}"
 }
 
-test_control_pending_skill_that_shrinks_passes() {
+test_control_pending_skill_that_shrinks_must_lower_ceiling() {
     local _d="${TEST_TMPDIR}/shrinks" _out
     _scratch_skill "${_d}" big-skill 47000
-    _scratch_skill "${_d}" at-ceiling 30000
-    _out="$(_reattach_violations "${_d}" "big-skill 47871
-at-ceiling 30000" 1)"
-    assert_equals "control: a pending skill that shrinks (or holds) above the budget passes" \
+    _out="$(_reattach_violations "${_d}" "big-skill 47871" 1)"
+    assert_contains "red control: a pending skill that shrinks fails until its ceiling is lowered" \
+        "${_d}/big-skill/SKILL.md is 47000 bytes, under its pending ceiling of 47871 — lower the ceiling to 47000" "${_out}"
+}
+
+test_control_shrink_with_ceiling_lowered_passes() {
+    local _d="${TEST_TMPDIR}/lowered" _out
+    _scratch_skill "${_d}" big-skill 47000
+    _scratch_skill "${_d}" other 30000
+    _out="$(_reattach_violations "${_d}" "big-skill 47000
+other 30000" 1)"
+    assert_equals "control: pending skills whose ceilings equal their sizes pass" \
         "" "$(_violations_of "${_out}")"
+}
+
+test_control_unbounded_ceiling_fails() {
+    local _d="${TEST_TMPDIR}/unbounded" _out _err="${TEST_TMPDIR}/unbounded.err"
+    _scratch_skill "${_d}" present 30000
+    _out="$(_reattach_violations "${_d}" "present 99999999999999999999" 1 2>"${_err}")"
+    assert_contains "red control: a 20-digit ceiling is rejected, not compared" \
+        "pending entry 'present 99999999999999999999' has no valid byte ceiling" "${_out}"
+    assert_contains "red control: with an unbounded ceiling the skill is held to the budget" \
+        "${_d}/present/SKILL.md is 30000 bytes, over the 19500-byte re-attach budget" "${_out}"
+    assert_equals "control: no comparison errored on stderr" "" "$(cat "${_err}")"
+}
+
+test_control_duplicate_pending_entry_fails() {
+    local _d="${TEST_TMPDIR}/dup" _out
+    _scratch_skill "${_d}" big 20000
+    _out="$(_reattach_violations "${_d}" "big 90000
+big 20000" 1)"
+    assert_contains "red control: a pending entry listed twice is named" \
+        "pending entry 'big' is listed more than once" "${_out}"
 }
 
 test_control_pending_skill_under_budget_must_leave_list() {
@@ -171,7 +223,10 @@ setup_test_env
 test_real_tree_fits_budget
 test_control_over_budget_fails_naming_file_and_size
 test_control_pending_skill_that_grows_fails
-test_control_pending_skill_that_shrinks_passes
+test_control_pending_skill_that_shrinks_must_lower_ceiling
+test_control_shrink_with_ceiling_lowered_passes
+test_control_unbounded_ceiling_fails
+test_control_duplicate_pending_entry_fails
 test_control_pending_skill_under_budget_must_leave_list
 test_control_stale_or_malformed_pending_entry_fails
 test_control_empty_glob_fails_the_floor
