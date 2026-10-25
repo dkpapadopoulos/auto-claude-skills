@@ -33,12 +33,16 @@ _INPUT="$(
 
 command -v jq >/dev/null 2>&1 || exit 0
 
-# Batch transcript + is_error + skill name into ONE jq fork (was two) —
-# \x1f-joined, controlled fields only.
-_FIELDS="$(printf '%s' "${_INPUT}" | jq -r '[.transcript_path // "", (.tool_response.is_error // false | tostring), (.tool_input.name // .tool_input.skill // "")] | join("\u001f")' 2>/dev/null)" || _FIELDS=""
+# Batch transcript + is_error + acs_source + skill name into ONE jq fork (was
+# two) — \x1f-joined, controlled fields only, skill name LAST. `acs_source` is
+# set only by the routing hook's typed-slash synthetic payload ("typed-slash");
+# it selects telemetry, never evidence.
+_FIELDS="$(printf '%s' "${_INPUT}" | jq -r '[.transcript_path // "", (.tool_response.is_error // false | tostring), (.acs_source // "" | tostring), (.tool_input.name // .tool_input.skill // "")] | join("\u001f")' 2>/dev/null)" || _FIELDS=""
 _TRANSCRIPT="${_FIELDS%%$'\x1f'*}"
 _REST="${_FIELDS#*$'\x1f'}"
 _IS_ERROR="${_REST%%$'\x1f'*}"
+_REST="${_REST#*$'\x1f'}"
+_ACS_SOURCE="${_REST%%$'\x1f'*}"
 _RAW="${_REST#*$'\x1f'}"
 
 # Resolve session token payload-first (issue #51): the singleton is shared
@@ -102,9 +106,12 @@ fi
 # cross-session carrier, so a real gating-Skill return must always record
 # (same rationale as the invocation record's earlier move).
 # Review-embedding skills (subagent-driven-development, agent-team-execution,
-# agent-team-review) each carry a mandated internal review, so they credit the
-# canonical `requesting-code-review` milestone — the same "skill-ran" proxy the
-# gate already trusts for the literal review skill.
+# agent-team-review) each carry a mandated internal review, and the equivalent
+# review skills (code-review, review-pr, security-review) ARE a review, so they
+# credit the canonical `requesting-code-review` milestone — the same "skill-ran"
+# proxy the gate already trusts for the literal review skill. The one list is
+# hooks/lib/credited-skills.sh; if it cannot be loaded, credit NARROWS to the
+# three proxies hardcoded below, never widens.
 _record_gating_milestone() {
     [ -f "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" ] || return 0
     # shellcheck source=lib/branch-ledger.sh
@@ -114,19 +121,31 @@ _record_gating_milestone() {
     branch_ledger_record "$1" 2>/dev/null || true
 }
 # PAIRED: these milestone names are also excluded from the walker's back-fill
-# prefix (skill-activation-hook.sh gating-milestone filter), checked by
-# openspec-guard.sh, and the proxy list is mirrored by the guard's
-# invocation-evidence review leg — a third gated milestone must be added in
-# all of them.
+# prefix (skill-activation-hook.sh gating-milestone filter) and checked by
+# openspec-guard.sh. The credited REVIEW names are single-sourced in
+# hooks/lib/credited-skills.sh (CREDITED_REVIEW_SKILLS) and read here; every
+# other credit site (the guard's invocation-evidence review leg, the routing
+# hook's typed-slash credit) must read or match that list, and the guard keeps
+# the same four-name fallback hardcoded. A third gated milestone must be added
+# in all of them.
+_CREDITED_OK=false
+. "${_PLUGIN_ROOT}/hooks/lib/credited-skills.sh" 2>/dev/null && command -v credited_review_skill >/dev/null 2>&1 && _CREDITED_OK=true || true
 case "${_BARE}" in
     requesting-code-review|verification-before-completion)
         _record_gating_milestone "${_BARE}" ;;
-    subagent-driven-development|agent-team-execution|agent-team-review)
+    *)
         # subagent-driven-development's review mandate lives in the EXTERNAL
         # superpowers plugin ("review after each task" in its SKILL.md) — not
         # verifiable from this repo; re-check if superpowers drops that step.
         # The two agent-team-* skills are owned here (skills/<name>/SKILL.md).
-        _record_gating_milestone "requesting-code-review" ;;
+        if [ "${_CREDITED_OK}" = "true" ]; then
+            credited_review_skill "${_BARE}" && _record_gating_milestone "requesting-code-review"
+        else
+            case "${_BARE}" in
+                subagent-driven-development|agent-team-execution|agent-team-review)
+                    _record_gating_milestone "requesting-code-review" ;;
+            esac
+        fi ;;
 esac
 
 # ---- Composition-state-dependent sections below (chain .completed merge,
@@ -167,6 +186,11 @@ if jq -e --arg s "${_BARE}" '(.chain // []) | index($s) != null' "${_STATE}" >/d
     command -v branch_ledger_record >/dev/null 2>&1 && \
         branch_ledger_record "${_BARE}" "" 2>/dev/null || true
 fi
+
+# A typed slash command (routing hook's synthetic payload) loaded no skill body
+# through the Skill tool, which is what C1 measures — skip ONLY this line; every
+# evidence write above is identical to a Skill return's.
+[ "${_ACS_SOURCE}" = "typed-slash" ] && exit 0
 
 # ---- C1: passive advisory-lens telemetry ----
 # Append one JSONL line per Skill completion. Fail-open: any error is silently
