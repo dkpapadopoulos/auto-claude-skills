@@ -30,9 +30,11 @@ REATTACH_BUDGET_BYTES=19500
 # One "<skill> <ceiling-bytes>" per line, each ceiling equal to that SKILL.md's
 # current `wc -c`. Remove an entry in the same commit that splits the skill;
 # lower a ceiling in the same commit that shrinks the skill; never raise one.
+# agent-team-review stays listed after its split: its rules alone exceed the
+# budget, so its core leads with them until a prose pass (design decision 4).
 REATTACH_PENDING="incident-analysis 83053
 alert-hygiene 65670
-agent-team-review 47871"
+agent-team-review 30546"
 
 # Owned skills at the time of writing; the real-tree cell fails below this.
 REATTACH_MIN_SKILLS=20

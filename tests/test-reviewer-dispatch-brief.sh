@@ -24,6 +24,10 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 echo "=== test-reviewer-dispatch-brief.sh ==="
 
 SKILL="${PROJECT_ROOT}/skills/agent-team-review/SKILL.md"
+# The lens prompts moved to references/ (re-attach budget); the per-lens
+# assertions read the file the lead copies each prompt from. The lead-side
+# §3 assertions below stay on SKILL.md.
+PROMPTS="${PROJECT_ROOT}/skills/agent-team-review/references/reviewer-prompts.md"
 FIXTURE_DIR="${PROJECT_ROOT}/tests/fixtures/agent-team-review/dispatch-brief"
 CLAUSES_FILE="${FIXTURE_DIR}/required-clauses.txt"
 RANGE_FILE="${FIXTURE_DIR}/pinned-range.txt"
@@ -140,7 +144,7 @@ LENSES="$(awk '
     in_s && match($0, /^[[:space:]]*name: "[^"]+"/) {
         line=$0; sub(/^[[:space:]]*name: "/, "", line); sub(/".*$/, "", line); print line
     }
-' "${SKILL}")"
+' "${PROMPTS}")"
 
 LENS_COUNT=0
 if [ -n "${LENSES}" ]; then
@@ -167,7 +171,7 @@ _lens_block() {
         f && /^[[:space:]]*name: "/ { exit }
         f && /^## / { exit }
         f
-    ' "${SKILL}"
+    ' "${PROMPTS}"
 }
 
 # Literal (not regex) containment: needles carry backticks and hyphens.
@@ -338,6 +342,13 @@ assert_contains "lead: undelivered lens routes to could-not-review" \
 # .git/worktrees/, which the main-tree cleanliness check cannot see.
 assert_contains "lead: reviewer worktrees are reaped" \
     "git worktree prune" "${LEAD_BLOCK}"
+
+# --- §2 routes the lead to the prompts it must deliver ----------------------
+# The prompts are no longer in SKILL.md, so a §2 that stops naming their file
+# leaves the lead writing reviewer prompts from memory.
+SPAWN_BLOCK="$(awk '/^### 2\. Spawn Reviewers/{f=1;next} f && /^### /{exit} f' "${SKILL}")"
+assert_contains "lead: §2 reads the prompts file before spawning" \
+    "Before spawning, Read \`references/reviewer-prompts.md\`" "${SPAWN_BLOCK}"
 
 # --- Verification cites the mechanism --------------------------------------
 # spec.md requires the outcome assertion to reference Protocol §3 rather than

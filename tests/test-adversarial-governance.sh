@@ -40,11 +40,17 @@ assert_contains "agent-safety-review: description uses 'Use when' trigger form" 
 # --- agent-team-review: adversarial reviewer ---
 TEAM_SKILL="${PROJECT_ROOT}/skills/agent-team-review/SKILL.md"
 TEAM_CONTENT="$(cat "${TEAM_SKILL}")"
+# The four lens prompts live in references/ (re-attach budget); the template
+# assertions read the file a reviewer prompt is actually copied from.
+TEAM_PROMPTS="${PROJECT_ROOT}/skills/agent-team-review/references/reviewer-prompts.md"
+PROMPTS_CONTENT="$(cat "${TEAM_PROMPTS}" 2>/dev/null)"
+# Negative checks scan every file the model reads for this skill.
+TEAM_ALL="$(cat "${TEAM_SKILL}" "${PROJECT_ROOT}/skills/agent-team-review/references"/*.md 2>/dev/null)"
 
-assert_contains "agent-team-review: adversarial-reviewer template" "adversarial-reviewer" "${TEAM_CONTENT}"
-assert_contains "agent-team-review: governance lens" "Governance" "${TEAM_CONTENT}"
-assert_contains "agent-team-review: HITL in adversarial focus" "HITL" "${TEAM_CONTENT}"
-assert_contains "agent-team-review: safety gate in adversarial focus" "safety gate" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: adversarial-reviewer template" 'name: "adversarial-reviewer"' "${PROMPTS_CONTENT}"
+assert_contains "agent-team-review: governance lens" "Your Lens: Governance" "${PROMPTS_CONTENT}"
+assert_contains "agent-team-review: HITL in adversarial focus" "HITL" "${PROMPTS_CONTENT}"
+assert_contains "agent-team-review: safety gate in adversarial focus" "Safety gates, approval steps" "${PROMPTS_CONTENT}"
 
 # --- agent-team-review: doubt discipline (change: adopt-doubt-discipline) ---
 assert_contains "agent-team-review: claim-withheld dispatch" "artifact and the contract" "${TEAM_CONTENT}"
@@ -61,7 +67,7 @@ assert_contains "agent-team-review: doubt-theater meaning" "validating, not revi
 # sits between quality- and adversarial-reviewer, so terminating on "adversarial-reviewer" silently
 # swallowed the spec block too and a bullet misplaced there would have passed. Anchored with `^\s*name:`
 # so the sibling `team_name:` line cannot terminate the range early.
-QUALITY_BLOCK="$(awk '/^[[:space:]]*name: "quality-reviewer"/{f=1;next} f && /^[[:space:]]*name: "/{exit} f' "${TEAM_SKILL}")"
+QUALITY_BLOCK="$(awk '/^[[:space:]]*name: "quality-reviewer"/{f=1;next} f && /^[[:space:]]*name: "/{exit} f' "${TEAM_PROMPTS}")"
 if [ -z "${QUALITY_BLOCK}" ]; then
     _record_fail "agent-team-review: quality-reviewer block extracted" "non-empty block" "empty — anchors moved, assertions below prove nothing"
 fi
@@ -81,7 +87,7 @@ assert_contains "agent-team-review: confidence is advisory only" "Confidence is 
 assert_contains "agent-team-review: permissions in description trigger" "auth/secrets/permissions/hooks/CI" "${TEAM_CONTENT}"
 assert_contains "agent-team-review: dropped suggestions stay visible" "below severity floor" "${TEAM_CONTENT}"
 assert_contains "agent-team-review: no silent discard of floored findings" "Never silently discard" "${TEAM_CONTENT}"
-assert_contains "agent-team-review: reviewers emit confidence/evidence" "including the Confidence and Evidence fields" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: reviewers emit confidence/evidence" "including the Confidence and Evidence fields" "${PROMPTS_CONTENT}"
 assert_contains "agent-team-review: cross-model offer" "Codex" "${TEAM_CONTENT}"
 assert_contains "agent-team-review: cross-model no silent skip" "silently skipping is not" "${TEAM_CONTENT}"
 assert_contains "agent-team-review: cross-model sandboxed" "injected instructions" "${TEAM_CONTENT}"
@@ -172,7 +178,7 @@ assert_contains "do-not-flag row: pre-existing"            '| `pre-existing`'   
 assert_contains "do-not-flag row: tool-owned"              '| `tool-owned`'                     "${atr}"
 
 # (b) The forbidden shapes, asserted as ABSENT rather than inferred from prose.
-assert_not_contains "no speculative do-not-raise row"      '| `speculative`'                    "${atr}"
+assert_not_contains "no speculative do-not-raise row"      '| `speculative`'                    "${TEAM_ALL}"
 
 # (a2) #245 — the SAME invariant on the copy that actually reaches a reviewer.
 #      §3 is prose the lead reads; a spawned reviewer sees only its own prompt,
@@ -189,7 +195,7 @@ while IFS= read -r _lens; do
         f && /^[[:space:]]*## Scope/ { s=1; next }
         s && /^[[:space:]]*## / { exit }
         s
-    ' "${ATR}")"
+    ' "${TEAM_PROMPTS}")"
     # Counted as LIST ITEMS, not by matching one verb. A reviewer added a third
     # category worded "Do not report `speculative` findings" to all four blocks and
     # ran both suites green: a `Do not raise` grep, its literal-`speculative` absence
@@ -217,8 +223,8 @@ LENS_EOF
 #      the #166 shape this pairing note exists to prevent.
 assert_contains "do-not-flag table names its paired reviewer copy" \
     "the reviewer's copy ships in the spawn" "${atr}"
-assert_not_contains "no synthesis-side provenance filter"  "Provenance filter"                  "${atr}"
-assert_not_contains "no category-based drop at synthesis"  "drop any finding whose category"    "${atr}"
+assert_not_contains "no synthesis-side provenance filter"  "Provenance filter"                  "${TEAM_ALL}"
+assert_not_contains "no category-based drop at synthesis"  "drop any finding whose category"    "${TEAM_ALL}"
 
 # (c) §4 synthesis must carry exactly ONE numbered drop/demote step (the
 #     severity floor). A second one is the lead-filter mutation.
@@ -234,9 +240,9 @@ assert_contains "authorship guard present"                 "Authorship guard"   
 assert_contains "authorship guard: self-review is convention-checking" \
     "convention-checking"                                                                       "${atr}"
 assert_contains "authorship guard keeps earned severity"   "at the severity its evidence earns" "${atr}"
-assert_not_contains "authorship guard does not demote per level" "demote each"                  "${atr}"
-assert_not_contains "authorship guard does not demote by level"  "one severity level"           "${atr}"
-assert_not_contains "authorship guard does not downgrade findings" "downgrade the finding"      "${atr}"
+assert_not_contains "authorship guard does not demote per level" "demote each"                  "${TEAM_ALL}"
+assert_not_contains "authorship guard does not demote by level"  "one severity level"           "${TEAM_ALL}"
+assert_not_contains "authorship guard does not downgrade findings" "downgrade the finding"      "${TEAM_ALL}"
 
 # (e) #245 — the guard's "nothing else will" is now false: the verdict artifact
 #     carries the declaration. Pin the prose to the MECHANISM in both

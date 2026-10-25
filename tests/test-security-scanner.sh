@@ -121,7 +121,9 @@ test_skill_md_documents_dependency_provenance() {
 test_review_security_lens_checks_provenance() {
   echo "--- test_review_security_lens_checks_provenance ---"
   local review_md
-  review_md="$(cat skills/agent-team-review/SKILL.md)"
+  # The security lens prompt lives in references/ (re-attach budget split).
+  review_md="$(awk '/^[[:space:]]*name: "security-reviewer"/{f=1;next} f && /^[[:space:]]*name: "/{exit} f' \
+    skills/agent-team-review/references/reviewer-prompts.md)"
   assert_contains "security lens names provenance" "provenance" "$review_md"
   assert_contains "security lens names slopsquatting" "slopsquatting" "$review_md"
 }

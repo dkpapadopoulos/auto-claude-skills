@@ -15,6 +15,8 @@ Five owned skills exceed the line: incident-analysis (83,053 bytes), alert-hygie
 ### Modified Capabilities
 
 - `auto-claude-skills`: owned skills fit the post-compaction re-attach budget.
+- `runtime-validation`: the visual-regression report's session-scope note now lives in `skills/runtime-validation/references/report-template.md`.
+- `adversarial-review`: the `quality-reviewer` brief now lives in `skills/agent-team-review/references/reviewer-prompts.md`.
 
 ## Impact
 
