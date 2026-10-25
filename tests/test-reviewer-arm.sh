@@ -409,18 +409,28 @@ _OUT="$(cd "$_REPO" && /bin/bash -u -c '
     printf "st=%s\n" "$(branch_ledger_sha_tag reviewer-returned "$2")"
     printf "ret=%s\n" "$(review_reviewer_returned_sha "$2")"
     printf "cov=%s\n" "$(review_reviewer_covers "$2" "$2" HEAD)"
-    reviewer_pairing_note_dispatch "$4" a11-agent k11 "" allowlist
-    printf "arm=%s\n" "$(reviewer_pairing_dispatch_arm "$4" a11-agent)"
+    reviewer_pairing_note_dispatch "$4" a11-agent k11 "" allowlist; printf "nd_rc=%s\n" "$?"
+    printf "darm=%s\n" "$(reviewer_pairing_dispatch_arm "$4" a11-agent)"
     reviewer_pairing_dispatch_sha "$4" a11-agent; printf "dsha_rc=%s\n" "$?"
     echo survived' _ "$PROJECT_ROOT" "$_REPO" "$_H" "$_SID" 2>&1 </dev/null)"
+# Each function prints under its OWN prefix and each cell asserts that WHOLE
+# line, so no cell can be satisfied by another function's output — the first
+# cut matched `arm=allowlist` as a substring of the tag= and st= lines and
+# passed with dispatch_arm printing nothing (review N1).
+_a11_line() { printf '%s\n' "$_OUT" | grep "^$1=" | head -1; }
 assert_contains "A11 /bin/bash -u: completes" "survived" "$_OUT"
 assert_not_contains "A11 /bin/bash -u: no unbound variable" "unbound" "$_OUT"
-assert_contains "A11 /bin/bash -u: branch_ledger_record + branch_ledger_tag" "tag=arm=allowlist" "$_OUT"
-assert_contains "A11 /bin/bash -u: branch_ledger_sha_tag" "st=${_H} arm=allowlist" "$_OUT"
-assert_contains "A11 /bin/bash -u: review_reviewer_returned_sha full body" "ret=${_H}" "$_OUT"
-assert_contains "A11 /bin/bash -u: review_reviewer_covers full body" "cov=${_H}" "$_OUT"
-assert_contains "A11 /bin/bash -u: note_dispatch + dispatch_arm" "arm=allowlist" "$_OUT"
-assert_contains "A11 /bin/bash -u: dispatch_sha on '-'" "dsha_rc=1" "$_OUT"
+assert_equals "A11 /bin/bash -u: branch_ledger_record + branch_ledger_tag" "tag=arm=allowlist" "$(_a11_line tag)"
+assert_equals "A11 /bin/bash -u: branch_ledger_sha_tag" "st=${_H} arm=allowlist" "$(_a11_line st)"
+assert_equals "A11 /bin/bash -u: review_reviewer_returned_sha full body" "ret=${_H}" "$(_a11_line ret)"
+assert_equals "A11 /bin/bash -u: review_reviewer_covers full body" "cov=${_H}" "$(_a11_line cov)"
+assert_equals "A11 /bin/bash -u: note_dispatch with an arm returns 0" "nd_rc=0" "$(_a11_line nd_rc)"
+# The planted line must exist BEFORE dispatch_sha's refusal means anything: an
+# absent line also returns 1, and only this assertion tells the two apart.
+assert_equals "A11 /bin/bash -u: note_dispatch wrote the '-' placeholder line" "a11-agent k11 - allowlist" \
+    "$(grep '^a11-agent ' "$(_dispatch_file)" 2>/dev/null)"
+assert_equals "A11 /bin/bash -u: dispatch_arm full body" "darm=allowlist" "$(_a11_line darm)"
+assert_equals "A11 /bin/bash -u: dispatch_sha refuses the '-' it reads" "dsha_rc=1" "$(_a11_line dsha_rc)"
 for _f in hooks/lib/branch-ledger.sh hooks/lib/reviewer-pairing.sh hooks/reviewer-evidence-hook.sh \
           hooks/reviewer-completion-hook.sh hooks/lib/credited-skills.sh; do
     if /bin/bash -n "${PROJECT_ROOT}/${_f}" 2>/dev/null; then _record_pass "A11 /bin/bash -n ${_f}"

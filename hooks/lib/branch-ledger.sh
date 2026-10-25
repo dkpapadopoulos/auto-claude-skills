@@ -72,11 +72,16 @@ branch_ledger_record() {
     # branch_ledger_sha_is_branch_local, so a corrupt subject fails toward
     # under-crediting instead.
     #
-    # Neither arm is reachable from any current caller (the only non-empty
-    # producer is `git rev-parse HEAD`, and note_dispatch blanks anything else
-    # before storing it), so no test can catch their removal — mutation-verified,
-    # 0 failures either way. Stated here rather than presented as covered, which
-    # is this change's standing rule for a knowingly-unobservable guard.
+    # Reachability of the arms below, stated per arm:
+    #   ""             every caller that omits <sha> (HEAD, the prior behaviour).
+    #   -              REACHED: both reviewer hooks pass it when the dispatch-time
+    #                  commit is unknown (tests/test-reviewer-arm.sh A8/A8b/A8c).
+    #   non-hex        NOT reachable from any hook (the only other non-empty
+    #                  producer is `git rev-parse HEAD`, and note_dispatch blanks
+    #                  non-hex before storing it); pinned only by a direct call
+    #                  in tests/test-reviewer-arm.sh A6, not end to end.
+    #   uppercase hex  NOT reachable from any hook (git prints lowercase); pinned
+    #                  by a direct call in tests/test-reviewer-arm.sh A13.
     case "$sha_in" in
         "") sha="$(git -C "${proj_root:-.}" rev-parse HEAD 2>/dev/null || true)" ;;
         -) sha="-" ;;
