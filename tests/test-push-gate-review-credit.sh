@@ -119,6 +119,14 @@ _run() {
     ( cd "${REPO}" && printf '%s' "${_PAYLOAD}" | \
         CLAUDE_PLUGIN_ROOT="${1:-${PROJECT_ROOT}}" /bin/bash "${GUARD}" 2>/dev/null )
 }
+# _run_cmd <command> [plugin-root] — the REAL guard on an arbitrary command,
+# still from inside the session checkout (the process cwd is the session's).
+_run_cmd() {
+    local _p
+    _p="$(jq -nc --arg c "$1" '{"transcript_path":"/tmp/proj/conv-X.jsonl","tool_input":{"command":$c}}')"
+    ( cd "${REPO}" && printf '%s' "${_p}" | \
+        CLAUDE_PLUGIN_ROOT="${2:-${PROJECT_ROOT}}" /bin/bash "${GUARD}" 2>/dev/null )
+}
 _decision() { printf '%s' "$1" | jq -r '.hookSpecificOutput.permissionDecision // "none"' 2>/dev/null; }
 _reason()   { printf '%s' "$1" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""' 2>/dev/null; }
 _ctx()      { printf '%s' "$1" | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null; }
@@ -402,5 +410,141 @@ _GEL="$(grep '^_GATE_ENFORCE_LIBS=' "${PROJECT_ROOT}/hooks/session-start-hook.sh
 assert_contains "R15a _GATE_ENFORCE_LIBS lists credited-skills.sh" "hooks/lib/credited-skills.sh" "${_GEL}"
 assert_contains "R15b the #192 runtime matrix covers credited-skills.sh" "credited-skills.sh" \
     "$(grep '^_LIBS=' "${SCRIPT_DIR}/test-hook-source-guard-runtime.sh")"
+
+# ---------------------------------------------------------------------------
+# R16: coverage is measured on the command's SUBJECT, the ledger read on the
+# PROCESS root (#219). The session checkout sits on feature/x with an
+# allowlisted reviewer at its HEAD (C3). feature/y adds unreviewed material
+# source after C3; feature/z adds only docs. A push NAMING feature/y — through
+# another worktree or as a refspec — must deny even though the checkout's own
+# HEAD is covered; feature/z must pass. A leg that measured coverage on the
+# process root/HEAD would allow every feature/y and <C1> push below (Task 5
+# review I1), at both gates.
+# ---------------------------------------------------------------------------
+echo "--- R16: coverage follows the command's subject, at both gates ---"
+for _gate in chain global; do
+    if [ "${_gate}" = "chain" ]; then _DENY="${_CHAIN_DENY}"; else _DENY="${_GLOBAL_DENY}"; fi
+    _fresh
+    [ "${_gate}" = "global" ] && rm -f "${HOME}/.claude/.skill-composition-state-${_TOK}"
+    _ledger reviewer-returned "${C3}" "arm=allowlist"
+    _WTY="${TEST_TMPDIR}/wt-y"
+    _WTZ="${TEST_TMPDIR}/wt-z"
+    git -C "${REPO}" worktree add -q -b feature/y "${_WTY}" "${C3}"
+    printf 'echo y\n' > "${_WTY}/y.sh"
+    git -C "${_WTY}" add y.sh
+    _GIT -C "${_WTY}" commit -q -m y
+    git -C "${REPO}" worktree add -q -b feature/z "${_WTZ}" "${C3}"
+    mkdir -p "${_WTZ}/docs"
+    printf 'z\n' > "${_WTZ}/docs/z.md"
+    git -C "${_WTZ}" add docs/z.md
+    _GIT -C "${_WTZ}" commit -q -m z
+
+    _out="$(_run_cmd "git push origin HEAD")"
+    _assert_pass "R16 ${_gate}: control — the session's own HEAD is covered" "${_out}"
+    _out="$(_run_cmd "git -C ${_WTY} push origin feature/y")"
+    _assert_deny "R16 ${_gate}: git -C <worktree> naming feature/y (material after the review)" "${_out}" "${_DENY}"
+    _out="$(_run_cmd "git push origin feature/y")"
+    _assert_deny "R16 ${_gate}: refspec feature/y from the session checkout" "${_out}" "${_DENY}"
+    _out="$(_run_cmd "git push origin ${C1}:refs/heads/z")"
+    _assert_deny "R16 ${_gate}: <C1>:refs/heads/z, which the reviewed sha does not precede" "${_out}" "${_DENY}"
+    _out="$(_run_cmd "git -C ${_WTZ} push origin feature/z")"
+    _assert_pass "R16 ${_gate}: git -C <worktree> naming feature/z (docs only since)" "${_out}"
+    assert_contains "R16 ${_gate}: feature/z via -C is credited by the reviewer leg" "${_RR_NOTE}" "$(_ctx "${_out}")"
+    _out="$(_run_cmd "git push origin feature/z")"
+    _assert_pass "R16 ${_gate}: refspec feature/z from the session checkout" "${_out}"
+    assert_contains "R16 ${_gate}: feature/z refspec is credited by the reviewer leg" "${_RR_NOTE}" "$(_ctx "${_out}")"
+    teardown_test_env
+done
+
+# ---------------------------------------------------------------------------
+# R17: the invocation leg's sidecar BINDING keeps the four historical names,
+# so the advisory text and git fork count on paths that passed before this
+# change are unchanged (Task 5 review I2; rulings F5/F6). Credit MEMBERSHIP is
+# the lib's (R9); binding is advisory only.
+# ---------------------------------------------------------------------------
+echo "--- R17: invocation sidecar binding is unchanged ---"
+_SIDECAR_REL=".claude/.skill-invocation-evidence-sha-${_TOK}"
+_UNBOUND="requesting-code-review accepted via session-local invocation evidence (real Skill return this session; not branch-bound — issue #131)."
+_fresh
+_evidence '["requesting-code-review"]'
+printf 'requesting-code-review %s\ncode-review %s\n' "${BASE}" "${C3}" > "${HOME}/${_SIDECAR_REL}"
+_out="$(_run)"
+_assert_pass "R17a evidence requesting-code-review, sidecar code-review at HEAD" "${_out}"
+assert_contains "R17a the advisory is the historical unbound text" "${_UNBOUND}" "$(_ctx "${_out}")"
+assert_not_contains "R17a a code-review sidecar line does not bind the advisory" "SHA-bound" "$(_ctx "${_out}")"
+# Control: one of the four DOES bind, so R17a is not passing on a dead loop.
+printf 'requesting-code-review %s\nagent-team-review %s\n' "${BASE}" "${C3}" > "${HOME}/${_SIDECAR_REL}"
+_out="$(_run)"
+assert_contains "R17b control: an agent-team-review sidecar line binds the advisory" \
+    "recorded at ${C3} on this branch" "$(_ctx "${_out}")"
+teardown_test_env
+
+# Fork count: a PATH shim counts git invocations. Sidecar lines for the newly
+# credited names must add none; a line for one of the four adds some (control).
+# The lines carry a sibling-branch sha: a sha equal to HEAD or to the mainline
+# base is decided without git, so it would make the control vacuous.
+_fresh
+git -C "${REPO}" checkout -q -b side main
+printf 'x\n' > "${REPO}/side.sh"
+git -C "${REPO}" add side.sh
+_GIT -C "${REPO}" commit -q -m side
+_SIDE="$(git -C "${REPO}" rev-parse HEAD)"
+git -C "${REPO}" checkout -q feature/x
+_evidence '["requesting-code-review"]'
+_REAL_GIT="$(command -v git)"
+_SHIM="${TEST_TMPDIR}/shim"
+_GITLOG="${TEST_TMPDIR}/git-calls.log"
+mkdir -p "${_SHIM}"
+printf '#!/bin/sh\necho x >> "%s"\nexec "%s" "$@"\n' "${_GITLOG}" "${_REAL_GIT}" > "${_SHIM}/git"
+chmod +x "${_SHIM}/git"
+_count_git() {   # runs the guard under the shim; prints the git call count
+    : > "${_GITLOG}"
+    ( cd "${REPO}" && printf '%s' "${_PAYLOAD}" | PATH="${_SHIM}:${PATH}" \
+        CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" /bin/bash "${GUARD}" >/dev/null 2>&1 )
+    wc -l < "${_GITLOG}" | tr -d ' '
+}
+printf 'requesting-code-review %s\n' "${BASE}" > "${HOME}/${_SIDECAR_REL}"
+_N0="$(_count_git)"
+_N0b="$(_count_git)"
+printf 'requesting-code-review %s\nsecurity-review %s\nreview-pr %s\n' "${BASE}" "${_SIDE}" "${_SIDE}" > "${HOME}/${_SIDECAR_REL}"
+_N1="$(_count_git)"
+printf 'requesting-code-review %s\nagent-team-execution %s\n' "${BASE}" "${_SIDE}" > "${HOME}/${_SIDECAR_REL}"
+_N2="$(_count_git)"
+if [ "${_N0:-0}" -gt 0 ]; then
+    _record_pass "R17c control: the shim counts git calls (${_N0})"
+else
+    _record_fail "R17c control: the shim counts git calls" "count is ${_N0:-empty}"
+fi
+assert_equals "R17c control: the count is stable across runs" "${_N0}" "${_N0b}"
+assert_equals "R17d security-review / review-pr sidecar lines add no git fork" "${_N0}" "${_N1}"
+if [ "${_N2:-0}" -gt "${_N0:-0}" ]; then
+    _record_pass "R17e control: a sidecar line for one of the four does add forks (${_N0} -> ${_N2})"
+else
+    _record_fail "R17e control: a sidecar line for one of the four does add forks" "${_N0} -> ${_N2}"
+fi
+teardown_test_env
+
+# ---------------------------------------------------------------------------
+# R18: an empty name never credits, even if the lib's list carried a stray
+# space (Task 5 review, Minor 2). A copy of the tree whose list has a doubled
+# and a trailing space; the lib still loads.
+# ---------------------------------------------------------------------------
+echo "--- R18: an empty evidence element never credits ---"
+_fresh
+_SPC="${TEST_TMPDIR}/spaced"
+mkdir -p "${_SPC}"
+cp -R "${PROJECT_ROOT}/hooks" "${_SPC}/hooks"
+cp -R "${PROJECT_ROOT}/config" "${_SPC}/config" 2>/dev/null || true
+sed 's/^CREDITED_REVIEW_SKILLS="requesting-code-review /CREDITED_REVIEW_SKILLS="requesting-code-review  /; s/^\(CREDITED_REVIEW_SKILLS=".*\)"$/\1 "/' \
+    "${CREDIT_LIB}" > "${_SPC}/hooks/lib/credited-skills.sh"
+assert_contains "R18 fixture: the copied list has a doubled space" "requesting-code-review  " \
+    "$(grep '^CREDITED_REVIEW_SKILLS=' "${_SPC}/hooks/lib/credited-skills.sh")"
+_evidence '[""]'
+_out="$(_run "${_SPC}")"
+_assert_deny "R18 evidence [\"\"] with a spaced list" "${_out}" "${_CHAIN_DENY}"
+_evidence '["code-review"]'
+_out="$(_run "${_SPC}")"
+_assert_pass "R18 control: the spaced copy still loads and credits code-review" "${_out}"
+teardown_test_env
 
 print_summary

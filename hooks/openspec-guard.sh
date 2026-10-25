@@ -1049,11 +1049,14 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             command -v jq >/dev/null 2>&1 || return 1
             # type guard: index() on a JSON *string* is substring search, so a
             # corrupt scalar file merely containing the name would satisfy it.
-            # Elements are compared for EQUALITY against each listed name.
+            # Elements are compared for EQUALITY against each listed name;
+            # empty names are dropped, so a stray space in the list can never
+            # make an empty-string element credit.
             case "$1" in
                 requesting-code-review)
                     jq -e --arg n "${_REVIEW_NAMES}" 'type=="array" and
-                        (($n | split(" ")) as $l | any(.[]; . as $e | $l | any(.[]; . == $e)))' \
+                        (($n | split(" ") | map(select(length > 0))) as $l
+                         | any(.[]; . as $e | $l | any(.[]; . == $e)))' \
                         "${_f}" >/dev/null 2>&1 ;;
                 *)
                     jq -e --arg s "$1" 'type=="array" and (index($s) != null)' "${_f}" >/dev/null 2>&1 ;;
@@ -1066,9 +1069,13 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # the global gate consult this leg (issue #133 dedup; acceptance
         # itself stays idempotent). Soft SHA-binding (issue #133): when the
         # completion hook's sidecar holds a "<skill> <sha>" record for the
-        # milestone (or a review-embedding proxy — PAIRED with _invoc_has's
-        # case list) whose SHA is branch-bound by the SAME rule as the
-        # ledger bridge, the advisory upgrades to name the bound SHA.
+        # milestone (or one of the four historical review-embedding proxies)
+        # whose SHA is branch-bound by the SAME rule as the ledger bridge,
+        # the advisory upgrades to name the bound SHA. The binding loop keeps
+        # those four DELIBERATELY rather than _invoc_has's lib list: the
+        # binding decides advisory text only, and walking the wider list
+        # changed the text and added git forks on paths that already passed
+        # (Task 5 review I2). Membership — what credits — is the lib's.
         # Binding NEVER gates acceptance — a hard SHA requirement would
         # re-break the #130 repro, where the recording cwd's SHA is
         # unrelated to the push branch. Fail-open: lib/file/SHA problems
@@ -1083,7 +1090,7 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             case " ${_INVOC_NOTED} " in *" $1 "*) return 0 ;; esac
             _INVOC_NOTED="${_INVOC_NOTED} $1"
             case "$1" in requesting-code-review)
-                _names="${_REVIEW_NAMES}" ;;
+                _names="$1 subagent-driven-development agent-team-execution agent-team-review" ;;
             esac
             if [ -f "${_sf}" ] && [ "${_LEDGER_OK}" = "true" ] && [ -n "${_HEAD_SHA}" ] \
                && command -v branch_ledger_sha_is_branch_local >/dev/null 2>&1 \
