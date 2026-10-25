@@ -393,8 +393,8 @@ case "${ACS_STICKY_REPEAT:-shadow}" in
   [Oo][Ff][Ff])                     _STICKY_REPEAT_MODE="off" ;;
   *)                                _STICKY_REPEAT_MODE="shadow" ;;
 esac
-# Slash commands: a typed REVIEW command is credited first (lib/typed-slash-credit.sh), then skipped
-[[ "$PROMPT" =~ ^[[:space:]]*/ ]] && { [[ -f "${PLUGIN_ROOT}/hooks/lib/typed-slash-credit.sh" ]] && . "${PLUGIN_ROOT}/hooks/lib/typed-slash-credit.sh" 2>/dev/null && typed_slash_credit "${_PROMPT_KIND}" "${PROMPT}" "${_HOOK_INPUT}" "${PLUGIN_ROOT}"; exit 0; }
+# Slash commands: a typed REVIEW command is credited first (lib/typed-slash-credit.sh, in a silenced subshell so its exit/unbound-var/output cannot reach routing), then skipped
+[[ "$PROMPT" =~ ^[[:space:]]*/ ]] && { [[ -f "${PLUGIN_ROOT}/hooks/lib/typed-slash-credit.sh" ]] && ( . "${PLUGIN_ROOT}/hooks/lib/typed-slash-credit.sh" && command -v typed_slash_credit && typed_slash_credit "${_PROMPT_KIND}" "${PROMPT}" "${_HOOK_INPUT}" "${PLUGIN_ROOT}" ) >/dev/null 2>&1; exit 0; }
 (( ${#PROMPT} < 5 )) && ! _comp_active && exit 0
 # Escape hatch: [no-skills] marker or -- prefix suppresses all routing
 [[ "$PROMPT" == *"[no-skills]"* ]] && exit 0

@@ -22,12 +22,23 @@
 #
 # Fork budget (preflight F5): nothing here runs on a prompt that does not start
 # with `/` (the caller's own regex gates it), and nothing forks until a credited
-# name has been recognised in pure bash. Then at most two jq (registry check,
-# payload) and the completion hook.
+# name has been recognised in pure bash. A slash prompt costs the caller's one
+# subshell; a credited one then at most two jq (registry check, payload) and
+# the completion hook, run synchronously, so its latency is the prompt's.
+#
+# The rule is the FIRST token: a prompt the person begins with a typed credited
+# command credits even when other text (a pasted notification, a peer message)
+# follows it; the same command anywhere after the first token never does.
 #
 # Sourced by skill-activation-hook.sh only (bash, `set -uo pipefail`, no ERR
-# trap). Constants and functions only; sources credited-skills.sh at CALL time,
-# guarded. Not model-sourced. Bash 3.2. Never records prompt text or args.
+# trap), INSIDE a subshell with stdout/stderr silenced: a function cannot
+# contain an `exit` or a `set -u` abort at load, a subshell can, so a broken
+# lib costs only the typed credit and routing stays exit 0 with no output. The
+# subshell also keeps this lib's globals (_TS_NAME, CREDITED_REVIEW_SKILLS and
+# every function) out of the hook's shell; a second caller that sources it
+# directly gets them. Constants and functions only; sources credited-skills.sh
+# at CALL time, guarded. Not model-sourced. Bash 3.2. Never records prompt text
+# or args.
 
 # _typed_slash_parse <prompt> — sets _TS_NAME to the typed name (no `/`) and
 # returns 0 when, after leading whitespace, the first token is `/` +

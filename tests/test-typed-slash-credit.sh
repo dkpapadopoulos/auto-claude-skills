@@ -14,13 +14,14 @@
 #   S2  /code-review (built-in, no registry entry) credits
 #   S3  /pr-review-toolkit:review-pr 12 (plugin command) credits
 #   S4  a mid-text mention records nothing
-#   S5  a task notification carrying the command records nothing; the push still denies
+#   S5  a task notification carrying the command records nothing (pins the :281 exit);
+#       the push still denies
 #   S6  the prompt-kind gate is load-bearing (an "unclassifiable" kind credits nothing)
 #   S7  uncredited names (/simplify, /receiving-code-review) record nothing
 #   S8  uninstalled names record nothing (each with an installed control)
 #   S9  a typed /superpowers:verification-before-completion records no VERIFY milestone
 #   S10 credited-skills.sh unreadable: nothing, exit 0, empty stdout
-#   S11 fork cell: no new jq on a non-slash or uncredited-slash prompt
+#   S11 fork cell: jq calls on non-slash / uncredited-slash prompts equal the BASE hook's
 #   S12 registry missing or corrupt: built-ins only
 #   S13 e2e: /code-review lets the push through; a mention does not
 #   S14 leading whitespace, a tab or a newline after the name still credit
@@ -28,7 +29,11 @@
 #   S16 repeats and a later real return do not duplicate evidence
 #   S17 typed credit writes no advisory-lens line (a real return does)
 #   U*  unit cells on the lib's functions, incl. every non-"prompt" kind
-#   X*  cross-session messages carrying the command record nothing
+#   X*  cross-session messages carrying the command record nothing (hook-level pins)
+#   S5b a prompt that BEGINS with the command credits though notification text follows
+#   F*  the lib's first-token rule refuses wrapped and mid-text commands on its own
+#   L*  a lib faulting at load or call leaves the hook at exit 0 with empty stdout
+#   W*  carriage return and (UTF-8) no-break space before the first token credit
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -90,14 +95,14 @@ _new_home() {
     printf '%s' '{"chain":["requesting-code-review","verification-before-completion"],"current_index":0,"completed":[]}' \
         > "${HOME}/.claude/.skill-composition-state-${TOK}"
 }
-# _turn <prompt> [plugin-root] [extra env...] : the REAL activation hook from REPO.
-# Sets _OUT (stdout) and _RC.
+# _turn <prompt> [plugin-root] [extra env...] : the REAL activation hook from REPO
+# (or the hook file named by _TURN_HOOK, which only S11 sets). Sets _OUT and _RC.
 _turn() {
     local _p="$1" _root="${2:-${PROJECT_ROOT}}"
     shift; [ "$#" -gt 0 ] && shift
     _OUT="$("${REAL_JQ}" -nc --arg p "${_p}" --arg t "${_TP}" --arg c "${REPO}" \
             '{prompt:$p, transcript_path:$t, session_id:"sid-typed", cwd:$c}' \
-        | ( cd "${REPO}" && env CLAUDE_PLUGIN_ROOT="${_root}" "$@" /bin/bash "${HOOK}" 2>/dev/null ))"
+        | ( cd "${REPO}" && env CLAUDE_PLUGIN_ROOT="${_root}" "$@" /bin/bash "${_TURN_HOOK:-${HOOK}}" 2>/dev/null ))"
     _RC=$?
 }
 # _turn_raw <prompt-file> : same, prompt read from a file (keeps exact bytes).
@@ -205,24 +210,37 @@ S4_PUSH="$(_push)"
 assert_contains "S13b e2e: after a mention the push denies" '"deny"' "${S4_PUSH:-<empty>}"
 assert_contains "S13b e2e: and names requesting-code-review" "requesting-code-review" "${S4_PUSH:-<empty>}"
 
-# S5: a live-shaped task notification whose body carries the command
+# S5: a live-shaped task notification whose body carries the command.
+# At HOOK level this is a REGRESSION PIN of the notification early exit
+# (skill-activation-hook.sh:281): a pure notification never reaches the slash line, so
+# these hook cells pass with or without the lib. What makes the lib's own first-token
+# rule decide such text is cell F below, which calls the lib directly.
 _new_home
 NOTE="${TEST_TMPDIR}/note.txt"
-sed 's|<summary>.*</summary>|<summary>/superpowers:requesting-code-review</summary>|' \
+sed 's|<summary>.*</summary>|<summary>Background command /superpowers:requesting-code-review completed</summary>|' \
     "${PROJECT_ROOT}/tests/fixtures/egress-consent/task-notification-bash.txt" > "${NOTE}"
-NOTE2="${TEST_TMPDIR}/note2.txt"
-{ printf '/superpowers:requesting-code-review\n'; cat "${PROJECT_ROOT}/tests/fixtures/egress-consent/task-notification-bash.txt"; } > "${NOTE2}"
-if grep -qF '<summary>/superpowers:requesting-code-review</summary>' "${NOTE}"; then
+if grep -qF ' /superpowers:requesting-code-review ' "${NOTE}"; then
     _record_pass "S5 setup: the notification carries the command"
 else
     _record_fail "S5 setup: the notification carries the command" "sed did not apply"
 fi
 _turn_raw "${NOTE}"
-_expect_nothing "S5 task notification"
+_expect_nothing "S5 task notification (pin of the :281 early exit)"
 _seed_verify
 S5_PUSH="$(_push)"
 assert_contains "S5: the push still denies" '"deny"' "${S5_PUSH:-<empty>}"
 assert_contains "S5: and names requesting-code-review" "requesting-code-review" "${S5_PUSH:-<empty>}"
+
+# S5b: the rule is the FIRST token. A prompt the person BEGINS with a typed credited
+# command credits even when other text follows it -- here the live notification fixture,
+# as if pasted after the command. The person typed the command first; what follows it
+# cannot un-type it, and a notification cannot put text in front of it (a pure
+# notification exits at :281, and anything else leading the prompt is not a slash).
+_new_home
+NOTE2="${TEST_TMPDIR}/note2.txt"
+{ printf '/superpowers:requesting-code-review\n'; cat "${PROJECT_ROOT}/tests/fixtures/egress-consent/task-notification-bash.txt"; } > "${NOTE2}"
+_turn_raw "${NOTE2}"
+_expect_credit "S5b first token typed, notification text after it: credits" "requesting-code-review"
 
 # S6: the kind gate is load-bearing. A copied plugin root whose shared classifier yields
 # "unclassifiable" for everything; the stock-lib copy is the positive control.
@@ -313,24 +331,44 @@ printf 'x\n' >> "\${JQ_COUNT_LOG}"
 exec "${REAL_JQ}" "\$@"
 EOF
 chmod +x "${SHIM}/jq"
-# _jq_calls <prompt> <root> : prints how many jq processes one turn started.
+# _jq_calls <prompt> <root> : prints how many jq processes one turn of <root>'s OWN
+# activation hook started (roots differ only in the files the cells name).
 _jq_calls() {
     local _log
     _new_home
     _log="${HOME}/jq-count.log"; : > "${_log}"
+    _TURN_HOOK="$2/hooks/skill-activation-hook.sh"
     _turn "$1" "$2" PATH="${SHIM}:${PATH}" JQ_COUNT_LOG="${_log}"
     wc -l < "${_log}" | tr -d ' '
 }
-for _p in "please refactor the parser" "/simplify x"; do
+# The counterfactual is the hook as it was BEFORE this change (BASE d8f84e7b), so a
+# mutant that adds a fork to the non-slash path -- on line 397's left side, say -- is
+# counted in one arm only. (Comparing against a lib-deleted copy of the CURRENT hook
+# could not see it: both arms would run the same line.)
+S11_BASE_REV="d8f84e7b"
+COPY_BASE="${TEST_TMPDIR}/root-base"
+mkdir -p "${COPY_BASE}" && cp -R "${COPY_STOCK}/hooks" "${COPY_STOCK}/config" "${COPY_BASE}/"
+if git -C "${PROJECT_ROOT}" show "${S11_BASE_REV}:hooks/skill-activation-hook.sh" \
+        > "${COPY_BASE}/hooks/skill-activation-hook.sh" 2>/dev/null \
+   && ! grep -q 'typed-slash-credit' "${COPY_BASE}/hooks/skill-activation-hook.sh" \
+   && grep -q 'typed-slash-credit' "${COPY_STOCK}/hooks/skill-activation-hook.sh"; then
+    _record_pass "S11 setup: base hook ${S11_BASE_REV} read; it predates typed credit, the stock copy has it"
+else
+    _record_fail "S11 setup: base hook ${S11_BASE_REV} read" "cannot check: commit unreadable (shallow clone?) or copies wrong"
+fi
+for _p in "please refactor the parser" "fix the failing login test" "/simplify x"; do
     _with="$(_jq_calls "${_p}" "${COPY_STOCK}")"
-    _without="$(_jq_calls "${_p}" "${COPY_NOTS}")"
+    _base="$(_jq_calls "${_p}" "${COPY_BASE}")"
     if [ "${_with}" -gt 0 ] 2>/dev/null; then
         _record_pass "S11 setup: the shim counted jq calls for '${_p}' (${_with})"
     else
         _record_fail "S11 setup: the shim counted jq calls for '${_p}'" "count '${_with}'"
     fi
-    assert_equals "S11 '${_p}': jq calls with the lib == without it" "${_without}" "${_with}"
+    assert_equals "S11 '${_p}': jq calls now == at base ${S11_BASE_REV}" "${_base}" "${_with}"
 done
+# The lib itself adds no jq to an uncredited slash command (kills a lib that forks first).
+assert_equals "S11 '/simplify x': jq calls with the lib == without it" \
+    "$(_jq_calls "/simplify x" "${COPY_NOTS}")" "$(_jq_calls "/simplify x" "${COPY_STOCK}")"
 _with="$(_jq_calls "/code-review" "${COPY_STOCK}")"
 _without="$(_jq_calls "/code-review" "${COPY_NOTS}")"
 if [ "${_with}" -gt "${_without}" ] 2>/dev/null; then
@@ -407,7 +445,9 @@ _skill_return "code-review"
 assert_equals "S17 control: a real Skill return writes one" "1" \
     "$(cat "${HOME}/.claude/.advisory-lens-log.jsonl" 2>/dev/null | wc -l | tr -d ' ')"
 
-# X: cross-session messages carrying the command
+# X: cross-session messages carrying the command. Like S5, at HOOK level these are
+# REGRESSION PINS: text that does not begin with `/` never reaches the slash line, so
+# they pass with or without the lib. Cells F below put the same texts to the lib.
 _new_home
 _turn "$(printf '<agent-message from="peer">\n/code-review\n</agent-message>')"
 if _has_review || [ -e "$(_INVOC)" ]; then _record_fail "X1 peer message carrying /code-review records nothing" "recorded"
@@ -416,6 +456,73 @@ _new_home
 _turn "$(printf '<cross-session-message from="other">/code-review</cross-session-message>')"
 if _has_review || [ -e "$(_INVOC)" ]; then _record_fail "X2 cross-session message carrying /code-review records nothing" "recorded"
 else _record_pass "X2 cross-session message carrying /code-review records nothing"; fi
+
+# F: the lib's FIRST-TOKEN rule decides wrapped and mid-text commands on its own.
+# typed_slash_credit is called directly with kind "prompt" -- the hook's earlier exits
+# (the :281 notification exit, the `^[[:space:]]*/` slash test) are bypassed, so only
+# the lib's own first-token check stands between each text and a credit. Each text
+# carries a credited, installed command as a whitespace-separated token.
+_unit_text() {   # <prompt-text> ; run in a subshell from REPO; HOME from _new_home
+    local _in; _in="$("${REAL_JQ}" -nc --arg p "$1" --arg t "${_TP}" '{prompt:$p, transcript_path:$t, session_id:"s"}')"
+    ( cd "${REPO}" && . "${LIB}" && typed_slash_credit prompt "$1" "${_in}" "${PROJECT_ROOT}" ) >/dev/null 2>&1
+}
+_f_nothing() {   # <label> <text>
+    _new_home; _unit_text "$2"
+    if _has_review || [ -e "$(_INVOC)" ]; then _record_fail "$1: the lib credits nothing" "recorded"
+    else _record_pass "$1: the lib credits nothing"; fi
+}
+_f_nothing "F1 task notification with the command in its summary" "$(cat "${NOTE}")"
+_f_nothing "F2 peer <agent-message> with the command on its own line" "$(printf '<agent-message from="peer">\n/code-review\n</agent-message>')"
+_f_nothing "F3 <cross-session-message> with the command on its own line" "$(printf '<cross-session-message from="other">\n/code-review\n</cross-session-message>')"
+_f_nothing "F4 harness intro line, then the command" "$(printf 'Another Claude session sent a message:\n/code-review')"
+_f_nothing "F5 a mid-text mention" "please run /superpowers:requesting-code-review now"
+_new_home; _unit_text "$(cat "${NOTE2}")"
+if _has_review; then _record_pass "F6 control: the same lib call on S5b's text (command first) credits"
+else _record_fail "F6 control: the same lib call on S5b's text (command first) credits" "nothing recorded"; fi
+
+# L: a lib that faults at LOAD or at CALL costs only the typed credit. The hook sources it
+# in a silenced subshell: an `exit`, a `set -u` abort or stray output must not change the
+# hook's exit status or stdout (UserPromptSubmit stdout reaches the model's context, and
+# exit 2 would block the person's prompt). Each copy differs from the stock lib only as named.
+_L_N=0
+_lib_fault() {   # <label> <lib-text>
+    local _root="${TEST_TMPDIR}/root-fault-${_L_N}"; _L_N=$((_L_N + 1))
+    mkdir -p "${_root}" && cp -R "${COPY_STOCK}/hooks" "${COPY_STOCK}/config" "${_root}/"
+    printf '%s\n' "$2" > "${_root}/hooks/lib/typed-slash-credit.sh"
+    _new_home; _turn "/code-review" "${_root}"
+    _expect_nothing "L $1"
+}
+_lib_fault "exit 3 at load" "exit 3"
+_lib_fault "exit 2 at load (would block the prompt)" "exit 2"
+_lib_fault "unbound variable at load (set -u abort)" ': "${_TSC_NEVER_SET_ANYWHERE}"'
+_lib_fault "stdout and stderr at load" "echo LIB-STDOUT-JUNK; echo LIB-STDERR-JUNK >&2"
+_lib_fault "defines no typed_slash_credit" "_unrelated() { :; }"
+_lib_fault "syntax error" "if then fi ("
+_lib_fault "the function prints and exits 2" 'typed_slash_credit() { echo CALL-JUNK; echo CALL-ERR >&2; exit 2; }'
+_lib_fault "the function hits an unbound variable" 'typed_slash_credit() { : "${_TSC_NEVER_SET_ANYWHERE}"; }'
+
+# W: whitespace before the first token is whitespace in the hook's own `[[:space:]]`
+# sense, and the lib uses the same class in the same process, so the two agree. A
+# carriage return is [[:space:]] in every locale. A no-break space (U+00A0) is
+# [[:space:]] under a UTF-8 locale (measured: C.UTF-8, en_US.UTF-8) and not under C,
+# where the hook's slash test does not match either and the prompt is routed as text.
+# Both are whitespace before the first token, so both credit where they are whitespace.
+_new_home; _turn "$(printf '\r/code-review')"
+_expect_credit "W1 carriage return before /code-review" "code-review"
+_NBSP="$(printf '\302\240')"
+_UTF_LOC=""
+for _l in C.UTF-8 en_US.UTF-8 UTF-8; do
+    if LC_ALL="${_l}" /bin/bash -c '[[ "$1" == [[:space:]] ]]' _ "${_NBSP}" 2>/dev/null; then _UTF_LOC="${_l}"; break; fi
+done
+if [ -n "${_UTF_LOC}" ]; then
+    _new_home; _turn "${_NBSP}/code-review" "${PROJECT_ROOT}" LC_ALL="${_UTF_LOC}"
+    _expect_credit "W2 no-break space before /code-review under ${_UTF_LOC}" "code-review"
+else
+    echo "  SKIP: W2 no UTF-8 locale classifies U+00A0 as [[:space:]] here -- NOT checked"
+fi
+_new_home; _turn "${_NBSP}/code-review" "${PROJECT_ROOT}" LC_ALL=C
+if _has_review || [ -e "$(_INVOC)" ]; then _record_fail "W3 no-break space under LC_ALL=C: not whitespace, credits nothing" "recorded"
+else _record_pass "W3 no-break space under LC_ALL=C: not whitespace, credits nothing"; fi
 
 # U: unit cells on the lib (each in a subshell; the lib sources nothing at load)
 _unit_name() { ( . "${LIB}" 2>/dev/null && _typed_slash_name "$1" ) 2>/dev/null; }
