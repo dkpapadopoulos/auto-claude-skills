@@ -881,6 +881,7 @@ while IFS='|' read -r _needle _label; do
     [ -n "${_needle}" ] || continue
     assert_contains "Step Sequence restates: ${_label}" "${_needle}" "${SEQ_TEXT}"
 done <<'SEQ'
+The main stop and approval gates, stage by stage in order|the lead does not claim to list every gate
 HALT with the exact payload before `createJiraIssue`|INTAKE halts before creating the ticket
 an MCP auth error: offer the fix, never fall back silently|Step 1 never falls back silently
 1b access gate: present a tool access summary, then wait for the user to fix or explicitly proceed|Step 1b presents the summary and waits
@@ -906,11 +907,21 @@ Q1-Q3 confident or back to INVESTIGATE Step 1|Step 8 Q1-Q3
 with a `partial` or `unavailable` domain, Q1-Q3 must state what could change the answer|Step 8 Q1-Q3 account for gaps
 Q4-Q12 each resolved by evidence or a status with its reason|Step 8 Q4-Q12
 Closure is blocked when any unresolved item weakens the chosen root cause, the named causal chain, or the root-cause layer coverage|Step 8 closure blocked by any weakening item
-and unless the root-cause service's layers are `assessed` (or a narrow `not_applicable`) and its `mechanism_status` is `known` or `not_applicable`|Step 8 closure needs layers and mechanism
+and unless the root-cause service's layers are `assessed` (or a narrow `not_applicable`) and its `mechanism_status` is `known` or `not_applicable` (when there is no application-layer mechanism to trace)|Step 8 closure needs layers and mechanism, with not_applicable qualified
 from the Step 7 summary only, no new queries|POSTMORTEM from the summary
 a verified recovery timestamp, or state "Recovery time not verified — estimated at X based on Y"|POSTMORTEM recovery verified or said not to be
 HALT with the exact comment before posting it|REPORT-BACK halts before posting
 SEQ
+
+# The list is not exhaustive (CLASSIFY's contradiction collapse, Step 2d's
+# thresholds, the CrashLoopBackOff sequence and others are only in the full
+# text), so the lead must not claim it is: a model told "every" would treat an
+# unlisted gate as optional.
+case "${SEQ_TEXT}" in
+    *"Every stop and approval gate"*|*"every stop and approval gate"*)
+        _record_fail "the Step Sequence lead does not claim to list every gate" "it says 'every'" ;;
+    *) _record_pass "the Step Sequence lead does not claim to list every gate" ;;
+esac
 
 # --- The rules survive a post-compaction re-attach --------------------------
 # Claude Code re-attaches an invoked skill cut to its first ~20,000 characters,
@@ -1107,7 +1118,7 @@ else
         "the CI reviewer's own prompt is a separate copy of this rule; if it states a fixed number it will block on it"
 fi
 
-INCIDENT_SKILL_WORD_BASELINE=11957
+INCIDENT_SKILL_WORD_BASELINE=11966
 word_count=$(wc -w < "${SKILL_FILE}" | tr -d ' ')
 if [ "$word_count" -le "${INCIDENT_SKILL_WORD_BASELINE}" ]; then
     _record_pass "SKILL.md: word count within baseline ${INCIDENT_SKILL_WORD_BASELINE} (${word_count})"

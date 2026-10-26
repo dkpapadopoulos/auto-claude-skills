@@ -35,7 +35,7 @@ REATTACH_BUDGET_BYTES=19500
 # message is where a raise is seen.
 # All three stay listed after their splits: their rules alone exceed the
 # budget, so each core leads with them until a prose pass (design decision 4).
-REATTACH_PENDING="incident-analysis 85250
+REATTACH_PENDING="incident-analysis 85310
 alert-hygiene 41297
 agent-team-review 30619"
 

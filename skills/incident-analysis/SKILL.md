@@ -17,7 +17,7 @@ Key re-entry paths:
 
 ## Step Sequence and Hard Gates
 
-Every stop and approval gate, stage by stage in order; each step's full text follows the Behavioral Constraints. After a compaction cut, Read this file before working past the cut.
+The main stop and approval gates, stage by stage in order; each step's full text follows the Behavioral Constraints. After a compaction cut, Read this file before working past the cut.
 
 - **INTAKE** (opt-in): HALT with the exact payload before `createJiraIssue`.
 - **MITIGATE:** 1 preflight and tier (an MCP auth error: offer the fix, never fall back silently); 1b access gate: present a tool access summary, then wait for the user to fix or explicitly proceed; 2 scope (UTC); 2b inventory; 2c impact; 2d baseline-first gate; 5 mitigation goes to CLASSIFY, never a bare command; 6 a code fix goes to INVESTIGATE.
@@ -27,7 +27,7 @@ Every stop and approval gate, stage by stage in order; each step's full text fol
 - **Step 5:** a recurring workload that ran clean last cycle is never the trigger, first runs aside. Anti-anchoring: if the chosen service is not the highest-ranked `service_error_inventory` entry, the hypothesis needs explicit evidence why; without it the gate should reject the hypothesis and redirect investigation to the highest-ranked service.
 - **EXECUTE:** kubectl missing: present the command, never run it; fingerprint drifted: do NOT execute, return to CLASSIFY; write a redacted `pre.json` (Step 2 waits for it under `requires_pre_execution_evidence`); then VALIDATE.
 - **VALIDATE:** a hard stop while stabilizing, or any stop condition while sampling: ESCALATE to a full INVESTIGATE; success goes to POSTMORTEM; mixed results: the user chooses; every exit writes a redacted `validate.json`.
-- **Step 8, full mode:** Q1-Q3 confident or back to INVESTIGATE Step 1; with a `partial` or `unavailable` domain, Q1-Q3 must state what could change the answer (a confident "yes" to Q1 is not possible when a relevant domain is missing); Q4-Q12 each resolved by evidence or a status with its reason. Closure is blocked when any unresolved item weakens the chosen root cause, the named causal chain, or the root-cause layer coverage, and unless the root-cause service's layers are `assessed` (or a narrow `not_applicable`) and its `mechanism_status` is `known` or `not_applicable`.
+- **Step 8, full mode:** Q1-Q3 confident or back to INVESTIGATE Step 1; with a `partial` or `unavailable` domain, Q1-Q3 must state what could change the answer (a confident "yes" to Q1 is not possible when a relevant domain is missing); Q4-Q12 each resolved by evidence or a status with its reason. Closure is blocked when any unresolved item weakens the chosen root cause, the named causal chain, or the root-cause layer coverage, and unless the root-cause service's layers are `assessed` (or a narrow `not_applicable`) and its `mechanism_status` is `known` or `not_applicable` (when there is no application-layer mechanism to trace).
 - **POSTMORTEM:** from the Step 7 summary only, no new queries; a verified recovery timestamp, or state "Recovery time not verified — estimated at X based on Y"; evidence links in every section.
 - **REPORT-BACK** (opt-in): HALT with the exact comment before posting it.
 

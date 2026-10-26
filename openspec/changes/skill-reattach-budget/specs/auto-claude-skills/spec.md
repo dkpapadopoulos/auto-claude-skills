@@ -15,6 +15,6 @@ Every owned `skills/<name>/SKILL.md` MUST be at most 19,500 bytes, so the whole 
 - **THEN** the skill-size test fails
 
 #### Scenario: A raise is recorded, never silent
-- **GIVEN** a pending skill whose SKILL.md grows from 83,053 to 85,250 bytes because its gates are restated inside the re-attach window
-- **WHEN** the same commit raises its recorded ceiling to 85,250 and its message states the reason
+- **GIVEN** a pending skill whose SKILL.md grows from 83,053 to 85,310 bytes because its gates are restated inside the re-attach window
+- **WHEN** the same commit raises its recorded ceiling to 85,310 and its message states the reason
 - **THEN** the skill-size test passes, and the raise is visible in the diff and the commit message
