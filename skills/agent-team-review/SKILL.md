@@ -188,10 +188,10 @@ Before any reproduction, Read `references/adjudication-worktree.md` and run it: 
 | Verdict | Action |
 |---------|--------|
 | `blocking_issues` | TeamDelete → return to IMPLEMENT → fix issues → re-review |
-| `suggestions_only` | TeamDelete → cross-model offer (§6, when applicable) → record the verdict → proceed to SHIP |
-| `clean` | TeamDelete → cross-model offer (§6, when applicable) → record the verdict → proceed to SHIP |
+| `suggestions_only` | TeamDelete → cross-model offer (§6, when applicable) → autofix batch (§4 step 4) → record the verdict → proceed to SHIP |
+| `clean` | TeamDelete → cross-model offer (§6, when applicable) → autofix batch (§4 step 4) → record the verdict → proceed to SHIP |
 
-**Then record the verdict** (Record the Review Verdict, after Verification), once, after §6 resolves: `--verdict clean` ONLY when every actionable finding was resolved or explicitly accepted, `findings-open` with the real `--unresolved-blocking` count otherwise, `could-not-review` when a lens never delivered; pass `--self-authored` when this context authored the diff; never read `~/.claude/.skill-session-token` (the script resolves the token).
+**Then record the verdict** (Record the Review Verdict, after Verification), once, after §6 resolves and any approved autofix batch is applied: `--verdict clean` ONLY when every actionable finding was resolved or explicitly accepted, `findings-open` with the real `--unresolved-blocking` count otherwise, `could-not-review` when a lens never delivered; pass `--self-authored` when this context authored the diff; never read `~/.claude/.skill-session-token` (the script resolves the token).
 
 **On `blocking_issues`** — Expected: zero blocking findings before SHIP. Actual: N blocking finding(s) remain. Do now: TeamDelete the review team, return to IMPLEMENT, fix each blocking finding (cite file:line from the report), then re-review. Do NOT proceed to SHIP until re-review returns `clean` or `suggestions_only`.
 

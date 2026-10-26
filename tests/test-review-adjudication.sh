@@ -176,12 +176,12 @@ SECTIONS
 # restated line is pinned on its own, so moving one past the cut fails by name.
 SECTION_5="$(awk '/^### 5\./{f=1;next} f && /^#+ /{exit} f' "${SKILL}")"
 SECTION_6_OPEN="$(awk '/^### 6\./{f=1;next} f && /^\*\*Mode A/{exit} f' "${SKILL}")"
-assert_contains "§5 routes clean through recording before SHIP" \
-    '| `clean` | TeamDelete → cross-model offer (§6, when applicable) → record the verdict → proceed to SHIP |' "${SECTION_5}"
-assert_contains "§5 routes suggestions_only through recording before SHIP" \
-    '| `suggestions_only` | TeamDelete → cross-model offer (§6, when applicable) → record the verdict → proceed to SHIP |' "${SECTION_5}"
-assert_contains "§5 records once, after §6 resolves" \
-    '**Then record the verdict** (Record the Review Verdict, after Verification), once, after §6 resolves' "${SECTION_5}"
+assert_contains "§5 routes clean through the autofix batch and recording before SHIP" \
+    '| `clean` | TeamDelete → cross-model offer (§6, when applicable) → autofix batch (§4 step 4) → record the verdict → proceed to SHIP |' "${SECTION_5}"
+assert_contains "§5 routes suggestions_only through the autofix batch and recording before SHIP" \
+    '| `suggestions_only` | TeamDelete → cross-model offer (§6, when applicable) → autofix batch (§4 step 4) → record the verdict → proceed to SHIP |' "${SECTION_5}"
+assert_contains "§5 records once, after §6 resolves and any approved autofix batch is applied" \
+    '**Then record the verdict** (Record the Review Verdict, after Verification), once, after §6 resolves and any approved autofix batch is applied:' "${SECTION_5}"
 assert_contains "§5 restates: clean only when every actionable finding was resolved or accepted" \
     '`--verdict clean` ONLY when every actionable finding was resolved or explicitly accepted' "${SECTION_5}"
 assert_contains "§5 restates: findings-open with the real count" \

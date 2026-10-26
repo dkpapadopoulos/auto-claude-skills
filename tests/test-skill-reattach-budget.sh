@@ -38,7 +38,7 @@ REATTACH_BUDGET_BYTES=19500
 # budget, so each core leads with them until a prose pass (design decision 4).
 REATTACH_PENDING="incident-analysis 85310
 alert-hygiene 42800
-agent-team-review 31466"
+agent-team-review 31570"
 
 # Owned skills at the time of writing; the real-tree cell fails below this.
 REATTACH_MIN_SKILLS=20
