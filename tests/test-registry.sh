@@ -499,6 +499,45 @@ test_health_check_output() {
 }
 
 # ---------------------------------------------------------------------------
+# 7b. The announce-to-user instruction is for a session's first turn, not for
+#     every compaction: a compact-path SessionStart keeps the status line and
+#     drops the MANDATORY line; startup and a payload without `source` keep it.
+# ---------------------------------------------------------------------------
+test_mandatory_line_skipped_on_compact() {
+    echo "-- test: MANDATORY announce line skipped only on source=compact --"
+    setup_test_env
+
+    local ctx
+    ctx="$(printf '{"session_id":"t-compact","source":"compact"}' | run_hook \
+        | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)"
+    assert_contains "compact: status line kept" "skills active" "${ctx}"
+    assert_not_contains "compact: MANDATORY line dropped" "MANDATORY: Before any other output" "${ctx}"
+
+    ctx="$(printf '{"session_id":"t-startup","source":"startup"}' | run_hook \
+        | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)"
+    assert_contains "startup: MANDATORY line kept" "MANDATORY: Before any other output" "${ctx}"
+
+    ctx="$(printf '{"session_id":"t-nosource"}' | run_hook \
+        | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)"
+    assert_contains "no source: MANDATORY line kept" "MANDATORY: Before any other output" "${ctx}"
+
+    local _src
+    for _src in resume clear compact2 Compact; do
+        ctx="$(printf '{"session_id":"t-%s","source":"%s"}' "${_src}" "${_src}" | run_hook \
+            | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)"
+        assert_contains "source=${_src}: MANDATORY line kept" "MANDATORY: Before any other output" "${ctx}"
+    done
+
+    # A non-string field must not cost the status line or the cwd split.
+    ctx="$(printf '{"session_id":"t-obj","cwd":{"x":1},"source":"compact"}' | run_hook \
+        | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)"
+    assert_contains "object cwd: status line kept" "skills active" "${ctx}"
+    assert_not_contains "object cwd: compact still recognised" "MANDATORY: Before any other output" "${ctx}"
+
+    teardown_test_env
+}
+
+# ---------------------------------------------------------------------------
 # 8. Discovers agent team user skills
 # ---------------------------------------------------------------------------
 test_discovers_agent_team_skills() {
@@ -1670,6 +1709,7 @@ test_newline_in_entry_cannot_forge_a_map_line
 test_missing_dirs_no_crash
 test_user_config_disables_skill
 test_health_check_output
+test_mandatory_line_skipped_on_compact
 test_discovers_agent_team_skills
 test_default_triggers_has_plugins_section
 test_default_triggers_has_phase_compositions

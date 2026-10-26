@@ -97,12 +97,18 @@ fi
 _HOOK_SESSION_ID=""
 _HOOK_TRANSCRIPT=""
 _HOOK_CWD=""
+_HOOK_SOURCE=""
 if [ -n "${_HOOK_STDIN}" ] && command -v jq >/dev/null 2>&1; then
     _HOOK_SESSION_ID="$(printf '%s' "${_HOOK_STDIN}" | jq -r '.session_id // empty' 2>/dev/null)" || _HOOK_SESSION_ID=""
     _HOOK_TRANSCRIPT="$(printf '%s' "${_HOOK_STDIN}" | jq -r '.transcript_path // empty' 2>/dev/null)" || _HOOK_TRANSCRIPT=""
-    # .cwd is consumed by the drift canary (Step 6a-ter); extracted here so the
-    # canary adds no unconditional jq fork of its own.
-    _HOOK_CWD="$(printf '%s' "${_HOOK_STDIN}" | jq -r '.cwd // empty' 2>/dev/null)" || _HOOK_CWD=""
+    # .cwd is consumed by the drift canary (Step 6a-ter); .source (startup /
+    # resume / clear / compact) decides whether the announce line is emitted.
+    # Both come from one jq fork, split on \x1f (not IFS whitespace). Each is
+    # coerced to text so a non-string field cannot fail the join, and cwd's
+    # trailing newlines are trimmed as the former `$(jq ...)` did.
+    _hs_pair="$(printf '%s' "${_HOOK_STDIN}" | jq -r '[(.cwd // "" | if type == "string" then . else tojson end | sub("\n+$"; "")), (.source // "" | if type == "string" then . else tojson end)] | join("\u001f")' 2>/dev/null)" || _hs_pair=""
+    _HOOK_CWD="${_hs_pair%%$'\x1f'*}"
+    case "${_hs_pair}" in *$'\x1f'*) _HOOK_SOURCE="${_hs_pair#*$'\x1f'}" ;; esac
 fi
 # Conversation-stable id: the transcript filename persists across resume/compact.
 # Token format is single-sourced in lib/session-token.sh so this writer and the
@@ -1818,9 +1824,15 @@ fi
 
 STATUS="SessionStart: ${AVAILABLE_COUNT} skills active (${INSTALLED_COMPANIONS} of ${TOTAL_COMPANIONS} plugins)${_ZM_STAT}${SETUP_CTA}"
 
-# Build model context: status + first-response instruction + any warnings
-CONTEXT="${STATUS}
+# Build model context: status + first-response instruction + any warnings.
+# The announce instruction is for a session's first turn; after a compaction
+# the user has already seen the status, and idle compaction made the compact
+# path ~35% of all injections (measured 2026-10-25), so it is skipped there.
+CONTEXT="${STATUS}"
+if [ "${_HOOK_SOURCE}" != "compact" ]; then
+    CONTEXT="${CONTEXT}
 MANDATORY: Before any other output, report the skill system status to the user in one line (e.g. '24 skills active across 7 plugins — run /setup to complete installation'). Do not skip or defer this."
+fi
 
 # --- Plugin root, for the files the MODEL reads (#311) -------------------
 # `CLAUDE_PLUGIN_ROOT` is set for THIS hook process and UNSET in the model's
