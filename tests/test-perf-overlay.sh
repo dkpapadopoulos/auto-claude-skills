@@ -9,6 +9,10 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 echo "=== test-perf-overlay.sh ==="
 
 SKILL_FILE="${PROJECT_ROOT}/skills/runtime-validation/SKILL.md"
+# The overlay script and the report template moved verbatim to references/
+# (openspec/changes/skill-reattach-budget); the overlay's rules stay in SKILL.md.
+PERF_FILE="${PROJECT_ROOT}/skills/runtime-validation/references/perf-overlay.md"
+REPORT_FILE="${PROJECT_ROOT}/skills/runtime-validation/references/report-template.md"
 
 assert_file_contains() {
     local description="$1" pattern="$2" file="$3"
@@ -23,8 +27,12 @@ assert_file_contains() {
 assert_file_contains "detects lighthouse tool" "lighthouse" "${SKILL_FILE}"
 assert_file_contains "detection self-gates (not detected branch)" "lighthouse: not detected" "${SKILL_FILE}"
 # Lab-honest framing (scenario 1) — NOT field CWV; INP not measured
-assert_file_contains "labels metrics as lab" "Lighthouse — lab" "${SKILL_FILE}"
+assert_file_contains "labels metrics as lab" "Lighthouse — lab" "${REPORT_FILE}"
 assert_file_contains "states field INP not measured" "INP is not measured" "${SKILL_FILE}"
+assert_file_contains "report template states field INP not measured" "INP is not measured" "${REPORT_FILE}"
+# The overlay script self-gates on an installed lighthouse, never an npx download
+assert_file_contains "overlay script self-gates on installed lighthouse" "node_modules/.bin/lighthouse" "${PERF_FILE}"
+assert_file_contains "core points at the overlay script" "references/perf-overlay.md" "${SKILL_FILE}"
 # Report-only, outside fix-loop (scenario 3)
 assert_file_contains "perf is report-only / outside fix loop" "report-only" "${SKILL_FILE}"
 # Conditional critical/beasties remediation (scenario 3)

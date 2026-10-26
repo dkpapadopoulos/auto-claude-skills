@@ -61,4 +61,14 @@ else
         "no 'never carry' line found in the FINDING contract section"
 fi
 
+# --- The HITL duties stay at §4 step 4 --------------------------------------
+# The six steps sit after §6, past the post-compaction re-attach window, so §4
+# itself must still say that every line is validated and none is applied
+# without per-item user approval.
+SECTION_4="$(awk '/^### 4\. Lead Synthesis/{f=1;next} f && /^### 4a\./{exit} f' "${F}")"
+assert_contains "autofix lane: §4 step 4 keeps validate-every-line" \
+    "validate every line" "${SECTION_4}"
+assert_contains "autofix lane: §4 step 4 keeps per-item user approval" \
+    "apply none without per-item user approval" "${SECTION_4}"
+
 print_summary

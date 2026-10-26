@@ -9,45 +9,27 @@ Tiered GCP log investigation with playbook-driven mitigation and structured vali
 
 ## Stage Flow
 
-```dot
-digraph stages {
-    rankdir=LR;
-    node [shape=box];
-    INTAKE -> MITIGATE [label="opt-in\nJira ticket\n(or skip)"];
-    MITIGATE -> CLASSIFY [label="mitigation\nneeded\n(Step 5)"];
-    MITIGATE -> INVESTIGATE [label="no mitigation\n(Step 6)"];
-    CLASSIFY -> EXECUTE [label="high\nconfidence"];
-    CLASSIFY -> INVESTIGATE [label="low\nconfidence\n(Steps 1-5 only)"];
-    INVESTIGATE -> CLASSIFY [label="re-classify\nafter probes"];
-    INVESTIGATE -> POSTMORTEM [label="completeness\ngate passed"];
-    EXECUTE -> VALIDATE;
-    VALIDATE -> POSTMORTEM [label="success"];
-    VALIDATE -> INVESTIGATE [label="failed"];
-    POSTMORTEM -> REPORT_BACK [label="opt-in\nJira comment"];
-}
-```
+The stage graph is drawn in `references/stage-flow.md`; the re-entry paths here and the Step Sequence below state its transitions.
 
 Key re-entry paths:
 - **CLASSIFY < 60 → INVESTIGATE:** Only Steps 1–5 run. Steps 6–9 skipped. Findings feed back to CLASSIFY.
 - **VALIDATE failed → INVESTIGATE:** Full Stage 2. The mitigation didn't work.
 
-## Quick Reference — Symptom to Playbook
+## Step Sequence and Hard Gates
 
-| Symptom | Likely Playbook | Category |
-|---------|----------------|----------|
-| Error spike after deploy | bad-release-rollback | bad-release |
-| CrashLoopBackOff / pod restarts | workload-restart | workload-failure |
-| Multi-pod probe timeout on one node | node-resource-exhaustion | infra-failure |
-| Node NotReady / kubelet down | infra-failure | infra-failure |
-| CPU/memory saturation + traffic spike | traffic-scale-out | resource-overload |
-| Config change correlated with errors | config-regression | bad-config |
-| Upstream dependency errors | dependency-failure | dependency-failure |
+The main stop and approval gates, stage by stage in order; each step's full text follows the Behavioral Constraints. After a compaction cut, Read this file before working past the cut.
 
-**When NOT to use this skill:**
-- Capacity planning or resource right-sizing without an active incident — use proactive monitoring tools instead
-- Alert tuning or alert hygiene — use the `alert-hygiene` skill
-- Non-production debugging (local dev, CI failures) — use `systematic-debugging`
-- Performance optimization without user-facing symptoms — not an incident
+- **INTAKE** (opt-in): HALT with the exact payload before `createJiraIssue`.
+- **MITIGATE:** 1 preflight and tier (an MCP auth error: offer the fix, never fall back silently); 1b access gate: present a tool access summary, then wait for the user to fix or explicitly proceed; 2 scope (UTC); 2b inventory; 2c impact; 2d baseline-first gate; 5 mitigation goes to CLASSIFY, never a bare command; 6 a code fix goes to INVESTIGATE.
+- **CLASSIFY:** score playbooks (`references/classify-scoring.md`); a detected veto signal disqualifies a playbook, and coverage below 0.70, unresolved `params` or failed `pre_conditions` make it ineligible for proposal; >=85 with a 15-point margin goes to the HITL gate, 60-84 to disambiguation probes, <60 to INVESTIGATE Steps 1-5 only.
+- **INVESTIGATE:** 3 deep dive (database metrics before blaming database capacity; caller investigation is mandatory for a shared resource); 3c sweep, mandatory for 2+ services; 6 flight plan, approved before any code is touched; 7 synthesis and YAML; 8 completeness gate.
+- **Step 4** (Tier 1 only): one trace hop at most. When multiple services meet the evidence criteria, 3+ services show failure signals, or the evidence is ambiguous or borderline: do NOT hop; present the trace timeline to the user and do NOT autonomously choose. If Service B's identity is ambiguous, STOP and present the trace to the user.
+- **Step 5:** a recurring workload that ran clean last cycle is never the trigger, first runs aside. Anti-anchoring: if the chosen service is not the highest-ranked `service_error_inventory` entry, the hypothesis needs explicit evidence why; without it the gate should reject the hypothesis and redirect investigation to the highest-ranked service.
+- **EXECUTE:** kubectl missing: present the command, never run it; fingerprint drifted: do NOT execute, return to CLASSIFY; write a redacted `pre.json` (Step 2 waits for it under `requires_pre_execution_evidence`); then VALIDATE.
+- **VALIDATE:** a hard stop while stabilizing, or any stop condition while sampling: ESCALATE to a full INVESTIGATE; success goes to POSTMORTEM; mixed results: the user chooses; every exit writes a redacted `validate.json`.
+- **Step 8, full mode:** Q1-Q3 confident or back to INVESTIGATE Step 1; with a `partial` or `unavailable` domain, Q1-Q3 must state what could change the answer (a confident "yes" to Q1 is not possible when a relevant domain is missing); Q4-Q12 each resolved by evidence or a status with its reason. Closure is blocked when any unresolved item weakens the chosen root cause, the named causal chain, or the root-cause layer coverage, and unless the root-cause service's layers are `assessed` (or a narrow `not_applicable`) and its `mechanism_status` is `known` or `not_applicable` (when there is no application-layer mechanism to trace).
+- **POSTMORTEM:** from the Step 7 summary only, no new queries; a verified recovery timestamp, or state "Recovery time not verified — estimated at X based on Y"; evidence links in every section.
+- **REPORT-BACK** (opt-in): HALT with the exact comment before posting it.
 
 ## Behavioral Constraints (Always Active)
 
@@ -80,20 +62,7 @@ During active investigation, all application-level file reads, log queries, and 
 
 For any LQL query longer than 5 words or containing quotes/regex, write the query to a session-scoped temp file via `mktemp` and execute via file read. This avoids escaping failures and concurrent-session race conditions:
 
-```bash
-LQL_FILE=$(mktemp /tmp/agent-lql-XXXXXX.txt)
-cat > "$LQL_FILE" << 'QUERY'
-resource.type="cloud_run_revision"
-AND resource.labels.service_name="checkout-service"
-AND severity>=ERROR
-AND timestamp>="2026-03-19T10:00:00Z"
-QUERY
-
-gcloud logging read "$(cat "$LQL_FILE")" \
-  --project=my-project --format=json --limit=50 ; rm -f "$LQL_FILE"
-```
-
-The `;` operator ensures cleanup runs regardless of whether `gcloud` succeeds or fails. `mktemp` with a random suffix prevents concurrent sessions from overwriting each other's queries.
+For example: `LQL_FILE=$(mktemp /tmp/agent-lql-XXXXXX.txt)`, write the query into it, then run `gcloud logging read "$(cat "$LQL_FILE")" ... ; rm -f "$LQL_FILE"` so cleanup runs whether or not `gcloud` succeeds. Full example: MITIGATE Step 3.
 
 ### 4. Context Discipline on Stage Transitions
 
@@ -170,8 +139,6 @@ For every service in the error chain, the investigation must assess both the inf
 - Any service that triggers Step 3c → Step 3 re-entry (see Step 3c escalation rule)
 
 For all other services, mechanism status `not_yet_traced` is acceptable — it records that the error class is known but the application-layer mechanism was not deeply investigated. This prevents over-investigation of obvious victims while ensuring the root-cause service is traced to mechanism.
-
-**Anti-pattern this prevents:** Building a complete, internally-consistent infrastructure narrative (timeouts, resource pressure, GC pauses) while the actual root cause is an application-layer bug (stale cache, template error, retry storm) in a service whose ERROR logs were never queried.
 
 ### 11. Intermediate Conclusion Verification
 
@@ -254,16 +221,10 @@ If you have access to `list_log_entries`, `search_traces`, `get_trace`, `list_ti
 1. Report the specific error to the user
 2. **Immediately offer the fix** — do NOT silently fall back to Tier 2:
 
-   > "MCP Observability auth expired (`<error>`). Tier 1 provides metrics, traces, and error reporting that gcloud CLI cannot. Fix now with:
-   > ```
-   > ! gcloud auth application-default login
-   > ```
-   > This opens a browser for re-authentication. Proceed?"
+   Show `! gcloud auth application-default login` (it opens a browser) and ask whether to proceed; the full wording is under Step 1b.
 
 3. If the user re-authenticates, re-probe to confirm, then classify as Tier 1
 4. **Only fall back to Tier 2 if the user explicitly declines** (e.g., "skip it", "proceed without", "no time"). Record the declined fix in the access gate for `evidence_coverage`.
-
-**Why this matters:** Tier 2 (gcloud CLI) cannot do `list_time_series` (metrics), `get_trace` (trace correlation), or `list_group_stats` (error reporting). Silently falling back to Tier 2 creates investigation gaps that are expensive to discover later — especially for database metrics, which are often the missing piece in shared-resource incidents. The few seconds to re-authenticate are far cheaper than the gaps.
 
 **Tier 2 — gcloud CLI via Bash:**
 ```bash
@@ -302,6 +263,14 @@ Investigation domains:
 **MCP auth expired is always a fixable gap.** When the access gate shows `auth expired (fixable)`, the Metrics and Trace correlation domains will show degraded or unavailable. Present this prominently:
 
 > "⚠ MCP auth expired — Metrics (`list_time_series`), Traces (`get_trace`), and Error Reporting (`list_group_stats`) will be unavailable. Fix with `! gcloud auth application-default login`?"
+
+The Step 1 auth-fix prompt, shown when the Tier 1 probe fails with an auth error:
+
+   > "MCP Observability auth expired (`<error>`). Tier 1 provides metrics, traces, and error reporting that gcloud CLI cannot. Fix now with:
+   > ```
+   > ! gcloud auth application-default login
+   > ```
+   > This opens a browser for re-authentication. Proceed?"
 
 **If any other fixable gap is detected**, present the fix command and ask:
 
@@ -361,8 +330,6 @@ These are rate-based classifications independent of the Step 2 error taxonomy. A
 1. **Step 3 (initial error query)** — before selecting which error signals to pursue in Steps 3b/4
 2. **Step 3c (multi-service sweep)** — before deep-diving into any service's errors (item 2 in the procedure)
 
-**Why this matters:** Without this gate, the investigation will deep-dive into every error signal regardless of whether it's normal. In one investigation, ~4 query round-trips were spent investigating 403 errors that turned out to be at baseline rate (4,948 vs 5,000) — time wasted that could have been spent on the actual anomaly (JDBC errors: 500 vs 0 baseline).
-
 **Implementation:** Query the incident count and baseline count **in parallel** (two queries in the same batch). Compute the ratio before proceeding. This adds one query round-trip but saves many by eliminating baseline signals early.
 
 ### Step 3: Query Error Rate / Recent Errors
@@ -372,6 +339,23 @@ Scoped to the identified service + narrow time window.
 **Tier 1:** Use `list_log_entries` with LQL filter scoped to service + severity + time window, `page_size` <= 50.
 
 **Tier 2:** Use the temp-file execution pattern (see Constraint 3) with `gcloud logging read` and `--limit=50`.
+
+The temp-file pattern (Constraint 3), as a worked example:
+
+```bash
+LQL_FILE=$(mktemp /tmp/agent-lql-XXXXXX.txt)
+cat > "$LQL_FILE" << 'QUERY'
+resource.type="cloud_run_revision"
+AND resource.labels.service_name="checkout-service"
+AND severity>=ERROR
+AND timestamp>="2026-03-19T10:00:00Z"
+QUERY
+
+gcloud logging read "$(cat "$LQL_FILE")" \
+  --project=my-project --format=json --limit=50 ; rm -f "$LQL_FILE"
+```
+
+The `;` operator ensures cleanup runs regardless of whether `gcloud` succeeds or fails. `mktemp` with a random suffix prevents concurrent sessions from overwriting each other's queries.
 
 ### Step 3b: Aggregate Error Fingerprint
 
@@ -409,6 +393,24 @@ If mitigation is needed, transition to CLASSIFY for structured playbook selectio
 ### Step 6: Transition
 
 If a code fix is needed (no mitigation required), transition to INVESTIGATE.
+
+## Quick Reference — Symptom to Playbook
+
+| Symptom | Likely Playbook | Category |
+|---------|----------------|----------|
+| Error spike after deploy | bad-release-rollback | bad-release |
+| CrashLoopBackOff / pod restarts | workload-restart | workload-failure |
+| Multi-pod probe timeout on one node | node-resource-exhaustion | infra-failure |
+| Node NotReady / kubelet down | infra-failure | infra-failure |
+| CPU/memory saturation + traffic spike | traffic-scale-out | resource-overload |
+| Config change correlated with errors | config-regression | bad-config |
+| Upstream dependency errors | dependency-failure | dependency-failure |
+
+**When NOT to use this skill:**
+- Capacity planning or resource right-sizing without an active incident — use proactive monitoring tools instead
+- Alert tuning or alert hygiene — use the `alert-hygiene` skill
+- Non-production debugging (local dev, CI failures) — use `systematic-debugging`
+- Performance optimization without user-facing symptoms — not an incident
 
 ## CLASSIFY
 
@@ -552,24 +554,7 @@ This pattern collapses an N-service sequential sweep (N round-trips) into 3 para
 
 **Output:** A `service_error_inventory` table in the Step 7 synthesis:
 
-```yaml
-service_error_inventory:
-  - service: "<name>"
-    error_class: "<dominant error>"
-    tier: 1|2|3
-    count_incident: <N>
-    count_baseline: <N>
-    deployment_in_72h: true|false
-    deployment_timestamp: "<UTC or null>"
-    investigated: true|false
-    infra_status: "assessed" | "not_applicable" | "unavailable" | "not_captured"
-    infra_evidence: "<what was checked>"
-    infra_reason: "<why not assessed, if status != assessed>"
-    app_status: "assessed" | "not_applicable" | "unavailable" | "not_captured"
-    app_evidence: "<what was checked>"
-    app_reason: "<why not assessed, if status != assessed>"
-    mechanism_status: "known" | "not_yet_traced" | "not_applicable"
-```
+Its schema, one entry per service (error class, tier, incident and baseline counts, 72-hour deployment, `investigated`, `infra_status`/`app_status` with evidence or reason, `mechanism_status`), is in `references/service-error-inventory.md`.
 
 **Layer status semantics:** `assessed` = Minimum required evidence for that layer is complete (infrastructure: deployment history + runtime signal; application: ERROR logs queried + dominant exception class identified). Other statuses: `not_applicable`, `unavailable` (reason required), `not_captured` (reason required). Full definitions in `references/investigation-schema.md`. Services with `investigated: false` must be flagged as gaps in `evidence_coverage`.
 
@@ -988,3 +973,13 @@ Post a concise investigation summary back to the Jira ticket after POSTMORTEM co
 ## Reference Tables
 
 LQL filter patterns, Tier 1 MCP tool parameters, and Tier 2 gcloud CLI commands: see `references/query-patterns.md`.
+
+## Reference files moved out of this file
+
+Lookup data only: every rule, and every text a rule needs to be carried out, stays above. The other `references/` files are named at the step that needs them.
+
+| File | Read it |
+|---|---|
+| `references/stage-flow.md` | For the stage graph at a glance. |
+| `references/service-error-inventory.md` | Step 3c, for the `service_error_inventory` YAML schema. |
+| `references/rationale.md` | When weighing whether a rule applies: why the tier, baseline and dual-layer rules exist. |

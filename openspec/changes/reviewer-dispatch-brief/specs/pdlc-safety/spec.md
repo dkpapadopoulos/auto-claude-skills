@@ -4,7 +4,7 @@
 
 ### Requirement: Every reviewer lens prompt MUST carry the delivery contract
 
-Each reviewer lens prompt in `skills/agent-team-review/SKILL.md` MUST state, within that
+Each reviewer lens prompt in `skills/agent-team-review/references/reviewer-prompts.md` MUST state, within that
 prompt's own text, that the reviewer:
 
 - time-boxes itself and reports even if incomplete, naming what it did not cover;
@@ -19,7 +19,7 @@ subagent reads only its own prompt.
 
 #### Scenario: all four lens prompts carry every clause
 
-- **GIVEN** `skills/agent-team-review/SKILL.md`
+- **GIVEN** `skills/agent-team-review/references/reviewer-prompts.md`
 - **WHEN** each of the `security-reviewer`, `quality-reviewer`, `spec-reviewer`, and
   `adversarial-reviewer` prompt blocks is extracted
 - **THEN** every needle in
@@ -120,7 +120,7 @@ leaves every later-added needle unanchored, which is a live instance of the same
 The non-vacuity floor MUST equal the fixture's needle count, never the anchor count: any
 headroom between the two is a set of needles deletable without tripping either control.
 
-The gate MUST derive the lens population from `skills/agent-team-review/SKILL.md` rather
+The gate MUST derive the lens population from `skills/agent-team-review/references/reviewer-prompts.md` rather
 than hardcoding it, so a lens added later cannot be silently exempt, and MUST assert that
 the per-lens Delivery Contract blocks are identical, since duplication is the chosen design
 and drift is its only cost.

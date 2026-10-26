@@ -17,6 +17,7 @@ paths:
   - "scripts/gate-status.sh"
   - "scripts/verify-and-record.sh"
   - "skills/openspec-ship/SKILL.md"
+  - "skills/openspec-ship/references/**"
 ---
 
 # Routing, session tokens and composition state

@@ -89,7 +89,9 @@ for _s in ${_persist_surfaces}; do
 done
 # agent-team-review: incantation gone, delegates token resolution to the script.
 _atr="$(cat "${PROJECT_ROOT}/skills/agent-team-review/SKILL.md" 2>/dev/null)"
-assert_not_contains "agent-team-review: incantation removed" "${INCANT}" "${_atr}"
+# The absence check covers references/ too: a block moved there is still run.
+assert_not_contains "agent-team-review: incantation removed" "${INCANT}" \
+    "$(cat "${PROJECT_ROOT}/skills/agent-team-review/SKILL.md" "${PROJECT_ROOT}/skills/agent-team-review/references"/*.md 2>/dev/null)"
 assert_contains     "agent-team-review: calls record-review-verdict.sh" "record-review-verdict.sh" "${_atr}"
 
 export HOME="$_OLDHOME"

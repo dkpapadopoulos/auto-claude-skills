@@ -69,6 +69,17 @@ The user should provide:
 - **Required for SP artifact archival:** `plan_path` — the path to the implementation plan (e.g., `docs/plans/2026-04-15-feature-plan.md`); also checks legacy `docs/superpowers/plans/`. If not provided, skip SP artifact archival with warning.
 - **Optional:** `feature-name` — kebab-case change name. If not provided, derive from `plan_path` by stripping the date prefix (e.g., `2026-03-14-feature.md` → `feature`). If neither is available, ask the user.
 
+## Reference files
+
+Situational detail lives in `references/` in this skill's base directory. Read each file with the Read tool at the moment named; never write those artifacts from memory.
+
+| File | Read it |
+|---|---|
+| `references/artifact-templates.md` | Step 3, before writing `proposal.md`, `design.md`, `spec.md` or `tasks.md` yourself (always on the no-CLI path) |
+| `references/changelog-template.md` | Step 5, before creating a new `CHANGELOG.md` |
+| `references/hypotheses.md` | Step 7a-bis, when `discovery_path` is in session state and readable |
+| `references/divergences-template.md` | Step 7c, before appending `## Divergences` |
+
 ## Steps
 
 ### Step 1: Detect Environment
@@ -163,69 +174,14 @@ The user can then course-correct (rename, merge, or approve) before `openspec-sh
 
 Create `openspec/changes/<feature-name>/` with:
 
-**proposal.md** (must match openspec's expected headers exactly):
-```
-## Why
-Why we built this. (Synthesized from SP brainstorming spec if available.)
+- **proposal.md** (must match openspec's expected headers exactly)
+- **design.md**
+- **specs/<capability>/spec.md** (delta spec, one per capability)
+- **tasks.md** (one form when `plan_path` is provided, another when it is NOT)
 
-## What Changes
-High-level summary of what was actually built.
-
-## Capabilities
-
-### New Capabilities
-- `<capability-name>`: Brief description of what this capability covers
-
-### Modified Capabilities
-- `<existing-name>`: What requirement changed
-
-## Impact
-Affected code, APIs, dependencies, systems.
-```
-
-**design.md:**
-```
-# Design: <Feature Name>
-
-## Architecture
-Data flow, component breakdown, system diagrams reflecting the as-built state.
-
-## Dependencies
-New packages, APIs, or database changes introduced.
-
-## Decisions & Trade-offs
-Why Path A over Path B. Rejected alternatives and rationale.
-(Synthesized from Superpowers brainstorming spec if available.)
-```
-
-**specs/<capability>/spec.md** (delta spec, one per capability):
+**Read `references/artifact-templates.md` before writing any of them** — it holds each exact template.
 
 Use RFC 2119 keywords in UPPERCASE: MUST, MUST NOT, SHALL, SHALL NOT, SHOULD, SHOULD NOT, MAY. Never write these as lowercase when they express requirements.
-
-```
-## ADDED Requirements
-
-### Requirement: <Name>
-<Description using RFC 2119 keywords in UPPERCASE, e.g. "The system MUST ...">
-
-#### Scenario: <Name>
-- **WHEN** <condition>
-- **THEN** <expected outcome>
-```
-
-**tasks.md** (when `plan_path` is provided):
-```
-# Tasks: <Feature Name>
-
-> Checkpoints reference branch commits. After squash-merge they are typically
-> recoverable only via the feature's GitHub PR (`gh pr view <N> --json commits`)
-> — plain clones and forks do not fetch PR refs.
-
-## Completed
-
-- [x] 1.1 <task description> (from SP execution plan) [checkpoint: <sha7>]
-- [x] 1.2 <task description>
-```
 
 **Checkpoint stamping (issue #129):** while writing the completed-task lines, attribute commits from `git log --oneline --abbrev=7 <merge-base>..HEAD`. Append ` [checkpoint: <sha7>]` ONLY when exactly one in-range commit matches the task by task number or strong keyword — ambiguous or unattributable tasks stay bare (a missing stamp is honest; a guessed one is not). Then run the deterministic integrity floor:
 
@@ -240,15 +196,6 @@ Do not stamp the no-plan placeholder variant of `tasks.md` — it has no per-tas
 - Always copy the `checkpoints: N stamped / M completed tasks` summary line into the ship report (this line is the kill-criterion evidence: two consecutive ships whose checkpoints nobody reads → remove this stamping step).
 
 The validator is scoped to pre-merge feature-branch use only — never run it against archived `tasks.md` files (after squash-merge the branch SHAs are gone from main's history and every stamp would spuriously fail).
-
-**tasks.md** (when `plan_path` is NOT provided):
-```
-# Tasks: <Feature Name>
-
-## Completed
-
-- [x] 1.1 Retrospective tasks unavailable — no Superpowers execution plan was provided. See git log for implementation history.
-```
 
 ### Step 4: Validate (CLI only)
 
@@ -266,17 +213,7 @@ Note: The CLI command is `openspec validate <change>`, not `openspec verify`. Th
 1. Check for `CHANGELOG.md` in the project root.
 2. If it exists with a recognizable format, append notes matching that format.
 3. If it exists with Keep a Changelog format, append under `## [Unreleased]`.
-4. If none exists, create a new `CHANGELOG.md` using Keep a Changelog format:
-   ```
-   # Changelog
-
-   All notable changes to this project will be documented in this file.
-
-   The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-   and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-   ## [Unreleased]
-   ```
+4. If none exists, create a new `CHANGELOG.md` using Keep a Changelog format — Read `references/changelog-template.md` for its header.
 5. Categorize entries strictly into `### Added`, `### Changed`, `### Fixed`, or `### Removed`.
 
 ### Step 6: Archive & Cleanup
@@ -316,34 +253,7 @@ After the archive path exists and SP artifacts (if any) have been moved:
 
 If `discovery_path` exists in session state AND the file at that path is readable:
 
-1. Read the `## Hypotheses` section from the discovery artifact
-2. Parse each `### H<N>:` entry, extracting:
-   - `id` — the hypothesis ID (e.g., "H1")
-   - `description` — the prose hypothesis line ("We believe ...")
-   - `metric` — from the **Metric:** field
-   - `baseline` — from the **Baseline:** field
-   - `target` — from the **Target:** field
-   - `window` — from the **Window:** field
-3. Persist hypotheses and mark the change archived. Source the state helpers from the auto-claude-skills plugin, then call them:
-
-```bash
-# Self-contained: re-resolve the token here (see "Resolving the session token")
-# — a $TOKEN set in an earlier Bash call is NOT in scope, and an empty token
-# makes both helpers below return silently, losing hypotheses and archived_at.
-PR='<PLUGIN_ROOT>'
-TOKEN="$(. "$PR/hooks/lib/session-token.sh" 2>/dev/null && resolve_own_session_token || cat ~/.claude/.skill-session-token 2>/dev/null)"
-. "$PR/hooks/lib/openspec-state.sh"
-
-HYPS='[{"id":"H1","description":"...","metric":"...","baseline":"...","target":"...","window":"..."}]'
-openspec_state_set_hypotheses "$TOKEN" "<slug>" "$HYPS"
-
-# Record the ship timestamp so write_learn_baseline captures the real ship time,
-# not the stop-hook wall-clock fallback. Call after archival in Step 7b completes,
-# or here if archival is already complete.
-openspec_state_mark_archived "$TOKEN" "<slug>"
-```
-
-If the discovery description contains single-quotes (e.g., "it's faster"), construct the JSON via `jq -n` instead of shell-quoted literals to avoid quoting blow-ups.
+Read `references/hypotheses.md` and follow it: parse `## Hypotheses`, persist via `openspec_state_set_hypotheses`, then record the ship time with `openspec_state_mark_archived`.
 
 If `discovery_path` is absent in session state or the file is unreadable: Skip silently. `hypotheses` stays null in state. This covers sessions that entered at DEBUG or skipped discovery.
 
@@ -370,23 +280,7 @@ If `design_path` exists in session state and the design file is readable:
 2. Read the design artifact's **Capabilities Affected** and **Out-of-Scope** sections
 3. Compare against what was actually built (from the OpenSpec change's `proposal.md` and `specs/`)
 4. Append a `## Divergences` section to the **archived** design doc:
-
-```markdown
-## Divergences (auto-generated at ship time)
-
-**Acceptance Scenarios:**
-- [x] GIVEN ... WHEN ... THEN ... — implemented as designed
-- [~] GIVEN ... WHEN ... THEN ... — implemented with modification: [describe]
-- [ ] GIVEN ... WHEN ... THEN ... — not implemented: [reason]
-
-**Scope changes:**
-- Added: [capability not in original out-of-scope or capabilities list]
-- Removed: [capability in original list but not implemented]
-- Modified: [capability implemented differently than designed]
-
-**Design decision changes:**
-- [any trade-offs or approach changes made during implementation]
-```
+   Read `references/divergences-template.md` for that section's format.
 
 **Important:** Write divergences to the **archived copy** in `docs/plans/archive/`, not the live file. The archive is the historical record; the live file may still be in use if the feature spans multiple sessions.
 

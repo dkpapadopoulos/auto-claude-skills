@@ -24,6 +24,10 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 echo "=== test-reviewer-dispatch-brief.sh ==="
 
 SKILL="${PROJECT_ROOT}/skills/agent-team-review/SKILL.md"
+# The lens prompts moved to references/ (re-attach budget); the per-lens
+# assertions read the file the lead copies each prompt from. The lead-side
+# §3 assertions below stay on SKILL.md.
+PROMPTS="${PROJECT_ROOT}/skills/agent-team-review/references/reviewer-prompts.md"
 FIXTURE_DIR="${PROJECT_ROOT}/tests/fixtures/agent-team-review/dispatch-brief"
 CLAUSES_FILE="${FIXTURE_DIR}/required-clauses.txt"
 RANGE_FILE="${FIXTURE_DIR}/pinned-range.txt"
@@ -140,7 +144,7 @@ LENSES="$(awk '
     in_s && match($0, /^[[:space:]]*name: "[^"]+"/) {
         line=$0; sub(/^[[:space:]]*name: "/, "", line); sub(/".*$/, "", line); print line
     }
-' "${SKILL}")"
+' "${PROMPTS}")"
 
 LENS_COUNT=0
 if [ -n "${LENSES}" ]; then
@@ -167,7 +171,7 @@ _lens_block() {
         f && /^[[:space:]]*name: "/ { exit }
         f && /^## / { exit }
         f
-    ' "${SKILL}"
+    ' "${PROMPTS}"
 }
 
 # Literal (not regex) containment: needles carry backticks and hyphens.
@@ -289,7 +293,7 @@ EOF
 # on the CATEGORY SET, which is what must not diverge. A category added to one
 # copy and not the other fails here rather than shipping a reviewer that scopes
 # itself by a rule the lead does not hold.
-LEAD_CATS="$(awk '/^\*\*Do not flag/{f=1} f&&match($0, /^\| `[a-z-]+`/){c=substr($0, RSTART+3, RLENGTH-4); print c} f&&/^The list stops at two/{exit}' "${SKILL}" | sort)"
+LEAD_CATS="$(awk '/^\*\*Do not flag/{f=1} f&&match($0, /^\| `[a-z-]+`/){c=substr($0, RSTART+3, RLENGTH-4); print c} f&&/^\*\*Trivial is not the same as droppable/{exit}' "${SKILL}" | sort)"
 REV_CATS="$(printf '%s\n' "${SCOPE_REF}" | awk 'match($0, /Do not raise `[a-z-]+`/){c=substr($0, RSTART+14, RLENGTH-15); print c}' | sort)"
 if [ -z "${LEAD_CATS}" ] || [ -z "${REV_CATS}" ]; then
     _record_fail "lead and reviewer scope categories both extracted" \
@@ -338,6 +342,21 @@ assert_contains "lead: undelivered lens routes to could-not-review" \
 # .git/worktrees/, which the main-tree cleanliness check cannot see.
 assert_contains "lead: reviewer worktrees are reaped" \
     "git worktree prune" "${LEAD_BLOCK}"
+
+# --- §2 routes the lead to the prompts it must deliver ----------------------
+# The prompts are no longer in SKILL.md, so a §2 that stops naming their file
+# leaves the lead writing reviewer prompts from memory.
+SPAWN_BLOCK="$(awk '/^### 2\. Spawn Reviewers/{f=1;next} f && /^### /{exit} f' "${SKILL}")"
+assert_contains "lead: §2 reads the prompts file before spawning" \
+    "Before spawning, Read \`references/reviewer-prompts.md\`" "${SPAWN_BLOCK}"
+# PASTED, never delegated: a reviewer reads only its own prompt (#204), and a
+# §6 Mode A reviewer gets only the review bundle, so a pointer to this file
+# makes the Delivery Contract and Scope conditional on the reviewer opening it
+# (observed: a lead told all four reviewers to read their section instead).
+assert_contains "lead: §2 pastes each prompt whole, contract and scope included" \
+    "paste each lens its prompt verbatim, Delivery Contract and Scope included" "${SPAWN_BLOCK}"
+assert_contains "lead: §2 forbids pointing a reviewer at the file" \
+    "never point a reviewer at the file instead" "${SPAWN_BLOCK}"
 
 # --- Verification cites the mechanism --------------------------------------
 # spec.md requires the outcome assertion to reference Protocol §3 rather than
