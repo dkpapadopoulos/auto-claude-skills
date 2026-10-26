@@ -138,24 +138,7 @@ If `gcloud` is `unauthenticated`, run `gcloud auth login` before proceeding. If 
 
 Default path for all data pull. Uses `gcloud auth print-access-token` for auth, `curl` for requests, Python scripts for pagination and extraction. MCP truncates at ~100K characters and cannot handle monitoring projects with >50 policies — REST has no such limits.
 
-```bash
-WORK_DIR=$(mktemp -d /tmp/ah-XXXXXX)
-SCRIPTS_DIR='<PLUGIN_ROOT>/skills/alert-hygiene/scripts'
-
-python3 "$SCRIPTS_DIR/pull-policies.py" \
-    --project "$MONITORING_PROJECT" \
-    --output "$WORK_DIR/policies.json"
-
-python3 "$SCRIPTS_DIR/pull-incidents.py" \
-    --project "$MONITORING_PROJECT" \
-    --days 14 \
-    --output "$WORK_DIR/alerts.json"
-
-python3 "$SCRIPTS_DIR/compute-clusters.py" \
-    --policies "$WORK_DIR/policies.json" \
-    --alerts "$WORK_DIR/alerts.json" \
-    --output "$WORK_DIR/clusters.json"
-```
+The commands (`pull-policies.py`, `pull-incidents.py --days 14`, `compute-clusters.py`, each writing to `$WORK_DIR`) are under `### Tier 1 data-pull commands`, after Key Terms.
 
 ### Tier 2 — MCP (targeted enrichment only)
 
@@ -198,17 +181,13 @@ Run pull-policies.py and pull-incidents.py with the validated project. Verify no
 Run compute-clusters.py. This produces a structured output with three sections:
 
 **Per-cluster fields (`clusters` array):**
-- `raw_incidents`, `deduped_episodes`, `dedupe_window_sec`
-- `distinct_resources`, `median_duration_sec`, `median_retrigger_sec`
 - `total_open_hours` — sum of actual incident durations (openTime to closeTime) in hours. **MANDATORY source for all open-incident-hours figures in the report.** Do NOT compute open-hours ad-hoc from `raw * median_duration` — that formula is inaccurate in both directions (overstates retrigger clusters, understates chronic long-tail clusters). If this field is missing or 0 for a cluster, the installed script version may predate this feature — re-run with the local source script.
-- `tod_pattern`, `pattern` (flapping/chronic/recurring/burst/isolated)
-- `noise_score`, `noise_reasons`, `label_inconsistency`
-- `threshold_value`, `comparison`, `condition_filter`, `condition_query`, `condition_type`, `condition_match`
-- `service_key` (normalized service identity from condition labels, or null), `signal_family` (error_rate/latency/availability/other)
 
-**Inventory-level fields:**
-- `metric_types_in_inventory` — deduplicated set of all metric types across all policy conditions
-- `unlabeled_ranking` — top 20 enabled policies without squad/team/owner label, ranked by total raw incidents
+The other per-cluster fields and the inventory-level fields (`metric_types_in_inventory`, `unlabeled_ranking`) are listed under `### Stage 2 output fields`, after Key Terms.
+
+**After a compaction, Read this SKILL.md before continuing past Stage 2.** The prescriptive templates Stage 3 applies, the rest of Stage 3b, and Stages 4-5 sit past the re-attach cut; this is their every-run index.
+
+**Every run after Stage 2:** Stage 3 applies the prescriptive reasoning templates (by pattern and by alert type) to every cluster; Stage 3b queries all clusters, prioritizing by raw incident count on API errors or rate limits; Stage 4 checks the Coverage Gap Checklist, runs Routing Validation (zero-channel and unlabeled policies with `raw_incidents > 10`, and label-inconsistent clusters with `raw_incidents > 5`, are promoted to Investigate) and the SLO cross-reference only when `slo-source-status.json` is `ok`; Stage 5 applies the Do Now Gate (failures drop to Investigate) and resolves IaC Location from `iac-modules.json`, never with `gh search code`.
 
 ### Stage 3: Classify and Prescribe
 
@@ -453,7 +432,7 @@ Include a Definitions section in every report (after Methodology, before Action 
 
 ## Situational rules and steps
 
-Kept after the rules above so those survive a post-compaction cut; each is named where it applies.
+Kept after the core steps: everything up to Stage 3b's Result Quality Gate ends inside the post-compaction window, and the end of Stage 2 indexes the every-run gates that follow it. Each section below is named where it applies.
 
 ### PromQL Change Spec Rules
 
@@ -470,6 +449,41 @@ The link URL patterns (Open policy, Open alert policies, View IaC, Browse IaC, I
 **Do Now:** Open policy + View IaC (or Browse IaC) (2 links). When an invocation file exists (threshold/label config separate from module definition), include both: View IaC (module) + View IaC (invocation) + Open policy (3 links).
 **Investigate:** Open policy + View/Browse IaC + optional contextual third link (max 3). Omit third link if it would require inventing missing query details.
 **Do not** embed URLs in `Policy ID` or `IaC Location` fields — keep those plain text.
+
+### Tier 1 data-pull commands
+
+```bash
+WORK_DIR=$(mktemp -d /tmp/ah-XXXXXX)
+SCRIPTS_DIR='<PLUGIN_ROOT>/skills/alert-hygiene/scripts'
+
+python3 "$SCRIPTS_DIR/pull-policies.py" \
+    --project "$MONITORING_PROJECT" \
+    --output "$WORK_DIR/policies.json"
+
+python3 "$SCRIPTS_DIR/pull-incidents.py" \
+    --project "$MONITORING_PROJECT" \
+    --days 14 \
+    --output "$WORK_DIR/alerts.json"
+
+python3 "$SCRIPTS_DIR/compute-clusters.py" \
+    --policies "$WORK_DIR/policies.json" \
+    --alerts "$WORK_DIR/alerts.json" \
+    --output "$WORK_DIR/clusters.json"
+```
+
+### Stage 2 output fields
+
+Per-cluster fields (`clusters` array), besides `total_open_hours` (kept in Stage 2):
+- `raw_incidents`, `deduped_episodes`, `dedupe_window_sec`
+- `distinct_resources`, `median_duration_sec`, `median_retrigger_sec`
+- `tod_pattern`, `pattern` (flapping/chronic/recurring/burst/isolated)
+- `noise_score`, `noise_reasons`, `label_inconsistency`
+- `threshold_value`, `comparison`, `condition_filter`, `condition_query`, `condition_type`, `condition_match`
+- `service_key` (normalized service identity from condition labels, or null), `signal_family` (error_rate/latency/availability/other)
+
+**Inventory-level fields:**
+- `metric_types_in_inventory` — deduplicated set of all metric types across all policy conditions
+- `unlabeled_ranking` — top 20 enabled policies without squad/team/owner label, ranked by total raw incidents
 
 ### Stage 1 optional enrichment
 

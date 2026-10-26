@@ -402,6 +402,54 @@ done <<'SECTIONS'
 **Result Quality Gate|3|**Step 4 |Stage 3b Result Quality Gate
 SECTIONS
 
+# --- Stages 3-5's every-run gates are indexed inside the window --------------
+# The prescriptive templates, the rest of Stage 3b and Stages 4-5 sit past the
+# cut; the end of Stage 2 indexes them and says to Read the file, and each of
+# those lines is pinned on its own so moving one past the cut fails by name.
+STAGE2_TEXT="$(_section '### Stage 2: Compute Cluster Stats' 3)"
+assert_contains "Stage 2 says to Read the file after a compaction" \
+    "**After a compaction, Read this SKILL.md before continuing past Stage 2.**" "${STAGE2_TEXT}"
+while IFS='|' read -r _needle _label; do
+    [ -n "${_needle}" ] || continue
+    assert_contains "Stage 2 index: ${_label}" "${_needle}" "${STAGE2_TEXT}"
+done <<'AHINDEX'
+Stage 3 applies the prescriptive reasoning templates (by pattern and by alert type) to every cluster|Stage 3 applies the templates
+Stage 3b queries all clusters, prioritizing by raw incident count on API errors or rate limits|Stage 3b queries all clusters
+Stage 4 checks the Coverage Gap Checklist|Stage 4 coverage gaps
+(zero-channel and unlabeled policies with `raw_incidents > 10`, and label-inconsistent clusters with `raw_incidents > 5`, are promoted to Investigate)|Stage 4 Routing Validation promotions
+the SLO cross-reference only when `slo-source-status.json` is `ok`|Stage 4 SLO cross-reference
+Stage 5 applies the Do Now Gate (failures drop to Investigate)|Stage 5 Do Now Gate
+resolves IaC Location from `iac-modules.json`, never with `gh search code`|Stage 5 IaC resolution, never gh search code
+AHINDEX
+assert_contains "Stage 2 keeps total_open_hours as the mandatory source" \
+    "**MANDATORY source for all open-incident-hours figures in the report.**" "${STAGE2_TEXT}"
+# _line_end <line-prefix> — byte offset where the first unfenced line starting
+# with the prefix ends.
+_line_end() {
+    LC_ALL=C awk -v h="$1" "${_FENCE_AWK}"'
+        { n += length($0) + 1 }
+        !fl && index($0, h) == 1 { print n; exit }
+    ' "${SKILL_FILE}"
+}
+while IFS='|' read -r _p _label; do
+    [ -n "${_p}" ] || continue
+    _end="$(_line_end "${_p}")"
+    case "${_end}" in
+        ''|*[!0-9]*)
+            _record_fail "${_label} ends within the first ${REATTACH_BYTES} bytes" "'${_p}' not found" ;;
+        *)
+            if [ "${_end}" -le "${REATTACH_BYTES}" ]; then
+                _record_pass "${_label} ends within the first ${REATTACH_BYTES} bytes (byte ${_end})"
+            else
+                _record_fail "${_label} ends within the first ${REATTACH_BYTES} bytes" \
+                    "it ends at byte ${_end}, past the re-attach cut"
+            fi ;;
+    esac
+done <<'AHLINES'
+**After a compaction, Read this SKILL.md|the after-a-compaction Read line
+**Every run after Stage 2:**|the Stages 3-5 every-run index
+AHLINES
+
 # --- References index: every references/*.md is named from SKILL.md ---------
 # A file the core never names is never Read, and a named file must exist.
 _refs_n=0
