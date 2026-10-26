@@ -294,8 +294,10 @@ json_ledger_items() {
     # `dedup` would exit 5 permanently. The message used to say "raise the
     # limit in mine-evidence.sh", but in a target repo that file lives in the
     # versioned plugin cache — editing it is overwritten by the next plugin
-    # update and trips the drift canary. So the cap is overridable from the
-    # environment, which is a remedy the user can actually apply.
+    # update. (The drift canary does not catch such an edit: it runs only when
+    # the session's cwd is the plugin's own source repo, and its manifest does
+    # not include this file.) So the cap is overridable from the environment,
+    # which is a remedy the user can actually apply.
     local LEDGER_LIMIT="${IMPROVEMENT_MINER_LEDGER_LIMIT:-200}"
     case "${LEDGER_LIMIT}" in ''|*[!0-9]*) LEDGER_LIMIT=200 ;; esac
     raw="$(gh issue list --label "${LABEL_RUN}" --state all --limit "${LEDGER_LIMIT}" \
