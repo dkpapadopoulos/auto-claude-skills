@@ -76,8 +76,8 @@ fi
 # Test 4: No stale "7 section" language in incident-analysis
 # ---------------------------------------------------------------------------
 
-# references/ is scanned too: postmortem text moved out of SKILL.md for the
-# re-attach budget (references/postmortem-fields.md) must not carry it either.
+# references/ is scanned too: any postmortem text moved out of SKILL.md into a
+# reference file must not carry it either.
 if { printf '%s\n' "${ANALYSIS_CONTENT}"; cat "${PROJECT_ROOT}/skills/incident-analysis/references/"*.md; } \
         | grep -qi "7 section headers\|seven section"; then
     _record_fail "stale: no 7-section language" "found '7 section headers' or 'seven section' in incident-analysis"

@@ -860,6 +860,10 @@ assert_contains "MITIGATE Step 1 keeps the no-silent-fallback rule" "do NOT sile
 assert_contains "MITIGATE Step 1b carries the access summary layout" "Trace correlation: ✓ complete (Tier 1 only)" "${M_STEP1B_TEXT}"
 assert_contains "MITIGATE Step 1b carries the Step 1 auth-fix prompt" \
     "This opens a browser for re-authentication. Proceed?" "${M_STEP1B_TEXT}"
+assert_contains "MITIGATE Step 1b keeps its own wait-for-the-user rule" \
+    "Wait for the user to fix or explicitly proceed." "${M_STEP1B_TEXT}"
+assert_contains "MITIGATE Step 1b keeps its present-the-summary rule" \
+    "present a tool access summary and prompt the user to fix **fixable** gaps" "${M_STEP1B_TEXT}"
 assert_contains "INVESTIGATE Step 3 keeps the mandatory DB rule" \
     "query the database's own metrics before attributing the issue to database capacity" "${I_STEP3_TEXT}"
 assert_contains "INVESTIGATE Step 3 carries the DB metric names" \
@@ -879,14 +883,19 @@ while IFS='|' read -r _needle _label; do
 done <<'SEQ'
 HALT with the exact payload before `createJiraIssue`|INTAKE halts before creating the ticket
 an MCP auth error: offer the fix, never fall back silently|Step 1 never falls back silently
-1b access gate (wait for a fix or an explicit proceed)|Step 1b waits
+1b access gate: present a tool access summary, then wait for the user to fix or explicitly proceed|Step 1b presents the summary and waits
 5 mitigation goes to CLASSIFY, never a bare command|Step 5 routes mitigation through CLASSIFY
+a detected veto signal disqualifies a playbook, and coverage below 0.70, unresolved `params` or failed `pre_conditions` make it ineligible for proposal|CLASSIFY veto, coverage and eligibility
 >=85 with a 15-point margin goes to the HITL gate, 60-84 to disambiguation probes, <60 to INVESTIGATE Steps 1-5 only|CLASSIFY routing bands
 database metrics before blaming database capacity|Step 3 DB metrics first
 caller investigation is mandatory for a shared resource|Step 3 caller investigation
 3c sweep, mandatory for 2+ services|Step 3c is mandatory
-4 one trace hop at most (Tier 1 only)|Step 4 one hop
+**Step 4** (Tier 1 only): one trace hop at most.|Step 4 one hop
+present the trace timeline to the user and do NOT autonomously choose|Step 4 lets the user choose
+the evidence is ambiguous or borderline: do NOT hop|Step 4 does not hop on ambiguous evidence
+If Service B's identity is ambiguous, STOP and present the trace to the user.|Step 4 stops on an ambiguous identity
 a recurring workload that ran clean last cycle is never the trigger, first runs aside|Step 5 recurring-workload gate
+without it the gate should reject the hypothesis and redirect investigation to the highest-ranked service|Step 5 anti-anchoring rejects the hypothesis
 6 flight plan, approved before any code is touched|Step 6 approval
 kubectl missing: present the command, never run it|EXECUTE kubectl rule
 fingerprint drifted: do NOT execute, return to CLASSIFY|EXECUTE fingerprint recheck
@@ -894,9 +903,12 @@ Step 2 waits for it under `requires_pre_execution_evidence`|EXECUTE pre.json
 a hard stop while stabilizing, or any stop condition while sampling: ESCALATE to a full INVESTIGATE|VALIDATE escalation
 every exit writes a redacted `validate.json`|VALIDATE validate.json
 Q1-Q3 confident or back to INVESTIGATE Step 1|Step 8 Q1-Q3
+with a `partial` or `unavailable` domain, Q1-Q3 must state what could change the answer|Step 8 Q1-Q3 account for gaps
 Q4-Q12 each resolved by evidence or a status with its reason|Step 8 Q4-Q12
-closure blocked unless the root-cause service's layers are `assessed` (or a narrow `not_applicable`) and its `mechanism_status` is `known` or `not_applicable`|Step 8 closure
+Closure is blocked when any unresolved item weakens the chosen root cause, the named causal chain, or the root-cause layer coverage|Step 8 closure blocked by any weakening item
+and unless the root-cause service's layers are `assessed` (or a narrow `not_applicable`) and its `mechanism_status` is `known` or `not_applicable`|Step 8 closure needs layers and mechanism
 from the Step 7 summary only, no new queries|POSTMORTEM from the summary
+a verified recovery timestamp, or state "Recovery time not verified — estimated at X based on Y"|POSTMORTEM recovery verified or said not to be
 HALT with the exact comment before posting it|REPORT-BACK halts before posting
 SEQ
 
@@ -975,8 +987,47 @@ done <<'SECTIONS'
 ### Default: Full Investigation|3||Investigation Modes: full investigation is the default
 ### Opt-In: Live Triage|3||Investigation Modes: live triage
 ## INTAKE (opt-in Jira ticket)|2||INTAKE (halt before createJiraIssue)
-### Step 1: Detect Available Tools|3||MITIGATE Step 1 (obs-preflight, tier, auth fix)
 SECTIONS
+# MITIGATE Step 1 is not pinned: it runs once, at session start, before any
+# compaction can cut it, so its bytes go to the Step Sequence's gates instead.
+
+# Each Step Sequence line is pinned on its own, so a gate line moved out of the
+# section (or the section reflowed past the cut) fails by name.
+# _line_end <line-prefix> — byte offset where the first unfenced line starting
+# with the prefix ends.
+_line_end() {
+    LC_ALL=C awk -v h="$1" "${_FENCE_AWK}"'
+        { n += length($0) + 1 }
+        !fl && index($0, h) == 1 { print n; exit }
+    ' "${SKILL_FILE}"
+}
+while IFS='|' read -r _p _label; do
+    [ -n "${_p}" ] || continue
+    _end="$(_line_end "${_p}")"
+    case "${_end}" in
+        ''|*[!0-9]*)
+            _record_fail "Step Sequence line '${_label}' ends within the first ${REATTACH_BYTES} bytes" "'${_p}' not found" ;;
+        *)
+            if [ "${_end}" -le "${REATTACH_BYTES}" ]; then
+                _record_pass "Step Sequence line '${_label}' ends within the first ${REATTACH_BYTES} bytes (byte ${_end})"
+            else
+                _record_fail "Step Sequence line '${_label}' ends within the first ${REATTACH_BYTES} bytes" \
+                    "it ends at byte ${_end}, past the re-attach cut"
+            fi ;;
+    esac
+done <<'SEQLINES'
+- **INTAKE** (opt-in)|INTAKE
+- **MITIGATE:**|MITIGATE (1 no silent fallback, 1b summary and wait)
+- **CLASSIFY:**|CLASSIFY (veto, coverage, eligibility, bands)
+- **INVESTIGATE:**|INVESTIGATE (3, 3c, 6)
+- **Step 4** (Tier 1 only)|Step 4 (present, do not choose, stop)
+- **Step 5:**|Step 5 (recurring workload, anti-anchoring)
+- **EXECUTE:**|EXECUTE
+- **VALIDATE:**|VALIDATE
+- **Step 8, full mode:**|Step 8 (gaps, closure)
+- **POSTMORTEM:**|POSTMORTEM (recovery verified or not)
+- **REPORT-BACK** (opt-in)|REPORT-BACK
+SEQLINES
 
 # --- References index: every references/*.md is named from SKILL.md ---------
 # A file the core never names is never Read, and a named file must exist.
@@ -1056,7 +1107,7 @@ else
         "the CI reviewer's own prompt is a separate copy of this rule; if it states a fixed number it will block on it"
 fi
 
-INCIDENT_SKILL_WORD_BASELINE=11799
+INCIDENT_SKILL_WORD_BASELINE=11957
 word_count=$(wc -w < "${SKILL_FILE}" | tr -d ' ')
 if [ "$word_count" -le "${INCIDENT_SKILL_WORD_BASELINE}" ]; then
     _record_pass "SKILL.md: word count within baseline ${INCIDENT_SKILL_WORD_BASELINE} (${word_count})"

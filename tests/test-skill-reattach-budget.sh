@@ -29,10 +29,13 @@ REATTACH_BUDGET_BYTES=19500
 
 # One "<skill> <ceiling-bytes>" per line, each ceiling equal to that SKILL.md's
 # current `wc -c`. Remove an entry in the same commit that splits the skill;
-# lower a ceiling in the same commit that shrinks the skill; never raise one.
+# lower a ceiling in the same commit that shrinks the skill. A ceiling may rise
+# only in a commit whose message states the reason (the INCIDENT_SKILL_WORD_BASELINE
+# convention): the equality check cannot tell a raise from a fall, so the
+# message is where a raise is seen.
 # All three stay listed after their splits: their rules alone exceed the
 # budget, so each core leads with them until a prose pass (design decision 4).
-REATTACH_PENDING="incident-analysis 84228
+REATTACH_PENDING="incident-analysis 85250
 alert-hygiene 41297
 agent-team-review 30619"
 

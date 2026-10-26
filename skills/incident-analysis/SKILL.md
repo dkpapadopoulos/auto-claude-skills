@@ -17,16 +17,18 @@ Key re-entry paths:
 
 ## Step Sequence and Hard Gates
 
-Each stage's steps in order, with the gates that stop them; the full text follows the Behavioral Constraints. After a compaction cut, Read this file before working past the cut.
+Every stop and approval gate, stage by stage in order; each step's full text follows the Behavioral Constraints. After a compaction cut, Read this file before working past the cut.
 
 - **INTAKE** (opt-in): HALT with the exact payload before `createJiraIssue`.
-- **MITIGATE:** 1 preflight and tier (an MCP auth error: offer the fix, never fall back silently); 1b access gate (wait for a fix or an explicit proceed); 2 scope (UTC); 2b inventory; 2c impact; 2d baseline-first gate; 3 errors; 3b aggregate fingerprint; 4 exemplars; 5 mitigation goes to CLASSIFY, never a bare command; 6 a code fix goes to INVESTIGATE.
-- **CLASSIFY:** score playbooks (`references/classify-scoring.md`): >=85 with a 15-point margin goes to the HITL gate, 60-84 to disambiguation probes, <60 to INVESTIGATE Steps 1-5 only.
-- **INVESTIGATE:** 1-2 logs and signals; 3 deep dive (database metrics before blaming database capacity; caller investigation is mandatory for a shared resource); 3c sweep, mandatory for 2+ services; 4 one trace hop at most (Tier 1 only); 4b; 5 hypothesis (a recurring workload that ran clean last cycle is never the trigger, first runs aside); 6 flight plan, approved before any code is touched; 6b; 7 synthesis and YAML; 8 completeness gate; 9.
+- **MITIGATE:** 1 preflight and tier (an MCP auth error: offer the fix, never fall back silently); 1b access gate: present a tool access summary, then wait for the user to fix or explicitly proceed; 2 scope (UTC); 2b inventory; 2c impact; 2d baseline-first gate; 5 mitigation goes to CLASSIFY, never a bare command; 6 a code fix goes to INVESTIGATE.
+- **CLASSIFY:** score playbooks (`references/classify-scoring.md`); a detected veto signal disqualifies a playbook, and coverage below 0.70, unresolved `params` or failed `pre_conditions` make it ineligible for proposal; >=85 with a 15-point margin goes to the HITL gate, 60-84 to disambiguation probes, <60 to INVESTIGATE Steps 1-5 only.
+- **INVESTIGATE:** 3 deep dive (database metrics before blaming database capacity; caller investigation is mandatory for a shared resource); 3c sweep, mandatory for 2+ services; 6 flight plan, approved before any code is touched; 7 synthesis and YAML; 8 completeness gate.
+- **Step 4** (Tier 1 only): one trace hop at most. When multiple services meet the evidence criteria, 3+ services show failure signals, or the evidence is ambiguous or borderline: do NOT hop; present the trace timeline to the user and do NOT autonomously choose. If Service B's identity is ambiguous, STOP and present the trace to the user.
+- **Step 5:** a recurring workload that ran clean last cycle is never the trigger, first runs aside. Anti-anchoring: if the chosen service is not the highest-ranked `service_error_inventory` entry, the hypothesis needs explicit evidence why; without it the gate should reject the hypothesis and redirect investigation to the highest-ranked service.
 - **EXECUTE:** kubectl missing: present the command, never run it; fingerprint drifted: do NOT execute, return to CLASSIFY; write a redacted `pre.json` (Step 2 waits for it under `requires_pre_execution_evidence`); then VALIDATE.
 - **VALIDATE:** a hard stop while stabilizing, or any stop condition while sampling: ESCALATE to a full INVESTIGATE; success goes to POSTMORTEM; mixed results: the user chooses; every exit writes a redacted `validate.json`.
-- **Step 8, full mode:** Q1-Q3 confident or back to INVESTIGATE Step 1; Q4-Q12 each resolved by evidence or a status with its reason; closure blocked unless the root-cause service's layers are `assessed` (or a narrow `not_applicable`) and its `mechanism_status` is `known` or `not_applicable`.
-- **POSTMORTEM:** from the Step 7 summary only, no new queries; a verified recovery timestamp; evidence links in every section.
+- **Step 8, full mode:** Q1-Q3 confident or back to INVESTIGATE Step 1; with a `partial` or `unavailable` domain, Q1-Q3 must state what could change the answer (a confident "yes" to Q1 is not possible when a relevant domain is missing); Q4-Q12 each resolved by evidence or a status with its reason. Closure is blocked when any unresolved item weakens the chosen root cause, the named causal chain, or the root-cause layer coverage, and unless the root-cause service's layers are `assessed` (or a narrow `not_applicable`) and its `mechanism_status` is `known` or `not_applicable`.
+- **POSTMORTEM:** from the Step 7 summary only, no new queries; a verified recovery timestamp, or state "Recovery time not verified — estimated at X based on Y"; evidence links in every section.
 - **REPORT-BACK** (opt-in): HALT with the exact comment before posting it.
 
 ## Behavioral Constraints (Always Active)
