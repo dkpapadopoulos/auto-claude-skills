@@ -1433,7 +1433,18 @@
         },
         {
           "step": "implementation-drift-check",
-          "purpose": "FALLBACK: Run drift check if it did not run in REVIEW"
+          "purpose": "FALLBACK: Run drift check if it did not run in REVIEW",
+          "gate": "artifact-presence",
+          "artifacts": [
+            "openspec/changes/*/",
+            "docs/plans/*-design.md",
+            "docs/plans/*-plan.md",
+            "docs/plans/*-spec.md",
+            "openspec/specs/*/spec.md",
+            "docs/superpowers/specs/*-design.md",
+            "docs/superpowers/plans/*.md",
+            "tests/fixtures/evals/*.json"
+          ]
         },
         {
           "step": "openspec-ship",
