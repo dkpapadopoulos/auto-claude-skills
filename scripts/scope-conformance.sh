@@ -11,7 +11,9 @@
 # plan (superpowers writing-plans Files-block format), line ranges stripped.
 # Matching is exact path or bash case-glob; case-glob `*` crosses `/`, which is
 # deliberately conservative-inclusive. Meta artifacts every chain touches
-# (docs/plans/*, openspec/*, CHANGELOG.md) are always covered.
+# (docs/plans/*, docs/superpowers/*, openspec/*, CHANGELOG.md) are always
+# covered; docs/superpowers/ is where superpowers writes its design docs and
+# plans by default, and writing-plans lets the user choose either location.
 
 set -u
 
@@ -68,13 +70,20 @@ if [ -z "$CHANGED" ]; then
     exit 0
 fi
 
-META_ALLOW="docs/plans/* openspec/* CHANGELOG.md"
+META_ALLOW="docs/plans/* docs/superpowers/* openspec/* CHANGELOG.md"
 
 # The plan file itself is always in-scope: it IS the manifest artifact of the
 # workflow being checked (strip a leading ./ to match git's repo-relative paths).
 PLAN_REL="${PLAN#./}"
 
 VIOLATIONS=""
+# Pathname expansion OFF for the loop: `for pat in $META_ALLOW` is unquoted (so
+# it splits), and with globbing on, each pattern was expanded against the CWD
+# first. In a repo that has an openspec/ directory, `openspec/*` became the
+# literal `openspec/changes openspec/specs`, which match no file inside them,
+# so a change's own proposal.md reported as a violation; `docs/superpowers/*`
+# did the same. `case` patterns are unaffected by -f.
+set -f
 while IFS= read -r f; do
     [ -n "$f" ] || continue
     covered=0
@@ -101,6 +110,7 @@ MANIFEST_EOF
 done <<CHANGED_EOF
 $CHANGED
 CHANGED_EOF
+set +f
 
 if [ -n "$VIOLATIONS" ]; then
     say "scope-conformance: VIOLATION — files changed outside declared scope (advisory):"

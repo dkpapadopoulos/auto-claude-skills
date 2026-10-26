@@ -150,5 +150,45 @@ echo impl > newdir/impl.sh
 bash "$SUT" plan.md main > "$OUT" 2>&1; rc=$?
 assert_exit "dir/ entry covers contained file" 0 "$rc"
 
+# --- Case 12: superpowers' default doc location is meta, like docs/plans/ ---
+# writing-plans 7.0.1 saves to docs/superpowers/plans/ unless the user prefers
+# another location, and brainstorming writes its design doc under
+# docs/superpowers/specs/. A plan saved there must not report its own chain's
+# artifacts as undeclared.
+make_repo "$TMP/spdocs"
+mkdir -p docs/superpowers/plans docs/superpowers/specs
+cat > docs/superpowers/plans/2026-10-26-thing.md <<'EOF'
+**Files:**
+- Modify: `scripts/foo.sh`
+EOF
+echo changed > scripts/foo.sh
+echo design > docs/superpowers/specs/2026-10-26-thing-design.md
+echo other > docs/superpowers/plans/2026-10-25-earlier.md
+bash "$SUT" docs/superpowers/plans/2026-10-26-thing.md main > "$OUT" 2>&1; rc=$?
+assert_exit "docs/superpowers/ design doc and plans exempt via meta allowlist" 0 "$rc"
+# Control: the allowlist entry is docs/superpowers/, not docs/. Without this, the
+# cell above would also pass if something exempted every docs/ file.
+echo stray > docs/notes.md
+bash "$SUT" docs/superpowers/plans/2026-10-26-thing.md main > "$OUT" 2>&1; rc=$?
+assert_exit "a docs/ file outside docs/superpowers/ still violates" 1 "$rc"
+assert_contains "the stray docs/ file is the one listed" "docs/notes.md" "$OUT"
+
+# --- Case 13: a meta pattern covers NESTED files when its directory exists ---
+# The script ran `for pat in $META_ALLOW` with globbing on, so in a repo that
+# HAS an openspec/ directory `openspec/*` expanded to `openspec/changes` (the
+# directory) and a change's own proposal.md reported as a violation. Case 8
+# never saw it: CHANGELOG.md has no glob, and no earlier case created the dir.
+make_repo "$TMP/nested"
+cat > plan.md <<'EOF'
+**Files:**
+- Modify: `scripts/foo.sh`
+EOF
+echo changed > scripts/foo.sh
+mkdir -p openspec/changes/thing/specs/cap
+echo why > openspec/changes/thing/proposal.md
+echo req > openspec/changes/thing/specs/cap/spec.md
+bash "$SUT" plan.md main > "$OUT" 2>&1; rc=$?
+assert_exit "nested openspec/ files exempt when openspec/ exists" 0 "$rc"
+
 echo "test-scope-conformance: ${PASS} passed, ${FAIL} failed"
 [ "$FAIL" -eq 0 ]
