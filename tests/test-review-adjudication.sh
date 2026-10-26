@@ -117,21 +117,37 @@ assert_contains "worktree commands carry uncommitted work from HEAD" \
 # §5 really ending 2,000 bytes past the cut.
 REATTACH_BYTES=19500
 # _section_end <heading-prefix> <level> [file] — byte offset where the section ends.
+# A fence opens with 3+ backticks or 3+ tildes and closes only on a line of the
+# SAME character, at least as long, with nothing after it — so a ``` inside a
+# ```` fence, or a ~~~ fence, does not end it. `fl` is the open fence's length.
 _section_end() {
     LC_ALL=C awk -v h="$1" -v lv="$2" '
-        /^[[:space:]]*```/ { fence = !fence }
-        f && !fence && match($0, /^#+ /) && RLENGTH - 1 <= lv { print n; done = 1; exit }
+        match($0, /^[[:space:]]*(```+|~~~+)/) {
+            _m = substr($0, RSTART, RLENGTH); sub(/^[[:space:]]*/, "", _m)
+            if (!fl) { fc = substr(_m, 1, 1); fl = length(_m) }
+            else if (substr(_m, 1, 1) == fc && length(_m) >= fl && substr($0, RSTART + RLENGTH) ~ /^[[:space:]]*$/) fl = 0
+        }
+        f && !fl && match($0, /^#+ /) && RLENGTH - 1 <= lv { print n; done = 1; exit }
         !f && index($0, h) == 1 { f = 1 }
         { n += length($0) + 1 }
         END { if (f && !done) print n }
     ' "${3:-${SKILL}}"
 }
-# Control: a fenced `# comment` inside a section does not end it. The expected
-# end is the next real heading's byte offset, read independently with grep -b.
+# Controls: a fenced `# comment` inside a section does not end it, for each
+# fence shape. The expected end is the next real heading's byte offset, read
+# independently with grep -b.
 _fence_doc="$(mktemp)"
 printf '%s\n' '# T' '' '### 5. X' 'text' '```bash' '# a shell comment' 'echo hi' '```' 'more' '### 6. Y' 'tail' > "${_fence_doc}"
 _fence_want="$(grep -b -m1 '^### 6\. Y' "${_fence_doc}" | cut -d: -f1)"
 assert_equals "control: a fenced # comment does not end a section early" \
+    "${_fence_want}" "$(_section_end '### 5. ' 3 "${_fence_doc}")"
+printf '%s\n' '# T' '' '### 5. X' 'text' '~~~bash' '# a shell comment' 'echo hi' '~~~' 'more' '### 6. Y' 'tail' > "${_fence_doc}"
+_fence_want="$(grep -b -m1 '^### 6\. Y' "${_fence_doc}" | cut -d: -f1)"
+assert_equals "control: a # comment in a tilde fence does not end a section early" \
+    "${_fence_want}" "$(_section_end '### 5. ' 3 "${_fence_doc}")"
+printf '%s\n' '# T' '' '### 5. X' 'text' '````markdown' '```bash' '# a shell comment' '```' '````' 'more' '### 6. Y' 'tail' > "${_fence_doc}"
+_fence_want="$(grep -b -m1 '^### 6\. Y' "${_fence_doc}" | cut -d: -f1)"
+assert_equals "control: a # comment in a four-backtick fence holding a \`\`\` block does not end a section early" \
     "${_fence_want}" "$(_section_end '### 5. ' 3 "${_fence_doc}")"
 rm -f "${_fence_doc}"
 while IFS='|' read -r _h _lv _label; do

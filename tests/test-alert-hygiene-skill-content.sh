@@ -277,12 +277,22 @@ assert_contains "templates reference has the link URL patterns" \
     "monitoring/alerting/policies/{id}?project={monitoring_project}" "${TEMPLATES_CONTENT}"
 
 # --- The core sends the model to each file at the step that needs it --------
+# _FENCE_AWK — awk rule tracking fenced code, shared by _section and
+# _section_end: a fence opens with 3+ backticks or 3+ tildes and closes only on
+# a line of the SAME character, at least as long, with nothing after it — so a
+# ``` inside a ```` fence, or a ~~~ fence, does not end it. `fl` is the open
+# fence's length (0 = outside a fence).
+_FENCE_AWK='
+        match($0, /^[[:space:]]*(```+|~~~+)/) {
+            _m = substr($0, RSTART, RLENGTH); sub(/^[[:space:]]*/, "", _m)
+            if (!fl) { fc = substr(_m, 1, 1); fl = length(_m) }
+            else if (substr(_m, 1, 1) == fc && length(_m) >= fl && substr($0, RSTART + RLENGTH) ~ /^[[:space:]]*$/) fl = 0
+        }'
 # _section <heading-prefix> <level> — the section's text, up to the next
 # heading of the same or a higher level, skipping fenced code.
 _section() {
-    awk -v h="$1" -v lv="$2" '
-        /^[[:space:]]*```/ { fence = !fence }
-        f && !fence && match($0, /^#+ /) && RLENGTH - 1 <= lv { exit }
+    LC_ALL=C awk -v h="$1" -v lv="$2" "${_FENCE_AWK}"'
+        f && !fl && match($0, /^#+ /) && RLENGTH - 1 <= lv { exit }
         !f && index($0, h) == 1 { f = 1 }
         f { print }
     ' "${SKILL_FILE}"
@@ -295,7 +305,18 @@ ENRICH_TEXT="$(_section '### Stage 1 optional enrichment' 3)"
 assert_contains "Stage 1 names where the optional enrichment steps are" \
     "### Stage 1 optional enrichment" "${STAGE1_TEXT}"
 assert_contains "Stage 1 keeps the precondition-or-fallback rule" \
-    "otherwise write its fallback artifacts and skip it" "${STAGE1_TEXT}"
+    "otherwise it writes its fallback artifacts and is skipped" "${STAGE1_TEXT}"
+# What applies on every run, fallback included, is restated inside the window
+# (the enrichment steps themselves sit past it).
+assert_contains "Stage 1 names the SLO artifacts every run writes" \
+    "Every run writes \`slo-services.json\` and \`slo-source-status.json\`" "${STAGE1_TEXT}"
+assert_contains "Stage 1 says to run the SLO block, which writes them on every branch" \
+    "run the SLO block in \`references/slo-enrichment.md\`" "${STAGE1_TEXT}"
+assert_contains "Stage 1 names the IaC status artifact" "\`iac-discovery/iac-status.json\`" "${STAGE1_TEXT}"
+assert_contains "Stage 1 keeps the report lines" \
+    "(\`SLO config: {reason}\`, \`IaC discovery: {reason}\` when skipped)" "${STAGE1_TEXT}"
+assert_contains "Stage 1 keeps the Target Owner priority" \
+    "Target Owner is its squad label, else its \`tf/squads/{squad}/\` directory, else CODEOWNERS (say which), else \`⚠ assign\`" "${STAGE1_TEXT}"
 for _f in slo-enrichment.md iac-discovery.md codeowners-resolution.md; do
     assert_contains "Stage 1 enrichment points at references/${_f}" "references/${_f}" "${ENRICH_TEXT}"
 done
@@ -326,22 +347,33 @@ REATTACH_BYTES=19500
 # _section_end <start-prefix> <level> [stop-prefix] [file] — byte offset where
 # the span ends.
 _section_end() {
-    LC_ALL=C awk -v h="$1" -v lv="$2" -v s="${3:-}" '
-        /^[[:space:]]*```/ { fence = !fence }
-        f && !fence && match($0, /^#+ /) && RLENGTH - 1 <= lv { print n; done = 1; exit }
-        f && !fence && s != "" && index($0, s) == 1 { print n; done = 1; exit }
+    LC_ALL=C awk -v h="$1" -v lv="$2" -v s="${3:-}" "${_FENCE_AWK}"'
+        f && !fl && match($0, /^#+ /) && RLENGTH - 1 <= lv { print n; done = 1; exit }
+        f && !fl && s != "" && index($0, s) == 1 { print n; done = 1; exit }
         !f && index($0, h) == 1 { f = 1 }
         { n += length($0) + 1 }
         END { if (f && !done) print n }
     ' "${4:-${SKILL_FILE}}"
 }
-# Control: a fenced `# comment` inside a section does not end it. The expected
-# end is the next real heading's byte offset, read independently with grep -b.
+# Controls: a fenced `# comment` inside a section does not end it, for each
+# fence shape. The expected end is the next real heading's byte offset, read
+# independently with grep -b.
 _fence_doc="$(mktemp)"
-printf '%s\n' '# T' '' '### Stage 2: X' 'text' '```bash' '# a shell comment' 'echo hi' '```' 'more' '### Stage 3: Y' 'tail' > "${_fence_doc}"
-_fence_want="$(grep -b -m1 '^### Stage 3: Y' "${_fence_doc}" | cut -d: -f1)"
-assert_equals "control: a fenced # comment does not end a section early" \
-    "${_fence_want}" "$(_section_end '### Stage 2: ' 3 '' "${_fence_doc}")"
+while IFS='|' read -r _shape _open _inner _close; do
+    [ -n "${_shape}" ] || continue
+    if [ -n "${_inner}" ]; then
+        printf '%s\n' '# T' '' '### Stage 2: X' 'text' "${_open}" "${_inner}" '# a comment' 'echo hi' '```' "${_close}" 'more' '### Stage 3: Y' 'tail' > "${_fence_doc}"
+    else
+        printf '%s\n' '# T' '' '### Stage 2: X' 'text' "${_open}" '# a comment' 'echo hi' "${_close}" 'more' '### Stage 3: Y' 'tail' > "${_fence_doc}"
+    fi
+    _fence_want="$(grep -b -m1 '^### Stage 3: Y' "${_fence_doc}" | cut -d: -f1)"
+    assert_equals "control: a # comment in a ${_shape} fence does not end a section early" \
+        "${_fence_want}" "$(_section_end '### Stage 2: ' 3 '' "${_fence_doc}")"
+done <<'FENCES'
+backtick|```bash||```
+tilde|~~~bash||~~~
+four-backtick holding a ``` block|````markdown|```bash|````
+FENCES
 rm -f "${_fence_doc}"
 while IFS='|' read -r _h _lv _stop _label; do
     [ -n "${_h}" ] || continue
@@ -361,8 +393,12 @@ done <<'SECTIONS'
 ## Behavioral Constraints|2||Behavioral Constraints
 ## Confidence Levels and Readiness|2||Confidence Levels and Readiness
 ## Report Structure|2||Report Structure (Do Now Gate through the report rules)
+## Tier Detection|2||Tier Detection (obs-preflight first)
 ### Stage 0: Validate Data Access|3||Stage 0 (fail early)
+### Stage 1: Pull Data|3||Stage 1 (counts; enrichment precondition-or-fallback, artifacts, report lines, owner priority)
 ### Stage 2: Compute Cluster Stats|3||Stage 2 (total_open_hours is mandatory)
+### Stage 3: Classify and Prescribe|3||Stage 3 (threshold-aware prescriptions)
+**Mandatory Query Parameters|3|**Step 3 |Stage 3b Mandatory Query Parameters
 **Result Quality Gate|3|**Step 4 |Stage 3b Result Quality Gate
 SECTIONS
 

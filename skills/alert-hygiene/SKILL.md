@@ -94,7 +94,7 @@ If any are missing, the item drops to Investigate regardless of confidence level
 
 Guardrail thresholds must be derived from evidence, not arbitrary. Guardrail = N/A only when the change cannot plausibly hide a real signal.
 
-Two finding-format rules are under `## Situational rules and steps`, after Key Terms: PromQL Change Spec Rules (exact current and proposed fragment, never blind copy-paste) and Contextual Action Links (one `**Links:**` line after `**Notification Reach:**` on every Do Now and Investigate finding, max 3, no URLs in `Policy ID` or `IaC Location`).
+PromQL Change Spec Rules and Contextual Action Links (`## Situational rules and steps`, after Key Terms): exact current and proposed fragment, never blind copy-paste; one `**Links:**` line after `**Notification Reach:**` on each Do Now and Investigate finding, max 3, no URLs in `Policy ID` or `IaC Location`.
 
 ### Two-Stage DoD Rules
 
@@ -120,9 +120,9 @@ The following Needs Decision items are mandatory when their trigger condition is
 
 ### Report templates and skeleton
 
-Before writing any finding, Read `references/report-templates.md` (the Do Now, Investigate and Needs Decision per-item templates and the link URL patterns) and fill every field the template carries; the Investigate template's Proposed Config Diff appears ONLY when evidence basis is `measured` or `structural` and a diff is derivable.
+Before writing any finding, Read `references/report-templates.md` (per-item templates, link URL patterns) and fill every field; the Investigate template's Proposed Config Diff appears ONLY when evidence basis is `measured` or `structural` and a diff is derivable.
 
-Before writing the report, Read `references/report-skeleton.md` and follow it section by section. Its rules: Decision Summary early, capped at 8-12 rows, every non-empty category at least one row, the rest in priority order, with a note when there are more than 12; modeled impact never overrides measured baselines; one Systemic Issues section with Ownership/Routing Debt, Dead/Orphaned Config, Missing Coverage and Inventory Health, read from compute-clusters output, never computed ad-hoc; Do Now opens with the Global Implementation Standard (verify every mutated field in production); a Verification Scorecard row per Do Now item; "Not attempted" lists genuine blockers only.
+Before writing the report, Read `references/report-skeleton.md` and follow it section by section. Its rules: Decision Summary early, capped at 8-12 rows, every non-empty category at least one row, the rest by priority, a note when over 12; modeled impact never overrides measured baselines; one Systemic Issues section with Ownership/Routing Debt, Dead/Orphaned Config, Missing Coverage and Inventory Health, read from compute-clusters output, never computed ad-hoc; Do Now opens with the Global Implementation Standard (verify every mutated field in production); a Verification Scorecard row per Do Now item; "Not attempted" lists genuine blockers only.
 
 ## Tier Detection
 
@@ -191,7 +191,7 @@ Run pull-policies.py and pull-incidents.py with the validated project. Verify no
 - Total incidents in window
 - Policies by squad label
 
-**Optional enrichment** (SLO config, IaC module discovery, CODEOWNERS ownership) runs next, in that order, each only when its preconditions hold (`{github_org}` given, `{iac_repos}` too for IaC and CODEOWNERS, and `gh` available and authenticated); otherwise write its fallback artifacts and skip it. Its steps are under `### Stage 1 optional enrichment`, after Key Terms.
+**Optional enrichment** (SLO config, IaC discovery, CODEOWNERS; steps under `### Stage 1 optional enrichment`, after Key Terms) runs in that order, each only when its preconditions hold (`{github_org}` given, `{iac_repos}` too for IaC and CODEOWNERS, and `gh` authenticated); otherwise it writes its fallback artifacts and is skipped. Every run writes `slo-services.json` and `slo-source-status.json` (run the SLO block in `references/slo-enrichment.md`: it writes them on every branch) and `iac-discovery/iac-status.json`, and reports each step's Stage 1 line (`SLO config: {reason}`, `IaC discovery: {reason}` when skipped). A finding's Target Owner is its squad label, else its `tf/squads/{squad}/` directory, else CODEOWNERS (say which), else `⚠ assign`.
 
 ### Stage 2: Compute Cluster Stats
 
@@ -222,7 +222,7 @@ For the **top 5 clusters by raw incidents** where the evidence basis would be "h
 
 **Step 1 — Map PromQL metric names to Cloud Monitoring equivalents.**
 
-Before the first metric query, Read `references/metric-queries.md`: the PromQL to Cloud Monitoring mapping table and the suffix order to try (a histogram `_count` maps to the parent `/histogram` type, never a separate `_count` metric).
+Before the first metric query, Read `references/metric-queries.md`: PromQL to Cloud Monitoring mapping and suffix order (a histogram `_count` maps to the parent `/histogram` type, never a `_count` metric).
 
 **Label discovery from PromQL:** Cloud Monitoring labels don't always match what you'd guess. Read the PromQL query from `policies.json` to find the actual label names used. For example, `http_server_requests_seconds_count{container="hcs-gb"}` tells you the Cloud Monitoring filter needs `metric.labels.container = "hcs-gb"` — not `metric.labels.application` or `metric.labels.service`. Always check the PromQL before constructing filters. PromQL labels on the metric selector map to `metric.labels.X` in Cloud Monitoring.
 
@@ -247,7 +247,7 @@ When in doubt, use REDUCE_MAX for gauges and REDUCE_SUM for counters. Never omit
 
 Use MCP `list_time_series` (Tier 1) or REST API via temp-file pattern (Tier 2). Select aligner and reducer from the Mandatory Query Parameters table above based on the metric class.
 
-The Tier 2 REST query template (filter in a `$WORK_DIR` temp file, all three aggregation parameters, `pageSize=100000`) is in `references/metric-queries.md`.
+The Tier 2 REST query template (all three aggregation parameters, `pageSize=100000`) is in `references/metric-queries.md`.
 
 Write results to `$WORK_DIR`, not to conversation context. Parse with `python3` one-liner to extract p50/p95.
 
