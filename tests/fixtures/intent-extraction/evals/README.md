@@ -173,7 +173,9 @@ a candidate for cutting down to its persistence handoff.
 **Directive:** the Scenario-1 block as shipped at `origin/main` 440a80b9 (3.97.5), pasted verbatim with
 `{{PLUGIN_ROOT}}` expanded. This is the current compressed prose (the "converge … BEFORE proposing any
 approach; then emit and stop for confirmation" sentence plus the two-line template), not the longer v2
-wording quoted above. Prominent injection (`--directive-file`), variance 5, one `claude -p` per iteration.
+wording quoted above. Prominent injection (`--directive-file`), variance 5, one runner invocation per
+iteration. That is two `claude -p` calls per iteration (turn 1 plus the `--resume` turn), so 10 per
+5-iteration arm.
 
 | delta | baseline 7.0.1 5× | treatment 7.0.1 + directive 5× |
 |-------|-------------------|--------------------------------|
@@ -200,7 +202,8 @@ regexes now under-count the baseline, so the margin is narrower than the table s
     in goes in as your proposal, with your reason") makes the baseline float a design in turn 2 in 4/5
     runs; the treatment does it in 0/5.
 - **Turn 1 has no format conflict.** Both arms send 7.0.1's own first message: one bolded open
-  question and "Or if you'd rather I just dive in, say so", about 90-145 words.
+  question and "Or if you'd rather I just dive in, say so", in 86-144 words (baseline 86-124,
+  treatment 109-144).
 - **Turn 2: the directive overrides 7.0.1's playback.** The two-line block replaces the playback
   chunk in 4/5 runs. In 1/5 both appear, so the intent is restated twice. Side effects:
   - 7.0.1's split between what the user said and what the model proposes is lost;
