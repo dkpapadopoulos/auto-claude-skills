@@ -190,6 +190,7 @@ find "${HOME}/.claude" -maxdepth 1 \
        -o -name '.skill-compact-pending-*' \
        -o -name '.skill-invocation-evidence-*' -o -name '.skill-phase-attest-*' \
        -o -name '.skill-reviewer-dispatch-*' -o -name '.skill-reviewer-complete-*' \
+       -o -name '.skill-reviewer-start-*' \
        -o -name '.skill-reviewer-saturated-*' -o -name '.skill-egress-*' \
        -o -name '.sticky-repeat-shown-*' \) \
     -mtime +"${_STATE_RETENTION_DAYS}" \
@@ -200,6 +201,7 @@ find "${HOME}/.claude" -maxdepth 1 \
     ! -name ".skill-phase-attest-${_SESSION_TOKEN}" \
     ! -name ".skill-reviewer-dispatch-${_SESSION_TOKEN}" \
     ! -name ".skill-reviewer-complete-${_SESSION_TOKEN}" \
+    ! -name ".skill-reviewer-start-${_SESSION_TOKEN}" \
     ! -name ".skill-reviewer-saturated-${_SESSION_TOKEN}" \
     ! -name ".sticky-repeat-shown-${_SESSION_TOKEN}" \
     ! -name ".skill-egress-*-${_SESSION_TOKEN}.*" \
@@ -916,7 +918,7 @@ fi
 # Shared with the drift canary (Step 6a-ter) — extend this ONE list to cover a
 # new gate-enforcement lib in both canaries. Repo-relative literals, no spaces:
 # unquoted word-split expansion is intentional and Bash-3.2 safe.
-_GATE_ENFORCE_LIBS="hooks/lib/branch-ledger.sh hooks/lib/verdict.sh hooks/lib/git-command.sh hooks/lib/session-token.sh hooks/lib/phase-evidence.sh hooks/lib/phase-attest.sh"
+_GATE_ENFORCE_LIBS="hooks/lib/branch-ledger.sh hooks/lib/verdict.sh hooks/lib/git-command.sh hooks/lib/session-token.sh hooks/lib/phase-evidence.sh hooks/lib/phase-attest.sh hooks/lib/credited-skills.sh"
 for _cf in ${_GATE_ENFORCE_LIBS}; do
     if [ ! -f "${PLUGIN_ROOT}/${_cf}" ]; then
         _CANARY_BAD="${_CANARY_BAD}${_CANARY_BAD:+, }${_cf##*/} (missing)"

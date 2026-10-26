@@ -425,6 +425,82 @@ _PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 [ -f "${_GC_ROOT}/hooks/lib/verify-shadow.sh" ] && \
     _guard_load "${_GC_ROOT}/hooks/lib/verify-shadow.sh" || true
 
+# credited-skills.sh (review-credit-from-evidence, decisions 2, 3 and 6) — the
+# ONE list of REVIEW names the invocation-evidence leg credits, and the reader
+# behind the reviewer leg (_rr_ok). A gate-enforcement lib, so it is in
+# _GATE_ENFORCE_LIBS. Its failure NARROWS credit and never widens it: the
+# invocation leg falls back to the four names credited before the lib existed
+# and the reviewer leg is not consulted, so a broken load can only add a deny.
+# Probed on its LAST definition, so a load that stopped part way reads as "not
+# loaded". #137 form through _guard_load; #198 note below.
+_CREDITED_OK=false
+[ -f "${_PLUGIN_ROOT}/hooks/lib/credited-skills.sh" ] && \
+    _guard_load "${_PLUGIN_ROOT}/hooks/lib/credited-skills.sh" && \
+    command -v review_reviewer_covers >/dev/null 2>&1 && _CREDITED_OK=true || true
+[ "${_CREDITED_OK}" = "true" ] || _degraded_note "credited-skills.sh did not load from ${_PLUGIN_ROOT}, so REVIEW credit fell back to the four skills credited before it existed (requesting-code-review, subagent-driven-development, agent-team-execution, agent-team-review) and a returned reviewer was not consulted. This can only add a deny, never remove one."
+_REVIEW_NAMES="requesting-code-review subagent-driven-development agent-team-execution agent-team-review"
+if [ "${_CREDITED_OK}" = "true" ] && [ -n "${CREDITED_REVIEW_SKILLS:-}" ]; then
+    _REVIEW_NAMES="${CREDITED_REVIEW_SKILLS}"
+fi
+
+# _shadow_stamp_prepare (review-credit-from-evidence, decision 4) — fills the
+# four stamps every shadow record carries: SHADOW_STAMP_SESSION_ID and
+# SHADOW_STAMP_TOOL_USE_ID (the hook payload's, i.e. the push call's),
+# SHADOW_STAMP_CC_VERSION (acs_cc_version, the ONE parser of AI_AGENT) and
+# SHADOW_STAMP_ACS_VERSION (this plugin's manifest). The recorders read the
+# globals; no recorder argument changed.
+#
+# Called ONLY inside a recorder's `command -v` branch, i.e. when a record is
+# about to be written, and idempotent, so a path that writes no record pays
+# nothing and a run writing several records pays once: one jq (payload and
+# manifest in a single fork) plus the $( ) around acs_cc_version. The guard's
+# first jq is deliberately not widened to carry the ids — every push would pay
+# for a field only a would-block record uses.
+#
+# Values are validated INSIDE jq, anchored on \A..\z (never ^..$, which
+# Oniguruma may treat as line anchors): an id must match [A-Za-z0-9._-]{1,128},
+# a version N.N.N with an optional [.+-] suffix. Anything else — absent,
+# non-string, over-long, path- or separator-bearing — becomes "". That also
+# makes the \x1f split below safe: no surviving value can contain the separator,
+# so a forged id cannot shift into the next field. Every failure (no jq answer,
+# unreadable or non-JSON manifest, unparseable payload) leaves the affected
+# stamp "", never blocks and never drops the record. Initialised here so an
+# inherited environment variable can never reach a record.
+_SHADOW_STAMPED=false
+SHADOW_STAMP_SESSION_ID=""
+SHADOW_STAMP_TOOL_USE_ID=""
+SHADOW_STAMP_CC_VERSION=""
+SHADOW_STAMP_ACS_VERSION=""
+_shadow_stamp_prepare() {
+    [ "${_SHADOW_STAMPED}" = "true" ] && return 0
+    _SHADOW_STAMPED=true
+    local _pj="${_PLUGIN_ROOT}/.claude-plugin/plugin.json" _st="" _sep=$'\x1f'
+    local _prog='def ok(re): if type == "string" and test(re) then . else "" end;
+        (fromjson? // null) as $p
+        | ($pj | fromjson? // null) as $m
+        | [ ($p | if type == "object" then .session_id  else null end | ok("\\A[A-Za-z0-9._-]{1,128}\\z")),
+            ($p | if type == "object" then .tool_use_id else null end | ok("\\A[A-Za-z0-9._-]{1,128}\\z")),
+            ($m | if type == "object" then .version     else null end
+                | ok("\\A[0-9]+\\.[0-9]+\\.[0-9]+([.+-][A-Za-z0-9.]+)?\\z")) ]
+        | join("\u001f")'
+    if [ -f "${_pj}" ] && [ -r "${_pj}" ]; then
+        _st="$(jq -Rrsj --rawfile pj "${_pj}" "${_prog}" <<< "${_INPUT:-}" 2>/dev/null)" || _st=""
+    else
+        _st="$(jq -Rrsj --arg pj "" "${_prog}" <<< "${_INPUT:-}" 2>/dev/null)" || _st=""
+    fi
+    case "${_st}" in
+        *"${_sep}"*"${_sep}"*)
+            SHADOW_STAMP_SESSION_ID="${_st%%"${_sep}"*}"
+            _st="${_st#*"${_sep}"}"
+            SHADOW_STAMP_TOOL_USE_ID="${_st%%"${_sep}"*}"
+            SHADOW_STAMP_ACS_VERSION="${_st#*"${_sep}"}" ;;
+    esac
+    if command -v acs_cc_version >/dev/null 2>&1; then
+        SHADOW_STAMP_CC_VERSION="$(acs_cc_version)" || SHADOW_STAMP_CC_VERSION=""
+    fi
+    return 0
+}
+
 # _attest_remedy <step> — a COPY-PASTEABLE attestation command (#248).
 #
 # Messages used to name `phase_attest` either with no source line at all, or
@@ -1004,10 +1080,15 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         _IMPL_MSG=""
         # _ledger_has MILESTONE — returns 0 if ledger satisfies; accumulates stale
         # warning text in _STALE_MSG when the recorded SHA differs from HEAD.
+        # _LH_REVIEW_SHA keeps the own-ledger requesting-code-review sha this
+        # function already read, so the REVIEW shadow witness (below) can
+        # measure an invocation's coverage without a second ledger read.
+        _LH_REVIEW_SHA=""
         _ledger_has() {
             [ "${_LEDGER_OK}" = "true" ] || return 1
             branch_ledger_has "$1" || return 1
             local _ls; _ls="$(branch_ledger_sha "$1")"
+            case "$1" in requesting-code-review) _LH_REVIEW_SHA="${_ls}" ;; esac
             if [ -n "${_HEAD_SHA}" ] && [ -n "${_ls}" ] && [ "${_ls}" != "${_HEAD_SHA}" ]; then
                 _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }$1 stale: recorded at ${_ls}, HEAD is ${_HEAD_SHA}. Rerun if new commits changed reviewed content."
             fi
@@ -1021,20 +1102,25 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # fragility or .completed's reset fragility. SAME resolved token
         # only: sibling tokens' files carry no repo/branch binding and would
         # over-accept another session's work. The review leg honors the
-        # review-embedding proxies — PAIRED with skill-completion-hook.sh's
-        # gating-milestone crediting case list.
+        # credited REVIEW names (_REVIEW_NAMES), single-sourced in
+        # hooks/lib/credited-skills.sh with the completion hook that writes
+        # this file; without the lib, the four names hardcoded where the lib
+        # is loaded. Both lists begin with requesting-code-review.
         _invoc_has() {
             local _f="${HOME}/.claude/.skill-invocation-evidence-${_SESSION_TOKEN}"
             [ -f "${_f}" ] || return 1
             command -v jq >/dev/null 2>&1 || return 1
             # type guard: index() on a JSON *string* is substring search, so a
             # corrupt scalar file merely containing the name would satisfy it.
+            # Elements are compared for EQUALITY against each listed name;
+            # empty names are dropped, so a stray space in the list can never
+            # make an empty-string element credit.
             case "$1" in
                 requesting-code-review)
-                    jq -e 'type=="array" and (index("requesting-code-review") != null
-                        or index("subagent-driven-development") != null
-                        or index("agent-team-execution") != null
-                        or index("agent-team-review") != null)' "${_f}" >/dev/null 2>&1 ;;
+                    jq -e --arg n "${_REVIEW_NAMES}" 'type=="array" and
+                        (($n | split(" ") | map(select(length > 0))) as $l
+                         | any(.[]; . as $e | $l | any(.[]; . == $e)))' \
+                        "${_f}" >/dev/null 2>&1 ;;
                 *)
                     jq -e --arg s "$1" 'type=="array" and (index($s) != null)' "${_f}" >/dev/null 2>&1 ;;
             esac
@@ -1046,9 +1132,13 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # the global gate consult this leg (issue #133 dedup; acceptance
         # itself stays idempotent). Soft SHA-binding (issue #133): when the
         # completion hook's sidecar holds a "<skill> <sha>" record for the
-        # milestone (or a review-embedding proxy — PAIRED with _invoc_has's
-        # case list) whose SHA is branch-bound by the SAME rule as the
-        # ledger bridge, the advisory upgrades to name the bound SHA.
+        # milestone (or one of the four historical review-embedding proxies)
+        # whose SHA is branch-bound by the SAME rule as the ledger bridge,
+        # the advisory upgrades to name the bound SHA. The binding loop keeps
+        # those four DELIBERATELY rather than _invoc_has's lib list: the
+        # binding decides advisory text only, and walking the wider list
+        # changed the text and added git forks on paths that already passed
+        # (Task 5 review I2). Membership — what credits — is the lib's.
         # Binding NEVER gates acceptance — a hard SHA requirement would
         # re-break the #130 repro, where the recording cwd's SHA is
         # unrelated to the push branch. Fail-open: lib/file/SHA problems
@@ -1104,6 +1194,113 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
             _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }$1 accepted via cross-location branch-ledger evidence recorded at ${_bsha:-unknown} on this branch (issue #131 bridge). Rerun if later commits changed reviewed content."
             return 0
         }
+        # _rr_ok — the REVIEW reviewer leg (review-credit-from-evidence,
+        # decision 3): a reviewer subagent that RETURNED credits REVIEW status
+        # when its review covers the push. The branch ledger's
+        # `reviewer-returned` milestone is read ONLY through credited-skills.sh,
+        # which accepts the allowlisted subagent_type arm alone (a
+        # description-matched or untagged record never credits) and a sha that
+        # is an ancestor of the subject with no material source change since
+        # (review_sha_covers). The ledger read stays on the process-derived root
+        # (_proot), like every ledger leg (#219); coverage is measured on the
+        # subject (_SUBJ_ROOT/_SUBJ_REV). Deliberately NOT routed through
+        # _bridge_has: a reviewer recorded under another branch key never
+        # credits. Each site calls it LAST, only after every existing REVIEW leg
+        # missed, so it adds no fork to a path that passes today. Memoised: the
+        # chain block and the global gate both consult it and the advisory is
+        # appended once. Fails toward no credit (either lib not loaded, any git
+        # failure, a `-` sha).
+        _RR_DONE=false
+        _RR_SHA=""
+        _rr_ok() {
+            if [ "${_RR_DONE}" != "true" ]; then
+                _RR_DONE=true
+                [ "${_CREDITED_OK}" = "true" ] && [ "${_LEDGER_OK}" = "true" ] || return 1
+                _RR_SHA="$(review_reviewer_covers "${_proot}" "${_SUBJ_ROOT}" "${_SUBJ_REV}")" || _RR_SHA=""
+                [ -n "${_RR_SHA}" ] || return 1
+                _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }requesting-code-review accepted via a returned reviewer (allowlisted subagent type) recorded at ${_RR_SHA}, with no material change between it and the pushed commit."
+            fi
+            [ -n "${_RR_SHA}" ]
+        }
+        # _review_witness — sets _RW_WITNESS and _RW_COVERAGE for the REVIEW
+        # shadow record (review-credit-from-evidence, decision 4). Called ONLY
+        # where Check 1b is about to write that record, after _rv_clean and
+        # _rv_bound are known. Diagnostic: it decides nothing and never calls
+        # _ledger_has/_invoc_ok/_bridge_has/_rr_ok, which append advisories.
+        # Candidates, in order:
+        #   reviewer-returned  the allowlisted reviewer, read only through the
+        #                      lib (review_reviewer_returned_sha); coverage from
+        #                      review_sha_covers on the subject. When the
+        #                      reviewer leg already credited at Check 1
+        #                      (_RR_SHA set) it is covered with no fork.
+        #   verdict            a clean review verdict (_rv_clean); covered iff
+        #                      bound (_rv_bound). Never covered here in practice:
+        #                      a clean bound verdict writes no record.
+        #   invocation         REVIEW status was credited by an existing leg
+        #                      (.completed, ledger, invocation evidence, bridge),
+        #                      i.e. the reviewer leg never ran (_RR_DONE unset;
+        #                      Check 1 is its first caller). Coverage from the
+        #                      own-ledger sha (_LH_REVIEW_SHA), else cannot-check.
+        # The first candidate that is covered wins; else the first present;
+        # else none/none. A reviewer recorded with sha `-` is refused by the
+        # lib and so is not a candidate. Anything that cannot be computed is
+        # cannot-check or absent — never a dropped record.
+        _RW_WITNESS="none"
+        _RW_COVERAGE="none"
+        _review_witness() {
+            local _rsha="" _rrc=3 _cov="" _fw="" _fc="" _isha=""
+            _RW_WITNESS="none"; _RW_COVERAGE="none"
+            # (1) reviewer-returned
+            if [ "${_RR_DONE}" = "true" ] && [ -n "${_RR_SHA}" ]; then
+                _RW_WITNESS="reviewer-returned"; _RW_COVERAGE="covered"
+                return 0
+            fi
+            if [ "${_CREDITED_OK}" = "true" ] && [ "${_LEDGER_OK}" = "true" ]; then
+                _rsha="$(review_reviewer_returned_sha "${_proot}")" || _rsha=""
+                if [ -n "${_rsha}" ]; then
+                    _rrc=0
+                    review_sha_covers "${_rsha}" "${_SUBJ_ROOT}" "${_SUBJ_REV}" || _rrc=$?
+                    case "${_rrc}" in 0) _cov="covered" ;; 1) _cov="uncovered" ;; *) _cov="cannot-check" ;; esac
+                    if [ "${_cov}" = "covered" ]; then
+                        _RW_WITNESS="reviewer-returned"; _RW_COVERAGE="covered"
+                        return 0
+                    fi
+                    _fw="reviewer-returned"; _fc="${_cov}"
+                fi
+            fi
+            # (2) verdict
+            if [ "${_rv_clean:-false}" = "true" ]; then
+                if [ "${_rv_bound:-false}" = "true" ]; then
+                    _RW_WITNESS="verdict"; _RW_COVERAGE="covered"
+                    return 0
+                fi
+                [ -n "${_fw}" ] || { _fw="verdict"; _fc="uncovered"; }
+            fi
+            # (3) invocation
+            if [ "${_RR_DONE}" != "true" ]; then
+                _isha="${_LH_REVIEW_SHA}"
+                if [ -z "${_isha}" ] || [ "${_CREDITED_OK}" != "true" ]; then
+                    _cov="cannot-check"
+                else
+                    if [ "${_isha}" = "${_rsha}" ] && [ "${_rrc}" -le 2 ]; then
+                        :
+                    else
+                        _rrc=0
+                        review_sha_covers "${_isha}" "${_SUBJ_ROOT}" "${_SUBJ_REV}" || _rrc=$?
+                    fi
+                    case "${_rrc}" in 0) _cov="covered" ;; 1) _cov="uncovered" ;; *) _cov="cannot-check" ;; esac
+                fi
+                if [ "${_cov}" = "covered" ]; then
+                    _RW_WITNESS="invocation"; _RW_COVERAGE="covered"
+                    return 0
+                fi
+                [ -n "${_fw}" ] || { _fw="invocation"; _fc="${_cov}"; }
+            fi
+            if [ -n "${_fw}" ]; then
+                _RW_WITNESS="${_fw}"; _RW_COVERAGE="${_fc}"
+            fi
+            return 0
+        }
         # One exclusion rule, two subjects (#161). The push path measures the
         # branch-local delta; the merge path measures the merged PR's files.
         _names_touch_material_source() {
@@ -1138,6 +1335,7 @@ EOF
             _ledger_has "requesting-code-review" && _review_completed=true
             [ "${_review_completed}" = "false" ] && _invoc_ok "requesting-code-review" && _review_completed=true
             [ "${_review_completed}" = "false" ] && _bridge_has "requesting-code-review" && _review_completed=true
+            [ "${_review_completed}" = "false" ] && _rr_ok && _review_completed=true
             if [ "${_review_in_chain}" = "true" ] && [ "${_review_completed}" = "false" ]; then
                 _MSG="PUSH GATE — Expected: REVIEW → VERIFY → SHIP completed before push. Actual: requesting-code-review has not run on this chain. Do now: invoke Skill(superpowers:requesting-code-review), then retry the denied command."
                 _skill_available "requesting-code-review" || _MSG="${_MSG} ${_SETUP_HINT}"
@@ -1218,9 +1416,11 @@ EOF
                             _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }REVIEW VERDICT: requesting-code-review was credited, but no review verdict covers this HEAD -- a Skill return is not evidence a review ran (#197). Record one with scripts/record-review-verdict.sh, or import a GitHub review with --from-github <pr>." ;;
                     esac
                     if command -v review_shadow_record >/dev/null 2>&1; then
+                        _shadow_stamp_prepare || true
+                        _review_witness || true
                         review_shadow_record "${_SESSION_TOKEN}" "${_SUBJ_ROOT}" "${_rv_reason}" \
                             "$( [ "${_gc_is_ghmerge}" = "true" ] && echo merge || echo push )" \
-                            "${_SUBJ_REV}" "${_TRANSCRIPT:-}" 2>/dev/null || true
+                            "${_SUBJ_REV}" "${_TRANSCRIPT:-}" "${_RW_WITNESS}" "${_RW_COVERAGE}" 2>/dev/null || true
                     fi
                 fi
             fi
@@ -1373,6 +1573,7 @@ EOF
                     # guard on a deny, and recording there writes every denied
                     # event twice.
                     if [ "${PUSH_GATE_CAPTURE_REPLAY:-}" != "1" ] && command -v verify_shadow_record >/dev/null 2>&1; then
+                        _shadow_stamp_prepare || true
                         verify_shadow_record "${_SESSION_TOKEN}" "${_SUBJ_ROOT}" "${_vm_class}" "${_vm_reason}" \
                             "push" "${_SUBJ_REV}" "${_TRANSCRIPT:-}" "${_vm_material}" "${_vm_src}" "${_vm_gate}" 2>/dev/null || true
                     fi
@@ -1587,6 +1788,7 @@ EOF
                         # population a false-block rate is computed over.
                         _impl_ae=true
                         { [ "${_impl_material}" != "true" ] || [ "${_impl_recog_del}" = "true" ]; } && _impl_ae=false
+                        _shadow_stamp_prepare || true
                         implement_shadow_record "${_pe_action}" "${_SUBJ_ROOT}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "none" "${_impl_db}" "${_impl_material}" "true" "${_impl_detail}" "${_SUBJ_REV}" "${_impl_ae}" || true
                     fi
                 fi
@@ -1603,6 +1805,7 @@ EOF
                         # An attested episode emits no advisory either; it is already
                         # outside the rate via would_block:false, and recording the
                         # field honestly keeps the two membership signals consistent.
+                        _shadow_stamp_prepare || true
                         implement_shadow_record "${_pe_action}" "${_SUBJ_ROOT}" "${_SESSION_TOKEN}" "${_TRANSCRIPT:-}" "attested" "${_impl_db}" "${_impl_material}" "false" "${_impl_detail}" "${_SUBJ_REV}" "false" || true
                     fi
                 fi
@@ -1675,9 +1878,11 @@ EOF
             fi
             # Same-token invocation evidence, then the cross-location ledger
             # bridge (issue #131) — tried only after the primary legs miss.
+            # REVIEW then tries the returned-reviewer leg (_rr_ok), last.
             [ "${_g_review}" = "false" ] && _invoc_ok "requesting-code-review"         && _g_review=true
             [ "${_g_verify}" = "false" ] && _invoc_ok "verification-before-completion" && _g_verify=true
             [ "${_g_review}" = "false" ] && _bridge_has "requesting-code-review"         && _g_review=true
+            [ "${_g_review}" = "false" ] && _rr_ok && _g_review=true
             [ "${_g_verify}" = "false" ] && _bridge_has "verification-before-completion" && _g_verify=true
             # A clean verification verdict covering HEAD is SHA-bound, so it also
             # satisfies the verify leg. NOTE (#295): "stronger" is the wrong word
@@ -2025,9 +2230,28 @@ if [ -f "${_COMP_STATE}" ] && command -v jq >/dev/null 2>&1; then
     jq -e '.completed | index("requesting-code-review")' "${_COMP_STATE}" >/dev/null 2>&1 && _in_completed=true
     # Ledger-aware (same OR as the push gate): a durable branch milestone counts as
     # completed, so this advisory does not contradict a ledger-satisfied push gate.
+    _ck4_ledger_ok=false
     if [ "${_in_completed}" = "false" ] && [ -f "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" ]; then
-        _guard_load "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" && \
+        _guard_load "${_PLUGIN_ROOT}/hooks/lib/branch-ledger.sh" && _ck4_ledger_ok=true && \
             branch_ledger_has "requesting-code-review" && _in_completed=true
+    fi
+    # Returned-reviewer leg (review-credit-from-evidence), LAST and only where
+    # the advisory would otherwise fire, so a path that is silent today gains
+    # no fork. A push or merge reuses the push gate's own leg (_rr_ok, memoised
+    # and measured on that command's subject), so this advisory cannot
+    # contradict the gate that just allowed it. Anything else (a commit) reads
+    # the process cwd's toplevel, HEAD, and that root's ledger key; an
+    # unresolvable root means not satisfied. No credited-skills.sh, no leg; and,
+    # as _rr_ok requires _LEDGER_OK, no leg on a branch-ledger.sh whose load
+    # above did not succeed.
+    if [ "${_in_chain}" = "true" ] && [ "${_in_completed}" = "false" ] && [ "${_CREDITED_OK}" = "true" ]; then
+        if command -v _rr_ok >/dev/null 2>&1; then
+            _rr_ok && _in_completed=true
+        elif [ "${_ck4_ledger_ok}" = "true" ]; then
+            _ck4_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+            [ -n "${_ck4_root}" ] && \
+                review_reviewer_covers "${_ck4_root}" "${_ck4_root}" HEAD >/dev/null 2>&1 && _in_completed=true
+        fi
     fi
     if [ "${_in_chain}" = "true" ] && [ "${_in_completed}" = "false" ]; then
         _review_ok=false

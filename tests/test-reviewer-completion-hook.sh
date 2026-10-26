@@ -563,11 +563,55 @@ else
     _record_pass "(o1) not a gate-enforcement component"
 fi
 
-if grep -q 'reviewer-returned' "${PROJECT_ROOT}/hooks/openspec-guard.sh" 2>/dev/null; then
-    _record_fail "(o2) no gate reads reviewer-returned in this change" "openspec-guard.sh references it"
+# (o2) The guard reads the `reviewer-returned` milestone ONLY through
+# hooks/lib/credited-skills.sh (review_reviewer_covers), which applies the
+# allowlist-arm and coverage rules. A direct read — a ledger accessor or a
+# ledger path built on the same line as the milestone name — would skip both,
+# so a description-arm or stale reviewer could credit. The bare string may
+# appear (comments); a direct read may not. A red control runs the same
+# predicate over a copy carrying one direct read, so it cannot pass vacuously.
+_o2_direct_reads() {   # <file> — prints offending lines
+    grep -n 'reviewer-returned' "$1" 2>/dev/null \
+        | grep -E 'branch_ledger_|_ledger_has|_bridge_has|skill-branch-ledger|_invoc_(has|ok)'
+}
+_O2_GUARD="${PROJECT_ROOT}/hooks/openspec-guard.sh"
+_o2_bad="$(_o2_direct_reads "${_O2_GUARD}")"
+if [ -n "${_o2_bad}" ]; then
+    _record_fail "(o2) the guard never reads reviewer-returned except through the lib" "${_o2_bad}"
 else
-    _record_pass "(o2) no gate reads reviewer-returned in this change"
+    _record_pass "(o2) the guard never reads reviewer-returned except through the lib"
 fi
+# Anchored on a CALL, `$(review_reviewer_covers `: the bare name also appears
+# in the guard's `command -v review_reviewer_covers` load probe, which would
+# satisfy a bare-name grep with the call deleted (Task 5 review, Minor 1).
+# ONE function, called by the real cell AND its red control below, so the
+# control measures the check itself, not a re-typed copy of its pattern.
+_o2_calls_lib() {   # <file> — 0 iff it calls review_reviewer_covers
+    grep -qF '$(review_reviewer_covers ' "$1" 2>/dev/null
+}
+if _o2_calls_lib "${_O2_GUARD}"; then
+    _record_pass "(o2) the guard reads it through review_reviewer_covers"
+else
+    _record_fail "(o2) the guard reads it through review_reviewer_covers" "no call found"
+fi
+_O2_TMP="$(mktemp "${TMPDIR:-/tmp}/o2-guard.XXXXXX")"
+{ cat "${_O2_GUARD}"; printf '%s\n' '_ledger_has "reviewer-returned" && _review_completed=true'; } > "${_O2_TMP}"
+if [ -n "$(_o2_direct_reads "${_O2_TMP}")" ]; then
+    _record_pass "(o2) red control: a direct ledger read of reviewer-returned is caught"
+else
+    _record_fail "(o2) red control: a direct ledger read of reviewer-returned is caught" "predicate missed it"
+fi
+# Red control for the call check: the same guard with the call swapped for
+# another reader must NOT satisfy it, though the load probe still names the lib.
+sed 's/\$(review_reviewer_covers /$(some_other_reader /' "${_O2_GUARD}" > "${_O2_TMP}"
+if cmp -s "${_O2_GUARD}" "${_O2_TMP}"; then
+    _record_fail "(o2) red control: the call check sees a swapped-out call" "the swap changed nothing"
+elif _o2_calls_lib "${_O2_TMP}"; then
+    _record_fail "(o2) red control: the call check sees a swapped-out call" "still satisfied without the call"
+else
+    _record_pass "(o2) red control: the call check sees a swapped-out call"
+fi
+rm -f "${_O2_TMP}"
 
 # --- (p) both pairing families are GC'd, each with its own exclusion --------
 # Behavioural pruning is asserted in tests/test-state-file-cleanup.sh. Here every
@@ -577,7 +621,7 @@ fi
 # this loop is what forces that.
 _SS="${PROJECT_ROOT}/hooks/session-start-hook.sh"
 _GCOK=1
-for _k in dispatch complete saturated; do
+for _k in dispatch complete start saturated; do
     grep -q "name '\.skill-reviewer-${_k}-\*'" "$_SS" 2>/dev/null || _GCOK=0
     grep -q "! -name \"\.skill-reviewer-${_k}-\${_SESSION_TOKEN}\"" "$_SS" 2>/dev/null || _GCOK=0
 done
@@ -655,7 +699,7 @@ fi
 # hooks without erroring, so it is pinned here rather than left to memory.
 _LASTFN="$(grep -o '^[a-z_][a-z_]*() {' "${PROJECT_ROOT}/hooks/lib/reviewer-pairing.sh" | tail -1 | sed 's/() {//')"
 _SOK=1
-for _h in reviewer-completion-hook reviewer-evidence-hook; do
+for _h in reviewer-completion-hook reviewer-evidence-hook reviewer-start-hook; do
     grep -q "command -v ${_LASTFN} >/dev/null 2>&1" "${PROJECT_ROOT}/hooks/${_h}.sh" 2>/dev/null || _SOK=0
 done
 if [ -n "${_LASTFN}" ] && [ "$_SOK" -eq 1 ]; then

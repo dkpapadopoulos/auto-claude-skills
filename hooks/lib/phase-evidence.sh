@@ -10,6 +10,19 @@
 _PHASE_EVID_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ -f "${_PHASE_EVID_DIR}/phase-attest.sh" ] && . "${_PHASE_EVID_DIR}/phase-attest.sh" 2>/dev/null || true
 [ -f "${_PHASE_EVID_DIR}/branch-ledger.sh" ] && . "${_PHASE_EVID_DIR}/branch-ledger.sh" 2>/dev/null || true
+# credited-skills.sh: the REVIEW names and the returned-reviewer reader the
+# requesting-code-review step reads (review-credit-from-evidence). A failed
+# load NARROWS: the step falls back to the four names credited before the lib
+# existed and no returned reviewer counts.
+# Sourced INSIDE a function (#192): skill-gate.sh sources this file bare under
+# `trap 'exit 0' ERR`, and the `&& … || true` form covers only the source's own
+# status — a command failing INSIDE the lib would trip that trap and turn every
+# skill-gate deny, for every step, into a silent allow. Bash 3.2 does not
+# inherit the ERR trap into a function without `set -E`, so a faulting lib
+# degrades here instead. Callers probe by function presence
+# (_phase_review_credited), never by this status.
+_phase_load_credited() { . "${_PHASE_EVID_DIR}/credited-skills.sh" 2>/dev/null; }
+[ -f "${_PHASE_EVID_DIR}/credited-skills.sh" ] && _phase_load_credited || true
 
 # Implementation-slot aliases: one canonical slot (codex #3).
 PHASE_IMPL_ALIASES="executing-plans subagent-driven-development agent-team-execution"
@@ -62,7 +75,35 @@ phase_step_satisfied() {
             return 0
         fi
     done
+    # requesting-code-review ONLY (never an alias group, so no other step can
+    # inherit it), tried after every leg above missed so a path that passes
+    # today gains no fork: the same REVIEW rule as the push guard.
+    [ "$step" = "requesting-code-review" ] && _phase_review_credited "$token" "$proot" && return 0
     return 1
+}
+
+# _phase_review_credited <token> <proj_root> -> 0 iff (Leg 1, widened) the
+# invocation array holds any credited REVIEW name, or (Leg 4) a returned
+# allowlisted reviewer's sha covers HEAD in <proj_root>. Without
+# credited-skills.sh the names narrow to the four credited before it existed
+# and Leg 4 is not consulted.
+_phase_review_credited() {
+    local token="${1:-}" proot="${2:-}" names rec
+    names="requesting-code-review subagent-driven-development agent-team-execution agent-team-review"
+    if command -v review_reviewer_covers >/dev/null 2>&1 && [ -n "${CREDITED_REVIEW_SKILLS:-}" ]; then
+        names="${CREDITED_REVIEW_SKILLS}"
+    fi
+    if [ -n "$token" ] && command -v jq >/dev/null 2>&1; then
+        rec="${HOME}/.claude/.skill-invocation-evidence-${token}"
+        if [ -f "$rec" ] && jq -e --arg n "$names" \
+            '($n | split(" ") | map(select(length > 0))) as $l
+             | type == "array" and any(.[]; . as $e | $l | index([$e]) != null)' \
+            "$rec" >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
+    command -v review_reviewer_covers >/dev/null 2>&1 || return 1
+    review_reviewer_covers "$proot" "$proot" HEAD >/dev/null 2>&1
 }
 
 # phase_gate_log <gate> <decision> <skill> <missing> — telemetry line, fail-open.
