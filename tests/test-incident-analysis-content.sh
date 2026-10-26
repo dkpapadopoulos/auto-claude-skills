@@ -13,6 +13,19 @@ SCHEMA_FILE="${PROJECT_ROOT}/skills/incident-analysis/references/investigation-s
 EVIDENCE_LINKS_REF="${PROJECT_ROOT}/skills/incident-analysis/references/evidence-links.md"
 SIGNALS_FILE="${PROJECT_ROOT}/skills/incident-analysis/signals.yaml"
 PLAYBOOK_DIR="${PROJECT_ROOT}/skills/incident-analysis/playbooks"
+# Situational detail moved out of SKILL.md so its rules fit the post-compaction
+# re-attach window (openspec/changes/skill-reattach-budget). A cell whose needle
+# lived in a moved block reads the file the block now lives in.
+REF_DIR="${PROJECT_ROOT}/skills/incident-analysis/references"
+STAGE_FLOW_REF="${REF_DIR}/stage-flow.md"
+TEMPFILE_REF="${REF_DIR}/temp-file-pattern.md"
+ACCESS_GATE_REF="${REF_DIR}/access-gate.md"
+DB_METRICS_REF="${REF_DIR}/db-metrics-gate.md"
+SWEEP_REF="${REF_DIR}/multi-service-sweep.md"
+PM_FIELDS_REF="${REF_DIR}/postmortem-fields.md"
+RATIONALE_REF="${REF_DIR}/rationale.md"
+# The files this split created; the negative checks below scan them too.
+MOVED_REFS="${STAGE_FLOW_REF} ${TEMPFILE_REF} ${ACCESS_GATE_REF} ${DB_METRICS_REF} ${SWEEP_REF} ${PM_FIELDS_REF} ${RATIONALE_REF}"
 
 # ---------------------------------------------------------------------------
 # Helper: assert file contains pattern (grep -q wrapper)
@@ -157,8 +170,8 @@ assert_file_contains "infra-failure.yaml: mentions certificate" "[Cc]ertificate"
 # SKILL.md — Access Gate (Step 1b)
 # ---------------------------------------------------------------------------
 assert_file_contains "SKILL.md: has access gate step" "Access Gate" "${SKILL_FILE}"
-assert_file_contains "SKILL.md: access gate checks gcloud auth" "gcloud auth" "${SKILL_FILE}"
-assert_file_contains "SKILL.md: access gate checks kubectl context" "kubectl" "${SKILL_FILE}"
+assert_file_contains "access-gate ref: access summary checks gcloud auth" "gcloud auth:" "${ACCESS_GATE_REF}"
+assert_file_contains "access-gate ref: access summary checks kubectl context" "kubectl context:" "${ACCESS_GATE_REF}"
 assert_file_contains "SKILL.md: access gate prompts user to fix" "Fix now.*proceed with degraded" "${SKILL_FILE}"
 assert_file_contains "SKILL.md: access gate records state for synthesis" "evidence_coverage" "${SKILL_FILE}"
 
@@ -168,7 +181,12 @@ assert_file_contains "SKILL.md: access gate records state for synthesis" "eviden
 assert_file_contains "SKILL.md: synthesis includes evidence coverage" "Evidence coverage and gaps" "${SKILL_FILE}"
 assert_file_contains "SKILL.md: has evidence_coverage block" "evidence_coverage:" "${SCHEMA_FILE}"
 assert_file_contains "SKILL.md: has gaps block" "gaps:" "${SKILL_FILE}"
-assert_file_contains "SKILL.md: coverage levels defined" "complete.*partial.*unavailable" "${SKILL_FILE}"
+# This needle only ever matched the access summary's domain lines, now in the
+# reference; the Step 7 table that defines the levels is asserted row by row.
+assert_file_contains "access-gate ref: domains carry the coverage levels" "complete.*partial.*unavailable" "${ACCESS_GATE_REF}"
+for _lvl in complete partial skipped unavailable; do
+    assert_file_contains "SKILL.md: Step 7 defines coverage level ${_lvl}" "^| \`${_lvl}\` |" "${SKILL_FILE}"
+done
 assert_file_contains "SKILL.md: gap recording rules" "Record a gap for" "${SKILL_FILE}"
 
 # ---------------------------------------------------------------------------
@@ -272,6 +290,9 @@ assert_file_contains "SKILL.md: Step 3 mentions gRPC connection analysis" \
 # ---------------------------------------------------------------------------
 # The infrastructure escalation paragraph must not use "likely" as a conclusion
 investigate_section="$(sed -n '/^## Stage 2 — INVESTIGATE/,/^## EXECUTE/p' "${SKILL_FILE}")"
+# The INVESTIGATE detail moved to references/ is held to the same rule.
+investigate_section="${investigate_section}
+$(cat "${DB_METRICS_REF}" "${SWEEP_REF}" 2>/dev/null)"
 if echo "${investigate_section}" | grep -q "root cause is likely"; then
     _record_fail "SKILL.md: no speculative 'likely' in infrastructure escalation" \
         "found 'root cause is likely' in INVESTIGATE section"
@@ -320,8 +341,8 @@ assert_file_contains "SKILL.md: recurring trap is a hard gate" \
 # ---------------------------------------------------------------------------
 assert_file_contains "SKILL.md: has multi-service error sweep step" \
     "Multi-Service Error Sweep" "${SKILL_FILE}"
-assert_file_contains "SKILL.md: step 3c has service_error_inventory output" \
-    "service_error_inventory:" "${SKILL_FILE}"
+assert_file_contains "multi-service-sweep ref: step 3c has service_error_inventory output" \
+    "service_error_inventory:" "${SWEEP_REF}"
 assert_file_contains "SKILL.md: step 3c requires 72-hour deployment history" \
     "72-hour deployment history" "${SKILL_FILE}"
 assert_file_contains "SKILL.md: step 3c warns against anchoring bias" \
@@ -541,13 +562,25 @@ assert_contains "SKILL.md: step 7 evidence links has omission behavior" \
 POSTMORTEM_STEP3=$(sed -n '/### Step 3: Generate Postmortem/,/### Step 4: Write to Disk/p' "${SKILL_FILE}")
 assert_contains "SKILL.md: postmortem step 3 mandates evidence link carry-forward" \
     "Constraint 12 carry-forward" "${POSTMORTEM_STEP3}"
-assert_contains "SKILL.md: postmortem step 3 maps sections to evidence_links sources" \
-    "chosen_hypothesis.evidence_links" "${POSTMORTEM_STEP3}"
+# The section-to-source table moved to references/postmortem-fields.md; Step 3
+# restates its placements and names the file.
+assert_file_contains "postmortem-fields ref: maps sections to evidence_links sources" \
+    "chosen_hypothesis.evidence_links" "${PM_FIELDS_REF}"
 assert_contains "SKILL.md: postmortem step 3 maps ruled_out to evidence_links" \
     "Investigation Notes" "${POSTMORTEM_STEP3}"
 # Verify with grep for the exact bracket pattern (case glob can't match [])
-assert_file_contains "SKILL.md: postmortem step 3 has ruled_out evidence_links mapping" \
-    'ruled_out\[\].evidence_links' "${SKILL_FILE}"
+assert_file_contains "postmortem-fields ref: has ruled_out evidence_links mapping" \
+    'ruled_out\[\].evidence_links' "${PM_FIELDS_REF}"
+assert_contains "SKILL.md: postmortem step 3 points at postmortem-fields.md" \
+    "per \`references/postmortem-fields.md\`" "${POSTMORTEM_STEP3}"
+assert_contains "SKILL.md: postmortem step 3 restates the root-cause placement" \
+    "\`chosen_hypothesis.evidence_links\` after the Root Cause & Trigger statement" "${POSTMORTEM_STEP3}"
+assert_contains "SKILL.md: postmortem step 3 restates the ruled-out placement" \
+    "\`ruled_out[].evidence_links\` after each ruled-out hypothesis in Investigation Notes" "${POSTMORTEM_STEP3}"
+assert_contains "SKILL.md: postmortem step 3 restates the inventory and timeline placements" \
+    "\`service_error_inventory[].evidence_links\` inline on Impact's infrastructure bullets; query URLs in the Timeline's evidence column" "${POSTMORTEM_STEP3}"
+assert_contains "SKILL.md: postmortem step 3 names the Mitigation Applied fields" \
+    "the exact interpolated Command Executed" "${POSTMORTEM_STEP3}"
 assert_contains "SKILL.md: postmortem step 3 addresses skip rationalization" \
     "Do not skip links" "${POSTMORTEM_STEP3}"
 assert_contains "SKILL.md: postmortem step 3 has constrained retroactive construction rule" \
@@ -768,15 +801,229 @@ assert_file_contains "the reference states quotable content is usually required"
     "usually should be" "${UNTRUSTED_REF}"
 # No experimental history in operational guidance: which eval arm suggested
 # what belongs on the issue, not in a constraint an agent reads at run time.
-if grep -qi "variance-5\|variance 5" "${SKILL_FILE}"; then
+# The text moved out of SKILL.md for the re-attach budget is scanned too, so a
+# move cannot carry history past this check. (hitl-scope.md's measurement note
+# predates the move and is reasoning kept in references/ by design.)
+# shellcheck disable=SC2086
+if grep -qi "variance-5\|variance 5" "${SKILL_FILE}" ${MOVED_REFS}; then
     _record_fail "the skill carries no eval-arm history" \
-        "SKILL.md mentions an eval variance — that belongs on the issue"
+        "SKILL.md or a reference moved out of it mentions an eval variance — that belongs on the issue"
 else
     _record_pass "the skill carries no eval-arm history"
 fi
 
 assert_file_contains "the reference distinguishes outward-sending from disk writes" \
     "does not run on the outbound path" "${UNTRUSTED_REF}"
+
+# ---------------------------------------------------------------------------
+# Re-attach split — situational detail lives in references/, each file named
+# where it applies, and the rules lead the core.
+# ---------------------------------------------------------------------------
+# --- Each moved block is in its file ----------------------------------------
+assert_file_contains "stage-flow ref: holds the stage graph" "digraph stages" "${STAGE_FLOW_REF}"
+assert_file_contains "stage-flow ref: holds the REPORT-BACK edge" "POSTMORTEM -> REPORT_BACK" "${STAGE_FLOW_REF}"
+assert_file_contains "temp-file ref: holds the mktemp example" "mktemp /tmp/agent-lql-XXXXXX.txt" "${TEMPFILE_REF}"
+assert_file_contains "temp-file ref: cleanup runs either way" "ensures cleanup runs regardless" "${TEMPFILE_REF}"
+assert_file_contains "access-gate ref: holds the auth-fix prompt" "! gcloud auth application-default login" "${ACCESS_GATE_REF}"
+assert_file_contains "access-gate ref: holds the domain lines" "Trace correlation: ✓ complete (Tier 1 only)" "${ACCESS_GATE_REF}"
+assert_file_contains "db-metrics ref: holds the connection metric" \
+    "cloudsql.googleapis.com/database/network/connections" "${DB_METRICS_REF}"
+assert_file_contains "db-metrics ref: holds the decision branch" "App-side pool exhaustion" "${DB_METRICS_REF}"
+assert_file_contains "db-metrics ref: rows combine" "Rows are not mutually exclusive" "${DB_METRICS_REF}"
+assert_file_contains "multi-service-sweep ref: holds the parallel rounds" "Architecture discovery batch" "${SWEEP_REF}"
+assert_file_contains "multi-service-sweep ref: holds the mechanism_status field" \
+    'mechanism_status: "known" | "not_yet_traced" | "not_applicable"' "${SWEEP_REF}"
+assert_file_contains "postmortem-fields ref: holds the Mitigation Applied table" "| Command Executed |" "${PM_FIELDS_REF}"
+assert_file_contains "rationale ref: holds the dual-layer anti-pattern" "Anti-pattern this prevents" "${RATIONALE_REF}"
+assert_file_contains "rationale ref: holds the tier rationale" "The few seconds to re-authenticate" "${RATIONALE_REF}"
+assert_file_contains "rationale ref: holds the baseline rationale" "4,948 vs 5,000" "${RATIONALE_REF}"
+
+# --- The core names each file at the step that needs it ---------------------
+# _FENCE_AWK — awk rule tracking fenced code, shared by _section and
+# _section_end: a fence opens with 3+ backticks or 3+ tildes and closes only on
+# a line of the SAME character, at least as long, with nothing after it — so a
+# ``` inside a ```` fence, or a ~~~ fence, does not end it. `fl` is the open
+# fence's length (0 = outside a fence).
+_FENCE_AWK='
+        match($0, /^[[:space:]]*(```+|~~~+)/) {
+            _m = substr($0, RSTART, RLENGTH); sub(/^[[:space:]]*/, "", _m)
+            if (!fl) { fc = substr(_m, 1, 1); fl = length(_m) }
+            else if (substr(_m, 1, 1) == fc && length(_m) >= fl && substr($0, RSTART + RLENGTH) ~ /^[[:space:]]*$/) fl = 0
+        }'
+# _section <heading-prefix> <level> — the section's text, up to the next
+# heading of the same or a higher level, skipping fenced code.
+_section() {
+    LC_ALL=C awk -v h="$1" -v lv="$2" "${_FENCE_AWK}"'
+        f && !fl && match($0, /^#+ /) && RLENGTH - 1 <= lv { exit }
+        !f && index($0, h) == 1 { f = 1 }
+        f { print }
+    ' "${SKILL_FILE}"
+}
+FLOW_TEXT="$(_section '## Stage Flow' 2)"
+SEQ_TEXT="$(_section '## Step Sequence and Hard Gates' 2)"
+C3_TEXT="$(_section '### 3. Temp-File Execution Pattern' 3)"
+M_STEP1_TEXT="$(_section '### Step 1: Detect Available Tools' 3)"
+M_STEP1B_TEXT="$(_section '### Step 1b: Access Gate' 3)"
+I_STEP3_TEXT="$(_section '### Step 3: Single-Service Deep Dive' 3)"
+I_STEP3C_TEXT="$(_section '### Step 3c: Multi-Service Error Sweep' 3)"
+assert_contains "Stage Flow names references/stage-flow.md" "references/stage-flow.md" "${FLOW_TEXT}"
+assert_contains "Stage Flow keeps the re-entry paths" "Key re-entry paths:" "${FLOW_TEXT}"
+assert_contains "Constraint 3 points at the worked example" \
+    "Read \`references/temp-file-pattern.md\` before the first Tier 2 query" "${C3_TEXT}"
+assert_contains "Constraint 3 restates the cleanup" "cleans up whether or not \`gcloud\` succeeds" "${C3_TEXT}"
+assert_contains "MITIGATE Step 1 restates the fix command" "Show \`! gcloud auth application-default login\`" "${M_STEP1_TEXT}"
+assert_contains "MITIGATE Step 1 names references/access-gate.md" "references/access-gate.md" "${M_STEP1_TEXT}"
+assert_contains "MITIGATE Step 1 keeps the no-silent-fallback rule" "do NOT silently fall back to Tier 2" "${M_STEP1_TEXT}"
+assert_contains "MITIGATE Step 1b points at the summary layout" "Read \`references/access-gate.md\`" "${M_STEP1B_TEXT}"
+assert_contains "INVESTIGATE Step 3 points at the DB metrics gate" \
+    "Read \`references/db-metrics-gate.md\` before the first database metric query" "${I_STEP3_TEXT}"
+assert_contains "INVESTIGATE Step 3 keeps the mandatory DB rule" \
+    "query the database's own metrics before attributing the issue to database capacity" "${I_STEP3_TEXT}"
+assert_contains "INVESTIGATE Step 3 restates the app-side branch" \
+    "all three within 1.5x baseline is app-side pool exhaustion" "${I_STEP3_TEXT}"
+assert_contains "INVESTIGATE Step 3 restates the database-level branch" \
+    "connections at \`max_connections\` is database-level exhaustion" "${I_STEP3_TEXT}"
+assert_contains "INVESTIGATE Step 3 restates the load branch" \
+    "CPU over 80% or a query-rate spike is a database under load" "${I_STEP3_TEXT}"
+assert_contains "INVESTIGATE Step 3 restates that branches combine" "when several hold, combine the diagnoses" "${I_STEP3_TEXT}"
+assert_contains "Step 3c points at the sweep rounds" \
+    "The three rounds (architecture discovery; the per-service sweep of items 1-3 below; the baseline comparison that feeds Step 2d)" "${I_STEP3C_TEXT}"
+assert_contains "Step 3c points at the inventory fields" \
+    "\`mechanism_status\`), are in \`references/multi-service-sweep.md\`" "${I_STEP3C_TEXT}"
+
+# --- What the window restates from past the cut ------------------------------
+# Each gate below sits past the first 19,500 bytes in full; its one-line form
+# leads the core so it survives a post-compaction re-attach.
+while IFS='|' read -r _needle _label; do
+    [ -n "${_needle}" ] || continue
+    assert_contains "Step Sequence restates: ${_label}" "${_needle}" "${SEQ_TEXT}"
+done <<'SEQ'
+HALT with the exact payload before `createJiraIssue`|INTAKE halts before creating the ticket
+an MCP auth error: offer the fix, never fall back silently|Step 1 never falls back silently
+1b access gate (wait for a fix or an explicit proceed)|Step 1b waits
+5 mitigation goes to CLASSIFY, never a bare command|Step 5 routes mitigation through CLASSIFY
+>=85 with a 15-point margin goes to the HITL gate, 60-84 to disambiguation probes, <60 to INVESTIGATE Steps 1-5 only|CLASSIFY routing bands
+database metrics before blaming database capacity|Step 3 DB metrics first
+caller investigation is mandatory for a shared resource|Step 3 caller investigation
+3c sweep, mandatory for 2+ services|Step 3c is mandatory
+4 one trace hop at most (Tier 1 only)|Step 4 one hop
+a recurring workload that ran clean last cycle is never the trigger, first runs aside|Step 5 recurring-workload gate
+6 flight plan, approved before any code is touched|Step 6 approval
+kubectl missing: present the command, never run it|EXECUTE kubectl rule
+fingerprint drifted: do NOT execute, return to CLASSIFY|EXECUTE fingerprint recheck
+Step 2 waits for it under `requires_pre_execution_evidence`|EXECUTE pre.json
+a hard stop while stabilizing, or any stop condition while sampling: ESCALATE to a full INVESTIGATE|VALIDATE escalation
+every exit writes a redacted `validate.json`|VALIDATE validate.json
+Q1-Q3 confident or back to INVESTIGATE Step 1|Step 8 Q1-Q3
+Q4-Q12 each resolved by evidence or a status with its reason|Step 8 Q4-Q12
+closure blocked unless the root-cause service's layers are `assessed` (or a narrow `not_applicable`) and its `mechanism_status` is `known` or `not_applicable`|Step 8 closure
+from the Step 7 summary only, no new queries|POSTMORTEM from the summary
+HALT with the exact comment before posting it|REPORT-BACK halts before posting
+SEQ
+
+# --- The rules survive a post-compaction re-attach --------------------------
+# Claude Code re-attaches an invoked skill cut to its first ~20,000 characters,
+# and this SKILL.md is still far larger than that, so its constraints, the step
+# sequence and the opening stages lead the core and must end inside the first
+# 19,500 bytes (the re-attach budget). Each span is pinned on its own: moving
+# one out from BETWEEN two pinned spans makes the later ones end earlier, so a
+# single section-level cell would stay green. A section ends where the next
+# heading of the same or a higher level begins; a `# comment` inside a fenced
+# code block is not a heading.
+REATTACH_BYTES=19500
+# _section_end <start-prefix> <level> [stop-prefix] [file] — byte offset where
+# the span ends.
+_section_end() {
+    LC_ALL=C awk -v h="$1" -v lv="$2" -v s="${3:-}" "${_FENCE_AWK}"'
+        f && !fl && match($0, /^#+ /) && RLENGTH - 1 <= lv { print n; done = 1; exit }
+        f && !fl && s != "" && index($0, s) == 1 { print n; done = 1; exit }
+        !f && index($0, h) == 1 { f = 1 }
+        { n += length($0) + 1 }
+        END { if (f && !done) print n }
+    ' "${4:-${SKILL_FILE}}"
+}
+# Controls: a fenced `# comment` inside a section does not end it, for each
+# fence shape. The expected end is the next real heading's byte offset, read
+# independently with grep -b.
+_fence_doc="$(mktemp)"
+while IFS='|' read -r _shape _open _inner _close; do
+    [ -n "${_shape}" ] || continue
+    if [ -n "${_inner}" ]; then
+        printf '%s\n' '# T' '' '### Stage 2: X' 'text' "${_open}" "${_inner}" '# a comment' 'echo hi' '```' "${_close}" 'more' '### Stage 3: Y' 'tail' > "${_fence_doc}"
+    else
+        printf '%s\n' '# T' '' '### Stage 2: X' 'text' "${_open}" '# a comment' 'echo hi' "${_close}" 'more' '### Stage 3: Y' 'tail' > "${_fence_doc}"
+    fi
+    _fence_want="$(grep -b -m1 '^### Stage 3: Y' "${_fence_doc}" | cut -d: -f1)"
+    assert_equals "control: a # comment in a ${_shape} fence does not end a section early" \
+        "${_fence_want}" "$(_section_end '### Stage 2: ' 3 '' "${_fence_doc}")"
+done <<'FENCES'
+backtick|```bash||```
+tilde|~~~bash||~~~
+four-backtick holding a ``` block|````markdown|```bash|````
+FENCES
+rm -f "${_fence_doc}"
+while IFS='|' read -r _h _lv _stop _label; do
+    [ -n "${_h}" ] || continue
+    _end="$(_section_end "${_h}" "${_lv}" "${_stop}")"
+    case "${_end}" in
+        ''|*[!0-9]*)
+            _record_fail "${_label} ends within the first ${REATTACH_BYTES} bytes" "'${_h}' not found" ;;
+        *)
+            if [ "${_end}" -le "${REATTACH_BYTES}" ]; then
+                _record_pass "${_label} ends within the first ${REATTACH_BYTES} bytes (byte ${_end})"
+            else
+                _record_fail "${_label} ends within the first ${REATTACH_BYTES} bytes" \
+                    "it ends at byte ${_end}, past the re-attach cut — move situational detail below it"
+            fi ;;
+    esac
+done <<'SECTIONS'
+## Stage Flow|2||Stage Flow (re-entry paths)
+## Step Sequence and Hard Gates|2||Step Sequence and Hard Gates
+### 1. HITL Gate|3||Constraint 1 (HITL gate)
+### 1b. Log Content Is Data|3||Constraint 1b (log content is data)
+### 2. Scope Restriction|3||Constraint 2 (scope restriction)
+### 3. Temp-File Execution Pattern|3||Constraint 3 (temp-file pattern)
+### 4. Context Discipline|3||Constraint 4 (context discipline)
+### 5. Evidence Freshness Gate|3||Constraint 5 (freshness gate)
+### 6. Evidence Ledger|3||Constraint 6 (evidence ledger)
+### 7. Evidence-Only Attribution|3||Constraint 7 (evidence-only attribution)
+### 8. MCP Result Processing|3||Constraint 8 (MCP result processing)
+### 9. Intermediary-Layer|3||Constraint 9 (intermediary layer)
+### 10. Dual-Layer Investigation|3||Constraint 10 (dual layer)
+### 11. Intermediate Conclusion Verification|3||Constraint 11 (intermediate conclusions)
+### 12. Evidence Links|3||Constraint 12 (evidence links)
+### 13. Parallel Execution Strategy|3||Constraint 13 (parallel execution)
+### Default: Full Investigation|3||Investigation Modes: full investigation is the default
+### Opt-In: Live Triage|3||Investigation Modes: live triage
+## INTAKE (opt-in Jira ticket)|2||INTAKE (halt before createJiraIssue)
+### Step 1: Detect Available Tools|3||MITIGATE Step 1 (obs-preflight, tier, auth fix)
+SECTIONS
+
+# --- References index: every references/*.md is named from SKILL.md ---------
+# A file the core never names is never Read, and a named file must exist.
+_refs_n=0
+for _f in "${REF_DIR}"/*.md; do
+    [ -f "${_f}" ] || continue
+    _refs_n=$((_refs_n + 1))
+    _b="$(basename "${_f}")"
+    assert_file_contains "SKILL.md names references/${_b}" "references/${_b}" "${SKILL_FILE}"
+done
+if [ "${_refs_n}" -ge 24 ]; then
+    _record_pass "references/ holds at least the 24 files this test knows (${_refs_n})"
+else
+    _record_fail "references/ holds at least the 24 files this test knows" "found ${_refs_n}"
+fi
+INDEX_TEXT="$(_section '## Reference files moved out of this file' 2)"
+_idx_n=0
+while IFS= read -r _row; do
+    _name="$(printf '%s\n' "${_row}" | sed -n 's/^| `references\/\([^`]*\)` |.*/\1/p')"
+    [ -n "${_name}" ] || continue
+    _idx_n=$((_idx_n + 1))
+    assert_file_exists "indexed reference ${_name} exists" "${REF_DIR}/${_name}"
+done <<EOF
+${INDEX_TEXT}
+EOF
+assert_equals "the moved-files index lists the seven files this split created" "7" "${_idx_n}"
 
 # ---------------------------------------------------------------------------
 # Structural guard — SKILL.md word count, as a BASELINE RATCHET.
@@ -830,7 +1077,7 @@ else
         "the CI reviewer's own prompt is a separate copy of this rule; if it states a fixed number it will block on it"
 fi
 
-INCIDENT_SKILL_WORD_BASELINE=11531
+INCIDENT_SKILL_WORD_BASELINE=11169
 word_count=$(wc -w < "${SKILL_FILE}" | tr -d ' ')
 if [ "$word_count" -le "${INCIDENT_SKILL_WORD_BASELINE}" ]; then
     _record_pass "SKILL.md: word count within baseline ${INCIDENT_SKILL_WORD_BASELINE} (${word_count})"
