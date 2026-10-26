@@ -36,7 +36,7 @@ _ROOT="$(cd "$(dirname "${BASH_SOURCE:-$0}")/.." 2>/dev/null && pwd)"
 # producer while its reader stayed behind, `--status` reported 0 episodes with
 # live records counted "unpoolable" — indistinguishable from an empty corpus, on
 # the one instrument that must never fake that state.
-REQUIRED_PREDICATE_VERSION=2
+REQUIRED_PREDICATE_VERSION=3
 _rs_lib="${_ROOT}/hooks/lib/review-shadow.sh"
 if [ -f "${_rs_lib}" ]; then
     # shellcheck disable=SC1090
@@ -208,7 +208,10 @@ _adjudicated_ids() {
 _adj_unparsed() {
     [ -f "${ADJ_LOG}" ] || { printf '0'; return 0; }
     local _t _p
-    _t="$(grep -c . "${ADJ_LOG}" 2>/dev/null | tr -d '[:space:]')"
+    # LC_ALL=C, as in _corpus_precheck: in a UTF-8 locale `.` does not match an
+    # invalid byte, so a corrupt line was counted neither as a line nor as
+    # unparseable.
+    _t="$(LC_ALL=C grep -c . "${ADJ_LOG}" 2>/dev/null | tr -d '[:space:]')"
     _p="$(jq -R -r 'fromjson? // empty | 1' "${ADJ_LOG}" 2>/dev/null | grep -c . | tr -d '[:space:]')"
     printf '%s' "$(( ${_t:-0} - ${_p:-0} ))"
 }
@@ -374,20 +377,15 @@ _episode_verdict() {
     printf '%s\n%s\n' "${_v}" "${_claim}"
 }
 
-# cmd_status — episode-level readout. Observational; always exits 0.
-cmd_status() {
-    local _tot=0 _lab=0 _fb=0 _tc=0 _unk=0 _agent=0 _unlab=0
-    local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
-    local _lines=0 _parsed=0 _unparsed=0 _legacy=0 _orphan=0 _lines_rc=0 _rkey=""
-    local _leg_eps=0 _leg_repos=0 _leg_span=0 _badts=0
-    local _band_hdl _den
-
-    echo "=== REVIEW shadow corpus (leg: push/merge REVIEW verdict) ==="
-    echo "corpus  : ${SHADOW_LOG}"
-    echo "sidecar : ${ADJ_LOG}"
-    echo "adjudicable predicate_version: ${REQUIRED_PREDICATE_VERSION}"
-    if [ ! -f "${SHADOW_LOG}" ]; then echo "(no corpus yet)"; return 0; fi
-    if ! command -v jq >/dev/null 2>&1; then echo "(jq required)"; return 0; fi
+# _corpus_precheck — shared by --status and --evidence-miss, so the two cannot
+# disagree about when the corpus is usable. Prints why and returns 1 when it is
+# absent, unreadable or jq is missing; otherwise sets _PC_LINES to the count of
+# non-empty lines and returns 0. Callers return 0 on failure: observational.
+_corpus_precheck() {
+    local _rc=0
+    _PC_LINES=0
+    if [ ! -f "${SHADOW_LOG}" ]; then echo "(no corpus yet)"; return 1; fi
+    if ! command -v jq >/dev/null 2>&1; then echo "(jq required)"; return 1; fi
     # "exists but cannot be read" must never render as "empty". `-f` says
     # nothing about readability, and the counts below pipe grep/jq into `tr`,
     # so a permission error is discarded with the pipeline's status -- measured,
@@ -397,18 +395,37 @@ cmd_status() {
     if [ ! -r "${SHADOW_LOG}" ]; then
         echo "ERROR: ${SHADOW_LOG} exists but is NOT READABLE."
         echo "  No claim is made about its contents. This is not an empty corpus."
-        return 0
+        return 1
     fi
 
     # PIPESTATUS[0], not the pipeline's status: `grep | tr` reports tr's.
-    _lines="$(grep -c . "${SHADOW_LOG}" 2>/dev/null)"; _lines_rc=$?
-    _lines="$(printf '%s' "${_lines}" | tr -d '[:space:]')"
+    # LC_ALL=C: in a UTF-8 locale `.` does not match an invalid byte, so a
+    # line of corrupt bytes was neither a record nor an unparseable line.
+    _PC_LINES="$(LC_ALL=C grep -c . "${SHADOW_LOG}" 2>/dev/null)"; _rc=$?
+    _PC_LINES="$(printf '%s' "${_PC_LINES}" | tr -d '[:space:]')"
     # grep -c exits 1 on "no matching lines", which is a legitimate empty file;
     # anything above 1 is a real read error and must not be reported as zero.
-    if [ "${_lines_rc}" -gt 1 ]; then
-        echo "ERROR: could not read ${SHADOW_LOG} (grep exit ${_lines_rc}). No claim is made about its contents."
-        return 0
+    if [ "${_rc}" -gt 1 ]; then
+        echo "ERROR: could not read ${SHADOW_LOG} (grep exit ${_rc}). No claim is made about its contents."
+        return 1
     fi
+    return 0
+}
+
+# cmd_status — episode-level readout. Observational; always exits 0.
+cmd_status() {
+    local _tot=0 _lab=0 _fb=0 _tc=0 _unk=0 _agent=0 _unlab=0
+    local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
+    local _lines=0 _parsed=0 _unparsed=0 _legacy=0 _orphan=0 _rkey=""
+    local _leg_eps=0 _leg_repos=0 _leg_span=0 _badts=0
+    local _band_hdl _den
+
+    echo "=== REVIEW shadow corpus (leg: push/merge REVIEW verdict) ==="
+    echo "corpus  : ${SHADOW_LOG}"
+    echo "sidecar : ${ADJ_LOG}"
+    echo "adjudicable predicate_version: ${REQUIRED_PREDICATE_VERSION}"
+    _corpus_precheck || return 0
+    _lines="${_PC_LINES}"
     # Counts records that PARSE, not records with a non-empty ts. Counting the
     # latter reported a well-formed record whose `ts` is "" as an unparseable
     # LINE -- and review-shadow.sh emits exactly that whenever `date` fails, so
@@ -550,13 +567,158 @@ EOF
     return 0
 }
 
+# cmd_rate_episodes — every _episodes row, unchanged (tab-separated). _episodes
+# is already would-block-only and at the adjudicable predicate version only, so this is the rate population.
+# stdout carries only those rows.
+cmd_rate_episodes() {
+    _episodes
+    return 0
+}
+
+# cmd_evidence_miss — of the would-block EPISODES at the adjudicable predicate
+# version, how many contain a record whose witness is an allowlisted reviewer
+# that returned on a commit covering the push (review_witness
+# "reviewer-returned", review_coverage "covered"). Owner decision 2026-10-25:
+# that is the registered false-block clause "a real review demonstrably did
+# occur". Invocation and verdict witnesses never count: an invocation is not
+# review evidence (#197). Observational; writes nothing; always exits 0.
+#
+# It is a LOWER BOUND on ONE kind of false block, never the registered rate:
+# the other false-block kind (an infrastructure reason the advisory misnames)
+# is not looked for, and a review the guard could not witness is not counted.
+#
+# One jq pass tags every line, so the population and each exclusion come from
+# the same read: K other predicate, J version-matching but no valid
+# witness/coverage pair, W would_block not boolean true, I a record_id not of
+# the producer's shape, U not a JSON object, P the population row. A second
+# awk pass re-tags as D every P row whose record_id another P row shares.
+# Per F11 the record_id -> (witness, coverage) map is then built from the P
+# rows FIRST and the grouped episodes are joined to it, so an episode is a
+# miss if ANY member id maps to (reviewer-returned, covered) -- exactly that
+# pair: `cannot-check` and `none` coverage are not "covered" and never count.
+#
+# Why I and D exist: the join is by id, and the grouper's member list is
+# comma-joined ids. A shared id attached one record's miss pair to a SECOND
+# episode (measured 2/2 where the answer is 1/2), a byte-identical duplicate
+# line counted as two records, and an id containing a comma split into other
+# records' ids -- inflating misses and driving the unplaced count negative,
+# which hid its line. None is producer-reachable (the id is hashed over a
+# nonce), so excluding them only costs a hand-edited corpus its rows. The
+# shape is anchored with \A and \z, not ^ and $: jq's `$` also matches before
+# a trailing newline, so "abcd\n" passed. It is 1-16 lowercase hex, NOT
+# exactly 16: the producer's cksum fallback
+# writes a shorter all-digit id, and a real record must not be excluded.
+cmd_evidence_miss() {
+    local _pv="${REQUIRED_PREDICATE_VERSION}" _rows _eps _counts _join
+    local _k=0 _j=0 _w=0 _i=0 _d=0 _p=0 _obj=0 _u=0 _n=0 _r=0 _m=0 _t=0
+
+    echo "REVIEW evidence-miss (diagnostic only; predicate_version ${_pv} records only)"
+    _corpus_precheck || return 0
+
+    # Each cell is a string or "": @tsv errors on an object or array, which
+    # would drop the WHOLE record from the read with nothing said.
+    _rows="$(jq -R -r --argjson pv "${_pv}" '
+        def inv($xs): . as $v | any($xs[]; . == $v);
+        def cell: if type == "string" then . elif . == null then "" else tojson end;
+        fromjson? // empty
+        | if type != "object" then "U"
+          elif (.predicate_version == $pv) | not then "K"
+          elif ((.review_witness  | inv(["reviewer-returned","verdict","invocation","none"]))
+            and (.review_coverage | inv(["covered","uncovered","cannot-check","none"]))) | not then "J"
+          elif (((.would_block | type) == "boolean") and .would_block == true) | not then "W"
+          elif ((.record_id | type) != "string") or ((.record_id | test("\\A[0-9a-f]{1,16}\\z")) | not) then "I"
+          else (["P", .repo, .branch, .session_token, .ts, .record_id,
+                 .review_witness, .review_coverage] | map(cell) | @tsv)
+          end' "${SHADOW_LOG}" 2>/dev/null \
+        | awk -F'\t' '
+            { line[NR] = $0; if ($1 == "P") seen[$6]++ }
+            END {
+                for (x = 1; x <= NR; x++) {
+                    if (substr(line[x], 1, 2) == "P\t") {
+                        split(line[x], f, "\t")
+                        if (seen[f[6]] > 1) { print "D"; continue }
+                    }
+                    print line[x]
+                }
+            }')"
+
+    _counts="$(printf '%s\n' "${_rows}" | awk -F'\t' '
+        $1 == "K" { k++ } $1 == "J" { j++ } $1 == "W" { w++ } $1 == "I" { i++ }
+        $1 == "D" { d++ } $1 == "P" { p++ }
+        $1 != "U" && $1 != "" { o++ }
+        END { print k+0, j+0, w+0, i+0, d+0, p+0, o+0 }')"
+    read -r _k _j _w _i _d _p _obj <<EOF
+${_counts}
+EOF
+    # A parsed non-object is not a record, so it is reported with the lines
+    # that did not parse.
+    _u=$(( ${_PC_LINES:-0} - _obj ))
+
+    _eps="$(printf '%s\n' "${_rows}" \
+            | awk -F'\t' '$1 == "P" { print $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 }' \
+            | shadow_group_episodes "${EPISODE_WINDOW_SEC}")"
+
+    # M rows (the map) precede E rows (the episodes) in one stream. Ids are
+    # unique among P rows by construction (D above), so each maps once.
+    _join="$( { printf '%s\n' "${_rows}" | awk -F'\t' '$1 == "P" { print "M\t" $6 "\t" $7 "\t" $8 }'
+                printf '%s\n' "${_eps}"  | awk -F'\t' 'NF { print "E\t" $5 }'; } \
+             | awk -F'\t' '
+                $1 == "M" { pair[$2] = $3 "\t" $4; next }
+                $1 == "E" {
+                    n++; c = split($2, ids, ","); r += c; hit = 0
+                    for (x = 1; x <= c; x++) if (pair[ids[x]] == "reviewer-returned\tcovered") hit = 1
+                    m += hit
+                }
+                END { print n+0, r+0, m+0 }')"
+    read -r _n _r _m <<EOF
+${_join}
+EOF
+    # Population rows the grouper could not place (an unusable ts).
+    _t=$(( _p - _r ))
+
+    echo "  would-block episodes: ${_n} (${_r} record(s))"
+    echo "  evidence misses: ${_m} episode(s) in which an allowlisted reviewer returned on a commit covering the push"
+    if [ "${_n}" -gt 0 ]; then
+        echo "  rate: ${_m}/${_n}"
+    else
+        echo "  rate: n/a (no would-block episodes)"
+    fi
+    echo "  excluded: ${_k} record(s) at other predicate versions; ${_j} record(s) at version ${_pv} without a valid review_witness/review_coverage; ${_u} unparseable line(s)"
+    if [ "${_w}" -gt 0 ]; then
+        echo "  excluded: ${_w} record(s) at version ${_pv} with would_block not boolean true"
+    fi
+    if [ "${_i}" -gt 0 ]; then
+        echo "  excluded: ${_i} record(s) at version ${_pv} with a record_id not of the producer's shape (1-16 lowercase hex)"
+    fi
+    if [ "${_d}" -gt 0 ]; then
+        echo "  excluded: ${_d} record(s) at version ${_pv} sharing a record_id with another record (not joinable by id)"
+    fi
+    if [ "${_t}" -gt 0 ]; then
+        echo "  excluded: ${_t} record(s) at version ${_pv} with no usable ts (cannot be placed in an episode)"
+    fi
+    # Unreachable while ids are unique and comma-free, but never silent: a
+    # negative difference means the episodes hold ids the population does not,
+    # and the numbers above cannot be trusted.
+    if [ "${_t}" -lt 0 ] || [ "${_u}" -lt 0 ]; then
+        echo "  ERROR: record accounting is inconsistent (${_PC_LINES:-0} line(s), ${_obj} record(s), ${_p} in the population, ${_r} placed in episodes). Do not use the counts above."
+    fi
+    echo "  This is a LOWER BOUND on one kind of false block (a real review demonstrably occurred). It is NOT the registered false-block rate."
+    echo "  review_witness cannot tell \"no reviewer\" from \"a reviewer whose dispatch commit was unknown\":"
+    echo "  the guard records the latter under the verdict, invocation or none witness, so it is never counted here."
+    return 0
+}
+
 _usage() {
     cat <<USAGE
 usage: $0 <command>
 
   --status                      episode-level readout and the pre-registered band
+  --rate-episodes               TSV of the episodes the rate is computed over
   --next                        oldest unadjudicated record, with how to label it
   --adjudicate <record_id> --verdict true_catch|false_block|unknown [--reason <text>]
+  --evidence-miss               would-block episodes in which an allowlisted reviewer
+                                returned on a commit covering the push (a lower bound
+                                on one kind of false block, not the registered rate)
 
 Diagnostic only. Writes to a sidecar; the shadow log is never mutated.
 The pre-registration in openspec/changes/review-verdict/design.md is the
@@ -569,6 +731,8 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --status)     _CMD=status ;;
         --next)       _CMD=next ;;
+        --rate-episodes) _CMD=rate_episodes ;;
+        --evidence-miss) _CMD=evidence-miss ;;
         --adjudicate) _CMD=adjudicate; shift; _RID="${1:-}" ;;
         --verdict)    shift; _VERDICT="${1:-}" ;;
         --reason)     shift; _REASON="${1:-}" ;;
@@ -580,6 +744,8 @@ done
 case "${_CMD}" in
     status)     cmd_status ;;
     next)       cmd_next ;;
+    rate_episodes) cmd_rate_episodes ;;
+    evidence-miss) cmd_evidence_miss ;;
     adjudicate) cmd_adjudicate "${_RID}" "${_VERDICT}" "${_REASON}" ;;
     *)          _usage >&2; exit 1 ;;
 esac

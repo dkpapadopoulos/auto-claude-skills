@@ -676,6 +676,27 @@ adj d1 true_catch "x" >/dev/null
 eq "an attested episode in repo B does NOT satisfy the 2-repo floor" "1" \
    "$(status | grep -c 'have 1)$')"
 
+# --rate-episodes: the exact episode set --status computes its rate over, so a
+# downstream consumer never re-derives the grouping. 2 would-block (one with an
+# EMPTY branch, the tab-collapse trap), 1 attested, 1 advisory-silent.
+: > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
+recae re1 "2026-08-01T10:00:00Z" "/repo/A" "feat/x" "tokRE1" true true
+recae re2 "2026-08-01T11:00:00Z" "/repo/B" "" "tokRE2" true true
+recae re3 "2026-08-01T12:00:00Z" "/repo/A" "feat/z" "tokRE3" false true
+recae re4 "2026-08-01T13:00:00Z" "/repo/A" "feat/w" "tokRE4" true false
+_re_out="$("$SCRIPT" --rate-episodes 2>/dev/null)"; _re_rc=$?
+eq "--rate-episodes exits 0" "0" "$_re_rc"
+eq "--rate-episodes prints one line per would-block episode" "2" \
+   "$(printf '%s\n' "$_re_out" | grep -c .)"
+eq "--status reports the same would-block count" "2" \
+   "$(status | awk '$1=="would-block" {print $2; exit}')"
+eq "every line has 5 tab-separated fields (empty branch preserved)" "5" \
+   "$(printf '%s\n' "$_re_out" | awk -F'\t' '{print NF}' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+eq "the empty-branch episode is present with its record id" "1" \
+   "$(printf '%s\n' "$_re_out" | awk -F'\t' '$2=="/repo/B" && $3=="" && $5=="re2"' | grep -c .)"
+eq "the attested and silent episodes are absent" "0" \
+   "$(printf '%s\n' "$_re_out" | grep -cE 're3|re4')"
+
 echo
 echo "Tests run: $(( PASS + FAIL ))  passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

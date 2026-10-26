@@ -43,8 +43,21 @@ branch_ledger_dir() {
 # records are consumed with HEAD-or-ancestor acceptance, so an over-late sha
 # silently covers commits nothing reviewed — the over-claim #181 removed from
 # verdicts. A caller that knows the real subject should pass it.
+#
+# <sha> may also be the literal `-`: "the subject commit is known to be
+# unknown". It is stored as-is, never resolved to HEAD — the reviewer hooks pass
+# it when the dispatch-time commit could not be read, because stamping a later
+# HEAD is exactly the over-late claim above. It is non-hex, so every sha reader
+# (branch_ledger_sha_is_branch_local, review_sha_covers) rejects it.
+#
+# <tag> is OPTIONAL and becomes a third field (`<sha> <ts> <tag>`) only when it
+# matches ^[A-Za-z0-9=_-]+$; anything else is DROPPED, never escaped, so a tag
+# can never add a field or a line. Omitted or dropped => byte-identical to the
+# two-field line every existing reader cuts by position. Read it back with
+# branch_ledger_tag. Today's only tags are the reviewer classifier's
+# `arm=allowlist` / `arm=description` on `reviewer-returned`.
 branch_ledger_record() {
-    local milestone="${1:-}" proj_root="${2:-}" sha_in="${3:-}" dir sha
+    local milestone="${1:-}" proj_root="${2:-}" sha_in="${3:-}" tag="${4:-}" dir sha ts
     [ -z "$milestone" ] && return 0
     dir="$(branch_ledger_dir "$proj_root")" || return 0
     [ -z "$dir" ] && return 0
@@ -59,23 +72,78 @@ branch_ledger_record() {
     # branch_ledger_sha_is_branch_local, so a corrupt subject fails toward
     # under-crediting instead.
     #
-    # Neither arm is reachable from any current caller (the only non-empty
-    # producer is `git rev-parse HEAD`, and note_dispatch blanks anything else
-    # before storing it), so no test can catch their removal — mutation-verified,
-    # 0 failures either way. Stated here rather than presented as covered, which
-    # is this change's standing rule for a knowingly-unobservable guard.
+    # Reachability of the arms below, stated per arm:
+    #   ""             every caller that omits <sha> (HEAD, the prior behaviour).
+    #   -              REACHED: both reviewer hooks pass it when the dispatch-time
+    #                  commit is unknown (tests/test-reviewer-arm.sh A8/A8b/A8c).
+    #   non-hex        NOT reachable from any hook (the only other non-empty
+    #                  producer is `git rev-parse HEAD`, and note_dispatch blanks
+    #                  non-hex before storing it); pinned only by a direct call
+    #                  in tests/test-reviewer-arm.sh A6, not end to end.
+    #   uppercase hex  NOT reachable from any hook (git prints lowercase); pinned
+    #                  by a direct call in tests/test-reviewer-arm.sh A13.
     case "$sha_in" in
         "") sha="$(git -C "${proj_root:-.}" rev-parse HEAD 2>/dev/null || true)" ;;
+        -) sha="-" ;;
         *[!0-9a-fA-F]*) sha="unknown" ;;
+        # Stored lowercase: git prints lowercase, and the credit reader
+        # (credited-skills.sh) accepts only [0-9a-f]. One fork, and only for an
+        # uppercase input, which no current caller produces.
+        *[A-F]*) sha="$(printf '%s' "$sha_in" | tr 'A-F' 'a-f' 2>/dev/null)" || sha="unknown" ;;
         *) sha="$sha_in" ;;
     esac
+    case "$tag" in *[!A-Za-z0-9=_-]*) tag="" ;; esac
     mkdir -p "$dir" 2>/dev/null || return 0
+    ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" || ts=""
     # per-milestone file (no shared-JSON read-modify-write → no concurrent race);
-    # atomic write; content = "<sha> <utc-ts>"
-    printf '%s %s\n' "${sha:-unknown}" "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" \
-        > "${dir}/${milestone}.tmp.$$" 2>/dev/null \
-        && mv "${dir}/${milestone}.tmp.$$" "${dir}/${milestone}" 2>/dev/null || return 0
+    # atomic write; content = "<sha> <utc-ts>" or "<sha> <utc-ts> <tag>". A
+    # tagged line never carries an empty timestamp, which would shift the tag
+    # into field 2 for a whitespace-splitting reader.
+    if [ -n "$tag" ]; then
+        printf '%s %s %s\n' "${sha:-unknown}" "${ts:-unknown}" "$tag" \
+            > "${dir}/${milestone}.tmp.$$" 2>/dev/null \
+            && mv "${dir}/${milestone}.tmp.$$" "${dir}/${milestone}" 2>/dev/null || return 0
+    else
+        printf '%s %s\n' "${sha:-unknown}" "$ts" \
+            > "${dir}/${milestone}.tmp.$$" 2>/dev/null \
+            && mv "${dir}/${milestone}.tmp.$$" "${dir}/${milestone}" 2>/dev/null || return 0
+    fi
     return 0
+}
+
+# branch_ledger_sha_tag <milestone> [<proj_root>] — prints "<sha> <tag>" taken
+# from ONE read of the milestone line under ONE key derivation, or nothing (no
+# ledger, no milestone, empty line). <tag> is empty for a two-field (untagged or
+# pre-tag) line, a value outside the tag charset, or a line with MORE than three
+# fields (malformed, so its tag is not trusted). <sha> is field 1 verbatim;
+# validating it is the caller's job. Always returns 0; callers parse the output.
+#
+# One read, not branch_ledger_tag + branch_ledger_sha: branch_ledger_record
+# replaces the file atomically, so two reads can straddle a concurrent
+# overwrite (or a branch switch between two key derivations) and pair one
+# record's tag with another record's sha — an `arm=allowlist` tag on an
+# `arm=description` reviewer's sha. A reader that decides on the PAIR must take
+# both from this function. `read` is a builtin: no fork beyond branch_ledger_dir's.
+branch_ledger_sha_tag() {
+    local milestone="${1:-}" proj_root="${2:-}" dir _s _t _g _rest
+    [ -n "$milestone" ] || return 0
+    case "$milestone" in */*|*..*) return 0 ;; esac
+    dir="$(branch_ledger_dir "$proj_root")" || return 0
+    [ -n "$dir" ] && [ -f "${dir}/${milestone}" ] || return 0
+    IFS=' ' read -r _s _t _g _rest < "${dir}/${milestone}" 2>/dev/null || [ -n "${_s:-}" ] || return 0
+    [ -n "${_s:-}" ] || return 0
+    if [ -n "${_rest:-}" ]; then _g=""; fi
+    case "${_g:-}" in *[!A-Za-z0-9=_-]*) _g="" ;; esac
+    printf '%s %s' "$_s" "${_g:-}"
+}
+
+# branch_ledger_tag <milestone> [<proj_root>] — prints just the tag half of
+# branch_ledger_sha_tag, or nothing. Always returns 0. For a decision that also
+# needs the sha, call branch_ledger_sha_tag instead (see why above).
+branch_ledger_tag() {
+    local _st
+    _st="$(branch_ledger_sha_tag "${1:-}" "${2:-}")" || return 0
+    case "$_st" in *" "*) printf '%s' "${_st#* }" ;; esac
 }
 
 branch_ledger_has() {

@@ -285,7 +285,7 @@ assert_equals       "S4 omitted discovery_source => cannot_check" "cannot_check"
 # --- Record shape: every field the reader keys on is present ---------------
 rm -f "${_VLOG}" "${_ART}"; _seed_status "${_BOTH}"
 _guard "${PROJECT_ROOT}" "${RA}" "git push origin HEAD" >/dev/null
-assert_equals "record: schema_version"    "2" "$(_lastf .schema_version)"
+assert_equals "record: schema_version"    "3" "$(_lastf .schema_version)"
 assert_equals "record: predicate_version" "2" "$(_lastf .predicate_version)"
 assert_equals "record: gate_declaration is recorded (declared, local)" "local" "$(_lastf .gate_declaration)"
 assert_equals "record: repo is the toplevel" "${RA}" "$(_lastf .repo)"
@@ -302,6 +302,30 @@ case "${_rid}" in
     *)       _record_pass "record: record_id present" ;;
 esac
 assert_not_contains "record: raw command text is never written" "git push" "$(cat "${_VLOG}")"
+
+# --- Schema 3: harness ids and versions (review-credit-from-evidence, d4) ----
+# session_id and tool_use_id come from the hook PAYLOAD, cc_version from
+# AI_AGENT, acs_version from the plugin manifest. A schema bump only: the
+# predicate stays 2. AI_AGENT is set explicitly, never inherited from the
+# harness running this suite.
+_stamp_vguard() { # <AI_AGENT>
+    ( cd "${RA}" && jq -n --arg tp "${_TPATH}" \
+        '{"transcript_path":$tp,"session_id":"sess-1","tool_use_id":"toolu_01AbC","tool_input":{"command":"git push origin HEAD"}}' \
+        | env VERIFY_SHADOW_LOG="${_VLOG}" REVIEW_SHADOW_LOG="${TMP}/rs.jsonl" \
+          IMPLEMENT_SHADOW_LOG="${TMP}/is.jsonl" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" AI_AGENT="$1" \
+          bash "${PROJECT_ROOT}/hooks/openspec-guard.sh" 2>/dev/null )
+}
+rm -f "${_VLOG}" "${_ART}"; _seed_status "${_BOTH}"
+_stamp_vguard "claude-code_2-1-308_harness" >/dev/null
+assert_equals "stamps: one record (non-vacuous)" "1" "$(_nrec)"
+assert_equals "stamps: schema_version is 3"           "3" "$(_lastf .schema_version)"
+assert_equals "stamps: predicate_version is unchanged" "2" "$(_lastf .predicate_version)"
+assert_equals "stamps: session_id from the payload"   "sess-1"      "$(_lastf .session_id)"
+assert_equals "stamps: tool_use_id from the payload"  "toolu_01AbC" "$(_lastf .tool_use_id)"
+assert_equals "stamps: cc_version parsed from AI_AGENT" "2.1.308"   "$(_lastf .cc_version)"
+assert_equals "stamps: acs_version is the plugin manifest's version" \
+    "$(jq -r .version "${PROJECT_ROOT}/.claude-plugin/plugin.json")" "$(_lastf .acs_version)"
+assert_equals "stamps: the classification is unchanged by stamping" "unexplained" "$(_lastf .classification)"
 
 # --- A credential embedded in the origin URL must not reach the corpus -----
 git -C "${RB}" remote set-url origin "https://user:s3cr3t@example.invalid/org/b.git"
@@ -849,6 +873,22 @@ assert_contains "round trip: a human label resolves it" "true_catch=1" "${out}"
 assert_contains "round trip: nothing unresolved" "unresolved=0" "${out}"
 assert_contains "round trip: --next says everything is labelled" "carries a human label" \
     "$(_rd 2026-10-20T00:00:00Z --next)"
+
+# --- round trip, older schema: the reader keeps parsing schema-2 records -----
+# The SAME guard-written record with its four stamps removed and schema 2: what
+# every record written before review-credit-from-evidence looks like.
+rm -f "${_VLOG}" "${_ART}" "${_ADJ}"; _seed_status "${_BOTH}"
+_guard "${PROJECT_ROOT}" "${RA}" "git push origin HEAD" >/dev/null
+assert_equals "schema-2 round trip: the guard wrote schema 3 with stamps" "3 true" \
+    "$(jq -r '"\(.schema_version) \(has("session_id"))"' "${_VLOG}")"
+jq -c '.ts = "2026-10-05T10:00:00Z" | del(.session_id,.tool_use_id,.cc_version,.acs_version) | .schema_version = 2' \
+    "${_VLOG}" > "${_CORP}"
+assert_equals "schema-2 round trip: the rewrite really is schema 2 without stamps" "2 false" \
+    "$(jq -r '"\(.schema_version) \(has("session_id"))"' "${_CORP}")"
+out="$(_status)"
+assert_contains "schema-2 round trip: counted as one would-block episode" "n=1" "${out}"
+assert_contains "schema-2 round trip: --next offers it" "$(_rid 1)" "$(_rd 2026-10-20T00:00:00Z --next)"
+rm -f "${_CORP}" "${_ADJ}"
 
 # --- an AGENT's label resolves nothing ---------------------------------------
 _reset

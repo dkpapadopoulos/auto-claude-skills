@@ -49,7 +49,15 @@
 # different population and is never pooled.
 # schema_version 2: adds `gate_declaration`, the contemporaneous evidence a
 # human needs to judge whether the remedy was reachable.
-VERIFY_SHADOW_SCHEMA_VERSION=2
+# schema_version 3 (2026-10-25, review-credit-from-evidence decision 4): adds
+# `session_id` and `tool_use_id` (the hook payload's, i.e. the push call's),
+# `cc_version` (from AI_AGENT) and `acs_version` (the plugin manifest), read
+# from the guard's SHADOW_STAMP_* globals; a stamp that could not be computed is
+# written as "", and the four keys are always present from schema 3 on. A
+# schema bump, not a predicate bump: the fire condition, the episode key and
+# the classification are unchanged, so schema-3 records pool with schema-2 ones
+# under predicate_version 2.
+VERIFY_SHADOW_SCHEMA_VERSION=3
 VERIFY_SHADOW_PREDICATE_VERSION=2
 
 # _verify_shadow_repo_id <remote-url> -> host/path
@@ -106,6 +114,8 @@ verify_shadow_record() {
     # <session_token> <subj_root> <classification> <reason> <action>
     #   [<subj_rev>] [<transcript_path>] [<material_source:true|false>] [<discovery_source>]
     #   [<gate_declaration:local|non-local|absent|unknown>]
+    # Stamps (schema 3) come from the SHADOW_STAMP_* globals, never from
+    # arguments; unset reads as "".
     local token="${1:-}" proot="${2:-}" class="${3:-}" reason="${4:-}" action="${5:-push}"
     local rev="${6:-HEAD}" tp="${7:-}" material="${8:-}" src="${9:-}" gate="${10:-}"
     local log branch head repo repo_id ts rec rid nonce wb
@@ -169,12 +179,15 @@ verify_shadow_record() {
         --arg branch "$branch" --arg head "$head" --arg token "$token" \
         --arg action "$action" --arg class "$class" --arg reason "$reason" \
         --arg src "$src" --arg tp "$tp" --arg gate "$gate" \
+        --arg sid "${SHADOW_STAMP_SESSION_ID:-}" --arg tuid "${SHADOW_STAMP_TOOL_USE_ID:-}" \
+        --arg ccv "${SHADOW_STAMP_CC_VERSION:-}" --arg acsv "${SHADOW_STAMP_ACS_VERSION:-}" \
         '{schema_version:$sv, predicate_version:$pv, record_id:$rid,
           ts:$ts, repo:$repo, repo_id:$repo_id, branch:$branch, head_sha:$head,
           session_token:$token, action:$action,
           would_block:$wb, classification:$class, reason:$reason,
           discovery_source:$src, gate_declaration:$gate, material_source:$mat,
-          transcript_path:$tp}' 2>/dev/null)" || return 0
+          transcript_path:$tp,
+          session_id:$sid, tool_use_id:$tuid, cc_version:$ccv, acs_version:$acsv}' 2>/dev/null)" || return 0
     [ -n "$rec" ] || return 0
 
     # No rotation, deliberately: it would drop records the decision rule has not

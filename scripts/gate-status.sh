@@ -44,6 +44,8 @@ The push gate (hooks/openspec-guard.sh) evaluates, in ORDER:
                                  in a routing repo without a clean verdict
                                  covering those changes
   gh pr merge / gh api merge traverse gates 2-5 like a push (audit F2).
+  Gates 2 and 5 also credit a returned allowlisted reviewer whose sha
+  covers the push as REVIEW evidence.
   REVIEW staleness (HEAD moved past the review SHA) is ADVISORY BY DESIGN —
   backtested 2026-07-15: every deny variant would have blocked 56-94% of
   clean merges and caught 0 defects (openspec/changes/gate-status/).
@@ -66,6 +68,16 @@ for _lib in session-token.sh branch-ledger.sh verdict.sh staleness-delta.sh; do
         _missing="${_missing} ${_lib}"
     fi
 done
+# credited-skills.sh is reported apart from the loop above: its absence NARROWS
+# REVIEW credit (the guard falls back to four names and ignores a returned
+# reviewer), so "the affected gates FALL OPEN" would state the opposite of what
+# happens. Probed on its LAST definition, as the guard does.
+_CREDITED_OK=false
+if [ -f "${_ROOT}/hooks/lib/credited-skills.sh" ]; then
+    # shellcheck disable=SC1090
+    . "${_ROOT}/hooks/lib/credited-skills.sh" 2>/dev/null && \
+        command -v review_reviewer_covers >/dev/null 2>&1 && _CREDITED_OK=true
+fi
 _HAS_JQ=true; command -v jq >/dev/null 2>&1 || _HAS_JQ=false
 
 _proot="$(git rev-parse --show-toplevel 2>/dev/null || true)"
@@ -76,6 +88,7 @@ _short="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
 echo "PUSH GATE STATUS — branch ${_branch} @ ${_short}"
 [ -z "${_proot}" ] && { echo "  not a git repository — the push gate never fires here"; exit 0; }
 [ -n "${_missing}" ] && echo "  WARNING: guard lib(s) unavailable:${_missing} — the affected gates FALL OPEN (see PUSH-GATE CANARY)"
+[ "${_CREDITED_OK}" = "true" ] || echo "  WARNING: credited-skills.sh unavailable — REVIEW credit narrowed to the four pre-change names and no returned reviewer counts (this can only add a deny)"
 [ "${_HAS_JQ}" = "false" ] && echo "  WARNING: jq missing — no evidence is establishable; gates 2-5 fall OPEN (CLAUDE.md: jq optional)"
 [ "${ACSM_SKIP_PUSH_GATE:-}" = "1" ] && echo "  NOTE: ACSM_SKIP_PUSH_GATE=1 is set in THIS shell — if Claude Code was launched with it, all denials are skipped"
 
@@ -138,6 +151,41 @@ _ev_line() {  # _ev_line <label> <milestone>
 _ev_line "REVIEW  (requesting-code-review)        " "requesting-code-review"
 _ev_line "VERIFY  (verification-before-completion)" "verification-before-completion"
 
+# The guard's reviewer leg (review-credit-from-evidence): a `reviewer-returned`
+# ledger milestone credits REVIEW only on the allowlisted arm and only when its
+# sha covers HEAD (credited-skills.sh::review_sha_covers). The sha and the arm
+# come from ONE read (branch_ledger_sha_tag), so the line can never pair one
+# record's arm with another's sha; coverage is then judged on that same sha.
+# _rr_covers feeds replay rows 2 and 5.
+_rr_covers=false; _rr_val="none"
+if [ "${_CREDITED_OK}" != "true" ]; then
+    _rr_val="not consulted (credited-skills.sh unavailable)"
+elif command -v branch_ledger_sha_tag >/dev/null 2>&1; then
+    # Validated RAW, scrubbed only for display: scrubbing first would delete a
+    # control character the lib's reader rejects, and show the result as
+    # covering (review M1). The tag is charset-filtered by branch_ledger_sha_tag,
+    # so only the sha can carry one.
+    _rr_st="$(branch_ledger_sha_tag reviewer-returned "${_proot}" 2>/dev/null)" || _rr_st=""
+    case "${_rr_st}" in
+        "") ;;
+        *" arm=allowlist")
+            _rr_sha="${_rr_st%% *}"
+            review_sha_covers "${_rr_sha}" "${_proot}" HEAD; _rr_rc=$?
+            _rr_sha="$(printf '%s' "${_rr_sha}" | _scrub)"
+            case "${_rr_rc}" in
+                0) _rr_val="@ ${_rr_sha} — covers HEAD"; _rr_covers=true ;;
+                1) _rr_val="@ ${_rr_sha} — does NOT cover HEAD (material change since, or not an ancestor)" ;;
+                *) _rr_val="@ ${_rr_sha} — cannot check coverage — not credited" ;;
+            esac ;;
+        *" arm=description") _rr_val="description-matched only — not credited" ;;
+        *" ") _rr_val="recorded before the arm was stored — not credited" ;;
+        *) _rr_val="unrecognised arm — not credited" ;;
+    esac
+else
+    _rr_val="not consulted (branch-ledger.sh unavailable)"
+fi
+echo "  REVIEWER (returned, allowlisted): ${_rr_val}"
+
 _v_state="absent"; _v_sha=""; _v_pos=""
 if command -v verdict_is_clean >/dev/null 2>&1 && [ -n "${_vtoken}" ]; then
     _v_sha="$(_verdict_sha "${_vtoken}" 2>/dev/null | _scrub || true)"
@@ -170,6 +218,7 @@ _chain_state_ok=false
 [ "${_HAS_JQ}" = "true" ] && [ -n "${_token}" ] && [ -f "${HOME}/.claude/.skill-composition-state-${_token}" ] && _chain_state_ok=true
 if [ "${_chain_state_ok}" = "true" ]; then
     _r_done=false; { _comp requesting-code-review completed || _led requesting-code-review; } && _r_done=true
+    [ "${_r_done}" = "false" ] && [ "${_rr_covers}" = "true" ] && _r_done=true
     if _comp requesting-code-review chain && [ "${_r_done}" = "false" ]; then
         _say "2 chain REVIEW gate" "WOULD DENY"
         _deny="${_deny:-2 chain REVIEW gate}"; _deny_fix="${_deny_fix:-invoke Skill(superpowers:requesting-code-review)}"
@@ -196,6 +245,7 @@ if command -v branch_ledger_has >/dev/null 2>&1 && [ "${_HAS_JQ}" = "true" ]; th
     _led verification-before-completion && _g_v=true
     _comp requesting-code-review completed && _g_r=true
     _comp verification-before-completion completed && _g_v=true
+    [ "${_g_r}" = "false" ] && [ "${_rr_covers}" = "true" ] && _g_r=true
     if [ "${_g_v}" = "false" ] && command -v verdict_is_clean >/dev/null 2>&1 \
        && verdict_is_clean "${_vtoken}" && verdict_covers_head "${_vtoken}" "${_proot}"; then _g_v=true; fi
     if [ "${_g_r}" = "false" ] || [ "${_g_v}" = "false" ]; then

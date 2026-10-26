@@ -15,10 +15,10 @@ terminal is outside the hook by construction.
 | # | Gate | Denies when | Remedy |
 |---|------|-------------|--------|
 | 1 | compound mutate-then-push | one command commits/merges/rebases/cherry-picks/reverts/ams AND pushes (evidence is pre-exec; the inline mutation can't be covered) | run the mutation first, then `git push` as a separate command |
-| 2 | chain REVIEW gate | `requesting-code-review` is in the active composition chain but not completed (.completed ∪ branch ledger) | invoke Skill(superpowers:requesting-code-review) |
+| 2 | chain REVIEW gate | `requesting-code-review` is in the active composition chain but not completed (.completed ∪ branch ledger ∪ a returned allowlisted reviewer whose sha covers the push) | invoke Skill(superpowers:requesting-code-review) |
 | 3 | chain VERIFY gate | `verification-before-completion` in chain, not completed | invoke Skill(superpowers:verification-before-completion) |
 | 4 | verify-hardening | the verification verdict AT HEAD (sha must equal HEAD, not ancestor) reports failing gates | fix failures, re-run Skill(auto-claude-skills:project-verification) |
-| 5 | global fail-closed gate | ANY agent push lacks a REVIEW record AND a VERIFY signal for this branch (ledger, .completed, or clean verdict covering HEAD) | run the missing Skill(s); this fires even with no composition chain |
+| 5 | global fail-closed gate | ANY agent push lacks a REVIEW record AND a VERIFY signal for this branch (ledger, .completed, or clean verdict covering HEAD; for REVIEW also a returned allowlisted reviewer whose sha covers the push) | run the missing Skill(s); this fires even with no composition chain |
 | 6 | routing governance | push touches `skills/`, `config/`, or `hooks/` in a routing repo without a clean verdict covering the routing changes (clean at HEAD, or clean ancestor with routing unchanged since) | Skill(auto-claude-skills:project-verification) until clean at HEAD |
 
 `gh pr merge` and `gh api` merge endpoints traverse the same gates 2–5

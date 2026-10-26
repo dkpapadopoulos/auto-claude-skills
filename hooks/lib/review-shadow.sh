@@ -103,14 +103,49 @@
 #
 # A timestamp does NOT recover the provenance: sessions run a cached plugin
 # version, so a record's date does not tell you which guard wrote it.
-REVIEW_SHADOW_SCHEMA_VERSION=2
-REVIEW_SHADOW_PREDICATE_VERSION=2
+#
+# predicate_version 3 / schema_version 3 (2026-10-25,
+# openspec/changes/review-credit-from-evidence, decision 4).
+#
+# The PREDICATE ground: this leg fires only when REVIEW status is already
+# satisfied (`_review_completed`), and that change widened what satisfies it —
+# three more credited REVIEW names, typed review slash commands crediting
+# through the completion hook, and a returned allowlisted reviewer covering the
+# push. So the population, i.e. what a pooled episode MEANS, changed, which is
+# the test this file states above. Predicate-2 records stay readable and are
+# reported, never pooled with predicate 3. Measured before the bump: the live
+# corpus held 205 predicate-1 and 269 predicate-2 records, none adjudicated;
+# the REVIEW window was closed as a null result on 2026-09-23, so no
+# registration loses data.
+#
+# The SCHEMA ground: the record gains `session_id`, `tool_use_id` (the hook
+# payload's, i.e. the push call's), `cc_version` and `acs_version`, read from
+# the guard's SHADOW_STAMP_* globals ("" when a stamp could not be computed),
+# and `review_witness` / `review_coverage`, passed by the guard as the 7th and
+# 8th arguments (see review_shadow_record).
+REVIEW_SHADOW_SCHEMA_VERSION=3
+REVIEW_SHADOW_PREDICATE_VERSION=3
 
 review_shadow_record() {
-    # <session_token> <subj_root> <reason> <action:push|merge> [<subj_rev>] [<transcript_path>]
+    # <session_token> <subj_root> <reason> <action:push|merge> [<subj_rev>] [<transcript_path>] [<review_witness>] [<review_coverage>]
+    #
+    # review_witness  reviewer-returned | verdict | invocation | none
+    # review_coverage covered | uncovered | cannot-check | none
+    # The guard computes both when it decides. An OMITTED argument records
+    # "none" (a caller that predates them); any other value outside the
+    # vocabulary, the empty string included, records "invalid", so a broken
+    # caller is visible in the corpus rather than read as "no evidence".
     local token="${1:-}" proot="${2:-}" reason="${3:-}" action="${4:-push}"
-    local rev="${5:-HEAD}" tp="${6:-}"
+    local rev="${5:-HEAD}" tp="${6:-}" witness="${7-none}" coverage="${8-none}"
     local log branch head repo ts rec rid nonce
+    case "${witness}" in
+        reviewer-returned|verdict|invocation|none) ;;
+        *) witness="invalid" ;;
+    esac
+    case "${coverage}" in
+        covered|uncovered|cannot-check|none) ;;
+        *) coverage="invalid" ;;
+    esac
     command -v jq >/dev/null 2>&1 || return 0
 
     log="${REVIEW_SHADOW_LOG:-${HOME}/.claude/.push-review-shadow.jsonl}"
@@ -179,11 +214,16 @@ review_shadow_record() {
         --arg ts "$ts" --arg repo "$repo" --arg branch "$branch" \
         --arg head "$head" --arg token "$token" --arg reason "$reason" \
         --arg action "$action" --arg tp "${tp:-${CLAUDE_CODE_TRANSCRIPT_PATH:-}}" \
+        --arg sid "${SHADOW_STAMP_SESSION_ID:-}" --arg tuid "${SHADOW_STAMP_TOOL_USE_ID:-}" \
+        --arg ccv "${SHADOW_STAMP_CC_VERSION:-}" --arg acsv "${SHADOW_STAMP_ACS_VERSION:-}" \
+        --arg rw "$witness" --arg rc "$coverage" \
         '{schema_version:$sv, predicate_version:$pv, record_id:$rid,
           ts:$ts, repo:$repo, branch:$branch, head_sha:$head,
           session_token:$token, action:$action,
           would_block:true, reason:$reason,
-          transcript_path:$tp}' 2>/dev/null)" || return 0
+          transcript_path:$tp,
+          session_id:$sid, tool_use_id:$tuid, cc_version:$ccv, acs_version:$acsv,
+          review_witness:$rw, review_coverage:$rc}' 2>/dev/null)" || return 0
     [ -n "$rec" ] || return 0
 
     # No rotation in v1, deliberately. The capture log rotates 1000->500, which

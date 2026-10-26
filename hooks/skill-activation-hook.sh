@@ -393,8 +393,8 @@ case "${ACS_STICKY_REPEAT:-shadow}" in
   [Oo][Ff][Ff])                     _STICKY_REPEAT_MODE="off" ;;
   *)                                _STICKY_REPEAT_MODE="shadow" ;;
 esac
-# Skip slash commands — these are handled by the Skill tool directly
-[[ "$PROMPT" =~ ^[[:space:]]*/ ]] && exit 0
+# Slash commands: a typed REVIEW command is credited first (lib/typed-slash-credit.sh, in a silenced subshell so its exit/unbound-var/output cannot reach routing), then skipped
+[[ "$PROMPT" =~ ^[[:space:]]*/ ]] && { [[ -f "${PLUGIN_ROOT}/hooks/lib/typed-slash-credit.sh" ]] && ( . "${PLUGIN_ROOT}/hooks/lib/typed-slash-credit.sh" && command -v typed_slash_credit && typed_slash_credit "${_PROMPT_KIND}" "${PROMPT}" "${_HOOK_INPUT}" "${PLUGIN_ROOT}" ) >/dev/null 2>&1; exit 0; }
 (( ${#PROMPT} < 5 )) && ! _comp_active && exit 0
 # Escape hatch: [no-skills] marker or -- prefix suppresses all routing
 [[ "$PROMPT" == *"[no-skills]"* ]] && exit 0
@@ -2496,10 +2496,7 @@ HALT if any Red Flag is true:
   DESIGN)
     RED_FLAGS="
 HALT if any Red Flag is true:
-- Editing implementation files before invoking Skill(superpowers:brainstorming)
-- Skipping design presentation and user approval
-- Jumping to writing code without exploring approaches first
-- Not writing a design doc before transitioning to PLAN"
+- Editing implementation files before invoking Skill(superpowers:brainstorming)"
     ;;
   PLAN)
     RED_FLAGS="
@@ -2507,7 +2504,7 @@ HALT if any Red Flag is true:
 - Editing implementation files before invoking Skill(superpowers:writing-plans)
 - Implementing without an approved plan document
 - Skipping TDD steps in the plan
-- Not saving the plan to docs/plans/ before executing"
+- Executing before the approved plan is saved to a file"
     ;;
   IMPLEMENT)
     RED_FLAGS="
@@ -2516,7 +2513,7 @@ HALT if any Red Flag is true:
 - Skipping TDD: writing implementation before writing the failing test
 - Not following the plan step by step
 - Jumping to SHIP without going through REVIEW (requesting-code-review) first
-- Not using subagent-driven-development or agent-team-execution for parallelizable tasks"
+- Not using the execution method the user chose at the plan handoff"
     ;;
   REVIEW)
     RED_FLAGS="

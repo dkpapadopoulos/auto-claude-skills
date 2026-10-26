@@ -23,12 +23,12 @@ export IMPLEMENT_SHADOW_LOG="${_u_home}/shadow.jsonl"
 # shellcheck disable=SC1090
 . "${PROJECT_ROOT}/hooks/lib/implement-shadow.sh"
 
-assert_equals "schema_version is 4" "4" "${IMPLEMENT_SHADOW_SCHEMA_VERSION}"
+assert_equals "schema_version is 5" "5" "${IMPLEMENT_SHADOW_SCHEMA_VERSION}"
 # 3 (#219): the push path now measures the tree and ref the command names, not
 # the session cwd — that changes WHEN the leg fires, so v2 records are no longer
 # poolable. Bumping this pin without bumping the constant, or vice versa, is the
 # mistake it exists to catch.
-assert_equals "predicate_version is 5 (#245 redirection parser + advisory_emitted)" "5" \
+assert_equals "predicate_version is 6 (review-credit-from-evidence: typed SDD/agent-team-execution credit)" "6" \
     "${IMPLEMENT_SHADOW_PREDICATE_VERSION}"
 
 implement_shadow_record push "${PROJECT_ROOT}" tok /tmp/t.jsonl none branch-local true
@@ -72,9 +72,9 @@ assert_equals "cannot_check is preserved per leg" "cannot_check" \
     "$(jq -r '.impl_evidence_detail.bridge' "${IMPLEMENT_SHADOW_LOG}")"
 assert_equals "missing is distinguishable from cannot_check" "missing" \
     "$(jq -r '.impl_evidence_detail.ledger' "${IMPLEMENT_SHADOW_LOG}")"
-assert_equals "schema_version on a detailed record is 4" "4" \
+assert_equals "schema_version on a detailed record is 5" "5" \
     "$(jq -r '.schema_version' "${IMPLEMENT_SHADOW_LOG}")"
-assert_equals "predicate_version is 5 so v4 records are NOT pooled" "5" \
+assert_equals "predicate_version is 6 so v5 records are NOT pooled" "6" \
     "$(jq -r '.predicate_version' "${IMPLEMENT_SHADOW_LOG}")"
 
 # An omitted detail must be null, NOT a fabricated all-missing object. "not
@@ -297,8 +297,8 @@ assert_json_valid "shadow record is valid json" "$IMPLEMENT_SHADOW_LOG"
 assert_contains "record names the gate"        '"gate":"push-implement"' "${_rec}"
 assert_contains "record marks a would-block"   '"would_block":true'      "${_rec}"
 assert_contains "record carries action push"   '"action":"push"'         "${_rec}"
-assert_contains "record carries schema_version"    '"schema_version":4'    "${_rec}"
-assert_contains "record carries predicate_version" '"predicate_version":5' "${_rec}"
+assert_contains "record carries schema_version"    '"schema_version":5'    "${_rec}"
+assert_contains "record carries predicate_version" '"predicate_version":6' "${_rec}"
 assert_contains "record carries a record_id"   '"record_id":'            "${_rec}"
 assert_contains "record carries a ts"          '"ts":'                   "${_rec}"
 assert_contains "record carries the transcript pointer" '"transcript_path":' "${_rec}"
@@ -424,7 +424,7 @@ _rec="$(cat "$IMPLEMENT_SHADOW_LOG")"
 assert_equals "merge writes one record" "1" "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
 assert_contains "merge record names the PR as its subject" '"diff_base":"pr:7"' "${_rec}"
 assert_contains "merge record still marks material source"  '"material_source":true' "${_rec}"
-assert_contains "predicate_version bumped to 5 (#245)"        '"predicate_version":5' "${_rec}"
+assert_contains "predicate_version is 6 on a merge record"    '"predicate_version":6' "${_rec}"
 assert_not_contains "merge did not become a deny" "permissionDecision" "${out:-}"
 
 # Unresolvable PR -> unresolved, record still written, still no deny.
@@ -732,6 +732,238 @@ out="$(run_guard 'git push --delete origin feature/x 2>&1 | tail -2 && git push 
 assert_contains "control: deletion mixed with a real push still advises" "IMPLEMENT:" "${out:-<empty>}"
 assert_equals "control: mixed command records advisory_emitted true" "true" \
     "$(jq -r '.advisory_emitted' "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | head -1)"
+
+# --- Schema 5: harness ids and versions (review-credit-from-evidence, d4) ----
+# Every record now carries session_id and tool_use_id from the hook PAYLOAD,
+# cc_version from AI_AGENT and acs_version from the plugin's own manifest. A
+# stamp that cannot be computed is written EMPTY; it never blocks or drops the
+# record. Driven through the REAL guard: the guard computes the stamps, the
+# recorder only writes them, so a lib-level cell would test the wrong half.
+# AI_AGENT is set or removed explicitly per cell: the harness running this suite
+# exports its own, and inheriting it would make every cell depend on that.
+_STAMP_ACS="$(jq -r .version "${PROJECT_ROOT}/.claude-plugin/plugin.json")"
+_mkpayload() { # [extra-json-object]
+    local _x="${1:-}"; [ -n "${_x}" ] || _x='{}'
+    jq -nc --arg tp "$_TPATH" --argjson x "${_x}" \
+        '{"transcript_path":$tp,"tool_input":{"command":"git push origin HEAD"}} + $x'
+}
+_stamp_guard() { # <payload> <AI_AGENT value | -unset-> [plugin_root]
+    local _root="${3:-${PROJECT_ROOT}}"
+    if [ "$2" = "-unset-" ]; then
+        ( cd "${_REPO}" && printf '%s' "$1" | env -u AI_AGENT CLAUDE_PLUGIN_ROOT="${_root}" \
+            VERIFY_SHADOW_LOG="$HOME/stamp-vs.jsonl" REVIEW_SHADOW_LOG="$HOME/stamp-rs.jsonl" \
+            bash "${_root}/hooks/openspec-guard.sh" 2>/dev/null )
+    else
+        ( cd "${_REPO}" && printf '%s' "$1" | env AI_AGENT="$2" CLAUDE_PLUGIN_ROOT="${_root}" \
+            VERIFY_SHADOW_LOG="$HOME/stamp-vs.jsonl" REVIEW_SHADOW_LOG="$HOME/stamp-rs.jsonl" \
+            bash "${_root}/hooks/openspec-guard.sh" 2>/dev/null )
+    fi
+}
+_sf() { jq -r "$1" "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | head -1; }   # field of record 1
+_IDS='{"session_id":"sess-1","tool_use_id":"toolu_01AbC"}'
+# A chain holding ONLY the implementation slot: the REVIEW and VERIFY verdict
+# legs then record nothing, so no other recorder's call site computes the
+# stamps first and each IMPLEMENT call site is tested on its own (measured: with
+# the full chain, deleting the attested site's stamp call stayed green because
+# the VERIFY site, which runs earlier, had already filled the globals).
+printf '%s' '{"chain":["executing-plans"],"current_index":0,"completed":[]}' > "${_COMP}"
+
+: > "$IMPLEMENT_SHADOW_LOG"; rm -f "$HOME/stamp-vs.jsonl" "$HOME/stamp-rs.jsonl"
+out="$(_stamp_guard "$(_mkpayload "${_IDS}")" "claude-code_2-1-308_harness")"
+assert_contains "stamps: fixture still raises the advisory (non-vacuous)" "IMPLEMENT:" "${out:-<empty>}"
+assert_equals "stamps: no other leg recorded, so no other site stamped first" "absent absent" \
+    "$([ -s "$HOME/stamp-vs.jsonl" ] && echo present || echo absent) $([ -s "$HOME/stamp-rs.jsonl" ] && echo present || echo absent)"
+assert_equals "stamps: exactly one record" "1" "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+assert_equals "stamps: schema_version is 5" "5" "$(_sf .schema_version)"
+assert_equals "stamps: predicate_version is 6" "6" "$(_sf .predicate_version)"
+assert_equals "stamps: session_id from the payload" "sess-1" "$(_sf .session_id)"
+assert_equals "stamps: tool_use_id from the payload" "toolu_01AbC" "$(_sf .tool_use_id)"
+assert_equals "stamps: cc_version parsed from AI_AGENT" "2.1.308" "$(_sf .cc_version)"
+assert_equals "stamps: acs_version is the plugin manifest's version" "${_STAMP_ACS}" "$(_sf .acs_version)"
+assert_not_empty "stamps: acs_version is not vacuously empty" "$(_sf .acs_version)"
+
+# The four keys are always PRESENT, even when empty: a reader must be able to
+# tell "stamped empty" (schema 5) from "never stamped" (schema <= 4).
+: > "$IMPLEMENT_SHADOW_LOG"
+_stamp_guard "$(_mkpayload)" "-unset-" >/dev/null
+assert_equals "stamps: AI_AGENT unset => cc_version empty" "" "$(_sf .cc_version)"
+assert_equals "stamps: payload without ids => session_id empty" "" "$(_sf .session_id)"
+assert_equals "stamps: payload without ids => tool_use_id empty" "" "$(_sf .tool_use_id)"
+assert_equals "stamps: empty stamps are present keys, not absent ones" "true true true true" \
+    "$(jq -r '[has("session_id"),has("tool_use_id"),has("cc_version"),has("acs_version")] | map(tostring) | join(" ")' \
+        "$IMPLEMENT_SHADOW_LOG" | head -1)"
+assert_equals "stamps: record without ids is still written" "1" "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+
+: > "$IMPLEMENT_SHADOW_LOG"
+_stamp_guard "$(_mkpayload "${_IDS}")" "claude-code_x-y_z" >/dev/null
+assert_equals "stamps: malformed AI_AGENT => cc_version empty" "" "$(_sf .cc_version)"
+assert_equals "stamps: malformed AI_AGENT does not cost the ids" "sess-1" "$(_sf .session_id)"
+
+# ONE definition of the AI_AGENT shape: the guard reuses acs_cc_version
+# (hooks/lib/credited-skills.sh), whose `_<suffix>` is optional. So a suffix-
+# less value parses, and the stamp must agree with the lib for every shape —
+# two parsers that disagree on one input is the paired-site drift class.
+: > "$IMPLEMENT_SHADOW_LOG"
+_stamp_guard "$(_mkpayload "${_IDS}")" "claude-code_2-1-308" >/dev/null
+assert_equals "stamps: suffix-less AI_AGENT parses as the lib parses it" "2.1.308" "$(_sf .cc_version)"
+# shellcheck disable=SC1090
+. "${PROJECT_ROOT}/hooks/lib/credited-skills.sh"
+while IFS= read -r _aa; do
+    : > "$IMPLEMENT_SHADOW_LOG"
+    _stamp_guard "$(_mkpayload "${_IDS}")" "${_aa}" >/dev/null
+    assert_equals "stamps: cc_version agrees with acs_cc_version for '${_aa}'" \
+        "$(AI_AGENT="${_aa}" acs_cc_version)" "$(_sf .cc_version)"
+done <<'AIAGENTS'
+claude-code_2-1-308_harness
+claude-code_10-0-1_sdk-cli
+claude-code_02-1-308_x
+claude-code_2-1_x
+claude-code_2-1-308-4_x
+codex_2-1-308_x
+AIAGENTS
+
+# Ids are kept only when they match ^[A-Za-z0-9._-]{1,128}$. A path-shaped or
+# space-bearing value is reduced to empty, never copied.
+: > "$IMPLEMENT_SHADOW_LOG"
+_stamp_guard "$(_mkpayload '{"session_id":"a b/../c","tool_use_id":"toolu_01AbC"}')" "-unset-" >/dev/null
+assert_equals "stamps: session_id outside the charset => empty" "" "$(_sf .session_id)"
+assert_equals "stamps: a rejected session_id leaves tool_use_id intact" "toolu_01AbC" "$(_sf .tool_use_id)"
+: > "$IMPLEMENT_SHADOW_LOG"
+_long="$(printf '%0129d' 0)"
+_stamp_guard "$(_mkpayload "{\"session_id\":\"${_long}\",\"tool_use_id\":42}")" "-unset-" >/dev/null
+assert_equals "stamps: a 129-char id => empty" "" "$(_sf .session_id)"
+assert_equals "stamps: a non-string id => empty" "" "$(_sf .tool_use_id)"
+: > "$IMPLEMENT_SHADOW_LOG"
+_stamp_guard "$(_mkpayload "{\"session_id\":\"$(printf '%0128d' 0)\"}")" "-unset-" >/dev/null
+assert_equals "stamps: a 128-char id is kept (boundary control)" "$(printf '%0128d' 0)" "$(_sf .session_id)"
+# The guard splits its one jq answer on \x1f. An id CARRYING \x1f must be
+# rejected inside jq, or it would shift the fields and forge the next stamp.
+: > "$IMPLEMENT_SHADOW_LOG"
+_stamp_guard "$(_mkpayload '{"session_id":"a\u001fforged\u001f9.9.9","tool_use_id":"t\nx"}')" "-unset-" >/dev/null
+assert_equals "stamps: an id carrying the field separator => empty" "" "$(_sf .session_id)"
+assert_equals "stamps: a separator-bearing id cannot forge tool_use_id" "" "$(_sf .tool_use_id)"
+assert_equals "stamps: a separator-bearing id cannot forge acs_version" "${_STAMP_ACS}" "$(_sf .acs_version)"
+
+# The attestation-resolved record (#169) is written by the second call site and
+# carries the same stamps.
+phase_attest "executing-plans" "stamp test" >/dev/null 2>&1
+: > "$IMPLEMENT_SHADOW_LOG"; rm -f "$HOME/stamp-vs.jsonl" "$HOME/stamp-rs.jsonl"
+_stamp_guard "$(_mkpayload "${_IDS}")" "claude-code_2-1-308_harness" >/dev/null
+assert_equals "stamps: attested run recorded no other leg (isolates this site)" "absent absent" \
+    "$([ -s "$HOME/stamp-vs.jsonl" ] && echo present || echo absent) $([ -s "$HOME/stamp-rs.jsonl" ] && echo present || echo absent)"
+assert_equals "stamps: attested record is the would_block:false one" "false" "$(_sf .would_block)"
+assert_equals "stamps: attested record carries session_id" "sess-1" "$(_sf .session_id)"
+assert_equals "stamps: attested record carries tool_use_id" "toolu_01AbC" "$(_sf .tool_use_id)"
+assert_equals "stamps: attested record carries cc_version" "2.1.308" "$(_sf .cc_version)"
+assert_equals "stamps: attested record carries acs_version" "${_STAMP_ACS}" "$(_sf .acs_version)"
+rm -f "$HOME/.claude/.skill-phase-attest-${_TOK}"
+
+# Fail-open on the manifest. A plugin root with NO .claude-plugin/ (every
+# other entry symlinked to the real checkout) must still write the record with
+# its ids; a malformed or non-JSON manifest yields an empty acs_version.
+_SROOT="$(mktemp -d /tmp/pg-impl-sroot-XXXXXX)"
+for _e in "${PROJECT_ROOT}"/*; do ln -s "${_e}" "${_SROOT}/${_e##*/}"; done
+: > "$IMPLEMENT_SHADOW_LOG"
+out="$(_stamp_guard "$(_mkpayload "${_IDS}")" "claude-code_2-1-308_harness" "${_SROOT}")"
+assert_contains "no manifest: the advisory still fires (non-vacuous)" "IMPLEMENT:" "${out:-<empty>}"
+assert_equals "no manifest: the record is still written" "1" "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
+assert_equals "no manifest: acs_version empty" "" "$(_sf .acs_version)"
+assert_equals "no manifest: session_id survives" "sess-1" "$(_sf .session_id)"
+assert_equals "no manifest: tool_use_id survives" "toolu_01AbC" "$(_sf .tool_use_id)"
+mkdir -p "${_SROOT}/.claude-plugin"
+while IFS='|' read -r _mv _want; do
+    printf '%s' "${_mv}" > "${_SROOT}/.claude-plugin/plugin.json"
+    : > "$IMPLEMENT_SHADOW_LOG"
+    _stamp_guard "$(_mkpayload "${_IDS}")" "-unset-" "${_SROOT}" >/dev/null
+    assert_equals "manifest ${_mv}: acs_version is '${_want}'" "${_want}" "$(_sf .acs_version)"
+    assert_equals "manifest ${_mv}: session_id survives" "sess-1" "$(_sf .session_id)"
+done <<'MANIFESTS'
+{"version":"1.2.3"}|1.2.3
+{"version":"1.2.3-rc.1"}|1.2.3-rc.1
+{"version":"1.2.3+build.7"}|1.2.3+build.7
+{"version":"v1.2.3"}|
+{"version":"1.2"}|
+{"version":"1.2.3\nx"}|
+{"version":"1.2.3 x"}|
+{"version":123}|
+not json|
+MANIFESTS
+rm -rf "${_SROOT}"
+
+rm -f "$HOME/stamp-vs.jsonl" "$HOME/stamp-rs.jsonl"
+printf '%s' '{"chain":["requesting-code-review","verification-before-completion","executing-plans"],"current_index":0,"completed":[]}' \
+    > "${_COMP}"
+
+# F5: the stamps cost a jq fork ONLY when a record is about to be written. A
+# jq shim on PATH logs each invocation's argv; the stamp read is the only jq
+# call loading the plugin manifest with --rawfile (scripts/push-gate-capture.sh,
+# run from the guard's EXIT trap, also reads the manifest — with a plain path).
+_JQSHIM="$(mktemp -d /tmp/pg-impl-jqshim-XXXXXX)"
+_JQREAL="$(command -v jq)"
+cat > "${_JQSHIM}/jq" <<SHIM
+#!/bin/bash
+printf '%s\n' "\$*" >> "${_JQSHIM}/calls"
+exec "${_JQREAL}" "\$@"
+SHIM
+chmod +x "${_JQSHIM}/jq"
+_stamp_jq_calls() { grep -F -- '--rawfile' "${_JQSHIM}/calls" 2>/dev/null | grep -c 'claude-plugin/plugin.json' | tr -d ' '; }
+_shim_guard() { # <AI_AGENT>
+    ( cd "${_REPO}" && _mkpayload "${_IDS}" | env PATH="${_JQSHIM}:${PATH}" AI_AGENT="$1" \
+        VERIFY_SHADOW_LOG="${_JQSHIM}/vs.jsonl" REVIEW_SHADOW_LOG="${_JQSHIM}/rs.jsonl" \
+        CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null )
+}
+_nlines() { if [ -f "$1" ]; then grep -c . "$1" | tr -d ' '; else echo 0; fi; }
+# This run writes TWO records (IMPLEMENT, and VERIFY on the fixture's unmeasured
+# verdict), so "one jq" also pins that the stamps are computed once per run.
+: > "$IMPLEMENT_SHADOW_LOG"; : > "${_JQSHIM}/calls"; rm -f "${_JQSHIM}/vs.jsonl"
+_shim_guard "claude-code_2-1-308_harness" >/dev/null
+assert_equals "F5: the run wrote an IMPLEMENT and a VERIFY record (precondition)" "1 1" \
+    "$(_nlines "$IMPLEMENT_SHADOW_LOG") $(_nlines "${_JQSHIM}/vs.jsonl")"
+assert_equals "F5: two records in one run read the stamps with exactly one jq" "1" "$(_stamp_jq_calls)"
+assert_equals "F5: the second record carries the same stamps" "sess-1 2.1.308" \
+    "$(jq -r '"\(.session_id) \(.cc_version)"' "${_JQSHIM}/vs.jsonl" 2>/dev/null)"
+assert_equals "F5: the shim saw the record being written (positive control)" "sess-1" "$(_sf .session_id)"
+# A passing path that writes no record of ANY leg: real invocation evidence
+# satisfies IMPLEMENT, and a chain holding only the implementation slot keeps
+# the REVIEW and VERIFY verdict legs (which this fixture's unreviewed,
+# unmeasured state would otherwise feed) from recording. All three corpora must
+# stay empty, or the cell would be measuring a recorded path.
+printf '%s' '{"chain":["executing-plans"],"current_index":0,"completed":[]}' > "${_COMP}"
+printf '%s\n' '["executing-plans"]' > "$HOME/.claude/.skill-invocation-evidence-${_TOK}"
+: > "$IMPLEMENT_SHADOW_LOG"; : > "${_JQSHIM}/calls"; rm -f "${_JQSHIM}/vs.jsonl" "${_JQSHIM}/rs.jsonl"
+out="$(_shim_guard "claude-code_2-1-308_harness")"
+assert_not_contains "F5: the no-record path passes (no deny)" '"deny"' "${out:-}"
+assert_equals "F5: the no-record path writes no record in any corpus (precondition)" "0 0 0" \
+    "$(_nlines "$IMPLEMENT_SHADOW_LOG") $(_nlines "${_JQSHIM}/vs.jsonl") $(_nlines "${_JQSHIM}/rs.jsonl")"
+assert_not_empty "F5: the shim intercepted the guard's other jq calls (positive control)" \
+    "$(cat "${_JQSHIM}/calls" 2>/dev/null)"
+assert_equals "F5: a path writing no record adds no stamp jq" "0" "$(_stamp_jq_calls)"
+rm -f "$HOME/.claude/.skill-invocation-evidence-${_TOK}"
+printf '%s' '{"chain":["requesting-code-review","verification-before-completion","executing-plans"],"current_index":0,"completed":[]}' \
+    > "${_COMP}"
+rm -rf "${_JQSHIM}"
+
+# Real producer -> real reader, both schemas. The guard writes a schema-5
+# record; scripts/shadow-adjudicate.sh must offer it, and must still offer the
+# SAME record rewritten to schema 4 (the four stamps removed) — readers keep
+# parsing older schemas.
+_ADJR="${PROJECT_ROOT}/scripts/shadow-adjudicate.sh"
+_adj_next() { # <log>
+    env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_ENTRYPOINT \
+        IMPLEMENT_SHADOW_LOG="$1" IMPLEMENT_ADJUDICATION_LOG="$HOME/adj-$$.jsonl" \
+        /bin/bash "${_ADJR}" --next 2>&1
+}
+: > "$IMPLEMENT_SHADOW_LOG"
+_stamp_guard "$(_mkpayload "${_IDS}")" "claude-code_2-1-308_harness" >/dev/null
+_s5id="$(_sf .record_id)"
+assert_not_empty "round trip: the guard wrote a schema-5 record_id" "${_s5id}"
+assert_contains "round trip: the reader offers a schema-5 record" "${_s5id}" "$(_adj_next "$IMPLEMENT_SHADOW_LOG")"
+jq -c 'del(.session_id,.tool_use_id,.cc_version,.acs_version) | .schema_version = 4' \
+    "$IMPLEMENT_SHADOW_LOG" > "$HOME/s4.jsonl"
+assert_equals "round trip: the downgraded record really is schema 4 without stamps" "4 false" \
+    "$(jq -r '"\(.schema_version) \(has("session_id"))"' "$HOME/s4.jsonl")"
+assert_contains "round trip: the reader still offers a schema-4 record" "${_s5id}" "$(_adj_next "$HOME/s4.jsonl")"
+rm -f "$HOME/s4.jsonl" "$HOME/adj-$$.jsonl"
 export HOME="$_OLDHOME"
 rm -rf "${_REPO}" "${_THOME}" 2>/dev/null
 print_summary

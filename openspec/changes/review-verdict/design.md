@@ -223,3 +223,25 @@ One honest exception to that heading, stated rather than buried: the floor's **d
 Also worth recording, because it is what makes the version bump cheap rather than merely principled: since **zero episodes were ever adjudicated**, discarding the 199 older records destroys no measurement value at all. Only unlabeled supply is lost.
 
 At the observed rate the floor is reachable again in roughly a week and a half of ordinary work, which is why a corpus nobody can vouch for is not worth keeping.
+
+## Amendment 2026-10-25 — the panel successor window was not registered
+
+A successor window for this leg, adjudicated by a model panel (`openspec/changes/archive/2026-10-25-shadow-panel-adjudication/`), was
+built and then closed INCONCLUSIVE **before registration**, by a rule approved
+before its numbers were seen: a leg is registered only if at most 10% of its
+cohort is likely to be judged `unknown`. Measured 2026-10-24 for this leg:
+**13.1–16.9%**, and 11.5% at best had every search match been shown. No real
+episode was judged.
+
+The cause is mostly the instrument, not lost evidence: 12 of 130 episodes
+(9.2%) had a push the locator could not find although earlier history
+survives, and with the broadened search matchers 7 of the 10 remaining
+likely-`unknown` episodes were search matches dropped past the packet's budget
+(2 of 5 before the broadening).
+
+No REVIEW window is open: the first was closed as a null result on 2026-09-23
+(above), and this successor was never registered. The leg stays advisory, as
+decided then. A successor should capture the gate's evidence at decision time,
+which removes both causes; a REVIEW-only panel with a fixed locator might also
+clear the cap, as a new registration (see the archived design's Outcome
+section).

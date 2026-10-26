@@ -161,3 +161,76 @@ Example treatment convergence (turn 2):
 > **Confirmed intent:** Desktop-notify this plugin's developers within ~1–2s when
 > `openspec-guard.sh` blocks their git push… **Out of scope:** email/phone alerts ·
 > repeated/nagging popups · non-blocking events."*
+
+### Re-baseline against superpowers brainstorming 7.0.1 — 2026-10-26
+
+**Why:** superpowers 6.4.1 and 7.0.x rebuilt brainstorming around reflecting intent back (a "Play It
+Back" chunk after each understood part). If 7.0.1 alone reached the C1/C2 deltas, the directive would be
+a candidate for cutting down to its persistence handoff.
+
+**Model:** `claude-opus-5-5` on both turns. **Baseline body:** superpowers brainstorming `SKILL.md` @
+**7.0.1** (sha256 `61a7ef918652108c76a3fd01e02dd92d39996c6b46d4cb2819cbd03f6c45e46a`, 2359 words).
+**Directive:** the Scenario-1 block as shipped at `origin/main` 440a80b9 (3.97.5), pasted verbatim with
+`{{PLUGIN_ROOT}}` expanded. This is the current compressed prose (the "converge … BEFORE proposing any
+approach; then emit and stop for confirmation" sentence plus the two-line template), not the longer v2
+wording quoted above. Prominent injection (`--directive-file`), variance 5, one runner invocation per
+iteration. That is two `claude -p` calls per iteration (turn 1 plus the `--resume` turn), so 10 per
+5-iteration arm.
+
+| delta | baseline 7.0.1 5× | treatment 7.0.1 + directive 5× |
+|-------|-------------------|--------------------------------|
+| C1 out-of-scope | 1/5 (20%) | **5/5 (100%)** |
+| C2 confirmed-intent | 0/5 (0%) | **5/5 (100%)** |
+| C3 persist (excluded) | 0/5 | 1/5 |
+
+Adversarial `intent-mechanical-noninterview` (treatment, 3×): 3/3 engage with the rename and **0/3**
+start an intent interview. Each run only asks for the repo path, because the subject cwd is empty. The
+safety stop did not fire.
+
+**By the gate, the directive still separates from 7.0.1.** A hand read of every turn-2 artifact shows the
+regexes now under-count the baseline, so the margin is narrower than the table says:
+
+- **The baseline already does the substance.** 7.0.1 plays back who / why / success in its own words
+  in 5/5 runs and states the exclusions in 5/5 ("What to avoid:", "Non-goals:", "Limits:", "no email or
+  phone alerts… not a full alerting system"). Only "Non-goals" matches the C1 regex.
+- **What the directive still adds:**
+  - a labelled one-line intent plus an out-of-scope line, which is the string the `set-intent` handoff
+    persists (5/5 against 0/5);
+  - exclusions the user never stated, such as "notifications for anything other than blocked pushes"
+    and "changing what the hooks block" (5/5 against 2/5);
+  - holding back a solution until the intent is confirmed. 7.0.1's playback rule ("anything you filled
+    in goes in as your proposal, with your reason") makes the baseline float a design in turn 2 in 4/5
+    runs; the treatment does it in 0/5.
+- **Turn 1 has no format conflict.** Both arms send 7.0.1's own first message: one bolded open
+  question and "Or if you'd rather I just dive in, say so", in 86-144 words (baseline 86-124,
+  treatment 109-144).
+- **Turn 2: the directive overrides 7.0.1's playback.** The two-line block replaces the playback
+  chunk in 4/5 runs. In 1/5 both appear, so the intent is restated twice. Side effects:
+  - 7.0.1's split between what the user said and what the model proposes is lost;
+  - the block labels the intent "Confirmed" while asking "Is that right?";
+  - 1/5 ends with two asks instead of 7.0.1's one.
+
+**Recommendation: keep the directive.** Cutting to the `set-intent` handoff alone is not supported: 7.0.1
+never produces the one-line string the handoff persists. **Not measured:** a trim that folds the
+two-line format into 7.0.1's playback ("end the what-it's-for playback chunk with the two labelled
+lines, then persist after confirmation") would keep 7.0.1's playback and drop the override. It needs its
+own A/B.
+
+**Isolation notes (for whoever re-runs this):**
+- **`--bare` breaks auth.** It reads no OAuth or keychain credentials and returned `Not logged in` with
+  zero tokens. Run the subject under an isolated HOME instead: a fresh `mktemp -d` holding a `Library`
+  symlink, a copy of `~/.claude.json` and an empty `.claude/`. Run it under `env -i`, so no `CLAUDE*`
+  variables reach it, with `PUSH_GATE_CAPTURE_DISABLE=1` and the three `*_SHADOW_LOG` variables
+  pointed at scratch, from an empty cwd outside the repo. Check the real
+  `~/.claude/.skill-registry-cache.json` mtime before and after; it was unchanged.
+- **The copied `~/.claude.json` brings the user-scope MCP servers into the subject.** One adversarial
+  run called `mcp__idea__search_text` and was refused by `-p` permissions. Account-synced claude.ai
+  skills also appear. Both affect the two arms equally.
+- **The directive names an absolute plugin path.** With an empty cwd, every treatment run tried to
+  Glob/Grep that real path, and all 6 attempts were refused.
+
+**The 2026-06-26 turn-2 runs above may have been unpinned.** Until the fix below, the runner's
+turn-2 `--resume` call dropped `--model` and `--bare`, and turn 2 is the turn the assertions score. The
+2026-10-26 runs pinned it with `ANTHROPIC_MODEL=claude-opus-5-5`, and all 92 assistant messages in the
+subject transcripts were verified as that model. The runner now forwards both flags on the resume call
+(`tests/test-run-behavioral-evals.sh`, "multi-turn resume" cells).
