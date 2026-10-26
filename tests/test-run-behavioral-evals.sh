@@ -692,7 +692,10 @@ n="$(cat "${RESUME_STUB_DIR}/count" 2>/dev/null || printf '0')"
 n=$((n + 1))
 printf '%s' "${n}" > "${RESUME_STUB_DIR}/count"
 printf '%s\n' "$@" > "${RESUME_STUB_DIR}/argv.${n}"
-jq -n --arg r "turn ${n} reply" '{type:"result", result:$r, session_id:"stub-session-1", model:"stub"}'
+# Each turn reports a different model in modelUsage (no top-level .model, as
+# the real CLI emits), so the artifact can be checked for the SCORED turn's.
+jq -n --arg r "turn ${n} reply" --arg m "stub-model-${n}" \
+    '{type:"result", result:$r, session_id:"stub-session-1", modelUsage:{($m):{}}}'
 EOF
 chmod +x "${RESUME_STUB_DIR}/claude"
 jq -n '[{id:"resume-scenario", prompt:"turn one ask", followup:"turn two answer",
@@ -724,6 +727,14 @@ assert_equals "resume: turn 1 carries --bare" "1" \
     "$(grep -cxF -- '--bare' "${RESUME_STUB_DIR}/argv.1" 2>/dev/null)"
 assert_equals "resume: turn 2 carries --bare" "1" \
     "$(grep -cxF -- '--bare' "${RESUME_STUB_DIR}/argv.2" 2>/dev/null)"
+
+# The artifact's model is the scored turn's (turn 2), and models_all keeps both.
+resume_artifact="$(ls "${RESUME_STUB_DIR}"/art/resume-scenario-*.json 2>/dev/null | head -n1)"
+assert_not_empty "resume: an artifact was written" "${resume_artifact}"
+assert_equals "resume: artifact model is the scored turn-2 model" "stub-model-2" \
+    "$(jq -r '.model' "${resume_artifact}" 2>/dev/null)"
+assert_equals "resume: artifact models_all holds both turns' models" '["stub-model-1","stub-model-2"]' \
+    "$(jq -c '.models_all' "${resume_artifact}" 2>/dev/null)"
 
 # Without the optional flags, turn 2 forwards neither.
 rm -f "${RESUME_STUB_DIR}/count" "${RESUME_STUB_DIR}"/argv.*

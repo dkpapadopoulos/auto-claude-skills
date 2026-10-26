@@ -516,6 +516,14 @@ ${CONSTRUCTED_PROMPT}"
                 RAW2="$(printf '%s' "${CLAUDE_JSON2}" | jq -r '.result // empty')"
                 if [ -n "${RAW2}" ]; then
                     RAW_OUTPUT="${RAW2}"
+                    # `model` describes the SCORED turn, so it is turn 2's here;
+                    # `models_all` unions both turns' keys so a turn-1/turn-2
+                    # mismatch stays visible in the artifact.
+                    MODEL="$(printf '%s' "${CLAUDE_JSON2}" | jq -r '(.model // (.modelUsage | keys[0]? // empty)) // "unknown"')"
+                    local MODELS_ALL2
+                    MODELS_ALL2="$(printf '%s' "${CLAUDE_JSON2}" | jq -c --argjson t1 "${MODELS_ALL}" \
+                        '($t1 + ((.modelUsage // {}) | keys)) | unique' 2>/dev/null)"
+                    [ -n "${MODELS_ALL2}" ] && MODELS_ALL="${MODELS_ALL2}"
                     TOOL_CALLS_JSON="$(printf '%s' "${CLAUDE_JSON2}" | jq -c '[
                         (.messages // []) | .[]? | (.content // []) | .[]?
                         | select(.type == "tool_use") | {name: .name, input: (.input // {})}
