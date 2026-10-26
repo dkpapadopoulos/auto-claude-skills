@@ -16,7 +16,7 @@ Evidence: the 2026-10-25 superpowers-evolution research, which compared the cach
 
 ## What Changes
 
-- **The brainstorming precondition** moves the trifecta classification and any `agent-safety-review` invocation to **before the design doc is approved**. The classification goes in the design doc, so that after approval the next step is writing-plans and nothing else. When brainstorming ends with no design doc (the user's "just dive in" opt-out, or the quick, clear task path), the check happens before building instead, so it does not lapse on a path 7.0.1 made first-class. The `product-discovery`-first clause is unchanged; it runs before brainstorming starts and does not conflict.
+- **The brainstorming precondition** moves the trifecta classification and any `agent-safety-review` invocation to **before the design doc is approved**. The classification goes in the design doc, so that after approval the next step is writing-plans and nothing else. When brainstorming ends with no design doc (the user's "just dive in" opt-out, or the quick, clear task path), both the classification and the invocation happen before building instead ("no design doc: classify and invoke before building"), so the check does not lapse on a path 7.0.1 made first-class. The `product-discovery`-first clause is unchanged; it runs before brainstorming starts and does not conflict.
 - **The DESIGN `EVAL STRATEGY` hint** gets the same timing (before design-doc approval; with no doc, before building) instead of "Before leaving DESIGN". It names `Skill(auto-claude-skills:runtime-validation)` and renders on every DESIGN prompt, so it had the same shape as the trifecta contradiction. Its size is unchanged (353 bytes).
 - **DESIGN red flags** keep only the ACS-unique routing obligation ("Editing implementation files before invoking Skill(superpowers:brainstorming)").
 - **Two red flags are reworded:**
@@ -40,7 +40,8 @@ Not changed:
 
 ### Modified Capabilities
 
-- `skill-routing`: a requirement that the routing text does not contradict the superpowers backbone at the DESIGN exit, the PLAN save and the IMPLEMENT method choice.
+- `skill-routing`: a requirement that the routing text does not contradict the superpowers backbone at the DESIGN exit, the PLAN save and the IMPLEMENT method choice. At the DESIGN exit it covers the brainstorming precondition's trifecta timing and the DESIGN `EVAL STRATEGY` hint's timing, on the design-doc path (before approval) and on the no-doc path (before building).
+- `scope-conformance`: the "Manifest parsing" requirement's meta allowlist gains `docs/superpowers/*`, and meta patterns cover nested paths whatever exists in the working directory.
 
 ## Impact
 

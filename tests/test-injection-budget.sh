@@ -213,8 +213,15 @@ echo "=== test-injection-budget.sh ==="
 # it is approved" never comes, so the trifecta check lapsed. The precondition
 # adds "(no design doc: before building)", 755 -> 788 bytes. The EVAL
 # STRATEGY hint took the same timing at no cost (353 -> 353). Per-shape
-# bytes now 964 / 5147 / 6545 / 3153 / 4601 / 1795.
-_INJECTION_BASELINE=22205
+# bytes then 964 / 5147 / 6545 / 3153 / 4601 / 1795.
+#
+# 22205 -> 22225 (2026-10-26, same change, re-review finding R1-M1): a
+# deliberate +20 on DESIGN. The no-doc clause re-timed only the invocation,
+# while the classification's stated home (the design doc) does not exist on
+# that path; it now reads "(no design doc: classify and invoke before
+# building)", 788 -> 808 bytes. Per-shape bytes now
+# 964 / 5167 / 6545 / 3153 / 4601 / 1795.
+_INJECTION_BASELINE=22225
 _MIN_SHAPES=6
 
 setup_test_env

@@ -169,11 +169,12 @@ _p="$(pre "${CFG}" brainstorming)"
 assert_contains "D2: the design doc carries the trifecta classification, from its data flow" \
     "TRIFECTA: the design doc classifies private_data / untrusted_input / outbound_action from its data flow;" "${_p}"
 assert_contains "D2: agent-safety-review is invoked before the design doc is approved" \
-    "; if >=2 are Present (or Unknowns could reach 2), invoke Skill(auto-claude-skills:agent-safety-review) before it is approved (no design doc: before building), or record the skip:" "${_p}"
+    "; if >=2 are Present (or Unknowns could reach 2), invoke Skill(auto-claude-skills:agent-safety-review) before it is approved (no design doc: classify and invoke before building), or record the skip:" "${_p}"
 # brainstorming 7.0.1 also ends with NO design doc (the "just dive in" opt-out, the quick,
-# clear task path). Without this clause "before it is approved" never comes and the check lapses.
-assert_contains "D2: with no design doc, agent-safety-review is invoked before building" \
-    "(no design doc: before building)" "${_p}"
+# clear task path). Without this clause "before it is approved" never comes and the check
+# lapses. It names BOTH acts: with no doc, the classification's stated home is gone too.
+assert_contains "D2: with no design doc, the trifecta is classified and agent-safety-review invoked before building" \
+    "(no design doc: classify and invoke before building)" "${_p}"
 assert_contains "D2: EVAL STRATEGY classifies verification before design-doc approval, or before building with no doc" \
     "EVAL STRATEGY: classify verification before design-doc approval (no doc: before building);" "$(hint "${CFG}" "EVAL STRATEGY:")"
 assert_contains "D2: the skip remedy and its {{PLUGIN_ROOT}} placeholder are unchanged" \

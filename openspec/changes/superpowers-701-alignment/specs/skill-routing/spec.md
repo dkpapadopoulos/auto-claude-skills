@@ -14,7 +14,7 @@ The text the activation hook renders, meaning registry descriptions and precondi
 
 - **WHEN** the brainstorming precondition is read from either config
 - **THEN** it says the trifecta classification and any `agent-safety-review` invocation happen before the design doc is approved
-- **AND** it says that, with no design doc, they happen before building
+- **AND** it says that, with no design doc, the classification and the invocation both happen before building
 - **AND** it does not contain "before leaving DESIGN"
 
 #### Scenario: EVAL STRATEGY is timed like the trifecta check
