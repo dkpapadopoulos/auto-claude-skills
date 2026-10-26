@@ -44,4 +44,4 @@ Not changed:
 
 ## Impact
 
-`config/default-triggers.json`, `config/fallback-registry.json`, `hooks/skill-activation-hook.sh` (RED_FLAGS), `scripts/scope-conformance.sh` (META_ALLOW gains `docs/superpowers/*`, superpowers' default plan and spec location), `tests/test-superpowers-description-drift.sh`, `tests/test-injection-budget.sh` (equality ratchet moves, with the reason at the constant), and any test pinning the old strings. No gate changes: nothing enforces `agent-safety-review`, and red flags are advisory text.
+`config/default-triggers.json`, `config/fallback-registry.json`, `hooks/skill-activation-hook.sh` (RED_FLAGS), `scripts/scope-conformance.sh` (META_ALLOW gains `docs/superpowers/*`, superpowers' default plan and spec location; and its allowlist loop stops glob-expanding the patterns against the CWD, which had made nested `openspec/` and `docs/superpowers/` files report as violations), `tests/test-superpowers-description-drift.sh`, `tests/test-injection-budget.sh` (equality ratchet moves, with the reason at the constant), and any test pinning the old strings. No gate changes: nothing enforces `agent-safety-review`, and red flags are advisory text.
