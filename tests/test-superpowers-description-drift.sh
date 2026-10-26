@@ -5,7 +5,8 @@
 # The descriptions in config/default-triggers.json are rendered into the routing block
 # ("[LATER] Step 7: Skill(superpowers:finishing-a-development-branch) -- <description>") and
 # into composition `purpose` lines, so a stale one tells the model something the skill it is
-# about to invoke will contradict. Checked against superpowers 6.4.2 (2026-09-25):
+# about to invoke will contradict. Checked against superpowers 6.4.2 (2026-09-25), and these
+# three re-checked against 7.0.1 (2026-10-26), where they still hold:
 #   * finishing-a-development-branch: the menu is merge locally / push and create a PR / keep
 #     the branch (two options on a detached HEAD). "Discard" left the menu in v6.2.0 and
 #     happens only when the user explicitly asks. We still said "present 4 options (...,
@@ -28,7 +29,9 @@
 #   D4  ADVISORY, never a failure: when superpowers is installed on this machine, say whether
 #       its text still matches the comment above. Upstream's wording is not under this repo's
 #       control, and this suite is the push gate, so an upstream reword must not turn it red.
-#       It prints UPSTREAM DRIFT or SKIPPED and counts as neither a pass nor a fail.
+#       It prints UPSTREAM DRIFT or SKIPPED and counts as neither a pass nor a fail. It looks
+#       in every marketplace under ~/.claude/plugins/cache/*/superpowers/ and reads the highest
+#       version installed, so a superpowers installed from another marketplace is not missed.
 #
 # Checked against superpowers 7.0.1 (2026-10-26; openspec change superpowers-701-alignment).
 # brainstorming's HARD-GATE ends "After the design doc is approved, the next step is the plan:
@@ -43,7 +46,13 @@
 # And verification-before-completion's description promised "no TODOs, docs updated", which
 # the skill does not say. D1-D3 cover those strings in both configs; R1-R3 are the openspec
 # scenarios, asserted on the RENDERED red flags (the hook run under an isolated HOME), not on
-# the hook source.
+# the hook source. D4 also watches brainstorming for the two 7.0.1 phrases this rests on:
+# "invoke superpowers:writing-plans and no other skill" and "Write the design doc".
+#   * the using-superpowers registry entry was deleted from both configs: it had no
+#     triggers, keywords or composition reference, so it could never be selected, and
+#     superpowers injects that skill itself at SessionStart. Session-start discovery still
+#     lists it, as a triggerless "Discovered skill" like every other uncurated superpowers
+#     skill.
 #
 # LIMITS, stated: D2 is substring presence. It would accept "never do a whole-branch review".
 # It pins the specific contradictions found on 2026-10-04, not "the descriptions are right".
@@ -152,12 +161,18 @@ for _n in finishing-a-development-branch executing-plans subagent-driven-develop
     assert_equals "D3: fallback-registry.json has the same description for ${_n}" "$(desc "${CFG}" "${_n}")" "$(desc "${FB}" "${_n}")"
 done
 assert_equals "D3: fallback-registry.json has the same brainstorming precondition" "$(pre "${CFG}" brainstorming)" "$(pre "${FB}" brainstorming)"
+# The dead using-superpowers entry stays deleted. Counted with jq rather than grepped, so an
+# unparseable config reads as -1 and fails instead of reading as "absent".
+for _f in "${CFG}" "${FB}"; do
+    _n="$(jq '[.skills[] | select(.name == "using-superpowers")] | length' "${_f}" 2>/dev/null)"
+    assert_equals "D3: ${_f##*/} carries no using-superpowers entry" "0" "${_n:--1}"
+done
 
-# D4: upstream, when present — advisory only. Highest version by numeric fields; `sort -V`
-# is not assumed. Only the default marketplace location is looked at.
+# D4: upstream, when present — advisory only. Highest version by numeric fields across every
+# marketplace; `sort -V` is not assumed. On a tie the first marketplace in glob order wins.
 SP_DIR=""
 _best_key=""
-for _d in "${HOME:-/nonexistent}"/.claude/plugins/cache/superpowers-marketplace/superpowers/*/skills; do
+for _d in "${HOME:-/nonexistent}"/.claude/plugins/cache/*/superpowers/*/skills; do
     [ -d "${_d}" ] || continue
     _v="${_d%/skills}"; _v="${_v##*/}"
     _key="$(printf '%s' "${_v}" | awk -F. '{ printf "%08d%08d%08d", $1 + 0, $2 + 0, $3 + 0 }')"
@@ -166,7 +181,7 @@ for _d in "${HOME:-/nonexistent}"/.claude/plugins/cache/superpowers-marketplace/
     fi
 done
 if [ -z "${SP_DIR}" ]; then
-    echo "  SKIPPED: D4 — superpowers not found in the default marketplace location; upstream text was not checked"
+    echo "  SKIPPED: D4 — superpowers not found under ~/.claude/plugins/cache/*/superpowers/; upstream text was not checked"
 else
     _drift=""
     grep -q 'present exactly these 3 options' "${SP_DIR}/finishing-a-development-branch/SKILL.md" 2>/dev/null \
@@ -175,6 +190,12 @@ else
         || _drift="${_drift} subagent-driven-development(whole-branch review)"
     grep -q 'inline execution' "${SP_DIR}/executing-plans/SKILL.md" 2>/dev/null \
         || _drift="${_drift} executing-plans(inline execution)"
+    # 7.0.1 wraps this sentence across lines, so whitespace is collapsed before matching.
+    tr -s ' \n' '  ' < "${SP_DIR}/brainstorming/SKILL.md" 2>/dev/null \
+        | grep -qF 'invoke superpowers:writing-plans and no other skill' \
+        || _drift="${_drift} brainstorming(writing-plans and no other skill)"
+    grep -qF 'Write the design doc' "${SP_DIR}/brainstorming/SKILL.md" 2>/dev/null \
+        || _drift="${_drift} brainstorming(Write the design doc)"
     if [ -z "${_drift}" ]; then
         echo "  NOTE: D4 — upstream ${SP_DIR%/skills} still says what these descriptions assume"
     else

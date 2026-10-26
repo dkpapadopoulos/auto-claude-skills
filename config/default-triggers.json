@@ -560,19 +560,6 @@
       "invoke": "Skill(superpowers:test-driven-development)"
     },
     {
-      "name": "using-superpowers",
-      "role": "domain",
-      "phase": "DESIGN",
-      "triggers": [],
-      "keywords": [],
-      "trigger_mode": "regex",
-      "priority": 200,
-      "precedes": [],
-      "requires": [],
-      "description": "Composition-activated: superpowers skill system introduction.",
-      "invoke": "Skill(superpowers:using-superpowers)"
-    },
-    {
       "name": "incident-analysis",
       "role": "domain",
       "phase": "DEBUG",
