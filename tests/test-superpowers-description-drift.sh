@@ -49,8 +49,11 @@
 # And verification-before-completion's description promised "no TODOs, docs updated", which
 # the skill does not say. D1-D3 cover those strings in both configs; R1-R3 are the openspec
 # scenarios, asserted on the RENDERED red flags (the hook run under an isolated HOME), not on
-# the hook source. D4 also watches brainstorming for the two 7.0.1 phrases this rests on:
-# "invoke superpowers:writing-plans and no other skill" and "Write the design doc".
+# the hook source. D4 also watches the 7.0.1 phrases these edits rest on: brainstorming's
+# "invoke superpowers:writing-plans and no other skill" and "Write the design doc";
+# writing-plans' "User preferences for plan location override this default" and "Which
+# execution approach"; subagent-driven-development's "Never dispatch multiple
+# implementation subagents in parallel".
 #   * the using-superpowers registry entry was deleted from both configs: it had no
 #     triggers, keywords or composition reference, so no routing rule selected it, and
 #     superpowers injects that skill itself at SessionStart. Session-start discovery still
@@ -221,6 +224,16 @@ else
         || _drift="${_drift} brainstorming(writing-plans and no other skill)"
     grep -qF 'Write the design doc' "${SP_DIR}/brainstorming/SKILL.md" 2>/dev/null \
         || _drift="${_drift} brainstorming(Write the design doc)"
+    # What the PLAN and IMPLEMENT red flags rest on: the plan's location is the user's to
+    # choose, the user picks the execution method at the handoff, and SDD never runs
+    # implementers in parallel. Whitespace-collapsed, so an upstream rewrap is not drift.
+    _sp_has() { tr -s ' \n' '  ' < "${SP_DIR}/$1/SKILL.md" 2>/dev/null | grep -qF -- "$2"; }
+    _sp_has writing-plans 'User preferences for plan location override this default' \
+        || _drift="${_drift} writing-plans(plan location is a user preference)"
+    _sp_has writing-plans 'Which execution approach' \
+        || _drift="${_drift} writing-plans(user chooses the execution approach)"
+    _sp_has subagent-driven-development 'Never dispatch multiple implementation subagents in parallel' \
+        || _drift="${_drift} subagent-driven-development(no parallel implementers)"
     if [ -z "${_drift}" ]; then
         echo "  NOTE: D4 — upstream ${SP_DIR%/skills} still says what these descriptions assume"
     else
