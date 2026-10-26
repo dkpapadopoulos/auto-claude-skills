@@ -23,8 +23,12 @@ Options:
   --bare                   run the inner 'claude -p' in --bare mode (skip hooks,
                            LSP, plugin). Strips ambient noise — e.g. this
                            plugin's own skill-activation banner — from the
-                           measured output. Recommended for the model-routing
-                           probation so the only injected guidance is SKILL_PATH.
+                           measured output. Needs API-key auth
+                           (ANTHROPIC_API_KEY or apiKeyHelper): it skips the
+                           keychain, so on an OAuth login every call returns
+                           "Not logged in" (measured 2026-10-26). With OAuth,
+                           isolate the subject with a temp HOME instead (see
+                           tests/fixtures/intent-extraction/evals/README.md).
   -h, --help               show this message
 
 Environment:
@@ -502,13 +506,24 @@ ${CONSTRUCTED_PROMPT}"
         SID="$(printf '%s' "${CLAUDE_JSON}" | jq -r '.session_id // empty')"
         if [ -n "${SID}" ]; then
             RAW_OUTPUT_T1="${RAW_OUTPUT}"
+            # Same optional flags as turn 1: the assertions score THIS turn, so
+            # dropping --model here would run the scored turn unpinned.
             CLAUDE_JSON2="$(printf '%s' "${FOLLOWUP_TEXT}" | "${CLAUDE_BIN}" -p --resume "${SID}" --output-format json \
-                --disallowedTools "${SANDBOX_TOOLS}" 2>&1)"
+                --disallowedTools "${SANDBOX_TOOLS}" \
+                ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} 2>&1)"
             claude2_exit=$?
             if [ "${claude2_exit}" -eq 0 ]; then
                 RAW2="$(printf '%s' "${CLAUDE_JSON2}" | jq -r '.result // empty')"
                 if [ -n "${RAW2}" ]; then
                     RAW_OUTPUT="${RAW2}"
+                    # `model` describes the SCORED turn, so it is turn 2's here;
+                    # `models_all` unions both turns' keys so a turn-1/turn-2
+                    # mismatch stays visible in the artifact.
+                    MODEL="$(printf '%s' "${CLAUDE_JSON2}" | jq -r '(.model // (.modelUsage | keys[0]? // empty)) // "unknown"')"
+                    local MODELS_ALL2
+                    MODELS_ALL2="$(printf '%s' "${CLAUDE_JSON2}" | jq -c --argjson t1 "${MODELS_ALL}" \
+                        '($t1 + ((.modelUsage // {}) | keys)) | unique' 2>/dev/null)"
+                    [ -n "${MODELS_ALL2}" ] && MODELS_ALL="${MODELS_ALL2}"
                     TOOL_CALLS_JSON="$(printf '%s' "${CLAUDE_JSON2}" | jq -c '[
                         (.messages // []) | .[]? | (.content // []) | .[]?
                         | select(.type == "tool_use") | {name: .name, input: (.input // {})}
