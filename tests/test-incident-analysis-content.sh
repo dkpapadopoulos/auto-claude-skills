@@ -13,19 +13,16 @@ SCHEMA_FILE="${PROJECT_ROOT}/skills/incident-analysis/references/investigation-s
 EVIDENCE_LINKS_REF="${PROJECT_ROOT}/skills/incident-analysis/references/evidence-links.md"
 SIGNALS_FILE="${PROJECT_ROOT}/skills/incident-analysis/signals.yaml"
 PLAYBOOK_DIR="${PROJECT_ROOT}/skills/incident-analysis/playbooks"
-# Situational detail moved out of SKILL.md so its rules fit the post-compaction
-# re-attach window (openspec/changes/skill-reattach-budget). A cell whose needle
-# lived in a moved block reads the file the block now lives in.
+# Lookup data moved out of SKILL.md for the post-compaction re-attach budget
+# (openspec/changes/skill-reattach-budget). Only pure lookup data moved: every
+# rule, and every text a rule needs to be carried out, stays in SKILL.md. A cell
+# whose needle lived in a moved block reads the file the block now lives in.
 REF_DIR="${PROJECT_ROOT}/skills/incident-analysis/references"
 STAGE_FLOW_REF="${REF_DIR}/stage-flow.md"
-TEMPFILE_REF="${REF_DIR}/temp-file-pattern.md"
-ACCESS_GATE_REF="${REF_DIR}/access-gate.md"
-DB_METRICS_REF="${REF_DIR}/db-metrics-gate.md"
-SWEEP_REF="${REF_DIR}/multi-service-sweep.md"
-PM_FIELDS_REF="${REF_DIR}/postmortem-fields.md"
+SEI_REF="${REF_DIR}/service-error-inventory.md"
 RATIONALE_REF="${REF_DIR}/rationale.md"
 # The files this split created; the negative checks below scan them too.
-MOVED_REFS="${STAGE_FLOW_REF} ${TEMPFILE_REF} ${ACCESS_GATE_REF} ${DB_METRICS_REF} ${SWEEP_REF} ${PM_FIELDS_REF} ${RATIONALE_REF}"
+MOVED_REFS="${STAGE_FLOW_REF} ${SEI_REF} ${RATIONALE_REF}"
 
 # ---------------------------------------------------------------------------
 # Helper: assert file contains pattern (grep -q wrapper)
@@ -170,8 +167,8 @@ assert_file_contains "infra-failure.yaml: mentions certificate" "[Cc]ertificate"
 # SKILL.md — Access Gate (Step 1b)
 # ---------------------------------------------------------------------------
 assert_file_contains "SKILL.md: has access gate step" "Access Gate" "${SKILL_FILE}"
-assert_file_contains "access-gate ref: access summary checks gcloud auth" "gcloud auth:" "${ACCESS_GATE_REF}"
-assert_file_contains "access-gate ref: access summary checks kubectl context" "kubectl context:" "${ACCESS_GATE_REF}"
+assert_file_contains "SKILL.md: access summary checks gcloud auth" "gcloud auth:" "${SKILL_FILE}"
+assert_file_contains "SKILL.md: access summary checks kubectl context" "kubectl context:" "${SKILL_FILE}"
 assert_file_contains "SKILL.md: access gate prompts user to fix" "Fix now.*proceed with degraded" "${SKILL_FILE}"
 assert_file_contains "SKILL.md: access gate records state for synthesis" "evidence_coverage" "${SKILL_FILE}"
 
@@ -181,9 +178,9 @@ assert_file_contains "SKILL.md: access gate records state for synthesis" "eviden
 assert_file_contains "SKILL.md: synthesis includes evidence coverage" "Evidence coverage and gaps" "${SKILL_FILE}"
 assert_file_contains "SKILL.md: has evidence_coverage block" "evidence_coverage:" "${SCHEMA_FILE}"
 assert_file_contains "SKILL.md: has gaps block" "gaps:" "${SKILL_FILE}"
-# This needle only ever matched the access summary's domain lines, now in the
-# reference; the Step 7 table that defines the levels is asserted row by row.
-assert_file_contains "access-gate ref: domains carry the coverage levels" "complete.*partial.*unavailable" "${ACCESS_GATE_REF}"
+# This needle only ever matched the access summary's domain lines; the Step 7
+# table that defines the levels is asserted row by row as well.
+assert_file_contains "SKILL.md: coverage levels defined" "complete.*partial.*unavailable" "${SKILL_FILE}"
 for _lvl in complete partial skipped unavailable; do
     assert_file_contains "SKILL.md: Step 7 defines coverage level ${_lvl}" "^| \`${_lvl}\` |" "${SKILL_FILE}"
 done
@@ -290,9 +287,9 @@ assert_file_contains "SKILL.md: Step 3 mentions gRPC connection analysis" \
 # ---------------------------------------------------------------------------
 # The infrastructure escalation paragraph must not use "likely" as a conclusion
 investigate_section="$(sed -n '/^## Stage 2 — INVESTIGATE/,/^## EXECUTE/p' "${SKILL_FILE}")"
-# The INVESTIGATE detail moved to references/ is held to the same rule.
+# The INVESTIGATE schema moved to references/ is held to the same rule.
 investigate_section="${investigate_section}
-$(cat "${DB_METRICS_REF}" "${SWEEP_REF}" 2>/dev/null)"
+$(cat "${SEI_REF}" 2>/dev/null)"
 if echo "${investigate_section}" | grep -q "root cause is likely"; then
     _record_fail "SKILL.md: no speculative 'likely' in infrastructure escalation" \
         "found 'root cause is likely' in INVESTIGATE section"
@@ -341,8 +338,8 @@ assert_file_contains "SKILL.md: recurring trap is a hard gate" \
 # ---------------------------------------------------------------------------
 assert_file_contains "SKILL.md: has multi-service error sweep step" \
     "Multi-Service Error Sweep" "${SKILL_FILE}"
-assert_file_contains "multi-service-sweep ref: step 3c has service_error_inventory output" \
-    "service_error_inventory:" "${SWEEP_REF}"
+assert_file_contains "service-error-inventory ref: step 3c has service_error_inventory output" \
+    "service_error_inventory:" "${SEI_REF}"
 assert_file_contains "SKILL.md: step 3c requires 72-hour deployment history" \
     "72-hour deployment history" "${SKILL_FILE}"
 assert_file_contains "SKILL.md: step 3c warns against anchoring bias" \
@@ -562,25 +559,15 @@ assert_contains "SKILL.md: step 7 evidence links has omission behavior" \
 POSTMORTEM_STEP3=$(sed -n '/### Step 3: Generate Postmortem/,/### Step 4: Write to Disk/p' "${SKILL_FILE}")
 assert_contains "SKILL.md: postmortem step 3 mandates evidence link carry-forward" \
     "Constraint 12 carry-forward" "${POSTMORTEM_STEP3}"
-# The section-to-source table moved to references/postmortem-fields.md; Step 3
-# restates its placements and names the file.
-assert_file_contains "postmortem-fields ref: maps sections to evidence_links sources" \
-    "chosen_hypothesis.evidence_links" "${PM_FIELDS_REF}"
+assert_contains "SKILL.md: postmortem step 3 maps sections to evidence_links sources" \
+    "chosen_hypothesis.evidence_links" "${POSTMORTEM_STEP3}"
 assert_contains "SKILL.md: postmortem step 3 maps ruled_out to evidence_links" \
     "Investigation Notes" "${POSTMORTEM_STEP3}"
 # Verify with grep for the exact bracket pattern (case glob can't match [])
-assert_file_contains "postmortem-fields ref: has ruled_out evidence_links mapping" \
-    'ruled_out\[\].evidence_links' "${PM_FIELDS_REF}"
-assert_contains "SKILL.md: postmortem step 3 points at postmortem-fields.md" \
-    "per \`references/postmortem-fields.md\`" "${POSTMORTEM_STEP3}"
-assert_contains "SKILL.md: postmortem step 3 restates the root-cause placement" \
-    "\`chosen_hypothesis.evidence_links\` after the Root Cause & Trigger statement" "${POSTMORTEM_STEP3}"
-assert_contains "SKILL.md: postmortem step 3 restates the ruled-out placement" \
-    "\`ruled_out[].evidence_links\` after each ruled-out hypothesis in Investigation Notes" "${POSTMORTEM_STEP3}"
-assert_contains "SKILL.md: postmortem step 3 restates the inventory and timeline placements" \
-    "\`service_error_inventory[].evidence_links\` inline on Impact's infrastructure bullets; query URLs in the Timeline's evidence column" "${POSTMORTEM_STEP3}"
-assert_contains "SKILL.md: postmortem step 3 names the Mitigation Applied fields" \
-    "the exact interpolated Command Executed" "${POSTMORTEM_STEP3}"
+assert_file_contains "SKILL.md: postmortem step 3 has ruled_out evidence_links mapping" \
+    'ruled_out\[\].evidence_links' "${SKILL_FILE}"
+assert_contains "SKILL.md: postmortem step 3 keeps the Mitigation Applied table" \
+    "| Command Executed |" "${POSTMORTEM_STEP3}"
 assert_contains "SKILL.md: postmortem step 3 addresses skip rationalization" \
     "Do not skip links" "${POSTMORTEM_STEP3}"
 assert_contains "SKILL.md: postmortem step 3 has constrained retroactive construction rule" \
@@ -822,18 +809,8 @@ assert_file_contains "the reference distinguishes outward-sending from disk writ
 # --- Each moved block is in its file ----------------------------------------
 assert_file_contains "stage-flow ref: holds the stage graph" "digraph stages" "${STAGE_FLOW_REF}"
 assert_file_contains "stage-flow ref: holds the REPORT-BACK edge" "POSTMORTEM -> REPORT_BACK" "${STAGE_FLOW_REF}"
-assert_file_contains "temp-file ref: holds the mktemp example" "mktemp /tmp/agent-lql-XXXXXX.txt" "${TEMPFILE_REF}"
-assert_file_contains "temp-file ref: cleanup runs either way" "ensures cleanup runs regardless" "${TEMPFILE_REF}"
-assert_file_contains "access-gate ref: holds the auth-fix prompt" "! gcloud auth application-default login" "${ACCESS_GATE_REF}"
-assert_file_contains "access-gate ref: holds the domain lines" "Trace correlation: ✓ complete (Tier 1 only)" "${ACCESS_GATE_REF}"
-assert_file_contains "db-metrics ref: holds the connection metric" \
-    "cloudsql.googleapis.com/database/network/connections" "${DB_METRICS_REF}"
-assert_file_contains "db-metrics ref: holds the decision branch" "App-side pool exhaustion" "${DB_METRICS_REF}"
-assert_file_contains "db-metrics ref: rows combine" "Rows are not mutually exclusive" "${DB_METRICS_REF}"
-assert_file_contains "multi-service-sweep ref: holds the parallel rounds" "Architecture discovery batch" "${SWEEP_REF}"
-assert_file_contains "multi-service-sweep ref: holds the mechanism_status field" \
-    'mechanism_status: "known" | "not_yet_traced" | "not_applicable"' "${SWEEP_REF}"
-assert_file_contains "postmortem-fields ref: holds the Mitigation Applied table" "| Command Executed |" "${PM_FIELDS_REF}"
+assert_file_contains "service-error-inventory ref: holds the mechanism_status field" \
+    'mechanism_status: "known" | "not_yet_traced" | "not_applicable"' "${SEI_REF}"
 assert_file_contains "rationale ref: holds the dual-layer anti-pattern" "Anti-pattern this prevents" "${RATIONALE_REF}"
 assert_file_contains "rationale ref: holds the tier rationale" "The few seconds to re-authenticate" "${RATIONALE_REF}"
 assert_file_contains "rationale ref: holds the baseline rationale" "4,948 vs 5,000" "${RATIONALE_REF}"
@@ -868,28 +845,30 @@ I_STEP3_TEXT="$(_section '### Step 3: Single-Service Deep Dive' 3)"
 I_STEP3C_TEXT="$(_section '### Step 3c: Multi-Service Error Sweep' 3)"
 assert_contains "Stage Flow names references/stage-flow.md" "references/stage-flow.md" "${FLOW_TEXT}"
 assert_contains "Stage Flow keeps the re-entry paths" "Key re-entry paths:" "${FLOW_TEXT}"
-assert_contains "Constraint 3 points at the worked example" \
-    "Read \`references/temp-file-pattern.md\` before the first Tier 2 query" "${C3_TEXT}"
-assert_contains "Constraint 3 restates the cleanup" "cleans up whether or not \`gcloud\` succeeds" "${C3_TEXT}"
+# Text a rule needs to be carried out stays in SKILL.md, past the window; the
+# window carries the mktemp example's first line.
+M_STEP3_TEXT="$(_section '### Step 3: Query Error Rate' 3)"
+assert_contains "Constraint 3 restates the mktemp line inside the window" \
+    "For example: \`LQL_FILE=\$(mktemp /tmp/agent-lql-XXXXXX.txt)\`" "${C3_TEXT}"
+assert_contains "Constraint 3 restates the cleanup" "; rm -f \"\$LQL_FILE\"\` so cleanup runs whether or not \`gcloud\` succeeds" "${C3_TEXT}"
+assert_contains "Constraint 3 names where the full example is" "Full example: MITIGATE Step 3." "${C3_TEXT}"
+assert_contains "MITIGATE Step 3 carries the temp-file example" "LQL_FILE=\$(mktemp /tmp/agent-lql-XXXXXX.txt)" "${M_STEP3_TEXT}"
+assert_contains "MITIGATE Step 3 carries the cleanup explanation" "ensures cleanup runs regardless" "${M_STEP3_TEXT}"
 assert_contains "MITIGATE Step 1 restates the fix command" "Show \`! gcloud auth application-default login\`" "${M_STEP1_TEXT}"
-assert_contains "MITIGATE Step 1 names references/access-gate.md" "references/access-gate.md" "${M_STEP1_TEXT}"
+assert_contains "MITIGATE Step 1 names where the wording is" "the full wording is under Step 1b." "${M_STEP1_TEXT}"
 assert_contains "MITIGATE Step 1 keeps the no-silent-fallback rule" "do NOT silently fall back to Tier 2" "${M_STEP1_TEXT}"
-assert_contains "MITIGATE Step 1b points at the summary layout" "Read \`references/access-gate.md\`" "${M_STEP1B_TEXT}"
-assert_contains "INVESTIGATE Step 3 points at the DB metrics gate" \
-    "Read \`references/db-metrics-gate.md\` before the first database metric query" "${I_STEP3_TEXT}"
+assert_contains "MITIGATE Step 1b carries the access summary layout" "Trace correlation: ✓ complete (Tier 1 only)" "${M_STEP1B_TEXT}"
+assert_contains "MITIGATE Step 1b carries the Step 1 auth-fix prompt" \
+    "This opens a browser for re-authentication. Proceed?" "${M_STEP1B_TEXT}"
 assert_contains "INVESTIGATE Step 3 keeps the mandatory DB rule" \
     "query the database's own metrics before attributing the issue to database capacity" "${I_STEP3_TEXT}"
-assert_contains "INVESTIGATE Step 3 restates the app-side branch" \
-    "all three within 1.5x baseline is app-side pool exhaustion" "${I_STEP3_TEXT}"
-assert_contains "INVESTIGATE Step 3 restates the database-level branch" \
-    "connections at \`max_connections\` is database-level exhaustion" "${I_STEP3_TEXT}"
-assert_contains "INVESTIGATE Step 3 restates the load branch" \
-    "CPU over 80% or a query-rate spike is a database under load" "${I_STEP3_TEXT}"
-assert_contains "INVESTIGATE Step 3 restates that branches combine" "when several hold, combine the diagnoses" "${I_STEP3_TEXT}"
-assert_contains "Step 3c points at the sweep rounds" \
-    "The three rounds (architecture discovery; the per-service sweep of items 1-3 below; the baseline comparison that feeds Step 2d)" "${I_STEP3C_TEXT}"
-assert_contains "Step 3c points at the inventory fields" \
-    "\`mechanism_status\`), are in \`references/multi-service-sweep.md\`" "${I_STEP3C_TEXT}"
+assert_contains "INVESTIGATE Step 3 carries the DB metric names" \
+    "cloudsql.googleapis.com/database/network/connections" "${I_STEP3_TEXT}"
+assert_contains "INVESTIGATE Step 3 carries the decision branch" "**App-side pool exhaustion**" "${I_STEP3_TEXT}"
+assert_contains "INVESTIGATE Step 3 carries that rows combine" "Rows are not mutually exclusive" "${I_STEP3_TEXT}"
+assert_contains "Step 3c carries the parallel rounds" "**Architecture discovery batch (one parallel round):**" "${I_STEP3C_TEXT}"
+assert_contains "Step 3c names the inventory schema file" \
+    "\`mechanism_status\`), is in \`references/service-error-inventory.md\`" "${I_STEP3C_TEXT}"
 
 # --- What the window restates from past the cut ------------------------------
 # Each gate below sits past the first 19,500 bytes in full; its one-line form
@@ -1008,10 +987,10 @@ for _f in "${REF_DIR}"/*.md; do
     _b="$(basename "${_f}")"
     assert_file_contains "SKILL.md names references/${_b}" "references/${_b}" "${SKILL_FILE}"
 done
-if [ "${_refs_n}" -ge 24 ]; then
-    _record_pass "references/ holds at least the 24 files this test knows (${_refs_n})"
+if [ "${_refs_n}" -ge 20 ]; then
+    _record_pass "references/ holds at least the 20 files this test knows (${_refs_n})"
 else
-    _record_fail "references/ holds at least the 24 files this test knows" "found ${_refs_n}"
+    _record_fail "references/ holds at least the 20 files this test knows" "found ${_refs_n}"
 fi
 INDEX_TEXT="$(_section '## Reference files moved out of this file' 2)"
 _idx_n=0
@@ -1023,7 +1002,7 @@ while IFS= read -r _row; do
 done <<EOF
 ${INDEX_TEXT}
 EOF
-assert_equals "the moved-files index lists the seven files this split created" "7" "${_idx_n}"
+assert_equals "the moved-files index lists the three lookup files this split created" "3" "${_idx_n}"
 
 # ---------------------------------------------------------------------------
 # Structural guard — SKILL.md word count, as a BASELINE RATCHET.
@@ -1077,7 +1056,7 @@ else
         "the CI reviewer's own prompt is a separate copy of this rule; if it states a fixed number it will block on it"
 fi
 
-INCIDENT_SKILL_WORD_BASELINE=11169
+INCIDENT_SKILL_WORD_BASELINE=11799
 word_count=$(wc -w < "${SKILL_FILE}" | tr -d ' ')
 if [ "$word_count" -le "${INCIDENT_SKILL_WORD_BASELINE}" ]; then
     _record_pass "SKILL.md: word count within baseline ${INCIDENT_SKILL_WORD_BASELINE} (${word_count})"

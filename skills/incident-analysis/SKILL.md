@@ -60,7 +60,7 @@ During active investigation, all application-level file reads, log queries, and 
 
 For any LQL query longer than 5 words or containing quotes/regex, write the query to a session-scoped temp file via `mktemp` and execute via file read. This avoids escaping failures and concurrent-session race conditions:
 
-Read `references/temp-file-pattern.md` before the first Tier 2 query: a worked example in which `; rm -f "$LQL_FILE"` cleans up whether or not `gcloud` succeeds.
+For example: `LQL_FILE=$(mktemp /tmp/agent-lql-XXXXXX.txt)`, write the query into it, then run `gcloud logging read "$(cat "$LQL_FILE")" ... ; rm -f "$LQL_FILE"` so cleanup runs whether or not `gcloud` succeeds. Full example: MITIGATE Step 3.
 
 ### 4. Context Discipline on Stage Transitions
 
@@ -219,7 +219,7 @@ If you have access to `list_log_entries`, `search_traces`, `get_trace`, `list_ti
 1. Report the specific error to the user
 2. **Immediately offer the fix** — do NOT silently fall back to Tier 2:
 
-   Show `! gcloud auth application-default login` (it opens a browser) and ask whether to proceed; the wording is in `references/access-gate.md`.
+   Show `! gcloud auth application-default login` (it opens a browser) and ask whether to proceed; the full wording is under Step 1b.
 
 3. If the user re-authenticates, re-probe to confirm, then classify as Tier 1
 4. **Only fall back to Tier 2 if the user explicitly declines** (e.g., "skip it", "proceed without", "no time"). Record the declined fix in the access gate for `evidence_coverage`.
@@ -243,11 +243,32 @@ Do not repeat this nudge after the first mention.
 
 After detecting the execution tier, present a tool access summary and prompt the user to fix **fixable** gaps (expired auth, wrong context) before continuing. Do not block on unfixable gaps (tool not installed) during an active incident.
 
-Read `references/access-gate.md` for the summary's layout: tool access (MCP observability, gcloud auth, kubectl context, GitHub CLI) and each investigation domain (Logs, Metrics, K8s state, Source analysis, Trace correlation) as complete, partial, skipped or unavailable.
+```
+Tool access:
+  MCP observability: available | auth expired (fixable) | unavailable
+  gcloud auth:       active (project X) | expired | not configured
+  kubectl context:   available (context Y) | unavailable
+  GitHub CLI (gh):   authenticated | not authenticated | not installed
+
+Investigation domains:
+  Logs:              ✓ complete (Tier N) | ⚠ partial | ✗ unavailable
+  Metrics:           ✓ complete (Tier N) | ⚠ partial (Tier 2 — no list_time_series) | ✗ unavailable
+  K8s state:         ✓ complete | ✗ unavailable
+  Source analysis:    ✓ complete | skipped | ✗ unavailable
+  Trace correlation: ✓ complete (Tier 1 only) | skipped | ✗ unavailable
+```
 
 **MCP auth expired is always a fixable gap.** When the access gate shows `auth expired (fixable)`, the Metrics and Trace correlation domains will show degraded or unavailable. Present this prominently:
 
 > "⚠ MCP auth expired — Metrics (`list_time_series`), Traces (`get_trace`), and Error Reporting (`list_group_stats`) will be unavailable. Fix with `! gcloud auth application-default login`?"
+
+The Step 1 auth-fix prompt, shown when the Tier 1 probe fails with an auth error:
+
+   > "MCP Observability auth expired (`<error>`). Tier 1 provides metrics, traces, and error reporting that gcloud CLI cannot. Fix now with:
+   > ```
+   > ! gcloud auth application-default login
+   > ```
+   > This opens a browser for re-authentication. Proceed?"
 
 **If any other fixable gap is detected**, present the fix command and ask:
 
@@ -316,6 +337,23 @@ Scoped to the identified service + narrow time window.
 **Tier 1:** Use `list_log_entries` with LQL filter scoped to service + severity + time window, `page_size` <= 50.
 
 **Tier 2:** Use the temp-file execution pattern (see Constraint 3) with `gcloud logging read` and `--limit=50`.
+
+The temp-file pattern (Constraint 3), as a worked example:
+
+```bash
+LQL_FILE=$(mktemp /tmp/agent-lql-XXXXXX.txt)
+cat > "$LQL_FILE" << 'QUERY'
+resource.type="cloud_run_revision"
+AND resource.labels.service_name="checkout-service"
+AND severity>=ERROR
+AND timestamp>="2026-03-19T10:00:00Z"
+QUERY
+
+gcloud logging read "$(cat "$LQL_FILE")" \
+  --project=my-project --format=json --limit=50 ; rm -f "$LQL_FILE"
+```
+
+The `;` operator ensures cleanup runs regardless of whether `gcloud` succeeds or fails. `mktemp` with a random suffix prevents concurrent sessions from overwriting each other's queries.
 
 ### Step 3b: Aggregate Error Fingerprint
 
@@ -446,7 +484,25 @@ After all probes complete, feed results back to CLASSIFY for reclassification.
 
   When the service shows `JDBCConnectionException`, `acquisition timeout`, `pool exhausted`, `ConnectionRefused` to a database, or Cloud SQL proxy errors, **query the database's own metrics before attributing the issue to database capacity**. This is mandatory — do not conclude "database under pressure" or "connection starvation" from application-side errors alone.
 
-  **Required queries and decision branch:** Read `references/db-metrics-gate.md` before the first database metric query. Query connection count, CPU utilization and query rate (incident window and baseline, in parallel per Constraint 13), then: all three within 1.5x baseline is app-side pool exhaustion (connections held too long); connections at `max_connections` is database-level exhaustion; CPU over 80% or a query-rate spike is a database under load; when several hold, combine the diagnoses.
+  **Required queries (incident window + baseline, in parallel per Constraint 13):**
+
+  | Metric | Tier 1 (`list_time_series`) | Tier 2 (REST API via `curl` + `gcloud auth print-access-token`) |
+  |--------|----------------------------|----------------------------------------------------------------|
+  | Connection count | `cloudsql.googleapis.com/database/network/connections` | Same metric via Monitoring REST API |
+  | CPU utilization | `cloudsql.googleapis.com/database/cpu/utilization` | Same metric via Monitoring REST API |
+  | Query rate | `cloudsql.googleapis.com/database/mysql/questions` (MySQL) or `cloudsql.googleapis.com/database/postgresql/transaction_count` (PostgreSQL) | Same metric via Monitoring REST API |
+
+  **Decision branch:**
+
+  | DB metrics vs baseline | Diagnosis | Investigation route |
+  |------------------------|-----------|-------------------|
+  | Connections, CPU, query rate all **normal** (within 1.5x baseline) | **App-side pool exhaustion** — connections held too long, not too many | Investigate application: slow queries holding connections, transaction scope changes, connection leak, pool sizing (max size, timeout, leak detection). Check deployment history for code changes affecting connection lifecycle. |
+  | Connections **elevated** (approaching or at `max_connections`) | **Database-level exhaustion** — too many consumers | Investigate database: `max_connections` setting, per-service pool sizing, total connection demand across all consumers. Consider connection isolation (dedicated instances for critical services like auth). |
+  | CPU **elevated** (>80%) or query rate **spiked** | **Database under load** — slow queries or query volume | Investigate database: slow query log, query plan regressions, lock contention. Check for new query patterns from recent deployments. |
+
+  Rows are not mutually exclusive. When multiple conditions are present (e.g., connections elevated AND CPU spiked), combine diagnoses: the database is both oversubscribed and overloaded.
+
+  **Anti-pattern this prevents:** Concluding "shared database starvation" from application-side JDBC errors when the database itself is healthy. In one investigation, this led to incorrect action items ("isolate auth service DB") that were revised after database metrics showed normal connection count, CPU, and query rate — the issue was app-side pool exhaustion (connections held too long under normal DB load).
 
 - **Application-logic analysis (for the dominant error path):**
   - **Call pattern detection:** From stack traces in Step 2 exemplars, determine whether the failing code path makes sequential (N+1) calls to the degraded dependency. A loop calling `checkPermission()` per item is N+1; a single `batchCheck()` call is not. If N+1 is detected, note the amplification factor (items per request x latency per call = total request latency).
@@ -471,7 +527,13 @@ If a `node-resource-exhaustion` playbook is available, transition to CLASSIFY fo
 
 **Parallel sweep pattern (Constraint 13):** When the error chain involves 3+ services (typically discovered through an intermediary layer), dispatch the per-service queries in parallel rather than sequentially (for 2 services, sequential execution is acceptable). Specifically:
 
-The three rounds (architecture discovery; the per-service sweep of items 1-3 below; the baseline comparison that feeds Step 2d) are in `references/multi-service-sweep.md`.
+1. **Architecture discovery batch (one parallel round):** Query all containers in the namespace with ERROR logs grouped by container name + deployment history for the 72h window + auth/identity service errors. This reveals the full service landscape and recent changes in a single round-trip instead of discovering services one at a time.
+
+2. **Per-service sweep batch (one parallel round):** For each service identified in the architecture discovery, dispatch items 1-3 of the procedure below (ERROR logs + error classification + deployment history) as parallel queries. Each query is independent — they target different services with the same query template.
+
+3. **Baseline comparison batch (one parallel round):** For each service's error count from the sweep, query the baseline count from a prior day in parallel. Feed results into the Step 2d baseline-first gate to skip baseline signals before deep-diving.
+
+This pattern collapses an N-service sequential sweep (N round-trips) into 3 parallel rounds regardless of N. The procedure below describes what to query per service; this pattern describes how to batch the execution.
 
 **Procedure:** For each service in the error chain not yet deeply investigated:
 
@@ -490,7 +552,7 @@ The three rounds (architecture discovery; the per-service sweep of items 1-3 bel
 
 **Output:** A `service_error_inventory` table in the Step 7 synthesis:
 
-Its fields, one entry per service (error class, tier, incident and baseline counts, 72-hour deployment, `investigated`, `infra_status`/`app_status` with evidence or reason, `mechanism_status`), are in `references/multi-service-sweep.md`.
+Its schema, one entry per service (error class, tier, incident and baseline counts, 72-hour deployment, `investigated`, `infra_status`/`app_status` with evidence or reason, `mechanism_status`), is in `references/service-error-inventory.md`.
 
 **Layer status semantics:** `assessed` = Minimum required evidence for that layer is complete (infrastructure: deployment history + runtime signal; application: ERROR logs queried + dominant exception class identified). Other statuses: `not_applicable`, `unavailable` (reason required), `not_captured` (reason required). Full definitions in `references/investigation-schema.md`. Services with `investigated: false` must be flagged as gaps in `evidence_coverage`.
 
@@ -858,7 +920,14 @@ Generate from the synthesized summary (NOT raw logs). Follow the template sectio
 
 If a playbook-driven mitigation was executed during this incident, include the following under the "Root Cause & Trigger" section of the postmortem:
 
-The fields (Playbook ID, Playbook Name, the exact interpolated Command Executed, Execution Time, Verification Status, Evidence Bundle path) are in `references/postmortem-fields.md`.
+| Field | Value |
+|-------|-------|
+| Playbook ID | The `id` of the playbook that was executed |
+| Playbook Name | Human-readable name from the playbook |
+| Command Executed | The exact interpolated command that was run |
+| Execution Time | Timestamp when EXECUTE Step 2 completed |
+| Verification Status | `verified`, `failed`, or `unverified` (from VALIDATE exit path) |
+| Evidence Bundle | Relative path to `docs/postmortems/evidence/<bundle-id>/` |
 
 Keep the 8 section headers (Summary, Impact, Action Items, Root Cause & Trigger, Timeline, Contributing Factors, Lessons Learned, Investigation Notes) intact. The mitigation details are a subsection within Root Cause & Trigger, not a new top-level section. If a project template overrides this structure (Step 1), follow the project template instead.
 
@@ -866,7 +935,13 @@ Keep the 8 section headers (Summary, Impact, Action Items, Root Cause & Trigger,
 
 Carry `evidence_links` from the Step 7 synthesis into every postmortem section. A postmortem without evidence links is just prose assertions.
 
-Placement, per `references/postmortem-fields.md`: `chosen_hypothesis.evidence_links` after the Root Cause & Trigger statement; `ruled_out[].evidence_links` after each ruled-out hypothesis in Investigation Notes; `service_error_inventory[].evidence_links` inline on Impact's infrastructure bullets; query URLs in the Timeline's evidence column; source and config URLs inline in Investigation Notes.
+| Postmortem section | Source | Link placement |
+|-------------------|--------|---------------|
+| Root Cause & Trigger | `chosen_hypothesis.evidence_links` | `**Links:** [label](url) · ...` after root cause statement |
+| Investigation Notes — Ruled out | `ruled_out[].evidence_links` | `**Links:** [label](url)` after each hypothesis |
+| Impact — Infrastructure | `service_error_inventory[].evidence_links` | Inline links on each infrastructure bullet |
+| Timeline | Query URLs from Steps 2-7 | Evidence column: `[label](url)` replacing plain-text descriptions |
+| Investigation Notes — Confirmed | Source code / config URLs | Inline links on file/config references |
 
 Build URLs from the evidence ledger (Constraint 6) using `references/evidence-links.md` templates. Retroactive construction is permitted only when exact original query parameters are visible verbatim in the conversation — never from prose summaries or inferred values. If parameters are unrecoverable, describe the evidence source in prose.
 
@@ -899,14 +974,10 @@ LQL filter patterns, Tier 1 MCP tool parameters, and Tier 2 gcloud CLI commands:
 
 ## Reference files moved out of this file
 
-Read each when its condition holds. The other `references/` files are named at the step that needs them.
+Lookup data only: every rule, and every text a rule needs to be carried out, stays above. The other `references/` files are named at the step that needs them.
 
 | File | Read it |
 |---|---|
 | `references/stage-flow.md` | For the stage graph at a glance. |
-| `references/temp-file-pattern.md` | Constraint 3, before the first Tier 2 query. |
-| `references/access-gate.md` | MITIGATE Steps 1 and 1b: the auth-fix prompt and the tool access summary. |
-| `references/db-metrics-gate.md` | INVESTIGATE Step 3, before the first database metric query. |
-| `references/multi-service-sweep.md` | Step 3c, before the sweep and before writing `service_error_inventory`. |
-| `references/postmortem-fields.md` | POSTMORTEM Step 3, before writing Mitigation Applied or placing evidence links. |
+| `references/service-error-inventory.md` | Step 3c, for the `service_error_inventory` YAML schema. |
 | `references/rationale.md` | When weighing whether a rule applies: why the tier, baseline and dual-layer rules exist. |

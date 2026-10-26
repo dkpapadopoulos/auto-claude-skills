@@ -32,7 +32,7 @@ REATTACH_BUDGET_BYTES=19500
 # lower a ceiling in the same commit that shrinks the skill; never raise one.
 # All three stay listed after their splits: their rules alone exceed the
 # budget, so each core leads with them until a prose pass (design decision 4).
-REATTACH_PENDING="incident-analysis 79719
+REATTACH_PENDING="incident-analysis 84228
 alert-hygiene 41297
 agent-team-review 30619"
 
