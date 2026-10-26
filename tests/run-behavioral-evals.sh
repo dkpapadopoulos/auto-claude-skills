@@ -23,8 +23,12 @@ Options:
   --bare                   run the inner 'claude -p' in --bare mode (skip hooks,
                            LSP, plugin). Strips ambient noise — e.g. this
                            plugin's own skill-activation banner — from the
-                           measured output. Recommended for the model-routing
-                           probation so the only injected guidance is SKILL_PATH.
+                           measured output. Needs API-key auth
+                           (ANTHROPIC_API_KEY or apiKeyHelper): it skips the
+                           keychain, so on an OAuth login every call returns
+                           "Not logged in" (measured 2026-10-26). With OAuth,
+                           isolate the subject with a temp HOME instead (see
+                           tests/fixtures/intent-extraction/evals/README.md).
   -h, --help               show this message
 
 Environment:
