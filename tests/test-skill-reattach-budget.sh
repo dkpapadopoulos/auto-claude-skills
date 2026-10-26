@@ -8,7 +8,8 @@
 # base-directory header and the frontmatter is stripped first, so a file of at
 # most 19,500 BYTES (bytes are at least characters) survives whole.
 #
-# Skills not yet split sit on a pending list whose ceiling is an EQUALITY
+# Skills over the budget (not yet split, or split with their rules alone over
+# it, ordered rules-first) sit on a pending list whose ceiling is an EQUALITY
 # ratchet, like INCIDENT_SKILL_WORD_BASELINE: it must equal the file's current
 # byte size. A pending skill that grows fails; one that shrinks fails until its
 # ceiling is lowered in the same commit, so slack is never banked for regrowth;

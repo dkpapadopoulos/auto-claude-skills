@@ -9,6 +9,10 @@ Five owned skills exceed the line: incident-analysis (83,053 bytes), alert-hygie
 - Each over-limit `SKILL.md` keeps its load-bearing instructions in a core under the budget and moves situational detail, verbatim, into `skills/<name>/references/*.md`, named from the core with the condition under which to Read it. Nothing is deleted.
 - A test fails when an owned `SKILL.md` exceeds 19,500 bytes, except for a listed set of pending skills, each with a size ceiling equal to its current size that falls with the file and may rise only in a commit whose message states the reason.
 - Order: openspec-ship, runtime-validation, agent-team-review, alert-hygiene, incident-analysis (its word-count ratchet moves in the same commit).
+- **Outcome:**
+  - openspec-ship and runtime-validation leave the pending list.
+  - agent-team-review, alert-hygiene and incident-analysis stay pending, their cores ordered rules-first (design decision 4).
+  - incident-analysis grows from 83,053 to 85,310 bytes to restate its gates inside the window, so it costs more per invocation than on main.
 
 ## Capabilities
 

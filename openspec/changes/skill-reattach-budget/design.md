@@ -15,8 +15,21 @@ Keep every owned skill's instructions present after compaction, and stop paying 
 1. **Budget: 19,500 bytes per owned `SKILL.md`, frontmatter included.** The re-attach cut is 20,000 characters including a ~110-145-character base-directory header; bytes are at least characters, and frontmatter is stripped before re-attachment, so 19,500 file bytes is inside the line with margin.
 2. **The core holds:** the trigger/purpose, every hard rule and gate, the step sequence, and an index of reference files, each with the condition that says when to Read it ("Before writing the archive, Read references/archive.md"). Situational detail (long tables, schemas, worked examples, rationale, per-provider variants) moves verbatim.
 3. **Validation before rollout:** after the first split (openspec-ship), one behavioral check — a headless isolated-HOME run in which the skill is invoked and the situation that needs a reference file arises — confirms the model Reads the reference. If it does not, the core must carry that rule inline instead.
-4. **Guard:** `tests/test-skill-reattach-budget.sh` fails for any owned `SKILL.md` over 19,500 bytes, except entries in an explicit pending list whose recorded ceilings equal the file's current size (an equality ratchet: a ceiling falls with the file, and may rise only in a commit whose message states the reason, the same convention as `INCIDENT_SKILL_WORD_BASELINE`); a skill leaves the list when split. Content tests that grep a moved passage are pointed at its new file in the same commit. A skill whose rules alone exceed the budget (agent-team-review: 30,619 bytes after its situational blocks moved; alert-hygiene: 41,297; incident-analysis: 85,310, above its 83,053 on main because its core now leads with a Step Sequence that restates every later stop and approval gate inside the window, while the text that carries out its rules stays inline) moves its situational detail anyway and stays pending at its new size, with its core ordered so the load-bearing rules come first and end inside the first 19,500 bytes, until a prose pass.
+4. **Guard:** `tests/test-skill-reattach-budget.sh` fails for any owned `SKILL.md` over 19,500 bytes, except entries in an explicit pending list whose recorded ceilings equal the file's current size (an equality ratchet: a ceiling falls with the file, and may rise only in a commit whose message states the reason, the same convention as `INCIDENT_SKILL_WORD_BASELINE`); a skill leaves the list when split. Content tests that grep a moved passage are pointed at its new file in the same commit. A skill whose rules alone exceed the budget moves its situational detail anyway and stays pending at its new size, with its core ordered so the load-bearing rules come first and end inside the first 19,500 bytes; every-run steps that still sit past the cut are restated or indexed inside it; and each pinned span and restated line has an end-offset cell in the skill's content test. This holds until a prose pass. Three skills are pending on that basis:
+   - **agent-team-review: 31,466 bytes.** §5 restates how to record the verdict, and §6's opening restates the same-family and Mode B rules.
+   - **alert-hygiene: 42,800 bytes.** The end of Stage 2 indexes the every-run gates of Stages 3-5 and says to Read the file after a compaction.
+   - **incident-analysis: 85,310 bytes,** above its 83,053 on main. Its core leads with a Step Sequence that restates the main later stop and approval gates inside the window, while the text that carries out its rules stays inline.
 5. **One skill per commit, each reviewed for "no instruction lost"** (every imperative in the old file located in the core or a named reference file).
+
+## Validation outcome
+
+Decision 3's behavioral checks were headless, isolated-HOME runs (Haiku, offline stubs).
+- **Read their reference:** openspec-ship, runtime-validation, agent-team-review and alert-hygiene. Each time, the model Read the file the situation called for.
+- **incident-analysis:** the model Read the needed reference in 1 of 6 opportunities across its two runs. That result drove the ruling that only lookup data stays in its `references/` (commit `f88e0375`). The text that carries out its rules went back inline, past the window.
+- **Not exercised:**
+  - runtime-validation's perf and visual-regression overlays;
+  - alert-hygiene's Stage 1 enrichment with `gh` available;
+  - compaction itself, in every run.
 
 ## Out of scope
 
