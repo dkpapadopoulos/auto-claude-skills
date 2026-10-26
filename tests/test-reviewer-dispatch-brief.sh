@@ -293,7 +293,7 @@ EOF
 # on the CATEGORY SET, which is what must not diverge. A category added to one
 # copy and not the other fails here rather than shipping a reviewer that scopes
 # itself by a rule the lead does not hold.
-LEAD_CATS="$(awk '/^\*\*Do not flag/{f=1} f&&match($0, /^\| `[a-z-]+`/){c=substr($0, RSTART+3, RLENGTH-4); print c} f&&/^The list stops at two/{exit}' "${SKILL}" | sort)"
+LEAD_CATS="$(awk '/^\*\*Do not flag/{f=1} f&&match($0, /^\| `[a-z-]+`/){c=substr($0, RSTART+3, RLENGTH-4); print c} f&&/^\*\*Trivial is not the same as droppable/{exit}' "${SKILL}" | sort)"
 REV_CATS="$(printf '%s\n' "${SCOPE_REF}" | awk 'match($0, /Do not raise `[a-z-]+`/){c=substr($0, RSTART+14, RLENGTH-15); print c}' | sort)"
 if [ -z "${LEAD_CATS}" ] || [ -z "${REV_CATS}" ]; then
     _record_fail "lead and reviewer scope categories both extracted" \

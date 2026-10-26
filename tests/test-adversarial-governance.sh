@@ -172,7 +172,7 @@ assert_contains "do-not-flag is reviewer scope, not a lead filter" \
 # (a) EXACTLY TWO do-not-raise rows. A third row is the mutation that a
 #     presence-grep cannot see. Count rows in the table between the heading and
 #     the paragraph that closes it.
-dnf_rows="$(awk '/^\*\*Do not flag/{f=1} f&&/^\| `[a-z-]+` /{n++} f&&/^The list stops at two/{exit} END{print n+0}' "${ATR}")"
+dnf_rows="$(awk '/^\*\*Do not flag/{f=1} f&&/^\| `[a-z-]+` /{n++} f&&/^\*\*Trivial is not the same as droppable/{exit} END{print n+0}' "${ATR}")"
 assert_equals "do-not-flag table has exactly 2 rows" "2" "${dnf_rows}"
 assert_contains "do-not-flag row: pre-existing"            '| `pre-existing`'                   "${atr}"
 assert_contains "do-not-flag row: tool-owned"              '| `tool-owned`'                     "${atr}"

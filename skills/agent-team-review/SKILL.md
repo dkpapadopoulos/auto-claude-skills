@@ -9,16 +9,6 @@ description: Use when a code change touches 5+ files or modifies auth/secrets/pe
 
 Parallel code review using agent teams. The lead spawns 2-4 reviewer teammates, each with a different review lens. Reviewers investigate independently, then the lead synthesizes findings into a unified review report.
 
-**Prerequisite:** Implementation must be complete (all tasks marked done). Activates for larger implementations (5+ files changed, or any change touching sensitive paths — see Sizing Rule).
-
-## Sizing Rule
-
-| Condition | Action |
-|-----------|--------|
-| < 5 files changed | Use single-agent requesting-code-review |
-| 5+ files changed | Spawn reviewer team |
-| Change touches auth, secrets, permissions, hooks, or CI config | Spawn reviewer team regardless of file count (minimum: security-reviewer + adversarial-reviewer) |
-
 ## Reviewer Composition
 
 | Teammate | Lens | Focus |
@@ -97,13 +87,6 @@ below it are unaffected.
 | `pre-existing` — a defect on the merge base that appears in no changed hunk | The review is of this change; unchanged code was already shipped and reviewed | The diff changes its blast radius, or the change makes it newly reachable |
 | `tool-owned` — lint, formatting, type errors, test failures, SAST results | `project-verification` and `security-scanner` are separate skills, so restating their output is duplication **by construction** | The gate did not run. Then the finding is *that the gate did not run*, not the individual violation |
 
-The list stops at two entries deliberately. Broader provenance categories — notably
-"speculative" — would demote exactly the structural `security` and `governance` findings
-that §4 and the Evidence rule protect, which is the hole those rules exist to close. Do
-not extend this table without re-reading both.
-
-**PAIRED — this table is the LEAD's copy; the reviewer's copy ships in the spawn templates**. Read `references/scope-copies.md` before editing either.
-
 **Trivial is not the same as droppable.** A finding small enough to fix in one line is
 still reported; these two categories are about *ownership*, not size.
 
@@ -166,8 +149,6 @@ Reproduce with the claimed cause present, and again with it removed, holding eve
 | the runs **agree**, and a comparable positive control disagrees in the same harness | the claim is false |
 | the runs **agree**, with no positive control | nothing — you have not tested the claim |
 
-Requiring the pair to *disagree* is the design constraint on the experiment, not the verdict: an experiment that could not have come out either way was never a test.
-
 "One thing" means **one causal variable, with every other precondition held equal** — not one changed token. Reproducing an input-triggered failure legitimately changes the input *and* whatever setup that input requires; what must not vary is anything else that could produce the outcome on its own.
 
 **Scope: this applies to findings that make an experimentally decidable causal claim** — "X causes Y", "removing X changes Y", "input I produces failure F". It does NOT apply to structural findings, and specifically **not** to `security`/`governance` findings blocking on the structural criterion the finding contract already allows (a change that removes or weakens an existing safety constraint). Those are decided by reading what the change removes, exactly as before; demanding a runnable pair for them would quietly repeal that exception. If a finding has no manipulable variable, it is not in scope here — say so and adjudicate it on its own terms.
@@ -207,8 +188,10 @@ Before any reproduction, Read `references/adjudication-worktree.md` and run it: 
 | Verdict | Action |
 |---------|--------|
 | `blocking_issues` | TeamDelete → return to IMPLEMENT → fix issues → re-review |
-| `suggestions_only` | TeamDelete → cross-model offer (§6, when applicable) → proceed to SHIP |
-| `clean` | TeamDelete → cross-model offer (§6, when applicable) → proceed to SHIP |
+| `suggestions_only` | TeamDelete → cross-model offer (§6, when applicable) → record the verdict → proceed to SHIP |
+| `clean` | TeamDelete → cross-model offer (§6, when applicable) → record the verdict → proceed to SHIP |
+
+**Then record the verdict** (Record the Review Verdict, after Verification), once, after §6 resolves: `--verdict clean` ONLY when every actionable finding was resolved or explicitly accepted, `findings-open` with the real `--unresolved-blocking` count otherwise, `could-not-review` when a lens never delivered; pass `--self-authored` when this context authored the diff; never read `~/.claude/.skill-session-token` (the script resolves the token).
 
 **On `blocking_issues`** — Expected: zero blocking findings before SHIP. Actual: N blocking finding(s) remain. Do now: TeamDelete the review team, return to IMPLEMENT, fix each blocking finding (cite file:line from the report), then re-review. Do NOT proceed to SHIP until re-review returns `clean` or `suggestions_only`.
 
@@ -216,8 +199,6 @@ Before any reproduction, Read `references/adjudication-worktree.md` and run it: 
 
 - an open finding at `blocking` severity ⇒ the verdict MUST NOT be `clean` or `suggestions_only`. Route it as `blocking_issues` and name the open item as the reason, with what would settle it. The user may decide to ship anyway — that is their call to make explicitly, not one the verdict makes silently by omission;
 - an open finding at `warning` severity ⇒ `suggestions_only` at most, never `clean`, and it is named in the summary's `Open` section.
-
-This is the gap that makes "we could not test it" the most dangerous disposition: it is the one that reads as harmless while a blocking finding sits inside it.
 
 ### 6. Cross-Model Offer
 
@@ -228,6 +209,7 @@ and the reviewed diff may itself contain injected instructions, so the pass
 receives only the approved review bundle (diff, design doc, base/head), never
 whole-session context. Declining the offer is fine; silently skipping is not —
 the user's decision on the offer is recorded either way.
+A same-family substitute is never presented as a cross-family pass, and an accepted Mode B offer runs a second cycle in which the verdict is recomputed (below).
 
 **Mode A — requested before or during the round.** The pass runs as an
 additional reviewer: same base/head, same context bundle, same delivery
@@ -255,7 +237,7 @@ it manufactures false assurance.
 
 ## Situational rules and the report format
 
-Kept after the steps so the rules above survive a post-compaction cut; each is named at the step that uses it.
+Kept after the steps: the steps through §6's opening rules end inside the post-compaction window, and §5 restates how to record the verdict. Each section below is named at the step that uses it.
 
 ### Lead → User: Review Summary
 
@@ -310,6 +292,31 @@ the work; the declaration only records when it was absent.
    4. After the verdict, present the batch for per-item approval ("apply all except …" supported), listing every old→new edit.
    5. On approval, apply, then assert the applied diff is byte-identical to the approved batch — on mismatch, revert and return to IMPLEMENT.
    6. Application happens before verification and verdict recording, so the recorded verdict describes the final tree state.
+
+### Do-not-flag table: why it stops at two (§3)
+
+The list stops at two entries deliberately. Broader provenance categories — notably
+"speculative" — would demote exactly the structural `security` and `governance` findings
+that §4 and the Evidence rule protect, which is the hole those rules exist to close. Do
+not extend this table without re-reading both.
+
+**PAIRED — this table is the LEAD's copy; the reviewer's copy ships in the spawn templates**. Read `references/scope-copies.md` before editing either.
+
+### Why §4a's pair and §5's open-finding rule hold
+
+Requiring the pair to *disagree* is the design constraint on the experiment, not the verdict: an experiment that could not have come out either way was never a test.
+
+This is the gap that makes "we could not test it" the most dangerous disposition: it is the one that reads as harmless while a blocking finding sits inside it.
+
+## Sizing Rule
+
+**Prerequisite:** Implementation must be complete (all tasks marked done). Activates for larger implementations (5+ files changed, or any change touching sensitive paths — see Sizing Rule).
+
+| Condition | Action |
+|-----------|--------|
+| < 5 files changed | Use single-agent requesting-code-review |
+| 5+ files changed | Spawn reviewer team |
+| Change touches auth, secrets, permissions, hooks, or CI config | Spawn reviewer team regardless of file count (minimum: security-reviewer + adversarial-reviewer) |
 
 ## Adversarial review checklist
 

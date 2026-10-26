@@ -170,6 +170,64 @@ done <<'SECTIONS'
 ### 5. Verdict Routing|3|§5
 SECTIONS
 
+# --- What runs every time past the cut is restated inside the window ---------
+# Recording the verdict (after Verification) and §6's Mode B and same-family
+# rules sit past the cut; §5 and §6's opening paragraph restate them, and each
+# restated line is pinned on its own, so moving one past the cut fails by name.
+SECTION_5="$(awk '/^### 5\./{f=1;next} f && /^#+ /{exit} f' "${SKILL}")"
+SECTION_6_OPEN="$(awk '/^### 6\./{f=1;next} f && /^\*\*Mode A/{exit} f' "${SKILL}")"
+assert_contains "§5 routes clean through recording before SHIP" \
+    '| `clean` | TeamDelete → cross-model offer (§6, when applicable) → record the verdict → proceed to SHIP |' "${SECTION_5}"
+assert_contains "§5 routes suggestions_only through recording before SHIP" \
+    '| `suggestions_only` | TeamDelete → cross-model offer (§6, when applicable) → record the verdict → proceed to SHIP |' "${SECTION_5}"
+assert_contains "§5 records once, after §6 resolves" \
+    '**Then record the verdict** (Record the Review Verdict, after Verification), once, after §6 resolves' "${SECTION_5}"
+assert_contains "§5 restates: clean only when every actionable finding was resolved or accepted" \
+    '`--verdict clean` ONLY when every actionable finding was resolved or explicitly accepted' "${SECTION_5}"
+assert_contains "§5 restates: findings-open with the real count" \
+    '`findings-open` with the real `--unresolved-blocking` count otherwise' "${SECTION_5}"
+assert_contains "§5 restates: could-not-review when a lens never delivered" \
+    '`could-not-review` when a lens never delivered' "${SECTION_5}"
+assert_contains "§5 restates: --self-authored when this context wrote the diff" \
+    'pass `--self-authored` when this context authored the diff' "${SECTION_5}"
+assert_contains "§5 restates: never read the singleton token" \
+    'never read `~/.claude/.skill-session-token`' "${SECTION_5}"
+assert_contains "§6 opening restates: a same-family substitute is never a cross-family pass" \
+    'A same-family substitute is never presented as a cross-family pass' "${SECTION_6_OPEN}"
+assert_contains "§6 opening names Mode B's second cycle and recomputed verdict" \
+    'an accepted Mode B offer runs a second cycle in which the verdict is recomputed' "${SECTION_6_OPEN}"
+# _line_end <line-prefix> — byte offset where the first unfenced line starting
+# with the prefix ends (same fence rule as _section_end).
+_line_end() {
+    LC_ALL=C awk -v h="$1" '
+        match($0, /^[[:space:]]*(```+|~~~+)/) {
+            _m = substr($0, RSTART, RLENGTH); sub(/^[[:space:]]*/, "", _m)
+            if (!fl) { fc = substr(_m, 1, 1); fl = length(_m) }
+            else if (substr(_m, 1, 1) == fc && length(_m) >= fl && substr($0, RSTART + RLENGTH) ~ /^[[:space:]]*$/) fl = 0
+        }
+        { n += length($0) + 1 }
+        !fl && index($0, h) == 1 { print n; exit }
+    ' "${SKILL}"
+}
+while IFS='|' read -r _p _label; do
+    [ -n "${_p}" ] || continue
+    _end="$(_line_end "${_p}")"
+    case "${_end}" in
+        ''|*[!0-9]*)
+            _record_fail "${_label} ends within the first ${REATTACH_BYTES} bytes" "'${_p}' not found" ;;
+        *)
+            if [ "${_end}" -le "${REATTACH_BYTES}" ]; then
+                _record_pass "${_label} ends within the first ${REATTACH_BYTES} bytes (byte ${_end})"
+            else
+                _record_fail "${_label} ends within the first ${REATTACH_BYTES} bytes" \
+                    "it ends at byte ${_end}, past the re-attach cut"
+            fi ;;
+    esac
+done <<'LINES'
+**Then record the verdict**|§5 record-the-verdict restatement
+A same-family substitute is never presented as a cross-family pass|§6 same-family and Mode B restatement
+LINES
+
 # --- References index: every references/*.md is named from SKILL.md ---------
 # A file the core never names is never Read, and a named file must exist.
 _refs_n=0
