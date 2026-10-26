@@ -12,7 +12,7 @@
 
 - **`runtime-validation`'s SHIP fallback.** It also covers API and CLI checks. A gate keyed on frontend tooling would hide those, so there is no single precondition to gate it on.
 - **The phase-map lines.** They describe the flow, not a step to run now.
-- **The AUTONOMY CHECK and EVAL STRATEGY hints.** The canonical `pdlc-safety` spec ("eval-strategy classification at DESIGN") requires EVAL STRATEGY to be an always-on DESIGN hint. AUTONOMY CHECK's wording is pinned by the open change `autonomy-control-coherence`, and the canonical `skill-routing` hint-brevity scenario requires its procedure to stay in `skills/agent-safety-review/SKILL.md`. Gating either would contradict those.
+- **The AUTONOMY CHECK and EVAL STRATEGY hints.** The canonical `pdlc-safety` spec ("eval-strategy classification at DESIGN") requires EVAL STRATEGY to be an always-on DESIGN hint. For AUTONOMY CHECK, the open change `autonomy-control-coherence` (`specs/pdlc-safety/spec.md`, "Autonomy↔Control Coherence Guidance at DESIGN") requires the guidance to be "model-assessed from the actual design (not keyword-triggered)". An artifact-presence gate is a deterministic file-presence test, so it would decide whether the guidance appears without the model assessing the design. Gating either hint would contradict those requirements.
 
 ## Risks
 
