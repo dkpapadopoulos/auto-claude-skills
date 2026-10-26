@@ -800,6 +800,20 @@ assert_equals "CONTROL: the pre-registered probabilities still yield a band" "DE
     "$( ( . "${PROJECT_ROOT}/hooks/lib/shadow-corpus.sh" 2>/dev/null
           ALPHA=0.05 DENY_P=0.10 ADVISORY_P=0.20 shadow_band 0 29 ) 2>/dev/null )"
 
+# --rate-episodes lists exactly the adjudicable (current predicate version, would-block) episodes.
+_re_l="${TMP}/re.jsonl"; _re_a="${TMP}/re-adj.jsonl"
+: > "${_re_l}"; : > "${_re_a}"
+_rec "${_re_l}" re1 "2026-09-10T10:00:00Z" /repo/x main tok-re1 absent
+_rec "${_re_l}" re2 "2026-09-10T12:00:00Z" /repo/y "" tok-re2 absent
+_rec "${_re_l}" re3 "2026-09-10T14:00:00Z" /repo/z feat tok-re3 absent
+_rec "${_re_l}" reOLD "2026-09-10T16:00:00Z" /repo/w main tok-re4 absent 1
+_re_out="$(REVIEW_SHADOW_LOG="${_re_l}" REVIEW_ADJUDICATION_LOG="${_re_a}" /bin/bash "${SUT}" --rate-episodes 2>/dev/null)"; _re_rc=$?
+assert_equals "--rate-episodes exits 0" "0" "${_re_rc}"
+assert_equals "--rate-episodes prints the 3 current-version episodes" "3" "$(printf '%s\n' "${_re_out}" | grep -c .)"
+assert_equals "no line names the older-version record" "0" "$(printf '%s\n' "${_re_out}" | grep -c reOLD)"
+assert_equals "every line has 5 tab-separated fields" "5" \
+    "$(printf '%s\n' "${_re_out}" | awk -F'\t' '{print NF}' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+
 # ---------------------------------------------------------------------------
 # 23. The writer-absent fallback literal EQUALS the producer's constant.
 #     Section 2 checks only that it is numeric. Measured at Task 8's review:

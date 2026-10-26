@@ -191,8 +191,37 @@ echo "=== test-injection-budget.sh ==="
 # on their own line that git push is denied until the Skill has been invoked
 # on this branch, while the guard would deny. +154 bytes per shape that
 # renders a chain, on the three chained shapes.
-# Per-shape bytes now 964 / 5295 / 6558 / 3153 / 4614 / 1795.
-_INJECTION_BASELINE=22379
+# Per-shape bytes then 964 / 5295 / 6558 / 3153 / 4614 / 1795.
+#
+# 22379 -> 22166 (2026-10-26, superpowers-701-alignment): the routing text
+# stops contradicting superpowers 7.0.1. DESIGN -187: three red flags that
+# restate brainstorming's own rules are cut (166), the verification-before-
+# completion description now says what the skill does (93 -> 80, -13, it is
+# in the DESIGN chain), and the brainstorming precondition moves the trifecta
+# step before design approval (-8). REVIEW and SHIP -13 each: that same
+# description. Per-shape bytes then 964 / 5108 / 6545 / 3153 / 4601 / 1795.
+#
+# 22166 -> 22172 (2026-10-26, same change, owner ruling): a deliberate +6 on
+# DESIGN. The brainstorming precondition gets back "from its data flow" (how
+# to classify the trifecta is the substance of the line), 749 -> 755 bytes,
+# still under the 757 it replaced. Per-shape bytes then
+# 964 / 5114 / 6545 / 3153 / 4601 / 1795.
+#
+# 22172 -> 22205 (2026-10-26, same change, review finding I1): a deliberate
+# +33 on DESIGN. brainstorming 7.0.1 can end with NO design doc (the user's
+# "just dive in" opt-out, or a quick, clear task), and on that path "before
+# it is approved" never comes, so the trifecta check lapsed. The precondition
+# adds "(no design doc: before building)", 755 -> 788 bytes. The EVAL
+# STRATEGY hint took the same timing at no cost (353 -> 353). Per-shape
+# bytes then 964 / 5147 / 6545 / 3153 / 4601 / 1795.
+#
+# 22205 -> 22225 (2026-10-26, same change, re-review finding R1-M1): a
+# deliberate +20 on DESIGN. The no-doc clause re-timed only the invocation,
+# while the classification's stated home (the design doc) does not exist on
+# that path; it now reads "(no design doc: classify and invoke before
+# building)", 788 -> 808 bytes. Per-shape bytes now
+# 964 / 5167 / 6545 / 3153 / 4601 / 1795.
+_INJECTION_BASELINE=22225
 _MIN_SHAPES=6
 
 setup_test_env

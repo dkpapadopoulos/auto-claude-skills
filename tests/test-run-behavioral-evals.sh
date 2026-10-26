@@ -675,4 +675,81 @@ assert_equals "subject pin to different model: exits 0" "0" "${exit_code}"
 assert_contains "subject pin to different model: judge assertion PASSes" "PASS [0/judge]" "${output}"
 assert_not_contains "subject pin to different model: judge NOT unparseable" "judge-unparseable" "${output}"
 
+# ---------------------------------------------------------------------------
+# Multi-turn resume: the turn-2 `--resume` call must carry the same optional
+# flags as turn 1 (--model, --bare). Assertions score the TURN-2 output, so a
+# resume call that drops --model runs the scored turn on the default model
+# while the artifact records turn 1's pin. A stub `claude` first on PATH logs
+# each invocation's argv to argv.<n>; no real claude, no API.
+# ---------------------------------------------------------------------------
+echo "-- multi-turn resume: turn 2 carries --model and --bare --"
+
+RESUME_STUB_DIR="$(mktemp -d -t acs-resume.XXXXXX)"
+cat > "${RESUME_STUB_DIR}/claude" <<'EOF'
+#!/bin/bash
+cat > /dev/null
+n="$(cat "${RESUME_STUB_DIR}/count" 2>/dev/null || printf '0')"
+n=$((n + 1))
+printf '%s' "${n}" > "${RESUME_STUB_DIR}/count"
+printf '%s\n' "$@" > "${RESUME_STUB_DIR}/argv.${n}"
+# Each turn reports a different model in modelUsage (no top-level .model, as
+# the real CLI emits), so the artifact can be checked for the SCORED turn's.
+jq -n --arg r "turn ${n} reply" --arg m "stub-model-${n}" \
+    '{type:"result", result:$r, session_id:"stub-session-1", modelUsage:{($m):{}}}'
+EOF
+chmod +x "${RESUME_STUB_DIR}/claude"
+jq -n '[{id:"resume-scenario", prompt:"turn one ask", followup:"turn two answer",
+        expected_behavior:"multi-turn flag threading",
+        assertions:[{text:"turn 2 reply", description:"scores the turn-2 output"}]}]' \
+    > "${RESUME_STUB_DIR}/pack.json"
+
+# Prints the argv token following <flag> in <argv-file>, or nothing.
+_resume_flag_value() {
+    awk -v f="$2" 'prev == f { print; exit } { prev = $0 }' "$1" 2>/dev/null
+}
+
+output="$(RESUME_STUB_DIR="${RESUME_STUB_DIR}" PATH="${RESUME_STUB_DIR}:${PATH}" \
+    BEHAVIORAL_EVALS=1 CLAUDE_BIN=claude \
+    ARTIFACTS_DIR="${RESUME_STUB_DIR}/art" \
+    SKILL_PATH="${PROJECT_ROOT}/skills/incident-analysis/SKILL.md" \
+    bash "${RUNNER}" --scenario resume-scenario --model resume-pin-model --bare \
+    --pack "${RESUME_STUB_DIR}/pack.json" 2>&1)"
+
+assert_equals "resume: stub claude invoked exactly twice" "2" "$(cat "${RESUME_STUB_DIR}/count" 2>/dev/null)"
+assert_equals "resume: call 2 is the --resume of call 1's session" "stub-session-1" \
+    "$(_resume_flag_value "${RESUME_STUB_DIR}/argv.2" --resume)"
+assert_contains "resume: the turn-2 output is what gets scored" "PASS [0/text]" "${output}"
+assert_equals "resume: turn 1 carries --model" "resume-pin-model" \
+    "$(_resume_flag_value "${RESUME_STUB_DIR}/argv.1" --model)"
+assert_equals "resume: turn 2 carries the same --model" "resume-pin-model" \
+    "$(_resume_flag_value "${RESUME_STUB_DIR}/argv.2" --model)"
+assert_equals "resume: turn 1 carries --bare" "1" \
+    "$(grep -cxF -- '--bare' "${RESUME_STUB_DIR}/argv.1" 2>/dev/null)"
+assert_equals "resume: turn 2 carries --bare" "1" \
+    "$(grep -cxF -- '--bare' "${RESUME_STUB_DIR}/argv.2" 2>/dev/null)"
+
+# The artifact's model is the scored turn's (turn 2), and models_all keeps both.
+resume_artifact="$(ls "${RESUME_STUB_DIR}"/art/resume-scenario-*.json 2>/dev/null | head -n1)"
+assert_not_empty "resume: an artifact was written" "${resume_artifact}"
+assert_equals "resume: artifact model is the scored turn-2 model" "stub-model-2" \
+    "$(jq -r '.model' "${resume_artifact}" 2>/dev/null)"
+assert_equals "resume: artifact models_all holds both turns' models" '["stub-model-1","stub-model-2"]' \
+    "$(jq -c '.models_all' "${resume_artifact}" 2>/dev/null)"
+
+# Without the optional flags, turn 2 forwards neither.
+rm -f "${RESUME_STUB_DIR}/count" "${RESUME_STUB_DIR}"/argv.*
+RESUME_STUB_DIR="${RESUME_STUB_DIR}" PATH="${RESUME_STUB_DIR}:${PATH}" \
+    BEHAVIORAL_EVALS=1 CLAUDE_BIN=claude \
+    ARTIFACTS_DIR="${RESUME_STUB_DIR}/art" \
+    SKILL_PATH="${PROJECT_ROOT}/skills/incident-analysis/SKILL.md" \
+    bash "${RUNNER}" --scenario resume-scenario \
+    --pack "${RESUME_STUB_DIR}/pack.json" >/dev/null 2>&1
+assert_equals "resume (no flags): stub claude invoked exactly twice" "2" "$(cat "${RESUME_STUB_DIR}/count" 2>/dev/null)"
+assert_equals "resume (no flags): turn 2 forwards no --model" "0" \
+    "$(grep -cxF -- '--model' "${RESUME_STUB_DIR}/argv.2" 2>/dev/null)"
+assert_equals "resume (no flags): turn 2 forwards no --bare" "0" \
+    "$(grep -cxF -- '--bare' "${RESUME_STUB_DIR}/argv.2" 2>/dev/null)"
+
+rm -rf "${RESUME_STUB_DIR}"
+
 print_summary

@@ -2496,10 +2496,7 @@ HALT if any Red Flag is true:
   DESIGN)
     RED_FLAGS="
 HALT if any Red Flag is true:
-- Editing implementation files before invoking Skill(superpowers:brainstorming)
-- Skipping design presentation and user approval
-- Jumping to writing code without exploring approaches first
-- Not writing a design doc before transitioning to PLAN"
+- Editing implementation files before invoking Skill(superpowers:brainstorming)"
     ;;
   PLAN)
     RED_FLAGS="
@@ -2507,7 +2504,7 @@ HALT if any Red Flag is true:
 - Editing implementation files before invoking Skill(superpowers:writing-plans)
 - Implementing without an approved plan document
 - Skipping TDD steps in the plan
-- Not saving the plan to docs/plans/ before executing"
+- Executing before the approved plan is saved to a file"
     ;;
   IMPLEMENT)
     RED_FLAGS="
@@ -2516,7 +2513,7 @@ HALT if any Red Flag is true:
 - Skipping TDD: writing implementation before writing the failing test
 - Not following the plan step by step
 - Jumping to SHIP without going through REVIEW (requesting-code-review) first
-- Not using subagent-driven-development or agent-team-execution for parallelizable tasks"
+- Not using the execution method the user chose at the plan handoff"
     ;;
   REVIEW)
     RED_FLAGS="

@@ -567,6 +567,14 @@ EOF
     return 0
 }
 
+# cmd_rate_episodes — every _episodes row, unchanged (tab-separated). _episodes
+# is already would-block-only and at the adjudicable predicate version only, so this is the rate population.
+# stdout carries only those rows.
+cmd_rate_episodes() {
+    _episodes
+    return 0
+}
+
 # cmd_evidence_miss — of the would-block EPISODES at the adjudicable predicate
 # version, how many contain a record whose witness is an allowlisted reviewer
 # that returned on a commit covering the push (review_witness
@@ -705,6 +713,7 @@ _usage() {
 usage: $0 <command>
 
   --status                      episode-level readout and the pre-registered band
+  --rate-episodes               TSV of the episodes the rate is computed over
   --next                        oldest unadjudicated record, with how to label it
   --adjudicate <record_id> --verdict true_catch|false_block|unknown [--reason <text>]
   --evidence-miss               would-block episodes in which an allowlisted reviewer
@@ -722,6 +731,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --status)     _CMD=status ;;
         --next)       _CMD=next ;;
+        --rate-episodes) _CMD=rate_episodes ;;
         --evidence-miss) _CMD=evidence-miss ;;
         --adjudicate) _CMD=adjudicate; shift; _RID="${1:-}" ;;
         --verdict)    shift; _VERDICT="${1:-}" ;;
@@ -734,6 +744,7 @@ done
 case "${_CMD}" in
     status)     cmd_status ;;
     next)       cmd_next ;;
+    rate_episodes) cmd_rate_episodes ;;
     evidence-miss) cmd_evidence_miss ;;
     adjudicate) cmd_adjudicate "${_RID}" "${_VERDICT}" "${_REASON}" ;;
     *)          _usage >&2; exit 1 ;;
