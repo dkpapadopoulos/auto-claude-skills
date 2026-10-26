@@ -199,8 +199,14 @@ echo "=== test-injection-budget.sh ==="
 # completion description now says what the skill does (93 -> 80, -13, it is
 # in the DESIGN chain), and the brainstorming precondition moves the trifecta
 # step before design approval (-8). REVIEW and SHIP -13 each: that same
-# description. Per-shape bytes now 964 / 5108 / 6545 / 3153 / 4601 / 1795.
-_INJECTION_BASELINE=22166
+# description. Per-shape bytes then 964 / 5108 / 6545 / 3153 / 4601 / 1795.
+#
+# 22166 -> 22172 (2026-10-26, same change, owner ruling): a deliberate +6 on
+# DESIGN. The brainstorming precondition gets back "from its data flow" (how
+# to classify the trifecta is the substance of the line), 749 -> 755 bytes,
+# still under the 757 it replaced. Per-shape bytes now
+# 964 / 5114 / 6545 / 3153 / 4601 / 1795.
+_INJECTION_BASELINE=22172
 _MIN_SHAPES=6
 
 setup_test_env

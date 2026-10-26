@@ -49,10 +49,12 @@
 # the hook source. D4 also watches brainstorming for the two 7.0.1 phrases this rests on:
 # "invoke superpowers:writing-plans and no other skill" and "Write the design doc".
 #   * the using-superpowers registry entry was deleted from both configs: it had no
-#     triggers, keywords or composition reference, so it could never be selected, and
+#     triggers, keywords or composition reference, so no routing rule selected it, and
 #     superpowers injects that skill itself at SessionStart. Session-start discovery still
 #     lists it, as a triggerless "Discovered skill" like every other uncurated superpowers
-#     skill.
+#     skill. Measured before and after: only a prompt containing the literal name
+#     "using-superpowers" selects it (the scorer's name boost), and that prompt now shows
+#     Phase [IMPLEMENT] rather than [DESIGN], because a discovered entry has no phase.
 #
 # LIMITS, stated: D2 is substring presence. It would accept "never do a whole-branch review".
 # It pins the specific contradictions found on 2026-10-04, not "the descriptions are right".
@@ -145,10 +147,11 @@ assert_contains "D2: executing-plans describes inline execution" "Inline executi
 assert_contains "D2: executing-plans names the whole-branch review" "whole-branch review" "$(desc "${CFG}" executing-plans)"
 assert_contains "D2: subagent-driven-development names the whole-branch review" "whole-branch review" "$(desc "${CFG}" subagent-driven-development)"
 _p="$(pre "${CFG}" brainstorming)"
-assert_contains "D2: the trifecta classification goes in the design doc" \
-    "outbound_action in the design doc." "${_p}"
+# One sentence on purpose: "it" in "before it is approved" can only be the design doc.
+assert_contains "D2: the design doc carries the trifecta classification, from its data flow" \
+    "TRIFECTA: the design doc classifies private_data / untrusted_input / outbound_action from its data flow;" "${_p}"
 assert_contains "D2: agent-safety-review is invoked before the design doc is approved" \
-    "invoke Skill(auto-claude-skills:agent-safety-review) before the design doc is approved" "${_p}"
+    "; if >=2 are Present (or Unknowns could reach 2), invoke Skill(auto-claude-skills:agent-safety-review) before it is approved, or record the skip:" "${_p}"
 assert_contains "D2: the skip remedy and its {{PLUGIN_ROOT}} placeholder are unchanged" \
     "or record the skip: source '{{PLUGIN_ROOT}}/hooks/lib/phase-attest.sh'; phase_attest agent-safety-review \"<why the trifecta is <2>\"." "${_p}"
 assert_contains "D2: the product-discovery clause is unchanged" \
