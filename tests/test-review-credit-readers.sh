@@ -254,26 +254,28 @@ _p3_fresh
 _SGCOPY="${TEST_TMPDIR}/plugin"
 mkdir -p "${_SGCOPY}"
 cp -R "${PROJECT_ROOT}/hooks" "${PROJECT_ROOT}/scripts" "${_SGCOPY}/"
-_sg_root() {  # <plugin-root> <skill>
+# The root is FIXED to the copy, not a parameter: the control and every mutant
+# run under the same CLAUDE_PLUGIN_ROOT and differ only in the lib's bytes.
+_sg_copy() {  # <skill>
     : > "${HOME}/.claude/.phase-gate-events.log"
-    ( cd "${REPO}" && printf '{"tool_name":"Skill","tool_input":{"skill":"%s"},"transcript_path":"/tmp/proj/conv-X.jsonl"}' "$2" \
-        | CLAUDE_PLUGIN_ROOT="$1" SKILL_PROJECT_ROOT="${REPO}" /bin/bash "${GATE_HOOK}" 2>/dev/null )
+    ( cd "${REPO}" && printf '{"tool_name":"Skill","tool_input":{"skill":"%s"},"transcript_path":"/tmp/proj/conv-X.jsonl"}' "$1" \
+        | CLAUDE_PLUGIN_ROOT="${_SGCOPY}" SKILL_PROJECT_ROOT="${REPO}" /bin/bash "${GATE_HOOK}" 2>/dev/null )
 }
-_out="$(_sg_root "${_SGCOPY}" openspec-ship)"
+_out="$(_sg_copy openspec-ship)"
 assert_equals "P4 control: the copied root denies with no evidence" "deny" "$(_sg_dec "${_out}")"
 for _fault in false _acs_no_such_command_xyz; do
     awk -v f="${_fault}" 'NR==2{print f}1' "${PROJECT_ROOT}/hooks/lib/credited-skills.sh" \
         > "${_SGCOPY}/hooks/lib/credited-skills.sh"
     assert_contains "P4 fixture (${_fault}): the fault is in the lib" "${_fault}" \
         "$(sed -n 2p "${_SGCOPY}/hooks/lib/credited-skills.sh")"
-    _out="$(_sg_root "${_SGCOPY}" openspec-ship)"
+    _out="$(_sg_copy openspec-ship)"
     assert_equals "P4 lib runs '${_fault}' mid-file => still deny" "deny" "$(_sg_dec "${_out}")"
     assert_contains "P4 lib runs '${_fault}' mid-file => the deny names requesting-code-review" \
         "Step 'requesting-code-review'" "$(_sg_reason "${_out}")"
     # A non-REVIEW step must keep denying too: the fault reached every step.
     printf '{"chain":["brainstorming","writing-plans"],"completed":[]}\n' \
         > "${HOME}/.claude/.skill-composition-state-${_TOK}"
-    _out="$(_sg_root "${_SGCOPY}" writing-plans)"
+    _out="$(_sg_copy writing-plans)"
     assert_equals "P4 lib runs '${_fault}' mid-file => a non-REVIEW step still denies" "deny" "$(_sg_dec "${_out}")"
     printf '{"chain":["requesting-code-review","openspec-ship"],"completed":[]}\n' \
         > "${HOME}/.claude/.skill-composition-state-${_TOK}"

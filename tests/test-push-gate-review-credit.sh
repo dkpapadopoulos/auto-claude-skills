@@ -516,7 +516,12 @@ else
     _record_fail "R17c control: the shim counts git calls" "count is ${_N0:-empty}"
 fi
 assert_equals "R17c control: the count is stable across runs" "${_N0}" "${_N0b}"
-assert_equals "R17d security-review / review-pr sidecar lines add no git fork" "${_N0}" "${_N1}"
+# The shim PREPENDS a counter to PATH and needs the real git behind it: git is
+# never meant to be absent here, so the label says "zero extra git calls" rather
+# than a phrase that reads as a tool-absence claim.
+_GIT_FOUND="$( PATH="${_SHIM}:${PATH}"; command -v git 2>/dev/null )"
+assert_equals "R17c control: git resolves to the counting shim, not around it" "${_SHIM}/git" "${_GIT_FOUND}"
+assert_equals "R17d security-review / review-pr sidecar lines add zero extra git calls" "${_N0}" "${_N1}"
 if [ "${_N2:-0}" -gt "${_N0:-0}" ]; then
     _record_pass "R17e control: a sidecar line for one of the four does add forks (${_N0} -> ${_N2})"
 else
