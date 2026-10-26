@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": "",
+  "plan_path": "",
+  "spec_path": null,
+  "sp_plan_path": "",
+  "sp_spec_path": null,
+  "change_slug": "review-credit-from-evidence",
+  "capability_slug": "",
+  "source_branch": "docs/archive-2026-10-26",
+  "base_commit": "058927c7e2e5c016d728592882e6404efb24855a",
+  "openspec_surface": "none",
+  "archived_at": "2026-10-26T21:52:18Z"
+}
