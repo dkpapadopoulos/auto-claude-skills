@@ -502,8 +502,11 @@ ${CONSTRUCTED_PROMPT}"
         SID="$(printf '%s' "${CLAUDE_JSON}" | jq -r '.session_id // empty')"
         if [ -n "${SID}" ]; then
             RAW_OUTPUT_T1="${RAW_OUTPUT}"
+            # Same optional flags as turn 1: the assertions score THIS turn, so
+            # dropping --model here would run the scored turn unpinned.
             CLAUDE_JSON2="$(printf '%s' "${FOLLOWUP_TEXT}" | "${CLAUDE_BIN}" -p --resume "${SID}" --output-format json \
-                --disallowedTools "${SANDBOX_TOOLS}" 2>&1)"
+                --disallowedTools "${SANDBOX_TOOLS}" \
+                ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} 2>&1)"
             claude2_exit=$?
             if [ "${claude2_exit}" -eq 0 ]; then
                 RAW2="$(printf '%s' "${CLAUDE_JSON2}" | jq -r '.result // empty')"
