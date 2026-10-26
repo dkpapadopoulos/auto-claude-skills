@@ -105,7 +105,7 @@ During Lead Synthesis the system MUST apply a severity floor to `quality`- and `
 
 ### Requirement: The quality-reviewer lens asks whether a change fixes the root cause or routes around it
 
-The `quality-reviewer` brief in `skills/agent-team-review/SKILL.md` MUST ask whether the diff is proportional to the defect and whether each added conditional corrects the root cause or routes around one that stays unfixed. The question SHALL treat "the root cause is still unfixed and this survives it" as the finding, and SHALL NOT treat the existence of a compensating layer as a finding in itself: a bridge, fallback, or sidecar is legitimate when the root cause is also fixed and the residual gap it closes is stated.
+The `quality-reviewer` brief in `skills/agent-team-review/references/reviewer-prompts.md` MUST ask whether the diff is proportional to the defect and whether each added conditional corrects the root cause or routes around one that stays unfixed. The question SHALL treat "the root cause is still unfixed and this survives it" as the finding, and SHALL NOT treat the existence of a compensating layer as a finding in itself: a bridge, fallback, or sidecar is legitimate when the root cause is also fixed and the residual gap it closes is stated.
 
 The question SHALL require the reviewer to name the input that still fails. That is the observable failure path the severity floor already demands of `quality`-category findings, so a real finding survives triage while a speculative one is correctly floored. The severity floor MUST NOT be given a carve-out for this question, because exempting it would reopen the nit accretion the floor exists to prevent.
 

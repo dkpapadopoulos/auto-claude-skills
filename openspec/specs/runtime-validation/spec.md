@@ -89,7 +89,7 @@ honesty convention of the Lighthouse perf overlay.
 
 #### Scenario: Report carries the session-scope caveat
 
-- **GIVEN** the visual-regression report section in `skills/runtime-validation/SKILL.md`
+- **GIVEN** the visual-regression report section in `skills/runtime-validation/references/report-template.md`
 - **WHEN** the section is inspected
 - **THEN** it SHALL include a note that diffing is session-scoped and that durable regression is
   delegated to the consumer's committed snapshot suite

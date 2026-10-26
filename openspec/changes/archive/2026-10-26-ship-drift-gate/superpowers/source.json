@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": null,
+  "plan_path": null,
+  "spec_path": null,
+  "sp_plan_path": null,
+  "sp_spec_path": null,
+  "change_slug": "ship-drift-gate",
+  "capability_slug": null,
+  "source_branch": "docs/archive-2026-10-26",
+  "base_commit": "058927c7e2e5c016d728592882e6404efb24855a",
+  "openspec_surface": "none",
+  "archived_at": "2026-10-26T21:52:18Z"
+}
