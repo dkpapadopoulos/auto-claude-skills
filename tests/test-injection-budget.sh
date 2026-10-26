@@ -204,9 +204,17 @@ echo "=== test-injection-budget.sh ==="
 # 22166 -> 22172 (2026-10-26, same change, owner ruling): a deliberate +6 on
 # DESIGN. The brainstorming precondition gets back "from its data flow" (how
 # to classify the trifecta is the substance of the line), 749 -> 755 bytes,
-# still under the 757 it replaced. Per-shape bytes now
+# still under the 757 it replaced. Per-shape bytes then
 # 964 / 5114 / 6545 / 3153 / 4601 / 1795.
-_INJECTION_BASELINE=22172
+#
+# 22172 -> 22205 (2026-10-26, same change, review finding I1): a deliberate
+# +33 on DESIGN. brainstorming 7.0.1 can end with NO design doc (the user's
+# "just dive in" opt-out, or a quick, clear task), and on that path "before
+# it is approved" never comes, so the trifecta check lapsed. The precondition
+# adds "(no design doc: before building)", 755 -> 788 bytes. The EVAL
+# STRATEGY hint took the same timing at no cost (353 -> 353). Per-shape
+# bytes now 964 / 5147 / 6545 / 3153 / 4601 / 1795.
+_INJECTION_BASELINE=22205
 _MIN_SHAPES=6
 
 setup_test_env

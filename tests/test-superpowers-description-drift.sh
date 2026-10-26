@@ -39,7 +39,10 @@
 # user choose Subagent-driven or Native and saves to docs/superpowers/plans/ by default. Our
 # text contradicted all three:
 #   * the brainstorming precondition said to invoke agent-safety-review "before leaving
-#     DESIGN" — after approval, where the backbone allows only writing-plans;
+#     DESIGN" — after approval, where the backbone allows only writing-plans. It now says
+#     before the design doc is approved, and before building when brainstorming ends with no
+#     design doc (opt-out, or a quick, clear task), so the check does not lapse there. The
+#     DESIGN EVAL STRATEGY hint (it names Skill(runtime-validation)) gets the same timing;
 #   * the PLAN red flag demanded docs/plans/, so a correct superpowers run read as a violation;
 #   * the IMPLEMENT red flag pushed subagent-driven-development / agent-team-execution over
 #     the method the user chose at the handoff.
@@ -114,6 +117,8 @@ fi
 
 desc() { jq -r --arg n "$2" '[.skills[] | select(.name == $n)][0].description // ""' "$1"; }
 pre() { jq -r --arg n "$2" '[.skills[] | select(.name == $n)][0].precondition // ""' "$1"; }
+# The DESIGN hint whose text starts with the label in $2 (first match; "" when absent).
+hint() { jq -r --arg l "$2" '[.phase_compositions.DESIGN.hints[]?.text | strings | select(startswith($l))][0] // ""' "$1"; }
 
 # D1 (7.0.1): stale text scoped to its FIELD, not the file. "before leaving DESIGN" is
 # also in the DESIGN AUTONOMY CHECK hint, which designs oversight rather than invoking a
@@ -128,6 +133,16 @@ for _f in "${CFG}" "${FB}"; do
     fi
     assert_not_contains "D1: brainstorming precondition in ${_f##*/} does not say 'before leaving DESIGN'" "before leaving DESIGN" "${_p}"
     assert_not_contains "D1: verification-before-completion in ${_f##*/} does not promise 'no TODOs, docs updated'" "no TODOs, docs updated" "${_v}"
+    # EVAL STRATEGY names Skill(runtime-validation) on every DESIGN render, so its timing is
+    # the same contradiction as the trifecta's. Case-insensitive: it once opened "Before".
+    _e="$(hint "${_f}" "EVAL STRATEGY:")"
+    if [ -z "${_e}" ]; then
+        _record_fail "D1: EVAL STRATEGY hint readable in ${_f##*/}" "empty; the 'is absent' cell would pass vacuously"
+    elif printf '%s' "${_e}" | grep -qiF 'before leaving DESIGN'; then
+        _record_fail "D1: EVAL STRATEGY hint in ${_f##*/} does not say 'before leaving DESIGN'" "still present"
+    else
+        _record_pass "D1: EVAL STRATEGY hint in ${_f##*/} does not say 'before leaving DESIGN'"
+    fi
 done
 # The phase-enforcement eval's prompts are frozen hook output and keep "before leaving
 # DESIGN"; its criteria describe that frozen context and pass on the invocation alone. Only
@@ -151,7 +166,13 @@ _p="$(pre "${CFG}" brainstorming)"
 assert_contains "D2: the design doc carries the trifecta classification, from its data flow" \
     "TRIFECTA: the design doc classifies private_data / untrusted_input / outbound_action from its data flow;" "${_p}"
 assert_contains "D2: agent-safety-review is invoked before the design doc is approved" \
-    "; if >=2 are Present (or Unknowns could reach 2), invoke Skill(auto-claude-skills:agent-safety-review) before it is approved, or record the skip:" "${_p}"
+    "; if >=2 are Present (or Unknowns could reach 2), invoke Skill(auto-claude-skills:agent-safety-review) before it is approved (no design doc: before building), or record the skip:" "${_p}"
+# brainstorming 7.0.1 also ends with NO design doc (the "just dive in" opt-out, the quick,
+# clear task path). Without this clause "before it is approved" never comes and the check lapses.
+assert_contains "D2: with no design doc, agent-safety-review is invoked before building" \
+    "(no design doc: before building)" "${_p}"
+assert_contains "D2: EVAL STRATEGY classifies verification before design-doc approval, or before building with no doc" \
+    "EVAL STRATEGY: classify verification before design-doc approval (no doc: before building);" "$(hint "${CFG}" "EVAL STRATEGY:")"
 assert_contains "D2: the skip remedy and its {{PLUGIN_ROOT}} placeholder are unchanged" \
     "or record the skip: source '{{PLUGIN_ROOT}}/hooks/lib/phase-attest.sh'; phase_attest agent-safety-review \"<why the trifecta is <2>\"." "${_p}"
 assert_contains "D2: the product-discovery clause is unchanged" \
@@ -164,6 +185,7 @@ for _n in finishing-a-development-branch executing-plans subagent-driven-develop
     assert_equals "D3: fallback-registry.json has the same description for ${_n}" "$(desc "${CFG}" "${_n}")" "$(desc "${FB}" "${_n}")"
 done
 assert_equals "D3: fallback-registry.json has the same brainstorming precondition" "$(pre "${CFG}" brainstorming)" "$(pre "${FB}" brainstorming)"
+assert_equals "D3: fallback-registry.json has the same EVAL STRATEGY hint" "$(hint "${CFG}" "EVAL STRATEGY:")" "$(hint "${FB}" "EVAL STRATEGY:")"
 # The dead using-superpowers entry stays deleted. Counted with jq rather than grepped, so an
 # unparseable config reads as -1 and fails instead of reading as "absent".
 for _f in "${CFG}" "${FB}"; do
