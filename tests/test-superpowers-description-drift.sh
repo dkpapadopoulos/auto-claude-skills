@@ -30,6 +30,21 @@
 #       control, and this suite is the push gate, so an upstream reword must not turn it red.
 #       It prints UPSTREAM DRIFT or SKIPPED and counts as neither a pass nor a fail.
 #
+# Checked against superpowers 7.0.1 (2026-10-26; openspec change superpowers-701-alignment).
+# brainstorming's HARD-GATE ends "After the design doc is approved, the next step is the plan:
+# invoke superpowers:writing-plans and no other skill", and writing-plans' handoff lets the
+# user choose Subagent-driven or Native and saves to docs/superpowers/plans/ by default. Our
+# text contradicted all three:
+#   * the brainstorming precondition said to invoke agent-safety-review "before leaving
+#     DESIGN" — after approval, where the backbone allows only writing-plans;
+#   * the PLAN red flag demanded docs/plans/, so a correct superpowers run read as a violation;
+#   * the IMPLEMENT red flag pushed subagent-driven-development / agent-team-execution over
+#     the method the user chose at the handoff.
+# And verification-before-completion's description promised "no TODOs, docs updated", which
+# the skill does not say. D1-D3 cover those strings in both configs; R1-R3 are the openspec
+# scenarios, asserted on the RENDERED red flags (the hook run under an isolated HOME), not on
+# the hook source.
+#
 # LIMITS, stated: D2 is substring presence. It would accept "never do a whole-branch review".
 # It pins the specific contradictions found on 2026-10-04, not "the descriptions are right".
 # Still simplified on purpose: a detached HEAD gets two options, not three.
@@ -43,8 +58,9 @@ CFG="${PROJECT_ROOT}/config/default-triggers.json"
 FB="${PROJECT_ROOT}/config/fallback-registry.json"
 README="${PROJECT_ROOT}/README.md"
 EVAL="${PROJECT_ROOT}/tests/fixtures/composition-uptake/evals/behavioral.json"
+PE_EVAL="${PROJECT_ROOT}/tests/fixtures/phase-enforcement/evals/behavioral.json"
 # An unreadable file makes `grep -q` exit 2, which reads as "absent" — a pass on nothing.
-for _f in "${CFG}" "${FB}" "${README}" "${EVAL}"; do
+for _f in "${CFG}" "${FB}" "${README}" "${EVAL}" "${PE_EVAL}"; do
     if [ ! -r "${_f}" ] || [ ! -s "${_f}" ]; then
         _record_fail "readable and non-empty: ${_f##*/}" "missing, unreadable or empty; every 'is absent' cell on it would pass vacuously"
         print_summary; exit 1
@@ -86,6 +102,31 @@ else
 fi
 
 desc() { jq -r --arg n "$2" '[.skills[] | select(.name == $n)][0].description // ""' "$1"; }
+pre() { jq -r --arg n "$2" '[.skills[] | select(.name == $n)][0].precondition // ""' "$1"; }
+
+# D1 (7.0.1): stale text scoped to its FIELD, not the file. "before leaving DESIGN" is
+# also in the DESIGN AUTONOMY CHECK hint, which designs oversight rather than invoking a
+# skill and is out of this change's scope, so a file-level grep would fail on it. An empty
+# field is a failure, never a pass: "absent from nothing" is the vacuous case.
+for _f in "${CFG}" "${FB}"; do
+    _p="$(pre "${_f}" brainstorming)"
+    _v="$(desc "${_f}" verification-before-completion)"
+    if [ -z "${_p}" ] || [ -z "${_v}" ]; then
+        _record_fail "D1: brainstorming precondition and verification description readable in ${_f##*/}" "one is empty; the 'is absent' cells would pass vacuously"
+        continue
+    fi
+    assert_not_contains "D1: brainstorming precondition in ${_f##*/} does not say 'before leaving DESIGN'" "before leaving DESIGN" "${_p}"
+    assert_not_contains "D1: verification-before-completion in ${_f##*/} does not promise 'no TODOs, docs updated'" "no TODOs, docs updated" "${_v}"
+done
+# The phase-enforcement eval's prompts are frozen hook output and keep "before leaving
+# DESIGN"; its criteria describe that frozen context and pass on the invocation alone. Only
+# expected_behavior asked for the stale timing, so only it is held here.
+_pe_expect="$(jq -r '[.[] | .expected_behavior? // empty | strings] | join("\n")' "${PE_EVAL}" 2>/dev/null)"
+if [ -n "${_pe_expect}" ]; then
+    assert_not_contains "D1: no expected_behavior in phase-enforcement asks for the invocation 'before leaving DESIGN'" "before leaving DESIGN" "${_pe_expect}"
+else
+    _record_fail "D1: no expected_behavior in phase-enforcement asks for the invocation 'before leaving DESIGN'" "no expected_behavior could be read from the fixture"
+fi
 
 # D2: positive needles.
 assert_contains "D2: finishing names the three menu options" "(merge local, create PR, keep branch)" "$(desc "${CFG}" finishing-a-development-branch)"
@@ -94,11 +135,23 @@ assert_not_contains "D2: finishing does not promise worktree cleanup (PR and kee
 assert_contains "D2: executing-plans describes inline execution" "Inline execution" "$(desc "${CFG}" executing-plans)"
 assert_contains "D2: executing-plans names the whole-branch review" "whole-branch review" "$(desc "${CFG}" executing-plans)"
 assert_contains "D2: subagent-driven-development names the whole-branch review" "whole-branch review" "$(desc "${CFG}" subagent-driven-development)"
+_p="$(pre "${CFG}" brainstorming)"
+assert_contains "D2: the trifecta classification goes in the design doc" \
+    "outbound_action in the design doc." "${_p}"
+assert_contains "D2: agent-safety-review is invoked before the design doc is approved" \
+    "invoke Skill(auto-claude-skills:agent-safety-review) before the design doc is approved" "${_p}"
+assert_contains "D2: the skip remedy and its {{PLUGIN_ROOT}} placeholder are unchanged" \
+    "or record the skip: source '{{PLUGIN_ROOT}}/hooks/lib/phase-attest.sh'; phase_attest agent-safety-review \"<why the trifecta is <2>\"." "${_p}"
+assert_contains "D2: the product-discovery clause is unchanged" \
+    "PRECONDITION: if this is a new feature or initiative and no discovery brief with an Assumption Ledger exists (check session-state discovery_path or docs/plans/*-discovery.md), invoke Skill(auto-claude-skills:product-discovery) FIRST to surface and grade the load-bearing assumptions, then return to brainstorming. Skip for bugfixes, small changes, or work already covered by an approved brief. TRIFECTA:" "${_p}"
+assert_contains "D2: verification-before-completion says what the skill does" \
+    "Run the verification command fresh and read its output before any success claim." "$(desc "${CFG}" verification-before-completion)"
 
 # D3: the fallback copy matches.
-for _n in finishing-a-development-branch executing-plans subagent-driven-development; do
+for _n in finishing-a-development-branch executing-plans subagent-driven-development verification-before-completion; do
     assert_equals "D3: fallback-registry.json has the same description for ${_n}" "$(desc "${CFG}" "${_n}")" "$(desc "${FB}" "${_n}")"
 done
+assert_equals "D3: fallback-registry.json has the same brainstorming precondition" "$(pre "${CFG}" brainstorming)" "$(pre "${FB}" brainstorming)"
 
 # D4: upstream, when present — advisory only. Highest version by numeric fields; `sort -V`
 # is not assumed. Only the default marketplace location is looked at.
@@ -128,5 +181,60 @@ else
         echo "  UPSTREAM DRIFT (advisory, not a failure): ${SP_DIR%/skills} no longer matches for:${_drift} — re-read it and update the descriptions and this file"
     fi
 fi
+
+# R1-R3: the openspec scenarios, on the RENDERED red flags. After D4 on purpose:
+# setup_test_env repoints HOME, and D4 reads the real plugin cache.
+#
+# Registry: the shipped default config with every skill available, so the real triggers
+# route DESIGN and IMPLEMENT. writing-plans ships with no trigger (it is reached by
+# chain), so it gets one probe-only trigger here; the PLAN red flags depend only on the
+# phase the hook settles on, which the "Phase: [PLAN]" cell checks. Each run takes its
+# own transcript_path, so no state carries from one render to the next.
+setup_test_env
+mkdir -p "${HOME}/.claude"
+jq '(.skills = [.skills[] | .available = true | .enabled = true])
+    | (.skills |= map(if .name == "writing-plans" then .triggers = ["(zzplanprobe)"] else . end))' \
+    "${CFG}" > "${HOME}/.claude/.skill-registry-cache.json"
+
+_render() {   # prompt tag -> additionalContext
+    local _tp="${TEST_TMPDIR}/$2.jsonl"
+    : > "${_tp}"
+    jq -n --arg p "$1" --arg t "${_tp}" '{prompt:$p, transcript_path:$t}' \
+        | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" SKILL_PROJECT_ROOT="${TEST_TMPDIR}" \
+          bash "${PROJECT_ROOT}/hooks/skill-activation-hook.sh" 2>/dev/null \
+        | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null
+}
+# Only the "- " lines directly under a "HALT if any Red Flag is true:" header. Hints
+# rendered elsewhere in the same output name docs/plans/ too, and they are not red flags.
+_flags() { printf '%s\n' "$1" | awk '/^HALT if any Red Flag is true:$/ { f = 1; next } f && /^- / { print; next } { f = 0 }'; }
+
+_ctx="$(_render "let's build a new caching layer for the API" design)"
+assert_contains "R1: the DESIGN prompt renders the DESIGN phase" "Phase: [DESIGN]" "${_ctx}"
+assert_equals "R1: DESIGN red flags are only the routing obligation" \
+    "- Editing implementation files before invoking Skill(superpowers:brainstorming)" "$(_flags "${_ctx}")"
+
+_ctx="$(_render "zzplanprobe the work" plan)"
+_rf="$(_flags "${_ctx}")"
+assert_contains "R2: the PLAN prompt renders the PLAN phase" "Phase: [PLAN]" "${_ctx}"
+if [ -z "${_rf}" ]; then
+    _record_fail "R2: PLAN red flags rendered" "no red-flag lines; the 'names no directory' cell would pass vacuously"
+else
+    assert_not_contains "R2: no PLAN red flag names docs/plans/" "docs/plans/" "${_rf}"
+    assert_contains "R2: the PLAN red flag requires the approved plan saved to a file" \
+        "- Executing before the approved plan is saved to a file" "${_rf}"
+fi
+
+_ctx="$(_render "continue with the next task in the plan" implement)"
+_rf="$(_flags "${_ctx}")"
+assert_contains "R3: the IMPLEMENT prompt renders the IMPLEMENT phase" "Phase: [IMPLEMENT]" "${_ctx}"
+if [ -z "${_rf}" ]; then
+    _record_fail "R3: IMPLEMENT red flags rendered" "no red-flag lines; the 'is not required' cells would pass vacuously"
+else
+    assert_not_contains "R3: no IMPLEMENT red flag requires subagent-driven-development" "subagent-driven-development" "${_rf}"
+    assert_not_contains "R3: no IMPLEMENT red flag requires agent-team-execution" "agent-team-execution" "${_rf}"
+    assert_contains "R3: the IMPLEMENT red flag defers to the method chosen at the plan handoff" \
+        "- Not using the execution method the user chose at the plan handoff" "${_rf}"
+fi
+teardown_test_env
 
 print_summary

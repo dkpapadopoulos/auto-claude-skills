@@ -191,8 +191,16 @@ echo "=== test-injection-budget.sh ==="
 # on their own line that git push is denied until the Skill has been invoked
 # on this branch, while the guard would deny. +154 bytes per shape that
 # renders a chain, on the three chained shapes.
-# Per-shape bytes now 964 / 5295 / 6558 / 3153 / 4614 / 1795.
-_INJECTION_BASELINE=22379
+# Per-shape bytes then 964 / 5295 / 6558 / 3153 / 4614 / 1795.
+#
+# 22379 -> 22166 (2026-10-26, superpowers-701-alignment): the routing text
+# stops contradicting superpowers 7.0.1. DESIGN -187: three red flags that
+# restate brainstorming's own rules are cut (166), the verification-before-
+# completion description now says what the skill does (93 -> 80, -13, it is
+# in the DESIGN chain), and the brainstorming precondition moves the trifecta
+# step before design approval (-8). REVIEW and SHIP -13 each: that same
+# description. Per-shape bytes now 964 / 5108 / 6545 / 3153 / 4601 / 1795.
+_INJECTION_BASELINE=22166
 _MIN_SHAPES=6
 
 setup_test_env
