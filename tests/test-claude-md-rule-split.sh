@@ -332,6 +332,7 @@ _COMBINED_REAL_LIMIT=150000      # the product's warning threshold (total, all f
 # containing an assert idiom, so every change to a one-line constant read as
 # a removed assertion and needed a human override (#379 and #387, 2026-10-26).
 # Editing the constant now deletes only `_COMBINED_BASELINE=<n>`.
+#   Lowered 167009 -> 161548 (-5461) 2026-10-27, stage 3c of the prose cleanup: push-gate-telemetry.md 23228 -> 17767 keeps its instructions, stated limits, pre-registration facts and every reason no test pins, and moves test-guarded history and the closed REVIEW window's narrative (recorded in openspec/changes/review-verdict/design.md) verbatim to docs/history/rules-push-gate-telemetry.md (loaded by nothing); path-scoped, so nothing changes at session start.
 #   Lowered 168611 -> 167009 (-1602) 2026-10-27, stage 3b of the prose cleanup with its review fixes: outbound-guards.md 17003 -> 15401 keeps its instructions, stated limits and every reason no test pins, and moves test-guarded history and reasons verbatim to docs/history/rules-outbound-guards.md (loaded by nothing); path-scoped, so nothing changes at session start.
 #   Re-measured 168570 -> 168611 (+41) 2026-10-26 when skill-reattach-budget (#387) merged: routing-state.md's `paths:` gains `skills/openspec-ship/references/**`, so the rule loads when that skill's moved reference files are read (path-scoped).
 #   Re-measured 163905 -> 168570 (+4665) 2026-10-26 when review-credit-from-evidence (#379) merged onto the prose cleanup (#377, #378, #388): #379 added the REVIEW-credit bullet and lib counts to push-gate-enforcement.md, REVIEW predicate 3 and the stamps to push-gate-telemetry.md, the typed-slash path to routing-state.md and the reviewer arm to outbound-guards.md (+4823 on its own base); both branches had corrected the same canary bullet, and the merged bullet keeps #379's eleven-file list with the prose cleanup's wording fixes (-158). All path-scoped.
@@ -345,7 +346,7 @@ _COMBINED_REAL_LIMIT=150000      # the product's warning threshold (total, all f
 #   Raised 174140 -> 174463 (+323) 2026-10-13: the CLAUDE.md Style line about hook latency now carries the measured numbers (172 ms activation median, 2,531 to 1,624 ms session start with twelve plugins) beside the stated targets instead of the false "~50ms"; paid at session start because CLAUDE.md is unscoped.
 #   Raised 173886 -> 174140 (+254) 2026-10-12: CLAUDE.md gains the `scripts/compaction-pairing.sh` Commands row (the compaction-carrier premise fix), all of it paid at session start because CLAUDE.md is unscoped.
 #   Raised 172241 -> 173886 (+1645) with #310: routing-state.md now says a keyword admits a skill independently of its triggers, names the audit that measures it and says what the audit cannot see (+1420), and CLAUDE.md gains that audit's Commands row and a clause in the scoring line (+225). The rule is path-scoped, so only the 225 are paid at session start.
-_COMBINED_BASELINE=167009  # RATCHET: today's exact total. Not a ceiling. History above.
+_COMBINED_BASELINE=161548  # RATCHET: today's exact total. Not a ceiling. History above.
 _PERFILE_ADVISORY_BYTES=40000    # #22364 states 40.0k CHARS; compared in bytes, so
                                  # approximate by ~0.6% here. Reported, never asserted.
 
