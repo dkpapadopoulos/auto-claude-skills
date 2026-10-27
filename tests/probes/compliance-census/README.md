@@ -199,4 +199,39 @@ alternative hits over 80 attributed prompts) because a prompt can match two alte
 
 ## Amendment log
 
-(none)
+### A1 (2026-10-27): how the one-week extension is read
+
+The window closed by count at the 46th mandate, rendered `2026-10-24T01:19:27Z`. The
+registered read, made 2026-10-27, was **9 obeyed in-turn of 46, p = 0.0669: inconclusive**,
+so "extend once by one week, then read again" applies. This README did not say how an
+extension is read; A1 fixes that before the extension closes.
+
+**What was seen before writing it, stated because it is not nothing:** the registered read
+prints its count table over every mandate up to the read, not only the first 46. It showed
+11 obeyed in-turn of 95 mandates to 2026-10-27, so 2 of the 49 mandates after the 46th
+(p = 0.2641 for 11 of 95). The thresholds below are the registered ones, unchanged; the only
+choices made here are the window end, which the registered "one week" fixes up to rounding,
+and a side column that tests nothing.
+
+- **Window**: data start unchanged (`2026-10-12T00:00:00Z`) to `2026-11-01T00:00:00Z`, the
+  first UTC midnight at least seven days after the 46th mandate. Every mandate in the window
+  counts, the first 46 included. Floor 3.95.8 and control 2 of 35, unchanged.
+- **Command**, run on or after 2026-11-01:
+  `python3 census.py --since 2026-10-12T00:00:00Z --cap-date 2026-11-01 --close-at 1000000`.
+  A `--close-at` above any reachable count makes the cap date the close, so every mandate up
+  to it is read; `CLOSED (by date 2026-11-01; ...)` is the expected shape. Run earlier, it
+  prints OPEN and no verdict.
+- **Reading**: p < 0.05 is "display moves behaviour", as registered. Anything else is "no
+  evidence that display moves behaviour": this is the second inconclusive read the
+  registered rule names, and there is no further extension. The tool's verdict line will
+  still print "inconclusive; extend once" in that case; A1 overrides that line. The "k of 2
+  or fewer" arm cannot fire, because the window holds the first 46 and 9 of them were
+  obeyed; that is stated now so its absence is not read as a result.
+- **Side column, reported and not tested**: the same k of n with the two gated skills
+  (`requesting-code-review`, `verification-before-completion`) removed from both, taken from
+  the `by skill` rows, against the control week with the same removal, **0 of 20** (the
+  control's 15 requesting-code-review mandates held both of its obeys). Why: 7 of the 11
+  in-turn obeys to 2026-10-27 were requesting-code-review, which the push gate also demands,
+  so a gate deny can produce an in-turn invocation the display did not; and PR #379
+  (merged 2026-10-26) changed what the REVIEW gate credits mid-extension. The side column is
+  untouched by both.
