@@ -1,0 +1,1 @@
+Run this newsletter issue through the authorial-judgment skill and return the revised text.

@@ -1,0 +1,1 @@
+Run this product update through the authorial-judgment skill and return the revised text.

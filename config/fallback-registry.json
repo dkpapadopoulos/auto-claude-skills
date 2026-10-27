@@ -922,7 +922,7 @@
       "priority": 15,
       "precedes": [],
       "requires": [],
-      "description": "Use when authoring or de-generic-ifying persuasive prose — essays, blog posts, op-eds, newsletters, talks, or a 'make this not sound like AI' rewrite — to apply a post-draft authorial-judgment revision pass. NOT for README/API-docs, specs/changelogs, or code.",
+      "description": "Use when a draft a reader will judge the writer by needs an editorial pass: essays, posts, talks, newsletters, website and product copy, cover letters, recommendation and reference letters, outreach and customer emails; or when prose 'sounds like AI', reads generic, or should sound like the author. NOT for README/API docs, specs, changelogs, release notes or code.",
       "invoke": "Skill(auto-claude-skills:authorial-judgment)",
       "available": false,
       "enabled": true
@@ -1729,7 +1729,7 @@
         "(^|[^a-z])(ui|frontend|layout|form|accessibility|a11y|responsive|user.?interaction|animation|tailwind|css)($|[^a-z])"
       ],
       "trigger_mode": "regex",
-      "hint": "FRONTEND QUALITY: For prescriptive build-it-right standards — if the web-interface-guidelines skill is installed, use it for UI interaction, accessibility, forms, and layout rules; if this is a React/Next app and the react-best-practices skill is installed, use it for performance rules (async waterfalls, bundle size, re-renders). If neither is installed, apply frontend-design and validate with runtime-validation.",
+      "hint": "FRONTEND QUALITY: use supported product claims; omit unsupported proof and label simulations. Preserve the approved visual direction and reuse working controls. Exercise changed actions and their applicable loading, empty, error and success states at desktop and phone widths, including keyboard, focus and reduced motion; report tested paths and gaps (runtime-validation runs the checks). In REVIEW, apply web-design-guidelines if it is installed, scoped to changed UI files; in a React or Next app, react-best-practices too if it is installed.",
       "phases": [
         "IMPLEMENT",
         "REVIEW"

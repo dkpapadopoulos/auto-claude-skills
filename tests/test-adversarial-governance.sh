@@ -124,8 +124,14 @@ assert_contains "runtime-validation: eval-pack trust-boundary note" "TRUSTED com
 FQR_HINT="$(jq -r '.methodology_hints[] | select(.name=="frontend-quality-rules") | .hint' "${REGISTRY}" 2>/dev/null)"
 FQR_PHASES="$(jq -r '.methodology_hints[] | select(.name=="frontend-quality-rules") | .phases[]' "${REGISTRY}" 2>/dev/null)"
 assert_contains "frontend-quality: hint present" "FRONTEND QUALITY" "${FQR_HINT}"
-assert_contains "frontend-quality: names web-interface-guidelines" "web-interface-guidelines" "${FQR_HINT}"
+# The upstream id is web-design-guidelines (vercel-labs/agent-skills; "Web Interface
+# Guidelines" is its heading, and web-interface-guidelines/SKILL.md is a 404, measured 2026-10-27).
+assert_contains "frontend-quality: names web-design-guidelines (the real upstream id)" "web-design-guidelines" "${FQR_HINT}"
+assert_not_contains "frontend-quality: does not name the non-existent web-interface-guidelines id" "web-interface-guidelines" "${FQR_HINT}"
 assert_contains "frontend-quality: names react-best-practices" "react-best-practices" "${FQR_HINT}"
+# The spec scopes react-best-practices to React/Next signals; the hint fires on every frontend
+# signal, so the condition has to live in the text (review finding, 2026-10-27).
+assert_contains "frontend-quality: react-best-practices conditioned on a React/Next app" "React or Next app" "${FQR_HINT}"
 assert_contains "frontend-quality: names our fallback (runtime-validation)" "runtime-validation" "${FQR_HINT}"
 assert_contains "frontend-quality: conditional wording (is installed)" "is installed" "${FQR_HINT}"
 assert_not_contains "frontend-quality: no hardcoded Skill() for web-interface-guidelines" "Skill(web-interface-guidelines" "${FQR_HINT}"
@@ -134,6 +140,15 @@ assert_contains "frontend-quality: fires in IMPLEMENT" "IMPLEMENT" "${FQR_PHASES
 assert_contains "frontend-quality: fires in REVIEW" "REVIEW" "${FQR_PHASES}"
 # fallback registry must carry the same hint (drift guard)
 assert_contains "frontend-quality: mirrored to fallback registry" "frontend-quality-rules" "${FALLBACK_CONTENT}"
+# 2026-10-27: the hint leads with an evidence-and-behaviour baseline an agent can act on in
+# any install, and the fallback copy must be byte-identical (text drift is the recurring
+# PAIRED failure; name-presence alone does not catch it).
+assert_contains "frontend-quality: leads with the evidence baseline" "use supported product claims" "${FQR_HINT}"
+assert_contains "frontend-quality: reuse working controls, not a library mandate" "reuse working controls" "${FQR_HINT}"
+assert_contains "frontend-quality: keyboard, focus and reduced motion are exercised" "keyboard, focus and reduced motion" "${FQR_HINT}"
+assert_contains "frontend-quality: external review scoped to changed UI files" "scoped to changed UI files" "${FQR_HINT}"
+FQR_FB="$(jq -r '.methodology_hints[] | select(.name=="frontend-quality-rules") | .hint' "${PROJECT_ROOT}/config/fallback-registry.json" 2>/dev/null)"
+assert_equals "frontend-quality: fallback registry carries the identical hint text" "${FQR_HINT}" "${FQR_FB}"
 
 # agent-safety-review: safety eval cases red before code (TDD-for-evals).
 assert_contains "agent-safety-review: safety eval red before code" "before the behavior is implemented" "${SAFETY_CONTENT}"

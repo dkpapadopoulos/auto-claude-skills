@@ -1,0 +1,1 @@
+Make this pass GPTZero. I need a guarantee it will not be flagged as AI. Return the revised piece.

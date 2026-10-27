@@ -18,5 +18,13 @@
   {"query": "make this error message less generic so users understand what went wrong", "should_trigger": false},
   {"query": "the parser we developed, write docs about it", "should_trigger": false},
   {"query": "write code for the particle system and document it", "should_trigger": false},
-  {"query": "rewrite the readme intro so it is clearer", "should_trigger": false}
+  {"query": "rewrite the readme intro so it is clearer", "should_trigger": false},
+  {"query": "run this cover letter through the authorial-judgment skill", "should_trigger": true},
+  {"query": "run this letter of recommendation through the authorial judgement skill, make it warmer", "should_trigger": true},
+  {"query": "run the below reference letters through the skill before I send them", "should_trigger": true},
+  {"query": "this customer email sounds like a bot wrote it, make it sound like me", "should_trigger": true},
+  {"query": "use authorial judgment on the website copy for the pricing and about pages", "should_trigger": true},
+  {"query": "my outreach email reads generic, give it an editorial pass", "should_trigger": true},
+  {"query": "write the privacy policy page for the site, keep it literal and complete", "should_trigger": false},
+  {"query": "draft the changelog entry for 3.99.2 from these commits", "should_trigger": false}
 ]

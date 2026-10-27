@@ -7,7 +7,7 @@ flag; when found, apply the repair.
 | Flag | What it means | Repair |
 |------|---------------|--------|
 | ARTIFICIAL_FLUENCY | Too smooth, frictionless — no visible thought | Add one real objection (move 2) |
-| UNQUESTIONING_CONVICTION / TOO_CERTAIN | Certain where the issue is contested | Narrow the claim to what the evidence supports |
+| UNQUESTIONING_CONVICTION / TOO_CERTAIN | Certain where the draft's own evidence contradicts the claim | Narrow the claim to what that evidence supports; a plain claim with nothing in the draft against it stays plain |
 | FAKE_DELIBERATION | Announces thought without doing it | Cut "let's unpack / it's worth noting"; show the turn (move 3) |
 | GENERIC_PERSPECTIVE / GENERIC_THESIS | Could have been written by anyone | Re-anchor to authorial position (move 1) |
 | DECORATIVE_METAPHOR / STALE_METAPHOR | Image sounds nice, clarifies nothing | Replace with the mechanism, or cut |
@@ -16,10 +16,10 @@ flag; when found, apply the repair.
 | REPETITION_AS_DEPTH | Idea returns without getting sharper | Delete, or add mechanism/consequence (move 4) |
 | CONTRARIAN_REFLEX / CHEAP_CONTRARIANISM | Attacks the obvious view to sound bold | Drop it unless the contrarian claim is true and useful |
 | PERSONA_COSPLAY / FAKE_HUMAN_TEXTURE | Invents voice, memory, background, or flaws | Delete the fabrication; apply the hard gate |
-| MISSING_READER_BLINDSPOT | The obvious objection goes unaddressed | Add the friction (move 2) |
+| MISSING_READER_BLINDSPOT | The obvious objection goes unaddressed | Add the friction (move 2); if answering it needs material the author has not supplied, name it in your note, not in the piece |
 | SAME_SENTENCE_SHAPE | Uniform sentence/paragraph rhythm | Vary structure to follow the thought (move 5) |
 | NO_MECHANISM / NO_CONSEQUENCE | Claim floats without how or so-what | State the mechanism or the consequence |
-| WEAK_ENDING | Tidy, symmetrical, default conclusion | Apply the inversion refusal (move 6) |
+| WEAK_ENDING | Tidy, symmetrical, default conclusion | Move 6: write the alternative; keep the author's close unless the alternative states a mechanism or consequence it lacks |
 
 ## Capturing recurring feedback (for repeated use)
 

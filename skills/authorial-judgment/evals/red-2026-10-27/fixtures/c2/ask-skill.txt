@@ -1,0 +1,1 @@
+Run this product page copy through the authorial-judgment skill. It is generic; make it convincing and return the revised copy.

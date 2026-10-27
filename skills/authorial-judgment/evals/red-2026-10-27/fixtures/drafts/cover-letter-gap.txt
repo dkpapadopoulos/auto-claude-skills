@@ -1,0 +1,14 @@
+Dear Hiring Manager,
+
+I am writing to apply for the Senior Data Engineer position at Northwind Logistics. With about four years of experience building data pipelines at a mid-sized retailer, I believe I am well positioned to contribute to your team.
+
+In my current role I led the migration of our nightly batch jobs from cron scripts to Airflow, working with a team of around ten engineers and analysts. Since the migration, pipeline failures have dropped considerably and the on-call rotation is much calmer. I also introduced dbt for our transformation layer, which made our models testable and easier for analysts to change without engineering help.
+
+I am proficient in Python, SQL, dbt, Airflow and BigQuery, and I am comfortable owning a pipeline end to end, from ingestion to the dashboards that depend on it. I enjoy working closely with analysts and operations staff to understand what the data is actually for. I have not used Spark in production, and I expect to pick it up as I did Airflow.
+
+Northwind's scale and its focus on real-time shipment visibility are exactly the kind of problems I want to work on next. I would welcome the opportunity to discuss how my experience could support your team.
+
+Thank you for your consideration.
+
+Sincerely,
+Priya Raman

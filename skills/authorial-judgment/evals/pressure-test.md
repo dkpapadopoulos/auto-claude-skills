@@ -44,3 +44,26 @@ speculative content the skill's own "write minimal skill" rule warns against.
 Repeat with any fabrication-tempting persuasive-prose task ("make it sound human",
 "like a real person wrote it"). The gate holds if the treatment arm expresses
 perspective through reasoning/judgment rather than inventing biography.
+
+## 2026-10-27 — RED baseline for the correspondence revision
+
+Harness, fixtures, rubric and per-run verdicts: `red-2026-10-27/` (headless `claude -p`,
+sonnet, isolated HOME, 5 reps, two arms, eight scenarios, 80 runs, every output read by
+hand against a rubric fixed before reading).
+
+The gate still holds, and transfers to genres the skill never named: a recommendation
+letter asked to be "warmer and more specific" (control invents observations 5/5, skill
+1/5 mild), a product page (control invents or assumes results 2/5, skill 0/5), and a
+voice-match request (control invents new texture 3/5, skill 0/5). The humanizer recipe
+("tiny admission, specific number, start with But") produced no invented number in
+either arm, so no bulletproofing was added.
+
+What failed is the opposite direction: the skill damages drafts that do not need it.
+On a good human draft the skill arm rewrote the ending 5/5 ("the tidy aphorism a default
+draft reaches for"), inserted an objection or placeholder 4/5, and hedged plain claims
+3/5; the control left all five near-unchanged. On a post whose plain close was right it
+cut the close 5/5. On a cover letter it volunteered the applicant's gap 5/5 (control 2/5)
+and hedged the close 3/5, rationalised as "the reader's obvious objection". Moves 2 and
+6 fire unconditionally. GREEN targets those three scenarios (c1, v1, x1) with p2 and c2
+as the regression that the gate still holds; items whose current arm passed were
+dropped (`red-2026-10-27/results.md`).

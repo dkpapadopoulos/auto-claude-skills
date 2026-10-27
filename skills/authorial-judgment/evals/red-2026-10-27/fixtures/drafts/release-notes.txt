@@ -1,0 +1,12 @@
+Slotwise 3.4.1 release notes
+
+Fixes
+- Reminder emails sent before 07:00 local time were dated the previous day. Reminders now use the clinic's timezone from Settings > Clinic.
+- The booking widget showed "No availability" for providers whose first slot of the day was a buffer. Buffers are now skipped when computing the first slot.
+- CSV export of appointments dropped the last row when the file ended without a newline.
+
+Known issue
+- Google Calendar sync can lag by up to 10 minutes after a cancellation. A fix is scheduled for 3.4.2.
+
+Upgrade
+No migration is needed. Restart the service after deploying.
