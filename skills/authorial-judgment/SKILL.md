@@ -33,10 +33,10 @@ sound human. This gate outranks every move below.
 ## Which moves the draft needs
 
 Read the draft once and decide which moves it needs. A move you cannot name a reason
-for is not applied; the author's request is a reason. A good draft comes back near-unchanged:
-the author's facts, numbers, dates, names, commitments and stated certainty stay as
-written, and a plain claim stays plain unless the draft's own evidence contradicts it.
-End with the three largest edits and why.
+for is not applied; the author's request is a reason. A good draft
+comes back near-unchanged: the author's facts, numbers, dates, names, commitments and
+stated certainty stay as written, and a plain claim stays plain unless the draft's own
+evidence contradicts it. End with the three largest edits and why.
 
 If the draft is a cover letter or application (addressed to a hiring manager,
 recruiter or committee, about the writer's fit): move 2 means answering a concern the
@@ -55,8 +55,8 @@ conversation without qualifying the fit.
 2. **Real objection = real friction.** Add friction only when the draft leaves
    unanswered a pushback a smart reader would raise; if the draft already answers it,
    move on. If answering it needs material the author has not supplied, name the
-   objection in your note to them, not in the piece. Ask: what would they reject, think is ignored, or
-   consider too easy? Then answer it briefly. Not random detours.
+   objection in your note to them, not in the piece. Ask: what would they reject,
+   think is ignored, or consider too easy? Then answer it briefly. Not random detours.
 
 3. **Deliberation only when earned.** Show the thought; don't announce it. Kill
    announced-thought phrases: "let's unpack," "it's worth noting," "as we delve
