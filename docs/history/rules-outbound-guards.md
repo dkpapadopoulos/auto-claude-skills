@@ -10,6 +10,9 @@ is not lost. Each section reproduces the original unit **verbatim** (as of commi
 surviving instruction lives. Every section was moved in the commit
 `docs: outbound-guards rule keeps its instructions and moves test-guarded history to docs/history`
 (the commit that created this file: `git log --diff-filter=A -- docs/history/rules-outbound-guards.md`).
+Review corrections followed in
+`docs: outbound-guards rule restores the size-gate tail and the measured-key note`: two
+clauses first listed here as moved were put back in the rule, and the notes below say so.
 
 ## Preamble: "Path-scoped rule, split out of the repo-root `CLAUDE.md` ..."
 
@@ -84,8 +87,9 @@ Moved in: the commit named above. Moved, with the test that guards each:
   miss; mid-string "review:" and "re-review" must credit), lines 85-113 (the noun
   "reviewer" and "code-reviewer" in task names must not). The word-boundary versus
   substring figures stay in the rule as the reason not to widen it.
-- "— measured 2026-09-07 —" and "**A worktree split is therefore not by itself a cause
-  of a missed read**, and this bullet previously said it was." Guard: none for the
+- "**A worktree split is therefore not by itself a cause of a missed read**, and this
+  bullet previously said it was." ("— measured 2026-09-07 —" was first moved too and
+  is back in the rule, because no test pins the same-branch claim.) Guard: none for the
   narrative about this bullet's earlier wording; the conclusion stays as the rule's
   instruction not to cite a different worktree. `tests/test-branch-ledger.sh` lines
   30-35 (same branch name, different repo: not shared) and lines 41-43 (detached HEAD is
@@ -123,8 +127,11 @@ Moved in: the commit named above. Moved, with the test that guards each:
   and lines 343-344 (the first option must be exactly the decline label).
 - "Bisected 2026-09-18: previews of 453/943/1433 chars come back in full (whole string
   or nothing, never truncated), 2413+ do not ⇒ threshold `(1433, 2413]`" and the
-  dialog's "(between 943 and 1433 chars)" and "small packages are both, a ~1.4 KB band is
-  attested but not fully shown, real packages are neither". The numbers are kept in the
+  dialog's "(between 943 and 1433 chars)". ("small packages are both, a ~1.4 KB band is
+  attested but not fully shown, real packages are neither" was first moved too and is
+  back in the rule: without it the sentence's headline, "no package size is both", is
+  false for previews under about 1 KB, which LIVE-E2E.md lines 125-129 show were both
+  returned and fully visible.) The numbers are kept in the
   comment at `tests/test-egress-consent-hooks.sh` lines 184-191 and in
   `openspec/changes/archive/2026-09-17-egress-consent-dispatcher/LIVE-E2E.md`, which the
   rule still names. Guard for the behaviour: lines 197-244 (the real captured payload
