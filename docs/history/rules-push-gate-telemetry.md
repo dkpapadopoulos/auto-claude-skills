@@ -10,6 +10,8 @@ commit `558c7b55`), names the test, if any, that now guards what was moved, and 
 where its surviving instruction lives. Every section was moved in the commit
 `docs: push-gate-telemetry rule keeps its instructions and moves test-guarded history to docs/history`
 (the commit that created this file: `git log --diff-filter=A -- docs/history/rules-push-gate-telemetry.md`).
+Review corrections to the notes (not to the quoted originals) followed in
+`docs: push-gate-telemetry rule names n's reading; history cites the right design.md lines`.
 
 The fourth bullet, "REVIEW predicate 3, push-time stamps and `--evidence-miss`", was not
 changed and has no section here.
@@ -74,15 +76,17 @@ rule, most of it in the original words. Moved:
   than IMPLEMENT's 0.22 ep/day — observed **3.68 ep/day**, 17x the other way" and "The
   horizon clause (`computed ONCE at n=5, recorded in this file`) was never computed, and
   only the starvation backstop could ever have fired." Guard: none by a test; the
-  decision record is `openspec/changes/review-verdict/design.md` lines 129-221 ("DECIDED
-  2026-09-23" at line 131). The figures are reproducible by the instrument:
+  figures are in `openspec/changes/review-verdict/design.md` lines 101-129 (the
+  amendment of 2026-09-23 starts at line 101), and the decision is at lines 131-150
+  ("DECIDED 2026-09-23"). The figures are reproducible by the instrument:
   `tests/test-review-shadow-adjudicate.sh` lines 661-674 (the excluded band is
   described as DESCRIPTIVE ONLY and its legacy episodes are grouped). The rule keeps 199
   records, 0 adjudications and "17x".
 - The horizon reconstruction: "Reconstructing the horizon late does not settle it ...
   opposite outcomes, so "every reading is in the past" is true and conceals the only
-  thing the clause protects." Guard: none by a test (design.md lines 177-191); moot
-  since the window closed.
+  thing the clause protects." Guard: none by a test (design.md lines 176-189, "The
+  reconstruction, and why it does not settle the horizon"); moot since the window
+  closed.
 - The detail of the two senses of `n` ("the floor ("n=29 **at zero false blocks**") ...
   RECORDED ones (**99** on 2026-09-23)"), the pre-decision state of the backstop
   ("Before the decision below ... would have fired 2026-11-24"), "a draft of the
@@ -90,8 +94,10 @@ rule, most of it in the original words. Moved:
   deliberately does NOT choose", "until the owner settled it, **no deadline was known to
   be live** ...", "The `n` ambiguity below is MOOT for this window and is retained as a
   defect for the NEXT registration to avoid", and the "Superseded standing conclusion,
-  kept for the reasoning". Guard: none by a test (design.md lines 125-175); all moot
-  since the window closed. The rule keeps a one-clause statement of the two senses
+  kept for the reasoning". Guard: none by a test. In design.md: the two senses of `n`,
+  the backstop's state under each and the retracted draft at lines 101-129, the decision
+  at lines 131-150, the superseded operative reading at lines 152-175, and the standing
+  conclusion at lines 215-221. All moot since the window closed. The rule keeps a one-clause statement of the two senses
   inside "name `n` unambiguously", the instruction "Do not assert one while shipping the
   other", the reason "resolving a pre-registration's ambiguity after seeing the data is
   the discretion it exists to refuse", and "zero adjudications is not zero false blocks,
