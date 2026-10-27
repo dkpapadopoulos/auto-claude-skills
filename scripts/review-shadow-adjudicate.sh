@@ -429,7 +429,7 @@ cmd_status() {
     local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
     local _lines=0 _parsed=0 _unparsed=0 _legacy=0 _orphan=0 _rkey=""
     local _leg_eps=0 _leg_repos=0 _leg_span=0 _badts=0
-    local _band_hdl _den
+    local _band_hdl _den _adjbad=0
 
     echo "=== REVIEW shadow corpus (leg: push/merge REVIEW verdict) ==="
     echo "corpus  : ${SHADOW_LOG}"
@@ -555,6 +555,18 @@ EOF
         fi
     fi
 
+    # Unparseable SIDECAR lines (#386). Every sidecar reader here skips them via
+    # `fromjson?`, so a corrupt line holding a human false_block lowers k with
+    # nothing said -- the direction that clears the flip. Announced in the
+    # VERIFY reader's words, and counted as UNCOUNTABLE below, which blocks the
+    # floor as it blocks the VERIFY decision rule.
+    _adjbad="$(_adj_unparsed)"
+    case "${_adjbad}" in ''|*[!0-9]*) _adjbad=1 ;; esac
+    if [ "${_adjbad}" -gt 0 ]; then
+        echo
+        echo "SIDECAR — unparseable label line(s) : ${_adjbad}"
+    fi
+
     # k/n: ONLY human-confirmed episodes count. Zero adjudications is NOT zero
     # false blocks -- it is no measurement, and reporting it as 0/0 clean is the
     # direction that would clear a deny-flip on no evidence.
@@ -572,8 +584,15 @@ EOF
         echo "   counts above, including any excluded band.)"
     elif [ "${_nrepos}" -lt "${FLOOR_REPOS}" ]; then
         echo "FLOOR NOT MET: diversity — ${_nrepos} repo(s) < ${FLOOR_REPOS}."
+    elif [ "${_adjbad}" -gt 0 ]; then
+        echo "FLOOR NOT MET: the sidecar is not fully readable."
     else
         echo "floor met on n and diversity; band above decides."
+    fi
+    if [ "${_adjbad}" -gt 0 ]; then
+        echo "UNCOUNTABLE : ${_adjbad} line(s)/record(s) above could not be placed."
+        echo "  Any of them may be a false block or hide one, so the decision rule is"
+        echo "  reported NOT MET until each is accounted for by hand."
     fi
     return 0
 }

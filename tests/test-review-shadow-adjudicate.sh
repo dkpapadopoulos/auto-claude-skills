@@ -474,6 +474,22 @@ case "${_outd2}" in
         _record_pass "CONTROL: adjudicating the second repo DOES satisfy diversity" ;;
     *) _record_fail "CONTROL: adjudicating the second repo DOES satisfy diversity" "got: ${_outd2}" ;;
 esac
+# (#386) The same met floor is NOT met once the sidecar holds a line the reader
+# cannot parse: that line may be a false_block, and losing one only lowers k.
+# The control above is what makes this reach the sidecar branch.
+_AD3="${TMP}/d-adj-corrupt.jsonl"
+cp "${_AD}" "${_AD3}"; printf '%s\n' '{"record_id":"d0","verdict":' >> "${_AD3}"
+_outd3="$(_run "${_LD}" "${_AD3}" --status)"
+case "${_outd3}" in
+    *"FLOOR NOT MET: the sidecar is not fully readable."*)
+        _record_pass "an unparseable sidecar line blocks an otherwise met floor" ;;
+    *) _record_fail "an unparseable sidecar line blocks an otherwise met floor" "got: ${_outd3}" ;;
+esac
+case "${_outd3}" in
+    *"floor met on n and diversity"*)
+        _record_fail "an unparseable sidecar line never prints 'floor met'" "got: ${_outd3}" ;;
+    *) _record_pass "an unparseable sidecar line never prints 'floor met'" ;;
+esac
 
 # ---------------------------------------------------------------------------
 # 13. DIVERSITY IS PER REPOSITORY, NOT PER WORKTREE PATH.
@@ -595,8 +611,14 @@ _rec "${_LC}" c2 "2026-09-11T10:00:00Z" /repo/y main tokc-2 absent
 ( unset CLAUDECODE CLAUDE_CODE_SESSION_ID
   REVIEW_SHADOW_LOG="${_LC}" REVIEW_ADJUDICATION_LOG="${_AC}" /bin/bash "${SUT}" --adjudicate c1 --verdict false_block
   REVIEW_SHADOW_LOG="${_LC}" REVIEW_ADJUDICATION_LOG="${_AC}" /bin/bash "${SUT}" --adjudicate c2 --verdict true_catch ) >/dev/null 2>&1
-_rate_before="$(_run "${_LC}" "${_AC}" --status | sed -n 's/^rate (human-confirmed only) : \(.*\)$/\1/p')"
+_out_intact="$(_run "${_LC}" "${_AC}" --status)"
+_rate_before="$(printf '%s\n' "${_out_intact}" | sed -n 's/^rate (human-confirmed only) : \(.*\)$/\1/p')"
 assert_equals "CONTROL: intact sidecar gives the expected rate" "k=1 false blocks of n=2 episode(s)" "${_rate_before}"
+case "${_out_intact}" in
+    *"SIDECAR — unparseable"*|*"UNCOUNTABLE"*)
+        _record_fail "CONTROL: an intact sidecar announces no corruption" "got: ${_out_intact}" ;;
+    *) _record_pass "CONTROL: an intact sidecar announces no corruption" ;;
+esac
 
 # Prepend one truncated line to the SIDECAR -- the log whose corruption moves k.
 printf '%s\n' '{"record_id":"trunc","verdict":' > "${TMP}/bad.jsonl"
@@ -605,11 +627,19 @@ _rate_after="$(_run "${_LC}" "${_AC}" --status | sed -n 's/^rate (human-confirme
 assert_equals "a truncated SIDECAR line does not discard the adjudications after it" \
     "${_rate_before}" "${_rate_after}"
 
-# And the corruption is ANNOUNCED, not merely survived.
+# And the corruption is ANNOUNCED, not merely survived (#386). The needle is the
+# SIDECAR's own line: a bare "unparseable" also matched the corpus summary's
+# "0 unparseable", so this cell passed while nothing called _adj_unparsed.
 _out_corrupt="$(_run "${_LC}" "${_AC}" --status)"
+if printf '%s\n' "${_out_corrupt}" | grep -qxF "SIDECAR — unparseable label line(s) : 1"; then
+    _record_pass "sidecar corruption is announced"
+else
+    _record_fail "sidecar corruption is announced" "no SIDECAR line in: ${_out_corrupt}"
+fi
 case "${_out_corrupt}" in
-    *"unparseable"*) _record_pass "sidecar corruption is announced" ;;
-    *) _record_fail "sidecar corruption is announced" "no unparseable count in: ${_out_corrupt}" ;;
+    *"UNCOUNTABLE : 1 line(s)/record(s) above could not be placed."*)
+        _record_pass "the corrupt sidecar line is reported UNCOUNTABLE" ;;
+    *) _record_fail "the corrupt sidecar line is reported UNCOUNTABLE" "got: ${_out_corrupt}" ;;
 esac
 
 # Same for the CORPUS: a truncated line must not hide records after it from
@@ -1246,9 +1276,9 @@ esac
 # F9 (final review M4) the SIDECAR's unparseable count, `_adj_unparsed`, takes the
 # same LC_ALL=C: under a UTF-8 locale `grep -c .` skipped an invalid-UTF-8 line,
 # so the total and the parsed count agreed and the corrupt line counted 0.
-# NOTE: nothing in the script calls `_adj_unparsed` today (measured: one
-# definition, zero callers, at the branch base and on main), so this cell drives
-# the real definition EXTRACTED from the script, under the locale F7 found.
+# The cell drives the real definition EXTRACTED from the script, under the
+# locale F7 found; --status now calls it (#386), so the end-to-end cell after it
+# pins the same line through the reader.
 _F9="${TMP}/f9-adj.jsonl"
 printf '%s\n' '{"record_id":"ok1","verdict":"true_catch","claimant":"human"}' > "${_F9}"
 printf '\377\376\n' >> "${_F9}"
@@ -1257,5 +1287,13 @@ if [ -n "${_f9_def}" ]; then _record_pass "F9 setup: _adj_unparsed extracted fro
 else _record_fail "F9 setup: _adj_unparsed extracted from the script" "definition not found"; fi
 _of9="$( ( eval "${_f9_def}"; ADJ_LOG="${_F9}"; LC_ALL="${_U8:-C}"; export LC_ALL; _adj_unparsed ) 2>/dev/null)"
 assert_equals "F9 an invalid-UTF-8 sidecar line counts as unparseable (${_U8:-C})" "1" "${_of9}"
+_F9L="${TMP}/f9.jsonl"; : > "${_F9L}"
+_rec "${_F9L}" ok1 "2026-09-10T10:00:00Z" /repo/x main tokf9 absent
+_of9s="$( ( LC_ALL="${_U8:-C}"; export LC_ALL; _run "${_F9L}" "${_F9}" --status ) )"
+if printf '%s\n' "${_of9s}" | grep -qxF "SIDECAR — unparseable label line(s) : 1"; then
+    _record_pass "F9 --status announces the invalid-UTF-8 sidecar line (${_U8:-C})"
+else
+    _record_fail "F9 --status announces the invalid-UTF-8 sidecar line (${_U8:-C})" "got: ${_of9s}"
+fi
 
 print_summary
