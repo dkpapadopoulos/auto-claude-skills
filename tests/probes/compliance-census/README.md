@@ -204,34 +204,61 @@ alternative hits over 80 attributed prompts) because a prompt can match two alte
 The window closed by count at the 46th mandate, rendered `2026-10-24T01:19:27Z`. The
 registered read, made 2026-10-27, was **9 obeyed in-turn of 46, p = 0.0669: inconclusive**,
 so "extend once by one week, then read again" applies. This README did not say how an
-extension is read; A1 fixes that before the extension closes.
+extension is read; A1 fixes that.
 
-**What was seen before writing it, stated because it is not nothing:** the registered read
-prints its count table over every mandate up to the read, not only the first 46. It showed
-11 obeyed in-turn of 95 mandates to 2026-10-27, so 2 of the 49 mandates after the 46th
-(p = 0.2641 for 11 of 95). The thresholds below are the registered ones, unchanged; the only
-choices made here are the window end, which the registered "one week" fixes up to rounding,
-and a side column that tests nothing.
+**A1 departs from the freeze rule at the top of this file**, which requires an amendment
+"before the data they affect is looked at". Part of the extension's data had been looked at
+when A1 was written. What was seen:
 
-- **Window**: data start unchanged (`2026-10-12T00:00:00Z`) to `2026-11-01T00:00:00Z`, the
-  first UTC midnight at least seven days after the 46th mandate. Every mandate in the window
-  counts, the first 46 included. Floor 3.95.8 and control 2 of 35, unchanged.
-- **Command**, run on or after 2026-11-01:
-  `python3 census.py --since 2026-10-12T00:00:00Z --cap-date 2026-11-01 --close-at 1000000`.
-  A `--close-at` above any reachable count makes the cap date the close, so every mandate up
-  to it is read; `CLOSED (by date 2026-11-01; ...)` is the expected shape. Run earlier, it
-  prints OPEN and no verdict.
-- **Reading**: p < 0.05 is "display moves behaviour", as registered. Anything else is "no
-  evidence that display moves behaviour": this is the second inconclusive read the
-  registered rule names, and there is no further extension. The tool's verdict line will
-  still print "inconclusive; extend once" in that case; A1 overrides that line. The "k of 2
-  or fewer" arm cannot fire, because the window holds the first 46 and 9 of them were
-  obeyed; that is stated now so its absence is not read as a result.
+- The registered read prints its count table over every mandate up to the read, not only the
+  first 46. At that read the table held 95 mandates, the last rendered
+  `2026-10-27T12:15:13Z`, and 11 obeyed in-turn: 2 of the 49 after the 46th (p = 0.2641 for
+  11 of 95). It reproduces with `--until 2026-10-27T12:16:00Z` added to the command below.
+- The per-skill split of that table: requesting-code-review held 7 of the 11 in-turn obeys
+  (31 mandates). The side column below was designed after seeing it.
+- What that implies, stated so no one reads the result as a surprise: p < 0.05 at the close
+  needs about 19 of 100, 20 of 105 or 21 of 110, that is 8 to 10 obeys among the next 5 to
+  15 mandates, against 2 of the 49 after the 46th. When A1 was written the read was, in
+  effect, foreseeable as "no evidence".
+
+The registered thresholds, control, floor and data start are unchanged. To leave no choice
+made after the peek, the window end is the exact one the registered "one week" names, not a
+rounded one.
+
+- **Window**: data start unchanged (`2026-10-12T00:00:00Z`) to `2026-10-31T01:19:28Z`, the
+  first whole second at least seven days after the 46th mandate (half-open: a mandate at
+  that instant is out). Every mandate in the window counts, the first 46 included.
+- **Command**, run on or after **2026-11-02** (the `--cap-date` test uses the local date, and
+  turns that started before the end need time to finish), never before it: before the cap
+  date the tool prints OPEN and no verdict line, but its count table IS the extension's
+  running k of n, so an early run is a peek at the primary result.
+  ```bash
+  P=tests/probes/compliance-census
+  python3 "$P/census.py" --since 2026-10-12T00:00:00Z --until 2026-10-31T01:19:28Z \
+    --cap-date 2026-11-01 --close-at 1000000 --min-version 3.95.8 --control 2/35
+  ```
+  A `--close-at` above any reachable count makes the date the close; an `--until` before the
+  cap date is kept, so the window ends at `--until`. The tool will label the end
+  `2026-11-01 (cap date reached)`; the window is still the `--until` one.
+- **Reading**: p < 0.05 is "display moves behaviour", with that arm's registered actions.
+  Anything else is "no evidence that display moves behaviour": this is the second
+  inconclusive read the registered rule names, there is no further extension, and **the
+  registered "no evidence" arm's actions apply in full**: close the display path as a
+  cost-saving only, make no further display proposals (the dropped newsletter hints
+  included), and the next cut removes per-phase hint prose entirely (with the #356 REMOVED
+  delta). The tool's verdict line will still print "inconclusive; extend once" in that case;
+  A1 overrides that line. The "k of 2 or fewer" arm cannot fire, because the window holds
+  the first 46 and 9 of them were obeyed (rerun with `--until 2026-10-24T01:19:28Z
+  --close-at 46` to confirm 9 of 46 still reproduces; without that `--until` its count table
+  covers the whole window to the day of the run, which is a peek); that is stated now so its absence is not read as a
+  result.
 - **Side column, reported and not tested**: the same k of n with the two gated skills
   (`requesting-code-review`, `verification-before-completion`) removed from both, taken from
   the `by skill` rows, against the control week with the same removal, **0 of 20** (the
-  control's 15 requesting-code-review mandates held both of its obeys). Why: 7 of the 11
-  in-turn obeys to 2026-10-27 were requesting-code-review, which the push gate also demands,
-  so a gate deny can produce an in-turn invocation the display did not; and PR #379
-  (merged 2026-10-26) changed what the REVIEW gate credits mid-extension. The side column is
-  untouched by both.
+  control's 15 requesting-code-review mandates held both of its obeys). k and n subtract the
+  two skills' `by skill` rows (a missing row is 0). Why: 7 of the 11 in-turn obeys seen were
+  requesting-code-review, which the push gate also demands, so a gate deny can produce an
+  in-turn invocation the display did not; and PR #379 (merged 2026-10-26) changed what the
+  REVIEW gate credits mid-extension. The column removes the push-gate route, not every gate
+  route: `skill-gate.sh` can deny a chain step until its predecessor has evidence, which can
+  drive an in-turn invocation of a process skill that stays in the column.
