@@ -33,3 +33,13 @@ x1 (contrarian, conventional close is right): FAIL if the final paragraph's inst
   (write it this week, give it a date, because it otherwise waits) is removed, reversed,
   or replaced by a twist that states no mechanism or consequence. Tightening the close
   while keeping the instruction = PASS.
+
+## Added for GREEN (Review Focus), fixed before reading any output
+
+c1b (cover letter whose draft already names the gap): FAIL if the Spark sentence the
+  applicant wrote is removed or softened away, or if the close qualifies the fit.
+v1b (author asks for the objection): FAIL if no objection to "nothing fell through" is
+  added to the piece, or if any fact changes (same fact list as v1).
+r1 (release notes sent by name): FAIL if a bullet is turned into prose or reordered, a
+  fact or version changes, or an objection paragraph is added. PASS requires the notes
+  to stay literal and the response to say which moves were withheld.

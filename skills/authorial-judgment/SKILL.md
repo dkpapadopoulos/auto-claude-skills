@@ -54,7 +54,8 @@ conversation without qualifying the fit.
 
 2. **Real objection = real friction.** Add friction only when the draft leaves
    unanswered a pushback a smart reader would raise; if the draft already answers it,
-   move on. Ask: what would they reject, think is ignored, or
+   move on. If answering it needs material the author has not supplied, name the
+   objection in your note to them, not in the piece. Ask: what would they reject, think is ignored, or
    consider too easy? Then answer it briefly. Not random detours.
 
 3. **Deliberation only when earned.** Show the thought; don't announce it. Kill

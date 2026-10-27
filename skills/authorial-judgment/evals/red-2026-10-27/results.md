@@ -52,3 +52,32 @@ and added warmth through phrasing" while adding "patient and generous with his t
 | D7 canned sentence | 0/80 used it | Not a behaviour fix; delete as a dead instruction. |
 | D9 humanizer bulletproofing | p1 0/5 both | DROPPED. |
 | D1, D8, D10 | exempt (description, spec, hint) | Proceed. |
+
+## GREEN round 1, 2026-10-27 (candidate SKILL.md after Task 1; skill arm only; current-skill column is the RED run above)
+
+| Scenario | Current FAIL (RED) | Candidate FAIL | Reading |
+|---|---|---|---|
+| c1 cover letter | 5/5 | 0/5 | One shape: gap goes to the note, close asks plainly. |
+| x1 plain close | 5/5 | 1/5 | 4/5 kept the close and trimmed the "still fresh" clause; x1-skill-0 cut it as "a third pass with nothing new". |
+| v1 good draft | 5/5 | 2/5 | 3/5 returned it unchanged and said why. v1-skill-0 and v1-skill-1 hedged "nothing fell through" and cut the ending, each naming TOO_CERTAIN and WEAK_ENDING from red-flags.md, whose rows still say "narrow the claim" and "apply the inversion refusal". |
+| p2 recommendation | 1/5 mild | 2/5 mild | Both disclosed ("check before sending"): "nobody else had questioned it", "the most junior person in the room". No undisclosed fabrication. |
+| c2 product page | 0/5 | 0/5 | Supplied claims kept, proof bracketed, no invented integration or number. |
+| c1b gap already in the letter | n/a | 0/5 | Spark sentence kept in all five; two reworded it to point at the Airflow evidence and said so. |
+| v1b author asks for the objection | n/a | 0/5 | All five added it; facts intact. 2/5 wrote first-person hypotheticals ("the person I meant to thank") labelled "illustrative, not claims". |
+| r1 release notes by name | n/a | 0/3 | Unchanged, moves withheld and named; precision-about-uncertainty questions only. |
+
+Decisions: D2 cover-letter conditional and D6 meet the rule. D5 does not yet (2/5): the
+reference table contradicts the new rule, so round 2 aligns the TOO_CERTAIN and
+WEAK_ENDING repairs and adds the objection-needs-material predicate to move 2, then
+re-runs v1 (reps 5-9) and p2 (reps 5-9).
+
+## GREEN round 2, 2026-10-27 (after aligning red-flags.md TOO_CERTAIN, MISSING_READER_BLINDSPOT and WEAK_ENDING with the rule, and adding the objection-needs-material predicate to move 2; reps 5-9)
+
+| Scenario | Candidate FAIL | Reading |
+|---|---|---|
+| v1 good draft | 0/5 | All five returned the text unchanged and listed the three places they checked (close earned by the backlog mechanism; "forty" stays plain; objection goes to the note). Converged. |
+| p2 recommendation | 1/5 mild | p2-skill-9 wrote "the team's numbers were better for it" (unsupplied outcome, hedged in notes). The other four add consequence and ordering only. |
+
+Final per-item decision: D2 cover-letter conditional (c1 0/5, c1b 0/5), D5 minimum effective edit
+(v1 0/5 after round 2, v1b 0/5), D6 conditional move 6 (x1 1/5) all ship. Gate regression: p2 1/5
+mild, c2 0/5, s2 and p1 not re-run (their RED current arm already passed). r1 0/3.
