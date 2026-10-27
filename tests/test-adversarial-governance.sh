@@ -129,6 +129,9 @@ assert_contains "frontend-quality: hint present" "FRONTEND QUALITY" "${FQR_HINT}
 assert_contains "frontend-quality: names web-design-guidelines (the real upstream id)" "web-design-guidelines" "${FQR_HINT}"
 assert_not_contains "frontend-quality: does not name the non-existent web-interface-guidelines id" "web-interface-guidelines" "${FQR_HINT}"
 assert_contains "frontend-quality: names react-best-practices" "react-best-practices" "${FQR_HINT}"
+# The spec scopes react-best-practices to React/Next signals; the hint fires on every frontend
+# signal, so the condition has to live in the text (review finding, 2026-10-27).
+assert_contains "frontend-quality: react-best-practices conditioned on a React/Next app" "React or Next app" "${FQR_HINT}"
 assert_contains "frontend-quality: names our fallback (runtime-validation)" "runtime-validation" "${FQR_HINT}"
 assert_contains "frontend-quality: conditional wording (is installed)" "is installed" "${FQR_HINT}"
 assert_not_contains "frontend-quality: no hardcoded Skill() for web-interface-guidelines" "Skill(web-interface-guidelines" "${FQR_HINT}"

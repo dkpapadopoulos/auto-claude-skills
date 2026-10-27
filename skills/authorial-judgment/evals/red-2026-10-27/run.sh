@@ -9,9 +9,9 @@ sc="$1"; arm="$2"; rep="$3"
 d="$R/fixtures/$sc"; out="$R/out/$sc-$arm-$rep"
 [ -s "$out.txt" ] && exit 0
 draft="$R/fixtures/drafts/$(cat "$d/draft")"
-prompt="$R/out/$sc-$arm.prompt"
+prompt="$out.prompt"   # per rep: concurrent reps must never share a file
 { cat "$d/ask-$arm.txt"; printf '\n---\n\n'; cat "$draft"; } > "$prompt"
-sys="$R/out/system-skill.txt"
+sys="$out.sys"
 { printf 'The authorial-judgment skill has been invoked for this task and is in effect. Its content follows.\n\n'
   cat "$SKILL_DIR/SKILL.md"; printf '\n\n# references/red-flags.md\n\n'; cat "$SKILL_DIR/references/red-flags.md"; } > "$sys"
 extra=()

@@ -361,7 +361,8 @@ Positions, Codex and mine agreeing unless marked:
    Exercise changed actions and their applicable loading, empty, error and success
    states at desktop and phone widths, including keyboard, focus and reduced motion;
    report tested paths and gaps (runtime-validation runs the checks). In REVIEW, apply
-   web-design-guidelines if installed, scoped to changed UI files."
+   web-design-guidelines if installed, scoped to changed UI files; in a React or Next app,
+   react-best-practices too if installed."
    My disagreement with Codex: keep it in IMPLEMENT as well as REVIEW (unchanged
    phases), since "finish the behaviour" bites while building.
 4. **Exposure before more text (Codex F5, adopted as a follow-up, not this change):**

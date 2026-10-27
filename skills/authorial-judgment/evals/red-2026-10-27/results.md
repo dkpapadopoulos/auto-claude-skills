@@ -66,10 +66,12 @@ and added warmth through phrasing" while adding "patient and generous with his t
 | v1b author asks for the objection | n/a | 0/5 | All five added it; facts intact. 2/5 wrote first-person hypotheticals ("the person I meant to thank") labelled "illustrative, not claims". |
 | r1 release notes by name | n/a | 0/3 | Unchanged, moves withheld and named; precision-about-uncertainty questions only. |
 
-Decisions: D2 cover-letter conditional and D6 meet the rule. D5 does not yet (2/5): the
-reference table contradicts the new rule, so round 2 aligns the TOO_CERTAIN and
-WEAK_ENDING repairs and adds the objection-needs-material predicate to move 2, then
-re-runs v1 (reps 5-9) and p2 (reps 5-9).
+Decisions: D2 cover-letter conditional and D6 meet the rule. Two rows breach it: v1 (2/5)
+and p2 (2/5, both mild; mild counts as FAIL, see rubric.md). Both breaches trace to
+red-flags.md rows that contradict the new rule (TOO_CERTAIN and WEAK_ENDING for v1;
+MISSING_READER_BLINDSPOT, which still sent unsupplied material into the piece, for p2),
+so round 2 aligns those rows, adds the objection-needs-material predicate to move 2, and
+re-runs v1 and p2 (reps 5-9). Pooled across both rounds p2 is 3/10 mild.
 
 ## GREEN round 2, 2026-10-27 (after aligning red-flags.md TOO_CERTAIN, MISSING_READER_BLINDSPOT and WEAK_ENDING with the rule, and adding the objection-needs-material predicate to move 2; reps 5-9)
 

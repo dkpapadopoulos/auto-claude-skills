@@ -33,7 +33,7 @@ sound human. This gate outranks every move below.
 ## Which moves the draft needs
 
 Read the draft once and decide which moves it needs. A move you cannot name a reason
-for is not applied; the reader's request is a reason. A good draft comes back near-unchanged:
+for is not applied; the author's request is a reason. A good draft comes back near-unchanged:
 the author's facts, numbers, dates, names, commitments and stated certainty stay as
 written, and a plain claim stays plain unless the draft's own evidence contradicts it.
 End with the three largest edits and why.
