@@ -389,6 +389,15 @@ eq "unparseable version: the reader refuses with exit 2" "rc=2" "$(printf '%s\n'
 eq "unparseable version: it says it cannot check" "1" \
    "$(printf '%s\n' "${_nv_out}" | grep -c '^error: cannot check: no valid IMPLEMENT_SHADOW_PREDICATE_VERSION')"
 
+# A lib that returns before setting the version must not be rescued by a value
+# inherited from the environment: that is the same guess, arriving another way.
+printf 'return 0\nIMPLEMENT_SHADOW_PREDICATE_VERSION=97\n' > "${_NV}/hooks/lib/implement-shadow.sh"
+_nv_out="$(IMPLEMENT_SHADOW_PREDICATE_VERSION=3; export IMPLEMENT_SHADOW_PREDICATE_VERSION; _nv_run)"
+eq "inherited version + lib returning early: the reader refuses with exit 2" "rc=2" \
+   "$(printf '%s\n' "${_nv_out}" | tail -1)"
+eq "inherited version + lib returning early: it reports no corpus" "0" \
+   "$(printf '%s\n' "${_nv_out}" | grep -c 'predicate_version')"
+
 # --- Task 5: --status ---
 seed()  { : > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"; }
 mkrec() { rec "$1" "2026-07-28T$2:00Z" "$3" "br-$1" "tok-$1"; }

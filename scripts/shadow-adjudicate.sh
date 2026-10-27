@@ -29,6 +29,10 @@ set -u
 REQUIRED_PREDICATE_VERSION=""
 _sa_lib="$(cd "$(dirname "${BASH_SOURCE:-$0}")/.." 2>/dev/null && pwd)/hooks/lib/implement-shadow.sh"
 if [ -f "${_sa_lib}" ]; then
+    # Cleared first, so a value inherited from the caller's environment can
+    # never stand in for one the lib failed to set (an early return, a
+    # partial update).
+    unset IMPLEMENT_SHADOW_PREDICATE_VERSION
     # shellcheck disable=SC1090
     . "${_sa_lib}" 2>/dev/null || true
     case "${IMPLEMENT_SHADOW_PREDICATE_VERSION:-}" in
