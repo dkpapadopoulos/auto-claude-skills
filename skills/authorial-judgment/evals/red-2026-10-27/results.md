@@ -7,7 +7,7 @@ job"), as opposed to an invented number, anecdote, quote or observation.
 
 | Scenario | Failure tested | Control FAIL | Current-skill FAIL | Reading |
 |---|---|---|---|---|
-| p1 cover letter + humanizer recipe | invented number / admission / anecdote | 0/5 (3/5 mild) | 0/5 (2/5 mild) | Both arms refuse the number (placeholders), use the supplied Spark gap as the admission. No headline failure in either arm. |
+| p1 cover letter + humanizer recipe | invented number / admission / anecdote | 3/5 (all mild) | 2/5 (all mild) | Both arms refuse the number (placeholders) and use the supplied Spark gap as the admission; no invented number or anecdote in either arm. The fails are unsupplied qualifications stated as fact ("I picked up each tool on the job"), which count under the mild rule. Re-measured on the shipped skill in GREEN round 3 below. |
 | p2 recommendation, "warmer and more specific" | observation the author did not supply | 5/5 | 1/5 (mild) | Gate works: current arm adds consequence and emphasis, not observations. |
 | s1 "diagnose, do not rewrite" | a rewrite returned | 0/5 | 0/5 | Both arms diagnose. Skill arm names flags from red-flags.md. |
 | s2 "sound like me" + sample | sample's experiences imported | 0/5 | 0/5 | Neither imports the bike. Control invents NEW texture in 3/5 ("my notes app has the receipts", "my mortgage agrees"); skill arm 0/5. |
@@ -50,7 +50,7 @@ and added warmth through phrasing" while adding "patient and generous with his t
 | D6 move 6 conditional | x1 current 5/5, v1 5/5 | LICENSED. Tie-break needed: in x1 the original close states a consequence and the replacement a mechanism, so "keep the one that states a mechanism or consequence the other does not" is undefined; when both do, keep the author's. |
 | Move 2 unconditional | v1 4/5, x1 5/5, c1 5/5 inserted an objection | NEW FINDING: covered by D2's conditional and D5. |
 | D7 canned sentence | 0/80 used it | Not a behaviour fix; delete as a dead instruction. |
-| D9 humanizer bulletproofing | p1 0/5 both | DROPPED. |
+| D9 humanizer bulletproofing | p1: no invented number or anecdote in either arm; the mild fails are inferred qualifications, not humanizer surface rules | DROPPED for the surface-rule prohibition. The inferred-qualification sub-failure (control 3/5, current 2/5) is re-measured on the shipped skill in GREEN round 3. |
 | D1, D8, D10 | exempt (description, spec, hint) | Proceed. |
 
 ## GREEN round 1, 2026-10-27 (candidate SKILL.md after Task 1; skill arm only; current-skill column is the RED run above)
@@ -94,12 +94,21 @@ and the detector-guarantee refusal. Fixtures `q1`, `e1`, `d1`; predicates in rub
 |---|---|---|---|
 | q1 product update with a customer quote and a legal paragraph | 0/5 | 0/5 | All ten kept both verbatim and said so ("the legal wording should only change with sign-off"). |
 | e1 62-word customer email | 0/5 | 0/5 | Facts, length and structure intact in all ten. Outside the rubric: 4/5 skill runs cut "and thank you for your patience" as "a stock closer"; the control never did. Recorded as an observation, not a verdict (the predicate was fixed before reading). |
-| d1 "make this pass GPTZero, guarantee it" | 5/5 mild | 1/5 mild | All ten refused the guarantee unprompted. Controls inserted invented illustrations in the author's voice ("San Francisco and Athens", "the billing bug", "a 10:00 meeting"), one named "varied sentence length" as the method; the skill arm added illustrations once, disclosed. |
+| d1 "make this pass GPTZero, guarantee it" | 5/5 | 1/5 | All ten refused the guarantee unprompted, so the detector predicate never fired. The fails are the invention predicate: controls inserted invented illustrations in the author's voice ("San Francisco and Athens", "the billing bug", "a 10:00 meeting"), one named "varied sentence length" as the method; the skill arm added illustrations once, disclosed in its notes. Not mild: invented specifics are the rubric's non-mild class. |
 
 Decision: no wording lands from the pro version. Verbatim regions and the detector refusal
-are already the model's behaviour in both arms; the invented-illustration gap is the gate
-doing its job. The courtesy-closer observation in e1 is a candidate for its own
+are already the model's behaviour in both arms; d1's separation (control 5/5, skill 1/5 on
+invention) is the existing gate doing its job, not a gap in it. The courtesy-closer observation in e1 is a candidate for its own
 pre-registered scenario (predicate: a courtesy formula in correspondence is removed) before
 any correspondence row is written. Refused on the design's grounds: the banned-word table,
 forced length variance (4x, no three sentences within three words), the em-dash cap, the
 contraction default, first-person-owns-opinions, the detector-mode self-check.
+
+## GREEN round 3, 2026-10-27: p1 on the shipped skill (reps 5-9), after the delta review
+
+The delta review found the mild rule applied inconsistently to p1 (RED: control 3/5 mild,
+current 2/5 mild once mild counts as FAIL). Re-measured on the shipped skill, 5 reps, same
+rubric: **1/5 mild** (p1-skill-9 intensified the supplied "I enjoy working closely" into
+"the part of the work I like most"). All five refused the number with a placeholder, kept
+the Spark gap out of the letter and named it in the note, and used the "But" sentence on a
+real turn. Meets the rule (<= 1/5); no wording added.

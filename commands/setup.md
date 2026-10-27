@@ -92,14 +92,18 @@ For UI work, the `frontend-quality-rules` hint offers two skills from Vercel's
 UI code against the Web Interface Guidelines: focus states, forms, typography, images,
 motion) and, in React/Next apps, `react-best-practices`. Check
 `~/.claude/skills/web-design-guidelines/` and `~/.claude/skills/react-best-practices/`
-and skip any that are present. Otherwise **ask the user** whether to install them:
+and skip any that are present. Otherwise **ask the user** whether to install them. The
+copies below are guarded so an existing directory is never nested into or overwritten:
 
 ```bash
 git clone --depth 1 https://github.com/vercel-labs/agent-skills.git /tmp/vercel-agent-skills
-cp -r /tmp/vercel-agent-skills/skills/web-design-guidelines ~/.claude/skills/web-design-guidelines
-cp -r /tmp/vercel-agent-skills/skills/react-best-practices ~/.claude/skills/react-best-practices
+[ -d ~/.claude/skills/web-design-guidelines ] || cp -r /tmp/vercel-agent-skills/skills/web-design-guidelines ~/.claude/skills/web-design-guidelines
+[ -d ~/.claude/skills/react-best-practices ] || cp -r /tmp/vercel-agent-skills/skills/react-best-practices ~/.claude/skills/react-best-practices
 rm -rf /tmp/vercel-agent-skills
 ```
+
+Note: the React skill's frontmatter declares `name: vercel-react-best-practices`, so the
+skills listing shows it under that name even though its folder is `react-best-practices`.
 
 If the user declines, skip this step; the hint degrades to its own baseline.
 
@@ -664,7 +668,7 @@ If yes:
 
 ## Execution
 
-Run each step in order. For steps 0 and 1, use AskUserQuestion to get the user's preference before taking action. For steps 2-4, if a skill directory already exists at the target path, skip it. For steps 5, 6, 7, 9, 10, and 11, use AskUserQuestion to get the user's preference before installing, and skip tools that are already installed (for step 11: skip if `.claude/org-hub.json` already exists).
+Run each step in order. For steps 0 and 1, use AskUserQuestion to get the user's preference before taking action. For steps 2-4, if a skill directory already exists at the target path, skip it. For step 3b, use AskUserQuestion before installing anything, and skip each skill whose directory already exists. For steps 5, 6, 7, 9, 10, and 11, use AskUserQuestion to get the user's preference before installing, and skip tools that are already installed (for step 11: skip if `.claude/org-hub.json` already exists).
 
 After setup, confirm what was configured:
 - Companion plugins: which were installed or skipped
@@ -672,6 +676,7 @@ After setup, confirm what was configured:
 - Cozempic: installed or skipped
 - `~/.claude/skills/doc-coauthoring/SKILL.md` exists
 - `~/.claude/skills/webapp-testing/SKILL.md` exists
+- Vercel frontend skills (3b): `~/.claude/skills/web-design-guidelines/` and `~/.claude/skills/react-best-practices/` installed or skipped
 - `security-scanner`: bundled with auto-claude-skills (no external install needed)
 - `uv`/`uvx`: available or skipped
 - `chub`: available or skipped
