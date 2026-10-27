@@ -11,6 +11,8 @@ exists so the history is not lost. Each section reproduces the original unit
 and says where its surviving instruction lives. Every section was moved in the commit
 `docs: push-gate-enforcement rule moves test-guarded SUBJECT narrative to docs/history`
 (the commit that created this file: `git log --diff-filter=A -- docs/history/rules-push-gate-enforcement.md`).
+Review corrections followed in
+`docs: push-gate-enforcement rule keeps the brace-group measurement and drops a deleted function name`.
 
 ## Preamble: "Path-scoped rule, split out of the repo-root `CLAUDE.md` ..."
 
@@ -84,14 +86,23 @@ with the test that guards each:
 - "Measured: `/bin/zsh -c 'cd =(touch /tmp/X; echo x)'` creates the file, and `git push
   --delete origin =(git push origin main)` certified." Guard: lines 274-279 (both zsh
   `=( )` shapes refuse; the comment records the measurement).
-- "Measured across `echo`, `cd`, `true` and a brace group." and "(mutation-verified:
-  four such cells stayed green while the guard-level cells failed)". Guard: lines
-  471-515 (the escaped-operator merge shapes reach the gate END TO END under `echo`,
-  `cd`, `true` and `<`, each asserting the REVIEW remedy text, i.e. which gate denied).
+- "(mutation-verified: four such cells stayed green while the guard-level cells
+  failed)". Guard: lines 471-515 (the escaped-operator merge shapes reach the gate END
+  TO END under `echo`, `cd`, `true` and `<`, each asserting the REVIEW remedy text,
+  i.e. which gate denied). The sentence "Measured across `echo`, `cd`, `true` and a
+  brace group." was first moved too and is back in the rule: no cell covers the
+  brace-group shape, so the measurement is not test-guarded.
 
 Corrected, not moved: "it is **5** today" and "(#229; **5** today)" now read **6** on
 2026-10-27. `hooks/lib/implement-shadow.sh` line 113 sets
 `IMPLEMENT_SHADOW_PREDICATE_VERSION=6` (#379).
+
+Corrected in review, not moved: "Deliberately NOT applied to
+`command_push_subject_is_partial`/`command_push_is_multi_ref`" named a function the
+same bullet says was deleted (`command_push_is_multi_ref` no longer exists in
+`hooks/lib/git-command.sh`). The name is dropped and the pronouns are made singular
+("its failure mode", "gating it"); the sentence is unchanged in meaning for
+`command_push_subject_is_partial`.
 
 Still in force: the bullet in the rule.
 
