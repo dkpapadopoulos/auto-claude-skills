@@ -1,0 +1,11 @@
+Why Your Standup Should Be Async
+
+Daily standups are a staple of modern software teams. It's worth noting that they originated in the agile movement as a lightweight way to keep everyone aligned. But in today's distributed world, the synchronous standup has become a relic.
+
+Let's unpack why. First, time zones make it almost impossible to find a slot that works for everyone. Second, standups interrupt deep work. Third, most of what gets said could be a message.
+
+An async standup, by contrast, is like a river that keeps flowing: everyone adds their update when it suits them, and the stream of information never stops. Teams that adopt async standups report higher satisfaction and better focus.
+
+Of course, some will say that face time matters. And it does. But that's what retros and one-on-ones are for.
+
+In conclusion, the synchronous standup is a habit, not a necessity. Teams that let go of it will find themselves more focused, more flexible, and more productive. The future of work is async, and the standup is just the beginning.

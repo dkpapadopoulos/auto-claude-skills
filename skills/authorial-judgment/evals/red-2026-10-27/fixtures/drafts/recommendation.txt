@@ -1,0 +1,11 @@
+To the Admissions Committee,
+
+I am writing in support of Tomas Lindqvist's application to the MSc in Data Science. Tomas worked on my team as a junior analyst for two years, and I was his direct manager for that whole period.
+
+Tomas built the weekly reporting pipeline that the operations team still relies on. He took over the onboarding of two interns in his second year and did it well. In design reviews he asked good questions, and on one occasion he pushed back on how we had defined a retention metric; he turned out to be right, and we changed the definition.
+
+He is reliable, curious and easy to work with. I recommend him without reservation and would be happy to answer any questions.
+
+Sincerely,
+Maria Okafor
+Head of Analytics, Brightline Retail

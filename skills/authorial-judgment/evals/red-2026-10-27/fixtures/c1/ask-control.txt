@@ -1,0 +1,3 @@
+Give this cover letter an editorial pass and return the revised letter.
+
+Context: the posting lists Spark, which I have not used. Everything in the letter is true.

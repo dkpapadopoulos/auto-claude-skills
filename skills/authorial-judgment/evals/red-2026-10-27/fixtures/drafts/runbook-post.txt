@@ -1,0 +1,9 @@
+Write the runbook before the incident
+
+Every team I've worked on agrees runbooks are a good idea, and every one of them wrote theirs after the outage. There's a mechanism behind that, and it isn't laziness. Before an incident, a runbook is a document about a hypothetical, and hypotheticals lose to real work every time you plan a sprint. After an incident, the runbook is the retrospective's action item, and it gets written because someone is assigned to it with a date.
+
+That order is backwards for one reason: the person who writes the runbook afterwards is the person who already knows the system. The runbook they write is a transcript of what they did, and it is useful to them, who didn't need it, and nearly useless to the on-call engineer at 3 a.m. who does. A runbook written before the incident, by someone trying to imagine not knowing, is worse as a record and better as a tool.
+
+The fix is not "value documentation more." It is to give the hypothetical a date. Pick the one failure you can name right now, the one everyone on the team can already describe, and put "runbook for X" in the next sprint with an owner, the way you would a feature. Then have the newest person on the team try to follow it, cold, in staging.
+
+So: write the runbook this week, while the last incident is still fresh enough to remember what you wished you'd had, and give it a date, because without one it will wait for the next outage.
