@@ -1,12 +1,17 @@
 #!/bin/bash
 # One fresh-context headless run. usage: bash run.sh <scenario> <control|skill> <rep>
-# Needs: $R/home (isolated HOME, see README.md), $R/cwd (empty dir), $R/out.
-# SKILL_DIR selects which SKILL.md the skill arm carries (default: this skill).
+# Scratch lives OUTSIDE the repo tree in $RED_WORK (default under $TMPDIR): the isolated
+# HOME, cwd and outputs. A scratch dir under skills/ trips the on-disk lints even when
+# gitignored (the CLI writes its own cache naming CLAUDE_PLUGIN_ROOT into HOME).
+# Needs: $RED_WORK/home (isolated HOME, see README.md). SKILL_DIR selects which SKILL.md
+# the skill arm carries (default: this skill).
 set -u
 R="$(cd "$(dirname "$0")" && pwd)"
+RED_WORK="${RED_WORK:-${TMPDIR:-/tmp}/acs-red-2026-10-27}"
+mkdir -p "$RED_WORK/out" "$RED_WORK/cwd"
 SKILL_DIR="${SKILL_DIR:-$(cd "$R/../.." && pwd)}"
 sc="$1"; arm="$2"; rep="$3"
-d="$R/fixtures/$sc"; out="$R/out/$sc-$arm-$rep"
+d="$R/fixtures/$sc"; out="$RED_WORK/out/$sc-$arm-$rep"
 [ -s "$out.txt" ] && exit 0
 draft="$R/fixtures/drafts/$(cat "$d/draft")"
 prompt="$out.prompt"   # per rep: concurrent reps must never share a file
@@ -17,7 +22,7 @@ sys="$out.sys"
 extra=()
 [ "$arm" = skill ] && extra=(--append-system-prompt "$(cat "$sys")")
 start=$(date +%s)
-env -i HOME="$R/home" PATH="$PATH" USER="$USER" LOGNAME="$USER" TMPDIR="${TMPDIR:-/tmp}" LANG=en_US.UTF-8 TERM=dumb \
+env -i HOME="$RED_WORK/home" PATH="$PATH" USER="$USER" LOGNAME="$USER" TMPDIR="${TMPDIR:-/tmp}" LANG=en_US.UTF-8 TERM=dumb \
   claude -p --model sonnet --tools "" --disable-slash-commands --strict-mcp-config \
   --setting-sources user --no-session-persistence --output-format text ${extra[@]+"${extra[@]}"} \
   < "$prompt" > "$out.tmp" 2> "$out.err"
