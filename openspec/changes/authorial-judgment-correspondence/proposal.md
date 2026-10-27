@@ -35,9 +35,13 @@ the external `frontend-design` skill.
 ## Capabilities
 
 - `prose-quality` (MODIFIED): the suppression requirement's rationale, and an explicit
-  statement that suppression governs inferred activation only. Further ADDED
-  requirements for the output contracts and the preservation check are added to this
-  change once RED decides which items land.
+  statement that suppression governs inferred activation only. (ADDED, after RED/GREEN):
+  minimum effective edit on a good draft; cover-letter conditional.
+- `skill-routing` (MODIFIED): the `frontend-quality-rules` hint leads with an
+  evidence-and-behaviour baseline and names the real upstream id `web-design-guidelines`.
+- Proposed, awaiting owner approval (design.md D13): amended hint text absorbing
+  reuse-controls, keyboard/focus and reduced-motion behaviour; a `/setup` row for the
+  Vercel skills; an exposure experiment as a follow-up.
 
 ## Impact
 

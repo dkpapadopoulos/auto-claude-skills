@@ -1,7 +1,7 @@
 # authorial-judgment revision + frontend-design default use — design
 
 **Date:** 2026-10-27
-**Status:** APPROVED by the owner 2026-10-27; RED baseline runs in progress. This file is the committed copy; the
+**Status:** GREEN complete 2026-10-27 (`skills/authorial-judgment/evals/red-2026-10-27/results.md`). This file is the committed copy; the
 gitignored `docs/plans/` original is superseded by it.
 **Sources considered:** Vuyyuru, "I built a Claude skill that makes writing not sound like AI"
 and the Drive `humanizer` SKILL.md; Vuyyuru, "How can your vibe-coded website not look
@@ -322,3 +322,62 @@ marker); whether D12's script is worth a file; whether D10 lands in the same PR 
 own (it touches `config/`, so it is routing-governed and needs the recorded verify).
 SKILL.md carries no narrative: no project names, no session dates, no "we found"
 (writing-skills anti-pattern); the design doc is where that lives.
+
+## Outcome after RED and GREEN (2026-10-27)
+
+RED (80 runs, hand-judged, `evals/red-2026-10-27/results.md`): the gate held and
+transferred to letters and product copy; the skill's failures ran the other way (good
+draft rewritten 5/5, correct close cut 5/5, cover letter volunteering its gap 5/5), because
+moves 2 and 6 fired unconditionally. Landed: D1, D2 as a cover-letter conditional only,
+D5 (with the no-hedging line from D4), D6 with a tie-break ("if both do, or neither does,
+keep the author's version"), D7, D8, D10. Dropped on the rule: D2's recommendation,
+website and email rows, D3, the `[NEEDS]` marker, D9, D12. GREEN needed one refactor:
+the reference table's TOO_CERTAIN, MISSING_READER_BLINDSPOT and WEAK_ENDING rows carried
+the old repairs and two reps cited them; aligned, then v1 0/5.
+
+## D13. Frontend items 3-6 (Codex sparring round 3, 2026-10-27; AWAITING OWNER APPROVAL)
+
+Sources: the owner's items 3-6 (Radix Primitives, Motion, GSAP ScrollTrigger, Vercel
+`web-design-guidelines`); Codex session 01a17d4a-4779-7353-a7ee-7dad407feabc. Measured
+in this round: the hint rendered in 13 transcripts outside this session, 1 on a real UI
+task ("review this with frontend-design"), 2 on design discussions about frontend
+routing, 10 on subagent status chatter.
+
+Positions, Codex and mine agreeing unless marked:
+
+1. **Behaviour, not libraries.** Carry "reuse working controls; when a new composite
+   control is needed, prefer an established primitive and verify keyboard and focus
+   behaviour after integration" and "support reduced motion; movement explains a
+   meaningful state change". Never name Radix, Motion or GSAP as a default: a library in
+   a user's repo is the user's decision, `frontend-design` already covers motion
+   restraint and visible focus, and GSAP's scroll-driven demo is a design decision for a
+   brief that asks for it. No reference file: it would duplicate upstream docs.
+2. **Identifier defect, fixed in this change:** the hint named `web-interface-guidelines`;
+   the upstream skill is `web-design-guidelines`. Config, test and spec delta corrected.
+3. **Amend D10's hint text** to absorb item 1 (Codex's 427-char draft, merged with ours
+   because the governance test requires `runtime-validation` to be named):
+   "FRONTEND QUALITY: use supported product claims; omit unsupported proof and label
+   simulations. Preserve the approved visual direction and reuse working controls.
+   Exercise changed actions and their applicable loading, empty, error and success
+   states at desktop and phone widths, including keyboard, focus and reduced motion;
+   report tested paths and gaps (runtime-validation runs the checks). In REVIEW, apply
+   web-design-guidelines if installed, scoped to changed UI files."
+   My disagreement with Codex: keep it in IMPLEMENT as well as REVIEW (unchanged
+   phases), since "finish the behaviour" bites while building.
+4. **Exposure before more text (Codex F5, adopted as a follow-up, not this change):**
+   1 relevant render in 13 says the hint's problem is where it fires, not what it says.
+   Follow-up experiment: label a frozen corpus of real UI changes and non-UI decoys,
+   compare current text, suppression and the amended text on identical tasks, count
+   relevant renders, missed UI tasks, and whether the agent exercised states or only
+   echoed the checklist. Suppression wins only if UI outcomes do not worsen.
+5. **Discovery of the Vercel skills via `/setup`, not a session-start notice:** add a
+   "Frontend polish (optional)" row to `commands/setup.md` naming `web-design-guidelines`
+   and `react-best-practices` with their repo, checked like the other rows. Rejected: a
+   per-session nag keyed on `package.json` (capability is not intent) and any automatic
+   install.
+6. **Refused:** a GSAP or Motion default; mandatory Radix; a new routed design skill; a
+   library bundle reference file; mandatory seed adoption (the pilot favoured the
+   unseeded arm 2 of 3).
+
+Needs the owner's yes on items 3 and 5 before either is built; item 2 is in; items 1, 4
+and 6 are positions.
