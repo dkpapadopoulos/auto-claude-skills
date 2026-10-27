@@ -134,6 +134,12 @@ assert_contains "frontend-quality: fires in IMPLEMENT" "IMPLEMENT" "${FQR_PHASES
 assert_contains "frontend-quality: fires in REVIEW" "REVIEW" "${FQR_PHASES}"
 # fallback registry must carry the same hint (drift guard)
 assert_contains "frontend-quality: mirrored to fallback registry" "frontend-quality-rules" "${FALLBACK_CONTENT}"
+# 2026-10-27: the hint leads with an evidence-and-behaviour baseline an agent can act on in
+# any install, and the fallback copy must be byte-identical (text drift is the recurring
+# PAIRED failure; name-presence alone does not catch it).
+assert_contains "frontend-quality: leads with the evidence baseline" "use real evidence for testimonials" "${FQR_HINT}"
+FQR_FB="$(jq -r '.methodology_hints[] | select(.name=="frontend-quality-rules") | .hint' "${PROJECT_ROOT}/config/fallback-registry.json" 2>/dev/null)"
+assert_equals "frontend-quality: fallback registry carries the identical hint text" "${FQR_HINT}" "${FQR_FB}"
 
 # agent-safety-review: safety eval cases red before code (TDD-for-evals).
 assert_contains "agent-safety-review: safety eval red before code" "before the behavior is implemented" "${SAFETY_CONTENT}"
