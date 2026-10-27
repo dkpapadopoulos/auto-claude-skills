@@ -682,6 +682,10 @@ eq "a record with NO advisory_emitted stays in the rate population" "1" \
 recae m2 "2026-08-01T10:00:00Z" "/repo/A" "feat/x" "tokM" true '"yes"'
 eq "a NON-BOOLEAN advisory_emitted stays in the rate population" "1" \
    "$(status | grep -c 'would-block  *1')"
+# ...and in --next's queue, which filters records with its own jq (cmd_next),
+# not through _episode_wb, so the rate cells above do not pin it.
+eq "--next DOES offer a NON-BOOLEAN advisory_emitted record" "1" \
+   "$("$SCRIPT" --next 2>/dev/null | grep -c '^m2 ' | tr -d ' ')"
 
 # A mixed episode keeps counting: only an episode whose would-block records are
 # ALL silent is excluded. Narrowing that would drop episodes the rate is
