@@ -697,6 +697,50 @@ eq "the empty-branch episode is present with its record id" "1" \
 eq "the attested and silent episodes are absent" "0" \
    "$(printf '%s\n' "$_re_out" | grep -cE 're3|re4')"
 
+# --- mixed-schema corpus (#382): every schema read, predicates never pooled ---
+# Four records from the REAL recorder, one episode each. One stays at the
+# producer's schema; one is rewritten to the schema before it (stamps removed),
+# one to the schema before that (advisory_emitted removed too), and one is moved
+# to the previous predicate. Versions are derived from the producer, never typed.
+_SV="${IMPLEMENT_SHADOW_SCHEMA_VERSION:-}"
+: > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
+for _t in tokMX5 tokMX4 tokMX3 tokMXP; do
+  ( unset SHADOW_STAMP_SESSION_ID SHADOW_STAMP_TOOL_USE_ID SHADOW_STAMP_CC_VERSION SHADOW_STAMP_ACS_VERSION
+    implement_shadow_record push "${ROOT}" "${_t}" /tmp/t.jsonl none branch-local true ) >/dev/null 2>&1
+done
+jq -c --argjson s1 "$(( _SV - 1 ))" --argjson s2 "$(( _SV - 2 ))" --argjson pv "$(( _PV - 1 ))" '
+    if .session_token == "tokMX4" then del(.session_id,.tool_use_id,.cc_version,.acs_version) | .schema_version = $s1
+    elif .session_token == "tokMX3" then del(.session_id,.tool_use_id,.cc_version,.acs_version,.advisory_emitted) | .schema_version = $s2
+    elif .session_token == "tokMXP" then .predicate_version = $pv
+    else . end' "$IMPLEMENT_SHADOW_LOG" > "$TMP/mx.t" && mv "$TMP/mx.t" "$IMPLEMENT_SHADOW_LOG"
+eq "mixed-schema fixture: (predicate, schema) per record" \
+   "$(( _PV - 1 ))/${_SV} ${_PV}/$(( _SV - 2 )) ${_PV}/$(( _SV - 1 )) ${_PV}/${_SV}" \
+   "$(jq -r '"\(.predicate_version)/\(.schema_version)"' "$IMPLEMENT_SHADOW_LOG" | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+eq "mixed-schema: every schema of the current predicate is in the rate population" "3" \
+   "$(status | awk '$1=="would-block" {print $2; exit}')"
+eq "mixed-schema: the other-predicate record is reported as excluded" "1" \
+   "$(status | awk '$1=="other-predicate" {print $2; exit}')"
+_mx_pid="$(jq -r 'select(.session_token == "tokMXP") | .record_id' "$IMPLEMENT_SHADOW_LOG")"
+_mx_re="$("$SCRIPT" --rate-episodes 2>/dev/null)"
+eq "mixed-schema: --rate-episodes holds the 3 current-predicate episodes" "3" \
+   "$(printf '%s\n' "$_mx_re" | grep -c .)"
+eq "mixed-schema: the other-predicate record is never pooled" "0" \
+   "$(printf '%s\n' "$_mx_re" | grep -cF -- "${_mx_pid:-no-such-id}")"
+# --next branches on the record's own schema_version (>= 3) for a null detail:
+# each schema must take the "carried no per-leg detail" arm, never the "< 3" one.
+_mx_legs=""
+for _i in 1 2 3; do
+  _mx_nx="$("$SCRIPT" --next 2>/dev/null)"
+  _mx_id="$(printf '%s\n' "$_mx_nx" | awk 'NR==1 {print $1}')"
+  _mx_legs="${_mx_legs}$(printf '%s\n' "$_mx_nx" | sed -n 's/^  legs    not recorded — schema \([0-9]*\) record carried no per-leg detail.*/\1/p') "
+  adj "${_mx_id:-none}" true_catch "mx" >/dev/null
+done
+eq "mixed-schema: --next reads each schema's null detail as 'not recorded at write time'" \
+   "$(( _SV - 2 )) $(( _SV - 1 )) ${_SV}" \
+   "$(printf '%s\n' ${_mx_legs} | LC_ALL=C sort -n | tr '\n' ' ' | sed 's/ $//')"
+eq "mixed-schema: --next never offers the other-predicate record" "1" \
+   "$("$SCRIPT" --next 2>/dev/null | grep -c '^nothing outstanding — all 3 ')"
+
 echo
 echo "Tests run: $(( PASS + FAIL ))  passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

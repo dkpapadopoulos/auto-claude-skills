@@ -890,6 +890,30 @@ assert_contains "schema-2 round trip: counted as one would-block episode" "n=1" 
 assert_contains "schema-2 round trip: --next offers it" "$(_rid 1)" "$(_rd 2026-10-20T00:00:00Z --next)"
 rm -f "${_CORP}" "${_ADJ}"
 
+# --- mixed-schema corpus (#382): both schemas read, predicates never pooled ------
+# Three records from the REAL recorder: one left at the producer's schema, one
+# rewritten to the previous schema (stamps removed, as above), and one moved to
+# the previous predicate. Versions are derived from the producer, never typed.
+_VSV="${VERIFY_SHADOW_SCHEMA_VERSION:-}"; _VPV="${VERIFY_SHADOW_PREDICATE_VERSION:-}"
+_reset
+_emit "${RA}" unexplained absent mx1 "2026-10-05T10:00:00Z"
+_emit "${RA}" unexplained absent mx2 "2026-10-05T11:00:00Z"
+_emit "${RA}" unexplained absent mx3 "2026-10-05T12:00:00Z"
+jq -c --argjson sv "$(( _VSV - 1 ))" --argjson pv "$(( _VPV - 1 ))" '
+    if .session_token == "mx2" then del(.session_id,.tool_use_id,.cc_version,.acs_version) | .schema_version = $sv
+    elif .session_token == "mx3" then .predicate_version = $pv
+    else . end' "${_CORP}" > "${_CORP}.t" && mv "${_CORP}.t" "${_CORP}"
+assert_equals "mixed-schema fixture: (predicate, schema) per record" \
+    "${_VPV}/${_VSV} ${_VPV}/$(( _VSV - 1 )) $(( _VPV - 1 ))/${_VSV}" \
+    "$(jq -r '"\(.predicate_version)/\(.schema_version)"' "${_CORP}" | tr '\n' ' ' | sed 's/ $//')"
+out="$(_status)"
+assert_contains "mixed-schema: both schemas of the current predicate are read" "n=2" "${out}"
+assert_contains "mixed-schema: the other-predicate record is reported as excluded" \
+    "EXCLUDED — other-predicate : 1 record(s)" "${out}"
+_rd 2026-10-20T00:00:00Z --adjudicate "$(_rid 3)" --verdict true_catch >/dev/null 2>&1
+assert_equals "mixed-schema: the other-predicate record cannot be labelled into the pool" "1" "$?"
+_reset
+
 # --- an AGENT's label resolves nothing ---------------------------------------
 _reset
 _emit "${RA}" unexplained absent t1 "2026-10-05T10:00:00Z"

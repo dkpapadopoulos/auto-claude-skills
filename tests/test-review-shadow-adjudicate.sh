@@ -973,6 +973,54 @@ else
     echo "  NOTE: base producer blob ${_BASE_BLOB} unavailable (shallow clone?) -- E4 not run"
 fi
 
+# MX (#382) a corpus mixing schema versions. Every record comes from a REAL
+# producer: two from the current one (one of them rewritten to the previous
+# schema, stamps and witness fields removed, which is what a record written
+# before the schema bump looks like at this predicate), and two from the base
+# producer, whose records carry the previous predicate AND the previous schema.
+# Both current-predicate records must reach the rate population whatever their
+# schema, and the base records must be excluded as other-predicate, never pooled.
+_SV="$( ( . "${WRITER}" 2>/dev/null; printf '%s' "${REVIEW_SHADOW_SCHEMA_VERSION:-}" ) )"
+if [ -s "${_BASE_WRITER}" ] && grep -q '^REVIEW_SHADOW_PREDICATE_VERSION=2$' "${_BASE_WRITER}" \
+   && [ -n "${_SV}" ]; then
+    _MX="${TMP}/mx.jsonl"; _MXA="${TMP}/mx-adj.jsonl"; rm -f "${_MX}" "${_MXA}"
+    _em_rec "${_MX}" tok-mx1
+    _em_rec "${TMP}/mx-old.jsonl" tok-mx2
+    jq -c --argjson sv "$(( _SV - 1 ))" \
+        'del(.session_id,.tool_use_id,.cc_version,.acs_version,.review_witness,.review_coverage)
+         | .schema_version = $sv' "${TMP}/mx-old.jsonl" >> "${_MX}" 2>/dev/null
+    for _t in tok-mx3 tok-mx4; do
+        ( . "${_BASE_WRITER}" 2>/dev/null
+          REVIEW_SHADOW_LOG="${_MX}" review_shadow_record "${_t}" "${_EMR}" "absent" "push" "HEAD" ) \
+          >/dev/null 2>&1
+    done
+    assert_equals "MX fixture: (predicate, schema) pairs are ${PV}/${_SV}, ${PV}/$(( _SV - 1 )) and 2 base records" \
+        "2/$(( _SV - 1 )) 2/$(( _SV - 1 )) ${PV}/$(( _SV - 1 )) ${PV}/${_SV}" \
+        "$(jq -r '"\(.predicate_version)/\(.schema_version)"' "${_MX}" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+    _omx="$(_run "${_MX}" "${_MXA}" --status)"
+    case "${_omx}" in
+        *"episodes (adjudicable) : 2 "*) _record_pass "MX both schemas of the current predicate are read (2 episodes)" ;;
+        *) _record_fail "MX both schemas of the current predicate are read (2 episodes)" "got: ${_omx}" ;;
+    esac
+    case "${_omx}" in
+        *"EXCLUDED — other-predicate : 2 record(s)"*) _record_pass "MX the base records are reported as other-predicate" ;;
+        *) _record_fail "MX the base records are reported as other-predicate" "got: ${_omx}" ;;
+    esac
+    _mx_base_ids="$(jq -r 'select(.predicate_version == 2) | .record_id' "${_MX}" 2>/dev/null)"
+    _mx_eps="$(_run "${_MX}" "${_MXA}" --rate-episodes)"
+    assert_equals "MX --rate-episodes holds the 2 current-predicate episodes" "2" "$(printf '%s\n' "${_mx_eps}" | grep -c .)"
+    _mx_pooled=0
+    while IFS= read -r _id; do
+        [ -n "${_id}" ] || continue
+        if printf '%s\n' "${_mx_eps}" | grep -qF -- "${_id}"; then _mx_pooled=$(( _mx_pooled + 1 )); fi
+    done <<EOF
+${_mx_base_ids}
+EOF
+    assert_equals "MX no base record is pooled into the rate population" "0" "${_mx_pooled}"
+else
+    echo "  NOTE: base producer or writer schema unavailable -- MX not run"
+fi
+
 # E5 a predicate-3 record without the fields, and ones carrying "invalid", are
 # excluded with their own cause and stay out of N. The field-less record is a
 # real producer record with the two fields deleted; the deletion is asserted to
