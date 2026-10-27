@@ -36,3 +36,15 @@ Both locked into `tests/fixtures/routing/authorial-judgment.txt`.
 - **FN** "i need a keynote intro…" — authoring intent phrased as "i need" rather than
   write/draft/compose. Broadening the verb set to need/want would re-introduce false
   positives; the current verb scope is the safe boundary.
+
+## 2026-10-27 addendum: correspondence prompts (description path only)
+
+`evals.json` gained six `should_trigger: true` correspondence prompts (cover letter,
+recommendation and reference letters, customer and outreach email, website copy) and two
+decoys (a privacy-policy page, a changelog entry). They test the DESCRIPTION path, the
+model's own choice when the skill is named or the draft is correspondence, which is how
+every measured real use of this skill arrived. The regex triggers are unchanged and no
+correspondence trigger was added: routing precision is this repo's known defect, and all
+real correspondence uses were invoked by name, so a new trigger would add mandates
+without recovering a single task. The regex table above therefore still stands as the
+routing result.
