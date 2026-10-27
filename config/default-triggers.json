@@ -839,7 +839,7 @@
       "priority": 15,
       "precedes": [],
       "requires": [],
-      "description": "Use when authoring or de-generic-ifying persuasive prose — essays, blog posts, op-eds, newsletters, talks, or a 'make this not sound like AI' rewrite — to apply a post-draft authorial-judgment revision pass. NOT for README/API-docs, specs/changelogs, or code.",
+      "description": "Use when a draft a reader will judge the writer by needs an editorial pass: essays, posts, talks, newsletters, website and product copy, cover letters, recommendation and reference letters, outreach and customer emails; or when prose 'sounds like AI', reads generic, or should sound like the author. NOT for README/API docs, specs, changelogs, release notes or code.",
       "invoke": "Skill(auto-claude-skills:authorial-judgment)"
     }
   ],

@@ -30,5 +30,13 @@ assert_contains "points to merged red-flag taxonomy" "references/red-flags.md"  
 REF="${PROJECT_ROOT}/skills/authorial-judgment/references/red-flags.md"
 assert_file_exists "red-flags.md reference exists"   "${REF}"
 
+# 2026-10-27 revision: scope by use, minimum effective edit, genre conditional, conditional move 6.
+assert_contains "description states triggers, not workflow" "Use when a draft a reader will judge the writer by" "${skill}"
+assert_contains "minimum effective edit"                 "comes back near-unchanged"        "${skill}"
+assert_contains "cover-letter conditional"              "If the draft is a cover letter"   "${skill}"
+assert_contains "move 6 tie-break keeps the author"      "keep the author's version"        "${skill}"
+assert_not_contains "canned blind-spot sentence removed" "half the problem"                 "${skill}"
+assert_not_contains "procedural rationale softened"      "certain and literal"              "${skill}"
+
 print_summary
 exit $?
