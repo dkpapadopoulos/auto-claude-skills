@@ -1718,6 +1718,35 @@ out="$(VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" VERIFY_SHA
 assert_contains "reader follows a MOVED producer version" "n=1" "${out}"
 assert_contains "the unmoved reader excludes that record" "n=0" "$(_status)"
 
+# --- no version, no guess (#405) --------------------------------------------------
+# A literal fallback equals the producer only until it bumps, then reports an
+# empty corpus. When the version cannot be derived the reader makes no claim and
+# exits 3, its "No claim is made" code. The moved-producer cell above is the
+# positive control: this same copy derives a version no literal could supply.
+cp "${RD}/hooks/lib/verify-shadow.sh" "${TMP}/verify-shadow.moved"
+_nv_run() { # -> output, then "rc=<status>" on the last line
+    VERIFY_SHADOW_LOG="${_CORP}" VERIFY_ADJUDICATION_LOG="${_ADJ}" VERIFY_SHADOW_NOW="2026-10-20T00:00:00Z" \
+        /bin/bash "${RD}/scripts/verify-shadow-adjudicate.sh" --status 2>&1
+    echo "rc=$?"
+}
+_nv_check() { # <label> <output>
+    assert_equals "$1: the reader refuses with exit 3" "rc=3" "$(printf '%s\n' "$2" | tail -1)"
+    assert_equals "$1: it says it cannot check" "1" \
+        "$(printf '%s\n' "$2" | grep -c '^error: cannot check: no valid VERIFY_SHADOW_PREDICATE_VERSION')"
+    assert_equals "$1: it reports no corpus" "0" "$(printf '%s\n' "$2" | grep -c 'adjudicable predicate_version')"
+}
+rm -f "${RD}/hooks/lib/verify-shadow.sh"
+_nv_check "producer lib absent" "$(_nv_run)"
+printf 'VERIFY_SHADOW_PREDICATE_VERSION=two\n' > "${RD}/hooks/lib/verify-shadow.sh"
+_nv_check "unparseable version" "$(_nv_run)"
+# A lib that returns before setting the version must not be rescued by a value
+# inherited from the environment: the same guess, arriving another way.
+printf 'return 0\nVERIFY_SHADOW_PREDICATE_VERSION=7\n' > "${RD}/hooks/lib/verify-shadow.sh"
+_nv_check "inherited version + lib returning early" \
+    "$(VERIFY_SHADOW_PREDICATE_VERSION=7; export VERIFY_SHADOW_PREDICATE_VERSION; _nv_run)"
+# Restore the moved producer, so the cell below fails on shadow-corpus.sh alone.
+cp "${TMP}/verify-shadow.moved" "${RD}/hooks/lib/verify-shadow.sh"
+
 # --- the shared corpus lib is required, never re-derived -------------------------
 rm -f "${RD}/hooks/lib/shadow-corpus.sh"
 VERIFY_SHADOW_LOG="${_CORP}" /bin/bash "${RD}/scripts/verify-shadow-adjudicate.sh" --status >/dev/null 2>&1

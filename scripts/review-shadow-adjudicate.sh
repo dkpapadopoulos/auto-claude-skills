@@ -30,21 +30,32 @@ ADJ_LOG="${REVIEW_ADJUDICATION_LOG:-$HOME/.claude/.push-review-adjudication.json
 
 _ROOT="$(cd "$(dirname "${BASH_SOURCE:-$0}")/.." 2>/dev/null && pwd)"
 
-# Adjudicable predicate version, DERIVED FROM THE PRODUCER. The literal below is
-# only the fallback for a checkout where the lib is absent. Pinning it
+# Adjudicable predicate version, DERIVED FROM THE PRODUCER. Pinning it
 # independently is a silent corpus blackout: when #219 bumped the IMPLEMENT
 # producer while its reader stayed behind, `--status` reported 0 episodes with
 # live records counted "unpoolable" — indistinguishable from an empty corpus, on
 # the one instrument that must never fake that state.
-REQUIRED_PREDICATE_VERSION=3
+#
+# There is NO literal fallback (#405, as #383 for the IMPLEMENT reader): a
+# literal equals the producer only until the producer bumps. When the version
+# cannot be derived the script REFUSES, as it does below without
+# shadow-corpus.sh. The inherited variable is cleared first, so a value exported
+# by the caller can never stand in for one the lib failed to set.
+REQUIRED_PREDICATE_VERSION=""
 _rs_lib="${_ROOT}/hooks/lib/review-shadow.sh"
 if [ -f "${_rs_lib}" ]; then
+    unset REVIEW_SHADOW_PREDICATE_VERSION
     # shellcheck disable=SC1090
     . "${_rs_lib}" 2>/dev/null || true
     case "${REVIEW_SHADOW_PREDICATE_VERSION:-}" in
         ''|*[!0-9]*) : ;;
         *) REQUIRED_PREDICATE_VERSION="${REVIEW_SHADOW_PREDICATE_VERSION}" ;;
     esac
+fi
+if [ -z "${REQUIRED_PREDICATE_VERSION}" ]; then
+    echo "error: cannot check: no valid REVIEW_SHADOW_PREDICATE_VERSION from hooks/lib/review-shadow.sh (looked at ${_rs_lib})." >&2
+    echo "       Refusing to guess the adjudicable predicate version: a wrong guess reports an empty corpus." >&2
+    exit 2
 fi
 
 # Shared corpus measurement, single-sourced with the IMPLEMENT adjudicator.
