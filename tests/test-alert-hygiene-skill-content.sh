@@ -10,7 +10,7 @@ echo "=== test-alert-hygiene-skill-content.sh ==="
 SKILL_FILE="${PROJECT_ROOT}/skills/alert-hygiene/SKILL.md"
 SKILL_CONTENT="$(cat "${SKILL_FILE}")"
 
-# Situational detail lives in references/ (openspec/changes/skill-reattach-budget):
+# Situational detail lives in references/ (openspec/changes/archive/2026-10-26-skill-reattach-budget):
 # each cell reads the file its passage now lives in, so a passage moved again, or
 # dropped from the file the core points at, still fails.
 REF_DIR="${PROJECT_ROOT}/skills/alert-hygiene/references"

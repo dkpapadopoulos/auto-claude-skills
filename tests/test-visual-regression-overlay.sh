@@ -10,7 +10,7 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 echo "=== test-visual-regression-overlay.sh ==="
 SKILL_FILE="${PROJECT_ROOT}/skills/runtime-validation/SKILL.md"
 # The overlay script and the report template moved verbatim to references/
-# (openspec/changes/skill-reattach-budget); the overlay's rules stay in SKILL.md.
+# (openspec/changes/archive/2026-10-26-skill-reattach-budget); the overlay's rules stay in SKILL.md.
 VISUAL_FILE="${PROJECT_ROOT}/skills/runtime-validation/references/visual-regression-overlay.md"
 REPORT_FILE="${PROJECT_ROOT}/skills/runtime-validation/references/report-template.md"
 

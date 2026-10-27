@@ -19,7 +19,7 @@ setup_test_env
 # ---------------------------------------------------------------------------
 RV_SKILL="${PROJECT_ROOT}/skills/runtime-validation/SKILL.md"
 RV_CONTENT="$(cat "${RV_SKILL}")"
-# Situational detail lives in references/ (openspec/changes/skill-reattach-budget);
+# Situational detail lives in references/ (openspec/changes/archive/2026-10-26-skill-reattach-budget);
 # negative checks scan the core AND every reference, since the model reads both.
 RV_REFS_DIR="${PROJECT_ROOT}/skills/runtime-validation/references"
 RV_ALL_CONTENT="$(cat "${RV_SKILL}" "${RV_REFS_DIR}"/*.md)"

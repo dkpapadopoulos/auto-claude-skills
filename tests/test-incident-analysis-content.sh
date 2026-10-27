@@ -14,7 +14,7 @@ EVIDENCE_LINKS_REF="${PROJECT_ROOT}/skills/incident-analysis/references/evidence
 SIGNALS_FILE="${PROJECT_ROOT}/skills/incident-analysis/signals.yaml"
 PLAYBOOK_DIR="${PROJECT_ROOT}/skills/incident-analysis/playbooks"
 # Lookup data moved out of SKILL.md for the post-compaction re-attach budget
-# (openspec/changes/skill-reattach-budget). Only pure lookup data moved: every
+# (openspec/changes/archive/2026-10-26-skill-reattach-budget). Only pure lookup data moved: every
 # rule, and every text a rule needs to be carried out, stays in SKILL.md. A cell
 # whose needle lived in a moved block reads the file the block now lives in.
 REF_DIR="${PROJECT_ROOT}/skills/incident-analysis/references"
