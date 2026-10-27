@@ -11,6 +11,8 @@ was moved, and says where its surviving instruction lives. Every section was mov
 the commit
 `docs: remedy-reachability rule keeps its instructions and moves test-guarded history to docs/history`
 (the commit that created this file: `git log --diff-filter=A -- docs/history/rules-remedy-reachability.md`).
+Review corrections to the notes (not to the quoted originals) followed in
+`docs: remedy-reachability rule names the four remedy renderings and the precondition owners`.
 
 ## Preamble: "Path-scoped rule, split out of the repo-root `CLAUDE.md` ..."
 
@@ -59,8 +61,14 @@ Moved, with the test that guards each:
   strings; a format change must reach all four" and the CI-review story of the
   unescaped `skill-gate.sh` site with its measured `source '/tmp/od'd/plug/…'`. Guard:
   lines 161-188 (a plugin path containing a single quote still yields a parseable
-  skill-gate remedy). "Four" was stale once the population grew to eight surfaces; the
-  rule now says "every rendering".
+  skill-gate remedy). "Four" is still accurate: the `phase_attest` remedy has four
+  renderings (the guard helper `_attest_remedy`, the skill-gate inline, and the
+  `brainstorming` and `executing-plans` config preconditions; the
+  `fallback-registry.json` copies are generated). "Eight" counts a different
+  population, the hook-rendered surfaces that carry a plugin path. The rule says "every
+  rendering" to avoid an enumeration, and names the four in bullet 1. (The first
+  version of this note called "four" stale, conflating the two counts; corrected in
+  review.)
 - "The lint's first version hardcoded two files, and review measured the gap: adding a
   fourth site to `skill-activation-hook.sh` left it green while this note claimed
   coverage — and that fourth site already existed." Guard: lines 190-226 (the lint
