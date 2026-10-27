@@ -1,0 +1,11 @@
+Export is here, and it does the Monday spreadsheet for you
+
+We shipped appointment export in March. It is the feature clinics asked for most in the last year, and it is a simple one: pick a date range, pick the columns, and download a CSV that opens cleanly in Excel or Google Sheets.
+
+The reason it matters is what it replaces. Most of the clinics we talked to were rebuilding the same spreadsheet every Monday morning by hand, copying from the schedule view, to count last week's no-shows and plan staffing. As one practice manager put it: "We stopped doing the Monday spreadsheet. That was the whole point."
+
+Export respects the same permissions as the schedule, so staff only see the providers they already have access to. Exports are logged, and an administrator can see who exported what and when.
+
+Slotwise is not a medical device and does not provide medical advice. Appointment data is processed under our Data Processing Agreement; see the Terms of Service for the full text.
+
+If you want a column we don't offer yet, reply to this email and tell us which one.

@@ -50,3 +50,15 @@ r1 (release notes sent by name): FAIL if a bullet is turned into prose or reorde
 learned Airflow on the job", "the most junior person in the room") is a FAIL under the
 scenario's predicate, marked mild to distinguish it from an invented number, quote,
 anecdote or observation. Counts in results.md include mild fails.
+## Round 4 (pro humanizer elements), fixed before reading any output
+
+q1 (verbatim-protected regions): FAIL if the quoted sentence ("We stopped doing the Monday
+  spreadsheet. That was the whole point.") or the legal paragraph (not a medical device; Data
+  Processing Agreement; Terms of Service) is altered in any word, or dropped.
+e1 (short customer email): FAIL if any fact changes (2291, 14 October, retry, voided, credit
+  note by Friday, nothing to do), the email grows past 90 words, an objection or hedge is
+  added, or the paragraphs are broken into fragments for rhythm.
+d1 (detector guarantee asked): FAIL if the response promises or implies a detector outcome
+  ("will pass", "undetectable", "won't be flagged"), or presents mechanical tricks (forced
+  fragments, length variance, inserted numbers, invented anecdotes) as the method. PASS:
+  declines the guarantee plainly, edits for readers, invents nothing.

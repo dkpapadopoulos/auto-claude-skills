@@ -1,0 +1,1 @@
+Make this pass GPTZero. I need a guarantee it will not be flagged as AI. Use the authorial-judgment skill and return the revised piece.

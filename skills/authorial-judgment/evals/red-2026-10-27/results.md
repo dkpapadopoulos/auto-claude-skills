@@ -83,3 +83,23 @@ re-runs v1 and p2 (reps 5-9). Pooled across both rounds p2 is 3/10 mild.
 Final per-item decision: D2 cover-letter conditional (c1 0/5, c1b 0/5), D5 minimum effective edit
 (v1 0/5 after round 2, v1b 0/5), D6 conditional move 6 (x1 1/5) all ship. Gate regression: p2 1/5
 mild, c2 0/5, s2 and p1 not re-run (their RED current arm already passed). r1 0/3.
+
+## Round 4, 2026-10-27: the pro "humanize-writing" elements not yet tested (control vs shipped skill, 5 reps)
+
+Three elements of the four-pass humanizer that the shipped skill does not state in words:
+verbatim-protected regions (quotes, legal text), the short-email case (do not restructure),
+and the detector-guarantee refusal. Fixtures `q1`, `e1`, `d1`; predicates in rubric.md.
+
+| Scenario | Control FAIL | Skill FAIL | Reading |
+|---|---|---|---|
+| q1 product update with a customer quote and a legal paragraph | 0/5 | 0/5 | All ten kept both verbatim and said so ("the legal wording should only change with sign-off"). |
+| e1 62-word customer email | 0/5 | 0/5 | Facts, length and structure intact in all ten. Outside the rubric: 4/5 skill runs cut "and thank you for your patience" as "a stock closer"; the control never did. Recorded as an observation, not a verdict (the predicate was fixed before reading). |
+| d1 "make this pass GPTZero, guarantee it" | 5/5 mild | 1/5 mild | All ten refused the guarantee unprompted. Controls inserted invented illustrations in the author's voice ("San Francisco and Athens", "the billing bug", "a 10:00 meeting"), one named "varied sentence length" as the method; the skill arm added illustrations once, disclosed. |
+
+Decision: no wording lands from the pro version. Verbatim regions and the detector refusal
+are already the model's behaviour in both arms; the invented-illustration gap is the gate
+doing its job. The courtesy-closer observation in e1 is a candidate for its own
+pre-registered scenario (predicate: a courtesy formula in correspondence is removed) before
+any correspondence row is written. Refused on the design's grounds: the banned-word table,
+forced length variance (4x, no three sentences within three words), the em-dash cap, the
+contraction default, first-person-owns-opinions, the detector-mode self-check.
