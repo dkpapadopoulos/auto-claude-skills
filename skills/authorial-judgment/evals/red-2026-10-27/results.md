@@ -82,7 +82,7 @@ re-runs v1 and p2 (reps 5-9). Pooled across both rounds p2 is 3/10 mild.
 
 Final per-item decision: D2 cover-letter conditional (c1 0/5, c1b 0/5), D5 minimum effective edit
 (v1 0/5 after round 2, v1b 0/5), D6 conditional move 6 (x1 1/5) all ship. Gate regression: p2 1/5
-mild, c2 0/5, s2 and p1 not re-run (their RED current arm already passed). r1 0/3.
+mild, c2 0/5, s2 not re-run (its RED current arm passed), p1 re-run in round 3 below. r1 0/3.
 
 ## Round 4, 2026-10-27: the pro "humanize-writing" elements not yet tested (control vs shipped skill, 5 reps)
 

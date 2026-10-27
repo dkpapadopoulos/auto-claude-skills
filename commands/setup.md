@@ -668,7 +668,7 @@ If yes:
 
 ## Execution
 
-Run each step in order. For steps 0 and 1, use AskUserQuestion to get the user's preference before taking action. For steps 2-4, if a skill directory already exists at the target path, skip it. For step 3b, use AskUserQuestion before installing anything, and skip each skill whose directory already exists. For steps 5, 6, 7, 9, 10, and 11, use AskUserQuestion to get the user's preference before installing, and skip tools that are already installed (for step 11: skip if `.claude/org-hub.json` already exists).
+Run each step in order. For steps 0 and 1, use AskUserQuestion to get the user's preference before taking action. For steps 2, 3 and 4, if a skill directory already exists at the target path, skip it. For step 3b, use AskUserQuestion before installing anything, and skip each skill whose directory already exists. For steps 5, 6, 7, 9, 10, and 11, use AskUserQuestion to get the user's preference before installing, and skip tools that are already installed (for step 11: skip if `.claude/org-hub.json` already exists).
 
 After setup, confirm what was configured:
 - Companion plugins: which were installed or skipped
