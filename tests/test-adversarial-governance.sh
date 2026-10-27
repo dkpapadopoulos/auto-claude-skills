@@ -124,7 +124,10 @@ assert_contains "runtime-validation: eval-pack trust-boundary note" "TRUSTED com
 FQR_HINT="$(jq -r '.methodology_hints[] | select(.name=="frontend-quality-rules") | .hint' "${REGISTRY}" 2>/dev/null)"
 FQR_PHASES="$(jq -r '.methodology_hints[] | select(.name=="frontend-quality-rules") | .phases[]' "${REGISTRY}" 2>/dev/null)"
 assert_contains "frontend-quality: hint present" "FRONTEND QUALITY" "${FQR_HINT}"
-assert_contains "frontend-quality: names web-interface-guidelines" "web-interface-guidelines" "${FQR_HINT}"
+# The upstream id is web-design-guidelines (vercel-labs/agent-skills; "Web Interface
+# Guidelines" is its heading, and web-interface-guidelines/SKILL.md is a 404, measured 2026-10-27).
+assert_contains "frontend-quality: names web-design-guidelines (the real upstream id)" "web-design-guidelines" "${FQR_HINT}"
+assert_not_contains "frontend-quality: does not name the non-existent web-interface-guidelines id" "web-interface-guidelines" "${FQR_HINT}"
 assert_contains "frontend-quality: names react-best-practices" "react-best-practices" "${FQR_HINT}"
 assert_contains "frontend-quality: names our fallback (runtime-validation)" "runtime-validation" "${FQR_HINT}"
 assert_contains "frontend-quality: conditional wording (is installed)" "is installed" "${FQR_HINT}"

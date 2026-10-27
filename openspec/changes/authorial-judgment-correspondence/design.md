@@ -233,7 +233,7 @@ Replace `frontend-quality-rules`' hint body (keep its name, triggers and phases)
 claims; omit unsupported proof and label simulated results. Exercise every changed
 action and its loading, empty, error and success states at desktop and phone widths and
 by keyboard; report what was exercised and what remains unfinished (runtime-validation
-runs the checks). If `web-interface-guidelines` or `react-best-practices` is installed,
+runs the checks). If `web-design-guidelines` or `react-best-practices` is installed,
 apply it after this baseline." Changes: the actionable baseline comes first; the
 optional skills are independent, not an "if neither" case. The governance test that pins
 no hardcoded `Skill()` token for the external namespace stays satisfied.

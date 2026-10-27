@@ -1729,7 +1729,7 @@
         "(^|[^a-z])(ui|frontend|layout|form|accessibility|a11y|responsive|user.?interaction|animation|tailwind|css)($|[^a-z])"
       ],
       "trigger_mode": "regex",
-      "hint": "FRONTEND QUALITY: use real evidence for testimonials, logos, statistics and product claims; omit unsupported proof and label simulated results. Exercise every changed action and its loading, empty, error and success states at desktop and phone widths and by keyboard; report what was exercised and what remains unfinished (runtime-validation runs the checks). If web-interface-guidelines or react-best-practices is installed, apply it after this baseline.",
+      "hint": "FRONTEND QUALITY: use real evidence for testimonials, logos, statistics and product claims; omit unsupported proof and label simulated results. Exercise every changed action and its loading, empty, error and success states at desktop and phone widths and by keyboard; report what was exercised and what remains unfinished (runtime-validation runs the checks). If web-design-guidelines or react-best-practices is installed, apply it after this baseline.",
       "phases": [
         "IMPLEMENT",
         "REVIEW"

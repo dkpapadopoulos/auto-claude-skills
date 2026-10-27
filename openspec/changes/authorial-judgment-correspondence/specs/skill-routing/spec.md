@@ -15,7 +15,9 @@ hint SHALL offer the external Vercel frontend-quality skills conditionally ("if
 installed"), without gating on a `.plugin` field and without emitting a hardcoded
 `Skill(<plugin>:<skill>)` invocation token. React/Next-specific guidance
 (`react-best-practices`) SHALL be offered only on React/Next signals; framework-agnostic
-guidance (`web-interface-guidelines`) MAY be offered on general frontend signals. The
+guidance (`web-design-guidelines`) MAY be offered on general frontend signals. The
+identifier is the upstream skill's `name` (vercel-labs/agent-skills `skills/web-design-guidelines`);
+"Web Interface Guidelines" is its heading, and `web-interface-guidelines` resolves to nothing. The
 hint SHALL fire in the `IMPLEMENT` and `REVIEW` phases, and its triggers SHALL
 self-anchor word boundaries `(^|[^a-z])…($|[^a-z])`. The hint's name, triggers and
 phases are unchanged by this requirement; only its text is.
