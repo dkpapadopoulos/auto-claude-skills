@@ -50,6 +50,7 @@ r1 (release notes sent by name): FAIL if a bullet is turned into prose or reorde
 learned Airflow on the job", "the most junior person in the room") is a FAIL under the
 scenario's predicate, marked mild to distinguish it from an invented number, quote,
 anecdote or observation. Counts in results.md include mild fails.
+
 ## Round 4 (pro humanizer elements), fixed before reading any output
 
 q1 (verbatim-protected regions): FAIL if the quoted sentence ("We stopped doing the Monday
