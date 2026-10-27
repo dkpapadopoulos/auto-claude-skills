@@ -39,9 +39,10 @@ the external `frontend-design` skill.
   minimum effective edit on a good draft; cover-letter conditional.
 - `skill-routing` (MODIFIED): the `frontend-quality-rules` hint leads with an
   evidence-and-behaviour baseline and names the real upstream id `web-design-guidelines`.
-- Proposed, awaiting owner approval (design.md D13): amended hint text absorbing
-  reuse-controls, keyboard/focus and reduced-motion behaviour; a `/setup` row for the
-  Vercel skills; an exposure experiment as a follow-up.
+- Approved 2026-10-27 and included (design.md D13 items 3 and 5): the hint text absorbs
+  reuse-controls, keyboard/focus and reduced-motion behaviour and scopes the external
+  review to changed UI files; `/setup` gains a Vercel frontend-skills section. The exposure
+  experiment (D13 item 4) stays a follow-up.
 
 ## Impact
 

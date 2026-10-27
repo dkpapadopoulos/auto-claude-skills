@@ -335,7 +335,7 @@ website and email rows, D3, the `[NEEDS]` marker, D9, D12. GREEN needed one refa
 the reference table's TOO_CERTAIN, MISSING_READER_BLINDSPOT and WEAK_ENDING rows carried
 the old repairs and two reps cited them; aligned, then v1 0/5.
 
-## D13. Frontend items 3-6 (Codex sparring round 3, 2026-10-27; AWAITING OWNER APPROVAL)
+## D13. Frontend items 3-6 (Codex sparring round 3, 2026-10-27; items 3 and 5 APPROVED by the owner the same day and implemented; 1, 4, 6 are positions)
 
 Sources: the owner's items 3-6 (Radix Primitives, Motion, GSAP ScrollTrigger, Vercel
 `web-design-guidelines`); Codex session 01a17d4a-4779-7353-a7ee-7dad407feabc. Measured
@@ -380,5 +380,5 @@ Positions, Codex and mine agreeing unless marked:
    library bundle reference file; mandatory seed adoption (the pilot favoured the
    unseeded arm 2 of 3).
 
-Needs the owner's yes on items 3 and 5 before either is built; item 2 is in; items 1, 4
-and 6 are positions.
+Items 2, 3 and 5 are in this change (item 3's text shipped with "if it is installed" kept
+for the governance anchor); items 1, 4 and 6 are positions; item 4 is a follow-up experiment.

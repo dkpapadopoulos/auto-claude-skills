@@ -85,6 +85,24 @@ cp -r /tmp/anthropic-skills/skills/webapp-testing ~/.claude/skills/webapp-testin
 rm -rf /tmp/anthropic-skills
 ```
 
+### 3b. Vercel frontend skills (optional, frontend polish)
+
+For UI work, the `frontend-quality-rules` hint offers two skills from Vercel's
+`vercel-labs/agent-skills` repo once they are installed: `web-design-guidelines` (reviews
+UI code against the Web Interface Guidelines: focus states, forms, typography, images,
+motion) and, in React/Next apps, `react-best-practices`. Check
+`~/.claude/skills/web-design-guidelines/` and `~/.claude/skills/react-best-practices/`
+and skip any that are present. Otherwise **ask the user** whether to install them:
+
+```bash
+git clone --depth 1 https://github.com/vercel-labs/agent-skills.git /tmp/vercel-agent-skills
+cp -r /tmp/vercel-agent-skills/skills/web-design-guidelines ~/.claude/skills/web-design-guidelines
+cp -r /tmp/vercel-agent-skills/skills/react-best-practices ~/.claude/skills/react-best-practices
+rm -rf /tmp/vercel-agent-skills
+```
+
+If the user declines, skip this step; the hint degrades to its own baseline.
+
 ### 4. security-scanner (built-in)
 
 The `security-scanner` skill is now bundled with auto-claude-skills. No external installation needed.

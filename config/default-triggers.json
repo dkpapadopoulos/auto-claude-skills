@@ -1019,7 +1019,7 @@
         "(^|[^a-z])(ui|frontend|layout|form|accessibility|a11y|responsive|user.?interaction|animation|tailwind|css)($|[^a-z])"
       ],
       "trigger_mode": "regex",
-      "hint": "FRONTEND QUALITY: use real evidence for testimonials, logos, statistics and product claims; omit unsupported proof and label simulated results. Exercise every changed action and its loading, empty, error and success states at desktop and phone widths and by keyboard; report what was exercised and what remains unfinished (runtime-validation runs the checks). If web-design-guidelines is installed, apply it after this baseline; in a React or Next app, apply react-best-practices too if it is installed.",
+      "hint": "FRONTEND QUALITY: use supported product claims; omit unsupported proof and label simulations. Preserve the approved visual direction and reuse working controls. Exercise changed actions and their applicable loading, empty, error and success states at desktop and phone widths, including keyboard, focus and reduced motion; report tested paths and gaps (runtime-validation runs the checks). In REVIEW, apply web-design-guidelines if it is installed, scoped to changed UI files; in a React or Next app, react-best-practices too if it is installed.",
       "phases": [
         "IMPLEMENT",
         "REVIEW"

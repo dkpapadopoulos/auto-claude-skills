@@ -143,7 +143,10 @@ assert_contains "frontend-quality: mirrored to fallback registry" "frontend-qual
 # 2026-10-27: the hint leads with an evidence-and-behaviour baseline an agent can act on in
 # any install, and the fallback copy must be byte-identical (text drift is the recurring
 # PAIRED failure; name-presence alone does not catch it).
-assert_contains "frontend-quality: leads with the evidence baseline" "use real evidence for testimonials" "${FQR_HINT}"
+assert_contains "frontend-quality: leads with the evidence baseline" "use supported product claims" "${FQR_HINT}"
+assert_contains "frontend-quality: reuse working controls, not a library mandate" "reuse working controls" "${FQR_HINT}"
+assert_contains "frontend-quality: keyboard, focus and reduced motion are exercised" "keyboard, focus and reduced motion" "${FQR_HINT}"
+assert_contains "frontend-quality: external review scoped to changed UI files" "scoped to changed UI files" "${FQR_HINT}"
 FQR_FB="$(jq -r '.methodology_hints[] | select(.name=="frontend-quality-rules") | .hint' "${PROJECT_ROOT}/config/fallback-registry.json" 2>/dev/null)"
 assert_equals "frontend-quality: fallback registry carries the identical hint text" "${FQR_HINT}" "${FQR_FB}"
 

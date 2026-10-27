@@ -6,10 +6,11 @@
 
 The routing config SHALL include a `frontend-quality-rules` methodology hint whose text
 leads with an evidence-and-behaviour baseline an agent can act on in any install: use
-real evidence for testimonials, logos, statistics and product claims, omit unsupported
-proof and label simulated results; exercise every changed action and its loading,
-empty, error and success states at desktop and phone widths and by keyboard; report
-what was exercised and what remains unfinished. The hint SHALL name our own
+supported product claims, omit unsupported proof and label simulations; preserve the
+approved visual direction and reuse working controls (no library is named); exercise
+changed actions and their applicable loading, empty, error and success states at desktop
+and phone widths, including keyboard, focus and reduced motion; report tested paths and
+gaps. The hint SHALL name our own
 `runtime-validation` skill as the skill that runs those checks. After the baseline, the
 hint SHALL offer the external Vercel frontend-quality skills conditionally ("if
 installed"), without gating on a `.plugin` field and without emitting a hardcoded
@@ -28,6 +29,7 @@ phases are unchanged by this requirement; only its text is.
 - **WHEN** the user prompt matches a React/Next frontend signal (e.g. "add a React component")
 - **THEN** the routing context SHALL include the `frontend-quality-rules` advisory hint text
 - **AND** the text SHALL state the evidence-and-behaviour baseline before any external skill
+- **AND** the external review SHALL be scoped to changed UI files
 - **AND** the hint SHALL reference `react-best-practices` conditionally and name
   `runtime-validation` for the checks
 
