@@ -382,3 +382,18 @@ Positions, Codex and mine agreeing unless marked:
 
 Items 2, 3 and 5 are in this change (item 3's text shipped with "if it is installed" kept
 for the governance anchor); items 1, 4 and 6 are positions; item 4 is a follow-up experiment.
+
+## Implementation Notes (synced at ship time)
+
+- The description had to change in `config/default-triggers.json` and `fallback-registry.json`
+  as well as the frontmatter: the config copy wins the registry merge.
+- `references/red-flags.md` rows TOO_CERTAIN, MISSING_READER_BLINDSPOT and WEAK_ENDING were
+  aligned with the new rule after two GREEN reps cited the old repairs by name; the
+  reference table is part of the skill under test.
+- The hint's external id was wrong (`web-interface-guidelines`; upstream is
+  `web-design-guidelines`); fixed, with `react-best-practices` scoped to React/Next.
+- D13 items 3 and 5 shipped the same day (hint text, `/setup` section 3b); items 1, 4, 6 are
+  positions; the exposure experiment (item 4) is a follow-up.
+- Round 4 tested the pro humanizer's untested elements; nothing landed
+  (`evals/red-2026-10-27/results.md`).
+- D12 (preserve-check script) not built: RED showed no number or date loss to automate.
