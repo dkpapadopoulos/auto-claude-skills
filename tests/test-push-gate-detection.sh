@@ -486,7 +486,8 @@ _assert_pred "single & still separates"            1 $D 'git push --delete origi
 # no quote state so the parse is balanced; detection fails before the whitelist
 # is reached).
 #
-# Measured across four different first words, so these pin the CLASS.
+# Measured across three first words and a brace group, plus the escaped `<`
+# form, so these pin the CLASS (the brace-group cell is #403).
 # ASSERTED END TO END, not through the ALL-form. The obvious unit cell here —
 # "command_push_is_all_deletions refuses it" — is VACUOUS for this defect and was
 # written that way first: when the bypass hides the push, the merged segment has
@@ -508,6 +509,7 @@ _assert_pred "single & still separates"            1 $D 'git push --delete origi
 for _c in 'echo a\>&git push origin main' \
           'cd a\>&git push origin main' \
           'true a\>&git push origin main' \
+          '{ echo a\>&git push origin main; }' \
           'echo a\<&git push origin main'; do
     out="$(_run "$_c")"
     assert_contains "escaped operator still reaches the gate: ${_c}" \
