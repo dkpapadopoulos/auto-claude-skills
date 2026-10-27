@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test-skill-reattach-budget.sh — every owned SKILL.md fits the post-compaction
-# re-attach budget (openspec/changes/skill-reattach-budget).
+# re-attach budget (openspec/changes/archive/2026-10-26-skill-reattach-budget).
 #
 # After a compaction Claude Code re-attaches each invoked skill cut to its first
 # 20,000 characters, so anything later in a long SKILL.md is gone for the rest of

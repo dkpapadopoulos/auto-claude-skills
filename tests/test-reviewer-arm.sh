@@ -4,7 +4,7 @@
 # record, into the branch ledger's `reviewer-returned` milestone, and the lib
 # functions the guard will use read it back.
 #
-# Spec: openspec/changes/review-credit-from-evidence/design.md decision 3.
+# Spec: openspec/changes/archive/2026-10-26-review-credit-from-evidence/design.md decision 3.
 # Binding ruling F3: completion-time HEAD is NEVER substituted for a missing
 # dispatch sha — the milestone records `-` and never credits.
 #

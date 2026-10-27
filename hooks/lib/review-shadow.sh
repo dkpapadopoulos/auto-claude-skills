@@ -105,7 +105,7 @@
 # version, so a record's date does not tell you which guard wrote it.
 #
 # predicate_version 3 / schema_version 3 (2026-10-25,
-# openspec/changes/review-credit-from-evidence, decision 4).
+# openspec/changes/archive/2026-10-26-review-credit-from-evidence, decision 4).
 #
 # The PREDICATE ground: this leg fires only when REVIEW status is already
 # satisfied (`_review_completed`), and that change widened what satisfies it —
