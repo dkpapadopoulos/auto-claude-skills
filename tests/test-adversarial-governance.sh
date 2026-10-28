@@ -137,17 +137,6 @@ assert_contains "frontend-quality: conditional wording (is installed)" "is insta
 assert_not_contains "frontend-quality: no hardcoded Skill() for web-interface-guidelines" "Skill(web-interface-guidelines" "${FQR_HINT}"
 assert_not_contains "frontend-quality: no hardcoded Skill() for react-best-practices" "Skill(react-best-practices" "${FQR_HINT}"
 assert_contains "frontend-quality: fires in IMPLEMENT" "IMPLEMENT" "${FQR_PHASES}"
-# /setup 3b is where the user consents to these external skills. web-design-guidelines
-# fetches its rules from vercel-labs/web-interface-guidelines main on every use (read
-# 2026-10-28), so consent must say so; and the model's copy was refused by the auto-mode
-# classifier the same day, so the step must hand the user a `!` line, not retry.
-SETUP_MD="$(cat "${PROJECT_ROOT}/commands/setup.md")"
-assert_contains "setup 3b: consent discloses the live rule fetch" \
-    "fetches them from the \`main\` branch of \`vercel-labs/web-interface-guidelines\`" "${SETUP_MD}"
-assert_contains "setup 3b: a refused copy is not retried another way" \
-    "do not retry it another way" "${SETUP_MD}"
-assert_contains "setup 3b: the fallback is a single guarded ! line" \
-    '! git clone --depth 1 https://github.com/vercel-labs/agent-skills.git /tmp/vercel-agent-skills && { [ -d ~/.claude/skills/web-design-guidelines ] ||' "${SETUP_MD}"
 assert_contains "frontend-quality: fires in REVIEW" "REVIEW" "${FQR_PHASES}"
 # fallback registry must carry the same hint (drift guard)
 assert_contains "frontend-quality: mirrored to fallback registry" "frontend-quality-rules" "${FALLBACK_CONTENT}"
@@ -160,6 +149,43 @@ assert_contains "frontend-quality: keyboard, focus and reduced motion are exerci
 assert_contains "frontend-quality: external review scoped to changed UI files" "scoped to changed UI files" "${FQR_HINT}"
 FQR_FB="$(jq -r '.methodology_hints[] | select(.name=="frontend-quality-rules") | .hint' "${PROJECT_ROOT}/config/fallback-registry.json" 2>/dev/null)"
 assert_equals "frontend-quality: fallback registry carries the identical hint text" "${FQR_HINT}" "${FQR_FB}"
+
+# /setup 3b is where the user consents to those external skills. web-design-guidelines
+# fetches its rules from vercel-labs/web-interface-guidelines main on every use (read
+# 2026-10-28), so consent must say so; and the model's copy was refused by the auto-mode
+# classifier the same day, so the step must hand the user `!` lines, not retry. Cells read
+# section 3b only: a sentence moved to another section passed a whole-file check (review).
+SETUP_3B="$(awk '/^### 3b\./{f=1} /^### 4\./{f=0} f' "${PROJECT_ROOT}/commands/setup.md")"
+assert_contains "setup 3b: section extracted" "### 3b. Vercel frontend skills" "${SETUP_3B}"
+assert_contains "setup 3b: consent discloses the live rule fetch" \
+    "fetches them from the \`main\` branch of \`vercel-labs/web-interface-guidelines\`" "${SETUP_3B}"
+assert_contains "setup 3b: a refused step is not retried another way" \
+    "do not retry it another way" "${SETUP_3B}"
+# The full lines, not a prefix: the review showed a prefix cell passing with the cleanup and
+# the copy destination changed. Each uses its own mktemp dir, because a fixed /tmp path left
+# behind by the refused attempt made the first run clone nothing and exit 0 (measured).
+_WDG_LINE='! d=$(mktemp -d) && mkdir -p ~/.claude/skills && git clone --depth 1 https://github.com/vercel-labs/agent-skills.git "$d/a" && { [ -d ~/.claude/skills/web-design-guidelines ] || cp -r "$d/a/skills/web-design-guidelines" ~/.claude/skills/web-design-guidelines; }; rm -rf "$d"'
+_BOTH_LINE='! d=$(mktemp -d) && mkdir -p ~/.claude/skills && git clone --depth 1 https://github.com/vercel-labs/agent-skills.git "$d/a" && { [ -d ~/.claude/skills/web-design-guidelines ] || cp -r "$d/a/skills/web-design-guidelines" ~/.claude/skills/web-design-guidelines; [ -d ~/.claude/skills/react-best-practices ] || cp -r "$d/a/skills/react-best-practices" ~/.claude/skills/react-best-practices; }; rm -rf "$d"'
+_BANG_LINES="$(printf '%s\n' "${SETUP_3B}" | grep '^! ')"
+assert_equals "setup 3b: exactly the two ! lines, in order" \
+    "$(printf '%s\n%s' "${_WDG_LINE}" "${_BOTH_LINE}")" "${_BANG_LINES}"
+# Each line must parse in the user's shell (zsh on macOS) and in bash. Heredoc-fed, so the
+# verdicts are recorded in this shell, not a pipe's subshell.
+_n_parsed=0
+while IFS= read -r _bl; do
+    [ -n "${_bl}" ] || continue
+    _cmd="${_bl#! }"
+    if printf '%s\n' "${_cmd}" | bash -n 2>/dev/null; then _record_pass "setup 3b: ! line parses under bash"; else _record_fail "setup 3b: ! line parses under bash" "${_cmd}"; fi
+    if command -v zsh >/dev/null 2>&1; then
+        if printf '%s\n' "${_cmd}" | zsh -n 2>/dev/null; then _record_pass "setup 3b: ! line parses under zsh"; else _record_fail "setup 3b: ! line parses under zsh" "${_cmd}"; fi
+    else
+        echo "  NOTE: zsh absent, zsh parse leg skipped"
+    fi
+    _n_parsed=$((_n_parsed + 1))
+done <<EOF
+${_BANG_LINES}
+EOF
+assert_equals "setup 3b: both ! lines were parse-checked (not vacuous)" "2" "${_n_parsed}"
 
 # agent-safety-review: safety eval cases red before code (TDD-for-evals).
 assert_contains "agent-safety-review: safety eval red before code" "before the behavior is implemented" "${SAFETY_CONTENT}"

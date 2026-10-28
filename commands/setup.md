@@ -95,8 +95,9 @@ motion) and, in React/Next apps, `react-best-practices`. Check
 and skip any that are present. Otherwise **ask the user** whether to install them, and say
 what they are agreeing to: `web-design-guidelines` ships no rules of its own; on every use
 it fetches them from the `main` branch of `vercel-labs/web-interface-guidelines`, so what it
-applies can change without a new install. It only reads files and reports findings. The
-copies below are guarded so an existing directory is never nested into or overwritten:
+applies can change without a new install. Today it only reads files and reports findings,
+but the fetched file is instructions the model follows, so that can change too. The copies
+below are guarded so an existing directory is never nested into or overwritten:
 
 ```bash
 git clone --depth 1 https://github.com/vercel-labs/agent-skills.git /tmp/vercel-agent-skills
@@ -108,12 +109,21 @@ rm -rf /tmp/vercel-agent-skills
 Note: the React skill's frontmatter declares `name: vercel-react-best-practices`, so the
 skills listing shows it under that name even though its folder is `react-best-practices`.
 
-If the copy is refused (on 2026-10-28 the auto-mode classifier refused it as untrusted code
-integration), do not retry it another way. Give the user this one line to run with the `!`
-prefix, adding the `react-best-practices` copy if they chose it too:
+If any step of this install is refused (on 2026-10-28 the auto-mode classifier refused the
+copy as untrusted code integration), do not retry it another way. Tell the user it was
+refused and give them the one line below to run with the `!` prefix. It uses its own temp
+directory, so a clone left behind by the refused attempt does not stop it. Its exit status
+is always `rm`'s, so read its output and then confirm
+`~/.claude/skills/web-design-guidelines/SKILL.md` exists. Web design guidelines only:
 
 ```bash
-! git clone --depth 1 https://github.com/vercel-labs/agent-skills.git /tmp/vercel-agent-skills && { [ -d ~/.claude/skills/web-design-guidelines ] || cp -r /tmp/vercel-agent-skills/skills/web-design-guidelines ~/.claude/skills/web-design-guidelines; }; rm -rf /tmp/vercel-agent-skills
+! d=$(mktemp -d) && mkdir -p ~/.claude/skills && git clone --depth 1 https://github.com/vercel-labs/agent-skills.git "$d/a" && { [ -d ~/.claude/skills/web-design-guidelines ] || cp -r "$d/a/skills/web-design-guidelines" ~/.claude/skills/web-design-guidelines; }; rm -rf "$d"
+```
+
+Both skills:
+
+```bash
+! d=$(mktemp -d) && mkdir -p ~/.claude/skills && git clone --depth 1 https://github.com/vercel-labs/agent-skills.git "$d/a" && { [ -d ~/.claude/skills/web-design-guidelines ] || cp -r "$d/a/skills/web-design-guidelines" ~/.claude/skills/web-design-guidelines; [ -d ~/.claude/skills/react-best-practices ] || cp -r "$d/a/skills/react-best-practices" ~/.claude/skills/react-best-practices; }; rm -rf "$d"
 ```
 
 If the user declines, skip this step; the hint degrades to its own baseline.
