@@ -83,9 +83,9 @@ fi
 _derived="$(_run "${_L}" "${_A}" --status | sed -n 's/^adjudicable predicate_version: //p')"
 assert_equals "reader's required version == producer's constant" "${PV}" "${_derived}"
 
-# That cell ALONE is vacuous and a mutation said so: the reader's no-lib
-# fallback literal currently equals the producer's constant, so deleting the
-# derivation entirely leaves it green. Proving derivation requires MOVING the
+# That cell ALONE was vacuous and a mutation said so: the reader's no-lib
+# fallback literal (removed by #405) equalled the producer's constant, so
+# deleting the derivation entirely left it green. Proving derivation requires MOVING the
 # producer, not merely reading it. Copy the tree, bump the writer's constant to
 # a value the fallback cannot produce, and see whether the reader follows.
 _FAKE="${TMP}/fakeroot"
@@ -106,17 +106,31 @@ _followed="$(REVIEW_SHADOW_LOG="${_L}" REVIEW_ADJUDICATION_LOG="${_A}" \
 assert_equals "reader FOLLOWS a producer bump (derivation is live, not a coincidence)" \
     "${_BUMPED}" "${_followed}"
 
-# And with the writer absent it must fall back to its own literal rather than
-# to an empty string -- an empty required version silently matches nothing and
-# reports an empty corpus.
+# No version, no guess (#405). A literal fallback equals the producer only until
+# the producer bumps, and then reports an empty corpus; so when the version
+# cannot be derived the reader REFUSES (exit 2, as without shadow-corpus.sh).
+# The bumped-producer cell above is the positive control: the same copy derives
+# a version no literal could supply, so these refusals are not a broken copy.
+_nv_run() { # -> output, then "rc=<status>" on the last line
+    REVIEW_SHADOW_LOG="${_L}" REVIEW_ADJUDICATION_LOG="${_A}" \
+        /bin/bash "${_FAKE}/scripts/review-shadow-adjudicate.sh" --status 2>&1
+    echo "rc=$?"
+}
+_nv_check() { # <label> <output>
+    assert_equals "$1: the reader refuses with exit 2" "rc=2" "$(printf '%s\n' "$2" | tail -1)"
+    assert_equals "$1: it says it cannot check" "1" \
+        "$(printf '%s\n' "$2" | grep -c '^error: cannot check: no valid REVIEW_SHADOW_PREDICATE_VERSION')"
+    assert_equals "$1: it reports no corpus" "0" "$(printf '%s\n' "$2" | grep -c 'adjudicable predicate_version')"
+}
 rm -f "${_FAKE}/hooks/lib/review-shadow.sh"
-_fallback="$(REVIEW_SHADOW_LOG="${_L}" REVIEW_ADJUDICATION_LOG="${_A}" \
-    /bin/bash "${_FAKE}/scripts/review-shadow-adjudicate.sh" --status 2>&1 \
-    | sed -n 's/^adjudicable predicate_version: //p')"
-case "${_fallback}" in
-    ''|*[!0-9]*) _record_fail "writer absent: reader falls back to a NUMERIC literal" "got '${_fallback}'" ;;
-    *) _record_pass "writer absent: reader falls back to a numeric literal (${_fallback})" ;;
-esac
+_nv_check "writer absent" "$(_nv_run)"
+printf 'REVIEW_SHADOW_PREDICATE_VERSION=three\n' > "${_FAKE}/hooks/lib/review-shadow.sh"
+_nv_check "unparseable version" "$(_nv_run)"
+# A writer that returns before setting the version must not be rescued by a
+# value inherited from the environment: the same guess, arriving another way.
+printf 'return 0\nREVIEW_SHADOW_PREDICATE_VERSION=%s\n' "${_BUMPED}" > "${_FAKE}/hooks/lib/review-shadow.sh"
+_nv_check "inherited version + writer returning early" \
+    "$(REVIEW_SHADOW_PREDICATE_VERSION="${PV}"; export REVIEW_SHADOW_PREDICATE_VERSION; _nv_run)"
 
 # ---------------------------------------------------------------------------
 # 3. Other-predicate records are REPORTED, never silently dropped. This is the
@@ -460,6 +474,49 @@ case "${_outd2}" in
         _record_pass "CONTROL: adjudicating the second repo DOES satisfy diversity" ;;
     *) _record_fail "CONTROL: adjudicating the second repo DOES satisfy diversity" "got: ${_outd2}" ;;
 esac
+# (#386) The same met floor is NOT met once the sidecar holds a line the reader
+# cannot parse: that line may be a false_block, and losing one only lowers k.
+# The control above is what makes this reach the sidecar branch.
+_AD3="${TMP}/d-adj-corrupt.jsonl"
+cp "${_AD}" "${_AD3}"; printf '%s\n' '{"record_id":"d0","verdict":' >> "${_AD3}"
+_outd3="$(_run "${_LD}" "${_AD3}" --status)"
+case "${_outd3}" in
+    *"FLOOR NOT MET: the corpus or sidecar is not fully readable."*)
+        _record_pass "an unparseable sidecar line blocks an otherwise met floor" ;;
+    *) _record_fail "an unparseable sidecar line blocks an otherwise met floor" "got: ${_outd3}" ;;
+esac
+case "${_outd3}" in
+    *"floor met on n and diversity"*)
+        _record_fail "an unparseable sidecar line never prints 'floor met'" "got: ${_outd3}" ;;
+    *) _record_pass "an unparseable sidecar line never prints 'floor met'" ;;
+esac
+# The CORPUS side of the same hole (review of #386). A corpus line that does not
+# parse, or a record whose ts cannot be placed, leaves the denominator with its
+# label orphaned -- and if that record held the false_block, k falls and the
+# band clears. 30 episodes less one still meet n=29 and diversity, so only the
+# uncountable accounting can stop "floor met".
+for _cx in trunc badts; do
+    _LD4="${TMP}/d-${_cx}.jsonl"
+    if [ "${_cx}" = trunc ]; then
+        awk 'index($0, "\"record_id\":\"d5\"") { print "{\"record_id\":\"d5\",\"ts\":"; next } { print }' \
+            "${_LD}" > "${_LD4}"
+    else
+        jq -c 'if .record_id == "d5" then .ts = "" else . end' "${_LD}" > "${_LD4}"
+    fi
+    _outd4="$(_run "${_LD4}" "${_AD}" --status)"
+    _nd4="$(printf '%s' "${_outd4}" | sed -n 's/^rate (human-confirmed only) : k=[0-9]* false blocks of n=\([0-9]*\).*/\1/p')"
+    assert_equals "corpus ${_cx}: n is still 29, so the n floor alone would pass" "29" "${_nd4}"
+    case "${_outd4}" in
+        *"floor met on n and diversity"*)
+            _record_fail "corpus ${_cx}: a record that cannot be placed blocks 'floor met'" "got: ${_outd4}" ;;
+        *) _record_pass "corpus ${_cx}: a record that cannot be placed blocks 'floor met'" ;;
+    esac
+    case "${_outd4}" in
+        *"UNCOUNTABLE : 1 line(s)/record(s) above could not be placed."*)
+            _record_pass "corpus ${_cx}: the record is reported UNCOUNTABLE" ;;
+        *) _record_fail "corpus ${_cx}: the record is reported UNCOUNTABLE" "got: ${_outd4}" ;;
+    esac
+done
 
 # ---------------------------------------------------------------------------
 # 13. DIVERSITY IS PER REPOSITORY, NOT PER WORKTREE PATH.
@@ -581,8 +638,14 @@ _rec "${_LC}" c2 "2026-09-11T10:00:00Z" /repo/y main tokc-2 absent
 ( unset CLAUDECODE CLAUDE_CODE_SESSION_ID
   REVIEW_SHADOW_LOG="${_LC}" REVIEW_ADJUDICATION_LOG="${_AC}" /bin/bash "${SUT}" --adjudicate c1 --verdict false_block
   REVIEW_SHADOW_LOG="${_LC}" REVIEW_ADJUDICATION_LOG="${_AC}" /bin/bash "${SUT}" --adjudicate c2 --verdict true_catch ) >/dev/null 2>&1
-_rate_before="$(_run "${_LC}" "${_AC}" --status | sed -n 's/^rate (human-confirmed only) : \(.*\)$/\1/p')"
+_out_intact="$(_run "${_LC}" "${_AC}" --status)"
+_rate_before="$(printf '%s\n' "${_out_intact}" | sed -n 's/^rate (human-confirmed only) : \(.*\)$/\1/p')"
 assert_equals "CONTROL: intact sidecar gives the expected rate" "k=1 false blocks of n=2 episode(s)" "${_rate_before}"
+case "${_out_intact}" in
+    *"SIDECAR — unparseable"*|*"UNCOUNTABLE"*)
+        _record_fail "CONTROL: an intact sidecar announces no corruption" "got: ${_out_intact}" ;;
+    *) _record_pass "CONTROL: an intact sidecar announces no corruption" ;;
+esac
 
 # Prepend one truncated line to the SIDECAR -- the log whose corruption moves k.
 printf '%s\n' '{"record_id":"trunc","verdict":' > "${TMP}/bad.jsonl"
@@ -591,11 +654,19 @@ _rate_after="$(_run "${_LC}" "${_AC}" --status | sed -n 's/^rate (human-confirme
 assert_equals "a truncated SIDECAR line does not discard the adjudications after it" \
     "${_rate_before}" "${_rate_after}"
 
-# And the corruption is ANNOUNCED, not merely survived.
+# And the corruption is ANNOUNCED, not merely survived (#386). The needle is the
+# SIDECAR's own line: a bare "unparseable" also matched the corpus summary's
+# "0 unparseable", so this cell passed while nothing called _adj_unparsed.
 _out_corrupt="$(_run "${_LC}" "${_AC}" --status)"
+if printf '%s\n' "${_out_corrupt}" | grep -qxF "SIDECAR — unparseable label line(s) : 1"; then
+    _record_pass "sidecar corruption is announced"
+else
+    _record_fail "sidecar corruption is announced" "no SIDECAR line in: ${_out_corrupt}"
+fi
 case "${_out_corrupt}" in
-    *"unparseable"*) _record_pass "sidecar corruption is announced" ;;
-    *) _record_fail "sidecar corruption is announced" "no unparseable count in: ${_out_corrupt}" ;;
+    *"UNCOUNTABLE : 1 line(s)/record(s) above could not be placed."*)
+        _record_pass "the corrupt sidecar line is reported UNCOUNTABLE" ;;
+    *) _record_fail "the corrupt sidecar line is reported UNCOUNTABLE" "got: ${_out_corrupt}" ;;
 esac
 
 # Same for the CORPUS: a truncated line must not hide records after it from
@@ -815,14 +886,14 @@ assert_equals "every line has 5 tab-separated fields" "5" \
     "$(printf '%s\n' "${_re_out}" | awk -F'\t' '{print NF}' | sort -u | tr '\n' ' ' | sed 's/ $//')"
 
 # ---------------------------------------------------------------------------
-# 23. The writer-absent fallback literal EQUALS the producer's constant.
-#     Section 2 checks only that it is numeric. Measured at Task 8's review:
-#     reverting the literal to 2 after the predicate-3 bump left this file and
-#     test-review-witness.sh fully green, while a lib-less checkout would then
-#     report every predicate-3 record as other-predicate -- the blackout class
-#     the reader's own comment warns about.
+# 23. (Retired by #405.) This section pinned the writer-absent fallback literal
+#     to the producer's constant, because reverting the literal after a bump
+#     left the suite green while a lib-less checkout reported every current
+#     record as other-predicate. The literal no longer exists: section 2's
+#     refusal cells pin that a lib-less checkout reports nothing at all.
 # ---------------------------------------------------------------------------
-assert_equals "writer absent: the fallback literal equals the producer's constant" "${PV}" "${_fallback}"
+assert_equals "the reader carries no literal predicate-version fallback" "0" \
+    "$(grep -cE '^REQUIRED_PREDICATE_VERSION=[0-9]' "${SUT}" | tr -d '[:space:]')"
 
 # ---------------------------------------------------------------------------
 # 24. --evidence-miss: over predicate-3 would-block EPISODES, those in which an
@@ -927,6 +998,55 @@ else
     # Visible, not silent: a shallow clone lacks the blob. Not recorded as a
     # pass, and not a red cell (one red cell blocks every routing push).
     echo "  NOTE: base producer blob ${_BASE_BLOB} unavailable (shallow clone?) -- E4 not run"
+fi
+
+# MX (#382) a corpus mixing schema versions. Every record comes from a REAL
+# producer: two from the current one (one of them rewritten to the previous
+# schema, stamps and witness fields removed -- a pair no producer wrote, since
+# schema 3 and predicate 3 were bumped together, so it pins only that the reader
+# never filters on schema), and two from the base producer, whose records carry
+# the previous predicate AND the previous schema: the mix a real corpus holds.
+# Both current-predicate records must reach the rate population whatever their
+# schema, and the base records must be excluded as other-predicate, never pooled.
+_SV="$( ( . "${WRITER}" 2>/dev/null; printf '%s' "${REVIEW_SHADOW_SCHEMA_VERSION:-}" ) )"
+if [ -s "${_BASE_WRITER}" ] && grep -q '^REVIEW_SHADOW_PREDICATE_VERSION=2$' "${_BASE_WRITER}" \
+   && [ -n "${_SV}" ]; then
+    _MX="${TMP}/mx.jsonl"; _MXA="${TMP}/mx-adj.jsonl"; rm -f "${_MX}" "${_MXA}"
+    _em_rec "${_MX}" tok-mx1
+    _em_rec "${TMP}/mx-old.jsonl" tok-mx2
+    jq -c --argjson sv "$(( _SV - 1 ))" \
+        'del(.session_id,.tool_use_id,.cc_version,.acs_version,.review_witness,.review_coverage)
+         | .schema_version = $sv' "${TMP}/mx-old.jsonl" >> "${_MX}" 2>/dev/null
+    for _t in tok-mx3 tok-mx4; do
+        ( . "${_BASE_WRITER}" 2>/dev/null
+          REVIEW_SHADOW_LOG="${_MX}" review_shadow_record "${_t}" "${_EMR}" "absent" "push" "HEAD" ) \
+          >/dev/null 2>&1
+    done
+    assert_equals "MX fixture: (predicate, schema) pairs are ${PV}/${_SV}, ${PV}/$(( _SV - 1 )) and 2 base records" \
+        "2/$(( _SV - 1 )) 2/$(( _SV - 1 )) ${PV}/$(( _SV - 1 )) ${PV}/${_SV}" \
+        "$(jq -r '"\(.predicate_version)/\(.schema_version)"' "${_MX}" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+    _omx="$(_run "${_MX}" "${_MXA}" --status)"
+    case "${_omx}" in
+        *"episodes (adjudicable) : 2 "*) _record_pass "MX both schemas of the current predicate are read (2 episodes)" ;;
+        *) _record_fail "MX both schemas of the current predicate are read (2 episodes)" "got: ${_omx}" ;;
+    esac
+    case "${_omx}" in
+        *"EXCLUDED — other-predicate : 2 record(s)"*) _record_pass "MX the base records are reported as other-predicate" ;;
+        *) _record_fail "MX the base records are reported as other-predicate" "got: ${_omx}" ;;
+    esac
+    _mx_base_ids="$(jq -r 'select(.predicate_version == 2) | .record_id' "${_MX}" 2>/dev/null)"
+    _mx_eps="$(_run "${_MX}" "${_MXA}" --rate-episodes)"
+    assert_equals "MX --rate-episodes holds the 2 current-predicate episodes" "2" "$(printf '%s\n' "${_mx_eps}" | grep -c .)"
+    _mx_pooled=0
+    while IFS= read -r _id; do
+        [ -n "${_id}" ] || continue
+        if printf '%s\n' "${_mx_eps}" | grep -qF -- "${_id}"; then _mx_pooled=$(( _mx_pooled + 1 )); fi
+    done <<EOF
+${_mx_base_ids}
+EOF
+    assert_equals "MX no base record is pooled into the rate population" "0" "${_mx_pooled}"
+else
+    echo "  NOTE: base producer or writer schema unavailable -- MX not run"
 fi
 
 # E5 a predicate-3 record without the fields, and ones carrying "invalid", are
@@ -1232,9 +1352,9 @@ esac
 # F9 (final review M4) the SIDECAR's unparseable count, `_adj_unparsed`, takes the
 # same LC_ALL=C: under a UTF-8 locale `grep -c .` skipped an invalid-UTF-8 line,
 # so the total and the parsed count agreed and the corrupt line counted 0.
-# NOTE: nothing in the script calls `_adj_unparsed` today (measured: one
-# definition, zero callers, at the branch base and on main), so this cell drives
-# the real definition EXTRACTED from the script, under the locale F7 found.
+# The cell drives the real definition EXTRACTED from the script, under the
+# locale F7 found; --status now calls it (#386), so the end-to-end cell after it
+# pins the same line through the reader.
 _F9="${TMP}/f9-adj.jsonl"
 printf '%s\n' '{"record_id":"ok1","verdict":"true_catch","claimant":"human"}' > "${_F9}"
 printf '\377\376\n' >> "${_F9}"
@@ -1243,5 +1363,13 @@ if [ -n "${_f9_def}" ]; then _record_pass "F9 setup: _adj_unparsed extracted fro
 else _record_fail "F9 setup: _adj_unparsed extracted from the script" "definition not found"; fi
 _of9="$( ( eval "${_f9_def}"; ADJ_LOG="${_F9}"; LC_ALL="${_U8:-C}"; export LC_ALL; _adj_unparsed ) 2>/dev/null)"
 assert_equals "F9 an invalid-UTF-8 sidecar line counts as unparseable (${_U8:-C})" "1" "${_of9}"
+_F9L="${TMP}/f9.jsonl"; : > "${_F9L}"
+_rec "${_F9L}" ok1 "2026-09-10T10:00:00Z" /repo/x main tokf9 absent
+_of9s="$( ( LC_ALL="${_U8:-C}"; export LC_ALL; _run "${_F9L}" "${_F9}" --status ) )"
+if printf '%s\n' "${_of9s}" | grep -qxF "SIDECAR — unparseable label line(s) : 1"; then
+    _record_pass "F9 --status announces the invalid-UTF-8 sidecar line (${_U8:-C})"
+else
+    _record_fail "F9 --status announces the invalid-UTF-8 sidecar line (${_U8:-C})" "got: ${_of9s}"
+fi
 
 print_summary

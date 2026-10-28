@@ -332,6 +332,7 @@ _COMBINED_REAL_LIMIT=150000      # the product's warning threshold (total, all f
 # containing an assert idiom, so every change to a one-line constant read as
 # a removed assertion and needed a human override (#379 and #387, 2026-10-26).
 # Editing the constant now deletes only `_COMBINED_BASELINE=<n>`.
+#   Raised 152618 -> 152709 (+91) 2026-10-28, #405 merged onto #406: push-gate-telemetry.md 18337 -> 18428, the REVIEW predicate-3 bullet said the REVIEW reader's fallback literal is pinned to the producer; #405 removed the literal from the REVIEW and VERIFY readers, which now refuse (exit 2 and 3) when they cannot derive the version (+91 on its own base, 151792 -> 151883); path-scoped.
 #   Raised 152099 -> 152618 (+519) 2026-10-27, #404: push-gate-telemetry.md 17818 -> 18337, the shadow-adjudicate bullet's rule (5) states the second membership field (`advisory_emitted`, schema 4) and its asymmetry with `would_block` (only an explicit false excludes), citing the test cells that pin it; path-scoped.
 #   Raised 152076 -> 152099 (+23) 2026-10-27, #383 follow-through: push-gate-enforcement.md 62810 -> 62833, the SUBJECT bullet said shadow-adjudicate.sh keeps a literal no-lib fallback, which #383 removed; it now says the reader refuses (exit 2) instead; path-scoped.
 #   Lowered 152132 -> 152076 (-56) 2026-10-27, #403: push-gate-enforcement.md 62866 -> 62810 moves the brace-group escaped-operator measurement verbatim to docs/history/rules-push-gate-enforcement.md (loaded by nothing), now that tests/test-push-gate-detection.sh pins that shape; path-scoped.
@@ -352,7 +353,7 @@ _COMBINED_REAL_LIMIT=150000      # the product's warning threshold (total, all f
 #   Raised 174140 -> 174463 (+323) 2026-10-13: the CLAUDE.md Style line about hook latency now carries the measured numbers (172 ms activation median, 2,531 to 1,624 ms session start with twelve plugins) beside the stated targets instead of the false "~50ms"; paid at session start because CLAUDE.md is unscoped.
 #   Raised 173886 -> 174140 (+254) 2026-10-12: CLAUDE.md gains the `scripts/compaction-pairing.sh` Commands row (the compaction-carrier premise fix), all of it paid at session start because CLAUDE.md is unscoped.
 #   Raised 172241 -> 173886 (+1645) with #310: routing-state.md now says a keyword admits a skill independently of its triggers, names the audit that measures it and says what the audit cannot see (+1420), and CLAUDE.md gains that audit's Commands row and a clause in the scoring line (+225). The rule is path-scoped, so only the 225 are paid at session start.
-_COMBINED_BASELINE=152618  # RATCHET: today's exact total. Not a ceiling. History above.
+_COMBINED_BASELINE=152709  # RATCHET: today's exact total. Not a ceiling. History above.
 _PERFILE_ADVISORY_BYTES=40000    # #22364 states 40.0k CHARS; compared in bytes, so
                                  # approximate by ~0.6% here. Reported, never asserted.
 

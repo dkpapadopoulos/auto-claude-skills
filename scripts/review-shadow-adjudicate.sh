@@ -30,21 +30,32 @@ ADJ_LOG="${REVIEW_ADJUDICATION_LOG:-$HOME/.claude/.push-review-adjudication.json
 
 _ROOT="$(cd "$(dirname "${BASH_SOURCE:-$0}")/.." 2>/dev/null && pwd)"
 
-# Adjudicable predicate version, DERIVED FROM THE PRODUCER. The literal below is
-# only the fallback for a checkout where the lib is absent. Pinning it
+# Adjudicable predicate version, DERIVED FROM THE PRODUCER. Pinning it
 # independently is a silent corpus blackout: when #219 bumped the IMPLEMENT
 # producer while its reader stayed behind, `--status` reported 0 episodes with
 # live records counted "unpoolable" — indistinguishable from an empty corpus, on
 # the one instrument that must never fake that state.
-REQUIRED_PREDICATE_VERSION=3
+#
+# There is NO literal fallback (#405, as #383 for the IMPLEMENT reader): a
+# literal equals the producer only until the producer bumps. When the version
+# cannot be derived the script REFUSES, as it does below without
+# shadow-corpus.sh. The inherited variable is cleared first, so a value exported
+# by the caller can never stand in for one the lib failed to set.
+REQUIRED_PREDICATE_VERSION=""
 _rs_lib="${_ROOT}/hooks/lib/review-shadow.sh"
 if [ -f "${_rs_lib}" ]; then
+    unset REVIEW_SHADOW_PREDICATE_VERSION
     # shellcheck disable=SC1090
     . "${_rs_lib}" 2>/dev/null || true
     case "${REVIEW_SHADOW_PREDICATE_VERSION:-}" in
         ''|*[!0-9]*) : ;;
         *) REQUIRED_PREDICATE_VERSION="${REVIEW_SHADOW_PREDICATE_VERSION}" ;;
     esac
+fi
+if [ -z "${REQUIRED_PREDICATE_VERSION}" ]; then
+    echo "error: cannot check: no valid REVIEW_SHADOW_PREDICATE_VERSION from hooks/lib/review-shadow.sh (looked at ${_rs_lib})." >&2
+    echo "       Refusing to guess the adjudicable predicate version: a wrong guess reports an empty corpus." >&2
+    exit 2
 fi
 
 # Shared corpus measurement, single-sourced with the IMPLEMENT adjudicator.
@@ -418,7 +429,7 @@ cmd_status() {
     local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
     local _lines=0 _parsed=0 _unparsed=0 _legacy=0 _orphan=0 _rkey=""
     local _leg_eps=0 _leg_repos=0 _leg_span=0 _badts=0
-    local _band_hdl _den
+    local _band_hdl _den _adjbad=0 _uncount=0
 
     echo "=== REVIEW shadow corpus (leg: push/merge REVIEW verdict) ==="
     echo "corpus  : ${SHADOW_LOG}"
@@ -544,6 +555,25 @@ EOF
         fi
     fi
 
+    # Unparseable SIDECAR lines (#386). Every sidecar reader here skips them via
+    # `fromjson?`, so a corrupt line holding a human false_block lowers k with
+    # nothing said -- the direction that clears the flip. Announced in the
+    # VERIFY reader's words, and counted as UNCOUNTABLE below, which blocks the
+    # floor as it blocks the VERIFY decision rule.
+    _adjbad="$(_adj_unparsed)"
+    case "${_adjbad}" in ''|*[!0-9]*) _adjbad=1 ;; esac
+    if [ "${_adjbad}" -gt 0 ]; then
+        echo
+        echo "SIDECAR — unparseable label line(s) : ${_adjbad}"
+    fi
+    # The corpus side, as the VERIFY reader counts it: an unparseable line or an
+    # unplaceable ts drops a record from the denominator while its label survives
+    # as an orphan, so a lost false_block clears the band. Orphans alone stay a
+    # WARNING above (an alternate corpus is a supported use).
+    case "${_unparsed}" in ''|*[!0-9]*) _unparsed=1 ;; esac
+    case "${_badts}" in ''|*[!0-9]*) _badts=1 ;; esac
+    _uncount=$(( _adjbad + _unparsed + _badts ))
+
     # k/n: ONLY human-confirmed episodes count. Zero adjudications is NOT zero
     # false blocks -- it is no measurement, and reporting it as 0/0 clean is the
     # direction that would clear a deny-flip on no evidence.
@@ -561,8 +591,15 @@ EOF
         echo "   counts above, including any excluded band.)"
     elif [ "${_nrepos}" -lt "${FLOOR_REPOS}" ]; then
         echo "FLOOR NOT MET: diversity — ${_nrepos} repo(s) < ${FLOOR_REPOS}."
+    elif [ "${_uncount}" -gt 0 ]; then
+        echo "FLOOR NOT MET: the corpus or sidecar is not fully readable."
     else
         echo "floor met on n and diversity; band above decides."
+    fi
+    if [ "${_uncount}" -gt 0 ]; then
+        echo "UNCOUNTABLE : ${_uncount} line(s)/record(s) above could not be placed."
+        echo "  Any of them may be a false block or hide one, so the decision rule is"
+        echo "  reported NOT MET until each is accounted for by hand."
     fi
     return 0
 }

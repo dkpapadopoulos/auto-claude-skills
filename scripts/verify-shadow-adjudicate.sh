@@ -53,18 +53,27 @@ ADJ_LOG="${VERIFY_ADJUDICATION_LOG:-$HOME/.claude/.push-verify-adjudication.json
 
 _ROOT="$(cd "$(dirname "${BASH_SOURCE:-$0}")/.." 2>/dev/null && pwd)"
 
-# Predicate version DERIVED FROM THE PRODUCER; the literal is only the fallback
-# for a checkout where the lib is absent. An independent pin is a silent corpus
-# blackout the day the producer bumps (the IMPLEMENT pair did exactly that).
-REQUIRED_PREDICATE_VERSION=2
+# Predicate version DERIVED FROM THE PRODUCER. An independent pin is a silent
+# corpus blackout the day the producer bumps (the IMPLEMENT pair did exactly
+# that), so there is NO literal fallback (#405, as #383): when the version cannot
+# be derived the reader makes no claim and exits 3, its "No claim is made" code.
+# The inherited variable is cleared first, so a value exported by the caller can
+# never stand in for one the lib failed to set.
+REQUIRED_PREDICATE_VERSION=""
 _vs_lib="${_ROOT}/hooks/lib/verify-shadow.sh"
 if [ -f "${_vs_lib}" ]; then
+    unset VERIFY_SHADOW_PREDICATE_VERSION
     # shellcheck disable=SC1090
     . "${_vs_lib}" 2>/dev/null || true
     case "${VERIFY_SHADOW_PREDICATE_VERSION:-}" in
         ''|*[!0-9]*) : ;;
         *) REQUIRED_PREDICATE_VERSION="${VERIFY_SHADOW_PREDICATE_VERSION}" ;;
     esac
+fi
+if [ -z "${REQUIRED_PREDICATE_VERSION}" ]; then
+    echo "error: cannot check: no valid VERIFY_SHADOW_PREDICATE_VERSION from hooks/lib/verify-shadow.sh (looked at ${_vs_lib})." >&2
+    echo "       No claim is made: a guessed predicate version reports an empty corpus." >&2
+    exit 3
 fi
 
 # The band rule, episode grouping and the ISO->epoch prelude are single-sourced
