@@ -21,16 +21,29 @@ set -u
 # at 2: `--status` reported 0 episodes with the real records counted as
 # "unpoolable", and `--verdict` refused every new record. That reads exactly like
 # an empty corpus, which is the one state this instrument must never fake.
-# The literal below is only the fallback for a checkout where the lib is absent.
-REQUIRED_PREDICATE_VERSION=3
+#
+# There is NO literal fallback (#383). One used to stand in when the lib was
+# absent, and it lagged the producer (3 against 6), so the fallback reproduced
+# the very blackout described above. When the version cannot be derived the
+# script REFUSES, exactly as it does below without shadow-corpus.sh.
+REQUIRED_PREDICATE_VERSION=""
 _sa_lib="$(cd "$(dirname "${BASH_SOURCE:-$0}")/.." 2>/dev/null && pwd)/hooks/lib/implement-shadow.sh"
 if [ -f "${_sa_lib}" ]; then
+    # Cleared first, so a value inherited from the caller's environment can
+    # never stand in for one the lib failed to set (an early return, a
+    # partial update).
+    unset IMPLEMENT_SHADOW_PREDICATE_VERSION
     # shellcheck disable=SC1090
     . "${_sa_lib}" 2>/dev/null || true
     case "${IMPLEMENT_SHADOW_PREDICATE_VERSION:-}" in
         ''|*[!0-9]*) : ;;
         *) REQUIRED_PREDICATE_VERSION="${IMPLEMENT_SHADOW_PREDICATE_VERSION}" ;;
     esac
+fi
+if [ -z "${REQUIRED_PREDICATE_VERSION}" ]; then
+    echo "error: cannot check: no valid IMPLEMENT_SHADOW_PREDICATE_VERSION from hooks/lib/implement-shadow.sh (looked at ${_sa_lib})." >&2
+    echo "       Refusing to guess the adjudicable predicate version: a wrong guess reports an empty corpus." >&2
+    exit 2
 fi
 # Shared corpus measurement, single-sourced with the REVIEW leg's adjudicator:
 # the band rule, the ISO->epoch prelude and the episode grouping are ONE method

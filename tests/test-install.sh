@@ -134,8 +134,12 @@ assert_contains \
     "openspec-guard.sh" \
     "${HOOKS_CONTENT}"
 
-# Test 8: hooks.json registers all required hook events
-for event in SessionStart UserPromptSubmit PreToolUse PostToolUse PreCompact Stop TeammateIdle; do
+# Test 8: hooks.json registers all required hook events.
+# A LITERAL list, not one derived from hooks.json: a set read from the file
+# under test cannot notice a registration removed from it. SubagentStart and
+# SubagentStop carry the reviewer start/completion hooks (#379, #385).
+_REQUIRED_EVENTS="SessionStart UserPromptSubmit PreToolUse PostToolUse PreCompact Stop TeammateIdle SubagentStart SubagentStop"
+for event in ${_REQUIRED_EVENTS}; do
     if printf '%s' "${HOOKS_CONTENT}" | jq -e ".hooks.${event}" >/dev/null 2>&1; then
         _record_pass "hooks.json registers ${event} event"
     else
@@ -143,6 +147,25 @@ for event in SessionStart UserPromptSubmit PreToolUse PostToolUse PreCompact Sto
             "event not found in hooks.json"
     fi
 done
+
+# ...and the list stays exhaustive: every event hooks.json registers must be in
+# it, so a new registration forces the list (and so its removal check) to grow.
+# Floor: an unreadable hooks.json yields no events and must not pass vacuously.
+_REGISTERED_EVENTS="$(printf '%s' "${HOOKS_CONTENT}" | jq -r '.hooks | keys[]' 2>/dev/null)" || _REGISTERED_EVENTS=""
+if [ -z "${_REGISTERED_EVENTS}" ]; then
+    _record_fail "hooks.json registered events are readable" "no events read from hooks.json"
+else
+    while IFS= read -r event; do
+        [ -n "${event}" ] || continue
+        case " ${_REQUIRED_EVENTS} " in
+            *" ${event} "*) _record_pass "registered event ${event} is in the required list" ;;
+            *) _record_fail "registered event ${event} is in the required list" \
+                   "hooks.json registers ${event}; add it to _REQUIRED_EVENTS in Test 8" ;;
+        esac
+    done <<EOF
+${_REGISTERED_EVENTS}
+EOF
+fi
 
 # Verify cozempic wrapper hooks are present
 assert_contains \

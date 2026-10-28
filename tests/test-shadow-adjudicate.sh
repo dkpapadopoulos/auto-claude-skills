@@ -357,6 +357,47 @@ _st="$("$SCRIPT" --status 2>&1)"
 eq "a previous-predicate record is reported as excluded" "1" \
    "$(printf '%s\n' "${_st}" | grep -c 'other-predicate   1')"
 
+# --- No version, no guess (#383) ---------------------------------------------
+# A literal fallback used to stand in when the producer lib was absent, and it
+# lagged the producer, so the reader filtered for a version no record carried
+# and reported an empty corpus. Now it must REFUSE (exit 2, as it does without
+# shadow-corpus.sh). Run from a scratch copy so the producer can be MOVED: the
+# positive control proves the copy derives a version nobody hardcoded (97), so
+# the two refusal cells cannot pass merely because the copy is broken.
+_NV="${TMP}/noversion"
+mkdir -p "${_NV}/scripts" "${_NV}/hooks/lib"
+cp "${SCRIPT}" "${_NV}/scripts/shadow-adjudicate.sh"
+cp "${ROOT}/hooks/lib/shadow-corpus.sh" "${_NV}/hooks/lib/shadow-corpus.sh"
+: > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
+_nv_run() { /bin/bash "${_NV}/scripts/shadow-adjudicate.sh" --status 2>&1; echo "rc=$?"; }
+
+printf 'IMPLEMENT_SHADOW_PREDICATE_VERSION=97\n' > "${_NV}/hooks/lib/implement-shadow.sh"
+_nv_out="$(_nv_run)"
+eq "control: a moved producer (97) is the version the copy adjudicates" "97" \
+   "$(printf '%s\n' "${_nv_out}" | sed -n '1s/.*predicate_version //p' | tr -d ' ')"
+
+rm -f "${_NV}/hooks/lib/implement-shadow.sh"
+_nv_out="$(_nv_run)"
+eq "lib absent: the reader refuses with exit 2" "rc=2" "$(printf '%s\n' "${_nv_out}" | tail -1)"
+eq "lib absent: it says it cannot check" "1" \
+   "$(printf '%s\n' "${_nv_out}" | grep -c '^error: cannot check: no valid IMPLEMENT_SHADOW_PREDICATE_VERSION')"
+eq "lib absent: it reports no corpus" "0" "$(printf '%s\n' "${_nv_out}" | grep -c 'predicate_version')"
+
+printf 'IMPLEMENT_SHADOW_PREDICATE_VERSION=six\n' > "${_NV}/hooks/lib/implement-shadow.sh"
+_nv_out="$(_nv_run)"
+eq "unparseable version: the reader refuses with exit 2" "rc=2" "$(printf '%s\n' "${_nv_out}" | tail -1)"
+eq "unparseable version: it says it cannot check" "1" \
+   "$(printf '%s\n' "${_nv_out}" | grep -c '^error: cannot check: no valid IMPLEMENT_SHADOW_PREDICATE_VERSION')"
+
+# A lib that returns before setting the version must not be rescued by a value
+# inherited from the environment: that is the same guess, arriving another way.
+printf 'return 0\nIMPLEMENT_SHADOW_PREDICATE_VERSION=97\n' > "${_NV}/hooks/lib/implement-shadow.sh"
+_nv_out="$(IMPLEMENT_SHADOW_PREDICATE_VERSION=3; export IMPLEMENT_SHADOW_PREDICATE_VERSION; _nv_run)"
+eq "inherited version + lib returning early: the reader refuses with exit 2" "rc=2" \
+   "$(printf '%s\n' "${_nv_out}" | tail -1)"
+eq "inherited version + lib returning early: it reports no corpus" "0" \
+   "$(printf '%s\n' "${_nv_out}" | grep -c 'predicate_version')"
+
 # --- Task 5: --status ---
 seed()  { : > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"; }
 mkrec() { rec "$1" "2026-07-28T$2:00Z" "$3" "br-$1" "tok-$1"; }
@@ -650,6 +691,10 @@ eq "a record with NO advisory_emitted stays in the rate population" "1" \
 recae m2 "2026-08-01T10:00:00Z" "/repo/A" "feat/x" "tokM" true '"yes"'
 eq "a NON-BOOLEAN advisory_emitted stays in the rate population" "1" \
    "$(status | grep -c 'would-block  *1')"
+# ...and in --next's queue, which filters records with its own jq (cmd_next),
+# not through _episode_wb, so the rate cells above do not pin it.
+eq "--next DOES offer a NON-BOOLEAN advisory_emitted record" "1" \
+   "$("$SCRIPT" --next 2>/dev/null | grep -c '^m2 ' | tr -d ' ')"
 
 # A mixed episode keeps counting: only an episode whose would-block records are
 # ALL silent is excluded. Narrowing that would drop episodes the rate is
