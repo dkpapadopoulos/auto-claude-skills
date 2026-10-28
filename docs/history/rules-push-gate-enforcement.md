@@ -92,6 +92,12 @@ with the test that guards each:
   i.e. which gate denied). The sentence "Measured across `echo`, `cd`, `true` and a
   brace group." was first moved too and is back in the rule: no cell covers the
   brace-group shape, so the measurement is not test-guarded.
+- "Measured across `echo`, `cd`, `true` and a brace group." Moved 2026-10-27 (#403),
+  once a cell pinned the brace-group shape. Guard: `tests/test-push-gate-detection.sh`
+  lines 509-517, where the escaped-operator loop now carries
+  `'{ echo a\>&git push origin main; }'` beside the `echo`, `cd`, `true` and `<` cells
+  and asserts the same REVIEW remedy text. Deleting the `*'\<'|*'\>'` arm in
+  `hooks/lib/git-command.sh` fails it together with its neighbours (6 red, 209 green).
 
 Corrected, not moved: "it is **5** today" and "(#229; **5** today)" now read **6** on
 2026-10-27. `hooks/lib/implement-shadow.sh` line 113 sets
