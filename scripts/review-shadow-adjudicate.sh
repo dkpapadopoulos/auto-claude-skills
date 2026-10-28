@@ -429,7 +429,7 @@ cmd_status() {
     local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
     local _lines=0 _parsed=0 _unparsed=0 _legacy=0 _orphan=0 _rkey=""
     local _leg_eps=0 _leg_repos=0 _leg_span=0 _badts=0
-    local _band_hdl _den _adjbad=0
+    local _band_hdl _den _adjbad=0 _uncount=0
 
     echo "=== REVIEW shadow corpus (leg: push/merge REVIEW verdict) ==="
     echo "corpus  : ${SHADOW_LOG}"
@@ -566,6 +566,13 @@ EOF
         echo
         echo "SIDECAR — unparseable label line(s) : ${_adjbad}"
     fi
+    # The corpus side, as the VERIFY reader counts it: an unparseable line or an
+    # unplaceable ts drops a record from the denominator while its label survives
+    # as an orphan, so a lost false_block clears the band. Orphans alone stay a
+    # WARNING above (an alternate corpus is a supported use).
+    case "${_unparsed}" in ''|*[!0-9]*) _unparsed=1 ;; esac
+    case "${_badts}" in ''|*[!0-9]*) _badts=1 ;; esac
+    _uncount=$(( _adjbad + _unparsed + _badts ))
 
     # k/n: ONLY human-confirmed episodes count. Zero adjudications is NOT zero
     # false blocks -- it is no measurement, and reporting it as 0/0 clean is the
@@ -584,13 +591,13 @@ EOF
         echo "   counts above, including any excluded band.)"
     elif [ "${_nrepos}" -lt "${FLOOR_REPOS}" ]; then
         echo "FLOOR NOT MET: diversity — ${_nrepos} repo(s) < ${FLOOR_REPOS}."
-    elif [ "${_adjbad}" -gt 0 ]; then
-        echo "FLOOR NOT MET: the sidecar is not fully readable."
+    elif [ "${_uncount}" -gt 0 ]; then
+        echo "FLOOR NOT MET: the corpus or sidecar is not fully readable."
     else
         echo "floor met on n and diversity; band above decides."
     fi
-    if [ "${_adjbad}" -gt 0 ]; then
-        echo "UNCOUNTABLE : ${_adjbad} line(s)/record(s) above could not be placed."
+    if [ "${_uncount}" -gt 0 ]; then
+        echo "UNCOUNTABLE : ${_uncount} line(s)/record(s) above could not be placed."
         echo "  Any of them may be a false block or hide one, so the decision rule is"
         echo "  reported NOT MET until each is accounted for by hand."
     fi

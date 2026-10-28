@@ -702,6 +702,9 @@ eq "the attested and silent episodes are absent" "0" \
 # producer's schema; one is rewritten to the schema before it (stamps removed),
 # one to the schema before that (advisory_emitted removed too), and one is moved
 # to the previous predicate. Versions are derived from the producer, never typed.
+# The older-schema records at the current predicate were never written (the
+# predicate was bumped after the schema), so they pin only that the reader never
+# filters on schema; the moved-predicate record is the mix a real corpus holds.
 _SV="${IMPLEMENT_SHADOW_SCHEMA_VERSION:-}"
 : > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
 for _t in tokMX5 tokMX4 tokMX3 tokMXP; do

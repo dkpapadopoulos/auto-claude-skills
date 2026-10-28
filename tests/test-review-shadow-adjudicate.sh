@@ -481,7 +481,7 @@ _AD3="${TMP}/d-adj-corrupt.jsonl"
 cp "${_AD}" "${_AD3}"; printf '%s\n' '{"record_id":"d0","verdict":' >> "${_AD3}"
 _outd3="$(_run "${_LD}" "${_AD3}" --status)"
 case "${_outd3}" in
-    *"FLOOR NOT MET: the sidecar is not fully readable."*)
+    *"FLOOR NOT MET: the corpus or sidecar is not fully readable."*)
         _record_pass "an unparseable sidecar line blocks an otherwise met floor" ;;
     *) _record_fail "an unparseable sidecar line blocks an otherwise met floor" "got: ${_outd3}" ;;
 esac
@@ -490,6 +490,33 @@ case "${_outd3}" in
         _record_fail "an unparseable sidecar line never prints 'floor met'" "got: ${_outd3}" ;;
     *) _record_pass "an unparseable sidecar line never prints 'floor met'" ;;
 esac
+# The CORPUS side of the same hole (review of #386). A corpus line that does not
+# parse, or a record whose ts cannot be placed, leaves the denominator with its
+# label orphaned -- and if that record held the false_block, k falls and the
+# band clears. 30 episodes less one still meet n=29 and diversity, so only the
+# uncountable accounting can stop "floor met".
+for _cx in trunc badts; do
+    _LD4="${TMP}/d-${_cx}.jsonl"
+    if [ "${_cx}" = trunc ]; then
+        awk 'index($0, "\"record_id\":\"d5\"") { print "{\"record_id\":\"d5\",\"ts\":"; next } { print }' \
+            "${_LD}" > "${_LD4}"
+    else
+        jq -c 'if .record_id == "d5" then .ts = "" else . end' "${_LD}" > "${_LD4}"
+    fi
+    _outd4="$(_run "${_LD4}" "${_AD}" --status)"
+    _nd4="$(printf '%s' "${_outd4}" | sed -n 's/^rate (human-confirmed only) : k=[0-9]* false blocks of n=\([0-9]*\).*/\1/p')"
+    assert_equals "corpus ${_cx}: n is still 29, so the n floor alone would pass" "29" "${_nd4}"
+    case "${_outd4}" in
+        *"floor met on n and diversity"*)
+            _record_fail "corpus ${_cx}: a record that cannot be placed blocks 'floor met'" "got: ${_outd4}" ;;
+        *) _record_pass "corpus ${_cx}: a record that cannot be placed blocks 'floor met'" ;;
+    esac
+    case "${_outd4}" in
+        *"UNCOUNTABLE : 1 line(s)/record(s) above could not be placed."*)
+            _record_pass "corpus ${_cx}: the record is reported UNCOUNTABLE" ;;
+        *) _record_fail "corpus ${_cx}: the record is reported UNCOUNTABLE" "got: ${_outd4}" ;;
+    esac
+done
 
 # ---------------------------------------------------------------------------
 # 13. DIVERSITY IS PER REPOSITORY, NOT PER WORKTREE PATH.
@@ -975,9 +1002,10 @@ fi
 
 # MX (#382) a corpus mixing schema versions. Every record comes from a REAL
 # producer: two from the current one (one of them rewritten to the previous
-# schema, stamps and witness fields removed, which is what a record written
-# before the schema bump looks like at this predicate), and two from the base
-# producer, whose records carry the previous predicate AND the previous schema.
+# schema, stamps and witness fields removed -- a pair no producer wrote, since
+# schema 3 and predicate 3 were bumped together, so it pins only that the reader
+# never filters on schema), and two from the base producer, whose records carry
+# the previous predicate AND the previous schema: the mix a real corpus holds.
 # Both current-predicate records must reach the rate population whatever their
 # schema, and the base records must be excluded as other-predicate, never pooled.
 _SV="$( ( . "${WRITER}" 2>/dev/null; printf '%s' "${REVIEW_SHADOW_SCHEMA_VERSION:-}" ) )"
