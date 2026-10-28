@@ -378,14 +378,23 @@ assert_contains "styleguide declares what the lint does NOT cover" "so you know 
 # Motion is not tokenised until a screen needs it, but the first motion role must bring its
 # reduced-motion block with it, so no screen has to remember to.
 assert_contains "styleguide ties the first motion role to a reduced-motion block" \
-    "prefers-reduced-motion: reduce" "${_sg}"
+    'When you add the first one, add a
+`prefers-reduced-motion: reduce` block' "${_sg}"
+# The tokens.json regeneration and _css_tokens read any column-0 ":root {" as light, so a
+# reduced-motion block with an unindented :root would overwrite light values (review M4).
+assert_contains "styleguide says to indent :root inside the reduced-motion block" \
+    "Nest \`:root\` inside that block and indent it" "${_sg}"
 
 # --- Method: adoption is optional, and moving screens are verified both ways ----------
 # D13 (2026-10-27) refused mandatory seed adoption and the pilot did not favour seeded
 # builds; step 0 once read "Adopt the seed. Do not start designing screens...".
 _md="$(cat "${PROJECT_ROOT}/docs/design-seed-method.md")"
-assert_contains "method says adopting the seed is optional" "adopting the seed is optional" "${_md}"
-assert_not_contains "method no longer mandates the seed" "Adopt the seed." "${_md}"
+assert_contains "method says adopting the seed is a choice, not a prerequisite" \
+    "adopting it is a choice, not a
+prerequisite" "${_md}"
+assert_contains "method allows skipping the seed only when the project has its own system" \
+    "skip it when the project already has its own tokens and styleguide" "${_md}"
+assert_not_contains "method no longer mandates the seed" "Adopt the seed" "${_md}"
 assert_contains "method verifies moving interactions with reduced motion on and off" \
     "reduced motion on and off" "${_md}"
 

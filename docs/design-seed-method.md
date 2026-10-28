@@ -1,8 +1,8 @@
 # The design method
 
 How to get a good interface out of Claude, and keep it good as it grows. Five steps. The
-seed (`../assets/design-seed/`, resolved from this file — see its `ADOPT.md`) is step 0's
-output; this document is the rest.
+seed (`../assets/design-seed/`, resolved from this file — see its `ADOPT.md`) is one way to
+produce step 0's output; this document is the rest.
 
 It needs **no** external design-system connector. Claude Design is a separate, optional
 lane that builds on an adopted `design/` rather than replacing a step of this method: a
@@ -16,10 +16,11 @@ files in the repo are the contract, never the connector.
 ## 0. Foundations, once per project
 
 Settle role tokens and a styleguide before designing screens: a model with no role tokens
-invents values. They can come from the seed or from the project's own design system, and
-adopting the seed is optional. Keep its values, replace them with choices made for the
-brief (`frontend-design`), or skip it. The seed supplies consistency, not taste: the paired
-pilot that tested it did not show seeded builds scoring higher.
+invents values. They can come from the seed or from the project's own design system: keep
+the seed's values, replace them with choices made for the brief (`frontend-design`), or
+skip it when the project already has its own tokens and styleguide. The seed supplies
+consistency and a starting floor, not the project's taste; adopting it is a choice, not a
+prerequisite.
 
 ## 1. Ground the question
 

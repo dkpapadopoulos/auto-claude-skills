@@ -79,8 +79,12 @@ screen needs them, as roles (`--elevation-popover`), not as a scale nobody asks 
 
 Name a motion role for the change it shows (`--motion-reveal-duration`,
 `--motion-reveal-easing`), not for its speed. When you add the first one, add a
-`prefers-reduced-motion: reduce` block in the same file that removes or shortens every
-motion role, so no screen has to remember to.
+`prefers-reduced-motion: reduce` block to `tokens.css` that sets every motion duration to
+near zero (not `0s`, which can stop `transitionend` from firing) or swaps the movement for a
+fade. Nest `:root` inside that block and indent it: the `tokens.json` regeneration in
+`ADOPT.md` reads any `:root {` at column 0 as the light theme. A screen that references the
+roles then gets the reduced version for free. The lint does not cover motion properties, so
+a literal duration is caught only by the method's reduced-motion check (step 5).
 
 ## What the lint covers, so you know what it doesn't
 
