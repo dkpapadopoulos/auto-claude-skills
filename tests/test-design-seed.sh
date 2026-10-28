@@ -375,5 +375,18 @@ _sg="$(cat "${SEED}/styleguide.md")"
 assert_contains "styleguide covers missing vs empty vs zero" "Missing is not empty" "${_sg}"
 assert_contains "styleguide covers numeric display" "tabular-nums" "${_sg}"
 assert_contains "styleguide declares what the lint does NOT cover" "so you know what it doesn't" "${_sg}"
+# Motion is not tokenised until a screen needs it, but the first motion role must bring its
+# reduced-motion block with it, so no screen has to remember to.
+assert_contains "styleguide ties the first motion role to a reduced-motion block" \
+    "prefers-reduced-motion: reduce" "${_sg}"
+
+# --- Method: adoption is optional, and moving screens are verified both ways ----------
+# D13 (2026-10-27) refused mandatory seed adoption and the pilot did not favour seeded
+# builds; step 0 once read "Adopt the seed. Do not start designing screens...".
+_md="$(cat "${PROJECT_ROOT}/docs/design-seed-method.md")"
+assert_contains "method says adopting the seed is optional" "adopting the seed is optional" "${_md}"
+assert_not_contains "method no longer mandates the seed" "Adopt the seed." "${_md}"
+assert_contains "method verifies moving interactions with reduced motion on and off" \
+    "reduced motion on and off" "${_md}"
 
 print_summary

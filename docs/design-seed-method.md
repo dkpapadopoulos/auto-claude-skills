@@ -15,10 +15,11 @@ files in the repo are the contract, never the connector.
 
 ## 0. Foundations, once per project
 
-Adopt the seed. Do not start designing screens before a project has tokens and a
-styleguide: a model with no role tokens invents values, and a model with no reference
-imitates whatever templated default it saw most. This is the single highest-leverage
-half-hour in the whole method.
+Settle role tokens and a styleguide before designing screens: a model with no role tokens
+invents values. They can come from the seed or from the project's own design system, and
+adopting the seed is optional. Keep its values, replace them with choices made for the
+brief (`frontend-design`), or skip it. The seed supplies consistency, not taste: the paired
+pilot that tested it did not show seeded builds scoring higher.
 
 ## 1. Ground the question
 
@@ -62,7 +63,9 @@ Reference roles, never literals. Build only what the chosen screen needs. Run
 
 ## 5. Verify in a browser, with evidence that fits the claim
 
-Open it. Look at it in both themes, at a narrow width, and with the keyboard only.
+Open it. Look at it in both themes, at a narrow width, and with the keyboard only. If
+anything on it moves, run each moving interaction with reduced motion on and off: on, the
+state change must still be visible without the movement.
 `runtime-validation` orchestrates the automatable parts (Playwright, axe, Lighthouse,
 visual regression) — that skill owns UI evidence; this method does not duplicate it.
 

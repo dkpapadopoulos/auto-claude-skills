@@ -77,6 +77,11 @@ Neither is in the token set yet, deliberately: nothing in the reference page nee
 and a token nobody references is a maintenance cost with no reader. Add them when a real
 screen needs them, as roles (`--elevation-popover`), not as a scale nobody asks for.
 
+Name a motion role for the change it shows (`--motion-reveal-duration`,
+`--motion-reveal-easing`), not for its speed. When you add the first one, add a
+`prefers-reduced-motion: reduce` block in the same file that removes or shortens every
+motion role, so no screen has to remember to.
+
 ## What the lint covers, so you know what it doesn't
 
 `checks/token-lint.sh --help` prints the exact scope. In short: it requires token
