@@ -92,7 +92,10 @@ For UI work, the `frontend-quality-rules` hint offers two skills from Vercel's
 UI code against the Web Interface Guidelines: focus states, forms, typography, images,
 motion) and, in React/Next apps, `react-best-practices`. Check
 `~/.claude/skills/web-design-guidelines/` and `~/.claude/skills/react-best-practices/`
-and skip any that are present. Otherwise **ask the user** whether to install them. The
+and skip any that are present. Otherwise **ask the user** whether to install them, and say
+what they are agreeing to: `web-design-guidelines` ships no rules of its own; on every use
+it fetches them from the `main` branch of `vercel-labs/web-interface-guidelines`, so what it
+applies can change without a new install. It only reads files and reports findings. The
 copies below are guarded so an existing directory is never nested into or overwritten:
 
 ```bash
@@ -104,6 +107,14 @@ rm -rf /tmp/vercel-agent-skills
 
 Note: the React skill's frontmatter declares `name: vercel-react-best-practices`, so the
 skills listing shows it under that name even though its folder is `react-best-practices`.
+
+If the copy is refused (on 2026-10-28 the auto-mode classifier refused it as untrusted code
+integration), do not retry it another way. Give the user this one line to run with the `!`
+prefix, adding the `react-best-practices` copy if they chose it too:
+
+```bash
+! git clone --depth 1 https://github.com/vercel-labs/agent-skills.git /tmp/vercel-agent-skills && { [ -d ~/.claude/skills/web-design-guidelines ] || cp -r /tmp/vercel-agent-skills/skills/web-design-guidelines ~/.claude/skills/web-design-guidelines; }; rm -rf /tmp/vercel-agent-skills
+```
 
 If the user declines, skip this step; the hint degrades to its own baseline.
 

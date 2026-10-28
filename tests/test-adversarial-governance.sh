@@ -137,6 +137,17 @@ assert_contains "frontend-quality: conditional wording (is installed)" "is insta
 assert_not_contains "frontend-quality: no hardcoded Skill() for web-interface-guidelines" "Skill(web-interface-guidelines" "${FQR_HINT}"
 assert_not_contains "frontend-quality: no hardcoded Skill() for react-best-practices" "Skill(react-best-practices" "${FQR_HINT}"
 assert_contains "frontend-quality: fires in IMPLEMENT" "IMPLEMENT" "${FQR_PHASES}"
+# /setup 3b is where the user consents to these external skills. web-design-guidelines
+# fetches its rules from vercel-labs/web-interface-guidelines main on every use (read
+# 2026-10-28), so consent must say so; and the model's copy was refused by the auto-mode
+# classifier the same day, so the step must hand the user a `!` line, not retry.
+SETUP_MD="$(cat "${PROJECT_ROOT}/commands/setup.md")"
+assert_contains "setup 3b: consent discloses the live rule fetch" \
+    "fetches them from the \`main\` branch of \`vercel-labs/web-interface-guidelines\`" "${SETUP_MD}"
+assert_contains "setup 3b: a refused copy is not retried another way" \
+    "do not retry it another way" "${SETUP_MD}"
+assert_contains "setup 3b: the fallback is a single guarded ! line" \
+    '! git clone --depth 1 https://github.com/vercel-labs/agent-skills.git /tmp/vercel-agent-skills && { [ -d ~/.claude/skills/web-design-guidelines ] ||' "${SETUP_MD}"
 assert_contains "frontend-quality: fires in REVIEW" "REVIEW" "${FQR_PHASES}"
 # fallback registry must carry the same hint (drift guard)
 assert_contains "frontend-quality: mirrored to fallback registry" "frontend-quality-rules" "${FALLBACK_CONTENT}"
