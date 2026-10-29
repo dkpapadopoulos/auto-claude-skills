@@ -1,8 +1,8 @@
 # The design method
 
 How to get a good interface out of Claude, and keep it good as it grows. Five steps. The
-seed (`../assets/design-seed/`, resolved from this file — see its `ADOPT.md`) is step 0's
-output; this document is the rest.
+seed (`../assets/design-seed/`, resolved from this file — see its `ADOPT.md`) is one way to
+produce step 0's output; this document is the rest.
 
 It needs **no** external design-system connector. Claude Design is a separate, optional
 lane that builds on an adopted `design/` rather than replacing a step of this method: a
@@ -15,10 +15,12 @@ files in the repo are the contract, never the connector.
 
 ## 0. Foundations, once per project
 
-Adopt the seed. Do not start designing screens before a project has tokens and a
-styleguide: a model with no role tokens invents values, and a model with no reference
-imitates whatever templated default it saw most. This is the single highest-leverage
-half-hour in the whole method.
+Settle role tokens and a styleguide before designing screens: a model with no role tokens
+invents values. They can come from the seed or from the project's own design system: keep
+the seed's values, replace them with choices made for the brief (`frontend-design`), or
+skip it when the project already has its own tokens and styleguide. The seed supplies
+consistency and a starting floor, not the project's taste; adopting it is a choice, not a
+prerequisite.
 
 ## 1. Ground the question
 
@@ -62,7 +64,9 @@ Reference roles, never literals. Build only what the chosen screen needs. Run
 
 ## 5. Verify in a browser, with evidence that fits the claim
 
-Open it. Look at it in both themes, at a narrow width, and with the keyboard only.
+Open it. Look at it in both themes, at a narrow width, and with the keyboard only. If
+anything on it moves, run each moving interaction with reduced motion on and off: on, the
+state change must still be visible without the movement.
 `runtime-validation` orchestrates the automatable parts (Playwright, axe, Lighthouse,
 visual regression) — that skill owns UI evidence; this method does not duplicate it.
 
