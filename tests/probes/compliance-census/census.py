@@ -210,20 +210,31 @@ def merged_entries(baks, path):
     return [r[2] for r in rows], read, bad
 
 
-def read_session(path, projects=None):
-    """Entries, the plugin version evidenced (None when none), and how many .bak copies were
-    merged and skipped as unreadable. projects=None is the registered read: no .bak is opened."""
-    baks = bak_copies(path, projects) if projects else []
-    if baks:
-        entries, merged, bad = merged_entries(baks, path)
-    else:
-        entries, merged, bad = list(iter_entries(path)), 0, 0
-    version = None
+def version_of(entries):
+    """The first plugin version the entries evidence, or None."""
     for entry in entries:
         found = install_version(entry, VERSION_RE)
-        if found and version is None:
-            version = found
-    return entries, version, merged, bad
+        if found:
+            return found
+    return None
+
+
+def read_session(path):
+    """Entries, their prompts, and the plugin version evidenced (None when none). The
+    registered read: no .bak is opened. verbs.py imports this; keep its two-value contract."""
+    entries = list(iter_entries(path))
+    return entries, version_of(entries)
+
+
+def read_session_with_bak(path, projects):
+    """As read_session, with the session's .bak copies merged (A2's sensitivity read), plus
+    how many copies were merged and how many were skipped as unreadable."""
+    baks = bak_copies(path, projects)
+    if not baks:
+        entries, version = read_session(path)
+        return entries, version, 0, 0
+    entries, merged, bad = merged_entries(baks, path)
+    return entries, version_of(entries), merged, bad
 
 
 def is_text_input(entry):
@@ -272,7 +283,10 @@ def census(projects, since, until, min_version, include_bak=False):
     blocks_in_window = 0
     for path in paths:
         try:
-            entries, version, merged, bad = read_session(path, projects if include_bak else None)
+            if include_bak:
+                entries, version, merged, bad = read_session_with_bak(path, projects)
+            else:
+                (entries, version), merged, bad = read_session(path), 0, 0
         except OSError:
             c["transcripts unreadable"] += 1
             continue
