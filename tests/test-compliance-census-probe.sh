@@ -302,11 +302,18 @@ echo "== C21: --include-bak reads a pruned session's .bak copies (#420); the def
 # it does for a session moved by EnterWorktree. s1 is a separate session whose id is a prefix of
 # s12, so a glob that dropped the dot after the id would merge s12's history into s1.
 PROJK="${TEST_TMPDIR}/projects-bak"; mkdir -p "${PROJK}/p1" "${PROJK}/p2"
+# Two backups: only the OLDER one still holds x1's Skill call; the newer one was already
+# thinned, so a newest-first merge would lose it.
+OLDBAK="${PROJK}/p2/s12.20261020_090500.jsonl.bak"; : > "${OLDBAK}"
+ctx   "${OLDBAK}" s0 ""  "2026-10-20T09:00:00Z" SessionStart "${START}"
+uu    "${OLDBAK}" u1 s0  "2026-10-20T09:01:00Z" "please build the exporter now" human
+ctx   "${OLDBAK}" a1 u1  "2026-10-20T09:01:01Z" UserPromptSubmit "${BLOCK}"
+skill "${OLDBAK}" x1 a1  "2026-10-20T09:01:10Z" "superpowers:brainstorming"
 BAK="${PROJK}/p2/s12.20261020_100000.jsonl.bak"; : > "${BAK}"
 ctx   "${BAK}" s0 ""  "2026-10-20T09:00:00Z" SessionStart "${START}"
 uu    "${BAK}" u1 s0  "2026-10-20T09:01:00Z" "please build the exporter now" human
 ctx   "${BAK}" a1 u1  "2026-10-20T09:01:01Z" UserPromptSubmit "${BLOCK}"
-skill "${BAK}" x1 a1  "2026-10-20T09:01:10Z" "superpowers:brainstorming"
+say   "${BAK}" x1 a1  "2026-10-20T09:01:10Z" "[pruned]"
 CUR="${PROJK}/p1/s12.jsonl"; : > "${CUR}"
 ctx   "${CUR}" s0 ""  "2026-10-20T09:00:00Z" SessionStart "${START}"
 uu    "${CUR}" u1 s0  "2026-10-20T09:01:00Z" "please build the exporter now" human
@@ -326,8 +333,9 @@ assert_contains "C21 default: both sessions counted" "typed prompts: 3" "$(cat "
 assert_not_contains "C21 default: and reports no merge" "bak copies" "$(cat "${OUT}/bak.txt")"
 RC="$(runk --include-bak)"
 assert_equals "C21 --include-bak: exits 0" "0" "${RC}"
-assert_contains "C21 --include-bak: the .bak in a sibling project directory is found and merged" "bak copies merged: 1" "$(cat "${OUT}/bak.txt")"
-assert_contains "C21 --include-bak: the oldest copy of x1 wins, so its Skill call is in-turn" "obeyed in-turn: 1" "$(cat "${OUT}/bak.txt")"
+assert_contains "C21 --include-bak: both .bak copies in a sibling project directory are found and merged" "bak copies merged: 2" "$(cat "${OUT}/bak.txt")"
+assert_contains "C21 --include-bak: one counted session had a .bak merged" "sessions counted with a .bak merged: 1" "$(cat "${OUT}/bak.txt")"
+assert_contains "C21 --include-bak: the OLDEST copy of x1 wins over the current file and the newer .bak" "obeyed in-turn: 1" "$(cat "${OUT}/bak.txt")"
 assert_contains "C21 --include-bak: entries in both copies count once, and s12 never leaks into s1" "typed prompts: 3" "$(cat "${OUT}/bak.txt")"
 assert_contains "C21 --include-bak: mandates rendered stays 1" "mandates rendered: 1" "$(cat "${OUT}/bak.txt")"
 assert_contains "C21 --include-bak: an unreadable .bak is counted" "bak copies unreadable: 1" "$(cat "${OUT}/bak.txt")"

@@ -206,6 +206,8 @@ def merged_entries(baks, path):
             t = ts_of(entry.get("timestamp"))
             last = t if t is not None else last
             rows.append((last, len(rows), entry))
+    # Defensive: oldest backup first, then the current file, is already near-chronological;
+    # forcing time order on every session changed no count in review (README A2, Limits).
     rows.sort(key=lambda r: (r[0], r[1]))
     return [r[2] for r in rows], read, bad
 
@@ -234,6 +236,10 @@ def read_session_with_bak(path, projects):
         entries, version = read_session(path)
         return entries, version, 0, 0
     entries, merged, bad = merged_entries(baks, path)
+    if merged == 0:
+        # Every backup was unreadable: read exactly as the registered read does.
+        entries, version = read_session(path)
+        return entries, version, 0, bad
     return entries, version_of(entries), merged, bad
 
 
@@ -272,7 +278,7 @@ def pair_block(index, by_uuid, entries, prompts):
 def census(projects, since, until, min_version, include_bak=False):
     paths = sorted(glob.glob(os.path.join(projects, "*", "*.jsonl")))
     c = {"transcripts read": 0, "transcripts unreadable": 0, "bak copies merged": 0, "bak copies unreadable": 0,
-         "sessions counted": 0,
+         "sessions counted": 0, "sessions counted with a .bak merged": 0,
          "sessions below version floor": 0, "sessions with unknown version": 0, "typed prompts": 0,
          "typed prompts with a block": 0, "inputs with a block that are not typed prompts": 0,
          "blocks unpaired": 0, "mandates rendered": 0, "obeyed in-turn": 0, "obeyed later in session": 0,
@@ -307,6 +313,8 @@ def census(projects, since, until, min_version, include_bak=False):
             c["sessions below version floor"] += 1
             continue
         c["sessions counted"] += 1
+        if merged:
+            c["sessions counted with a .bak merged"] += 1
         c["typed prompts"] += len(typed_idx)
         by_uuid = {}
         for i, e in enumerate(entries):
@@ -419,6 +427,7 @@ def main():
             "sessions with unknown version"]
     if args.include_bak:
         keys[2:2] = ["bak copies merged", "bak copies unreadable"]
+        keys.insert(keys.index("sessions counted") + 1, "sessions counted with a .bak merged")
     for key in keys:
         print(f"{key}: {c[key]}")
     if c["transcripts read"] == 0 or c["sessions counted"] == 0:
