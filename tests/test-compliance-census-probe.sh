@@ -295,6 +295,36 @@ RC="$(python3 "${CENSUS}" --projects "${PROJU}" --control 0/23 --since 2026-10-2
 assert_equals "C20: still exits 0 when another transcript could be read" "0" "${RC}"
 assert_contains "C20: and the unreadable one is counted" "transcripts unreadable: 1" "$(cat "${OUT}/unreadable.txt")"
 
+echo "== C21: --include-bak reads a pruned session's .bak copies (#420); the default does not =="
+# Cozempic pruning leaves the earlier history only in <sid>.<stamp>.jsonl.bak beside the session.
+# Here the current file lost the in-turn Skill call; the .bak still holds it, and both hold the block.
+PROJK="${TEST_TMPDIR}/projects-bak"; mkdir -p "${PROJK}/p1"
+BAK="${PROJK}/p1/s12.20261020_100000.jsonl.bak"; : > "${BAK}"
+ctx   "${BAK}" s0 ""  "2026-10-20T09:00:00Z" SessionStart "${START}"
+uu    "${BAK}" u1 s0  "2026-10-20T09:01:00Z" "please build the exporter now" human
+ctx   "${BAK}" a1 u1  "2026-10-20T09:01:01Z" UserPromptSubmit "${BLOCK}"
+skill "${BAK}" x1 a1  "2026-10-20T09:01:10Z" "superpowers:brainstorming"
+CUR="${PROJK}/p1/s12.jsonl"; : > "${CUR}"
+ctx   "${CUR}" s0 ""  "2026-10-20T09:00:00Z" SessionStart "${START}"
+uu    "${CUR}" u1 s0  "2026-10-20T09:01:00Z" "please build the exporter now" human
+ctx   "${CUR}" a1 u1  "2026-10-20T09:01:01Z" UserPromptSubmit "${BLOCK}"
+uu    "${CUR}" u2 x1  "2026-10-20T09:02:00Z" "thanks, carry on" human
+# A .bak of ANOTHER session id must never be merged into this one.
+OTHER="${PROJK}/p1/s99.20261020_100000.jsonl.bak"; : > "${OTHER}"
+skill "${OTHER}" y1 a1 "2026-10-20T09:01:20Z" "superpowers:brainstorming"
+runk() { python3 "${CENSUS}" --projects "${PROJK}" --control 0/23 --since 2026-10-20T00:00:00Z --until 2026-10-21T00:00:00Z --today 2026-10-21 "$@" > "${OUT}/bak.txt" 2>&1; echo $?; }
+RC="$(runk)"
+assert_equals "C21 default: exits 0" "0" "${RC}"
+assert_contains "C21 default: the registered read never opens a .bak, so the pruned call is not seen" "obeyed in-turn: 0" "$(cat "${OUT}/bak.txt")"
+assert_not_contains "C21 default: and reports no merge" "bak copies merged" "$(cat "${OUT}/bak.txt")"
+RC="$(runk --include-bak)"
+assert_equals "C21 --include-bak: exits 0" "0" "${RC}"
+assert_contains "C21 --include-bak: the call kept only in the .bak is in-turn" "obeyed in-turn: 1" "$(cat "${OUT}/bak.txt")"
+assert_contains "C21 --include-bak: the block in both copies is one mandate, not two" "mandates rendered: 1" "$(cat "${OUT}/bak.txt")"
+assert_contains "C21 --include-bak: the typed prompts are not double-counted" "typed prompts: 2" "$(cat "${OUT}/bak.txt")"
+assert_contains "C21 --include-bak: the merge is reported, and the other session's .bak is not merged" "bak copies merged: 1" "$(cat "${OUT}/bak.txt")"
+assert_contains "C21 --include-bak: s99's .bak is not counted as a session" "transcripts read: 1" "$(cat "${OUT}/bak.txt")"
+
 echo "== C12: compiles =="
 python3 -m py_compile "${CENSUS}" 2>/dev/null
 assert_equals "C12: census.py compiles" "0" "$?"

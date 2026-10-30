@@ -262,3 +262,40 @@ rounded one.
   REVIEW gate credits mid-extension. The column removes the push-gate route, not every gate
   route: `skill-gate.sh` can deny a chain step until its predecessor has evidence, which can
   drive an in-turn invocation of a process skill that stays in the column.
+
+### A2 (2026-10-30): a sensitivity read over pruned history (#420)
+
+The census reads `<projects>/*/*.jsonl` only. Cozempic pruning leaves a session's earlier
+history only in `<sid>.<stamp>.jsonl.bak` beside it, which the census never opens. #420
+measured, over sessions that have a `.bak`, entries on or after the data start: 48% of
+routing blocks (142 of 293) and 37% of `Skill` calls (64 of 172) survive in the current
+file. A block whose paired call was pruned reads as "not obeyed", so the registered read is
+biased **down** in pruned sessions.
+
+What was known when A2 was written: only #420's counts, which are blocks and calls, not
+mandates or in-turn obeys. Nobody ran `census.py` over the extension window after A1 to
+write A2, and the A1 read had not been made.
+
+- **The registered read stays the read of record**: A1's command, unchanged, on or after
+  2026-11-02.
+- **Sensitivity read, at the same sitting**: the same command with `--include-bak` added,
+  which merges each session's `.bak` copies, each uuid once (the oldest copy). Its control is
+  re-read the same way: the control command in the Runbook above with `--include-bak`,
+  taking k and n from its `obeyed in-turn` and `mandates rendered` lines, passed as
+  `--control K/N`. Report both reads, the side column for both, and `bak copies merged`.
+- **How the two combine** (fixed now):
+  - both "no evidence" (p >= 0.05): A1's "no evidence" arm applies in full;
+  - both p < 0.05: the "display moves behaviour" arm applies;
+  - they disagree: the result is **not robust to pruning**. No arm's actions apply: the
+    display path stays as it is, no display proposals are made, and the irreversible
+    action (the next cut removing per-phase hint prose entirely) is not taken. There is no
+    further extension of this registration; whether a new one is worth running is the
+    owner's call.
+- **Why not switch the read of record to the merged one**: the bias direction was known
+  before the read, so switching would choose the read more likely to show an effect. A2
+  uses the new fact only to stop an irreversible action resting on a number known to be
+  biased.
+- **Limits**: a `.bak` exists only where Cozempic ran, and whether old `.bak` files are ever
+  deleted is unmeasured, so the merged read can still miss history. Subagent transcripts
+  stay unread, in both reads. The merge orders entries by timestamp, an entry without one
+  keeping the time of the entry read before it.
