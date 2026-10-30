@@ -169,20 +169,35 @@ def typed(prompt):
     return prompt is not None and prompt[1] == "human" and not prompt[0].startswith("<")
 
 
-def bak_copies(path):
-    """The Cozempic backups of one session (<sid>.<stamp>.jsonl.bak beside <sid>.jsonl), oldest
-    stamp first. Pruning leaves the earlier history only there (#420)."""
-    stem = path[:-len(".jsonl")]
-    return sorted(glob.glob(glob.escape(stem) + ".*.jsonl.bak"))
+def bak_copies(path, projects):
+    """The Cozempic backups of one session, <sid>.<stamp>.jsonl.bak, oldest stamp first.
+    Pruning leaves the earlier history only there (#420). They are looked up by session id
+    in EVERY project directory: a session moved by EnterWorktree keeps its backups in the
+    directory it started in."""
+    sid = os.path.basename(path)[:-len(".jsonl")]
+    found = glob.glob(os.path.join(glob.escape(projects), "*", glob.escape(sid) + ".*.jsonl.bak"))
+    return sorted(found, key=os.path.basename)
 
 
-def merged_entries(paths):
-    """Every entry of the given copies, each uuid once (its first, i.e. oldest, copy, which
-    pruning has not yet thinned), in time order. An entry with no timestamp keeps the time
-    of the entry before it, so it stays where it was read."""
-    seen, rows, last = set(), [], 0.0
-    for p in paths:
-        for entry in iter_entries(p):
+def merged_entries(baks, path):
+    """Every entry of the backups and the current file, each uuid once, in time order. The
+    OLDEST copy of an entry wins: pruning rewrites entries it keeps (a Skill tool_use can be
+    thinned out of an assistant entry that survives), so the current copy is the least
+    complete. An entry with no timestamp keeps the time of the entry before it, so it stays
+    where it was read. An unreadable backup is skipped and counted; an unreadable current
+    file raises, as in the registered read."""
+    seen, rows, last, read, bad = set(), [], 0.0, 0, 0
+    for p in baks + [path]:
+        try:
+            copy = list(iter_entries(p))
+        except OSError:
+            if p == path:
+                raise
+            bad += 1
+            continue
+        if p != path:
+            read += 1
+        for entry in copy:
             u = entry.get("uuid")
             if isinstance(u, str) and u:
                 if u in seen:
@@ -192,20 +207,23 @@ def merged_entries(paths):
             last = t if t is not None else last
             rows.append((last, len(rows), entry))
     rows.sort(key=lambda r: (r[0], r[1]))
-    return [r[2] for r in rows]
+    return [r[2] for r in rows], read, bad
 
 
-def read_session(path, include_bak=False):
-    """Entries, their prompts, the plugin version evidenced (None when none), and how many
-    .bak copies were merged (always 0 without include_bak: the registered read)."""
-    baks = bak_copies(path) if include_bak else []
-    entries = merged_entries(baks + [path]) if baks else list(iter_entries(path))
+def read_session(path, projects=None):
+    """Entries, the plugin version evidenced (None when none), and how many .bak copies were
+    merged and skipped as unreadable. projects=None is the registered read: no .bak is opened."""
+    baks = bak_copies(path, projects) if projects else []
+    if baks:
+        entries, merged, bad = merged_entries(baks, path)
+    else:
+        entries, merged, bad = list(iter_entries(path)), 0, 0
     version = None
     for entry in entries:
         found = install_version(entry, VERSION_RE)
         if found and version is None:
             version = found
-    return entries, version, len(baks)
+    return entries, version, merged, bad
 
 
 def is_text_input(entry):
@@ -242,7 +260,8 @@ def pair_block(index, by_uuid, entries, prompts):
 
 def census(projects, since, until, min_version, include_bak=False):
     paths = sorted(glob.glob(os.path.join(projects, "*", "*.jsonl")))
-    c = {"transcripts read": 0, "transcripts unreadable": 0, "bak copies merged": 0, "sessions counted": 0,
+    c = {"transcripts read": 0, "transcripts unreadable": 0, "bak copies merged": 0, "bak copies unreadable": 0,
+         "sessions counted": 0,
          "sessions below version floor": 0, "sessions with unknown version": 0, "typed prompts": 0,
          "typed prompts with a block": 0, "inputs with a block that are not typed prompts": 0,
          "blocks unpaired": 0, "mandates rendered": 0, "obeyed in-turn": 0, "obeyed later in session": 0,
@@ -253,12 +272,13 @@ def census(projects, since, until, min_version, include_bak=False):
     blocks_in_window = 0
     for path in paths:
         try:
-            entries, version, merged = read_session(path, include_bak)
+            entries, version, merged, bad = read_session(path, projects if include_bak else None)
         except OSError:
             c["transcripts unreadable"] += 1
             continue
         c["transcripts read"] += 1
         c["bak copies merged"] += merged
+        c["bak copies unreadable"] += bad
         prompts = [prompt_of(e) for e in entries]
         stamps = [ts_of(e.get("timestamp")) for e in entries]
         in_window = [s is not None and s >= since and (until is None or s < until) for s in stamps]
@@ -384,7 +404,7 @@ def main():
     keys = ["transcripts read", "transcripts unreadable", "sessions counted", "sessions below version floor",
             "sessions with unknown version"]
     if args.include_bak:
-        keys.insert(2, "bak copies merged")
+        keys[2:2] = ["bak copies merged", "bak copies unreadable"]
     for key in keys:
         print(f"{key}: {c[key]}")
     if c["transcripts read"] == 0 or c["sessions counted"] == 0:

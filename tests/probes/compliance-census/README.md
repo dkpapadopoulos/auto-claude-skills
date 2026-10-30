@@ -272,25 +272,33 @@ routing blocks (142 of 293) and 37% of `Skill` calls (64 of 172) survive in the 
 file. A block whose paired call was pruned reads as "not obeyed", so the registered read is
 biased **down** in pruned sessions.
 
-What was known when A2 was written: only #420's counts, which are blocks and calls, not
-mandates or in-turn obeys. Nobody ran `census.py` over the extension window after A1 to
-write A2, and the A1 read had not been made.
+What was known when A2 was written: #420's counts, which are blocks and calls, not mandates
+or in-turn obeys, and A1's own disclosure that the registered read was, in effect,
+foreseeable as "no evidence". Nobody ran `census.py` over the extension window after A1 to
+write A2, and the A1 read had not been made. Taken together, the only outcome A2 can
+realistically change is "registered no evidence, merged p < 0.05", and the change it makes
+there softens that result. A2 is therefore a one-way safeguard against an irreversible
+action resting on a number known to be biased down, not a neutral second test; read "not
+robust to pruning" with that in mind.
 
 - **The registered read stays the read of record**: A1's command, unchanged, on or after
   2026-11-02.
 - **Sensitivity read, at the same sitting**: the same command with `--include-bak` added,
-  which merges each session's `.bak` copies, each uuid once (the oldest copy). Its control is
-  re-read the same way: the control command in the Runbook above with `--include-bak`,
-  taking k and n from its `obeyed in-turn` and `mandates rendered` lines, passed as
-  `--control K/N`. Report both reads, the side column for both, and `bak copies merged`.
+  which merges each session's `.bak` copies, found by session id in every project
+  directory, each uuid once (the oldest copy, because pruning also rewrites entries it
+  keeps). Its control is re-read the same way: the control command in the Runbook above
+  with `--include-bak`, taking k and n from its `obeyed in-turn` and `mandates rendered`
+  lines, passed as `--control K/N`. The merged read's side column takes its control from
+  that re-read's `by skill` rows, removing the two gated skills as A1 does. Report both
+  reads, the side column for both, `bak copies merged` and `bak copies unreadable`.
 - **How the two combine** (fixed now):
   - both "no evidence" (p >= 0.05): A1's "no evidence" arm applies in full;
   - both p < 0.05: the "display moves behaviour" arm applies;
-  - they disagree: the result is **not robust to pruning**. No arm's actions apply: the
-    display path stays as it is, no display proposals are made, and the irreversible
-    action (the next cut removing per-phase hint prose entirely) is not taken. There is no
-    further extension of this registration; whether a new one is worth running is the
-    owner's call.
+  - they disagree: the result is **not robust to pruning**. The "no evidence" arm applies
+    except its irreversible action: the display path is closed as a cost-saving only and no
+    display proposals are made, but the next cut that removes per-phase hint prose entirely
+    is not taken. There is no further extension of this registration; whether a new one is
+    worth running is the owner's call.
 - **Why not switch the read of record to the merged one**: the bias direction was known
   before the read, so switching would choose the read more likely to show an effect. A2
   uses the new fact only to stop an irreversible action resting on a number known to be
@@ -298,4 +306,10 @@ write A2, and the A1 read had not been made.
 - **Limits**: a `.bak` exists only where Cozempic ran, and whether old `.bak` files are ever
   deleted is unmeasured, so the merged read can still miss history. Subagent transcripts
   stay unread, in both reads. The merge orders entries by timestamp, an entry without one
-  keeping the time of the entry read before it.
+  keeping the time of the entry read before it; forcing that order on every session with no
+  `.bak` merged changed no count over the control week or the four weeks before the data
+  start (measured in review). An unreadable `.bak` is skipped and counted; the session is
+  still read. A restored SessionStart entry can change which build a session is credited
+  with, so the merged read's `sessions counted` and floor lines can differ from the
+  registered read's; that follows the registered "first version evidenced" rule on more
+  complete history.
