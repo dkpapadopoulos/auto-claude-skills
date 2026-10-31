@@ -1,0 +1,66 @@
+{
+  "issue": 412,
+  "baseline_commit": "9beab52679ab04e6666cb8e3f1e87703ac38c2fc",
+  "matcher": "tests/probes/real-prompt-replay/replay.sh at the freeze commit (skills: the hook's _score_skills positional scan; hints: the hook's METHODOLOGY HINTS loop, plain =~), prompt lowercased with tr",
+  "rule": {
+    "V1": "V0 with these bare alternatives deleted from every top-level alternation where present: style, styles?, page, card, tab, dashboard, dashboards?",
+    "V2": "V1 with these alternatives appended to the main trigger's top-level alternation, each unless the identical alternative is already present: screens?, layouts?, looks?, mock-?ups?, ui, ux, on (a|the) phone, mobile"
+  },
+  "routes": {
+    "frontend-design": {
+      "kind": "skill",
+      "main_trigger": 0,
+      "V0": [
+        "(^|[^a-z])(ui|frontend|front.end|components?|layouts?|styles?|css|tailwind|responsive|dashboards?|screens?|landing.?pages?|mockups?|wireframes?)($|[^a-z])"
+      ],
+      "V1": [
+        "(^|[^a-z])(ui|frontend|front.end|components?|layouts?|css|tailwind|responsive|screens?|landing.?pages?|mockups?|wireframes?)($|[^a-z])"
+      ],
+      "V2": [
+        "(^|[^a-z])(ui|frontend|front.end|components?|layouts?|css|tailwind|responsive|screens?|landing.?pages?|mockups?|wireframes?|looks?|mock-?ups?|ux|on (a|the) phone|mobile)($|[^a-z])"
+      ]
+    },
+    "frontend-playwright": {
+      "kind": "hint",
+      "main_trigger": 0,
+      "V0": [
+        "(^|[^a-z])(component|page|form|modal|dialog|sidebar|navbar|header|footer|button|dropdown|tooltip|tab|card|widget|dashboard|landing.?page|login.?page|signup|onboard|checkout|ui|frontend|layout|style|css|tailwind|responsive)($|[^a-z])"
+      ],
+      "V1": [
+        "(^|[^a-z])(component|form|modal|dialog|sidebar|navbar|header|footer|button|dropdown|tooltip|widget|landing.?page|login.?page|signup|onboard|checkout|ui|frontend|layout|css|tailwind|responsive)($|[^a-z])"
+      ],
+      "V2": [
+        "(^|[^a-z])(component|form|modal|dialog|sidebar|navbar|header|footer|button|dropdown|tooltip|widget|landing.?page|login.?page|signup|onboard|checkout|ui|frontend|layout|css|tailwind|responsive|screens?|layouts?|looks?|mock-?ups?|ux|on (a|the) phone|mobile)($|[^a-z])"
+      ]
+    },
+    "frontend-quality-rules": {
+      "kind": "hint",
+      "main_trigger": 1,
+      "V0": [
+        "(^|[^a-z])(react|next.?js|jsx|tsx|component|hydrat|bundle|re.?renders?)($|[^a-z])",
+        "(^|[^a-z])(ui|frontend|layout|form|accessibility|a11y|responsive|user.?interaction|animation|tailwind|css)($|[^a-z])"
+      ],
+      "V1": [
+        "(^|[^a-z])(react|next.?js|jsx|tsx|component|hydrat|bundle|re.?renders?)($|[^a-z])",
+        "(^|[^a-z])(ui|frontend|layout|form|accessibility|a11y|responsive|user.?interaction|animation|tailwind|css)($|[^a-z])"
+      ],
+      "V2": [
+        "(^|[^a-z])(react|next.?js|jsx|tsx|component|hydrat|bundle|re.?renders?)($|[^a-z])",
+        "(^|[^a-z])(ui|frontend|layout|form|accessibility|a11y|responsive|user.?interaction|animation|tailwind|css|screens?|layouts?|looks?|mock-?ups?|ux|on (a|the) phone|mobile)($|[^a-z])"
+      ]
+    },
+    "design-seed": {
+      "kind": "hint",
+      "main_trigger": 0,
+      "V0": [
+        "(^|[^a-z])(styleguides?|style.guides?|design.systems?|design.tokens?|theming|ui|frontend|front.end|screens?|components?|layouts?|dashboards?|mockups?|wireframes?)($|[^a-z])"
+      ],
+      "V1": [
+        "(^|[^a-z])(styleguides?|style.guides?|design.systems?|design.tokens?|theming|ui|frontend|front.end|screens?|components?|layouts?|mockups?|wireframes?)($|[^a-z])"
+      ],
+      "V2": [
+        "(^|[^a-z])(styleguides?|style.guides?|design.systems?|design.tokens?|theming|ui|frontend|front.end|screens?|components?|layouts?|mockups?|wireframes?|looks?|mock-?ups?|ux|on (a|the) phone|mobile)($|[^a-z])"
+      ]
+    }
+  }
+}
