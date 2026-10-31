@@ -532,5 +532,46 @@ has_line "L2: all routed records are replayed" "prompts 5" "${RR_LOG}"
 has_line "L2: the notification source is kept" "source not-a-prompt:task-notification: 2" "${RR_LOG}"
 has_line "L2: the consultation prompt is attributed to trigger 5" "trigger 5: 1 (human 1, in-word discarded 0)" "${RR_LOG}"
 
+# H1-H5: methodology hints, a --config override and per-record hits (#412). A hint matches
+# like the hook's METHODOLOGY HINTS loop (plain =~, no in-word discard); a skill keeps the
+# positional scan. One skill and one hint get the trigger "hang" in a copy of the config.
+HCFG="${TEST_TMPDIR}/variant-config.json"
+jq '(.skills[] | select(.name == "panel") | .triggers) = ["hang"]
+    | (.methodology_hints[] | select(.name == "design-seed") | .triggers) = ["hang"]' \
+    "${PROJECT_ROOT}/config/default-triggers.json" > "${HCFG}"
+HPROMPTS="${TEST_TMPDIR}/hint-prompts.jsonl"
+{
+    jq -nc '{prompt:"what changes now",source:"human"}'
+    jq -nc '{prompt:"hang on",source:"human"}'
+} > "${HPROMPTS}"
+H_HINT="$(bash "${REPLAY}" --config "${HCFG}" design-seed "${HPROMPTS}" "${OUT}/h-hint" < /dev/null 2>&1)"
+assert_equals "H1: a hint name replays" "0" "$?"
+has_line "H1: a hint is reported as a hint" "kind hint" "${H_HINT}"
+H_SKILL="$(bash "${REPLAY}" --config "${HCFG}" panel "${HPROMPTS}" "${OUT}/h-skill" < /dev/null 2>&1)"
+has_line "H1: a skill is reported as a skill" "kind skill" "${H_SKILL}"
+has_line "H2: a hint counts an in-word match, as the hook's hint loop does" "trigger 0: 2 (human 2, in-word discarded 0)" "${H_HINT}"
+has_line "H2: a skill discards the same in-word match" "trigger 0: 1 (human 1, in-word discarded 1)" "${H_SKILL}"
+H_REAL="$(bash "${REPLAY}" design-seed "${HPROMPTS}" "${OUT}/h-real" < /dev/null 2>&1)"
+has_line "H3: without --config the real triggers are used" "matched prompts: 0 (human 0)" "${H_REAL}"
+has_line "H3: --config replaces the triggers" "matched prompts: 2 (human 2)" "${H_HINT}"
+assert_equals "H4: hits.tsv names each matched record by its line number" "$(printf '1\t0\n2\t0')" "$(cat "${OUT}/h-hint/hits.tsv" 2>/dev/null)"
+assert_equals "H4: hits.tsv is private" "0o600" "$(mode_of "${OUT}/h-hint/hits.tsv" 2>/dev/null)"
+H_ONE="$(bash "${REPLAY}" --config "${HCFG}" panel "${HPROMPTS}" "${OUT}/h-one" < /dev/null 2>&1)"
+assert_equals "H4: only the matching line is listed" "$(printf '2\t0')" "$(cat "${OUT}/h-one/hits.tsv" 2>/dev/null)"
+jq '.methodology_hints += [{name:"panel",hint:"x",triggers:["y"]}]' "${HCFG}" > "${TEST_TMPDIR}/both.json"
+H_ERR="$(bash "${REPLAY}" --config "${TEST_TMPDIR}/both.json" panel "${HPROMPTS}" "${OUT}/h-both" < /dev/null 2>&1)"
+assert_equals "H5: a name that is both a skill and a hint is refused" "2" "$?"
+has_line "H5: ... and says why" "ambiguous name, both a skill and a methodology hint: panel" "${H_ERR}"
+H_ERR="$(bash "${REPLAY}" --config "${HCFG}" no-such-route "${HPROMPTS}" "${OUT}/h-none" < /dev/null 2>&1)"
+assert_equals "H5: a name absent from the config is refused" "2" "$?"
+has_line "H5: ... and says why" "unknown skill or hint: no-such-route" "${H_ERR}"
+printf 'not json' > "${TEST_TMPDIR}/bad.json"
+H_ERR="$(bash "${REPLAY}" --config "${TEST_TMPDIR}/bad.json" panel "${HPROMPTS}" "${OUT}/h-bad" < /dev/null 2>&1)"
+assert_equals "H5: an unreadable --config is refused" "2" "$?"
+has_line "H5: ... and says why" "not a readable JSON config: ${TEST_TMPDIR}/bad.json" "${H_ERR}"
+H_ERR="$(bash "${REPLAY}" --config "${TEST_TMPDIR}/missing.json" panel "${HPROMPTS}" "${OUT}/h-missing" < /dev/null 2>&1)"
+assert_equals "H5: a missing --config is refused" "2" "$?"
+has_line "H5: ... and says why" "not a readable JSON config: ${TEST_TMPDIR}/missing.json" "${H_ERR}"
+
 teardown_test_env
 print_summary

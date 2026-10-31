@@ -1,27 +1,40 @@
 #!/bin/bash
-# replay.sh <skill> <prompts.jsonl> <out-dir>
+# replay.sh [--config FILE] <skill-or-hint> <prompts.jsonl> <out-dir>
 #
-# Replays prompts (from extract.py or routed.py) against one skill's triggers in
-# config/default-triggers.json, with the activation hook's own matching: the prompt is
-# lowercased with tr, tested with bash `[[ $P =~ $trigger ]]`, and a hit counts only when
-# the hook would count it, i.e. at least one match touches a word boundary (a match
+# Replays prompts (from extract.py or routed.py) against the triggers of one skill
+# (.skills[]) or one methodology hint (.methodology_hints[]) in config/default-triggers.json,
+# or in FILE (a variant config, #412), with the activation hook's own matching: the prompt is
+# lowercased with tr and tested with bash `[[ $P =~ $trigger ]]`. For a skill a hit counts
+# only when the hook would count it, i.e. at least one match touches a word boundary (a match
 # interior to a word on both sides, like "hang" in "changes", scores 0 in the hook and is
-# counted here as discarded). It measures TRIGGER MATCHES, not selection: the hook's early
-# exits (short prompts, slash commands, greetings, notifications) and scoring are not
-# applied.
+# counted here as discarded). For a hint any match counts, as in the hook's METHODOLOGY HINTS
+# loop, which has no such scan. It measures TRIGGER MATCHES, not selection: the hook's early
+# exits (short prompts, slash commands, greetings, notifications), scoring, a hint's phase
+# scope and its suppression by a selected skill are not applied.
 #
-# Prints the prompt count per source, a hit count per trigger index (with the human share),
-# the discarded in-word hits, and the prompts that hit any trigger. Writes
-# <out-dir>/matches.tsv: indices, source, date, project, prompt (tabs and newlines replaced
-# by spaces). The output holds prompt text, so an output directory inside a git repository,
-# or one git cannot vouch for, is refused (exit 2). Exit 2 also for an unknown skill or a
-# malformed prompts file. The hook can also select a skill by its name alone; this replay
-# does not model that.
+# Prints "kind skill" or "kind hint", the prompt count per source, a hit count per trigger
+# index (with the human share), the discarded in-word hits, and the prompts that hit any
+# trigger. Writes <out-dir>/matches.tsv: indices, source, date, project, prompt (tabs and
+# newlines replaced by spaces); and <out-dir>/hits.tsv: the 1-based line number of each
+# matched record in the prompts file, a tab, and its indices. The output holds prompt text,
+# so an output directory inside a git repository, or one git cannot vouch for, is refused
+# (exit 2). Exit 2 also for an unknown name, a name that is both a skill and a hint, an
+# unreadable config or a malformed prompts file. The hook can also select a skill by its name
+# alone; this replay does not model that.
 set -uf
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd -P)"
+CONFIG="${ROOT}/config/default-triggers.json"
+if [ "${1:-}" = "--config" ]; then
+    CONFIG="${2:-}"
+    shift 2 2>/dev/null || set --
+    if [ -z "${CONFIG}" ] || [ ! -f "${CONFIG}" ] || ! jq -e 'type == "object"' "${CONFIG}" >/dev/null 2>&1; then
+        echo "not a readable JSON config: ${CONFIG}" >&2
+        exit 2
+    fi
+fi
 SKILL="${1:-}"; PROMPTS="${2:-}"; OUTDIR="${3:-}"
 if [ -z "${SKILL}" ] || [ ! -f "${PROMPTS}" ] || [ -z "${OUTDIR}" ]; then
-    echo "usage: replay.sh <skill> <prompts.jsonl> <out-dir>" >&2
+    echo "usage: replay.sh [--config FILE] <skill-or-hint> <prompts.jsonl> <out-dir>" >&2
     exit 2
 fi
 
@@ -73,12 +86,17 @@ case $? in
     *) echo "refusing to write: cannot check that ${OUTDIR} is outside a git repository: ${_why}" >&2; exit 2 ;;
 esac
 
-N_TRIG="$(jq -r --arg s "${SKILL}" '[.skills[] | select(.name == $s) | .triggers | length] | .[0] // empty' \
-    "${ROOT}/config/default-triggers.json" 2>/dev/null)"
-if [ -z "${N_TRIG}" ]; then
-    echo "unknown skill: ${SKILL}" >&2
-    exit 2
-fi
+# KIND: "skill" or "hint", from which list names it; both or neither is refused.
+KIND="$(jq -r --arg s "${SKILL}" '
+    [(.skills // [])[] | select(.name == $s)] as $k | [(.methodology_hints // [])[] | select(.name == $s)] as $h
+    | if ($k | length) > 0 and ($h | length) > 0 then "both"
+      elif ($k | length) > 0 then "skill" elif ($h | length) > 0 then "hint" else "" end' "${CONFIG}" 2>/dev/null)"
+case "${KIND}" in
+    skill) LIST="skills" ;;
+    hint) LIST="methodology_hints" ;;
+    both) echo "ambiguous name, both a skill and a methodology hint: ${SKILL}" >&2; exit 2 ;;
+    *) echo "unknown skill or hint: ${SKILL}" >&2; exit 2 ;;
+esac
 _bad="$(jq -r 'if type == "object" and (.prompt | type) == "string" then empty else "bad" end' "${PROMPTS}" 2>&1)"
 _rc=$?
 if [ "${_rc}" -ne 0 ] || [ -n "${_bad}" ]; then
@@ -88,22 +106,26 @@ fi
 TRIGGERS=()
 while IFS= read -r _t; do
     TRIGGERS+=("${_t}")
-done < <(jq -r --arg s "${SKILL}" '.skills[] | select(.name == $s) | .triggers[]' "${ROOT}/config/default-triggers.json")
+done < <(jq -r --arg s "${SKILL}" --arg l "${LIST}" '.[$l][] | select(.name == $s) | (.triggers // [])[]' "${CONFIG}")
 
 mkdir -p "${OUTDIR}" || exit 2
 _full="$(cd "${OUTDIR}" && pwd -P)" || exit 2
 MATCHES="${_full}/matches.tsv"
-if [ -L "${MATCHES}" ] || { [ -e "${MATCHES}" ] && [ -n "$(find "${MATCHES}" -links +1 2>/dev/null)" ]; }; then
-    echo "refusing to write through a symlink or hard link: ${MATCHES}" >&2
-    exit 2
-fi
-# Replace, never write through: remove the old file, then create it exclusively (noclobber
-# makes bash open with O_EXCL) and keep it open for the whole run.
-rm -f "${MATCHES}" || exit 2
+HITS="${_full}/hits.tsv"
+for _f in "${MATCHES}" "${HITS}"; do
+    if [ -L "${_f}" ] || { [ -e "${_f}" ] && [ -n "$(find "${_f}" -links +1 2>/dev/null)" ]; }; then
+        echo "refusing to write through a symlink or hard link: ${_f}" >&2
+        exit 2
+    fi
+done
+# Replace, never write through: remove the old files, then create them exclusively
+# (noclobber makes bash open with O_EXCL) and keep them open for the whole run.
+rm -f "${MATCHES}" "${HITS}" || exit 2
 set -C
 { exec 3> "${MATCHES}"; } 2>/dev/null || { echo "cannot create ${MATCHES} exclusively" >&2; exit 2; }
+{ exec 4> "${HITS}"; } 2>/dev/null || { echo "cannot create ${HITS} exclusively" >&2; exit 2; }
 set +C
-chmod 600 "${MATCHES}"
+chmod 600 "${MATCHES}" "${HITS}"
 
 # _hook_hit <P> <trigger>: exit 0 when the hook's scan would score the trigger above 0.
 # Mirrors the positional scan in hooks/skill-activation-hook.sh::_score_skills.
@@ -162,8 +184,13 @@ while IFS= read -r -d '' _rec; do
     _hits=""
     _i=0
     while [ "${_i}" -lt "${#TRIGGERS[@]}" ]; do
-        _hook_hit "${_p}" "${TRIGGERS[_i]}"
-        case $? in
+        if [ "${KIND}" = "hint" ]; then
+            # The hook's hint loop: any match counts.
+            [[ "${_p}" =~ ${TRIGGERS[_i]} ]] && _rc=0 || _rc=2
+        else
+            _hook_hit "${_p}" "${TRIGGERS[_i]}"; _rc=$?
+        fi
+        case ${_rc} in
             0) COUNTS[_i]=$((COUNTS[_i] + 1))
                [ "${_src}" = "human" ] && HUMAN[_i]=$((HUMAN[_i] + 1))
                _hits="${_hits}${_hits:+,}${_i}" ;;
@@ -176,6 +203,7 @@ while IFS= read -r -d '' _rec; do
         [ "${_src}" = "human" ] && _matched_human=$((_matched_human + 1))
         _flat="$(printf '%s' "${_raw}" | tr '\t\n\r' '   ')"
         printf '%s\t%s\t%s\t%s\t%s\n' "${_hits}" "${_src}" "${_ts}" "${_proj}" "${_flat}" >&3
+        printf '%s\t%s\n' "${_total}" "${_hits}" >&4
     fi
 done < <(jq -j '
     def safe: tostring | explode | map(select(. != 0) | if . == 31 or . == 9 or . == 10 then 32 else . end) | implode;
@@ -184,6 +212,7 @@ done < <(jq -j '
     + ((.project // "") | safe) + ([31] | implode)
     + (.prompt | explode | map(select(. != 0)) | implode) + ([0] | implode)' "${PROMPTS}")
 
+echo "kind ${KIND}"
 echo "prompts ${_total}"
 for _pair in ${SOURCES}; do
     echo "source ${_pair%%=*}: ${_pair#*=}"
