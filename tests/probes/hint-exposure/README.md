@@ -19,7 +19,10 @@ P=tests/probes/hint-exposure
 python3 "$P/draw.py" --since 2026-09-14T00:00:00Z --until "$CUTOFF" --seed "$SEED" --out-dir "$D"
 python3 "$P/label.py" --draw-dir "$D" --prereg docs/plans/2026-10-31-frontend-hint-exposure-prereg.md --model claude-opus-5-5 --labeller L1
 python3 "$P/label.py" --draw-dir "$D" --prereg docs/plans/2026-10-31-frontend-hint-exposure-prereg.md --model claude-sonnet-5-5 --labeller L2
-# owner.tsv: the owner labels the rows where L1 and L2 disagree or either is MALFORMED
+# exit 4 from label.py means a labeller run failed: rerun that labeller, never adjudicate around it
+python3 "$P/score.py" --draw-dir "$D" --variants docs/plans/2026-10-31-frontend-hint-variants.json \
+  --labels "$D/L1.tsv" "$D/L2.tsv" --seed "$SEED" --worksheet "$D/worksheet.tsv"
+# the owner labels worksheet.tsv (id and prompt only) into owner.tsv: <id><TAB>UI|NOT
 git show "${BASELINE}:config/default-triggers.json" > "$D/base-config.json"
 bash "$P/q1.sh" docs/plans/2026-10-31-frontend-hint-variants.json "$D/base-config.json" "$D" < /dev/null
 python3 "$P/score.py" --draw-dir "$D" --variants docs/plans/2026-10-31-frontend-hint-variants.json \

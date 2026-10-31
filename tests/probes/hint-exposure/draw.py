@@ -115,8 +115,9 @@ def blob_sha(path):
 
 
 def session_rows(path, projects, since, until, seen):
-    """Rows of one session, as (sort key, row) pairs, and the copies read."""
-    entries, _version, _merged, _bad = census.read_session_with_bak(path, projects)
+    """Rows of one session, as (sort key, row) pairs, and how many of its .bak copies were
+    unreadable (skipped, as the census's A2 read skips them)."""
+    entries, _version, _merged, bad = census.read_session_with_bak(path, projects)
     sid = os.path.basename(path)[:-len(".jsonl")]
     prompts = [prompt_of(e) for e in entries]
     stamps = [census.ts_of(e.get("timestamp")) for e in entries]
@@ -157,7 +158,7 @@ def session_rows(path, projects, since, until, seen):
                "routes": routes, "listed": listed,
                "q2": {k: q2_class(k, before, in_turn, after, direct) for k in listed}}
         out.append(((s, sid, key), row))
-    return out
+    return out, bad
 
 
 def main():
@@ -180,18 +181,20 @@ def main():
         return 2
 
     paths = sorted(glob.glob(os.path.join(glob.escape(a.projects), "*", "*.jsonl")))
-    seen, keyed, read, unreadable = set(), [], [], 0
+    seen, keyed, read, unreadable, bak_bad, unhashed = set(), [], [], 0, 0, 0
     for path in paths:
         try:
-            keyed.extend(session_rows(path, a.projects, since, until, seen))
+            got, bad = session_rows(path, a.projects, since, until, seen)
         except OSError:
             unreadable += 1
             continue
+        keyed.extend(got)
+        bak_bad += bad
         for copy in census.bak_copies(path, a.projects) + [path]:
             try:
                 read.append({"path": copy, "size": os.path.getsize(copy), "sha256": sha256_of(copy)})
             except OSError:
-                pass
+                unhashed += 1
     keyed.sort(key=lambda kr: kr[0])
     a_rows = [kr for kr in keyed if kr[1]["stratum"] == "A"]
     b_rows = [kr for kr in keyed if kr[1]["stratum"] == "B"]
@@ -213,6 +216,7 @@ def main():
     manifest = {
         "since": a.since, "until": a.until, "seed": a.seed, "n_b_requested": a.n_b,
         "N_A": len(a_rows), "N_B": len(b_rows), "n_B": n_b, "transcripts_unreadable": unreadable,
+        "bak_copies_unreadable": bak_bad, "copies_unhashed": unhashed,
         "readers": {name: blob_sha(os.path.join(HERE, rel)) for name, rel in (
             ("draw.py", "draw.py"), ("census.py", "../compliance-census/census.py"),
             ("extract.py", "../real-prompt-replay/extract.py"))},
@@ -224,6 +228,7 @@ def main():
     print("stratum A: %d" % len(a_rows))
     print("stratum B: %d sampled %d" % (len(b_rows), n_b))
     print("copies read: %d, transcripts unreadable: %d" % (len(read), unreadable))
+    print("bak copies unreadable: %d, copies unhashed: %d" % (bak_bad, unhashed))
     print("manifest sha256: %s" % hashlib.sha256(body.encode("utf-8")).hexdigest())
     return 0
 

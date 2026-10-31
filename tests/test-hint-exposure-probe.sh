@@ -90,6 +90,8 @@ ctx  "${S1}" ap bp  "2026-10-20T09:09:01Z" UserPromptSubmit "${PROSE_BLOCK}"
 uu   "${S1}" b3 ap  "2026-10-20T09:10:00Z" "list the open issues" human
 # s2: pruned; the earlier prompt survives only in the .bak, and one entry is in both copies.
 S2="${PROJ}/p2/s2.jsonl"
+# An unreadable .bak for s1 (a directory with a backup's name): skipped, and counted.
+mkdir -p "${PROJ}/p1/s1.20261020T130000.jsonl.bak"
 uu   "${PROJ}/p2/s2.20261020T120000.jsonl.bak" k1 "" "2026-10-20T10:00:00Z" "a prompt only the backup still holds" human
 uu   "${PROJ}/p2/s2.20261020T120000.jsonl.bak" k2 k1 "2026-10-20T10:01:00Z" "a prompt in both copies" human
 uu   "${S2}" k2 k1 "2026-10-20T10:01:00Z" "a prompt in both copies" human
@@ -138,6 +140,8 @@ draw --seed 1 --n-b 50 --out-dir "${OUT}" > /dev/null
 assert_equals "D5: a prompt only the backup holds is a row" "1" "$(grep -c 'only the backup' "${OUT}/rows.jsonl")"
 assert_equals "D5: an entry in both copies is one row" "1" "$(grep -c 'in both copies' "${OUT}/rows.jsonl")"
 assert_equals "D5: a uuid copied into another session is one row" "1" "$(grep -c 'rename the export job' "${OUT}/rows.jsonl")"
+assert_contains "D5: an unreadable .bak is counted, never silently skipped" "bak copies unreadable: 1" "$(cat "${OUT}.log")"
+assert_equals "D5: ... and recorded in the manifest" "1" "$(jq .bak_copies_unreadable "${OUT}/manifest.json")"
 
 echo "== D6: Q2 turn classes =="
 assert_equals "D6: invoked in the prompt's turn" '{"frontend-design":"in-turn"}' "$(row "${UI_PROMPT}" .q2)"
@@ -239,6 +243,12 @@ mkdraw "${TEST_TMPDIR}/s4m" '{"rows":[
  {"s":"A","w":1,"l1":"MALFORMED","l2":"MALFORMED","m":{"V0":1,"V1":1,"V2":1}},
  {"s":"A","w":1,"l1":"UI","l2":"UI","m":{"V0":1,"V1":1,"V2":1}}]}'
 assert_contains "S4: two MALFORMED answers are not an agreement" "unresolved 1" "$(score "${TEST_TMPDIR}/s4m")"
+echo "== S11: the owner's worksheet =="
+S_OUT="$(score "${TEST_TMPDIR}/s4" --worksheet "${TEST_TMPDIR}/s4/worksheet.tsv")"
+assert_equals "S11: the worksheet holds only the rows the owner must label, id and prompt only" "$(printf 'r00001\tp1')" "$(cat "${TEST_TMPDIR}/s4/worksheet.tsv" 2>/dev/null)"
+assert_equals "S11: ... and is private" "600" "$(stat -f '%Lp' "${TEST_TMPDIR}/s4/worksheet.tsv" 2>/dev/null || stat -c '%a' "${TEST_TMPDIR}/s4/worksheet.tsv" 2>/dev/null)"
+assert_contains "S11: a worksheet inside a repository is refused" "rc=2" "$(score "${TEST_TMPDIR}/s4" --worksheet "${PROBE}/worksheet-$$.tsv")"
+assert_equals "S11: ... and not written" "absent" "$([ -e "${PROBE}/worksheet-$$.tsv" ] && echo present || echo absent)"
 
 echo "== S5: no UI rows =="
 mkdraw "${TEST_TMPDIR}/s5" '{"rows":[{"s":"A","w":1,"l1":"NOT","l2":"NOT","m":{"V0":1,"V1":1,"V2":1}}]}'
@@ -256,6 +266,7 @@ mkdraw "${TEST_TMPDIR}/s7" "{\"rows\":[$(rows 9 "${HIT}"),${MISS}]}"
 S_OUT="$(score "${TEST_TMPDIR}/s7")"
 assert_contains "S7: V0 recall above 0.85 makes branch A unreachable" "unreachable: A" "${S_OUT}"
 assert_contains "S7: V0 precision 1 makes branch B unreachable" "unreachable: A B" "${S_OUT}"
+assert_contains "S7: an unreachable branch is scored as failing, so the verdict is not left inconclusive" "D1 frontend-design V2: fails" "${S_OUT}"
 
 echo "== S8: resamples with an undefined quantity =="
 ONE='{"s":"A","w":1,"l1":"UI","l2":"UI","m":{"V0":0,"V1":1,"V2":1}}'
@@ -304,6 +315,11 @@ json.dump({"env": dict(os.environ), "argv": sys.argv, "cwd": os.getcwd(), "input
           open(os.path.join(log, "call-%03d.json" % n), "w"))
 ids = re.findall(r"^(r\d{5})\t", text, re.M)
 mode = os.environ.get("STUB_MODE", "ok")
+if mode == "die" and "r00001" in re.findall(r"^(r\d{5})\t", text, re.M):
+    sys.exit(1)
+if mode == "iserror":
+    print(json.dumps({"is_error": True, "result": "\n".join(i + "\tUI" for i in re.findall(r"^(r\d{5})\t", text, re.M))}))
+    sys.exit(0)
 lines = []
 for k, i in enumerate(ids):
     if mode == "omit-first" and k == 0:
@@ -358,7 +374,16 @@ assert_equals "L4: no CLAUDE* variable reaches the labeller" "0" "$(jq '[.env | 
 assert_equals "L4: the labeller runs in its own HOME" "true" "$(jq --arg h "${HOME}" '.env.HOME != $h' "${_call}")"
 assert_equals "L4: ... and an empty working directory outside the repository" "true" \
     "$(jq --arg r "${PROJECT_ROOT}" '.cwd | startswith($r) | not' "${_call}")"
-assert_contains "L4: the labeller has no tools" "Bash,Read" "$(jq -r '.argv | join(" ")' "${_call}")"
+assert_contains "L4: the denylist stays as a backstop" "Bash,Read" "$(jq -r '.argv | join(" ")' "${_call}")"
+assert_equals "L4: the labeller has no tools at all (--tools '')" "true" "$(jq '.argv | (index("--tools")) as $i | $i != null and .[$i + 1] == ""' "${_call}")"
+assert_equals "L4: ... and no session is persisted" "true" "$(jq '.argv | index("--no-session-persistence") != null' "${_call}")"
+echo "== L5: a failed run is not a malformed answer =="
+assert_equals "L5: a labeller process that dies makes the harness exit 4" "4" "$(label die)"
+assert_equals "L5: ... its row is FAILED, not MALFORMED" "$(printf 'r00001\tFAILED')" "$(grep r00001 "${LBD}/L1.tsv")"
+assert_equals "L5: ... its batch mates are labelled on the retry" "4" "$(grep -c 'UI$' "${LBD}/L1.tsv")"
+assert_equals "L5: ... and the manifest counts failed runs" "true" "$(jq '.failed_runs > 0' "${LBD}/L1-manifest.json")"
+assert_equals "L5: an is_error result is a failed run, whatever its text says" "4" "$(label iserror)"
+assert_equals "L5: ... and none of its answers is used" "0" "$(grep -c 'UI$' "${LBD}/L1.tsv")"
 assert_equals "L4: a draw dir inside a repository is refused" "2" \
     "$(python3 "${LABEL}" --draw-dir "${PROBE}" --prereg "${PREREG}" --model m --labeller L1 --claude "${STUB}" > /dev/null 2>&1; echo $?)"
 

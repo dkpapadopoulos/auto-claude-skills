@@ -17,15 +17,22 @@ fixed, V0 and the variant on the same resample). A condition passes when the int
 its threshold, fails when it lies wholly on the wrong side, and is otherwise inconclusive; a
 branch is the AND and the variant the OR of these, three-valued. A resample in which a delta is
 undefined is dropped and counted; above 5% dropped, that delta's conditions are inconclusive.
-A variant whose triggers equal V0's is identical-to-V0 and not scored. An undefined point
-estimate (no UI rows, or a variant or V0 with no matches) is cannot-check.
+A branch that cannot pass whatever the variant does (A when V0 recall > 0.85, B when V0
+precision is 1) is scored as failing and noted "unreachable". A variant whose triggers equal
+V0's is identical-to-V0 and not scored. An undefined point estimate (no UI rows, or a variant or
+V0 with no matches) is cannot-check.
+
+--worksheet FILE writes the rows the owner must label (L1 and L2 disagree, or either is
+MALFORMED or FAILED) as `<id><TAB><prompt>` and nothing else, so the owner labels blind to the
+stratum, routes, weights and the labellers' votes. It holds prompt text: mode 0600, and a path
+inside a git repository is refused (exit 2).
 
 Exit 0 when every verdict was reached, 3 when any is cannot-check (unresolved labels, a
 missing replay, an undefined estimate), 2 on bad input. Prints counts only, never prompts.
 
 Usage:
   score.py --draw-dir DIR --variants FILE --labels L1.tsv L2.tsv [--owner FILE] --seed INT
-           [--resamples 2000]
+           [--resamples 2000] [--worksheet FILE]
 """
 import sys
 
@@ -36,6 +43,10 @@ import json  # noqa: E402
 import math  # noqa: E402
 import os  # noqa: E402
 import random  # noqa: E402
+import re  # noqa: E402
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "real-prompt-replay"))
+from extract import open_private, refuse_repo_path  # noqa: E402
 
 THRESHOLDS = {"A": (("recall", 0.15, False), ("precision", 0.0, False)),
               "B": (("precision", 0.0, True), ("recall", -0.05, False))}
@@ -120,7 +131,10 @@ def main():
     ap.add_argument("--owner")
     ap.add_argument("--seed", type=int, required=True)
     ap.add_argument("--resamples", type=int, default=2000)
+    ap.add_argument("--worksheet")
     a = ap.parse_args()
+    if a.worksheet and refuse_repo_path(os.path.dirname(os.path.abspath(a.worksheet))):
+        return 2
     try:
         with open(os.path.join(a.draw_dir, "rows.jsonl"), encoding="utf-8") as f:
             rows = [json.loads(line) for line in f if line.strip()]
@@ -131,6 +145,12 @@ def main():
         return 2
     labels, agreed, by_owner, unresolved = resolve(rows, l1, l2, owner)
     print("labels: rows %d agreed %d owner-resolved %d unresolved %d" % (len(rows), agreed, by_owner, unresolved))
+    if a.worksheet:
+        with open_private(a.worksheet) as f:
+            for r in sorted(rows, key=lambda r: r["id"]):
+                if r["id"] not in labels:
+                    f.write("%s\t%s\n" % (r["id"], re.sub(r"[\t\r\n]+", " ", r["prompt"])))
+        print("worksheet: %d rows for the owner" % unresolved)
     if unresolved:
         print("Q1: cannot-check (unresolved labels)")
         return 3
@@ -200,6 +220,7 @@ def main():
             print("  " + "; ".join("delta %s %+.4f [%s] (dropped %d/%d)" % (
                 q, point[q], "%+.4f, %+.4f" % cis[q] if cis[q] else "none", dropped[q], a.resamples)
                 for q in ("precision", "recall")))
+            notes = [b for b, bad in (("A", r0 > 0.85), ("B", p0 >= 1.0)) if bad]
             branch = {}
             for b, conds in THRESHOLDS.items():
                 vals = []
@@ -208,7 +229,7 @@ def main():
                         vals.append("inconclusive")
                     else:
                         vals.append(condition(cis[q], t, strict))
-                branch[b] = all3(vals)
+                branch[b] = "fail" if b in notes else all3(vals)
             if branch["A"] == "pass" or branch["B"] == "pass":
                 verdict = "qualifies-" + "+".join(b for b in ("A", "B") if branch[b] == "pass")
                 qualifying.append((r, p, v))
@@ -216,7 +237,6 @@ def main():
                 verdict = "fails"
             else:
                 verdict = "inconclusive"
-            notes = [b for b, bad in (("A", r0 > 0.85), ("B", p0 >= 1.0)) if bad]
             print("D1 %s %s: %s%s" % (route, v, verdict, "  unreachable: " + " ".join(notes) if notes else ""))
         qualifying.sort(key=lambda t: (-t[0], -t[1], t[2]))
         print("rank %s: %s" % (route, ", ".join(t[2] for t in qualifying) or "none"))
