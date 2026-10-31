@@ -36,7 +36,7 @@ The replay takes about 1.5 minutes for 2,000 prompts.
 | Script | What it does | Reads |
 |---|---|---|
 | `extract.py` | Writes the distinct prompts, each labelled by source. | Top-level session transcripts only. |
-| `replay.sh` | Tests prompts against one skill's CURRENT triggers, matching the way the hook does. | `config/default-triggers.json` from this checkout, plus a prompts file from either Python script. |
+| `replay.sh` | Tests prompts against one skill's or one methodology hint's CURRENT triggers, matching the way the hook does. Also writes `hits.tsv` (each matched record's line number and trigger indices). | `config/default-triggers.json` from this checkout, or a variant config passed with `--config FILE`, plus a prompts file from either Python script. |
 | `routed.py` | Lists the prompts the INSTALLED hook actually routed to a skill, each labelled by source. It also prints the first and last date each plugin version is evidenced as installed. | The hook output recorded in the transcripts. |
 
 **Sources.** Each prompt is labelled from the transcript's own provenance fields, never from
@@ -59,7 +59,7 @@ wrappers (notifications, resumed-session summaries, injected skill text).
 
 **Limits:**
 - Transcripts on disk cover only about four weeks. On 2026-09-17 the earliest was 2026-08-20.
-- `replay.sh` measures trigger matches, not selection. It lowercases like the hook (`tr`) and matches like the hook (bash `=~`). It also drops a match that sits inside a word, as the hook does. It does not apply the hook's early exits or scoring, and it does not model the hook selecting a skill by its name alone.
+- `replay.sh` measures trigger matches, not selection. It lowercases like the hook (`tr`) and matches like the hook (bash `=~`). For a skill it also drops a match that sits inside a word, as the hook's scoring does; for a methodology hint it keeps it, as the hook's hint loop does. It does not apply the hook's early exits, scoring, a hint's phase scope or a hint's suppression by a selected skill, and it does not model the hook selecting a skill by its name alone.
 - `routed.py` reflects whichever plugin version was installed at the time. The hook output does not say which trigger fired. Replaying the routed prompts attributes them to triggers only for the triggers in this checkout.
 - Install evidence comes only from a skill the harness loaded from a version (a meta entry with no prompt source and no origin, the version taken from its first line) and from the session-start hook's own output, never from a path in a prompt or in other hook output. Sessions started before an update keep showing the old version, so use the date a version was **first** seen.
 
