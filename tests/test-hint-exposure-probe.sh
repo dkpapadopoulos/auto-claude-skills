@@ -287,4 +287,79 @@ assert_equals "S9: the variant's triggers are the appendix's" '["export"]' \
 assert_equals "S9: V0 hits line 1" "$(printf '1\t0')" "$(cat "${Q1D}/replay-design-seed-V0/hits.tsv")"
 assert_equals "S9: V1 hits line 2" "$(printf '2\t0')" "$(cat "${Q1D}/replay-design-seed-V1/hits.tsv")"
 
+# --- L1-L4: the labeller harness (D2), against a stub claude ------------------------------
+LABEL="${PROBE}/label.py"
+STUB="${TEST_TMPDIR}/stub-claude"
+cat > "${STUB}" <<'PY'
+#!/usr/bin/env python3
+# A stand-in for `claude -p`: answers UI for every row id it is sent, shaped by STUB_MODE,
+# and records its environment and input per call under STUB_LOG.
+import json, os, re, sys
+if "--version" in sys.argv:
+    print("9.9.9 (stub)"); sys.exit(0)
+text = sys.stdin.read()
+log = os.environ["STUB_LOG"]; os.makedirs(log, exist_ok=True)
+n = len(os.listdir(log))
+json.dump({"env": dict(os.environ), "argv": sys.argv, "cwd": os.getcwd(), "input": text},
+          open(os.path.join(log, "call-%03d.json" % n), "w"))
+ids = re.findall(r"^(r\d{5})\t", text, re.M)
+mode = os.environ.get("STUB_MODE", "ok")
+lines = []
+for k, i in enumerate(ids):
+    if mode == "omit-first" and k == 0:
+        continue
+    if mode == "junk-first" and k == 0:
+        lines.append(i + "\tMAYBE"); continue
+    lines.append(i + "\tUI")
+if mode == "junk-first":
+    lines.append("r99999\tUI")
+if mode == "poach":
+    lines += [r + "\tNOT" for r in ("r00001", "r00002", "r00003", "r00004", "r00005") if r not in ids]
+print(json.dumps({"result": "\n".join(lines)}))
+PY
+chmod +x "${STUB}"
+LBD="${TEST_TMPDIR}/lab"; mkdir -p "${LBD}"
+for _i in 1 2 3 4 5; do jq -nc --arg i "r0000${_i}" '{id:$i,stratum:"A",weight:1,prompt:("prompt "+$i)}'; done > "${LBD}/rows.jsonl"
+PREREG="${PROJECT_ROOT}/docs/plans/2026-10-31-frontend-hint-exposure-prereg.md"
+if [ ! -f "${PREREG}" ]; then
+    PREREG="${TEST_TMPDIR}/prereg.md"
+    printf '# x\n<!-- RUBRIC-BEGIN -->\nLabel each message UI or NOT.\n<!-- RUBRIC-END -->\n' > "${PREREG}"
+fi
+label() { # <mode> [extra args]
+    local mode="$1"; shift
+    env STUB_MODE="${mode}" STUB_LOG="${TEST_TMPDIR}/log-${mode}" CLAUDE_CODE_PROBE_MARKER=1 \
+        python3 "${LABEL}" --draw-dir "${LBD}" --prereg "${PREREG}" --model stub-model --labeller L1 \
+        --batch 2 --seed 3 --jobs 1 --claude "${STUB}" "$@" > "${LBD}/label.log" 2>&1
+    echo $?
+}
+echo "== L1: a complete answer =="
+assert_equals "L1: exits 0" "0" "$(label ok)"
+assert_equals "L1: every row labelled, in id order" "$(printf 'r00001\tUI\nr00002\tUI\nr00003\tUI\nr00004\tUI\nr00005\tUI')" "$(cat "${LBD}/L1.tsv")"
+assert_equals "L1: three batches of at most two rows" "3" "$(ls "${TEST_TMPDIR}/log-ok" | wc -l | tr -d ' ')"
+assert_contains "L1: the rubric is sent verbatim" "$(sed -n '/<!-- RUBRIC-BEGIN -->/,/<!-- RUBRIC-END -->/p' "${PREREG}" | sed '1d;$d' | head -1)" \
+    "$(jq -r .input "${TEST_TMPDIR}/log-ok/call-000.json")"
+assert_equals "L1: the manifest names the model and the rubric hash" "stub-model true" \
+    "$(jq -r '"\(.model) \(.rubric_sha256 | test("^[0-9a-f]{64}$"))"' "${LBD}/L1-manifest.json")"
+echo "== L2: a dropped row is re-asked once, then MALFORMED =="
+label omit-first > /dev/null
+assert_equals "L2: each batch is asked twice (the retry also omits)" "6" "$(ls "${TEST_TMPDIR}/log-omit-first" | wc -l | tr -d ' ')"
+assert_equals "L2: three rows end MALFORMED, two are labelled" "3 2" \
+    "$(printf '%s %s' "$(grep -c 'MALFORMED' "${LBD}/L1.tsv")" "$(grep -c 'UI$' "${LBD}/L1.tsv")")"
+echo "== L3: an invented id or answer never becomes a row =="
+label junk-first > /dev/null
+assert_equals "L3: still five rows" "5" "$(grep -c . "${LBD}/L1.tsv")"
+assert_equals "L3: no invented id" "0" "$(grep -c r99999 "${LBD}/L1.tsv")"
+assert_equals "L3: an answer outside UI|NOT is MALFORMED after the retry" "0" "$(grep -c MAYBE "${LBD}/L1.tsv")"
+label poach > /dev/null
+assert_equals "L3: an answer for a row sent in another batch is ignored" "0" "$(grep -c NOT "${LBD}/L1.tsv")"
+echo "== L4: isolation =="
+_call="${TEST_TMPDIR}/log-ok/call-000.json"
+assert_equals "L4: no CLAUDE* variable reaches the labeller" "0" "$(jq '[.env | keys[] | select(startswith("CLAUDE"))] | length' "${_call}")"
+assert_equals "L4: the labeller runs in its own HOME" "true" "$(jq --arg h "${HOME}" '.env.HOME != $h' "${_call}")"
+assert_equals "L4: ... and an empty working directory outside the repository" "true" \
+    "$(jq --arg r "${PROJECT_ROOT}" '.cwd | startswith($r) | not' "${_call}")"
+assert_contains "L4: the labeller has no tools" "Bash,Read" "$(jq -r '.argv | join(" ")' "${_call}")"
+assert_equals "L4: a draw dir inside a repository is refused" "2" \
+    "$(python3 "${LABEL}" --draw-dir "${PROBE}" --prereg "${PREREG}" --model m --labeller L1 --claude "${STUB}" > /dev/null 2>&1; echo $?)"
+
 print_summary

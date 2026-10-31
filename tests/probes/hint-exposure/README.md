@@ -8,6 +8,7 @@ that freeze. Tests: `tests/test-hint-exposure-probe.sh`.
 |---|---|
 | `draw.py` | Draws the labelling corpus (D3): typed prompts with `.bak` copies merged, stratum A from each prompt's own routing block, a seeded uniform sample of the rest, weights, and the Q2 turn classes (D8). |
 | `q1.sh` | Writes one config per route and variant from the appendix (only that route's triggers replaced) and replays the drawn prompts through `replay.sh --config` (D4). |
+| `label.py` | One blind labeller (D2): the frozen rubric and shuffled batches of rows to a fresh headless `claude -p` per batch, in its own HOME with no tools, MCP servers or CLAUDE* variables; unanswered rows are re-asked once, then MALFORMED. |
 | `score.py` | Resolves labels (D2), computes weighted precision and recall per route and variant, the bootstrap intervals and the three-valued D1 verdicts, the ranking, and the Q2 table (D8). Exit 3 is cannot-check. |
 
 After the freeze, in order (`$D` outside any repository; seeds and cutoff from the frozen
@@ -16,6 +17,9 @@ registration):
 ```bash
 P=tests/probes/hint-exposure
 python3 "$P/draw.py" --since 2026-09-14T00:00:00Z --until "$CUTOFF" --seed "$SEED" --out-dir "$D"
+python3 "$P/label.py" --draw-dir "$D" --prereg docs/plans/2026-10-31-frontend-hint-exposure-prereg.md --model claude-opus-5-5 --labeller L1
+python3 "$P/label.py" --draw-dir "$D" --prereg docs/plans/2026-10-31-frontend-hint-exposure-prereg.md --model claude-sonnet-5-5 --labeller L2
+# owner.tsv: the owner labels the rows where L1 and L2 disagree or either is MALFORMED
 bash "$P/q1.sh" docs/plans/2026-10-31-frontend-hint-variants.json \
   <(git show "$BASELINE:config/default-triggers.json") "$D" < /dev/null
 python3 "$P/score.py" --draw-dir "$D" --variants docs/plans/2026-10-31-frontend-hint-variants.json \
