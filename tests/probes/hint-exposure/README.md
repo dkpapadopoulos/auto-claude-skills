@@ -20,8 +20,8 @@ python3 "$P/draw.py" --since 2026-09-14T00:00:00Z --until "$CUTOFF" --seed "$SEE
 python3 "$P/label.py" --draw-dir "$D" --prereg docs/plans/2026-10-31-frontend-hint-exposure-prereg.md --model claude-opus-5-5 --labeller L1
 python3 "$P/label.py" --draw-dir "$D" --prereg docs/plans/2026-10-31-frontend-hint-exposure-prereg.md --model claude-sonnet-5-5 --labeller L2
 # owner.tsv: the owner labels the rows where L1 and L2 disagree or either is MALFORMED
-bash "$P/q1.sh" docs/plans/2026-10-31-frontend-hint-variants.json \
-  <(git show "$BASELINE:config/default-triggers.json") "$D" < /dev/null
+git show "${BASELINE}:config/default-triggers.json" > "$D/base-config.json"
+bash "$P/q1.sh" docs/plans/2026-10-31-frontend-hint-variants.json "$D/base-config.json" "$D" < /dev/null
 python3 "$P/score.py" --draw-dir "$D" --variants docs/plans/2026-10-31-frontend-hint-variants.json \
   --labels "$D/L1.tsv" "$D/L2.tsv" --owner "$D/owner.tsv" --seed "$SEED"
 ```
