@@ -295,6 +295,53 @@ RC="$(python3 "${CENSUS}" --projects "${PROJU}" --control 0/23 --since 2026-10-2
 assert_equals "C20: still exits 0 when another transcript could be read" "0" "${RC}"
 assert_contains "C20: and the unreadable one is counted" "transcripts unreadable: 1" "$(cat "${OUT}/unreadable.txt")"
 
+echo "== C21: --include-bak reads a pruned session's .bak copies (#420); the default does not =="
+# Cozempic pruning leaves a session's earlier history only in <sid>.<stamp>.jsonl.bak. It also
+# rewrites entries it keeps: here the current copy of x1 lost its Skill tool_use, which only the
+# .bak still holds, so the OLDEST copy must win. The .bak sits in a SIBLING project directory, as
+# it does for a session moved by EnterWorktree. s1 is a separate session whose id is a prefix of
+# s12, so a glob that dropped the dot after the id would merge s12's history into s1.
+PROJK="${TEST_TMPDIR}/projects-bak"; mkdir -p "${PROJK}/p1" "${PROJK}/p2"
+# Two backups: only the OLDER one still holds x1's Skill call; the newer one was already
+# thinned, so a newest-first merge would lose it.
+OLDBAK="${PROJK}/p2/s12.20261020_090500.jsonl.bak"; : > "${OLDBAK}"
+ctx   "${OLDBAK}" s0 ""  "2026-10-20T09:00:00Z" SessionStart "${START}"
+uu    "${OLDBAK}" u1 s0  "2026-10-20T09:01:00Z" "please build the exporter now" human
+ctx   "${OLDBAK}" a1 u1  "2026-10-20T09:01:01Z" UserPromptSubmit "${BLOCK}"
+skill "${OLDBAK}" x1 a1  "2026-10-20T09:01:10Z" "superpowers:brainstorming"
+BAK="${PROJK}/p2/s12.20261020_100000.jsonl.bak"; : > "${BAK}"
+ctx   "${BAK}" s0 ""  "2026-10-20T09:00:00Z" SessionStart "${START}"
+uu    "${BAK}" u1 s0  "2026-10-20T09:01:00Z" "please build the exporter now" human
+ctx   "${BAK}" a1 u1  "2026-10-20T09:01:01Z" UserPromptSubmit "${BLOCK}"
+say   "${BAK}" x1 a1  "2026-10-20T09:01:10Z" "[pruned]"
+CUR="${PROJK}/p1/s12.jsonl"; : > "${CUR}"
+ctx   "${CUR}" s0 ""  "2026-10-20T09:00:00Z" SessionStart "${START}"
+uu    "${CUR}" u1 s0  "2026-10-20T09:01:00Z" "please build the exporter now" human
+ctx   "${CUR}" a1 u1  "2026-10-20T09:01:01Z" UserPromptSubmit "${BLOCK}"
+say   "${CUR}" x1 a1  "2026-10-20T09:01:10Z" "[pruned]"
+uu    "${CUR}" u2 x1  "2026-10-20T09:02:00Z" "thanks, carry on" human
+S1K="${PROJK}/p1/s1.jsonl"; : > "${S1K}"
+ctx   "${S1K}" s0 ""  "2026-10-20T09:30:00Z" SessionStart "${START}"
+uu    "${S1K}" v1 s0  "2026-10-20T09:31:00Z" "hello there" human
+# s1's own backup is unreadable: only that copy is skipped and counted, never the session.
+mkdir -p "${PROJK}/p1/s1.20261020_093000.jsonl.bak"
+runk() { python3 "${CENSUS}" --projects "${PROJK}" --control 0/23 --since 2026-10-20T00:00:00Z --until 2026-10-21T00:00:00Z --today 2026-10-21 "$@" > "${OUT}/bak.txt" 2>&1; echo $?; }
+RC="$(runk)"
+assert_equals "C21 default: exits 0" "0" "${RC}"
+assert_contains "C21 default: the registered read never opens a .bak, so the pruned call is not seen" "obeyed in-turn: 0" "$(cat "${OUT}/bak.txt")"
+assert_contains "C21 default: both sessions counted" "typed prompts: 3" "$(cat "${OUT}/bak.txt")"
+assert_not_contains "C21 default: and reports no merge" "bak copies" "$(cat "${OUT}/bak.txt")"
+RC="$(runk --include-bak)"
+assert_equals "C21 --include-bak: exits 0" "0" "${RC}"
+assert_contains "C21 --include-bak: both .bak copies in a sibling project directory are found and merged" "bak copies merged: 2" "$(cat "${OUT}/bak.txt")"
+assert_contains "C21 --include-bak: one counted session had a .bak merged" "sessions counted with a .bak merged: 1" "$(cat "${OUT}/bak.txt")"
+assert_contains "C21 --include-bak: the OLDEST copy of x1 wins over the current file and the newer .bak" "obeyed in-turn: 1" "$(cat "${OUT}/bak.txt")"
+assert_contains "C21 --include-bak: entries in both copies count once, and s12 never leaks into s1" "typed prompts: 3" "$(cat "${OUT}/bak.txt")"
+assert_contains "C21 --include-bak: mandates rendered stays 1" "mandates rendered: 1" "$(cat "${OUT}/bak.txt")"
+assert_contains "C21 --include-bak: an unreadable .bak is counted" "bak copies unreadable: 1" "$(cat "${OUT}/bak.txt")"
+assert_contains "C21 --include-bak: and its session is still read" "transcripts unreadable: 0" "$(cat "${OUT}/bak.txt")"
+assert_contains "C21 --include-bak: both sessions counted" "sessions counted: 2" "$(cat "${OUT}/bak.txt")"
+
 echo "== C12: compiles =="
 python3 -m py_compile "${CENSUS}" 2>/dev/null
 assert_equals "C12: census.py compiles" "0" "$?"

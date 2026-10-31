@@ -262,3 +262,77 @@ rounded one.
   REVIEW gate credits mid-extension. The column removes the push-gate route, not every gate
   route: `skill-gate.sh` can deny a chain step until its predecessor has evidence, which can
   drive an in-turn invocation of a process skill that stays in the column.
+
+### A2 (2026-10-30): a sensitivity read over pruned history (#420)
+
+The census reads `<projects>/*/*.jsonl` only. Cozempic pruning leaves a session's earlier
+history only in `<sid>.<stamp>.jsonl.bak` beside it, which the census never opens. #420
+measured, over sessions that have a `.bak`, entries on or after the data start: 48% of
+routing blocks (142 of 293) and 37% of `Skill` calls (64 of 172) survive in the current
+file. A block whose paired call was pruned reads as "not obeyed", so the registered read is
+biased **down** in pruned sessions.
+
+What was known when A2 was written: #420's counts, which are blocks and calls, not mandates
+or in-turn obeys, and A1's own disclosure that the registered read was, in effect,
+foreseeable as "no evidence". Nobody ran `census.py` over the extension window after A1 to
+write A2, nobody ran the control week with `--include-bak` (so the merged control below
+was unknown), and the A1 read had not been made. Taken together, the only outcome A2 can
+realistically change is "registered no evidence, merged p < 0.05", and the change it makes
+there softens that result. A2 is therefore a one-way safeguard against an irreversible
+action resting on a number known to be biased down, not a neutral second test; read "not
+robust to pruning" with that in mind.
+
+- **The registered read stays the read of record**: A1's command, unchanged, on or after
+  2026-11-02.
+- **Sensitivity read, at the same sitting**: the same command with `--include-bak` added,
+  which merges each session's `.bak` copies, found by session id in every project
+  directory, each uuid once (the oldest copy, because pruning also rewrites entries it
+  keeps). Its control is re-read the same way: the control command in the Runbook above
+  with `--include-bak`, taking k and n from its `obeyed in-turn` and `mandates rendered`
+  lines, passed as `--control K/N`. The merged read's side column takes its control from
+  that re-read's `by skill` rows, removing the two gated skills as A1 does. Report both
+  reads, the side column for both, `bak copies merged`, `bak copies unreadable` and
+  `sessions counted with a .bak merged`. The two merged commands, run on or after
+  2026-11-02 at the same sitting as A1's:
+  ```bash
+  P=tests/probes/compliance-census
+  # 1. The merged control: k = its "obeyed in-turn", n = its "mandates rendered".
+  python3 "$P/census.py" --since 2026-10-05T00:00:00Z --until 2026-10-12T00:00:00Z \
+    --min-version 0.0.0 --close-at 1 --include-bak
+  # 2. The merged read, with K/N from command 1.
+  python3 "$P/census.py" --since 2026-10-12T00:00:00Z --until 2026-10-31T01:19:28Z \
+    --cap-date 2026-11-01 --close-at 1000000 --min-version 3.95.8 --control K/N --include-bak
+  ```
+- **How the two combine** (fixed now):
+  - both "no evidence" (p >= 0.05): A1's "no evidence" arm applies in full;
+  - both p < 0.05: the "display moves behaviour" arm applies, and its condition on PR
+    #350's line ("only if routed gating invocations rose") is judged on the read of record's
+    routed counts;
+  - registered p >= 0.05, merged p < 0.05: the result is **not robust to pruning**. The
+    "no evidence" arm applies except its irreversible action: the display path is closed as
+    a cost-saving only and no display proposals are made, but the next cut that removes
+    per-phase hint prose entirely is not taken;
+  - registered p < 0.05, merged p >= 0.05: the registered "display moves behaviour" arm
+    stands, as the read of record, and is reported as not robust to pruning. A2 never turns
+    a registered positive into a negative.
+  
+  There is no further extension of this registration; whether a new one is worth running
+  is the owner's call.
+- **Why not switch the read of record to the merged one**: the bias direction was known
+  before the read, so switching would choose the read more likely to show an effect. A2
+  uses the new fact only to stop an irreversible action resting on a number known to be
+  biased.
+- **Limits**: a `.bak` exists only where Cozempic ran, and whether old `.bak` files are ever
+  deleted is unmeasured, so the merged read can still miss history. Subagent transcripts
+  stay unread, in both reads. The merge orders entries by timestamp, an entry without one
+  keeping the time of the entry read before it; forcing that order on every session with no
+  `.bak` merged changed no count over the control week or the four weeks before the data
+  start (measured in review). An unreadable `.bak` is skipped and counted; the session is
+  still read, exactly as the registered read reads it when no copy could be merged. A
+  `.bak` whose current transcript no longer exists anywhere is never read (11 on disk when
+  A2 was written, all stamped 2026-08-08 to 09-22, outside both windows). If the same
+  `<sid>.jsonl` existed in two project directories, both would merge the same backups and
+  that history would count twice (none existed when A2 was written). A restored
+  SessionStart entry can change which build a session is credited with, so the merged read's `sessions counted` and floor lines can differ from the
+  registered read's; that follows the registered "first version evidenced" rule on more
+  complete history.

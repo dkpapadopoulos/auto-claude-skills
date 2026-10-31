@@ -46,6 +46,7 @@ code.
 Usage:
   census.py --since ISO8601 [--until ISO8601] [--projects DIR] [--min-version X.Y.Z]
             [--control K/N] [--close-at N] [--cap-date YYYY-MM-DD] [--today YYYY-MM-DD]
+            [--include-bak]   # also read <sid>.*.jsonl.bak copies (README A2, #420)
   census.py --self-test-p K N --control K/N      # print the tail for K of N and exit
 """
 import sys
@@ -168,15 +169,78 @@ def typed(prompt):
     return prompt is not None and prompt[1] == "human" and not prompt[0].startswith("<")
 
 
-def read_session(path):
-    """Entries, their prompts, and the plugin version evidenced (None when none)."""
-    entries = list(iter_entries(path))
-    version = None
+def bak_copies(path, projects):
+    """The Cozempic backups of one session, <sid>.<stamp>.jsonl.bak, oldest stamp first.
+    Pruning leaves the earlier history only there (#420). They are looked up by session id
+    in EVERY project directory: a session moved by EnterWorktree keeps its backups in the
+    directory it started in."""
+    sid = os.path.basename(path)[:-len(".jsonl")]
+    found = glob.glob(os.path.join(glob.escape(projects), "*", glob.escape(sid) + ".*.jsonl.bak"))
+    return sorted(found, key=os.path.basename)
+
+
+def merged_entries(baks, path):
+    """Every entry of the backups and the current file, each uuid once, in time order. The
+    OLDEST copy of an entry wins: pruning rewrites entries it keeps (a Skill tool_use can be
+    thinned out of an assistant entry that survives), so the current copy is the least
+    complete. An entry with no timestamp keeps the time of the entry before it, so it stays
+    where it was read. An unreadable backup is skipped and counted; an unreadable current
+    file raises, as in the registered read."""
+    seen, rows, last, read, bad = set(), [], 0.0, 0, 0
+    for p in baks + [path]:
+        try:
+            copy = list(iter_entries(p))
+        except OSError:
+            if p == path:
+                raise
+            bad += 1
+            continue
+        if p != path:
+            read += 1
+        for entry in copy:
+            u = entry.get("uuid")
+            if isinstance(u, str) and u:
+                if u in seen:
+                    continue
+                seen.add(u)
+            t = ts_of(entry.get("timestamp"))
+            last = t if t is not None else last
+            rows.append((last, len(rows), entry))
+    # Defensive: oldest backup first, then the current file, is already near-chronological;
+    # forcing time order on every session changed no count in review (README A2, Limits).
+    rows.sort(key=lambda r: (r[0], r[1]))
+    return [r[2] for r in rows], read, bad
+
+
+def version_of(entries):
+    """The first plugin version the entries evidence, or None."""
     for entry in entries:
         found = install_version(entry, VERSION_RE)
-        if found and version is None:
-            version = found
-    return entries, version
+        if found:
+            return found
+    return None
+
+
+def read_session(path):
+    """Entries, their prompts, and the plugin version evidenced (None when none). The
+    registered read: no .bak is opened. verbs.py imports this; keep its two-value contract."""
+    entries = list(iter_entries(path))
+    return entries, version_of(entries)
+
+
+def read_session_with_bak(path, projects):
+    """As read_session, with the session's .bak copies merged (A2's sensitivity read), plus
+    how many copies were merged and how many were skipped as unreadable."""
+    baks = bak_copies(path, projects)
+    if not baks:
+        entries, version = read_session(path)
+        return entries, version, 0, 0
+    entries, merged, bad = merged_entries(baks, path)
+    if merged == 0:
+        # Every backup was unreadable: read exactly as the registered read does.
+        entries, version = read_session(path)
+        return entries, version, 0, bad
+    return entries, version_of(entries), merged, bad
 
 
 def is_text_input(entry):
@@ -211,9 +275,10 @@ def pair_block(index, by_uuid, entries, prompts):
     return None
 
 
-def census(projects, since, until, min_version):
+def census(projects, since, until, min_version, include_bak=False):
     paths = sorted(glob.glob(os.path.join(projects, "*", "*.jsonl")))
-    c = {"transcripts read": 0, "transcripts unreadable": 0, "sessions counted": 0,
+    c = {"transcripts read": 0, "transcripts unreadable": 0, "bak copies merged": 0, "bak copies unreadable": 0,
+         "sessions counted": 0, "sessions counted with a .bak merged": 0,
          "sessions below version floor": 0, "sessions with unknown version": 0, "typed prompts": 0,
          "typed prompts with a block": 0, "inputs with a block that are not typed prompts": 0,
          "blocks unpaired": 0, "mandates rendered": 0, "obeyed in-turn": 0, "obeyed later in session": 0,
@@ -224,11 +289,16 @@ def census(projects, since, until, min_version):
     blocks_in_window = 0
     for path in paths:
         try:
-            entries, version = read_session(path)
+            if include_bak:
+                entries, version, merged, bad = read_session_with_bak(path, projects)
+            else:
+                (entries, version), merged, bad = read_session(path), 0, 0
         except OSError:
             c["transcripts unreadable"] += 1
             continue
         c["transcripts read"] += 1
+        c["bak copies merged"] += merged
+        c["bak copies unreadable"] += bad
         prompts = [prompt_of(e) for e in entries]
         stamps = [ts_of(e.get("timestamp")) for e in entries]
         in_window = [s is not None and s >= since and (until is None or s < until) for s in stamps]
@@ -243,6 +313,8 @@ def census(projects, since, until, min_version):
             c["sessions below version floor"] += 1
             continue
         c["sessions counted"] += 1
+        if merged:
+            c["sessions counted with a .bak merged"] += 1
         c["typed prompts"] += len(typed_idx)
         by_uuid = {}
         for i, e in enumerate(entries):
@@ -302,6 +374,8 @@ def main():
     ap.add_argument("--control", default=DEFAULT_CONTROL, help="K/N obeyed in the baseline week")
     ap.add_argument("--close-at", type=int, default=DEFAULT_CLOSE_AT)
     ap.add_argument("--cap-date", default=DEFAULT_CAP_DATE)
+    ap.add_argument("--include-bak", action="store_true",
+                    help="also read each session's <sid>.*.jsonl.bak copies, each uuid once (A2's sensitivity read, #420)")
     ap.add_argument("--today", help=argparse.SUPPRESS)
     ap.add_argument("--self-test-p", nargs=2, type=int, metavar=("K", "N"), help="print the tail for K of N and exit")
     args = ap.parse_args()
@@ -344,13 +418,17 @@ def main():
     cap_ts = ts_of(args.cap_date + "T00:00:00+00:00")
     if by_date and cap_ts is not None and (until is None or until > cap_ts):
         until = cap_ts
-    c, by_skill, sizes, blocks_in_window, mandates = census(args.projects, since, until, min_version)
+    c, by_skill, sizes, blocks_in_window, mandates = census(args.projects, since, until, min_version, args.include_bak)
     until_text = args.until or "open"
     if by_date:
         until_text = f"{args.cap_date} (cap date reached)"
     print(f"window: {args.since} to {until_text}; version floor {args.min_version}")
-    for key in ("transcripts read", "transcripts unreadable", "sessions counted", "sessions below version floor",
-                "sessions with unknown version"):
+    keys = ["transcripts read", "transcripts unreadable", "sessions counted", "sessions below version floor",
+            "sessions with unknown version"]
+    if args.include_bak:
+        keys[2:2] = ["bak copies merged", "bak copies unreadable"]
+        keys.insert(keys.index("sessions counted") + 1, "sessions counted with a .bak merged")
+    for key in keys:
         print(f"{key}: {c[key]}")
     if c["transcripts read"] == 0 or c["sessions counted"] == 0:
         print("cannot check: no session at or above the version floor has a typed prompt in the window")
