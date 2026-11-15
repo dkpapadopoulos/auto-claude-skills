@@ -1050,18 +1050,6 @@
       ]
     },
     {
-      "name": "phase-enforcement",
-      "triggers": [
-        "(fix|change|update|rename|move|add a|modify|edit|refactor|implement|write the|create the)"
-      ],
-      "trigger_mode": "regex",
-      "hint": "PHASE ENFORCEMENT: You are in DESIGN/PLAN phase. Complete the current phase skill before editing implementation files. Small changes still require the full flow — scaled down, not skipped.",
-      "phases": [
-        "DESIGN",
-        "PLAN"
-      ]
-    },
-    {
       "name": "deterministic-security-scan",
       "triggers": [
         "(security|vulnerabilit|owasp|cve|semgrep|opengrep|trivy|sast|dast|dependency.audit)"

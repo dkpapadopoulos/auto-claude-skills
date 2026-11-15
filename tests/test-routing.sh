@@ -5219,6 +5219,25 @@ test_phase_enforcement_hint_not_at_implement() {
 }
 test_phase_enforcement_hint_not_at_implement
 
+# The two tests above drive the phase FILTER of methodology hints with the harness's
+# embedded registry, which keeps a phase-enforcement entry as its fixture. The SHIPPED
+# configs no longer carry that entry: it asserted a rule no gate enforces ("Small
+# changes still require the full flow") and contradicted superpowers 7.0.2's quick-task
+# path. Removed by owner ruling 2026-11-15; not part of the registered hint cut.
+test_shipped_configs_have_no_phase_enforcement_hint() {
+    echo "-- test: shipped configs carry no phase-enforcement methodology hint --"
+    local cfg n total
+    for cfg in config/default-triggers.json config/fallback-registry.json; do
+        total="$(jq -r '.methodology_hints | length' "${PROJECT_ROOT}/${cfg}" 2>/dev/null)"
+        case "${total}" in
+            ''|*[!0-9]*|0) _record_fail "methodology_hints readable in ${cfg}" "read '${total}' entries; the absence cell would pass vacuously" ; continue ;;
+        esac
+        n="$(jq -r '[.methodology_hints[] | select(.name == "phase-enforcement" or ((.hint // "") | test("PHASE ENFORCEMENT")))] | length' "${PROJECT_ROOT}/${cfg}" 2>/dev/null)"
+        assert_equals "no phase-enforcement hint in ${cfg} (of ${total} methodology hints)" "0" "${n}"
+    done
+}
+test_shipped_configs_have_no_phase_enforcement_hint
+
 test_plan_red_flags() {
     echo "-- test: PLAN phase has RED FLAGS --"
     setup_test_env
