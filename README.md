@@ -4,7 +4,7 @@ A [Claude Code](https://code.claude.com) plugin that reads each prompt you type 
 
 ## What It Does to a Session
 
-A prompt-submit hook scores your prompt against trigger patterns. If nothing matches, it adds nothing. If something matches, it adds one block of text to Claude's context for that prompt. For a prompt that asks for a new feature, the block starts like this (trimmed):
+A prompt-submit hook scores your prompt against trigger patterns. If nothing matches and no workflow is in progress, it adds nothing. If something matches, it adds one block of text to Claude's context for that prompt. Once a prompt has started a workflow, later prompts in that session, even "ok", get the current step repeated until the workflow finishes. For a prompt that asks for a new feature, the block starts like this (trimmed):
 
 ```
 SKILL ACTIVATION (1 skills | Build New)
@@ -12,7 +12,7 @@ SKILL ACTIVATION (1 skills | Build New)
 Process: brainstorming -> Skill(superpowers:brainstorming)
 HALT if any Red Flag is true:
 - Editing implementation files before invoking Skill(superpowers:brainstorming)
-Composition: DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP
+Composition: DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP
   [CURRENT] Step 1: Skill(superpowers:brainstorming)
   [NEXT] Step 2: Skill(superpowers:writing-plans)
   ...
@@ -21,17 +21,17 @@ Evaluate: **Phase: [DESIGN]** | brainstorming MUST INVOKE
 
 Run `/skill-explain "your prompt"` to see how any prompt is scored and what would be added for it.
 
-**What it costs.** The hook takes about 170 ms per prompt (median, measured 2026-10-12). A routed prompt adds roughly 6 KB of text; an unmatched prompt adds none. Session start takes about 1.6 s with twelve plugins installed.
+**What it costs.** The hook takes about 170 ms per prompt (median, measured 2026-10-12). A routed prompt adds between 1 and 6.5 KB of text depending on the phase (about 5 KB for a new-feature prompt). Session start takes about 1.6 s with twelve plugins installed, and also adds context of its own. These are measurements on one machine, not guarantees.
 
-**What can block you.** Almost everything above is text Claude reads, not a block: "HALT" is an instruction to the model. The hard blocks apply only to tool calls the agent makes, never to your own terminal:
+**What can block you.** Almost everything above is text Claude reads, not a block: "HALT" is an instruction to the model. The hard blocks apply only to tool calls the agent makes, never to your own terminal. The ones you will meet by default are:
 
-- An agent-run `git push` or `gh pr merge` is refused when no review and no passing verification are recorded for the branch. [docs/enforcement-map.md](docs/enforcement-map.md) lists each push gate and its remedy, and `bash scripts/gate-status.sh` shows what would be refused on your current branch. To bypass, push from your own terminal or start Claude Code with `ACSM_SKIP_PUSH_GATE=1`.
+- An agent-run `git push` or `gh pr merge` is refused unless both a code review and a verification run are recorded for the branch. [docs/enforcement-map.md](docs/enforcement-map.md) lists each push gate and its remedy, and `bash scripts/gate-status.sh` shows what would be refused on your current branch. To bypass, push from your own terminal or start Claude Code with `ACSM_SKIP_PUSH_GATE=1`.
 - An agent-run `gh` issue or pull-request post is refused when its body reproduces text from your private Claude memory files.
 - Invoking a skill out of sequence produces a warning. It is a block only in this plugin's own repository, or when you set `phase_enforcement.skill_sequencing` to `deny` in `~/.claude/skill-config.json`.
 
-**How to turn it down.** Disable any skill's routing with `"enabled": false` in `~/.claude/skill-config.json` (see [Configuration](#configuration)). Remove the plugin with `/plugin uninstall auto-claude-skills@acsm`.
+**How to turn it down.** Disable a skill's routing with `"overrides": {"<skill>": {"enabled": false}}` in `~/.claude/skill-config.json` (see [Configuration](#configuration)). This does not turn off the push gate. Remove the plugin with `/plugin uninstall auto-claude-skills@acsm`.
 
-**Without superpowers.** Routing only considers skills that are installed, so superpowers skills are never suggested when it is absent. The plugin's own skills and those of your other installed plugins still route.
+**Without superpowers.** Routing only selects installed skills, so no superpowers skill is mandated when it is absent, though review guidance may still name them. The push gate still applies: without superpowers its review and verification steps cannot be satisfied, so agent pushes are refused until you install it or use a bypass.
 
 ## Why This Exists
 
