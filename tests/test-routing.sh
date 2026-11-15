@@ -5269,22 +5269,19 @@ test_review_sequence_visible() {
 }
 test_review_sequence_visible
 
-# capture-knowledge must AUTO-surface at the phases where durable learnings emerge
-# (LEARN / SHIP / post-DEBUG) via phase composition, NOT only on capture keywords.
-# This proves the shipped wiring, not a synthetic registry. The skill previously
-# fired only on "capture/save/remember a learning", violating the auto-invocation
-# thesis. See CHANGELOG.md and
-# openspec/changes/archive/2026-06-19-capture-knowledge-autorouting/ for rationale.
-test_capture_knowledge_auto_surfaces() {
-    echo "-- test: capture-knowledge auto-surfaces at LEARN/SHIP/DEBUG without capture keywords --"
+# capture-knowledge is NOT surfaced by phase alone. It used to be, through a
+# CAPTURE KNOWLEDGE phase hint at LEARN / SHIP / DEBUG; the shipped phase hints were
+# removed (openspec/changes/registered-hint-cut), and the skill-routing spec forbids
+# replacing them with an unconditional banner. Each phase is first shown to route, so
+# an absence is never vacuous. The keyword path is pinned by
+# test_capture_knowledge_routes below.
+test_capture_knowledge_not_surfaced_by_phase() {
+    echo "-- test: capture-knowledge is not surfaced by phase alone, in any phase --"
     setup_test_env
 
-    # Use the production fallback registry (carries phase_compositions hints)
+    # The production fallback registry, so this reads the shipped phase compositions.
     local cache="${HOME}/.claude/.skill-registry-cache.json"
     cp "${PROJECT_ROOT}/config/fallback-registry.json" "${cache}"
-    # Enable the LEARN/SHIP/DEBUG driver skills (positive cases) plus two non-learning
-    # drivers (requesting-code-review -> REVIEW, executing-plans -> IMPLEMENT) for the
-    # negative cases below.
     local tmp="${cache}.tmp"
     jq '.skills |= map(
         if (.name == "outcome-review" or .name == "verification-before-completion" or .name == "systematic-debugging" or .name == "requesting-code-review" or .name == "executing-plans")
@@ -5292,52 +5289,25 @@ test_capture_knowledge_auto_surfaces() {
         else . end
     )' "${cache}" > "${tmp}" && mv "${tmp}" "${cache}"
 
-    local output context
-
-    # LEARN — prompt has NO capture/save/remember keyword
-    output="$(run_hook "how did the auth feature perform after launch")"
-    context="$(extract_context "${output}")"
-    assert_contains "LEARN auto-surfaces capture-knowledge" \
-        "Skill(auto-claude-skills:capture-knowledge)" "${context}"
-
-    # SHIP — prompt has NO capture keyword
-    output="$(run_hook "wrap up the auth module and ship the release")"
-    context="$(extract_context "${output}")"
-    assert_contains "SHIP auto-surfaces capture-knowledge" \
-        "Skill(auto-claude-skills:capture-knowledge)" "${context}"
-
-    # DEBUG — prompt has NO capture keyword
-    output="$(run_hook "debug the broken auth login error")"
-    context="$(extract_context "${output}")"
-    assert_contains "DEBUG auto-surfaces capture-knowledge" \
-        "Skill(auto-claude-skills:capture-knowledge)" "${context}"
-
-    # Negative case (spec scenario "Not an unconditional banner"): a non-learning
-    # phase MUST NOT surface the hint. REVIEW is named in the spec's exclusion list.
-    # Assert the prompt genuinely routes to REVIEW first, so the absence is not vacuous.
-    output="$(run_hook "review the auth pull request for code quality")"
-    context="$(extract_context "${output}")"
-    assert_contains "REVIEW routes (keeps negative case non-vacuous)" \
-        "requesting-code-review" "${context}"
-    assert_not_contains "REVIEW does NOT surface capture-knowledge" \
-        "Skill(auto-claude-skills:capture-knowledge)" "${context}"
-
-    # IMPLEMENT — the highest-traffic excluded phase; guards against a future change
-    # that widens the hint to IMPLEMENT specifically (which the REVIEW case above
-    # would miss). Routing proof is anchored on the IMPLEMENT composition's
-    # test-driven-development line (see phase_compositions.IMPLEMENT.parallel in
-    # config/default-triggers.json); if that composition is refactored, update this
-    # anchor. Used here to prove the prompt actually routed to IMPLEMENT (non-vacuous).
-    output="$(run_hook "implement the remaining tasks")"
-    context="$(extract_context "${output}")"
-    assert_contains "IMPLEMENT routes (keeps negative case non-vacuous)" \
-        "test-driven-development" "${context}"
-    assert_not_contains "IMPLEMENT does NOT surface capture-knowledge" \
-        "Skill(auto-claude-skills:capture-knowledge)" "${context}"
+    local output context row phase anchor prompt
+    while IFS='|' read -r phase anchor prompt; do
+        [ -n "${phase}" ] || continue
+        output="$(run_hook "${prompt}")"
+        context="$(extract_context "${output}")"
+        assert_contains "${phase} routes (keeps the absence non-vacuous)" "${anchor}" "${context}"
+        assert_not_contains "${phase} does not surface capture-knowledge without a capture keyword" \
+            "Skill(auto-claude-skills:capture-knowledge)" "${context}"
+    done <<'PHASES'
+LEARN|outcome-review|how did the auth feature perform after launch
+SHIP|verification-before-completion|wrap up the auth module and ship the release
+DEBUG|systematic-debugging|debug the broken auth login error
+REVIEW|requesting-code-review|review the auth pull request for code quality
+IMPLEMENT|test-driven-development|implement the remaining tasks
+PHASES
 
     teardown_test_env
 }
-test_capture_knowledge_auto_surfaces
+test_capture_knowledge_not_surfaced_by_phase
 
 test_frontmatter_overrides_default_triggers() {
     echo "-- test: frontmatter triggers override default-triggers.json --"
@@ -7085,60 +7055,6 @@ test_project_verification_routes_review() {
 test_project_verification_routes_review
 
 # ---------------------------------------------------------------------------
-# Helper: v4 registry (has all SHIP skills) + atlassian plugin with chosen
-# availability + SHIP hints loaded from config/default-triggers.json so the
-# test reads the real config source and fails when the hint is absent.
-# install_registry_v4_with_atlassian_from_config <true|false>
-# ---------------------------------------------------------------------------
-install_registry_v4_with_atlassian_from_config() {
-    local available="${1:-true}"
-    install_registry_v4
-    local cache_file="${HOME}/.claude/.skill-registry-cache.json"
-    local tmp_file
-    tmp_file="$(mktemp)"
-    # Read SHIP hints from the real config, then overlay the registry:
-    # 1. Replace SHIP hints with those from config/default-triggers.json
-    # 2. Inject atlassian plugin with chosen availability
-    jq --arg avail "${available}" \
-       --slurpfile cfg "${PROJECT_ROOT}/config/default-triggers.json" '
-      .plugins += [{"name":"atlassian","available":($avail == "true")}] |
-      .phase_compositions.SHIP.hints = ($cfg[0].phase_compositions.SHIP.hints // [])
-    ' "${cache_file}" > "${tmp_file}" && mv "${tmp_file}" "${cache_file}"
-}
-
-# ---------------------------------------------------------------------------
-# SHIP-phase Jira PR-title hint: gated on atlassian plugin availability.
-# Uses the real SHIP hints from config/default-triggers.json so the test
-# fails when the hint is absent from config and passes when it is present.
-# Harness helper reused: install_registry_v4 (v4 base with SHIP skills) +
-# jq overlay of config SHIP hints + atlassian availability injection.
-# ---------------------------------------------------------------------------
-test_jira_pr_title_hint_emits_at_ship_when_atlassian_available() {
-    echo "-- test: SHIP PR-title hint emits when atlassian available, suppressed otherwise --"
-
-    # --- available: hint should be present ---
-    setup_test_env
-    install_registry_v4_with_atlassian_from_config "true"
-
-    local ctx_available
-    ctx_available="$(extract_context "$(run_hook "ship the feature and merge to main")")"
-    assert_contains "PR-title hint present when atlassian available" "JIRA PR TITLE" "${ctx_available}"
-
-    teardown_test_env
-
-    # --- unavailable: hint must be suppressed ---
-    setup_test_env
-    install_registry_v4_with_atlassian_from_config "false"
-
-    local ctx_unavailable
-    ctx_unavailable="$(extract_context "$(run_hook "ship the feature and merge to main")")"
-    assert_not_contains "PR-title hint suppressed when atlassian unavailable" "JIRA PR TITLE" "${ctx_unavailable}"
-
-    teardown_test_env
-}
-test_jira_pr_title_hint_emits_at_ship_when_atlassian_available
-
-# ---------------------------------------------------------------------------
 # capture-knowledge routes on learning/knowledge capture prompts
 # ---------------------------------------------------------------------------
 test_capture_knowledge_routes() {
@@ -7237,20 +7153,6 @@ test_trifecta_hint_absent_at_ship() {
     teardown_test_env
 }
 test_trifecta_hint_absent_at_ship
-
-# REVIEW adversarial hint references agent-safety-review for trifecta flows
-test_review_adversarial_references_safety_review() {
-    echo "-- test: REVIEW adversarial hint references agent-safety-review --"
-    setup_test_env
-    install_registry_v4_with_real_phase_hints
-
-    local ctx
-    ctx="$(extract_context "$(run_hook "review my changes before merge")")"
-    assert_contains "REVIEW adversarial routes to agent-safety-review" "Skill(auto-claude-skills:agent-safety-review)" "${ctx}"
-
-    teardown_test_env
-}
-test_review_adversarial_references_safety_review
 
 # Existing keyword fast-path for agent-safety-review still fires by triggers
 test_agent_safety_review_fastpath_still_fires() {

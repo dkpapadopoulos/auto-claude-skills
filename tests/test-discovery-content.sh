@@ -37,17 +37,14 @@ assert_contains "SKILL uses persist-state.sh" "persist-state.sh" "${SKILL_CONTEN
 assert_contains "SKILL persists discovery path" "set-discovery-path" "${SKILL_CONTENT}"
 assert_contains "SKILL persists hypotheses" "set-hypotheses" "${SKILL_CONTENT}"
 
-# --- Registry: DISCOVER persistence hint ---
+# The DISCOVER persistence step used to be asserted on a PERSIST DISCOVERY phase hint in
+# both configs too. That hint was removed (openspec/changes/registered-hint-cut); the
+# skill's own Persist Discovery State step, asserted above, is the remaining carrier.
 REGISTRY="${PROJECT_ROOT}/config/default-triggers.json"
 REGISTRY_CONTENT="$(cat "${REGISTRY}")"
 
-assert_contains "DISCOVER persistence hint in registry" "PERSIST DISCOVERY" "${REGISTRY_CONTENT}"
-assert_contains "discovery_path state write in hint" "set-discovery-path" "${REGISTRY_CONTENT}"
-
 FALLBACK="${PROJECT_ROOT}/config/fallback-registry.json"
 FALLBACK_CONTENT="$(cat "${FALLBACK}")"
-
-assert_contains "DISCOVER persistence hint in fallback" "PERSIST DISCOVERY" "${FALLBACK_CONTENT}"
 
 # --- Registry: write-learn-baseline SHIP step ---
 assert_contains "write-learn-baseline in SHIP sequence" "write-learn-baseline" "${REGISTRY_CONTENT}"

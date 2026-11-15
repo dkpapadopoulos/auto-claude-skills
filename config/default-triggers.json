@@ -1355,17 +1355,7 @@
           "purpose": "Check past decisions and existing specs before discovery synthesis"
         }
       ],
-      "hints": [
-        {
-          "plugin": "atlassian",
-          "text": "ATLASSIAN: Pull Jira issues and Confluence docs to ground discovery in real backlog context.",
-          "when": "installed"
-        },
-        {
-          "text": "PERSIST DISCOVERY: After the user approves the discovery brief, save it to `docs/plans/YYYY-MM-DD-<slug>-discovery.md`, then in ONE Bash call: bash '{{PLUGIN_ROOT}}/scripts/persist-state.sh' set-discovery-path \"$SLUG\" \"$DISCOVERY_PATH\".",
-          "when": "always"
-        }
-      ]
+      "hints": []
     },
     "DESIGN": {
       "driver": "brainstorming",
@@ -1383,39 +1373,7 @@
           "purpose": "Check existing specs and past decisions before proposing approaches"
         }
       ],
-      "hints": [
-        {
-          "plugin": "feature-dev",
-          "text": "Consider /feature-dev for agent-parallel feature development",
-          "when": "installed"
-        },
-        {
-          "plugin": "skill-creator",
-          "text": "Consider Skill(skill-creator) to eval/benchmark skill quality",
-          "when": "installed AND prompt matches skill"
-        },
-        {
-          "plugin": "hookify",
-          "text": "Consider /hookify to create behavior rules",
-          "when": "installed AND prompt matches (prevent|block|guard|rule)"
-        },
-        {
-          "text": "DESIGN→PLAN CONTRACT: Before PLAN, the design output MUST name (1) Capabilities affected, (2) Explicit out-of-scope, (3) 2-4 GIVEN/WHEN/THEN Acceptance scenarios, saved to `docs/plans/YYYY-MM-DD-<slug>-design.md`.",
-          "when": "always"
-        },
-        {
-          "text": "PERSIST DESIGN: After brainstorming, save the design to `docs/plans/YYYY-MM-DD-<slug>-design.md` (Problem, Capabilities Affected, Out-of-Scope, Approach, Acceptance Scenarios, Decision), then in ONE Bash call: bash '{{PLUGIN_ROOT}}/scripts/persist-state.sh' upsert-change \"$SLUG\" \"\" \"\" \"\" \"$DESIGN_PATH\".",
-          "when": "always"
-        },
-        {
-          "text": "EVAL STRATEGY: classify verification before design-doc approval (no doc: before building); ask the user if unclear. Probabilistic/LLM/agent work: an eval SET with adversarial/safety subsets failing (red) before implementation; deterministic: TDD plus the acceptance scenarios. See Skill(auto-claude-skills:runtime-validation) § Eval strategy at DESIGN.",
-          "when": "always"
-        },
-        {
-          "text": "AUTONOMY CHECK: If the design is an agent that acts on its own, name its autonomy level (advise / recommend / execute-reversible / execute-irreversible) and, from execute-reversible up, design proportional oversight before leaving DESIGN: autonomy without proportional control is a liability, not power. Levels and oversight patterns: Skill(auto-claude-skills:agent-safety-review) § Autonomy levels; this is guidance, not a gate.",
-          "when": "always"
-        }
-      ]
+      "hints": []
     },
     "PLAN": {
       "driver": "writing-plans",
@@ -1427,20 +1385,7 @@
           "purpose": "Gather curated API docs, map dependencies, check institutional memory before planning"
         }
       ],
-      "hints": [
-        {
-          "text": "CARRY SCENARIOS: If a design artifact exists at `docs/plans/*-design.md` for this feature, read its Acceptance Scenarios section and include them in the plan as verification criteria. Save the plan to `docs/plans/YYYY-MM-DD-<slug>-plan.md`.",
-          "when": "always"
-        },
-        {
-          "text": "VERTICAL SLICES: Decompose by behavior, not by layer: each task is a thin end-to-end slice (data -> logic -> interface), independently testable, paired with a failing test first; slice the same way when sizing for agent-team-execution.",
-          "when": "always"
-        },
-        {
-          "text": "SCOPE MANIFEST: Each task's **Files:** block (backticked repo-relative Create/Modify/Test/Delete paths, optional `- Allow: ` globs) is the scope manifest. REVIEW runs `{{PLUGIN_ROOT}}/scripts/scope-conformance.sh` against it; undeclared touched files are advisory violations.",
-          "when": "always"
-        }
-      ]
+      "hints": []
     },
     "IMPLEMENT": {
       "driver": "executing-plans",
@@ -1523,22 +1468,7 @@
           ]
         }
       ],
-      "hints": [
-        {
-          "plugin": "pr-review-toolkit",
-          "text": "Consider /review-pr for structured multi-agent PR review",
-          "when": "installed"
-        },
-        {
-          "text": "ADVERSARIAL REVIEW: Ask whether the change weakens a safety gate, HITL requirement or approval step; widens autonomous scope or permissions; adds `dangerouslyDisableSandbox`, `--no-verify` or `force`; or touches routing in hooks/ or config/. Any YES is a blocking governance finding with file:line. Checklist: Skill(auto-claude-skills:agent-team-review) § Adversarial review checklist; >=2 lethal-trifecta fields need Skill(auto-claude-skills:agent-safety-review).",
-          "when": "always"
-        },
-        {
-          "plugin": "skill-creator",
-          "text": "When a skill was created/edited in this change, run Skill(skill-creator) to validate triggering on a held-out prompt set before merge (advisory).",
-          "when": "installed"
-        }
-      ],
+      "hints": [],
       "sequence": [
         {
           "step": "requesting-code-review",
@@ -1615,31 +1545,7 @@
           "purpose": "Automated branch-to-PR flow"
         }
       ],
-      "hints": [
-        {
-          "plugin": "commit-commands",
-          "text": "Consider /commit-push-pr for automated branch-to-PR workflow",
-          "when": "installed"
-        },
-        {
-          "plugin": "github",
-          "text": "Use GitHub MCP tools (create_pull_request) for programmatic PR creation with labels and reviewers",
-          "when": "installed"
-        },
-        {
-          "text": "LEARN REMINDER: After shipping, use 'how did [feature] perform' to review outcomes with the outcome-review skill.",
-          "when": "always"
-        },
-        {
-          "plugin": "atlassian",
-          "text": "JIRA PR TITLE: If the branch name carries a Jira ID (feature/PROJ-123 -> PROJ-123), fetch the ticket subject via the Atlassian MCP (getJiraIssue) and title the PR '<JIRA-ID>: <subject>'; with no Jira ID, skip.",
-          "when": "installed"
-        },
-        {
-          "text": "CAPTURE KNOWLEDGE: If this work surfaced a durable, non-obvious, team-relevant learning, consider Skill(auto-claude-skills:capture-knowledge) (human-gated write to the committed .claude/knowledge/ base); skip routine or repo-derivable facts.",
-          "when": "always"
-        }
-      ]
+      "hints": []
     },
     "DEBUG": {
       "driver": "systematic-debugging",
@@ -1656,16 +1562,7 @@
           "purpose": "Reproduce bug with failing test before fixing. INVOKE before writing fix code"
         }
       ],
-      "hints": [
-        {
-          "text": "DEBUG ESCALATION: If the fix touches multiple files, changes behavior, or affects a public API, enter REVIEW → SHIP after debugging. Use Skill(superpowers:requesting-code-review) to transition.",
-          "when": "always"
-        },
-        {
-          "text": "CAPTURE KNOWLEDGE: If this work surfaced a durable, non-obvious, team-relevant learning, consider Skill(auto-claude-skills:capture-knowledge) (human-gated write to the committed .claude/knowledge/ base); skip routine or repo-derivable facts.",
-          "when": "always"
-        }
-      ]
+      "hints": []
     },
     "LEARN": {
       "driver": "outcome-review",
@@ -1683,12 +1580,7 @@
           "purpose": "Create follow-up tickets and annotate original issues with outcome data"
         }
       ],
-      "hints": [
-        {
-          "text": "CAPTURE KNOWLEDGE: If this work surfaced a durable, non-obvious, team-relevant learning, consider Skill(auto-claude-skills:capture-knowledge) (human-gated write to the committed .claude/knowledge/ base); skip routine or repo-derivable facts.",
-          "when": "always"
-        }
-      ]
+      "hints": []
     }
   }
 }

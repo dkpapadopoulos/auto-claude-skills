@@ -2190,10 +2190,12 @@ test_frontmatter_backslash_escaping() {
 test_frontmatter_backslash_escaping
 
 # ---------------------------------------------------------------------------
-# spec-driven preset mutates DESIGN PERSIST and PLAN CARRY hints
+# spec-driven preset announces the mode and rewrites no phase hint. It used to rewrite
+# DESIGN PERSIST and PLAN CARRY; the shipped phase hints were removed
+# (openspec/changes/registered-hint-cut).
 # ---------------------------------------------------------------------------
-test_spec_driven_preset_mutates_design_hints() {
-    echo "-- test: spec-driven preset mutates DESIGN PERSIST hint --"
+test_spec_driven_preset_announces_and_rewrites_no_hint() {
+    echo "-- test: spec-driven preset announces the mode, rewrites no hint --"
     setup_test_env
 
     # Activate spec-driven preset via user config
@@ -2205,39 +2207,35 @@ test_spec_driven_preset_mutates_design_hints() {
 
     local cache_file="${HOME}/.claude/.skill-registry-cache.json"
     assert_file_exists "cache file created" "${cache_file}"
-
-    local design_hint_text
-    design_hint_text="$(jq -r '.phase_compositions.DESIGN.hints[].text // empty' "${cache_file}" | tr '\n' ' ')"
-    assert_contains "DESIGN PERSIST hint redirects to openspec/changes/" "openspec/changes/" "${design_hint_text}"
-    assert_not_contains "DESIGN PERSIST no longer mentions docs/plans/ for design-md" "docs/plans/YYYY-MM-DD-<slug>-design.md" "${design_hint_text}"
-
-    local plan_hint_text
-    plan_hint_text="$(jq -r '.phase_compositions.PLAN.hints[].text // empty' "${cache_file}" | tr '\n' ' ')"
-    assert_contains "PLAN CARRY reads from openspec/changes/" "openspec/changes/" "${plan_hint_text}"
+    assert_contains "spec-driven mode is announced" \
+        "spec-driven mode active: design intent persisted to openspec/changes/ (committed)" "${output}"
+    assert_equals "spec-driven writes no DESIGN hint" "array:0" \
+        "$(jq -r '.phase_compositions.DESIGN.hints | "\(type):\(length)"' "${cache_file}" 2>/dev/null)"
+    assert_equals "spec-driven writes no PLAN hint" "array:0" \
+        "$(jq -r '.phase_compositions.PLAN.hints | "\(type):\(length)"' "${cache_file}" 2>/dev/null)"
 
     teardown_test_env
 }
-test_spec_driven_preset_mutates_design_hints
+test_spec_driven_preset_announces_and_rewrites_no_hint
 
 # ---------------------------------------------------------------------------
-# Default (no preset) keeps DESIGN hints pointing at docs/plans/
+# Default (no preset) does not announce spec-driven mode
 # ---------------------------------------------------------------------------
-test_default_preset_keeps_docs_plans_hints() {
-    echo "-- test: default preset keeps docs/plans/ hints --"
+test_default_preset_does_not_announce_spec_driven() {
+    echo "-- test: default preset does not announce spec-driven mode --"
     setup_test_env
-    # No skill-config.json → no preset → no mutation
+    # No skill-config.json → no preset
 
     local output
     output="$(run_hook)"
 
     local cache_file="${HOME}/.claude/.skill-registry-cache.json"
-    local design_hint_text
-    design_hint_text="$(jq -r '.phase_compositions.DESIGN.hints[].text // empty' "${cache_file}" | tr '\n' ' ')"
-    assert_contains "DESIGN PERSIST still mentions docs/plans/" "docs/plans/YYYY-MM-DD-<slug>-design.md" "${design_hint_text}"
+    assert_file_exists "cache file created (default mode)" "${cache_file}"
+    assert_not_contains "default mode does not announce spec-driven" "spec-driven mode active" "${output}"
 
     teardown_test_env
 }
-test_default_preset_keeps_docs_plans_hints
+test_default_preset_does_not_announce_spec_driven
 
 # ---------------------------------------------------------------------------
 # spec-driven preset WITHOUT the OpenSpec Validate workflow → warning emitted

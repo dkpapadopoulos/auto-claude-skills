@@ -38,7 +38,8 @@ fi
 setup_test_env
 BASE_HOME="${TEST_TMPDIR}/base"
 mkdir -p "${BASE_HOME}/.claude"
-echo '{}' | HOME="${BASE_HOME}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+# _SKILL_TEST_MODE=1: without it session-start regenerates the tracked fallback registry.
+echo '{}' | HOME="${BASE_HOME}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" _SKILL_TEST_MODE=1 \
     /bin/bash "${PROJECT_ROOT}/hooks/session-start-hook.sh" >/dev/null 2>&1
 CACHE0="${BASE_HOME}/.claude/.skill-registry-cache.json"
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # test-spec-driven-flow.sh — End-to-end verification of spec-driven mode
 # 1. Preset file has openspec_first: true
-# 2. Session-start with spec-driven preset mutates DESIGN/PLAN hints
-# 3. Session-start without preset leaves hints pointing at docs/plans/
+# 2. Session-start with spec-driven preset announces the mode and rewrites no hint
+# 3. Session-start without preset does not announce it
 # 4. openspec-ship SKILL.md has pre-flight check content
 # 5. design-debate SKILL.md has both mode outputs
 #
@@ -28,40 +28,43 @@ flag="$(jq -r '.openspec_first // false' "$preset_file")"
 assert_equals "openspec_first is true" "true" "$flag"
 
 # ---------------------------------------------------------------------------
-# Phase 2: Session-start with spec-driven preset mutates hints
+# Phase 2: Session-start with spec-driven preset announces the mode
 # ---------------------------------------------------------------------------
-echo "-- Phase 2: session-start mutates hints --"
+# The preset used to rewrite three DESIGN/PLAN phase hints. The shipped phase hints
+# were removed (openspec/changes/registered-hint-cut), so the preset now announces the
+# mode once per session and rewrites nothing.
+_SD_NOTICE="spec-driven mode active: design intent persisted to openspec/changes/ (committed)"
+_hint_shape() { jq -r --arg p "$2" '.phase_compositions[$p].hints | "\(type):\(length)"' "$1" 2>/dev/null; }
+
+echo "-- Phase 2: session-start announces spec-driven mode --"
 setup_test_env
 mkdir -p "${HOME}/.claude"
 printf '{"preset":"spec-driven"}' > "${HOME}/.claude/skill-config.json"
 
-CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" _SKILL_TEST_MODE=1 \
-    bash "${HOOK}" >/dev/null 2>&1
+sd_out="$(CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" _SKILL_TEST_MODE=1 \
+    bash "${HOOK}" 2>/dev/null < /dev/null)"
 
 cache_file="${HOME}/.claude/.skill-registry-cache.json"
 assert_file_exists "cache file exists" "$cache_file"
-
-design_hints="$(jq -r '.phase_compositions.DESIGN.hints[].text // empty' "$cache_file" | tr '\n' ' ')"
-assert_contains "DESIGN hints mention openspec/changes/" "openspec/changes/" "$design_hints"
-assert_contains "DESIGN hints mention specs/<capability-slug>/spec.md" "specs/<capability-slug>/spec.md" "$design_hints"
-
-plan_hints="$(jq -r '.phase_compositions.PLAN.hints[].text // empty' "$cache_file" | tr '\n' ' ')"
-assert_contains "PLAN hints mention openspec/changes/" "openspec/changes/" "$plan_hints"
+assert_contains "spec-driven: the mode is announced" "${_SD_NOTICE}" "$sd_out"
+assert_equals "spec-driven: no DESIGN hint is written" "array:0" "$(_hint_shape "$cache_file" DESIGN)"
+assert_equals "spec-driven: no PLAN hint is written" "array:0" "$(_hint_shape "$cache_file" PLAN)"
 
 teardown_test_env
 
 # ---------------------------------------------------------------------------
-# Phase 3: Session-start without preset preserves docs/plans/ hints
+# Phase 3: Session-start without preset does not announce it
 # ---------------------------------------------------------------------------
-echo "-- Phase 3: no preset preserves defaults --"
+echo "-- Phase 3: no preset, no announcement --"
 setup_test_env
-# No skill-config.json → no preset → no mutation
-CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" _SKILL_TEST_MODE=1 \
-    bash "${HOOK}" >/dev/null 2>&1
+# No skill-config.json → no preset
+def_out="$(CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" _SKILL_TEST_MODE=1 \
+    bash "${HOOK}" 2>/dev/null < /dev/null)"
 
 cache_file="${HOME}/.claude/.skill-registry-cache.json"
-design_hints="$(jq -r '.phase_compositions.DESIGN.hints[].text // empty' "$cache_file" | tr '\n' ' ')"
-assert_contains "DESIGN hints mention docs/plans/ in default mode" "docs/plans/YYYY-MM-DD-<slug>-design.md" "$design_hints"
+assert_file_exists "cache file exists (default mode)" "$cache_file"
+assert_not_contains "default mode: spec-driven is not announced" "spec-driven mode active" "$def_out"
+assert_equals "default mode: no DESIGN hint is written" "array:0" "$(_hint_shape "$cache_file" DESIGN)"
 teardown_test_env
 
 # ---------------------------------------------------------------------------
