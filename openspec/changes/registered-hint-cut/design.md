@@ -111,10 +111,25 @@ by Codex on the same brief.
    object and are not in the registered scope.
 2. **No relocation and no replacement line.** Consequences are written into `proposal.md` and
    the REMOVED deltas instead.
-3. **Mandates stay byte-identical.** The registration closes display as a line of work and
-   names one removal. Whether to retire the `MUST INVOKE` display is a separate question for a
-   new registration (to be filed as an issue), together with the two emphatic lines at
-   `hooks/skill-activation-hook.sh:1630` and `:1911`. Owner ruling, 2026-11-15.
+3. **Mandates stay byte-identical, and the question is assessed here instead of filed.** The
+   registration closes display as a line of work and names one removal. Assessment made
+   2026-11-16 from 651 real routing blocks since 2026-10-12 (median 4,370 bytes):
+   - *Cost is small.* Mandate lines are 6.0% of block bytes (median 234 B), of which the two
+     emphatic lines at `hooks/skill-activation-hook.sh:1630` and `:1911` are 2.2% (128 B). The
+     composition chain is 43.3% and hint bullets 34.8% (that figure includes red-flag bullets,
+     so it slightly overstates hints).
+   - *Effect is unknown, and leans positive.* Every read sits above its control (18 of 146
+     against 2 of 35; 45 of 266 against 4 of 44; without the gate-backed skills 24 of 181
+     against 0 of 25), none significantly. No arm without mandate lines exists.
+   - *Removal has a known downside.* Chain state is written whether or not the block is shown,
+     so without the mandate line a session first learns which step a gate wants from the deny.
+   - *The measured defect is elsewhere.* Wrong mandates come from scoring (100 of 183 in the
+     earlier field census), which issue #409 and trigger narrowing address without touching
+     display.
+   So retiring them would trade an unmeasured benefit for about 6% of the block. Not done, and
+   not queued. It reopens only if someone is willing to run a registered experiment with a
+   no-mandate arm; at this cost share that is not worth the owner's hours. Owner ruling on
+   leaving them, 2026-11-15.
 4. **ADVERSARIAL REVIEW goes with the rest, and this is the removal to look at hardest.** It is
    the only one of the 23 whose spec calls it an always-on safety lens: it asks every code
    review whether the change weakens a safety gate, a human-approval step or scope, and routes
@@ -123,8 +138,7 @@ by Codex on the same brief.
    `agent-safety-review`, or the reviewer's own judgement. The gate-gaming tripwire, the push
    gate and the governance regression tests are unaffected. Keeping this one line is the single
    defensible deviation from "entirely"; it would be recorded as a deviation in the census
-   README, not as an interpretation. **Proposed: delete it. The owner confirms or overrides when
-   approving this document.**
+   README, not as an interpretation. **Deleted with the rest: owner ruling, 2026-11-16.**
 5. **`phase-enforcement` is deleted in the same PR as a separate, labelled commit.** Not
    registered. Reason: it asserts a rule no gate enforces and contradicts superpowers 7.0.2's
    quick-task path. Never reworded. Owner ruling, 2026-11-15.
@@ -148,7 +162,7 @@ by Codex on the same brief.
 
 - **Codex:** "close the display path" obliges retiring the mandate display too; cutting hints
   while mandates still render must not be described as the path being closed. Adopted in part:
-  this change does not claim the path is closed, and the mandate question is filed.
+  this change does not claim the path is closed; Decision 3 gives the assessment.
 - **Critic:** the census's control is the longer pre-#349 block, so the null licenses nothing
   about hints. Adopted as the framing sentence of the proposal.
 - **Critic and architect, round 2:** `phase-enforcement` should not ride in this PR. Overruled
@@ -182,9 +196,7 @@ config, a hook's preset step, tests and specs.
 - `tests/test-discovery-content.sh` asserts a hint heading without reading hints structurally,
   so it is a seventeenth file to check.
 - The adversarial-review spec's Purpose paragraph still says "Always-on… Provides a checklist".
-  It is prose, not a requirement; correct it at archive.
-- Filing the mandate-display issue is a GitHub write and waits for the owner's explicit yes.
-- Recorded fixtures (`tests/probes/fixtures/hooks-recovered/routing.json`, the frozen
+  It is prose, not a requirement; correct it at archive.- Recorded fixtures (`tests/probes/fixtures/hooks-recovered/routing.json`, the frozen
   behavioral eval prompts) are records of past output and append-only; do not edit them to
   match.
 - `openspec/changes/composition-hint-plugin-root` is unarchived and MODIFIES "Rendered guidance
