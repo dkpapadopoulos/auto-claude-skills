@@ -56,7 +56,7 @@ The plugin turns a loose collection of skills, hooks, and integrations into a ph
   | DISCOVER | Pulls Jira/Confluence context, synthesizes a discovery brief before design | Context-stack lookups for prior decisions and specs |
   | DESIGN | Activates brainstorming, explores requirements before coding | `design-debate`, `feature-dev`, `frontend-design` when installed and appropriate |
   | PLAN | Structures implementation into discrete tasks with dependency ordering | Context lookups for APIs, blast radius, and past decisions |
-  | IMPLEMENT | Drives the execution-plan/TDD workflow; halts if implementation is written before a failing test | `agent-team-execution` for independent tasks, security guidance when installed |
+  | IMPLEMENT | Drives the execution-plan/TDD workflow; tells Claude to stop if implementation is written before a failing test | `agent-team-execution` for independent tasks, security guidance when installed |
   | REVIEW | Routes into `requesting-code-review` plus security scanning | `agent-team-review`, PR toolkit specialists, runtime validation, and drift checks when applicable |
   | SHIP | Routes through verification, `openspec-ship`, and branch completion | Commit/PR automation and memory consolidation when installed |
   | LEARN | Routes to `outcome-review` for metrics and follow-up work | PostHog and Jira follow-through when installed |
