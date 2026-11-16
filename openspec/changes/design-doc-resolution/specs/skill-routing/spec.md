@@ -82,6 +82,7 @@
 - **WHEN** `skills/deploy-gate/SKILL.md` check 4 is read
 - **THEN** it calls the resolver, warns on `stale`, passes `resolved`, treats `absent` and `ambiguous` as informational, and reports exit 3 as "could not check"
 - **AND** it says not to make a slug up from the branch name, and that without `--slug` `absent` means only that nothing was recorded
+- **AND** it names exit 2 as a refused slug with nothing checked, and the Output example's check 4 row shows an outcome and its source, not "exists"
 
 ## MODIFIED Requirements
 

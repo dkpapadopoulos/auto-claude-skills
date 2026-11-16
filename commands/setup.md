@@ -511,7 +511,7 @@ gcloud auth application-default login
 
 ### 9. Multi-user mode (spec-driven + CI gate, optional)
 
-For repos with ≥2 active developers, enable spec-driven mode. Design intent is committed to `openspec/changes/<feature>/` (visible to teammates via `git pull`) instead of gitignored `docs/plans/`. A GitHub Actions workflow validates every active OpenSpec change on every PR.
+For repos with ≥2 active developers, enable spec-driven mode. Design intent belongs in `openspec/changes/<feature>/` (visible to teammates via `git pull` once it is committed) instead of gitignored `docs/plans/`. The plugin does not check that it was written there. A GitHub Actions workflow validates every active OpenSpec change on every PR.
 
 **Detection:** Check the target repo's state before presenting this step:
 - Is `~/.claude/skill-config.json` already set to `{"preset": "spec-driven"}`? If yes, skip preset activation.
