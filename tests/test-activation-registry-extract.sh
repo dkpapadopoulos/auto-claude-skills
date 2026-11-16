@@ -304,11 +304,13 @@ assert_contains "C7: RS in the hints section does not cost the skills" \
 
 # RS only in a DISABLED skill's required_when: the required_when section selects every
 # skill that has one, the skills section only enabled ones, so only the RS check over
-# section 3 can see this. The DEBUG compositions must still render.
+# section 3 can see this. The DEBUG compositions must still render. The DEBUG hint is a
+# fixture: the shipped phase compositions carry none (openspec/changes/registered-hint-cut).
 RSRW="${TEST_TMPDIR}/rs-rw.json"
 "${REAL_JQ}" '([30] | implode) as $rs
   | .skills |= map(if .name == "deploy-gate"
-                   then .enabled = false | .required_when = ("x" + $rs + "y") else . end)' \
+                   then .enabled = false | .required_when = ("x" + $rs + "y") else . end)
+  | .phase_compositions.DEBUG.hints = ((.phase_compositions.DEBUG.hints // []) + [{text: "zz-rsrw-debug-hint"}])' \
     "${FULL}" > "${RSRW}"
 OUT7F="$(run_hook "${RSRW}" "debug the flaky login test")"
 assert_contains "C7 setup: the prompt still routes to the DEBUG process skill" \
@@ -316,7 +318,7 @@ assert_contains "C7 setup: the prompt still routes to the DEBUG process skill" \
 assert_contains "C7: RS only in a disabled skill's required_when keeps the DEBUG compositions" \
     "[unified-context-stack]" "${OUT7F}"
 assert_contains "C7: RS only in a disabled skill's required_when keeps the DEBUG hints" \
-    "DEBUG ESCALATION" "${OUT7F}"
+    "zz-rsrw-debug-hint" "${OUT7F}"
 
 # RS as the FIRST character of an emitted value: the check must test for presence, not
 # for a positive position.

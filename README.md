@@ -21,7 +21,7 @@ Evaluate: **Phase: [DESIGN]** | brainstorming MUST INVOKE
 
 Run `/skill-explain "your prompt"` to see how any prompt is scored and what would be added for it.
 
-**What it costs.** The hook takes about 170 ms per prompt (median, measured 2026-10-12). A routed prompt adds between 1 and 6.5 KB of text depending on the phase (about 5 KB for a new-feature prompt). Session start takes about 1.6 s with twelve plugins installed, and also adds context of its own. These are measurements on one machine, not guarantees.
+**What it costs.** The hook takes about 170 ms per prompt (median, measured 2026-10-12). A routed prompt adds between 0.5 and 6 KB of text depending on the phase (about 3.7 KB for a new-feature prompt; measured 2026-11-16, after the per-phase hints were removed). Session start takes about 1.6 s with twelve plugins installed, and also adds context of its own. These are measurements on one machine, not guarantees.
 
 **What can block you.** Almost everything above is text Claude reads, not a block: "HALT" is an instruction to the model. The hard blocks apply only to tool calls the agent makes, never to your own terminal. The ones you will meet by default are:
 
@@ -241,7 +241,7 @@ Full setup guide and rollback steps: [docs/CI.md](docs/CI.md).
 
 **Optional: per-capability review routing.** Copy `.github/CODEOWNERS.template` into your repo as `.github/CODEOWNERS` and replace the `@your-*-team` placeholders. Every PR that touches a capability's spec will auto-request review from that capability's owner.
 
-**What changes:** DESIGN phase writes to `openspec/changes/<feature>/proposal.md` + `design.md` + `specs/<cap>/spec.md` (committed) instead of `docs/plans/*.md` (gitignored). `openspec-ship` validates and syncs the existing change at SHIP time instead of creating from scratch. Task plans (`docs/plans/*-plan.md`) stay local in both modes.
+**What changes:** design intent belongs in `openspec/changes/<feature>/proposal.md` + `design.md` + `specs/<cap>/spec.md` (committed) instead of `docs/plans/*.md` (gitignored). Each session is told so once, at start; `design-debate` writes its output there; and `openspec-ship` validates and syncs the existing change at SHIP time instead of creating from scratch. There is no per-prompt reminder during an ordinary DESIGN step, so if nobody wrote the change earlier it is created at SHIP and CI has nothing to validate until then. Task plans (`docs/plans/*-plan.md`) stay local in both modes.
 
 **Without the CI gate installed:** session-start emits a one-line warning nudging you to run `/setup` or copy the workflow files manually.
 

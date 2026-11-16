@@ -221,7 +221,14 @@ echo "=== test-injection-budget.sh ==="
 # that path; it now reads "(no design doc: classify and invoke before
 # building)", 788 -> 808 bytes. Per-shape bytes now
 # 964 / 5167 / 6545 / 3153 / 4601 / 1795.
-_INJECTION_BASELINE=22225
+#
+# 22225 -> 17895 (2026-11-16, registered-hint-cut): -4330. The 23 shipped
+# phase hints are removed under the compliance census's registered rule
+# (tests/probes/compliance-census/README.md, read 2026-11-15). A cost decision;
+# not a finding about what the hints did. Per shape: -443 / -1477 / -616 /
+# -617 / -735 / -442. Per-shape bytes now
+# 521 / 3690 / 5929 / 2536 / 3866 / 1353.
+_INJECTION_BASELINE=17895
 _MIN_SHAPES=6
 
 setup_test_env

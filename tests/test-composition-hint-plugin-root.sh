@@ -4,6 +4,13 @@
 # plugin-internal file by a path the reader cannot open. Issue #306; defect
 # class #248 (four surfaces), #305 (a fifth, `methodology_hints[].hint`).
 #
+# SINCE openspec/changes/registered-hint-cut the shipped configs carry NO
+# composition hints and the spec-driven preset rewrites none, so the history
+# below describes text that no longer ships. The RENDERER and its expander are
+# unchanged and still render any hint a registry holds, so this file now drives
+# them with fixture hints of the same shape (`inject_fixture_hints`), and its
+# static lints report an empty population instead of asserting a floor.
+#
 # THE DEFECT. `hooks/skill-activation-hook.sh` accumulates COMPOSITION_HINTS
 # from the composition's `hints[].text` VERBATIM. `{{PLUGIN_ROOT}}` was wired
 # into the `precondition` renderer by #248 and into the `hint` renderer by #305;
@@ -115,6 +122,27 @@ build_cache() {
         /bin/bash "${proot}/hooks/session-start-hook.sh" \
         < /dev/null >/dev/null 2>&1 ) || true
 }
+# inject_fixture_hints <home> — give the built registry one DISCOVER and one DESIGN
+# hint. The shipped phase compositions carry NO hints since
+# openspec/changes/registered-hint-cut, but the renderer and its `{{PLUGIN_ROOT}}`
+# expander are unchanged and still render whatever a registry holds, so the cells
+# below exercise that code with fixture texts of the SAME shape as the two shipped
+# hints that carried the rc=127 defect (a pasted `bash '<placeholder>/scripts/
+# persist-state.sh' …` command). The labels are what `render` greps for.
+FIX_DISCOVER_LABEL='ZZ-FIXTURE DISCOVER'
+FIX_DESIGN_LABEL='ZZ-FIXTURE DESIGN'
+inject_fixture_hints() {
+    local cache="$1/.claude/.skill-registry-cache.json" tmp
+    tmp="${cache}.fix"
+    if jq --arg d "${FIX_DISCOVER_LABEL}" --arg s "${FIX_DESIGN_LABEL}" '
+        .phase_compositions.DISCOVER.hints = [{text: ($d + ": then in ONE Bash call: bash '"'"'{{PLUGIN_ROOT}}/scripts/persist-state.sh'"'"' set-discovery-path \"<path>\".")}]
+        | .phase_compositions.DESIGN.hints = [{text: ($s + ": then in ONE Bash call: bash '"'"'{{PLUGIN_ROOT}}/scripts/persist-state.sh'"'"' set-design-path \"<path>\".")}]
+    ' "${cache}" > "${tmp}" 2>/dev/null; then
+        mv "${tmp}" "${cache}"
+    else
+        rm -f "${tmp}"
+    fi
+}
 # render <home> <plugin-root> <prompt> <needle> — the rendered hint line.
 render() {
     local home="$1" proot="$2" prompt="$3" needle="$4"
@@ -157,11 +185,19 @@ for _cfg in "${PROJECT_ROOT}/config/default-triggers.json" "${PROJECT_ROOT}/conf
     # (`[.hint]` tolerates nulls) and it was not carried across; it is now.
     _n="$(jq '[.phase_compositions[]?.hints[]?.text | select(type == "string" and . != "")] | length' "${_cfg}" 2>/dev/null)"
     case "${_n}" in ''|*[!0-9]*) _n=0 ;; esac
-    if [ "${_n}" -ge 10 ]; then
-        _record_pass "${_base}: read ${_n} composition hints to lint"
+    # POPULATION, restated after openspec/changes/registered-hint-cut: the shipped
+    # configs carry ZERO composition hints, and tests/test-phase-hint-brevity.sh pins
+    # that zero (with its own readability floor). So today the three lints below
+    # inspect nothing, and say so; they are kept because they are the guard the moment
+    # a hint is reintroduced. The old `>= 10` floor is replaced by a readability check:
+    # a config jq cannot read must still fail here, not count as zero.
+    if ! jq -e '.phase_compositions | type == "object" and length > 0' "${_cfg}" >/dev/null 2>&1; then
+        _record_fail "${_base}: phase_compositions readable" \
+            "unreadable or empty — the lints below would pass having checked nothing"
+    elif [ "${_n}" -eq 0 ]; then
+        _record_pass "${_base}: 0 shipped composition hints, so the lints below have nothing to inspect (zero is pinned in test-phase-hint-brevity.sh)"
     else
-        _record_fail "${_base}: read enough composition hints to lint" \
-            "found ${_n} — the lint below would pass having checked nothing"
+        _record_pass "${_base}: read ${_n} composition hints to lint"
     fi
 
     # (a) The broken pair itself. This is the exact shape that shipped.
@@ -243,11 +279,8 @@ ${_rel}"
     # `{{PLUGIN_ROOT}}`, it must not be preceded by a double quote, and a single
     # text must not mix the quoted and bare spellings.
     #
-    # POPULATION: this shares the `_n >= 10` floor recorded above, which runs
-    # BEFORE it over the same `phase_compositions[*].hints[].text` set. A config
-    # that yielded zero texts would fail that floor, so this lint cannot pass
-    # vacuously — it does not need a floor of its own, but it DOES depend on
-    # that one, so do not reorder them.
+    # POPULATION: the same `phase_compositions[*].hints[].text` set the cell above
+    # reports on. With zero shipped hints it inspects nothing, as that cell states.
     #
     # The mixing predicate keys on the SPELLINGS, not on a count of
     # placeholders: `'{{PLUGIN_ROOT}}/a' and '{{PLUGIN_ROOT}}/b'` is legal and
@@ -321,11 +354,23 @@ echo "--- lint: the spec-driven injected hint text ---"
 _SS="${PROJECT_ROOT}/hooks/session-start-hook.sh"
 _inj_n="$(grep -c '\.text = "' "${_SS}" 2>/dev/null)" || _inj_n=0
 case "${_inj_n}" in ''|*[!0-9]*) _inj_n=0 ;; esac
-if [ "${_inj_n}" -ge 3 ]; then
-    _record_pass "session-start-hook.sh: read ${_inj_n} injected hint texts to lint"
+# SINCE openspec/changes/registered-hint-cut THERE IS NO SECOND WRITER: the preset's
+# rewrite was deleted with the hints it rewrote, so the expected count is ZERO and the
+# lints below inspect nothing. A `.text =` rewrite returning in this shape FAILS here
+# (the skill-routing spec says the session-start hook MUST NOT rewrite phase hints).
+# Limit, unchanged from above: a rewrite reintroduced through `--arg`, a heredoc or
+# concatenation would not match and would read as zero here too. The zero pin in
+# tests/test-phase-hint-brevity.sh does NOT catch that either: a rewrite maps over the
+# shipped hints, which are empty, so the registry still reads zero. The behavioural
+# cell "preset leaves a config hint alone" in the mutation section below is what
+# holds it, by giving the preset a hint to rewrite.
+if [ ! -r "${_SS}" ]; then
+    _record_fail "session-start-hook.sh: readable" "cannot read ${_SS}"
+elif [ "${_inj_n}" -eq 0 ]; then
+    _record_pass "session-start-hook.sh: no injected hint text (the spec-driven preset rewrites nothing)"
 else
-    _record_fail "session-start-hook.sh: read enough injected hint texts to lint" \
-        "found ${_inj_n} — the rewrite mechanism moved and this lint is now vacuous"
+    _record_fail "session-start-hook.sh: no injected hint text" \
+        "${_inj_n} \`.text = \"\` assignment(s) found; the preset must not rewrite phase hints"
 fi
 _inj_bad="$(grep -n '\.text = "' "${_SS}" 2>/dev/null | grep 'CLAUDE_PLUGIN_ROOT:-' | cut -c1-120)"
 if [ -z "${_inj_bad}" ]; then
@@ -386,6 +431,7 @@ echo ""
 echo "--- end-to-end: rendered composition hints resolve outside this plugin ---"
 H1="${WORK}/home-default"
 build_cache "${H1}" "${PROJECT_ROOT}" ""
+inject_fixture_hints "${H1}"
 
 _e2e() {
     local label="$1" line="$2"
@@ -436,19 +482,17 @@ _e2e() {
     fi
 }
 
-_e2e "DISCOVER" "$(render "${H1}" "${PROJECT_ROOT}" "${DISCOVER_PROMPT}" 'PERSIST DISCOVERY')"
-_e2e "DESIGN"   "$(render "${H1}" "${PROJECT_ROOT}" "${DESIGN_PROMPT}"   'PERSIST DESIGN')"
+_e2e "DISCOVER" "$(render "${H1}" "${PROJECT_ROOT}" "${DISCOVER_PROMPT}" "${FIX_DISCOVER_LABEL}")"
+_e2e "DESIGN"   "$(render "${H1}" "${PROJECT_ROOT}" "${DESIGN_PROMPT}"   "${FIX_DESIGN_LABEL}")"
 
-# Spec-driven: the second writer's output, end to end.
+# Spec-driven: the same fixture rendered from a cache built under the preset. The
+# fixture is injected AFTER session-start built the cache, so this shows only that the
+# renderer behaves the same under the preset; it does not show the preset leaves a
+# hint alone. That is the "preset leaves a config hint alone" cell further down.
 H2="${WORK}/home-specdriven"
 build_cache "${H2}" "${PROJECT_ROOT}" "spec-driven"
-_SD_LINE="$(render "${H2}" "${PROJECT_ROOT}" "${DESIGN_PROMPT}" 'PERSIST DESIGN (spec-driven)')"
-if [ -n "${_SD_LINE}" ]; then
-    _e2e "DESIGN/spec-driven" "${_SD_LINE}"
-else
-    _record_fail "DESIGN/spec-driven: the preset's hint rendered" \
-        "empty — the preset did not take effect, so the second writer is untested"
-fi
+inject_fixture_hints "${H2}"
+_e2e "DESIGN/spec-driven" "$(render "${H2}" "${PROJECT_ROOT}" "${DESIGN_PROMPT}" "${FIX_DESIGN_LABEL}")"
 
 # ===========================================================================
 # 3b. THE TWO EXPANDER BRANCHES, executed directly.
@@ -587,6 +631,43 @@ fi
 if [ -f "${MUT}/hooks/skill-activation-hook.sh" ]; then
     _record_pass "mutation: the isolated copy exists"
 
+    # ---- PRESET LEAVES A CONFIG HINT ALONE ------------------------------
+    # The deleted Step 6c rewrite matched hint texts by their leading label
+    # (PERSIST DESIGN, DESIGN→PLAN CONTRACT, CARRY SCENARIOS). With the shipped
+    # hints empty a restored rewrite maps over nothing and every zero pin still
+    # reads zero, so the copy's CONFIG is given hints carrying two of those labels
+    # and the cache is built under the preset by the real session-start hook: the
+    # cached text must be byte-equal to what the config held. The config is
+    # restored afterwards, before the copy is used again.
+    _PRE_D='PERSIST DESIGN: zz-preset-fixture stays as written'
+    _PRE_P='CARRY SCENARIOS: zz-preset-fixture stays as written'
+    cp "${MUT}/config/default-triggers.json" "${WORK}/mut-config.orig"
+    if jq --arg d "${_PRE_D}" --arg p "${_PRE_P}" '
+            .phase_compositions.DESIGN.hints = [{text: $d}]
+            | .phase_compositions.PLAN.hints = [{text: $p}]
+        ' "${WORK}/mut-config.orig" > "${MUT}/config/default-triggers.json" 2>/dev/null; then
+        H5="${WORK}/home-preset-config-hint"
+        build_cache "${H5}" "${MUT}" "spec-driven"
+        _pre_cache="${H5}/.claude/.skill-registry-cache.json"
+        _pre_got_d="$(jq -r '.phase_compositions.DESIGN.hints[0].text // "<absent>"' "${_pre_cache}" 2>/dev/null)"
+        _pre_got_p="$(jq -r '.phase_compositions.PLAN.hints[0].text // "<absent>"' "${_pre_cache}" 2>/dev/null)"
+        if [ "${_pre_got_d}" = "${_PRE_D}" ]; then
+            _record_pass "preset leaves a config hint alone: DESIGN text is byte-equal after a spec-driven build"
+        else
+            _record_fail "preset leaves a config hint alone: DESIGN text is byte-equal after a spec-driven build" \
+                "config held '${_PRE_D}', cache holds '${_pre_got_d}'"
+        fi
+        if [ "${_pre_got_p}" = "${_PRE_P}" ]; then
+            _record_pass "preset leaves a config hint alone: PLAN text is byte-equal after a spec-driven build"
+        else
+            _record_fail "preset leaves a config hint alone: PLAN text is byte-equal after a spec-driven build" \
+                "config held '${_PRE_P}', cache holds '${_pre_got_p}'"
+        fi
+    else
+        _record_fail "preset leaves a config hint alone: fixture config written" "jq could not write the copy's config"
+    fi
+    cp "${WORK}/mut-config.orig" "${MUT}/config/default-triggers.json"
+
     # ---- DERIVATION, before the copy is mutated -------------------------
     # Every cell above is satisfied by a config hint that HARDCODES the
     # author's own absolute path: lint (a) finds no `CLAUDE_PLUGIN_ROOT:-`,
@@ -608,6 +689,7 @@ if [ -f "${MUT}/hooks/skill-activation-hook.sh" ]; then
     # bake-in-passable. The placeholder-spelling lint is what covers those.
     H4="${WORK}/home-derivation"
     build_cache "${H4}" "${MUT}" ""
+    inject_fixture_hints "${H4}"
     _derivation_cell() {
         local label="$1" needle="$2" dpath ppath
         dpath="$(_persist_path "$(render "${H4}" "${MUT}" "${DESIGN_PROMPT}" "${needle}")")"
@@ -635,7 +717,7 @@ if [ -f "${MUT}/hooks/skill-activation-hook.sh" ]; then
                    "expected a path under ${MUT}, got ${dpath}" ;;
         esac
     }
-    _derivation_cell "hint"   'PERSIST DESIGN'
+    _derivation_cell "hint"   "${FIX_DESIGN_LABEL}"
     _derivation_cell "intent" 'set-intent'
     # ---------------------------------------------------------------------
 
@@ -658,7 +740,8 @@ if [ -f "${MUT}/hooks/skill-activation-hook.sh" ]; then
 
         H3="${WORK}/home-mutated"
         build_cache "${H3}" "${MUT}" ""
-        _MUT_LINE="$(render "${H3}" "${MUT}" "${DESIGN_PROMPT}" 'PERSIST DESIGN')"
+        inject_fixture_hints "${H3}"
+        _MUT_LINE="$(render "${H3}" "${MUT}" "${DESIGN_PROMPT}" "${FIX_DESIGN_LABEL}")"
         if [ -z "${_MUT_LINE}" ]; then
             _record_fail "mutation: the mutated hook still renders the hint" \
                 "empty render — the hook broke outright, which is a DIFFERENT fault than the one named"

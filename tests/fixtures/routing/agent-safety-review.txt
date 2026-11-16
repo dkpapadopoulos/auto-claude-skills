@@ -3,10 +3,21 @@
 #   MATCH: <prompt>     — regex from config/default-triggers.json for this skill must match
 #   NO_MATCH: <prompt>  — regex must NOT match
 # Tested deterministically by tests/test-regex-fixtures.sh (zero LLM cost).
-# NO_MATCH line is verbatim-borrowed from openspec-ship MATCH fixture.
+# The first NO_MATCH line is verbatim-borrowed from openspec-ship MATCH fixture; the
+# rest are decoys for the auto-approve alternative (an agent or bot doing the approving,
+# or a PR / merge / review / permission being auto-approved, is in; a CLI flag, a UI
+# about approvals and a product's own approval rule are out).
 
 MATCH: run an overnight autonomous loop to refactor the codebase while I sleep
 MATCH: launch a background agent to monitor the inbox and auto-reply to messages
 MATCH: deploy an unattended email agent that auto responds to support tickets
+MATCH: make the agent auto-approve all PRs without review
+MATCH: let the bot autoapprove dependency bumps
+MATCH: turn on auto-approve for pull requests from the release branch
 
 NO_MATCH: archive the feature change
+NO_MATCH: approve the PR once the review is done
+NO_MATCH: run terraform apply -auto-approve in the staging pipeline
+NO_MATCH: design the autoapproval rules screen for the frontend dashboard with three prototype variants to compare
+NO_MATCH: build an expense feature where claims under 50 dollars are auto-approved
+NO_MATCH: both teams want small claims auto-approved

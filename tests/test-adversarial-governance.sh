@@ -8,28 +8,25 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 echo "=== test-adversarial-governance.sh ==="
 
-# --- REVIEW composition: adversarial checklist ---
 REGISTRY="${PROJECT_ROOT}/config/default-triggers.json"
 REGISTRY_CONTENT="$(cat "${REGISTRY}")"
 FALLBACK="${PROJECT_ROOT}/config/fallback-registry.json"
 FALLBACK_CONTENT="$(cat "${FALLBACK}")"
 
-assert_contains "adversarial checklist in REVIEW hints (default)" "ADVERSARIAL REVIEW" "${REGISTRY_CONTENT}"
-assert_contains "adversarial checklist in REVIEW hints (fallback)" "ADVERSARIAL REVIEW" "${FALLBACK_CONTENT}"
-assert_contains "HITL check in adversarial checklist" "safety gate, HITL requirement" "${REGISTRY_CONTENT}"
-assert_contains "bypass patterns in adversarial checklist" "dangerouslyDisableSandbox" "${REGISTRY_CONTENT}"
-
-# --- Autonomy<->control coherence (DESIGN) ---
-assert_contains "autonomy check in DESIGN hints (default)" "AUTONOMY CHECK" "${REGISTRY_CONTENT}"
-assert_contains "autonomy check in DESIGN hints (fallback)" "AUTONOMY CHECK" "${FALLBACK_CONTENT}"
-assert_contains "autonomy principle stated (default)" "autonomy without proportional control is a liability" "${REGISTRY_CONTENT}"
-assert_contains "autonomy principle stated (fallback)" "autonomy without proportional control is a liability" "${FALLBACK_CONTENT}"
-assert_contains "autonomy hint is advisory not a gate (default)" "this is guidance, not a gate" "${REGISTRY_CONTENT}"
-assert_contains "autonomy hint is advisory not a gate (fallback)" "this is guidance, not a gate" "${FALLBACK_CONTENT}"
+# The adversarial checklist, the autonomy check and the eval strategy used to be
+# asserted on REVIEW/DESIGN phase hints in the two configs. Those hints were removed
+# (openspec/changes/registered-hint-cut; their absence is pinned in
+# tests/test-phase-hint-brevity.sh). The same content is asserted below on the skill
+# that owns each procedure, which is where it has lived since the hints were shortened.
 
 # --- agent-safety-review: design-time governance ---
 SAFETY_SKILL="${PROJECT_ROOT}/skills/agent-safety-review/SKILL.md"
 SAFETY_CONTENT="$(cat "${SAFETY_SKILL}")"
+
+# --- Autonomy<->control coherence ---
+assert_contains "agent-safety-review: autonomy levels section" "## Autonomy levels" "${SAFETY_CONTENT}"
+assert_contains "agent-safety-review: autonomy principle stated" "autonomy without proportional control is a liability" "${SAFETY_CONTENT}"
+assert_contains "agent-safety-review: autonomy check is advisory not a gate" "this is guidance, not a gate" "${SAFETY_CONTENT}"
 
 assert_contains "agent-safety-review: lethal trifecta" "lethal trifecta" "${SAFETY_CONTENT}"
 assert_contains "agent-safety-review: blast-radius" "blast-radius" "${SAFETY_CONTENT}"
@@ -47,6 +44,9 @@ PROMPTS_CONTENT="$(cat "${TEAM_PROMPTS}" 2>/dev/null)"
 # Negative checks scan every file the model reads for this skill.
 TEAM_ALL="$(cat "${TEAM_SKILL}" "${PROJECT_ROOT}/skills/agent-team-review/references"/*.md 2>/dev/null)"
 
+assert_contains "agent-team-review: adversarial review checklist section" "## Adversarial review checklist" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: HITL check in adversarial checklist" "safety gate, HITL requirement" "${TEAM_CONTENT}"
+assert_contains "agent-team-review: bypass patterns in adversarial checklist" "dangerouslyDisableSandbox" "${TEAM_CONTENT}"
 assert_contains "agent-team-review: adversarial-reviewer template" 'name: "adversarial-reviewer"' "${PROMPTS_CONTENT}"
 assert_contains "agent-team-review: governance lens" "Your Lens: Governance" "${PROMPTS_CONTENT}"
 assert_contains "agent-team-review: HITL in adversarial focus" "HITL" "${PROMPTS_CONTENT}"
@@ -99,16 +99,16 @@ assert_contains "agent-team-review: sensitive-path override" "regardless of file
 # cases red before code; safety-relevant runtime paths exercised; eval scenarios
 # append-only.
 
-# DESIGN-phase EVAL STRATEGY hint: classify probabilistic-vs-deterministic, ask if unclear.
-assert_contains "EVAL STRATEGY hint in DESIGN hints (default)" "EVAL STRATEGY" "${REGISTRY_CONTENT}"
-assert_contains "EVAL STRATEGY hint in DESIGN hints (fallback)" "EVAL STRATEGY" "${FALLBACK_CONTENT}"
-assert_contains "EVAL STRATEGY: classify (model-asks, not regex)" "ask the user if" "${REGISTRY_CONTENT}"
-assert_contains "EVAL STRATEGY: adversarial/safety subset" "adversarial/safety subsets" "${REGISTRY_CONTENT}"
-assert_contains "EVAL STRATEGY: red before implementation" "failing (red) before implementation" "${REGISTRY_CONTENT}"
-
 # runtime-validation: safety-relevant paths must be exercised + eval scenarios append-only.
 RTV_SKILL="${PROJECT_ROOT}/skills/runtime-validation/SKILL.md"
 RTV_CONTENT="$(cat "${RTV_SKILL}")"
+# Eval strategy: classify probabilistic-vs-deterministic, ask if unclear. Asserted on the
+# owning skill (the DESIGN hint that pointed here was removed).
+assert_contains "runtime-validation: eval strategy section" "## Eval strategy at DESIGN" "${RTV_CONTENT}"
+assert_contains "runtime-validation: eval strategy classifies (model-asks, not regex)" "ask the user if" "${RTV_CONTENT}"
+assert_contains "runtime-validation: eval strategy has adversarial and safety subsets" "adversarial and safety subsets" "${RTV_CONTENT}"
+assert_contains "runtime-validation: eval strategy is red before implementation" "failing (red) before implementation" "${RTV_CONTENT}"
+assert_contains "runtime-validation: safety dimensions are hard pass/fail" "hard pass/fail gates" "${RTV_CONTENT}"
 assert_contains "runtime-validation: safety-relevant paths section" "Safety-Relevant Paths" "${RTV_CONTENT}"
 assert_contains "runtime-validation: safety paths must be exercised" "MUST be exercised" "${RTV_CONTENT}"
 assert_contains "runtime-validation: eval scenarios append-only" "append-only" "${RTV_CONTENT}"

@@ -29,7 +29,8 @@
       "path": "cli",
       "inputs": {"prompt": "let's design a new autonomous agent feature"},
       "expected": {"output_contains": "AUTONOMY CHECK"},
-      "tags": ["routing", "design", "autonomy"]
+      "deprecated": "2026-11-16: the AUTONOMY CHECK phase hint was removed with every shipped phase hint (openspec/changes/registered-hint-cut). The autonomy levels stay in skills/agent-safety-review/SKILL.md. Kept, not deleted, per the append-only rule in skills/runtime-validation/SKILL.md.",
+      "tags": ["routing", "design", "autonomy", "deprecated"]
     }
   ]
 }

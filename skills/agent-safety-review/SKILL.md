@@ -64,7 +64,7 @@ guidance, not a veto.
 
 ## Autonomy levels
 
-The DESIGN-phase hint `AUTONOMY CHECK` points here. The rungs, the oversight
+The rungs, the oversight
 test and the advisory rule are Step 2b above; at DESIGN time apply them to the
 proposed design rather than to a built system, and when the rule fires help the
 user design the oversight in before leaving DESIGN. Judge from the actual

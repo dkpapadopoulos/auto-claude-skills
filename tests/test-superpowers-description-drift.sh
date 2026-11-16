@@ -41,8 +41,7 @@
 #   * the brainstorming precondition said to invoke agent-safety-review "before leaving
 #     DESIGN" — after approval, where the backbone allows only writing-plans. It now says
 #     before the design doc is approved, and before building when brainstorming ends with no
-#     design doc (opt-out, or a quick, clear task), so the check does not lapse there. The
-#     DESIGN EVAL STRATEGY hint (it names Skill(runtime-validation)) gets the same timing;
+#     design doc (opt-out, or a quick, clear task), so the check does not lapse there;
 #   * the PLAN red flag demanded docs/plans/, so a correct superpowers run read as a violation;
 #   * the IMPLEMENT red flag pushed subagent-driven-development / agent-team-execution over
 #     the method the user chose at the handoff.
@@ -120,13 +119,12 @@ fi
 
 desc() { jq -r --arg n "$2" '[.skills[] | select(.name == $n)][0].description // ""' "$1"; }
 pre() { jq -r --arg n "$2" '[.skills[] | select(.name == $n)][0].precondition // ""' "$1"; }
-# The DESIGN hint whose text starts with the label in $2 (first match; "" when absent).
-hint() { jq -r --arg l "$2" '[.phase_compositions.DESIGN.hints[]?.text | strings | select(startswith($l))][0] // ""' "$1"; }
 
-# D1 (7.0.1): stale text scoped to its FIELD, not the file. "before leaving DESIGN" is
-# also in the DESIGN AUTONOMY CHECK hint, which designs oversight rather than invoking a
-# skill and is out of this change's scope, so a file-level grep would fail on it. An empty
-# field is a failure, never a pass: "absent from nothing" is the vacuous case.
+# D1 (7.0.1): stale text scoped to its FIELD, not the file, so an unrelated use of the
+# phrase elsewhere in a config cannot fail it. An empty field is a failure, never a pass:
+# "absent from nothing" is the vacuous case. (The DESIGN EVAL STRATEGY hint was held to
+# the same timing here until the shipped phase hints were removed by
+# openspec/changes/registered-hint-cut.)
 for _f in "${CFG}" "${FB}"; do
     _p="$(pre "${_f}" brainstorming)"
     _v="$(desc "${_f}" verification-before-completion)"
@@ -136,17 +134,23 @@ for _f in "${CFG}" "${FB}"; do
     fi
     assert_not_contains "D1: brainstorming precondition in ${_f##*/} does not say 'before leaving DESIGN'" "before leaving DESIGN" "${_p}"
     assert_not_contains "D1: verification-before-completion in ${_f##*/} does not promise 'no TODOs, docs updated'" "no TODOs, docs updated" "${_v}"
-    # EVAL STRATEGY names Skill(runtime-validation) on every DESIGN render, so its timing is
-    # the same contradiction as the trifecta's. Case-insensitive: it once opened "Before".
-    _e="$(hint "${_f}" "EVAL STRATEGY:")"
-    if [ -z "${_e}" ]; then
-        _record_fail "D1: EVAL STRATEGY hint readable in ${_f##*/}" "empty; the 'is absent' cell would pass vacuously"
-    elif printf '%s' "${_e}" | grep -qiF 'before leaving DESIGN'; then
-        _record_fail "D1: EVAL STRATEGY hint in ${_f##*/} does not say 'before leaving DESIGN'" "still present"
-    else
-        _record_pass "D1: EVAL STRATEGY hint in ${_f##*/} does not say 'before leaving DESIGN'"
-    fi
 done
+# The eval-strategy TIMING moved with its carrier. The removed EVAL STRATEGY hint held the
+# corrected timing ("before design-doc approval (no doc: before building)"); with the hint
+# gone, skills/runtime-validation/SKILL.md § Eval strategy at DESIGN is the only text that
+# states it, and it still opened "Before leaving DESIGN" (the hint had been corrected, the
+# section it pointed at had not). Held on the section, not the file. Case-insensitive, as
+# the hint cell was: the sentence opens with a capital.
+_es="$(awk '/^## Eval strategy at DESIGN/{f=1; next} /^## /{f=0} f' "${PROJECT_ROOT}/skills/runtime-validation/SKILL.md" 2>/dev/null)"
+if [ -z "${_es}" ]; then
+    _record_fail "D1: runtime-validation's eval-strategy section is readable" "empty; the 'is absent' cell would pass vacuously"
+elif printf '%s' "${_es}" | grep -qiF 'before leaving DESIGN'; then
+    _record_fail "D1: runtime-validation's eval strategy does not say 'before leaving DESIGN'" "still present"
+else
+    _record_pass "D1: runtime-validation's eval strategy does not say 'before leaving DESIGN'"
+fi
+assert_contains "D2: runtime-validation classifies verification before the design doc is approved, or before building with no doc" \
+    "before the design doc is approved (no design doc: before building)" "${_es}"
 # The phase-enforcement eval's prompts are frozen hook output and keep "before leaving
 # DESIGN"; its criteria describe that frozen context and pass on the invocation alone. Only
 # expected_behavior asked for the stale timing, so only it is held here.
@@ -175,8 +179,6 @@ assert_contains "D2: agent-safety-review is invoked before the design doc is app
 # lapses. It names BOTH acts: with no doc, the classification's stated home is gone too.
 assert_contains "D2: with no design doc, the trifecta is classified and agent-safety-review invoked before building" \
     "(no design doc: classify and invoke before building)" "${_p}"
-assert_contains "D2: EVAL STRATEGY classifies verification before design-doc approval, or before building with no doc" \
-    "EVAL STRATEGY: classify verification before design-doc approval (no doc: before building);" "$(hint "${CFG}" "EVAL STRATEGY:")"
 assert_contains "D2: the skip remedy and its {{PLUGIN_ROOT}} placeholder are unchanged" \
     "or record the skip: source '{{PLUGIN_ROOT}}/hooks/lib/phase-attest.sh'; phase_attest agent-safety-review \"<why the trifecta is <2>\"." "${_p}"
 assert_contains "D2: the product-discovery clause is unchanged" \
@@ -189,7 +191,6 @@ for _n in finishing-a-development-branch executing-plans subagent-driven-develop
     assert_equals "D3: fallback-registry.json has the same description for ${_n}" "$(desc "${CFG}" "${_n}")" "$(desc "${FB}" "${_n}")"
 done
 assert_equals "D3: fallback-registry.json has the same brainstorming precondition" "$(pre "${CFG}" brainstorming)" "$(pre "${FB}" brainstorming)"
-assert_equals "D3: fallback-registry.json has the same EVAL STRATEGY hint" "$(hint "${CFG}" "EVAL STRATEGY:")" "$(hint "${FB}" "EVAL STRATEGY:")"
 # The dead using-superpowers entry stays deleted. Counted with jq rather than grepped, so an
 # unparseable config reads as -1 and fails instead of reading as "absent".
 for _f in "${CFG}" "${FB}"; do

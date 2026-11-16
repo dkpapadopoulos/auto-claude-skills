@@ -320,8 +320,7 @@ This is the gap that makes "we could not test it" the most dangerous disposition
 
 ## Adversarial review checklist
 
-The REVIEW-phase hint `ADVERSARIAL REVIEW` points here. In addition to standard
-code review, evaluate these governance checks against the change:
+In addition to standard code review, evaluate these governance checks against the change:
 
 1. Does any change weaken or remove an existing safety gate, HITL requirement,
    or approval step?
