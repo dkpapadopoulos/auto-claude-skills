@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_path": null,
+  "design_path": "",
+  "plan_path": "openspec/changes/archive/2026-11-16-verify-receipt/superpowers/2026-11-16-verify-receipt-plan.md",
+  "spec_path": "openspec/changes/archive/2026-11-16-verify-receipt/specs/project-verification/spec.md",
+  "sp_plan_path": "openspec/changes/archive/2026-11-16-verify-receipt/superpowers/2026-11-16-verify-receipt-plan.md",
+  "sp_spec_path": "openspec/changes/archive/2026-11-16-verify-receipt/specs/project-verification/spec.md",
+  "change_slug": "verify-receipt",
+  "capability_slug": "project-verification",
+  "source_branch": "feat/verify-receipt",
+  "base_commit": "8216da12691bd2bec6fc195d3fd158fe666a5f44",
+  "openspec_surface": "none",
+  "archived_at": "2026-11-16T10:46:24Z"
+}
