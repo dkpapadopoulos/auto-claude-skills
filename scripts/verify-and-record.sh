@@ -581,7 +581,11 @@ jq -c '{passed,failed,could_not_verify,gate_gaming_status,test_delta,worktree_di
 # on a clean tree is named too; its receipt is headed FAIL. Single-quoted with
 # ' escaped, because this line is pasted and a plugin path is not ours to trust
 # (.claude/rules/remedy-reachability.md).
-if [ "$WORKTREE_DIRTY" != "true" ] && [ "$SHA_BEFORE" = "$SHA_AFTER" ] \
+# The sha test also covers a repo with no commits, where both reads are the same
+# non-sha text and compare equal.
+_RCPT_SHA_OK=false
+case "$SHA_BEFORE" in ''|*[!0-9a-f]*) : ;; *) [ "${#SHA_BEFORE}" -ge 40 ] && _RCPT_SHA_OK=true ;; esac
+if [ "$WORKTREE_DIRTY" != "true" ] && [ "$_RCPT_SHA_OK" = "true" ] && [ "$SHA_BEFORE" = "$SHA_AFTER" ] \
    && [ -f "${PLUGIN_ROOT}/scripts/verify-receipt.sh" ]; then
     _RCPT_Q="$(printf '%s' "${PLUGIN_ROOT}/scripts/verify-receipt.sh" | sed "s/'/'\\\\''/g")"
     printf "receipt for a PR description: bash '%s'\n" "$_RCPT_Q"

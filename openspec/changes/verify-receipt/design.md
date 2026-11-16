@@ -44,9 +44,14 @@ agent pastes it into the PR description (project-verification SKILL.md)
 ```
 
 `verify-receipt.sh` is a reader. It sources `hooks/lib/verdict.sh` and resolves
-the token the way `verify-and-record.sh` does, then `verdict_resolve_token` for
-the cross-token bridge, so a verdict recorded by a sibling session for the same
-commit is found, and a failing verdict at the commit outranks a clean one.
+the token the way `verify-and-record.sh` does. This session's own verdict is
+used when it is for the exact commit, the push gate's first choice too.
+Otherwise it uses a measured verdict another session recorded for the exact
+commit, a failing one first. (Corrected after review, 2026-11-16: the first
+text said a failing verdict always outranks a clean one, which is not what the
+gate or this script does when the session has its own verdict at the commit;
+and `verdict_resolve_token` is not used, because its bridge does not see a
+could-not-verify or suspect sibling.)
 
 ## Decisions
 
@@ -91,15 +96,19 @@ commit is found, and a failing verdict at the commit outranks a clean one.
 
 | Receipt result | When |
 |---|---|
-| `pass` | no failed, no could-not-run, gate-gaming `clean` |
+| `pass` | no failed, no could-not-run, gate-gaming `clean`, at least one check passed |
 | `fail` | any failed check |
-| `could-not-verify` | no failed check, at least one could not run |
-| `suspect` | otherwise clean, gate-gaming status is `suspect` |
+| `could-not-verify` | no failed check, and: a check could not run, or the gate-gaming status is neither `clean` nor `suspect`, or no check is recorded |
+| `suspect` | no failed or could-not-run check, gate-gaming status is `suspect` |
+
+`pass` is never wider than `verdict_is_clean` in `hooks/lib/verdict.sh`. A
+record whose `failed`, `could_not_verify` or `passed` is not an array, or whose
+`worktree_dirty` is not a boolean, is not rendered (exit 3).
 
 A gate-gaming status other than `clean` or `suspect` (for example
 `unverified`) is printed as recorded when it is a lowercase word, and
-`unrecognised` otherwise; it does not turn a pass into a fail. The receipt
-reports, it does not rule.
+`unrecognised` otherwise. It makes the result `could-not-verify`, never `pass`
+(corrected after review: the first text let it stay a pass, against the table).
 
 Amended at build (2026-11-16): a check name is printed only when it is a plain
 label (letters, digits, dot, underscore, hyphen, space; at most 60 characters),

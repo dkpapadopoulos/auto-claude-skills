@@ -357,6 +357,68 @@ assert_equals "declared gate: receipt rendered" "0" "${RC}"
 assert_contains "declared gate: provenance says verify-yml" "(verify-yml)" "${OUT}"
 assert_contains "declared gate: the check is listed" "| tests | passed |" "${OUT}"
 
+# --- Review findings: the receipt may never read better than the gate's reader -
+
+echo "== F1: pass needs a clean gate-gaming status and at least one check =="
+RF="$(mkrepo "${TEST_TMPDIR}/rf")"
+# fresh — a real clean verdict for RF under the own token
+fresh() { rm -f "${ARTIFACT}"; record "${RF}" --name unit --run true; }
+fresh; edit_artifact '.gate_gaming_status = "unverified"'   # the writer pairs this with a could_not_verify entry
+render "${RF}"
+assert_equals "unverified status: rendered" "0" "${RC}"
+assert_contains "unverified status is not a pass" " result=could-not-verify -->" "$(printf '%s\n' "${OUT}" | head -1)"
+assert_contains "unverified status is shown" "- Gate-gaming check: unverified" "${OUT}"
+fresh; edit_artifact 'del(.gate_gaming_status)'
+render "${RF}"
+assert_contains "missing status is not a pass" " result=could-not-verify -->" "$(printf '%s\n' "${OUT}" | head -1)"
+fresh; edit_artifact '.passed = []'   # the writer refuses an empty gate
+render "${RF}"
+assert_contains "zero checks is not a pass" " result=could-not-verify -->" "$(printf '%s\n' "${OUT}" | head -1)"
+assert_contains "zero checks says so" "| (no checks recorded) | - |" "${OUT}"
+
+echo "== F2: a record whose fields are the wrong type is not rendered =="
+# verdict_has_test_failure reads a string or object in .failed as a failure, so
+# rendering these as an empty list printed PASS over a verdict the push gate
+# reads as failing. None is writable by the writer.
+for _edit in '.failed = "unit"' '.failed = {"a":1}' '.could_not_verify = "x"' '.passed = null' '.worktree_dirty = "true"' 'del(.worktree_dirty)'; do
+    fresh; edit_artifact "${_edit}"
+    render "${RF}"
+    assert_equals "malformed (${_edit}): exit 3" "3" "${RC}"
+    assert_empty "malformed (${_edit}): stdout empty" "${OUT}"
+done
+
+echo "== F3: provenance is printed as a fixed word =="
+fresh; edit_artifact '.discovery_source = "explicit\n"'   # passes the lib's case after $( ) strips the newline
+render "${RF}"
+assert_contains "provenance stays on one line" "\`verify-and-record.sh\` (explicit)" "${OUT}"
+
+echo "== F4: a sibling session's could-not-verify verdict at HEAD is found =="
+rm -f "${ARTIFACT}" "${OTHER}"
+( cd "${RF}" && SKILL_SESSION_TOKEN=session-other /bin/bash "${VAR}" --name types --run definitely-not-a-cmd-xyz >/dev/null 2>&1 < /dev/null )
+assert_equals "precondition: sibling recorded could-not-verify" '["types"]' "$(jq -c '.could_not_verify' "${OTHER}" 2>/dev/null)"
+render "${RF}"
+assert_equals "sibling could-not-verify: rendered" "0" "${RC}"
+assert_contains "sibling could-not-verify: result" " result=could-not-verify -->" "$(printf '%s\n' "${OUT}" | head -1)"
+# Two siblings at the commit, one failing: the failing one is rendered.
+( cd "${RF}" && SKILL_SESSION_TOKEN=session-third /bin/bash "${VAR}" --name unit --run 'exit 1' >/dev/null 2>&1 < /dev/null )
+render "${RF}"
+assert_contains "among siblings a failing verdict is the one rendered" " result=fail -->" "$(printf '%s\n' "${OUT}" | head -1)"
+# A sibling's hand-written record at the commit is not picked up.
+rm -f "${OTHER}" "${TEST_HOME}/.claude/.skill-project-verified-session-third"
+( cd "${RF}" && SKILL_SESSION_TOKEN=session-other /bin/bash "${VAR}" --name unit --run true >/dev/null 2>&1 < /dev/null )
+jq '.discovery_source = "heuristic:make"' "${OTHER}" > "${OTHER}.e" && mv "${OTHER}.e" "${OTHER}"
+render "${RF}"
+assert_equals "sibling hand-written record: no receipt" "1" "${RC}"
+assert_empty "sibling hand-written record: stdout empty" "${OUT}"
+rm -f "${OTHER}"
+
+echo "== F5: a repo with no commits names no command =="
+mkdir -p "${TEST_TMPDIR}/unborn" && git -C "${TEST_TMPDIR}/unborn" init -q -b main .
+rm -f "${ARTIFACT}"
+writer_out "${TEST_TMPDIR}/unborn" "${REPO_ROOT}" --name unit --run true
+assert_contains "precondition: the writer still wrote a verdict" "verdict written:" "${WOUT}"
+assert_not_contains "unborn repo: the receipt command is not named" "verify-receipt" "${WOUT}"
+
 # --- The skill tells the agent what the receipt is for -----------------------
 
 echo "== S1-S3: skills/project-verification/SKILL.md =="

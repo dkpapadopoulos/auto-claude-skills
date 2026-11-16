@@ -8,7 +8,8 @@
 # A receipt is printed only for a verdict that the deterministic writer wrote
 # (discovery_source verify-yml|explicit), whose sha is HEAD exactly, and that
 # was not measured on a tree with uncommitted changes. A FAILING verdict that
-# meets those conditions is rendered too, headed FAIL.
+# meets those conditions is rendered too, headed FAIL. PASS is printed only for
+# what hooks/lib/verdict.sh::verdict_is_clean accepts, with at least one check.
 #
 # Exit status says whether a receipt was RENDERED, never whether the gate
 # passed (the same convention as the writer); the first line carries the result.
@@ -39,11 +40,10 @@ HEAD_SHA="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null)" || _cnc "HEAD does not r
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 # shellcheck source=../hooks/lib/verdict.sh
 . "${PLUGIN_ROOT}/hooks/lib/verdict.sh" 2>/dev/null || true
-command -v verdict_resolve_token >/dev/null 2>&1 || _cnc "cannot load hooks/lib/verdict.sh from the plugin"
+command -v verdict_sha_is_head >/dev/null 2>&1 || _cnc "cannot load hooks/lib/verdict.sh from the plugin"
 
 # Token: resolved exactly as scripts/verify-and-record.sh resolves it, so the
-# reader looks where the writer wrote. verdict_resolve_token then bridges to a
-# sibling session's verdict for this exact commit when the own token has none.
+# reader looks where the writer wrote.
 TOKEN="${SKILL_SESSION_TOKEN:-}"
 if [ -z "$TOKEN" ] && [ -f "${PLUGIN_ROOT}/hooks/lib/session-token.sh" ]; then
     # shellcheck source=../hooks/lib/session-token.sh
@@ -51,22 +51,57 @@ if [ -z "$TOKEN" ] && [ -f "${PLUGIN_ROOT}/hooks/lib/session-token.sh" ]; then
     command -v resolve_own_session_token >/dev/null 2>&1 && TOKEN="$(resolve_own_session_token)"
 fi
 [ -n "$TOKEN" ] || TOKEN="$(cat "${HOME}/.claude/.skill-session-token" 2>/dev/null || echo default)"
-TOKEN="$(verdict_resolve_token "$TOKEN" "$ROOT")"
+
+# _one_object <file> — exactly one JSON object. Unslurped, jq reports on the
+# LAST document, so a failing verdict followed by a second object would read as
+# that object.
+_one_object() { jq -es 'length == 1 and (.[0] | type == "object")' "$1" >/dev/null 2>&1; }
+# _measured <token> — the deterministic writer wrote it, from a gate it ran.
+_measured() {
+    [ "$(jq -r '.writer // ""' "$(verdict_artifact_path "$1")" 2>/dev/null)" = "verify-and-record.sh" ] && verdict_is_measured "$1"
+}
+
+# Which verdict. This session's own, when it is for this exact commit (the same
+# first choice the push gate makes). Otherwise any MEASURED verdict another
+# session recorded for this exact commit, a failing one first. Not
+# verdict_resolve_token: its bridge sees only clean and failing siblings, so a
+# could-not-verify or suspect verdict written under another token (the
+# SKILL_SESSION_TOKEN override, or a run from the user's own terminal) was
+# reported as "no verdict". A sibling for any other commit is never used.
+if ! verdict_sha_is_head "$TOKEN" "$ROOT"; then
+    _pick=""
+    while IFS= read -r _f; do
+        [ -n "$_f" ] || continue
+        _t="${_f##*/}"; _t="${_t#.skill-project-verified-}"
+        [ -n "$_t" ] && [ "$_t" != "$TOKEN" ] || continue
+        _one_object "$_f" && verdict_sha_is_head "$_t" "$ROOT" && _measured "$_t" || continue
+        if verdict_has_test_failure "$_t"; then _pick="$_t"; break; fi
+        [ -n "$_pick" ] || _pick="$_t"
+    done <<EOF
+$(grep -lF "$HEAD_SHA" "${HOME}/.claude/.skill-project-verified-"* 2>/dev/null)
+EOF
+    [ -z "$_pick" ] || TOKEN="$_pick"
+fi
 
 F="$(verdict_artifact_path "$TOKEN")" || _cnc "no session token resolved"
 [ -f "$F" ] || _no "no verdict is recorded for this commit; run the repo's gate with verify-and-record.sh first"
-# Exactly one JSON object. Unslurped, jq reports on the LAST document, so a
-# failing verdict followed by a second object would read as that object.
-jq -es 'length == 1 and (.[0] | type == "object")' "$F" >/dev/null 2>&1 || _cnc "the recorded verdict is not a single JSON object"
+_one_object "$F" || _cnc "the recorded verdict is not a single JSON object"
 
-if [ "$(jq -r '.writer // ""' "$F" 2>/dev/null)" != "verify-and-record.sh" ] || ! verdict_is_measured "$TOKEN"; then
-    _no "the recorded verdict was not measured by verify-and-record.sh; a hand-written verdict gets no receipt"
-fi
+_measured "$TOKEN" || _no "the recorded verdict was not measured by verify-and-record.sh; a hand-written verdict gets no receipt"
 
 if ! verdict_sha_is_head "$TOKEN" "$ROOT"; then
     V_SHA="$(jq -r '.sha // "" | strings | select(test("^[0-9a-f]{40}([0-9a-f]{24})?$"))' "$F" 2>/dev/null)"
     _no "the verdict was recorded for ${V_SHA:-an unreadable commit}, but HEAD is ${HEAD_SHA}; verify this commit to get a receipt for it"
 fi
+
+# The fields the result is computed from must be the types the writer writes.
+# The shared readers take a string or object in .failed as a failure
+# (verdict_has_test_failure) and a non-boolean worktree_dirty as clean, so
+# reading either loosely here printed PASS over a record the push gate reads as
+# failing. Nothing is guessed: a record in another shape is not rendered.
+jq -e '(.failed | type == "array") and (.could_not_verify | type == "array") and (.passed | type == "array")
+       and (.worktree_dirty | type == "boolean")' "$F" >/dev/null 2>&1 \
+    || _cnc "the recorded verdict is not in the shape verify-and-record.sh writes"
 
 verdict_measured_dirty "$TOKEN" && _no "the verdict was measured with uncommitted changes in the tree, so it does not describe the commit; commit, then verify again"
 
@@ -82,28 +117,29 @@ NOTE="Produced on the author's machine from the recorded verdict for this commit
 # trailing newline (measured: "clean\n" passes ^[a-z-]{1,30}$).
 RENDER='
   def plain: type == "string" and test("\\A[A-Za-z0-9._ -]{1,60}\\z");
-  def list: if type == "array" then . else [] end;
   def rows($names; $outcome):
     ($names | map(select(plain))) as $ok
     | (($names | length) - ($ok | length)) as $odd
     | ($ok | map("| \(.) | \($outcome) |"))
       + (if $odd > 0 then ["| (\($odd) check(s) with a name that is not a plain label) | \($outcome) |"] else [] end);
-  (.failed | list) as $f
-  | (.could_not_verify | list) as $c
-  | (.passed | list) as $p
+  .failed as $f
+  | .could_not_verify as $c
+  | .passed as $p
   | (.gate_gaming_status | if type == "string" and test("\\A[a-z-]{1,30}\\z") then . else "unrecognised" end) as $gg
   | (.ts | if type == "string" and test("\\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\\z") then . else "unknown" end) as $ts
   | (if ($f | length) > 0 then "fail"
      elif ($c | length) > 0 then "could-not-verify"
      elif $gg == "suspect" then "suspect"
-     else "pass" end) as $result
+     elif $gg == "clean" and ($p | length) > 0 then "pass"
+     else "could-not-verify" end) as $result
+  | (if .discovery_source == "verify-yml" then "verify-yml" else "explicit" end) as $src
   | ({"pass":"PASS","fail":"FAIL","could-not-verify":"COULD NOT VERIFY","suspect":"SUSPECT"}[$result]) as $head
   | (rows($f; "FAILED") + rows($c; "could not run") + rows($p; "passed")) as $rows
   | [ "<!-- acs-verify-receipt v1 sha=\($sha) result=\($result) -->",
       "### Local verification: \($head)",
       "",
       "- Commit: `\($sha)`",
-      "- Recorded: \($ts) by `verify-and-record.sh` (\(.discovery_source))",
+      "- Recorded: \($ts) by `verify-and-record.sh` (\($src))",
       "- Gate-gaming check: \($gg)",
       "",
       "| Check | Outcome |",
