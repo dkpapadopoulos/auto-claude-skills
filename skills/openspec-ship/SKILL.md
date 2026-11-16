@@ -274,15 +274,12 @@ If `discovery_path`, `design_path`, `plan_path`, or `spec_path` exist in session
 
 ### Step 7c: Generate Divergences Report
 
-If `design_path` exists in session state and the design file is readable:
+Find the design doc: `bash '<PLUGIN_ROOT>/scripts/resolve-design-doc.sh' --slug <feature-name>`, then read `references/design-doc-outcomes.md` and do what it says for the outcome printed (`resolved`, `stale`, `ambiguous`, `absent`, or exit 3). Never skip this step silently. Only `resolved` continues:
 
-1. Read the design artifact's **Acceptance Scenarios** section
-2. Read the design artifact's **Capabilities Affected** and **Out-of-Scope** sections
+1. Read the doc's **Acceptance Scenarios** section
+2. Read its **Capabilities Affected** and **Out-of-Scope** sections
 3. Compare against what was actually built (from the OpenSpec change's `proposal.md` and `specs/`)
-4. Append a `## Divergences` section to the **archived** design doc:
-   Read `references/divergences-template.md` for that section's format.
-
-**Important:** Write divergences to the **archived copy** in `docs/plans/archive/`, not the live file. The archive is the historical record; the live file may still be in use if the feature spans multiple sessions.
+4. Append a `## Divergences` section in the format of `references/divergences-template.md`.
 
 ## Graceful Degradation Summary
 

@@ -21,7 +21,8 @@
 #
 # Order: (1) the path recorded in session state for the slug, CHECKED for readability and
 # reported `stale` when it fails (a record is never trusted blind and never silently
-# replaced by a filename match); (2) openspec/changes/<slug>/design.md;
+# replaced by a filename match; the one exception is the same basename under
+# docs/plans/archive/, where openspec-ship's archive step moves it); (2) openspec/changes/<slug>/design.md;
 # (3) docs/plans/YYYY-MM-DD-<slug>-design.md.
 #
 # Without --slug only arm (1) runs, over changes not yet marked archived. This script
@@ -124,6 +125,11 @@ esac
 if [ -n "${RECORDED}" ]; then
     if _readable "${RECORDED}"; then
         _emit resolved state "${RECORDED}" 1
+    elif [ -f "${ROOT}/docs/plans/archive/${RECORDED##*/}" ] && [ -r "${ROOT}/docs/plans/archive/${RECORDED##*/}" ]; then
+        # openspec-ship Step 7b moves a recorded design doc to docs/plans/archive/ and
+        # the Divergences step runs after it. Same basename, that one directory: this is
+        # the recorded doc at its new path, not a filename guess.
+        _emit resolved state "docs/plans/archive/${RECORDED##*/}" 1
     else
         _emit stale state "${RECORDED}" 0
     fi

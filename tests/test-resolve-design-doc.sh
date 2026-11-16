@@ -78,6 +78,18 @@ _repo r-stale; : > "${REPO}/docs/plans/2026-01-01-f-design.md"
 _state_one f "docs/plans/2025-12-31-f-design.md"
 _cell "recorded path missing, a filename match exists" "stale${TAB}state${TAB}docs/plans/2025-12-31-f-design.md${TAB}0" --slug f
 
+# openspec-ship's Step 7b MOVES a recorded design doc to docs/plans/archive/ and its
+# Divergences step runs after that, so the recorded path is unreadable by then for the
+# most ordinary reason. The moved copy is the recorded doc: same basename, in the one
+# directory that step moves to. It is reported under source `state`, at its new path.
+_repo r-moved; mkdir -p "${REPO}/docs/plans/archive"; : > "${REPO}/docs/plans/archive/2026-01-01-f-design.md"
+_state_one f "docs/plans/2026-01-01-f-design.md"
+_cell "recorded path was moved to docs/plans/archive by the archive step" "resolved${TAB}state${TAB}docs/plans/archive/2026-01-01-f-design.md${TAB}1" --slug f
+# Only that directory, and only the same basename: a same-named file elsewhere is not it.
+_repo r-moved-elsewhere; mkdir -p "${REPO}/docs/old"; : > "${REPO}/docs/old/2026-01-01-f-design.md"
+_state_one f "docs/plans/2026-01-01-f-design.md"
+_cell "a same-named file outside docs/plans/archive does not rescue a stale record" "stale${TAB}state${TAB}docs/plans/2026-01-01-f-design.md${TAB}0" --slug f
+
 # With --slug the change may already be marked archived (openspec-ship marks it before
 # its Divergences step), so archived_at must not hide the record.
 _repo r-archived; : > "${REPO}/docs/plans/2026-01-01-f-design.md"
@@ -178,6 +190,69 @@ _repo r-usage
 ( cd "${REPO}" && SKILL_PROJECT_ROOT="${REPO}" /bin/bash "${SCRIPT}" --bogus >/dev/null 2>&1 ); assert_equals "unknown flag exits 2" "2" "$?"
 ( cd "${REPO}" && SKILL_PROJECT_ROOT="${REPO}" /bin/bash "${SCRIPT}" --slug >/dev/null 2>&1 );  assert_equals "--slug without a value exits 2" "2" "$?"
 ( cd "${REPO}" && SKILL_PROJECT_ROOT="${REPO}" /bin/bash "${SCRIPT}" --slug '' >/dev/null 2>&1 ); assert_equals "an empty slug exits 2" "2" "$?"
+
+# --- the two skills call it, and say what each outcome means ------------------
+# Content cells: they show the instruction is THERE, in the step that needs it. They do
+# not show a model follows it.
+_section() { # <file> <heading line> — the text from that heading up to the next heading of the same or higher level
+    awk -v h="$2" '
+        $0 == h { f = 1; lvl = match($0, /[^#]/) - 1; next }
+        f && /^#+ / { n = match($0, /[^#]/) - 1; if (n <= lvl) f = 0 }
+        f' "$1" 2>/dev/null
+}
+SHIP="${PROJECT_ROOT}/skills/openspec-ship/SKILL.md"
+GATE="${PROJECT_ROOT}/skills/deploy-gate/SKILL.md"
+_7c="$(_section "${SHIP}" '### Step 7c: Generate Divergences Report')"
+_7b="$(_section "${SHIP}" '### Step 7b: Archive Intent Artifacts')"
+_g4="$(awk '/^4\. \*\*Design Intent Exists\*\*/{f=1} f && /^### /{f=0} f' "${GATE}" 2>/dev/null)"
+for _pair in "openspec-ship Step 7c|${_7c}" "openspec-ship Step 7b|${_7b}" "deploy-gate check 4|${_g4}"; do
+    if [ -z "${_pair#*|}" ]; then
+        _record_fail "${_pair%%|*}: section readable" "empty; every cell on it would pass or fail for the wrong reason"
+    else
+        _record_pass "${_pair%%|*}: section readable"
+    fi
+done
+for _pair in "openspec-ship Step 7c|${_7c}" "deploy-gate check 4|${_g4}"; do
+    _l="${_pair%%|*}"; _t="${_pair#*|}"
+    assert_contains "${_l}: calls the resolver by its plugin path" "'<PLUGIN_ROOT>/scripts/resolve-design-doc.sh'" "${_t}"
+    assert_contains "${_l}: passes the change slug" "--slug" "${_t}"
+    for _o in resolved stale ambiguous absent; do
+        assert_contains "${_l}: names the outcome ${_o}" "\`${_o}\`" "${_t}"
+    done
+    assert_contains "${_l}: could-not-check is its own case" "exit 3" "${_t}"
+    assert_not_contains "${_l}: no hook-style placeholder" "{{PLUGIN_ROOT}}" "${_t}"
+done
+# What to do per outcome lives in a reference file the step tells the reader to open:
+# openspec-ship's SKILL.md sits 122 bytes under its 19,500-byte re-attach budget
+# (tests/test-skill-reattach-budget.sh), and Step 7c is near its end.
+_REF_NAME="references/design-doc-outcomes.md"
+_ref="$(cat "${PROJECT_ROOT}/skills/openspec-ship/${_REF_NAME}" 2>/dev/null)"
+assert_contains "Step 7c: names the outcomes reference" "\`${_REF_NAME}\`" "${_7c}"
+assert_contains "Step 7c: is never skipped silently" "Never skip this step silently" "${_7c}"
+if [ -z "${_ref}" ]; then
+    _record_fail "outcomes reference readable" "skills/openspec-ship/${_REF_NAME} is missing or empty; Step 7c points at nothing"
+else
+    _record_pass "outcomes reference readable"
+fi
+for _o in resolved stale ambiguous absent; do
+    assert_contains "outcomes reference: has a row for ${_o}" "| \`${_o}\`" "${_ref}"
+done
+assert_contains "outcomes reference: could-not-check is its own row" "| exit 3" "${_ref}"
+assert_contains "outcomes reference: a filename match is labelled" "found by filename, not recorded" "${_ref}"
+assert_contains "outcomes reference: absent is said, not skipped" "No design doc found" "${_ref}"
+assert_contains "outcomes reference: missing scenarios are said" "no acceptance scenarios" "${_ref}"
+assert_contains "outcomes reference: a filename match is never moved" "do not move it" "${_ref}"
+# Both ask-the-user rows, counted: one phrase present once would pass with a row lost.
+assert_equals "outcomes reference: ambiguous AND stale each ask the user" "2" \
+    "$(printf '%s\n' "${_ref}" | grep -c 'ask the user which file is the design doc')"
+for _bad in "newest" "most recent" "latest"; do
+    assert_not_contains "outcomes reference: never told to pick the ${_bad}" "${_bad}" "${_ref}"
+    assert_not_contains "Step 7c: never told to pick the ${_bad}" "${_bad}" "${_7c}"
+done
+# Step 7b moves files. It must keep moving ONLY recorded paths: a filename match is
+# evidence, not identity, and must never authorise a move.
+assert_contains "Step 7b: still moves the four recorded paths" 'for f in "$discovery_path" "$design_path" "$plan_path" "$spec_path"; do' "${_7b}"
+assert_not_contains "Step 7b: does not call the resolver" "resolve-design-doc" "${_7b}"
 
 export HOME="${_OLDHOME}"
 rm -rf "${WORK}"
