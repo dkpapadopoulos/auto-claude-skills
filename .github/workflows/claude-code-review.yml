@@ -161,11 +161,12 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: |
-            https://github.com/anthropics/claude-plugins-official.git
-          plugins: |
-            plugin-dev
-            skill-creator
+          # No plugin_marketplaces / plugins (#429). This step used to install
+          # plugin-dev and skill-creator from an external marketplace; when one
+          # entry of that marketplace's file used a source type this pinned
+          # action could not parse, the whole file was rejected and the step
+          # failed before reviewing anything, on every PR. The allowed tools
+          # below include neither Skill nor Task, so the plugins were unusable.
           claude_args: |
             --json-schema '{"type":"object","properties":{"review":{"type":"string"}},"required":["review"]}'
             --allowed-tools 'Read Grep Glob Bash(wc:*) Bash(git diff:*) Bash(git log:*) Bash(git status:*) Bash(git rev-parse:*)'
