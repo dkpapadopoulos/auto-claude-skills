@@ -374,7 +374,68 @@ else
     else
         _record_fail "U8g: empty base — exact HEAD still accepted" "returned non-zero"
     fi
+    # U8h (#428): the <sha> must BE a sha. Git resolves a ref-like string, so
+    # the literal `HEAD` is "an ancestor of HEAD not reachable from base" on
+    # every branch with a commit of its own — one such record credited REVIEW
+    # and VERIFY machine-wide. U8b/U8c above are the controls that a real
+    # object name still passes. An abbreviated sha is refused too: writers
+    # store full names, and a short hex string can also be a ref.
+    for _bad in "HEAD" "HEAD~1" "feature/x" "@" "${ANC_SHA:0:12}" "unknown" "-"; do
+        if branch_ledger_sha_is_branch_local "${_bad}" "${REPO}" "${HEAD_SHA}" "${_MB}"; then
+            _record_fail "U8h: non-sha value '${_bad}' is NOT branch-local" "git resolved it as a revision and it was accepted"
+        else
+            _record_pass "U8h: non-sha value '${_bad}' is NOT branch-local"
+        fi
+    done
 fi
+teardown_test_env
+
+# ---------------------------------------------------------------------------
+# U9 (#428): the WRITER. In a repo with no commits `git rev-parse HEAD` prints
+# the word HEAD before failing, and `|| true` kept it as the recorded sha.
+# ---------------------------------------------------------------------------
+echo "--- U9: a record made before the first commit never stores a ref name ---"
+setup_test_env
+mkdir -p "${HOME}/.claude"
+UNBORN="${TEST_TMPDIR}/unborn"
+git init -q -b main "${UNBORN}"
+# shellcheck disable=SC1090
+. "${LEDGER_LIB}"
+branch_ledger_record "requesting-code-review" "${UNBORN}"
+_U9_FILE="$(branch_ledger_dir "${UNBORN}")/requesting-code-review"
+if [ -f "${_U9_FILE}" ]; then
+    _record_pass "U9a: the unborn-repo record was written (the cell reached the writer)"
+    assert_equals "U9b: unborn repo records 'unknown', never the word HEAD" \
+        "unknown" "$(cut -d' ' -f1 < "${_U9_FILE}")"
+else
+    _record_fail "U9a: the unborn-repo record was written (the cell reached the writer)" "no file at ${_U9_FILE}"
+fi
+# Control: with a commit the default subject is still the full HEAD sha.
+REPO="${TEST_TMPDIR}/repo"
+_mk_repo "${REPO}"
+branch_ledger_record "requesting-code-review" "${REPO}"
+assert_equals "U9c: control — a born repo still records the full HEAD sha" \
+    "$(git -C "${REPO}" rev-parse feature/x)" \
+    "$(cut -d' ' -f1 < "$(branch_ledger_dir "${REPO}")/requesting-code-review")"
+teardown_test_env
+
+# ---------------------------------------------------------------------------
+# G12 (#428): end to end. Sibling ledger records holding the literal HEAD for
+# BOTH gating milestones must not open the gate. G5 is the control that real
+# branch-local shas under a foreign key still bridge.
+# ---------------------------------------------------------------------------
+echo "--- G12: literal-HEAD sibling records do not satisfy the gate ---"
+setup_test_env
+mkdir -p "${HOME}/.claude"
+REPO="${TEST_TMPDIR}/repo"
+_mk_repo "${REPO}"
+_SIB="${HOME}/.claude/.skill-branch-ledger-foreignkey000000000000000000000000000000"
+mkdir -p "${_SIB}"
+printf 'HEAD 2026-01-01T00:00:00Z\n' > "${_SIB}/requesting-code-review"
+printf 'HEAD 2026-01-01T00:00:00Z\n' > "${_SIB}/verification-before-completion"
+G12="$(run_guard_in "${REPO}")"
+assert_contains "G12: literal-HEAD records under a foreign key => deny" '"deny"' "${G12:-<empty>}"
+assert_not_contains "G12: no bridge advisory is claimed for them" 'cross-location branch-ledger evidence' "${G12:-}"
 teardown_test_env
 
 # ---------------------------------------------------------------------------
