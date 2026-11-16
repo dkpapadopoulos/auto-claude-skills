@@ -210,8 +210,9 @@ fi
 # sha was the ONE field in this record measured at a different time from
 # everything it describes.
 # --verify --quiet (#430): a bare `rev-parse HEAD` prints the word HEAD on stdout
-# before failing when HEAD does not resolve (a repo with no commits), so the
-# fallback APPENDED and the recorded sha was "HEAD<newline>unknown".
+# before failing when HEAD does not resolve (no commits yet, or an unborn
+# branch), so the fallback APPENDED and the recorded sha was
+# "HEAD<newline>unknown".
 SHA_BEFORE="$(git -C "$ROOT" rev-parse --verify --quiet HEAD 2>/dev/null || echo unknown)"
 
 # worktree_dirty — ADVISORY ONLY, never deny-wired. A clean sha on a dirty tree
@@ -534,7 +535,9 @@ OUT="${HOME}/.claude/.skill-project-verified-${TOKEN}"
 _TD_BASE="$BASE"
 [ -n "$_TD_BASE" ] || _TD_BASE="$(git -C "$ROOT" merge-base origin/main HEAD 2>/dev/null)"
 [ -n "$_TD_BASE" ] || _TD_BASE="$(git -C "$ROOT" merge-base main HEAD 2>/dev/null)"
-[ -n "$_TD_BASE" ] || _TD_BASE="$(git -C "$ROOT" rev-parse HEAD~1 2>/dev/null)"
+# --verify --quiet for the reason given at SHA_BEFORE: without it a root commit
+# yields the text "HEAD~1" and the fallback below never runs (#430).
+[ -n "$_TD_BASE" ] || _TD_BASE="$(git -C "$ROOT" rev-parse --verify --quiet HEAD~1 2>/dev/null)"
 if [ -n "$_TD_BASE" ]; then
     _TD_FILES="$(git -C "$ROOT" diff --name-only "$_TD_BASE"..HEAD 2>/dev/null)"
 else

@@ -206,10 +206,15 @@ assert_test_functions_wired "$0"
 # #429. The review job installed two plugins from an external marketplace. One
 # entry of that marketplace's file later used a source type the pinned action's
 # CLI could not parse, the whole file was rejected, and the job died before it
-# read any code, on every PR. The job's --allowed-tools has neither Skill nor
-# Task, so the plugins could not be used anyway. Pinned: the job loads no
-# marketplace and installs no plugin, so no file outside this repo and the
-# pinned action can stop a review.
+# read any code, on every PR. Nothing in the workflow names either plugin.
+# Pinned: the job loads no marketplace and installs no plugin, so no file
+# outside this repo and the pinned action can stop a review.
+#
+# NOT claimed, because it is false: that the plugins were unusable. The
+# --allowed-tools list only PRE-APPROVES tools; the pinned action sets no tool
+# restriction, and Skill and Agent need no permission for most uses, so a review
+# could have reached a plugin's skills. Whether one ever did was not measured
+# (found in review of the first cut of this fix, which asserted the opposite).
 test_review_job_depends_on_no_external_marketplace() {
     local n
     n="$(grep -cE '^[[:space:]]*(plugin_marketplaces|plugins):' "${WF}")"
@@ -217,12 +222,10 @@ test_review_job_depends_on_no_external_marketplace() {
     # Floor: the step this is about is still there, so 0 is not a missing file.
     n="$(grep -c 'uses: anthropics/claude-code-action@' "${WF}")"
     assert_equals "the review step is still present" "1" "${n}"
-    # The premise the removal rests on: the job cannot invoke a plugin skill.
-    if grep -E -- "--allowed-tools '[^']*'" "${WF}" | grep -qE "\\b(Skill|Task|Agent)\\b"; then
-        _record_fail "review job's allowed tools cannot invoke a plugin" "Skill/Task/Agent is allowed: revisit #429 before re-adding plugins"
-    else
-        _record_pass "review job's allowed tools cannot invoke a plugin"
-    fi
+    # What the removal rests on: no instruction or step asks for either plugin.
+    # Comment lines are excluded; the comment that explains #429 names both.
+    n="$(grep -vE '^[[:space:]]*#' "${WF}" | grep -cE 'plugin-dev|skill-creator')"
+    assert_equals "nothing in the workflow asks for plugin-dev or skill-creator" "0" "${n}"
 }
 
 test_preconditions

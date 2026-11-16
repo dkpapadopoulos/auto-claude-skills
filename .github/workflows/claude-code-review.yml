@@ -165,8 +165,10 @@ jobs:
           # plugin-dev and skill-creator from an external marketplace; when one
           # entry of that marketplace's file used a source type this pinned
           # action could not parse, the whole file was rejected and the step
-          # failed before reviewing anything, on every PR. The allowed tools
-          # below include neither Skill nor Task, so the plugins were unusable.
+          # failed before reviewing anything, on every PR. Nothing in the
+          # prompt or the later steps names either plugin. (They were not
+          # unusable: --allowed-tools only pre-approves, so a review could have
+          # reached their skills. Whether one ever did was not measured.)
           claude_args: |
             --json-schema '{"type":"object","properties":{"review":{"type":"string"}},"required":["review"]}'
             --allowed-tools 'Read Grep Glob Bash(wc:*) Bash(git diff:*) Bash(git log:*) Bash(git status:*) Bash(git rev-parse:*)'
