@@ -53,6 +53,9 @@ The push gate (hooks/openspec-guard.sh) evaluates, in ORDER:
 Bypasses (human-only): push from your own terminal, or launch Claude Code
 with ACSM_SKIP_PUSH_GATE=1 in its environment.
 
+This replays the push gate only. The skill gate, the publish guard and the
+egress-consent check can also deny, and none of them is replayed here.
+
 Full map: docs/enforcement-map.md
 HELP
     exit 0
