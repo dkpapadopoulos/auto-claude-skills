@@ -186,6 +186,101 @@ OUT="$( cd "${R1}" && /bin/bash "${RCPT}" --help 2>/dev/null < /dev/null )"; RC=
 assert_equals "an argument: exit 3" "3" "${RC}"
 assert_empty "an argument: stdout empty" "${OUT}"
 
+# --- Disclosure: a PR description can be public, and names are user text ------
+
+echo "== D1/D2: command line, output and local detail never reach the receipt =="
+RD="$(mkrepo "${TEST_TMPDIR}/rd")"
+rm -f "${ARTIFACT}"
+record "${RD}" --name deploy --run 'echo LEAKED-OUTPUT-7731; : --token=SECRET-TOKEN-4242'
+assert_contains "precondition: the artifact holds the command line" "SECRET-TOKEN-4242" "$(jq -r '.command' "${ARTIFACT}")"
+assert_contains "precondition: the artifact holds the output" "LEAKED-OUTPUT-7731" "$(jq -r '.output_excerpt' "${ARTIFACT}")"
+render "${RD}"
+assert_equals "secret-bearing verdict still renders" "0" "${RC}"
+assert_contains "the check itself is listed" "| deploy | passed |" "${OUT}"
+assert_not_contains "command line is not in the receipt" "SECRET-TOKEN-4242" "${OUT}"
+assert_not_contains "command output is not in the receipt" "LEAKED-OUTPUT-7731" "${OUT}"
+assert_not_contains "home directory is not in the receipt" "${TEST_HOME}" "${OUT}"
+assert_not_contains "session token is not in the receipt" "session-rcpt" "${OUT}"
+assert_not_contains "artifact name is not in the receipt" ".skill-project-verified" "${OUT}"
+
+echo "== D3: a check name that is not a plain label is counted, not shown =="
+rm -f "${ARTIFACT}"
+record "${RD}" --name 'x --> @everyone' --run true --name ok --run true
+assert_equals "precondition: the writer accepted the name" '["x --> @everyone","ok"]' "$(jq -c '.passed' "${ARTIFACT}")"
+render "${RD}"
+assert_equals "hostile name: exit 0" "0" "${RC}"
+assert_not_contains "hostile name is not printed" "@everyone" "${OUT}"
+assert_equals "the only comment terminator is the marker's" "1" "$(printf '%s\n' "${OUT}" | grep -c -- '-->')"
+assert_contains "hostile name is counted" "| (1 check(s) with a name that is not a plain label) | passed |" "${OUT}"
+assert_contains "plain name beside it still listed" "| ok | passed |" "${OUT}"
+
+echo "== D4: a failed check with a table-breaking name still reads as FAILED =="
+rm -f "${ARTIFACT}"
+record "${RD}" --name 'a | b' --run 'exit 1'
+render "${RD}"
+assert_contains "marker carries result=fail" " result=fail -->" "$(printf '%s\n' "${OUT}" | head -1)"
+assert_not_contains "pipe-bearing name is not printed" "a | b" "${OUT}"
+assert_contains "it is counted under FAILED" "| (1 check(s) with a name that is not a plain label) | FAILED |" "${OUT}"
+
+echo "== D5/D6: recorded free text is not echoed =="
+rm -f "${ARTIFACT}"
+record "${RD}" --name unit --run true
+# The writer records a status word and an ISO timestamp; anything else means the
+# file was edited after it was written, which is what these two cells model.
+edit_artifact '.gate_gaming_status = "clean -->\n@x"'
+render "${RD}"
+assert_equals "edited status: still renders" "0" "${RC}"
+assert_contains "edited status reads unrecognised" "- Gate-gaming check: unrecognised" "${OUT}"
+assert_not_contains "edited status text is not printed" "@x" "${OUT}"
+rm -f "${ARTIFACT}"
+record "${RD}" --name unit --run true
+edit_artifact '.ts = "yesterday <b>"'
+render "${RD}"
+assert_contains "edited ts reads unknown" "- Recorded: unknown by" "${OUT}"
+assert_not_contains "edited ts text is not printed" "<b>" "${OUT}"
+
+echo "== D6b: a trailing newline does not pass the shape check =="
+rm -f "${ARTIFACT}"
+record "${RD}" --name unit --run true
+edit_artifact '.gate_gaming_status = "clean\n"'   # jq's $ matches before it
+render "${RD}"
+assert_contains "status with a trailing newline reads unrecognised" "- Gate-gaming check: unrecognised" "${OUT}"
+
+echo "== D6c: a failed entry that is not a string is still a failure =="
+rm -f "${ARTIFACT}"
+record "${RD}" --name unit --run true
+edit_artifact '.failed = [7]'   # not writable by the writer; an edited record
+render "${RD}"
+assert_contains "non-string failed entry: result=fail" " result=fail -->" "$(printf '%s\n' "${OUT}" | head -1)"
+assert_contains "non-string failed entry is counted" "| (1 check(s) with a name that is not a plain label) | FAILED |" "${OUT}"
+
+echo "== D7: a suspect gate-gaming status =="
+rm -f "${ARTIFACT}"
+record "${RD}" --name unit --run true
+# A real suspect needs a mainline base and a weakened test in the diff;
+# tests/test-gate-gaming-scope.sh owns that path. Set on a real artifact here.
+edit_artifact '.gate_gaming_status = "suspect"'
+render "${RD}"
+assert_contains "marker carries result=suspect" " result=suspect -->" "$(printf '%s\n' "${OUT}" | head -1)"
+assert_contains "heading says SUSPECT" "### Local verification: SUSPECT" "${OUT}"
+assert_contains "status line says suspect" "- Gate-gaming check: suspect" "${OUT}"
+
+echo "== D8/D9: which session's verdict is rendered =="
+OTHER="${TEST_HOME}/.claude/.skill-project-verified-session-other"
+rm -f "${ARTIFACT}" "${OTHER}"
+( cd "${RD}" && SKILL_SESSION_TOKEN=session-other /bin/bash "${VAR}" --name unit --run 'exit 1' >/dev/null 2>&1 < /dev/null )
+assert_file_exists "precondition: sibling verdict written" "${OTHER}"
+render "${RD}"
+assert_equals "sibling-only verdict at HEAD: rendered" "0" "${RC}"
+assert_contains "sibling-only: the sibling's failure is shown" " result=fail -->" "$(printf '%s\n' "${OUT}" | head -1)"
+# Own verdict at the exact commit wins without a sibling scan
+# (verdict_resolve_token leg 1, the precedence the push gate uses). Pinned as
+# observed: this session's receipt describes this session's run.
+record "${RD}" --name unit --run true
+render "${RD}"
+assert_contains "own verdict at HEAD is the one rendered" " result=pass -->" "$(printf '%s\n' "${OUT}" | head -1)"
+rm -f "${OTHER}"
+
 cd "${REPO_ROOT}" || true
 teardown_test_env
 print_summary

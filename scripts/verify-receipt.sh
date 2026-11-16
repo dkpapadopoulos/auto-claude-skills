@@ -72,24 +72,38 @@ verdict_measured_dirty "$TOKEN" && _no "the verdict was measured with uncommitte
 
 # The program is single-quoted, so the one sentence with an apostrophe arrives as $note.
 NOTE="Produced on the author's machine from the recorded verdict for this commit. It is not CI and is not tamper-proof."
+#
+# Every recorded string is checked before it is printed. Check names are user
+# text (a --name value or a .verify.yml entry; the writer refuses only a comma,
+# a newline and US), and this output goes into a PR description, so a name is
+# shown only if it is a plain label, the rule verdict_unclean_remedy applies to
+# the same names. Others are counted, never dropped: a failed check with an odd
+# name is still a failed check. \z, not $: in jq, $ also matches before a
+# trailing newline (measured: "clean\n" passes ^[a-z-]{1,30}$).
 RENDER='
-  ((.failed // []) | map(strings)) as $f
-  | ((.could_not_verify // []) | map(strings)) as $c
-  | ((.passed // []) | map(strings)) as $p
-  | (.gate_gaming_status // "" | tostring) as $gg
+  def plain: type == "string" and test("\\A[A-Za-z0-9._ -]{1,60}\\z");
+  def list: if type == "array" then . else [] end;
+  def rows($names; $outcome):
+    ($names | map(select(plain))) as $ok
+    | (($names | length) - ($ok | length)) as $odd
+    | ($ok | map("| \(.) | \($outcome) |"))
+      + (if $odd > 0 then ["| (\($odd) check(s) with a name that is not a plain label) | \($outcome) |"] else [] end);
+  (.failed | list) as $f
+  | (.could_not_verify | list) as $c
+  | (.passed | list) as $p
+  | (.gate_gaming_status | if type == "string" and test("\\A[a-z-]{1,30}\\z") then . else "unrecognised" end) as $gg
+  | (.ts | if type == "string" and test("\\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\\z") then . else "unknown" end) as $ts
   | (if ($f | length) > 0 then "fail"
      elif ($c | length) > 0 then "could-not-verify"
      elif $gg == "suspect" then "suspect"
      else "pass" end) as $result
   | ({"pass":"PASS","fail":"FAIL","could-not-verify":"COULD NOT VERIFY","suspect":"SUSPECT"}[$result]) as $head
-  | ([ ($f[] | "| \(.) | FAILED |"),
-       ($c[] | "| \(.) | could not run |"),
-       ($p[] | "| \(.) | passed |") ]) as $rows
+  | (rows($f; "FAILED") + rows($c; "could not run") + rows($p; "passed")) as $rows
   | [ "<!-- acs-verify-receipt v1 sha=\($sha) result=\($result) -->",
       "### Local verification: \($head)",
       "",
       "- Commit: `\($sha)`",
-      "- Recorded: \(.ts // "unknown") by `verify-and-record.sh` (\(.discovery_source))",
+      "- Recorded: \($ts) by `verify-and-record.sh` (\(.discovery_source))",
       "- Gate-gaming check: \($gg)",
       "",
       "| Check | Outcome |",
