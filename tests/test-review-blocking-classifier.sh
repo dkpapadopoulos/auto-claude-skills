@@ -203,6 +203,31 @@ test_fixture_counts_do_not_shrink() {
 
 assert_test_functions_wired "$0"
 
+# #429. The review job installed two plugins from an external marketplace. One
+# entry of that marketplace's file later used a source type the pinned action's
+# CLI could not parse, the whole file was rejected, and the job died before it
+# read any code, on every PR. Nothing in the workflow names either plugin.
+# Pinned: the job loads no marketplace and installs no plugin, so no file
+# outside this repo and the pinned action can stop a review.
+#
+# NOT claimed, because it is false: that the plugins were unusable. The
+# --allowed-tools list only PRE-APPROVES tools; the pinned action sets no tool
+# restriction, and Skill and Agent need no permission for most uses, so a review
+# could have reached a plugin's skills. Whether one ever did was not measured
+# (found in review of the first cut of this fix, which asserted the opposite).
+test_review_job_depends_on_no_external_marketplace() {
+    local n
+    n="$(grep -cE '^[[:space:]]*(plugin_marketplaces|plugins):' "${WF}")"
+    assert_equals "review job loads no marketplace and installs no plugin" "0" "${n}"
+    # Floor: the step this is about is still there, so 0 is not a missing file.
+    n="$(grep -c 'uses: anthropics/claude-code-action@' "${WF}")"
+    assert_equals "the review step is still present" "1" "${n}"
+    # What the removal rests on: no instruction or step asks for either plugin.
+    # Comment lines are excluded; the comment that explains #429 names both.
+    n="$(grep -vE '^[[:space:]]*#' "${WF}" | grep -cE 'plugin-dev|skill-creator')"
+    assert_equals "nothing in the workflow asks for plugin-dev or skill-creator" "0" "${n}"
+}
+
 test_preconditions
 test_observed_none_bodies_classify_none
 test_all_three_renderings_are_present_in_the_corpus
@@ -213,5 +238,6 @@ test_classifier_never_exits_nonzero
 test_workflow_only_submits_a_review_on_blocking
 test_unknown_does_not_request_changes
 test_fixture_counts_do_not_shrink
+test_review_job_depends_on_no_external_marketplace
 
 print_summary
