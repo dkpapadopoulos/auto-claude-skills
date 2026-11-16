@@ -32,6 +32,24 @@ extract_context() {
     printf '%s' "${output}" | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null
 }
 
+# Helper: is the skill SELECTED in this context? The hook lists every selected skill,
+# and only those, on its Evaluate line ("**Phase: [X]** | a MUST INVOKE, b YES/NO"), one
+# tag per skill (_eval_tag in hooks/skill-activation-hook.sh). A skill's name anywhere
+# in the context is not selection: composition steps, PARALLEL/SEQUENCE lines, hints
+# and preconditions name skills that were not selected, and a scenario that matched on
+# the name alone passed on a hint's text while no trigger matched its prompt
+# (adversarial-21-auto-approve, found when the hint was removed in #427).
+_skill_selected() {
+    local _ev _n
+    _ev="$(printf '%s\n' "$1" | grep -F '**Phase: [' | head -1)"
+    _n="$(printf '%s' "$2" | sed 's/[][\.*^$]/\\&/g')"
+    printf '%s\n' "${_ev}" | grep -qE "(\| |, )${_n} (YES/NO|MUST INVOKE|REQUIRED|INVOKE WHEN: )"
+}
+# Named-but-not-selected (skill, scenario) pairs seen across the run. Zero would mean
+# the predicate above cannot be told from the substring match it replaced.
+_NAMED_NOT_SELECTED=0
+_REGISTRY_NAMES="$(jq -r '.skills[].name' "${PROJECT_ROOT}/config/fallback-registry.json" 2>/dev/null)"
+
 # ---------------------------------------------------------------------------
 # Install the full registry including Wave 1 skills
 # ---------------------------------------------------------------------------
@@ -81,9 +99,23 @@ run_scenario() {
     while [ "$i" -lt "$expected_count" ]; do
         local expected_skill
         expected_skill="$(jq -r ".expected_skills[$i]" "$fixture_file")"
-        assert_contains "${name}: expected skill '${expected_skill}'" "${expected_skill}" "${context}"
+        if _skill_selected "${context}" "${expected_skill}"; then
+            _record_pass "${name}: expected skill '${expected_skill}' is selected"
+        else
+            _record_fail "${name}: expected skill '${expected_skill}' is selected" "not on the Evaluate line: $(printf '%s\n' "${context}" | grep -F '**Phase: [' | head -1)"
+        fi
         i=$((i + 1))
     done
+
+    local _rn
+    while IFS= read -r _rn; do
+        [ -n "${_rn}" ] || continue
+        case "${context}" in
+            *"${_rn}"*) _skill_selected "${context}" "${_rn}" || _NAMED_NOT_SELECTED=$((_NAMED_NOT_SELECTED + 1)) ;;
+        esac
+    done <<EOF
+${_REGISTRY_NAMES}
+EOF
 
     # Check expected_in_composition skills appear in the composition chain
     local comp_count
@@ -131,6 +163,23 @@ for fixture in "${FIXTURES_DIR}"/*.json; do
 done
 
 teardown_test_env
+
+# The selection predicate must discriminate on the hook's real output: some skill named
+# in a context without being selected, and a known selection read back as selected.
+if [ "${_NAMED_NOT_SELECTED}" -ge 1 ]; then
+    _record_pass "selection is narrower than a name match (${_NAMED_NOT_SELECTED} named-but-not-selected pairs)"
+else
+    _record_fail "selection is narrower than a name match" "no scenario named a skill it did not select; the predicate is untested"
+fi
+_ctl='Evaluate: **Phase: [DESIGN]** | writing-skills REQUIRED, brainstorming MUST INVOKE, agent-team-review INVOKE WHEN: a, b, skill-scaffold YES/NO'
+for _c in writing-skills brainstorming agent-team-review skill-scaffold; do
+    if _skill_selected "${_ctl}" "${_c}"; then _record_pass "control: ${_c} reads as selected"
+    else _record_fail "control: ${_c} reads as selected" "predicate rejected a tagged skill"; fi
+done
+for _c in team-review scaffold skill a; do
+    if _skill_selected "${_ctl}" "${_c}"; then _record_fail "control: '${_c}' is not a selected skill" "predicate matched part of a name"
+    else _record_pass "control: '${_c}' is not a selected skill"; fi
+done
 
 # ---------------------------------------------------------------------------
 # Summary
