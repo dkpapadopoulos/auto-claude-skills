@@ -10,7 +10,7 @@ map; the two are pinned together by `tests/test-gate-status.sh`).
 
 **How far to trust the list.** That test derives the blocking hooks from
 `hooks/` and fails when one is not named here, and does the same for the push
-gate's deny labels. It cannot see a deny assembled from a variable or a
+gate's deny labels. It matches text, so it cannot see a deny assembled from a variable or a
 helper, a new deny branch inside a hook already listed (outside the push
 gate), or a refusal added to a script. Those three depend on whoever adds
 one updating this page.
@@ -63,9 +63,9 @@ cannot set either. That variable does nothing for the three hooks below.
 
 | Hook | Runs on | Denies when | Default | Remedy |
 |------|---------|-------------|---------|--------|
-| `hooks/skill-gate.sh` | PreToolUse:Skill | a skill in the active composition chain is invoked while an earlier step has no evidence (invocation record, branch ledger, or attestation; `.completed` does not count) | deny only in this plugin's own source repo; a warning everywhere else. `phase_enforcement.skill_sequencing` in `~/.claude/skill-config.json` sets `deny`, `warn` or `off`. Any infrastructure failure (no jq, no token, no state, missing lib) allows with no output | invoke the missing step, or record a skip with `phase_attest` (the deny prints the command; REVIEW and VERIFY accept only real invocations), or run the action yourself |
+| `hooks/skill-gate.sh` | PreToolUse:Skill | a skill in the active composition chain is invoked while an earlier step has no evidence (invocation record, branch ledger, attestation, or for REVIEW a returned allowlisted reviewer; `.completed` does not count) | deny only in this plugin's own source repo; a warning everywhere else. `phase_enforcement.skill_sequencing` in `~/.claude/skill-config.json` sets `deny`, `warn` or `off`. Any infrastructure failure (no jq, no token, no state, missing lib) allows with no output | invoke the missing step, or record a skip with `phase_attest` (the deny prints the command; REVIEW and VERIFY accept only real invocations), or run the action yourself |
 | `hooks/publish-guard.sh` | PreToolUse:Bash | a `gh` command that publishes text (issue, PR, comment and similar bodies) reproduces text from the local memory corpus verbatim (#174) | deny on a match, always. When it cannot check (no corpus, no jq, missing lib) it allows and says so | rewrite the body to cite `memory/<file>.md:<line>` instead of quoting it |
-| `hooks/egress-consent-ask-hook.sh` | PreToolUse:AskUserQuestion | a question marked `[egress-consent:<digest>]` arrives pre-answered, comes from a subagent, does not fit the required shape, shows a preview that does not hash to the prepared package, or reuses a tool-use id | deny, always, for marked questions; unmarked questions pass untouched | ask again from the main conversation, exactly as `scripts/consult-dispatch.sh prepare` printed it |
+| `hooks/egress-consent-ask-hook.sh` | PreToolUse:AskUserQuestion | a question marked `[egress-consent:<digest>]` arrives pre-answered, comes from a subagent, does not fit the required shape, shows a preview that does not hash to the prepared package, or reuses a tool-use id | deny for marked questions; unmarked questions pass untouched. When it cannot check (no jq, unloadable lib, unparseable payload) it allows and says so, and records no ask, so nothing can be approved from that question | ask again from the main conversation, exactly as `scripts/consult-dispatch.sh prepare` printed it |
 
 ## Stops that are not a deny
 
@@ -74,9 +74,13 @@ cannot set either. That variable does nothing for the three hooks below.
   work with the task names. At most once per 120 seconds per teammate.
 - `scripts/consult-dispatch.sh send` refuses to send a package to another
   vendor without a fresh user approval of that exact package (exit 3 cannot
-  verify, 4 not approved, 6 secret-scan findings). It is a script, not a hook.
+  verify, 4 not approved, 6 secret-scan findings; exit 2 is a usage error,
+  an unsupported provider or a missing `codex`, and also sends nothing). Exit 5
+  is different: the send failed midway, content may have left the machine and
+  the approval is spent, so do not retry blindly. It is a script, not a hook.
   `consultation.egress_consent: "warn"` in `~/.claude/skill-config.json`
-  turns the approval check off, and the script announces that on every send.
+  turns the approval check off, and the script announces that on every send;
+  the secret scan still runs.
 
 ## Advisory only (additionalContext, never a deny)
 

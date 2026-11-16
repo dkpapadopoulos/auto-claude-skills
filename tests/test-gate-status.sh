@@ -183,8 +183,20 @@ while IFS= read -r reg; do
 done <<EOF
 ${reg_cmds}
 EOF
-deny_hooks="$(grep -lE '"permissionDecision"[^#]*deny|"decision"[^#]*block' "${REPO_ROOT}"/hooks/*.sh 2>/dev/null || true)"
-exit2_hooks="$(grep -lE '^[[:space:]]*exit 2([[:space:]]|$)' "${REPO_ROOT}"/hooks/*.sh 2>/dev/null || true)"
+# Widened after review: the quotes may be escaped (a printf inside double
+# quotes), `"continue":false` also stops, and `exit 2` need not start the line
+# (`|| exit 2`, `{ …; exit 2; }`).
+deny_hooks="$(grep -lE '\\?"permissionDecision\\?"[^#]*deny|\\?"decision\\?"[^#]*block|\\?"continue\\?"[^#]*false' "${REPO_ROOT}"/hooks/*.sh 2>/dev/null || true)"
+exit2_hooks="$(grep -lE '(^|[;&|{[:space:]])exit 2([[:space:];}]|$)' "${REPO_ROOT}"/hooks/*.sh 2>/dev/null || true)"
+# A blocking hook must be named in the part of the map that describes blocks,
+# not merely somewhere on the page: a hook listed under "Advisory only" that
+# later starts denying would otherwise pass.
+map_blocks="$(awk '/^## Hard blocks/{p=1} /^## Advisory only/{p=0} p' "${REPO_ROOT}/docs/enforcement-map.md")"
+if [ -n "${map_blocks}" ]; then
+    _record_pass "map's blocks sections extracted"
+else
+    _record_fail "map's blocks sections extracted" "no text between '## Hard blocks' and '## Advisory only' — the headings moved"
+fi
 n_deny_hooks="$(printf '%s\n' "${deny_hooks}" | grep -c '.' || true)"
 n_exit2_hooks="$(printf '%s\n' "${exit2_hooks}" | grep -c '.' || true)"
 if [ "${n_deny_hooks:-0}" -ge 4 ] && [ "${n_exit2_hooks:-0}" -ge 1 ]; then
@@ -195,7 +207,7 @@ else
 fi
 while IFS= read -r hook_path; do
     [ -n "${hook_path}" ] || continue
-    assert_contains "enforcement-map names blocking hook: ${hook_path##*/}" "hooks/${hook_path##*/}" "${map}"
+    assert_contains "enforcement-map names blocking hook: ${hook_path##*/}" "hooks/${hook_path##*/}" "${map_blocks}"
 done <<EOF
 ${deny_hooks}
 ${exit2_hooks}
@@ -212,7 +224,7 @@ else
 fi
 while IFS= read -r label; do
     [ -n "${label}" ] || continue
-    assert_contains "enforcement-map names push-gate deny label: ${label}" "\`${label}\`" "${map}"
+    assert_contains "enforcement-map names push-gate deny label: ${label}" "\`${label}\`" "${map_blocks}"
 done <<EOF
 ${deny_labels}
 EOF
