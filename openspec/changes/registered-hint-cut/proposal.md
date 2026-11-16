@@ -32,7 +32,7 @@ null is "no evidence", never "no effect". The only claim this change makes is by
 - The hint **rendering mechanism** in `hooks/skill-activation-hook.sh` is not touched.
 - Composition state, mandates (`MUST INVOKE` lines), the composition chain, red flags,
   preconditions and every gate are not touched. Scoring is not touched except for one trigger
-  alternative (`auto.?approv` on `agent-safety-review`), carried as its own commit: a scenario
+  trigger (auto-approve, scoped to an actor or an object, on `agent-safety-review`), carried as its own commits: a scenario
   expecting that skill had passed only because a removed hint's text named it (`design.md`,
   Decision 8).
 - One further deletion, **not registered** and carried as its own commit with its own reason:
@@ -66,14 +66,23 @@ No new capability.
   - Nothing tells the model to run `persist-state.sh upsert-change`, so the PLAN-phase DESIGN
     COMPLETENESS guard (advisory, fail-open) will find no `design_path` in almost every session.
     Measured before the cut: 5 of 188 sessions that saw PERSIST DESIGN ran it.
+  - The same missing `design_path` has three more readers, found by the whole-branch review.
+    Each already did nothing whenever the state was absent, and now that is nearly always:
+    `openspec-ship` generates no Divergences report (Step 7c) and does not move the design doc
+    to `docs/plans/archive/` (Step 7b); `deploy-gate`'s "Design Intent Exists" check has nothing
+    to read; and the post-compaction "Active OpenSpec changes" line lists a change before SHIP
+    only if discovery ran. Not repaired here: a fallback in `openspec-ship` that finds the
+    design doc without the state is a skill change of its own.
+  - `tests/fixtures/evals/routing-validation.json` expected the AUTONOMY CHECK hint; that
+    scenario is marked `deprecated`, not deleted.
   - Ordinary `requesting-code-review` no longer receives the adversarial governance checklist.
     `agent-team-review` keeps its adversarial-reviewer specialist.
   - The EVAL STRATEGY, AUTONOMY CHECK and CAPTURE KNOWLEDGE prompts stop; their procedures stay
     in `runtime-validation`, `agent-safety-review` and `capture-knowledge`, reachable by trigger
     or by name.
-- **Other installs:** shipped defaults change for everyone on the next plugin update. Whether a
-  user can add a phase hint back through `~/.claude/skill-config.json` is unconfirmed and
-  probably not possible today (see `design.md`, Left to the builder).
+- **Other installs:** shipped defaults change for everyone on the next plugin update. A user
+  cannot add a phase hint back through `~/.claude/skill-config.json`: session-start takes
+  `phase_compositions` from the shipped config only (confirmed by the whole-branch review).
 - **Tests:** 16 test files read phase hints structurally; seven assert hint headings.
   `tests/test-phase-hint-brevity.sh` changes from per-phase ceilings to a zero pin.
 - **Not in this change:** issue #409 (paste stripping), any change to mandate wording or the

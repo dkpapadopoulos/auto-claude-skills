@@ -356,17 +356,21 @@ _inj_n="$(grep -c '\.text = "' "${_SS}" 2>/dev/null)" || _inj_n=0
 case "${_inj_n}" in ''|*[!0-9]*) _inj_n=0 ;; esac
 # SINCE openspec/changes/registered-hint-cut THERE IS NO SECOND WRITER: the preset's
 # rewrite was deleted with the hints it rewrote, so the expected count is ZERO and the
-# lints below inspect nothing. They stay as the guard if a `.text =` rewrite returns
-# in this shape. Limit, unchanged from above: a rewrite reintroduced through `--arg`,
-# a heredoc or concatenation would not match and would read as zero here too;
-# tests/test-phase-hint-brevity.sh (Z5) is what catches that, by reading the registry
-# the preset actually produced.
+# lints below inspect nothing. A `.text =` rewrite returning in this shape FAILS here
+# (the skill-routing spec says the session-start hook MUST NOT rewrite phase hints).
+# Limit, unchanged from above: a rewrite reintroduced through `--arg`, a heredoc or
+# concatenation would not match and would read as zero here too. The zero pin in
+# tests/test-phase-hint-brevity.sh does NOT catch that either: a rewrite maps over the
+# shipped hints, which are empty, so the registry still reads zero. The behavioural
+# cell "preset leaves a config hint alone" in the mutation section below is what
+# holds it, by giving the preset a hint to rewrite.
 if [ ! -r "${_SS}" ]; then
     _record_fail "session-start-hook.sh: readable" "cannot read ${_SS}"
 elif [ "${_inj_n}" -eq 0 ]; then
     _record_pass "session-start-hook.sh: no injected hint text (the spec-driven preset rewrites nothing)"
 else
-    _record_pass "session-start-hook.sh: read ${_inj_n} injected hint texts to lint"
+    _record_fail "session-start-hook.sh: no injected hint text" \
+        "${_inj_n} \`.text = \"\` assignment(s) found; the preset must not rewrite phase hints"
 fi
 _inj_bad="$(grep -n '\.text = "' "${_SS}" 2>/dev/null | grep 'CLAUDE_PLUGIN_ROOT:-' | cut -c1-120)"
 if [ -z "${_inj_bad}" ]; then
@@ -481,8 +485,10 @@ _e2e() {
 _e2e "DISCOVER" "$(render "${H1}" "${PROJECT_ROOT}" "${DISCOVER_PROMPT}" "${FIX_DISCOVER_LABEL}")"
 _e2e "DESIGN"   "$(render "${H1}" "${PROJECT_ROOT}" "${DESIGN_PROMPT}"   "${FIX_DESIGN_LABEL}")"
 
-# Spec-driven: there is no second writer any more, so the preset must leave a hint a
-# registry holds exactly as the default mode renders it. Same fixture, same cells.
+# Spec-driven: the same fixture rendered from a cache built under the preset. The
+# fixture is injected AFTER session-start built the cache, so this shows only that the
+# renderer behaves the same under the preset; it does not show the preset leaves a
+# hint alone. That is the "preset leaves a config hint alone" cell further down.
 H2="${WORK}/home-specdriven"
 build_cache "${H2}" "${PROJECT_ROOT}" "spec-driven"
 inject_fixture_hints "${H2}"
@@ -624,6 +630,43 @@ fi
 
 if [ -f "${MUT}/hooks/skill-activation-hook.sh" ]; then
     _record_pass "mutation: the isolated copy exists"
+
+    # ---- PRESET LEAVES A CONFIG HINT ALONE ------------------------------
+    # The deleted Step 6c rewrite matched hint texts by their leading label
+    # (PERSIST DESIGN, DESIGN→PLAN CONTRACT, CARRY SCENARIOS). With the shipped
+    # hints empty a restored rewrite maps over nothing and every zero pin still
+    # reads zero, so the copy's CONFIG is given hints carrying two of those labels
+    # and the cache is built under the preset by the real session-start hook: the
+    # cached text must be byte-equal to what the config held. The config is
+    # restored afterwards, before the copy is used again.
+    _PRE_D='PERSIST DESIGN: zz-preset-fixture stays as written'
+    _PRE_P='CARRY SCENARIOS: zz-preset-fixture stays as written'
+    cp "${MUT}/config/default-triggers.json" "${WORK}/mut-config.orig"
+    if jq --arg d "${_PRE_D}" --arg p "${_PRE_P}" '
+            .phase_compositions.DESIGN.hints = [{text: $d}]
+            | .phase_compositions.PLAN.hints = [{text: $p}]
+        ' "${WORK}/mut-config.orig" > "${MUT}/config/default-triggers.json" 2>/dev/null; then
+        H5="${WORK}/home-preset-config-hint"
+        build_cache "${H5}" "${MUT}" "spec-driven"
+        _pre_cache="${H5}/.claude/.skill-registry-cache.json"
+        _pre_got_d="$(jq -r '.phase_compositions.DESIGN.hints[0].text // "<absent>"' "${_pre_cache}" 2>/dev/null)"
+        _pre_got_p="$(jq -r '.phase_compositions.PLAN.hints[0].text // "<absent>"' "${_pre_cache}" 2>/dev/null)"
+        if [ "${_pre_got_d}" = "${_PRE_D}" ]; then
+            _record_pass "preset leaves a config hint alone: DESIGN text is byte-equal after a spec-driven build"
+        else
+            _record_fail "preset leaves a config hint alone: DESIGN text is byte-equal after a spec-driven build" \
+                "config held '${_PRE_D}', cache holds '${_pre_got_d}'"
+        fi
+        if [ "${_pre_got_p}" = "${_PRE_P}" ]; then
+            _record_pass "preset leaves a config hint alone: PLAN text is byte-equal after a spec-driven build"
+        else
+            _record_fail "preset leaves a config hint alone: PLAN text is byte-equal after a spec-driven build" \
+                "config held '${_PRE_P}', cache holds '${_pre_got_p}'"
+        fi
+    else
+        _record_fail "preset leaves a config hint alone: fixture config written" "jq could not write the copy's config"
+    fi
+    cp "${WORK}/mut-config.orig" "${MUT}/config/default-triggers.json"
 
     # ---- DERIVATION, before the copy is mutated -------------------------
     # Every cell above is satisfied by a config hint that HARDCODES the

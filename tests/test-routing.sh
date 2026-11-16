@@ -5303,12 +5303,15 @@ test_capture_knowledge_not_surfaced_by_phase() {
     cp "${PROJECT_ROOT}/config/fallback-registry.json" "${cache}"
     local tmp="${cache}.tmp"
     jq '.skills |= map(
-        if (.name == "outcome-review" or .name == "verification-before-completion" or .name == "systematic-debugging" or .name == "requesting-code-review" or .name == "executing-plans")
+        if (.name == "outcome-review" or .name == "verification-before-completion" or .name == "systematic-debugging" or .name == "requesting-code-review" or .name == "executing-plans" or .name == "capture-knowledge")
         then . + {available:true, enabled:true}
         else . end
     )' "${cache}" > "${tmp}" && mv "${tmp}" "${cache}"
 
-    local output context row phase anchor prompt
+    # capture-knowledge is AVAILABLE here, so a trigger widened to match these prompts
+    # would select it and fail the absence cells; the last row is the positive control
+    # that this registry can select it at all.
+    local output context phase anchor prompt
     while IFS='|' read -r phase anchor prompt; do
         [ -n "${phase}" ] || continue
         output="$(run_hook "${prompt}")"
@@ -5323,6 +5326,13 @@ DEBUG|systematic-debugging|debug the broken auth login error
 REVIEW|requesting-code-review|review the auth pull request for code quality
 IMPLEMENT|test-driven-development|implement the remaining tasks
 PHASES
+
+    local ctl_prompt
+    ctl_prompt="$(sed -n 's/^MATCH: //p' "${PROJECT_ROOT}/tests/fixtures/routing/capture-knowledge.txt" | head -1)"
+    output="$(run_hook "${ctl_prompt}")"
+    context="$(extract_context "${output}")"
+    assert_contains "control: this registry selects capture-knowledge on its own fixture prompt" \
+        "Skill(auto-claude-skills:capture-knowledge)" "${context}"
 
     teardown_test_env
 }

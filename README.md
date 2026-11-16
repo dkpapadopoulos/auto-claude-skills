@@ -212,7 +212,7 @@ Full setup guide and rollback steps: [docs/CI.md](docs/CI.md).
 
 **Optional: per-capability review routing.** Copy `.github/CODEOWNERS.template` into your repo as `.github/CODEOWNERS` and replace the `@your-*-team` placeholders. Every PR that touches a capability's spec will auto-request review from that capability's owner.
 
-**What changes:** DESIGN phase writes to `openspec/changes/<feature>/proposal.md` + `design.md` + `specs/<cap>/spec.md` (committed) instead of `docs/plans/*.md` (gitignored). `openspec-ship` validates and syncs the existing change at SHIP time instead of creating from scratch. Task plans (`docs/plans/*-plan.md`) stay local in both modes.
+**What changes:** design intent belongs in `openspec/changes/<feature>/proposal.md` + `design.md` + `specs/<cap>/spec.md` (committed) instead of `docs/plans/*.md` (gitignored). Each session is told so once, at start; `design-debate` writes its output there; and `openspec-ship` validates and syncs the existing change at SHIP time instead of creating from scratch. There is no per-prompt reminder during an ordinary DESIGN step, so if nobody wrote the change earlier it is created at SHIP and CI has nothing to validate until then. Task plans (`docs/plans/*-plan.md`) stay local in both modes.
 
 **Without the CI gate installed:** session-start emits a one-line warning nudging you to run `/setup` or copy the workflow files manually.
 
