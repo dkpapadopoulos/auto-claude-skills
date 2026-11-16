@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test-resolve-design-doc.sh — scripts/resolve-design-doc.sh answers "where is this
 # change's design doc" WITHOUT a model-performed state write, read-only, with four
-# outcomes. Design: openspec/changes/design-doc-resolution/.
+# outcomes. Design: openspec/changes/archive/2026-11-16-design-doc-resolution/.
 #
 # Why it exists: the PERSIST DESIGN phase hint was the only text that asked the model to
 # record a design doc's path (measured: 5 of 188 sessions that saw it ran it), and the
@@ -289,6 +289,14 @@ assert_contains "Step 7c: uses the outcome Step 3 kept" "the outcome Step 3 kept
 assert_contains "deploy-gate check 4: calls the resolver by its plugin path, with the slug" "${_CALL}" "${_g4}"
 assert_contains "deploy-gate check 4: no slug from the branch name" "do not make one up from the branch name" "${_g4}"
 assert_contains "deploy-gate check 4: absent without a slug is only 'nothing recorded'" "means only that nothing was recorded" "${_g4}"
+# A refused slug (exit 2) prints no outcome line either; unnamed, it reads as a pass or
+# as exit 3. And the Output example must show what check 4 now produces: an outcome and
+# its source, not the "<path> exists" evidence of the file test it replaced.
+assert_contains "deploy-gate check 4: a refused slug is its own case" "exit 2" "${_g4}"
+_g4_row="$(grep -F '| 4 | Design intent |' "${GATE}" 2>/dev/null)"
+assert_equals "deploy-gate Output: exactly one example row for check 4" "1" "$(printf '%s\n' "${_g4_row}" | grep -c .)"
+assert_contains "deploy-gate Output: the check 4 row shows an outcome and its source" "\`resolved\` (docs-plans)" "${_g4_row}"
+assert_not_contains "deploy-gate Output: the check 4 row is not a file-exists test" "exists" "${_g4_row}"
 for _pair in "openspec-ship Step 7c|${_7c}" "deploy-gate check 4|${_g4}"; do
     _l="${_pair%%|*}"; _t="${_pair#*|}"
     for _o in resolved stale ambiguous absent; do

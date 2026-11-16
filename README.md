@@ -214,7 +214,7 @@ Trigger syntax: `"+keyword"` adds, `"-keyword"` removes, `"keyword"` replaces al
 
 ## Multi-User Mode (spec-driven)
 
-For repos with ≥2 active developers, turn on **spec-driven mode**: design intent is committed to `openspec/changes/<feature>/` (visible to teammates via `git pull`) instead of gitignored `docs/plans/`. Every PR is validated by a GitHub Actions gate.
+For repos with ≥2 active developers, turn on **spec-driven mode**: design intent belongs in `openspec/changes/<feature>/` (visible to teammates via `git pull` once you commit it) instead of gitignored `docs/plans/`. The plugin does not check that it was written there. Every PR is validated by a GitHub Actions gate.
 
 **30-second setup:**
 

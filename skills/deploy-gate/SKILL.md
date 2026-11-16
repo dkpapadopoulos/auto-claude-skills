@@ -59,7 +59,7 @@ Run each check. Report pass/fail with evidence. Do not block on warnings — rep
 
 4. **Design Intent Exists**
    Run `bash '<PLUGIN_ROOT>/scripts/resolve-design-doc.sh' --slug <change-slug>`, where the slug is the change's folder name under `openspec/changes/` or the name the user gave. If you have neither, omit `--slug`; do not make one up from the branch name. It prints `<outcome> <source> <path> <count>`, tab-separated.
-   Gate: Soft — warn on `stale` (a design doc was recorded and its file is gone). `resolved` passes. `absent` and `ambiguous` are informational: say which, without a warning, because most work has no design doc. Without `--slug`, `absent` means only that nothing was recorded; no file was searched for. On exit 3 report "could not check"; that is not a pass.
+   Gate: Soft — warn on `stale` (a design doc was recorded and its file is gone). `resolved` passes. `absent` and `ambiguous` are informational: say which, without a warning, because most work has no design doc. Without `--slug`, `absent` means only that nothing was recorded; no file was searched for. On exit 3 report "could not check"; that is not a pass. On exit 2 the slug was refused and nothing was checked: run again with the right slug or without `--slug`.
 
 ### Advisory Checks (warn only)
 
@@ -105,7 +105,7 @@ Report as a structured checklist:
 | 1 | CI Status | PASS | Last run: success (run 12345) |
 | 2 | No WIP commits | PASS | 0 WIP-pattern commits found |
 | 3 | Version updated | WARN | No version change detected |
-| 4 | Design intent | PASS | docs/plans/2026-04-15-feature-design.md exists |
+| 4 | Design intent | PASS | `resolved` (docs-plans): docs/plans/2026-04-15-feature-design.md |
 | 5 | Branch protection | INFO | Required status checks: [ci/build] |
 | 6 | Dependent services | HUMAN | User confirmed: no downstream impact |
 | 7 | Feature flags | SKIP | No feature flags in this change |
