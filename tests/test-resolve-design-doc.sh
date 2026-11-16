@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test-resolve-design-doc.sh — scripts/resolve-design-doc.sh answers "where is this
 # change's design doc" WITHOUT a model-performed state write, read-only, with four
-# outcomes. Design: openspec/changes/design-doc-resolution/.
+# outcomes. Design: openspec/changes/archive/2026-11-16-design-doc-resolution/.
 #
 # Why it exists: the PERSIST DESIGN phase hint was the only text that asked the model to
 # record a design doc's path (measured: 5 of 188 sessions that saw it ran it), and the
