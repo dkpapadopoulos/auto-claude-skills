@@ -55,8 +55,11 @@ dirty paths, the session token, or any path under the user's home directory.
 
 ### Requirement: The receipt is offered where the verdict is recorded
 
-After `scripts/verify-and-record.sh` writes a measured verdict it MUST print the
-exact command that renders the receipt, as an absolute single-quoted path. The
+After `scripts/verify-and-record.sh` writes a measured verdict for which a
+receipt can be rendered (the working tree was clean and `HEAD` did not move
+during the run), it MUST print the exact command that renders the receipt, as
+an absolute single-quoted path. For any other verdict it MUST NOT name the
+command, because the command would refuse. The
 `project-verification` skill MUST instruct the agent to include the receipt
 verbatim in the description of a pull request opened or updated for that commit,
 and to render it again after any later commit. Neither MUST block a push or a
@@ -66,6 +69,11 @@ pull request when no receipt can be rendered.
 - **GIVEN** a repo with a declared or explicit gate
 - **WHEN** `verify-and-record.sh` records a measured verdict
 - **THEN** its output contains a line naming `verify-receipt.sh` by absolute path in single quotes
+
+#### Scenario: A dirty-tree verdict names no receipt command
+- **GIVEN** a repo with uncommitted changes to a tracked file
+- **WHEN** `verify-and-record.sh` records a measured verdict
+- **THEN** its output does not name `verify-receipt.sh`
 
 #### Scenario: No receipt, nothing blocked
 - **GIVEN** a repo where no verdict has been recorded

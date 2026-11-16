@@ -80,6 +80,10 @@ commit is found, and a failing verdict at the commit outranks a clean one.
    closing line of `verify-and-record.sh` is printed only after a measured
    verdict is written, and is rendered as an absolute, single-quoted command
    per `.claude/rules/remedy-reachability.md`.
+   Amended at planning (2026-11-16): the line is printed only when a receipt
+   can be rendered, that is, not for a dirty-tree verdict and not for a run
+   that straddled a commit. Naming a command that will refuse is the defect
+   that rule exists for.
 9. **`skills/project-verification/SKILL.md` is at 19,041 of its 19,500-byte
    re-attach budget.** The added instruction stays under 400 bytes.
 
@@ -93,8 +97,15 @@ commit is found, and a failing verdict at the commit outranks a clean one.
 | `suspect` | otherwise clean, gate-gaming status is `suspect` |
 
 A gate-gaming status other than `clean` or `suspect` (for example
-`unverified`) is printed as recorded and does not turn a pass into a fail; the
-receipt reports, it does not rule.
+`unverified`) is printed as recorded when it is a lowercase word, and
+`unrecognised` otherwise; it does not turn a pass into a fail. The receipt
+reports, it does not rule.
+
+Amended at build (2026-11-16): a check name is printed only when it is a plain
+label (letters, digits, dot, underscore, hyphen, space; at most 60 characters),
+the rule `verdict_unclean_remedy` already applies. Any other name is counted
+under its outcome. Names come from `--name` or `.verify.yml`, and the receipt
+is pasted into a PR description, where `-->`, a mention or a pipe would act.
 
 ## Trade-offs
 
