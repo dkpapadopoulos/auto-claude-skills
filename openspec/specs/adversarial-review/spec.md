@@ -1,14 +1,7 @@
 ## Purpose
 
-Always-on governance review lens that treats every code review as adversarial. Provides a checklist, a specialist reviewer agent, and regression tests that catch HITL bypass, scope expansion, safety-gate weakening, and hook/config drift before merge.
+Governance review lens for adversarial code review. Provides a specialist reviewer agent in `agent-team-review` (with its checklist in that skill) and regression tests that catch HITL bypass, scope expansion, safety-gate weakening, and hook/config drift before merge. It is not always-on: the checklist that every REVIEW prompt used to carry was removed with the shipped phase hints (`openspec/changes/archive/2026-11-16-registered-hint-cut`), so an ordinary `requesting-code-review` does not receive it.
 ## Requirements
-### Requirement: Always-On Adversarial Checklist
-The REVIEW phase composition MUST include an always-on adversarial checklist hint with governance checks for HITL bypass, scope expansion, safety gate weakening, bypass patterns, and hook/config changes. The checklist MUST fire on every code review, not only pattern-matched reviews.
-
-#### Scenario: Checklist reaches code-reviewer
-- **WHEN** the REVIEW composition fires requesting-code-review
-- **THEN** the code-reviewer's context includes the ADVERSARIAL REVIEW checklist
-
 ### Requirement: Adversarial-Reviewer Specialist
 agent-team-review MUST include an adversarial-reviewer template as a 4th specialist alongside security-reviewer, quality-reviewer, and spec-reviewer. The adversarial-reviewer MUST use the same FINDING communication contract with a `governance` category.
 
