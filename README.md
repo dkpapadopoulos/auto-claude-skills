@@ -1,8 +1,37 @@
 # auto-claude-skills
 
-A [Claude Code](https://code.claude.com) plugin that enables agentic PDLC (agent-assisted product development lifecycle): it helps Claude move from discovery through learning with the right skills, guardrails, and tool context for each phase.
+A [Claude Code](https://code.claude.com) plugin that reads each prompt you type and, when it looks like development work, tells Claude which installed skills to use and in what order. It sits on top of [superpowers](https://github.com/obra/superpowers) and your other skill plugins: it routes to their skills, it does not replace them.
 
-Instead of relying on memory and ad hoc prompting, the plugin gives Claude a stronger operating model across the AI-enabled PDLC. It routes the right skill, surfaces the next step, guards planning/review/verification, and — in spec-driven mode — commits design intent to versioned artifacts so work stays aligned across sessions and teammates.
+## What It Does to a Session
+
+A prompt-submit hook scores your prompt against trigger patterns. If nothing matches and no workflow is in progress, it adds nothing. If something matches, it adds one block of text to Claude's context for that prompt. Once a prompt has started a workflow, later prompts in that session, even "ok", get the current step repeated until the workflow finishes. For a prompt that asks for a new feature, the block starts like this (trimmed):
+
+```
+SKILL ACTIVATION (1 skills | Build New)
+
+Process: brainstorming -> Skill(superpowers:brainstorming)
+HALT if any Red Flag is true:
+- Editing implementation files before invoking Skill(superpowers:brainstorming)
+Composition: DESIGN -> PLAN -> IMPLEMENT -> REVIEW -> SHIP -> SHIP -> SHIP
+  [CURRENT] Step 1: Skill(superpowers:brainstorming)
+  [NEXT] Step 2: Skill(superpowers:writing-plans)
+  ...
+Evaluate: **Phase: [DESIGN]** | brainstorming MUST INVOKE
+```
+
+Run `/skill-explain "your prompt"` to see how any prompt is scored and what would be added for it.
+
+**What it costs.** The hook takes about 170 ms per prompt (median, measured 2026-10-12). A routed prompt adds between 1 and 6.5 KB of text depending on the phase (about 5 KB for a new-feature prompt). Session start takes about 1.6 s with twelve plugins installed, and also adds context of its own. These are measurements on one machine, not guarantees.
+
+**What can block you.** Almost everything above is text Claude reads, not a block: "HALT" is an instruction to the model. The hard blocks apply only to tool calls the agent makes, never to your own terminal. The ones you will meet by default are:
+
+- An agent-run `git push` or `gh pr merge` is refused unless both a code review and a verification run are recorded for the branch. [docs/enforcement-map.md](docs/enforcement-map.md) lists each push gate and its remedy, and `bash scripts/gate-status.sh` shows what would be refused on your current branch. To bypass, push from your own terminal or start Claude Code with `ACSM_SKIP_PUSH_GATE=1`.
+- An agent-run `gh` issue or pull-request post is refused when its body reproduces text from your private Claude memory files.
+- Invoking a skill out of sequence produces a warning. It is a block only in this plugin's own repository, or when you set `phase_enforcement.skill_sequencing` to `deny` in `~/.claude/skill-config.json`.
+
+**How to turn it down.** Disable a skill's routing with `"overrides": {"<skill>": {"enabled": false}}` in `~/.claude/skill-config.json` (see [Configuration](#configuration)). This does not turn off the push gate. Remove the plugin with `/plugin uninstall auto-claude-skills@acsm`.
+
+**Without superpowers.** Routing only selects installed skills, so no superpowers skill is mandated when it is absent, though review guidance may still name them. The push gate still applies: without superpowers its review and verification steps cannot be satisfied, so agent pushes are refused until you install it or use a bypass.
 
 ## Why This Exists
 
@@ -20,14 +49,14 @@ The plugin turns a loose collection of skills, hooks, and integrations into a ph
 
 - **Prompt routing by intent.** Each prompt is scored against trigger patterns and matched to relevant skills. Prompts that match nothing produce no output — no noise on non-development work.
 
-- **Phase-aware PDLC orchestration.** The plugin infers a likely phase and composes the relevant skills, sequences, and hints across the delivery lifecycle:
+- **Phase-aware PDLC orchestration.** PDLC is the product development lifecycle, from discovery through learning. The plugin infers a likely phase and composes the relevant skills, sequences, and hints across the delivery lifecycle:
 
   | Phase | Baseline path | Optional enhancers |
   |-------|---------------|-------------------|
   | DISCOVER | Pulls Jira/Confluence context, synthesizes a discovery brief before design | Context-stack lookups for prior decisions and specs |
   | DESIGN | Activates brainstorming, explores requirements before coding | `design-debate`, `feature-dev`, `frontend-design` when installed and appropriate |
   | PLAN | Structures implementation into discrete tasks with dependency ordering | Context lookups for APIs, blast radius, and past decisions |
-  | IMPLEMENT | Drives the execution-plan/TDD workflow; halts if implementation is written before a failing test | `agent-team-execution` for independent tasks, security guidance when installed |
+  | IMPLEMENT | Drives the execution-plan/TDD workflow; tells Claude to stop if implementation is written before a failing test | `agent-team-execution` for independent tasks, security guidance when installed |
   | REVIEW | Routes into `requesting-code-review` plus security scanning | `agent-team-review`, PR toolkit specialists, runtime validation, and drift checks when applicable |
   | SHIP | Routes through verification, `openspec-ship`, and branch completion | Commit/PR automation and memory consolidation when installed |
   | LEARN | Routes to `outcome-review` for metrics and follow-up work | PostHog and Jira follow-through when installed |
