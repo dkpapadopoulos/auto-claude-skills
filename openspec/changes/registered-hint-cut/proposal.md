@@ -30,8 +30,11 @@ null is "no evidence", never "no effect". The only claim this change makes is by
   Step 6c) is deleted. The once-per-session notice "spec-driven mode active: design intent
   persisted to openspec/changes/ (committed)" stays.
 - The hint **rendering mechanism** in `hooks/skill-activation-hook.sh` is not touched.
-- Composition state, scoring, mandates (`MUST INVOKE` lines), the composition chain, red flags,
-  preconditions and every gate are not touched.
+- Composition state, mandates (`MUST INVOKE` lines), the composition chain, red flags,
+  preconditions and every gate are not touched. Scoring is not touched except for one trigger
+  alternative (`auto.?approv` on `agent-safety-review`), carried as its own commit: a scenario
+  expecting that skill had passed only because a removed hint's text named it (`design.md`,
+  Decision 8).
 - One further deletion, **not registered** and carried as its own commit with its own reason:
   the `phase-enforcement` entry in `methodology_hints` ("Small changes still require the full
   flow"). The owner approved it on 2026-11-15 because it contradicts superpowers 7.0.2's

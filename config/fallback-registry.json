@@ -823,7 +823,7 @@
       "role": "domain",
       "phase": "DESIGN",
       "triggers": [
-        "(autonomous.?loop|ralph.?loop|overnight|unattended|background.?agent|browser.?agent|email.?agent|inbox.?agent|yolo|skip.?permission|dangerously|permissionless|auto.?reply|auto.?respond|send.on.behalf)",
+        "(autonomous.?loop|ralph.?loop|overnight|unattended|background.?agent|browser.?agent|email.?agent|inbox.?agent|yolo|skip.?permission|dangerously|permissionless|auto.?reply|auto.?respond|auto.?approv|send.on.behalf)",
         "((disable|turn.?off|bypass|remove|skip|ignore|suppress|weaken).{0,24}(safety|safeguard|guard.?rail|security.check|safety.check|approval|human.review|confirmation))"
       ],
       "keywords": [

@@ -8,5 +8,8 @@
 MATCH: run an overnight autonomous loop to refactor the codebase while I sleep
 MATCH: launch a background agent to monitor the inbox and auto-reply to messages
 MATCH: deploy an unattended email agent that auto responds to support tickets
+MATCH: make the agent auto-approve all PRs without review
+MATCH: let the bot autoapprove dependency bumps
 
 NO_MATCH: archive the feature change
+NO_MATCH: approve the PR once the review is done

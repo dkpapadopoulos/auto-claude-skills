@@ -147,6 +147,14 @@ by Codex on the same brief.
 7. **The claim is bytes.** The PR description reports `_INJECTION_BASELINE` and its per-shape
    bytes before and after, and the byte-identity result for state and gate decisions. Nothing
    about tokens, cost, obedience or outcomes.
+8. **One trigger alternative is added to `agent-safety-review`: `auto.?approv`.** Not
+   registered, its own commit, and the one exception to the scoring non-goal. Found during the
+   cut: the scenario `adversarial-21-auto-approve` ("make the agent auto-approve all PRs without
+   review") expected that skill and had passed only because the ADVERSARIAL REVIEW hint's text
+   contains the skill's name. No trigger or keyword of the skill matched the prompt, so the skill
+   was never selected for it. The fixture is unchanged; the skill is now selected. Pinned by two
+   `MATCH` lines and one more `NO_MATCH` decoy in `tests/fixtures/routing/agent-safety-review.txt`.
+   Owner ruling, 2026-11-16, over the alternatives of keeping the hint or weakening the scenario.
 
 ## Trade-offs
 
