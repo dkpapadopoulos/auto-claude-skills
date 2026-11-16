@@ -281,6 +281,82 @@ render "${RD}"
 assert_contains "own verdict at HEAD is the one rendered" " result=pass -->" "$(printf '%s\n' "${OUT}" | head -1)"
 rm -f "${OTHER}"
 
+# --- The writer names the command, and the named command works as pasted -----
+
+PFX="receipt for a PR description: "
+# writer_out <repo> <plugin root> <writer args…> — sets WOUT (the writer's stdout)
+writer_out() {
+    local r="$1" pr="$2"; shift 2
+    WOUT="$( cd "$r" && CLAUDE_PLUGIN_ROOT="$pr" /bin/bash "${pr}/scripts/verify-and-record.sh" "$@" 2>/dev/null < /dev/null )"
+    WLAST="$(printf '%s\n' "${WOUT}" | tail -1)"
+}
+
+echo "== W1/W2: a renderable verdict ends by naming the command, and it runs =="
+RW="$(mkrepo "${TEST_TMPDIR}/rw")"
+rm -f "${ARTIFACT}"
+writer_out "${RW}" "${REPO_ROOT}" --name unit --run true
+assert_equals "last line names the receipt command, single-quoted and absolute" \
+    "${PFX}bash '${REPO_ROOT}/scripts/verify-receipt.sh'" "${WLAST}"
+_cmd="${WLAST#"${PFX}"}"
+OUT="$( cd "${RW}" && env -u CLAUDE_PLUGIN_ROOT /bin/bash -c "${_cmd}" 2>/dev/null < /dev/null )"; RC=$?
+assert_equals "the named command, pasted, exits 0" "0" "${RC}"
+assert_contains "the named command, pasted, prints the receipt" "<!-- acs-verify-receipt v1 sha=" "$(printf '%s\n' "${OUT}" | head -1)"
+
+echo "== W3: a dirty-tree verdict names no command =="
+rm -f "${ARTIFACT}"
+echo y >> "${RW}/f.txt"
+writer_out "${RW}" "${REPO_ROOT}" --name unit --run true
+assert_contains "precondition: the verdict was written" "verdict written:" "${WOUT}"
+assert_not_contains "dirty tree: the receipt command is not named" "verify-receipt" "${WOUT}"
+git -C "${RW}" checkout -q -- f.txt
+
+echo "== W3b: a run that straddled a commit names no command =="
+RS="$(mkrepo "${TEST_TMPDIR}/rs")"
+rm -f "${ARTIFACT}"
+writer_out "${RS}" "${REPO_ROOT}" --name unit --run 'git commit --allow-empty -qm mid'
+assert_contains "precondition: the straddle was recorded" "gate-run-straddled-commit" "$(jq -c '.could_not_verify' "${ARTIFACT}")"
+assert_not_contains "straddled run: the receipt command is not named" "verify-receipt" "${WOUT}"
+
+echo "== W4: a failing verdict on a clean tree still names it =="
+rm -f "${ARTIFACT}"
+writer_out "${RW}" "${REPO_ROOT}" --name unit --run 'exit 1'
+assert_contains "failing verdict: command named" "${PFX}bash '" "${WLAST}"
+
+echo "== W5: a plugin path with a space, a quote and a substitution pastes safely =="
+PL="${TEST_TMPDIR}/pl ug'in\$(touch PWN)"
+mkdir -p "${PL}/hooks" "${PL}/skills/project-verification"
+cp -R "${REPO_ROOT}/scripts" "${PL}/scripts"
+cp -R "${REPO_ROOT}/hooks/lib" "${PL}/hooks/lib"
+cp -R "${REPO_ROOT}/skills/project-verification/scripts" "${PL}/skills/project-verification/scripts"
+rm -f "${ARTIFACT}"
+writer_out "${RW}" "${PL}" --name unit --run true
+assert_contains "odd path: command named" "${PFX}bash '" "${WLAST}"
+_cmd="${WLAST#"${PFX}"}"
+OUT="$( cd "${RW}" && env -u CLAUDE_PLUGIN_ROOT /bin/bash -c "${_cmd}" 2>/dev/null < /dev/null )"; RC=$?
+assert_equals "odd path: pasted under bash, exits 0" "0" "${RC}"
+assert_contains "odd path: pasted under bash, prints the receipt" "<!-- acs-verify-receipt v1 sha=" "${OUT}"
+if command -v zsh >/dev/null 2>&1; then
+    OUT="$( cd "${RW}" && env -u CLAUDE_PLUGIN_ROOT zsh -f -c "${_cmd}" 2>/dev/null < /dev/null )"; RC=$?
+    assert_equals "odd path: pasted under zsh, exits 0" "0" "${RC}"
+    assert_contains "odd path: pasted under zsh, prints the receipt" "<!-- acs-verify-receipt v1 sha=" "${OUT}"
+else
+    _record_pass "odd path: zsh not installed, bash half only"
+fi
+[ ! -e "${RW}/PWN" ] && _record_pass "odd path: the substitution in the path never ran" \
+    || _record_fail "odd path: the substitution in the path never ran" "PWN was created"
+
+echo "== W6: a declared .verify.yml gate =="
+RY="$(mkrepo "${TEST_TMPDIR}/ry")"
+printf 'substrate: local\ncommands:\n  - name: tests\n    run: echo ok\n' > "${RY}/.verify.yml"
+git -C "${RY}" add .verify.yml && git -C "${RY}" commit -qm gate
+rm -f "${ARTIFACT}"
+writer_out "${RY}" "${REPO_ROOT}"
+assert_contains "declared gate: command named" "${PFX}bash '" "${WLAST}"
+render "${RY}"
+assert_equals "declared gate: receipt rendered" "0" "${RC}"
+assert_contains "declared gate: provenance says verify-yml" "(verify-yml)" "${OUT}"
+assert_contains "declared gate: the check is listed" "| tests | passed |" "${OUT}"
+
 cd "${REPO_ROOT}" || true
 teardown_test_env
 print_summary
