@@ -241,3 +241,7 @@ Before emitting a PASS verdict, confirm -- do not infer:
 ## Output
 
 A `## Project Verification Results` table plus the written evidence file path. If no gate was discovered, say so plainly and ask the user to add `.verify.yml`.
+
+When the writer prints a receipt command, run it and paste its output verbatim into the PR description for that commit; after any later commit, verify again and replace it. If it refuses, say no receipt exists; never write one by hand:
+
+`bash '<PLUGIN_ROOT>/scripts/verify-receipt.sh'`
