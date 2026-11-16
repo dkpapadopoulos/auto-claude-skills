@@ -21,7 +21,7 @@ Evaluate: **Phase: [DESIGN]** | brainstorming MUST INVOKE
 
 Run `/skill-explain "your prompt"` to see how any prompt is scored and what would be added for it.
 
-**What it costs.** The hook takes about 170 ms per prompt (median, measured 2026-10-12). A routed prompt adds between 1 and 6.5 KB of text depending on the phase (about 5 KB for a new-feature prompt). Session start takes about 1.6 s with twelve plugins installed, and also adds context of its own. These are measurements on one machine, not guarantees.
+**What it costs.** The hook takes about 170 ms per prompt (median, measured 2026-10-12). A routed prompt adds between 0.5 and 6 KB of text depending on the phase (about 3.7 KB for a new-feature prompt; measured 2026-11-16, after the per-phase hints were removed). Session start takes about 1.6 s with twelve plugins installed, and also adds context of its own. These are measurements on one machine, not guarantees.
 
 **What can block you.** Almost everything above is text Claude reads, not a block: "HALT" is an instruction to the model. The hard blocks apply only to tool calls the agent makes, never to your own terminal. The ones you will meet by default are:
 
