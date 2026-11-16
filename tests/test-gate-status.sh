@@ -147,6 +147,104 @@ done
 assert_contains "verdict.sh still defines _verdict_sha (rendered by gate-status)" \
     "_verdict_sha()" "$(cat "${REPO_ROOT}/hooks/lib/verdict.sh")"
 
+echo "== enforcement-map names every hook that can block (#424) =="
+# The map claims to list everything that can block. Until #424 it listed the
+# push gate alone while three other hooks denied, and nothing failed. The
+# population is DERIVED from hooks/: any top-level hook with a line emitting
+# "permissionDecision" as deny (the matcher tests/test-deny-reason-reaches-model.sh
+# uses, with the same known limit: a deny built from a variable is not seen),
+# or a {"decision":"block"} (none today), plus any hook that exits 2. Floors
+# keep it from passing on an empty match.
+# NOT covered, and stated in the map rather than hidden: a second deny branch
+# added to a hook already listed (only the push gate's are enumerated, by
+# label, below), and a refusal added to a script under scripts/.
+# The glob is the right population only while every registered hook command is
+# a top-level hooks/*.sh file, so that is asserted first.
+reg_cmds="$(jq -r '.hooks[][] | .hooks[].command' "${REPO_ROOT}/hooks/hooks.json" 2>/dev/null | sort -u)"
+n_reg="$(printf '%s\n' "${reg_cmds}" | grep -c '.' || true)"
+if [ "${n_reg:-0}" -ge 20 ]; then
+    _record_pass "hook registrations read from hooks.json (${n_reg}, floor 20)"
+else
+    _record_fail "hook registrations read from hooks.json" "found ${n_reg}, expected >= 20"
+fi
+while IFS= read -r reg; do
+    [ -n "${reg}" ] || continue
+    reg_file="${reg%% *}"
+    case "${reg_file}" in
+        '${CLAUDE_PLUGIN_ROOT}/hooks/'*/*|'${CLAUDE_PLUGIN_ROOT}/hooks/'*[!h]|'${CLAUDE_PLUGIN_ROOT}/hooks/'*[!s]h)
+            _record_fail "registered hook is a top-level hooks/*.sh: ${reg_file}" \
+                "the blocking-hook scan globs hooks/*.sh and cannot see this one" ;;
+        '${CLAUDE_PLUGIN_ROOT}/hooks/'*.sh)
+            _record_pass "registered hook is a top-level hooks/*.sh: ${reg_file##*/}" ;;
+        *)
+            _record_fail "registered hook is a top-level hooks/*.sh: ${reg_file}" \
+                "the blocking-hook scan globs hooks/*.sh and cannot see this one" ;;
+    esac
+done <<EOF
+${reg_cmds}
+EOF
+# Widened after review: the quotes may be escaped (a printf inside double
+# quotes), `"continue":false` also stops, and `exit 2` need not start the line
+# (`|| exit 2`, `{ …; exit 2; }`).
+deny_hooks="$(grep -lE '\\?"permissionDecision\\?"[^#]*deny|\\?"decision\\?"[^#]*block|\\?"continue\\?"[^#]*false' "${REPO_ROOT}"/hooks/*.sh 2>/dev/null || true)"
+exit2_hooks="$(grep -lE '(^|[;&|{[:space:]])exit 2([[:space:];}]|$)' "${REPO_ROOT}"/hooks/*.sh 2>/dev/null || true)"
+# A blocking hook must be named in the part of the map that describes blocks,
+# not merely somewhere on the page: a hook listed under "Advisory only" that
+# later starts denying would otherwise pass.
+map_blocks="$(awk '/^## Hard blocks/{p=1} /^## Advisory only/{p=0} p' "${REPO_ROOT}/docs/enforcement-map.md")"
+# The END heading must exist too: without it awk reads to the end of the file
+# and the advisory section counts as a blocks section again.
+if [ -n "${map_blocks}" ] && grep -q '^## Advisory only' "${REPO_ROOT}/docs/enforcement-map.md"; then
+    _record_pass "map's blocks sections extracted"
+else
+    _record_fail "map's blocks sections extracted" "no text between '## Hard blocks' and '## Advisory only' — the headings moved"
+fi
+n_deny_hooks="$(printf '%s\n' "${deny_hooks}" | grep -c '.' || true)"
+n_exit2_hooks="$(printf '%s\n' "${exit2_hooks}" | grep -c '.' || true)"
+if [ "${n_deny_hooks:-0}" -ge 4 ] && [ "${n_exit2_hooks:-0}" -ge 1 ]; then
+    _record_pass "blocking-hook population is non-vacuous (${n_deny_hooks} deny, ${n_exit2_hooks} exit-2)"
+else
+    _record_fail "blocking-hook population is non-vacuous" \
+        "found ${n_deny_hooks} deny-emitting and ${n_exit2_hooks} exit-2 hooks, expected >= 4 and >= 1"
+fi
+while IFS= read -r hook_path; do
+    [ -n "${hook_path}" ] || continue
+    assert_contains "enforcement-map names blocking hook: ${hook_path##*/}" "hooks/${hook_path##*/}" "${map_blocks}"
+done <<EOF
+${deny_hooks}
+${exit2_hooks}
+EOF
+# Every push-gate deny label the guard can record is in the map too: the
+# phase-enforcement leg was a seventh deny site the six-row table never showed.
+deny_labels="$(grep -o '_DECISION="deny:[a-z-]*"' "${REPO_ROOT}/hooks/openspec-guard.sh" \
+               | sed -e 's/^_DECISION="deny://' -e 's/"$//' | sort -u)"
+n_labels="$(printf '%s\n' "${deny_labels}" | grep -c '.' || true)"
+if [ "${n_labels:-0}" -ge 7 ]; then
+    _record_pass "push-gate deny labels found (${n_labels}, floor 7)"
+else
+    _record_fail "push-gate deny labels found" "found ${n_labels}, expected >= 7 — the label idiom moved"
+fi
+while IFS= read -r label; do
+    [ -n "${label}" ] || continue
+    assert_contains "enforcement-map names push-gate deny label: ${label}" "\`${label}\`" "${map_blocks}"
+done <<EOF
+${deny_labels}
+EOF
+# The other direction: a hook the map names must exist, or the map points at
+# a file that was renamed away.
+map_hooks="$(grep -o 'hooks/[a-z-]*\.sh' "${REPO_ROOT}/docs/enforcement-map.md" | sort -u)"
+while IFS= read -r named; do
+    [ -n "${named}" ] || continue
+    if [ -f "${REPO_ROOT}/${named}" ]; then
+        _record_pass "hook named in the map exists: ${named}"
+    else
+        _record_fail "hook named in the map exists: ${named}" "no such file"
+    fi
+done <<EOF
+${map_hooks}
+EOF
+assert_contains "--help says it replays the push gate only" "replays the push gate only" "${help_out}"
+
 cd "${REPO_ROOT}" || true
 teardown_test_env
 print_summary
