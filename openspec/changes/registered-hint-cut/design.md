@@ -152,9 +152,17 @@ by Codex on the same brief.
    cut: the scenario `adversarial-21-auto-approve` ("make the agent auto-approve all PRs without
    review") expected that skill and had passed only because the ADVERSARIAL REVIEW hint's text
    contains the skill's name. No trigger or keyword of the skill matched the prompt, so the skill
-   was never selected for it. The fixture is unchanged; the skill is now selected. Pinned by two
-   `MATCH` lines and one more `NO_MATCH` decoy in `tests/fixtures/routing/agent-safety-review.txt`.
-   Owner ruling, 2026-11-16, over the alternatives of keeping the hint or weakening the scenario.
+   was never selected for it. The fixture is unchanged; the skill is now selected. Owner ruling,
+   2026-11-16, over the alternatives of keeping the hint or weakening the scenario.
+   The first cut was the bare alternative, and the whole-branch review measured what it cost:
+   `terraform apply -auto-approve` and a product's own approval rule went from no routing block
+   to a DESIGN block, and a UI task mentioning approvals lost `frontend-design` from its second
+   domain slot. The trigger is therefore scoped: an actor (`agent`, `bot`, `claude`, `assistant`,
+   `llm`) followed within 40 characters by the word, or the word followed within 30 by `pull
+   request`, `PR`, `merge`, `review`, `permission` or `tool call`. Three `MATCH` lines and five
+   decoys in `tests/fixtures/routing/agent-safety-review.txt` pin it, the reviewer's three
+   over-match prompts among the decoys. Known cost of scoping: a prompt that names neither an
+   actor nor one of those objects ("enable auto-approve") no longer selects the skill.
 
 ## Trade-offs
 
@@ -204,7 +212,8 @@ config, a hook's preset step, tests and specs.
 - `tests/test-discovery-content.sh` asserts a hint heading without reading hints structurally,
   so it is a seventeenth file to check.
 - The adversarial-review spec's Purpose paragraph still says "Always-on… Provides a checklist".
-  It is prose, not a requirement; correct it at archive.- Recorded fixtures (`tests/probes/fixtures/hooks-recovered/routing.json`, the frozen
+  It is prose, not a requirement; correct it at archive.
+- Recorded fixtures (`tests/probes/fixtures/hooks-recovered/routing.json`, the frozen
   behavioral eval prompts) are records of past output and append-only; do not edit them to
   match.
 - `openspec/changes/composition-hint-plugin-root` is unarchived and MODIFIES "Rendered guidance

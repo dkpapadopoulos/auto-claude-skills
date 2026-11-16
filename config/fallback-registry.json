@@ -823,8 +823,9 @@
       "role": "domain",
       "phase": "DESIGN",
       "triggers": [
-        "(autonomous.?loop|ralph.?loop|overnight|unattended|background.?agent|browser.?agent|email.?agent|inbox.?agent|yolo|skip.?permission|dangerously|permissionless|auto.?reply|auto.?respond|auto.?approv|send.on.behalf)",
-        "((disable|turn.?off|bypass|remove|skip|ignore|suppress|weaken).{0,24}(safety|safeguard|guard.?rail|security.check|safety.check|approval|human.review|confirmation))"
+        "(autonomous.?loop|ralph.?loop|overnight|unattended|background.?agent|browser.?agent|email.?agent|inbox.?agent|yolo|skip.?permission|dangerously|permissionless|auto.?reply|auto.?respond|send.on.behalf)",
+        "((disable|turn.?off|bypass|remove|skip|ignore|suppress|weaken).{0,24}(safety|safeguard|guard.?rail|security.check|safety.check|approval|human.review|confirmation))",
+        "((agents?|bots?|claude|assistant|llm)[^a-z].{0,40}auto.?approv|auto.?approv.{0,30}(pull.?request|prs?( |$)|merge|review|permission|tool.?call))"
       ],
       "keywords": [
         "autonomous loop",

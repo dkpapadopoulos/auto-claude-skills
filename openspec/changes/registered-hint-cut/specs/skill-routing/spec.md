@@ -33,7 +33,17 @@ Every `phase_compositions.<PHASE>.hints` in `config/default-triggers.json` and i
 
 ### Requirement: Removing a phase hint leaves its skill reachable and its procedure in place
 
-The procedures the removed phase hints pointed at MUST stay in full in their owning skills: the autonomy levels in `skills/agent-safety-review/SKILL.md`, the adversarial governance lens in `skills/agent-team-review/SKILL.md`, and the eval strategy in `skills/runtime-validation/SKILL.md`. The pre-existing keyword triggers of `agent-safety-review` and `capture-knowledge` MUST continue to select those skills. The removed hints MUST NOT be replaced by an unconditional session banner or by widening those skills' regex triggers. (These are the obligations of the removed surfacing and brevity requirements that were not about the hint text itself.)
+The procedures the removed phase hints pointed at MUST stay in full in their owning skills: the autonomy levels in `skills/agent-safety-review/SKILL.md`, the adversarial governance lens in `skills/agent-team-review/SKILL.md`, and the eval strategy in `skills/runtime-validation/SKILL.md`. The pre-existing keyword triggers of `agent-safety-review` and `capture-knowledge` MUST continue to select those skills. The removed hints MUST NOT be replaced by an unconditional session banner or by a trigger that matches by phase or on every prompt. One scoped trigger is added to `agent-safety-review` and is the only trigger change this requirement permits: it selects the skill when an agent or bot is asked to auto-approve, or when a pull request, merge, review, permission or tool call is to be auto-approved, because the scenario "make the agent auto-approve all PRs without review" had been satisfied only by a removed hint's text. It MUST NOT match the bare word: a command-line flag (`terraform apply -auto-approve`), a screen about approval rules, or a product's own approval rule does not select the skill. (These are the obligations of the removed surfacing and brevity requirements that were not about the hint text itself.)
+
+#### Scenario: an agent asked to auto-approve selects agent-safety-review
+
+- **WHEN** the prompt is "make the agent auto-approve all PRs without review"
+- **THEN** `agent-safety-review` is selected by its regex triggers
+
+#### Scenario: the bare word does not select it
+
+- **WHEN** the prompt is "run terraform apply -auto-approve in the staging pipeline" or "build an expense feature where claims under 50 dollars are auto-approved"
+- **THEN** no `agent-safety-review` trigger matches
 
 #### Scenario: agent-safety-review keyword fast-path still works
 
@@ -53,7 +63,7 @@ The procedures the removed phase hints pointed at MUST stay in full in their own
 ## MODIFIED Requirements
 
 ### Requirement: Preset-Gated OpenSpec-First Mode
-The plugin MUST support a `spec-driven` preset that redirects DESIGN and PLAN artifact creation from `docs/plans/` to `openspec/changes/<feature>/` when the preset's `openspec_first` flag is `true`. The redirection is carried by the session-start notice and by the skills that read the preset (`design-debate`, `openspec-ship`); it MUST NOT be carried by rewriting phase composition hints.
+The plugin MUST support a `spec-driven` preset whose `openspec_first` flag, when `true`, makes `openspec/changes/<feature>/` the place design intent is persisted instead of `docs/plans/`. The preset is carried by a once-per-session notice from the session-start hook and by the skills that read it (`design-debate` writes its output there; `openspec-ship` syncs an existing change instead of creating one). It MUST NOT be carried by rewriting phase composition hints, and no per-prompt text redirects an ordinary DESIGN or PLAN step.
 
 #### Scenario: spec-driven preset active announces the mode and rewrites no hint
 - **GIVEN** `~/.claude/skill-config.json` contains `{"preset": "spec-driven"}`
