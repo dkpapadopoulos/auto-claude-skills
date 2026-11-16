@@ -336,3 +336,38 @@ robust to pruning" with that in mind.
   SessionStart entry can change which build a session is credited with, so the merged read's `sessions counted` and floor lines can differ from the
   registered read's; that follows the registered "first version evidenced" rule on more
   complete history.
+
+### The read (2026-11-15)
+
+Made once, on 2026-11-15, with A1's command and A2's two commands at the same sitting, each
+exactly as written above (command 2 of A2 with `--control 4/44` from command 1).
+
+| read | obeyed in-turn of mandates | control | p | reading |
+|---|---|---|---|---|
+| registered (read of record, A1) | 18 of 146 | 2 of 35 | 0.2111 | no evidence |
+| merged (`--include-bak`, A2) | 45 of 266 | 4 of 44 | 0.1345 | no evidence |
+
+Merged read: `bak copies merged` 128, `bak copies unreadable` 0, `sessions counted with a .bak
+merged` 27.
+
+Side column, reported and not tested (the two gated skills removed from both sides): registered
+9 of 113 against 0 of 20; merged 24 of 181 against 0 of 25.
+
+**Result: both reads are "no evidence" (p >= 0.05), so A2's first row applies and A1's "no
+evidence" arm applies in full.** This is the second inconclusive read the registered rule names;
+there is no further extension.
+
+- The display path is closed as a cost-saving only, and no further display proposals are made.
+- The registered cut, "the next cut removes per-phase hint prose entirely", is carried out by
+  `openspec/changes/registered-hint-cut`: all 23 shipped `phase_compositions.<PHASE>.hints`
+  entries are deleted from both configs, with the REMOVED spec deltas. No deviation from
+  "entirely": no phase hint was kept or reworded.
+- That change also carries two commits that are **not** registered actions and do not cite this
+  census: the deletion of the `phase-enforcement` methodology hint, and one trigger alternative
+  (`auto.?approv`) on `agent-safety-review`. Their reasons are in that change's `design.md`
+  (Decisions 5 and 8).
+
+What this read does not say: that the hints had no effect. "No evidence" at this sample size
+means an effect smaller than roughly one obeyed mandate in four would not have been detected
+(see "What this can detect"), on one owner who knew the hypothesis. The only claim the cut makes
+is the bytes it removes.
