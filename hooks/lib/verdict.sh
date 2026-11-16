@@ -48,6 +48,12 @@ verdict_covers_head() {
     local token="${1:-}" proot="${2:-}" rev="${3:-HEAD}" sha head
     sha="$(_verdict_sha "$token")" || return 1
     [ -z "$sha" ] && return 1
+    # The artifact's sha must BE a full object name (#428): it goes to git as a
+    # revision below, and a ref-like value (the word HEAD, a branch name) is
+    # "the subject or an ancestor of it" for every commit. Same rule as
+    # branch-ledger.sh::branch_ledger_sha_is_branch_local.
+    case "$sha" in *[!0-9a-f]*) return 1 ;; esac
+    case "${#sha}" in 40|64) ;; *) return 1 ;; esac
     [ -z "$proot" ] && proot="$(git rev-parse --show-toplevel 2>/dev/null)"
     head="$(git -C "${proot:-.}" rev-parse "$rev" 2>/dev/null)" || return 1
     [ -z "$head" ] && return 1

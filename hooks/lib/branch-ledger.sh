@@ -48,7 +48,8 @@ branch_ledger_dir() {
 # unknown". It is stored as-is, never resolved to HEAD — the reviewer hooks pass
 # it when the dispatch-time commit could not be read, because stamping a later
 # HEAD is exactly the over-late claim above. It is non-hex, so every sha reader
-# (branch_ledger_sha_is_branch_local, review_sha_covers) rejects it.
+# (branch_ledger_sha_is_branch_local, review_sha_covers) rejects it — the first
+# by an explicit full-hex check since #428, not by git failing to resolve it.
 #
 # <tag> is OPTIONAL and becomes a third field (`<sha> <ts> <tag>`) only when it
 # matches ^[A-Za-z0-9=_-]+$; anything else is DROPPED, never escaped, so a tag
@@ -83,7 +84,10 @@ branch_ledger_record() {
     #   uppercase hex  NOT reachable from any hook (git prints lowercase); pinned
     #                  by a direct call in tests/test-reviewer-arm.sh A13.
     case "$sha_in" in
-        "") sha="$(git -C "${proj_root:-.}" rev-parse HEAD 2>/dev/null || true)" ;;
+        # --verify -q, never a bare `rev-parse HEAD || true`: in a repo with no
+        # commits the bare form PRINTS the word HEAD before failing, and that
+        # word was stored as the sha (#428). Empty falls to `unknown` below.
+        "") sha="$(git -C "${proj_root:-.}" rev-parse --verify -q 'HEAD^{commit}' 2>/dev/null || true)" ;;
         -) sha="-" ;;
         *[!0-9a-fA-F]*) sha="unknown" ;;
         # Stored lowercase: git prints lowercase, and the credit reader
@@ -189,6 +193,14 @@ _branch_ledger_mainline_base() {
 branch_ledger_sha_is_branch_local() {
     local sha="${1:-}" proj_root="${2:-}" head="${3:-}" base="${4:-}"
     [ -n "$sha" ] && [ -n "$head" ] || return 1
+    # <sha> must BE a full object name (#428). It is read from a state file and
+    # handed to git, which resolves any revision: the literal `HEAD` is an
+    # ancestor of HEAD that is not reachable from base on every branch with a
+    # commit of its own, so one such record credited REVIEW and VERIFY on every
+    # branch of every repo. Checked BEFORE the equality below, so a caller whose
+    # own <head> is not a sha cannot match a bad record either.
+    case "$sha" in *[!0-9a-f]*) return 1 ;; esac
+    case "${#sha}" in 40|64) ;; *) return 1 ;; esac
     [ "$sha" = "$head" ] && return 0
     [ -n "$base" ] || return 1                        # no mainline base => exact-head only
     [ "$sha" = "$base" ] && return 1                  # the base itself is mainline
