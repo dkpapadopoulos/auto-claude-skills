@@ -75,6 +75,14 @@ No new capability.
     design doc without the state is a skill change of its own.
   - `tests/fixtures/evals/routing-validation.json` expected the AUTONOMY CHECK hint; that
     scenario is marked `deprecated`, not deleted.
+  - Five rules lived in hint text alone and have no other carrier in any skill, command or
+    hook: VERTICAL SLICES, JIRA PR TITLE, DEBUG ESCALATION, CARRY SCENARIOS and, outside
+    `design-debate`, the DESIGN→PLAN contract. "Procedures stay in the owning skills" holds
+    only for the adversarial checklist, the autonomy levels, the eval strategy and the
+    discovery persist step. Checked by searching `skills/`, `commands/`, the activation hook
+    and the config for each rule's wording, 2026-11-16.
+  - The EVAL STRATEGY hint carried a corrected timing its skill section did not. The section
+    (`runtime-validation` § Eval strategy at DESIGN) is corrected in this change and pinned.
   - Ordinary `requesting-code-review` no longer receives the adversarial governance checklist.
     `agent-team-review` keeps its adversarial-reviewer specialist.
   - The EVAL STRATEGY, AUTONOMY CHECK and CAPTURE KNOWLEDGE prompts stop; their procedures stay

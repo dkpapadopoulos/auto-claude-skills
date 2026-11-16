@@ -135,6 +135,22 @@ for _f in "${CFG}" "${FB}"; do
     assert_not_contains "D1: brainstorming precondition in ${_f##*/} does not say 'before leaving DESIGN'" "before leaving DESIGN" "${_p}"
     assert_not_contains "D1: verification-before-completion in ${_f##*/} does not promise 'no TODOs, docs updated'" "no TODOs, docs updated" "${_v}"
 done
+# The eval-strategy TIMING moved with its carrier. The removed EVAL STRATEGY hint held the
+# corrected timing ("before design-doc approval (no doc: before building)"); with the hint
+# gone, skills/runtime-validation/SKILL.md § Eval strategy at DESIGN is the only text that
+# states it, and it still opened "Before leaving DESIGN" (the hint had been corrected, the
+# section it pointed at had not). Held on the section, not the file. Case-insensitive, as
+# the hint cell was: the sentence opens with a capital.
+_es="$(awk '/^## Eval strategy at DESIGN/{f=1; next} /^## /{f=0} f' "${PROJECT_ROOT}/skills/runtime-validation/SKILL.md" 2>/dev/null)"
+if [ -z "${_es}" ]; then
+    _record_fail "D1: runtime-validation's eval-strategy section is readable" "empty; the 'is absent' cell would pass vacuously"
+elif printf '%s' "${_es}" | grep -qiF 'before leaving DESIGN'; then
+    _record_fail "D1: runtime-validation's eval strategy does not say 'before leaving DESIGN'" "still present"
+else
+    _record_pass "D1: runtime-validation's eval strategy does not say 'before leaving DESIGN'"
+fi
+assert_contains "D2: runtime-validation classifies verification before the design doc is approved, or before building with no doc" \
+    "before the design doc is approved (no design doc: before building)" "${_es}"
 # The phase-enforcement eval's prompts are frozen hook output and keep "before leaving
 # DESIGN"; its criteria describe that frozen context and pass on the invocation alone. Only
 # expected_behavior asked for the stale timing, so only it is held here.

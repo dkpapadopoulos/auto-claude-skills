@@ -325,7 +325,7 @@ Ad-hoc test scripts are ephemeral and never committed. Screenshots and validatio
 
 ## Eval strategy at DESIGN
 
-Before leaving DESIGN, classify how the feature is verified; ask the user if it is unclear.
+Classify how the feature is verified before the design doc is approved (no design doc: before building); ask the user if it is unclear.
 
 - **Probabilistic, AI, LLM or agent behaviour** (outputs cannot be exact-matched): plan an eval SET, not just unit tests. It holds a smoke subset; adversarial and safety subsets (jailbreak, injection, safety-routing suppression); a pinned judge model and version; never-delete cases (deprecate with a dated rationale instead); and a pre-registered safety stop naming the halt condition and who can call it. Author the safety subset first and have it failing (red) before implementation.
 - **Deterministic behaviour**: standard test-driven development plus the design's acceptance scenarios are the bar.
