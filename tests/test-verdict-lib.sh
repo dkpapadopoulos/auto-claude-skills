@@ -65,6 +65,15 @@ assert_equals "unrelated sha !covers (false-block guard)" "1" "$(_bool verdict_c
 mkart "$(jq -nc '{failed:[],could_not_verify:[],gate_gaming_status:"clean"}')"
 assert_equals "missing sha !covers"           "1" "$(_bool verdict_covers_head "${TOKEN}" "${REPO}")"
 
+# A sha that is not a full object name MUST NOT cover HEAD (#428). Git resolves
+# a ref-like string as a revision, so the word HEAD is "HEAD or an ancestor of
+# it" for every commit. The ancestor cell above is the control that a real
+# object name still covers.
+for _bad in "HEAD" "HEAD~1" "master" "main" "@" "${C1:0:12}"; do
+    mkart "$(jq -nc --arg s "${_bad}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+    assert_equals "non-sha '${_bad}' !covers"  "1" "$(_bool verdict_covers_head "${TOKEN}" "${REPO}")"
+done
+
 # absent artifact
 rm -f "${ART}"
 assert_equals "absent => not clean"           "1" "$(_bool verdict_is_clean "${TOKEN}")"
