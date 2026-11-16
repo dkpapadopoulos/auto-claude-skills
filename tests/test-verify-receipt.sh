@@ -357,6 +357,19 @@ assert_equals "declared gate: receipt rendered" "0" "${RC}"
 assert_contains "declared gate: provenance says verify-yml" "(verify-yml)" "${OUT}"
 assert_contains "declared gate: the check is listed" "| tests | passed |" "${OUT}"
 
+# --- The skill tells the agent what the receipt is for -----------------------
+
+echo "== S1-S3: skills/project-verification/SKILL.md =="
+SK="${REPO_ROOT}/skills/project-verification/SKILL.md"
+SK_OUT="$(sed -n '/^## Output/,$p' "${SK}")"
+assert_contains "Output section names the receipt command by plugin root" "bash '<PLUGIN_ROOT>/scripts/verify-receipt.sh'" "${SK_OUT}"
+assert_contains "Output section says verbatim" "verbatim" "${SK_OUT}"
+assert_contains "Output section says PR description" "PR description" "${SK_OUT}"
+assert_contains "Output section forbids a hand-written receipt" "never write one by hand" "${SK_OUT}"
+_sk_bytes="$(wc -c < "${SK}" | tr -d ' ')"
+[ "${_sk_bytes}" -le 19500 ] && _record_pass "SKILL.md within the 19,500-byte re-attach budget (${_sk_bytes})" \
+    || _record_fail "SKILL.md within the 19,500-byte re-attach budget" "${_sk_bytes} bytes"
+
 cd "${REPO_ROOT}" || true
 teardown_test_env
 print_summary
