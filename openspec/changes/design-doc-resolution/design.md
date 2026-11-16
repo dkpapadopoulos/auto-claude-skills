@@ -34,12 +34,22 @@ injected text.
 ## Decisions
 
 1. **Four outcomes, and exit 3 is not one of them.** `resolved`, `stale`, `ambiguous`, `absent`.
-   A state file that exists and cannot be read exits 3 with no output line.
+   A state file that exists and is not exactly one JSON object of the expected shape exits 3
+   with no output line. That includes a `design_path` of the wrong type: review measured a
+   numeric one falling through to a filename match the caller would have described as "nothing
+   recorded".
 2. **A recorded path is checked and never silently replaced.** If the file is gone the outcome
    is `stale`, even when a file matches by name.
-3. **One exception, found while building:** `openspec-ship` Step 7b moves a recorded doc to
-   `docs/plans/archive/` and Step 7c runs after it, so every recorded doc would otherwise read
-   `stale`. The same basename under that one directory is reported as the recorded doc.
+3. **`openspec-ship` resolves in Step 3, before anything is created or moved, and uses the
+   answer in Step 7c.** Step 3 can write an as-built `design.md` into the change folder, Step 6
+   moves that folder to `openspec/changes/archive/`, and Step 7b moves recorded docs to
+   `docs/plans/archive/`. The first cut resolved at 7c and patched one of those moves inside
+   the resolver (a same-named file under `docs/plans/archive/` counted as the recorded doc).
+   The whole-branch review measured both halves failing: every spec-driven ship was told "No
+   design doc found" because Step 6 had just archived it, and the patch resolved a recorded
+   `openspec/changes/f/design.md` or a path outside the repo to an unrelated archive file with
+   nothing in the output to say so, which is this design's anti-goal. The patch is removed. The
+   reference file maps each source to where its doc is by Step 7c.
 4. **No slug from the branch name** (Codex). A branch name is a candidate, not an identity. The
    calling skill knows the change slug and passes it. Without `--slug`, only the recorded arm
    runs, over changes not marked archived.
@@ -57,8 +67,10 @@ injected text.
 ## Trade-offs
 
 - Exactly one date-prefixed filename match is evidence, not identity.
-- A file already in `docs/plans/archive/` with the recorded basename is taken for the recorded
-  doc.
+- The path-after-move mapping in the reference file is followed by a model, not computed. If
+  the file is not where the table says, the instruction is to say so and write no report.
+- Run a second time after a ship (a feature spanning sessions), the resolver reports a recorded
+  doc that Step 7b already moved as `stale`, and the step asks the user.
 - Content cells show the skill text is present; they do not show a model follows it.
 
 ## Dissent recorded
@@ -69,8 +81,9 @@ nothing from this change.
 
 ## Verification
 
-`tests/test-resolve-design-doc.sh`: each outcome and source, stale and moved records, prefix
-and metacharacter slugs, another session's state, wrong-shape JSON, no `jq` (with the
+`tests/test-resolve-design-doc.sh`: each outcome and source, stale records with a same-named
+decoy in the archive, prefix and metacharacter slugs, another session's state, twelve
+wrong-shape state files each with and without a slug, no `jq` (with the
 precondition asserted at run time), usage errors, and a before/after snapshot proving nothing
 is written. Mutation controls on a scratch copy: seven of ten mutants fail a cell, three are
 equivalent. The three tests pinning the notice moved to the new text and failed first.

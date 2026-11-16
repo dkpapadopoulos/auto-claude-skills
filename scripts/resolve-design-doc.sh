@@ -20,9 +20,8 @@
 #   `ambiguous` is followed by one candidate path per line.
 #
 # Order: (1) the path recorded in session state for the slug, CHECKED for readability and
-# reported `stale` when it fails (a record is never trusted blind and never silently
-# replaced by a filename match; the one exception is the same basename under
-# docs/plans/archive/, where openspec-ship's archive step moves it); (2) openspec/changes/<slug>/design.md;
+# reported `stale` when it fails (a record is never trusted blind and never replaced by
+# another file, not by a filename match and not by a same-named file elsewhere); (2) openspec/changes/<slug>/design.md;
 # (3) docs/plans/YYYY-MM-DD-<slug>-design.md.
 #
 # Without --slug only arm (1) runs, over changes not yet marked archived. This script
@@ -32,9 +31,16 @@
 # A path found by arms (2) or (3) is evidence, not identity. Callers must label it as
 # found by filename, and must not move or archive a file on the strength of it.
 #
-# Exit: 0 decided (including `absent`); 2 usage; 3 cannot check (a state file exists and
-# cannot be parsed, or jq is missing while one exists). Exit 3 prints no outcome line, so
-# "could not check" can never be read as "absent".
+# RUN IT BEFORE ANYTHING IS CREATED OR MOVED. It reports where the doc is NOW. A caller
+# that archives files (openspec-ship moves the change folder in Step 6 and recorded docs
+# in Step 7b) must resolve first and carry the answer forward; run afterwards it would
+# report `stale` or `absent` for a doc that was there a moment ago.
+#
+# Exit: 0 decided (including `absent`); 2 usage; 3 cannot check: a state file exists and
+# is not exactly one JSON object of the expected shape (`changes` an object, each entry an
+# object, a `design_path` a string without tab or newline, or null), or jq is missing
+# while one exists. Exit 3 prints no outcome line, so "could not check" can never be read
+# as "absent" or "nothing recorded".
 #
 # Writes nothing. Bash 3.2.
 set -u
@@ -92,21 +98,42 @@ if [ -n "${TOKEN}" ]; then
     STATE="${HOME}/.claude/.skill-openspec-state-${TOKEN}"
     if [ -f "${STATE}" ]; then
         command -v jq >/dev/null 2>&1 || { echo "resolve-design-doc: cannot check: jq not found and a state file exists" >&2; exit 3; }
-        jq -e 'type == "object"' "${STATE}" >/dev/null 2>&1 || { echo "resolve-design-doc: cannot check: state file is not a JSON object" >&2; exit 3; }
+        # One jq pass validates the shape and extracts. `-s` so that two concatenated
+        # documents are seen as two, not processed one after the other. Anything of the
+        # wrong type is an error, never "nothing recorded": a design_path of 5 or a
+        # `changes` array means the file is not what this script understands.
+        _JQ_SHAPE='
+            def path_of:
+                if . == null then empty
+                elif type != "string" then error("design_path is not a string")
+                elif test("[\t\n]") then error("design_path holds a control character")
+                elif . == "" then empty
+                else . end;
+            if length != 1 then error("not exactly one JSON document") else .[0] end
+            | if type != "object" then error("not an object") else . end
+            | (.changes // {})
+            | if type != "object" then error("changes is not an object") else . end
+            | with_entries(if (.value | type) != "object" then error("a change entry is not an object") else . end)'
         if [ "${HAVE_SLUG}" -eq 1 ]; then
-            RECORDED="$(jq -r --arg s "${SLUG}" '(.changes // {})[$s].design_path // "" | if type == "string" then . else "" end' "${STATE}" 2>/dev/null)" \
-                || { echo "resolve-design-doc: cannot check: state file could not be read" >&2; exit 3; }
+            RECORDED="$(jq -rs --arg s "${SLUG}" "${_JQ_SHAPE}"'
+                | (.[$s] // {}) | .design_path | path_of' "${STATE}" 2>/dev/null)" \
+                || { echo "resolve-design-doc: cannot check: the state file is not one JSON object of the expected shape" >&2; exit 3; }
         else
-            _open="$(jq -r '[(.changes // {}) | to_entries[]
-                    | select((.value.design_path | type) == "string" and .value.design_path != "")
-                    | select(.value.archived_at == null)
-                    | .value.design_path] | .[]' "${STATE}" 2>/dev/null)" \
-                || { echo "resolve-design-doc: cannot check: state file could not be read" >&2; exit 3; }
+            _open="$(jq -rs "${_JQ_SHAPE}"'
+                | to_entries[] | select(.value.archived_at == null) | .value.design_path | path_of' "${STATE}" 2>/dev/null)" \
+                || { echo "resolve-design-doc: cannot check: the state file is not one JSON object of the expected shape" >&2; exit 3; }
             _n=0
             if [ -n "${_open}" ]; then
-                while IFS= read -r _line; do _n=$((_n + 1)); done <<EOF
-${_open}
-EOF
+                _rest="${_open}"
+                while [ -n "${_rest}" ]; do
+                    _n=$((_n + 1))
+                    case "${_rest}" in
+                        *"
+"*) _rest="${_rest#*
+}" ;;
+                        *) _rest="" ;;
+                    esac
+                done
             fi
             if [ "${_n}" -gt 1 ]; then
                 _emit ambiguous state "" "${_n}"
@@ -117,19 +144,9 @@ EOF
         fi
     fi
 fi
-# A recorded path holding a tab or newline cannot be reported in this format.
-case "${RECORDED}" in
-    *"$(printf '\t')"*|*"
-"*) echo "resolve-design-doc: cannot check: the recorded path holds a control character" >&2; exit 3 ;;
-esac
 if [ -n "${RECORDED}" ]; then
     if _readable "${RECORDED}"; then
         _emit resolved state "${RECORDED}" 1
-    elif [ -f "${ROOT}/docs/plans/archive/${RECORDED##*/}" ] && [ -r "${ROOT}/docs/plans/archive/${RECORDED##*/}" ]; then
-        # openspec-ship Step 7b moves a recorded design doc to docs/plans/archive/ and
-        # the Divergences step runs after it. Same basename, that one directory: this is
-        # the recorded doc at its new path, not a filename guess.
-        _emit resolved state "docs/plans/archive/${RECORDED##*/}" 1
     else
         _emit stale state "${RECORDED}" 0
     fi

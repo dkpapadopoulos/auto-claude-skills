@@ -12,8 +12,10 @@ which the hook never checks.
 
 - New `scripts/resolve-design-doc.sh`: read-only, four outcomes (`resolved`, `stale`,
   `ambiguous`, `absent`), exit 3 for "could not check".
-- `openspec-ship` Step 7c (Divergences) and `deploy-gate` check 4 call it and say what they
-  found. `openspec-ship`'s per-outcome table is `references/design-doc-outcomes.md`.
+- `openspec-ship` calls it in Step 3, before it creates or moves anything, and its Step 7c
+  (Divergences) acts on that kept outcome; `deploy-gate` check 4 calls it directly. Both say
+  what they found. `openspec-ship`'s per-outcome table, and where each source's doc sits after
+  the archive steps, is `references/design-doc-outcomes.md`.
 - `openspec-ship` Step 7b (archive) is unchanged: only recorded paths are moved.
 - The spec-driven notice becomes "spec-driven preset active: design intent belongs in
   openspec/changes/<feature>/; not verified this session".
