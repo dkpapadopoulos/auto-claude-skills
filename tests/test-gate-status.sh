@@ -192,7 +192,9 @@ exit2_hooks="$(grep -lE '(^|[;&|{[:space:]])exit 2([[:space:];}]|$)' "${REPO_ROO
 # not merely somewhere on the page: a hook listed under "Advisory only" that
 # later starts denying would otherwise pass.
 map_blocks="$(awk '/^## Hard blocks/{p=1} /^## Advisory only/{p=0} p' "${REPO_ROOT}/docs/enforcement-map.md")"
-if [ -n "${map_blocks}" ]; then
+# The END heading must exist too: without it awk reads to the end of the file
+# and the advisory section counts as a blocks section again.
+if [ -n "${map_blocks}" ] && grep -q '^## Advisory only' "${REPO_ROOT}/docs/enforcement-map.md"; then
     _record_pass "map's blocks sections extracted"
 else
     _record_fail "map's blocks sections extracted" "no text between '## Hard blocks' and '## Advisory only' — the headings moved"

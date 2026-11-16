@@ -74,13 +74,14 @@ cannot set either. That variable does nothing for the three hooks below.
   work with the task names. At most once per 120 seconds per teammate.
 - `scripts/consult-dispatch.sh send` refuses to send a package to another
   vendor without a fresh user approval of that exact package (exit 3 cannot
-  verify, 4 not approved, 6 secret-scan findings; exit 2 is a usage error,
-  an unsupported provider or a missing `codex`, and also sends nothing). Exit 5
+  verify, 4 not approved, 6 secret-scan findings; exit 2 is a usage error
+  or a missing `codex`, and also sends nothing). Exit 5
   is different: the send failed midway, content may have left the machine and
   the approval is spent, so do not retry blindly. It is a script, not a hook.
   `consultation.egress_consent: "warn"` in `~/.claude/skill-config.json`
   turns the approval check off, and the script announces that on every send;
-  the secret scan still runs.
+  the secret scan still runs when gitleaks is installed. Without gitleaks the
+  script says so and sends unscanned, in either mode.
 
 ## Advisory only (additionalContext, never a deny)
 
