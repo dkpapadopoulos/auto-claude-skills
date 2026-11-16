@@ -2208,7 +2208,7 @@ test_spec_driven_preset_announces_and_rewrites_no_hint() {
     local cache_file="${HOME}/.claude/.skill-registry-cache.json"
     assert_file_exists "cache file created" "${cache_file}"
     assert_contains "spec-driven mode is announced" \
-        "spec-driven mode active: design intent persisted to openspec/changes/ (committed)" "${output}"
+        "spec-driven preset active: design intent belongs in openspec/changes/<feature>/; not verified this session" "${output}"
     assert_equals "spec-driven writes no DESIGN hint" "array:0" \
         "$(jq -r '.phase_compositions.DESIGN.hints | "\(type):\(length)"' "${cache_file}" 2>/dev/null)"
     assert_equals "spec-driven writes no PLAN hint" "array:0" \
@@ -2231,7 +2231,8 @@ test_default_preset_does_not_announce_spec_driven() {
 
     local cache_file="${HOME}/.claude/.skill-registry-cache.json"
     assert_file_exists "cache file created (default mode)" "${cache_file}"
-    assert_not_contains "default mode does not announce spec-driven" "spec-driven mode active" "${output}"
+    assert_not_contains "default mode does not announce spec-driven" "spec-driven preset active" "${output}"
+    assert_not_contains "default mode prints no spec-driven warning" "spec-driven mode active" "${output}"
 
     teardown_test_env
 }

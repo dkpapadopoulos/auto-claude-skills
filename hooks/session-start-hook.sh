@@ -1020,12 +1020,16 @@ fi
 # Design intent goes to openspec/changes/ instead of docs/plans/; the skills that
 # read the preset (design-debate, openspec-ship) act on it. This step rewrites no
 # phase hint: the shipped phase compositions carry none
-# (openspec/changes/registered-hint-cut). Task plans in docs/plans/*-plan.md are
-# unchanged.
+# (openspec/changes/archive/2026-11-16-registered-hint-cut). Task plans in
+# docs/plans/*-plan.md are unchanged.
+# The line states where design intent belongs and that nothing checked it. It used
+# to read "design intent persisted to openspec/changes/ (committed)", a completed
+# fact this hook never verified. It is a statement, not an instruction: the
+# compliance census closed further display proposals.
 if [ -n "$_preset_name" ] && [ "$_preset_name" != "null" ] && [ -f "$_preset_file" ]; then
   _openspec_first="$(jq -r '.openspec_first // false' "$_preset_file" 2>/dev/null)"
   if [ "$_openspec_first" = "true" ]; then
-    WARNINGS="$(printf '%s' "${WARNINGS}" | jq --arg m "spec-driven mode active: design intent persisted to openspec/changes/ (committed)" '. + [$m]')"
+    WARNINGS="$(printf '%s' "${WARNINGS}" | jq --arg m "spec-driven preset active: design intent belongs in openspec/changes/<feature>/; not verified this session" '. + [$m]')"
 
     # Discovery nudge: if the consumer repo is missing the OpenSpec Validate
     # workflow, spec-driven mode has no CI enforcement. Emit a one-line hint

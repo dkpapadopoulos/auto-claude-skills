@@ -98,7 +98,7 @@ printf '%s\n' '{"preset":"spec-driven"}' > "${HOME}/.claude/skill-config.json"
 _sd_out="$(CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" _SKILL_TEST_MODE=1 bash "${HOOK}" 2>"${HOME}/sd.err" < /dev/null)"
 _sd_cache="${HOME}/.claude/.skill-registry-cache.json"
 assert_contains "Z5: session-start announces spec-driven mode" \
-    "spec-driven mode active: design intent persisted to openspec/changes/ (committed)" "${_sd_out}"
+    "spec-driven preset active: design intent belongs in openspec/changes/<feature>/; not verified this session" "${_sd_out}"
 assert_equals "Z5: session-start prints no jq error under the preset" "0" \
     "$(grep -c 'jq:' "${HOME}/sd.err" 2>/dev/null || true)"
 for _p in DESIGN PLAN; do
