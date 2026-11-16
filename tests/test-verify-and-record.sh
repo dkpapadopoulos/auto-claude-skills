@@ -491,6 +491,41 @@ else
     done
 fi
 
+echo "== T28 (#430): a repo with no commits records sha 'unknown', never the word HEAD =="
+# `git rev-parse HEAD` prints the word HEAD on stdout before failing when HEAD
+# does not resolve, so `$(git rev-parse HEAD || echo unknown)` captured
+# "HEAD<newline>unknown". A sha field holding HEAD is a revision git resolves to
+# whatever is checked out (#428 is the same read in the branch ledger).
+R28="${TEST_HOME}/r28"
+mkdir -p "${R28}" && git -C "${R28}" init -q -b main .
+rm -f "${ARTIFACT}"
+( cd "${R28}" && /bin/bash "${VAR}" --name unit --run "true" ) >/dev/null 2>&1 < /dev/null
+assert_file_exists "unborn repo: a verdict is still written" "${ARTIFACT}"
+assert_equals "unborn repo: sha is exactly 'unknown'" "unknown" "$(jq -r '.sha' "${ARTIFACT}" 2>/dev/null)"
+assert_equals "unborn repo: the run is not called a straddle" "false" "$(jq -r '(.could_not_verify // []) | index("gate-run-straddled-commit") != null' "${ARTIFACT}" 2>/dev/null)"
+# Control: a repo with a commit still records that commit.
+assert_equals "control: a born repo records its HEAD" "$(git -C "${R27}" rev-parse HEAD)" \
+    "$( rm -f "${ARTIFACT}"; ( cd "${R27}" && /bin/bash "${VAR}" --name unit --run "true" ) >/dev/null 2>&1 < /dev/null; jq -r '.sha' "${ARTIFACT}" 2>/dev/null )"
+
+# The skill gives the same read for the hand-written fallback, run by a model.
+_bare="$(grep -cE 'git rev-parse HEAD 2>/dev/null \|\| echo unknown' "${REPO_ROOT}/skills/project-verification/SKILL.md")"
+assert_equals "project-verification SKILL.md has no bare 'rev-parse HEAD || echo unknown'" "0" "${_bare}"
+_ver="$(grep -cF 'git rev-parse --verify --quiet HEAD 2>/dev/null || echo unknown' "${REPO_ROOT}/skills/project-verification/SKILL.md")"
+assert_equals "project-verification SKILL.md reads HEAD with --verify --quiet, twice" "2" "${_ver}"
+
+echo "== T29 (#430): test_delta in a one-commit repo with no mainline branch =="
+# Same defect, one line away: `rev-parse HEAD~1` prints the text HEAD~1 before
+# failing, so the base was non-empty, the root-commit fallback never ran, and
+# the failed diff listed nothing: a source change with no test read "n/a".
+# The branch is `trunk` on purpose: on main or master the mainline base is HEAD
+# itself, the diff is empty by design, and this line is never reached.
+R29="${TEST_HOME}/r29"
+mkdir -p "${R29}" && ( cd "${R29}" && git init -q -b trunk . && git config user.email t@t && git config user.name t \
+    && echo x > src.sh && git add . && git commit -qm only ) >/dev/null 2>&1
+rm -f "${ARTIFACT}"
+( cd "${R29}" && /bin/bash "${VAR}" --name unit --run "true" ) >/dev/null 2>&1 < /dev/null
+assert_equals "one-commit repo: the root commit's source file counts" "missing" "$(jq -r '.test_delta' "${ARTIFACT}" 2>/dev/null)"
+
 cd "${REPO_ROOT}" || true
 teardown_test_env
 print_summary

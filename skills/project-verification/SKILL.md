@@ -125,7 +125,7 @@ script cannot run.
 **BEFORE the first gate command**, record the commit under test (issue #181) — a suite can run for many minutes, and reading HEAD afterwards silently binds the verdict to any commit made meanwhile, i.e. to a tree no gate ever ran against:
 
 ```bash
-git rev-parse HEAD 2>/dev/null || echo unknown                     # pre-gate sha — the commit actually measured
+git rev-parse --verify --quiet HEAD 2>/dev/null || echo unknown                     # pre-gate sha — the commit actually measured
 git status --porcelain --untracked-files=no 2>/dev/null | head -1  # non-empty => worktree_dirty: true
 ```
 
@@ -165,7 +165,7 @@ if [ -z "$TOKEN" ] && [ -f "$STL" ]; then
     command -v resolve_own_session_token >/dev/null 2>&1 && TOKEN="$(resolve_own_session_token)"
 fi
 [ -n "$TOKEN" ] || TOKEN="$(cat ~/.claude/.skill-session-token 2>/dev/null || echo default)"
-git rev-parse HEAD 2>/dev/null || echo unknown   # post-gate sha — compare with the pre-gate one from Step 2
+git rev-parse --verify --quiet HEAD 2>/dev/null || echo unknown   # post-gate sha — compare with the pre-gate one from Step 2
 # write the JSON below to ~/.claude/.skill-project-verified-${TOKEN}, using the
 # PRE-gate sha from Step 2 as "sha" (NOT this one)
 ```
