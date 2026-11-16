@@ -65,3 +65,14 @@ both would have made the fix a false claim:
 
 No behaviour change for readers inside this repo, where plugin root and project
 root coincide. That coincidence is why the defect survived six surfaces.
+
+## Amended before archive (2026-11-16)
+
+This change shipped in #312 and was archived after the registered hint cut (#427),
+which removed every shipped composition hint and the `spec-driven` preset's rewrite of
+one. The delta was corrected first so the archive adds nothing false: the list of
+surfaces says the shipped configs carry no composition hint, the composition-hint
+scenario is stated for a registry that holds one, and "A preset that rewrites a hint
+preserves the placeholder" became "A preset leaves a composition hint's text alone".
+The renderer, the expander and `tests/test-composition-hint-plugin-root.sh` are
+unchanged by this amendment; that test drives fixture hints and pins all of it.

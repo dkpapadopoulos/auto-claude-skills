@@ -19,10 +19,12 @@ of fields. The enumeration of rendering surfaces has been wrong three times
 (four → five → six → eight), so a requirement scoped to named fields is
 satisfied by the next surface that is added and missed. The surfaces known to
 carry such text today are a skill's `precondition`, `methodology_hints[].hint`,
-`phase_compositions[*].hints[].text`, the hint text the `spec-driven` preset
-injects from `session-start-hook.sh`, and directives the activation hook
-hardcodes into `SKILL_LINES`. That list is illustrative; a new surface is in
-scope on the day it renders, not on the day it is added here.
+and directives the activation hook hardcodes into `SKILL_LINES`.
+`phase_compositions[*].hints[].text` is still rendered by the hook whenever a
+registry holds one, so it stays in scope, but the shipped configs carry none
+and the `spec-driven` preset rewrites none (see "Spec-driven preset is
+announced once per session and rewrites no hint"). That list is illustrative; a
+new surface is in scope on the day it renders, not on the day it is added here.
 
 #### Scenario: A hint's plugin path is substituted and opens in an adopting repo
 
@@ -48,19 +50,20 @@ scope on the day it renders, not on the day it is added here.
 
 #### Scenario: A composition hint's plugin path resolves outside this plugin
 
-- **GIVEN** a `phase_compositions[*].hints[].text` naming `scripts/persist-state.sh`
+- **GIVEN** a registry whose `phase_compositions[*].hints[].text` names a plugin
+  file as `{{PLUGIN_ROOT}}/<path>` (no shipped config carries one)
 - **WHEN** the hint is rendered for a prompt in a repo that is not this plugin
 - **THEN** the emitted text MUST contain no `CLAUDE_PLUGIN_ROOT` fallback pair
 - **AND** the emitted path MUST be absolute and readable with
   `CLAUDE_PLUGIN_ROOT` unset
 
-#### Scenario: A preset that rewrites a hint preserves the placeholder
+#### Scenario: A preset leaves a composition hint's text alone
 
-- **GIVEN** `~/.claude/skill-config.json` sets `"preset": "spec-driven"`, which
-  rewrites `phase_compositions.DESIGN.hints[].text`
-- **WHEN** the rewritten hint is rendered in a repo that is not this plugin
-- **THEN** the emitted path MUST be absolute and readable, exactly as the
-  default text's would be
+- **GIVEN** `~/.claude/skill-config.json` sets `"preset": "spec-driven"` and the
+  config holds a composition hint for DESIGN or PLAN
+- **WHEN** the session-start hook builds the registry
+- **THEN** that hint's text MUST be byte-equal to the config's, and it MUST
+  render in a repo that is not this plugin exactly as it does without the preset
 
 ### Requirement: A rendered path's quoting MUST follow its consumer
 
