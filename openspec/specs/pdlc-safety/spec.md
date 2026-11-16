@@ -55,24 +55,6 @@ The plugin MUST include a suite-level behavioral evaluation that validates routi
 - **WHEN** `bash tests/test-scenario-evals.sh` is run
 - **THEN** it MUST test PDLC scenarios (prototype-lab, starter-template co-selection), safety scenarios (lethal trifecta, overnight, YOLO), guardrail scenarios (SHIP phase routing, composition chain), and driver-invariant scenarios (new skills never as process drivers)
 
-### Requirement: eval-strategy classification at DESIGN
-The DESIGN phase composition MUST emit an always-on advisory hint instructing the model to classify how the feature is verified — asking the user when unclear — and branch the guidance: probabilistic/AI/LLM/agent behavior plans an eval set (smoke + adversarial/safety subsets, pinned judge model+version, never-delete cases, pre-registered safety-stop) with the safety subset authored failing (red) before implementation; deterministic work uses test-driven-development plus the mandated acceptance scenarios. The hint MUST be advisory and fail-open, and MUST be mirrored into the fallback registry. Safety dimensions MUST be treated as hard pass/fail gates, never averaged into a quality blend.
-
-#### Scenario: AI/LLM feature classification
-- **WHEN** a builder is in DESIGN for a feature whose outputs cannot be exact-matched (LLM/agent/probabilistic)
-- **THEN** the EVAL STRATEGY hint MUST direct planning an eval set with adversarial/safety subsets and a safety subset authored red before implementation
-- **AND** it MUST NOT rely on an automatic AI-feature detector — the model classifies, asking the user when unclear
-
-#### Scenario: Deterministic feature classification
-- **WHEN** the feature is deterministic
-- **THEN** the EVAL STRATEGY hint MUST direct standard test-driven-development plus the acceptance scenarios already required by the DESIGN→PLAN contract
-- **AND** it MUST NOT impose eval-set ceremony (judges, adversarial subsets) on deterministic work
-
-#### Scenario: Advisory and fail-open
-- **WHEN** the hint is emitted
-- **THEN** it MUST be advisory only and MUST NOT block or alter routing scores
-- **AND** it MUST be present in both `config/default-triggers.json` and `config/fallback-registry.json`
-
 ### Requirement: safety eval cases red before code
 The `agent-safety-review` skill MUST require that, for AI/LLM or agent features, the safety eval cases (injection, escalation, refusal, safety-routing-suppression) are authored and failing (red) before the behavior is implemented, composing with `test-driven-development`. Detection added after the behavior exists MUST NOT be treated as a substitute.
 
@@ -546,4 +528,20 @@ lower bound on one kind of false block, not the registered false-block rate.
 - **WHEN** the owner types `/superpowers:subagent-driven-development` as the prompt's first token and the agent then runs `git push`
 - **THEN** no IMPLEMENT advisory MUST be emitted and no IMPLEMENT shadow record MUST be written
 - **AND** when the owner instead types `/superpowers:executing-plans`, which is not a credited REVIEW name, the IMPLEMENT advisory MUST fire and a would-block IMPLEMENT shadow record MUST be written at the new predicate version
+
+### Requirement: Eval-strategy procedure lives in runtime-validation
+
+`skills/runtime-validation/SKILL.md` MUST carry the eval-strategy procedure under a heading "Eval strategy at DESIGN": the model classifies how a feature is verified, asking the user when unclear; probabilistic, LLM or agent behaviour plans an eval set with adversarial and safety subsets, the safety subset authored failing before implementation; deterministic work uses test-driven development plus the acceptance scenarios. Safety dimensions MUST be treated as hard pass/fail gates, never averaged into a quality blend. The section MUST place the classification before the design doc is approved, or before building when there is no design doc, and MUST NOT say "before leaving DESIGN" (the timing the removed hint carried, and the same rule the brainstorming precondition follows). (This keeps the content obligations of the removed "eval-strategy classification at DESIGN" requirement; only the always-on DESIGN hint is gone.)
+
+#### Scenario: The procedure is present in the owning skill
+
+- **WHEN** `skills/runtime-validation/SKILL.md` is read
+- **THEN** it contains the heading "Eval strategy at DESIGN"
+- **AND** it states that safety dimensions are hard pass/fail gates and are never averaged
+
+#### Scenario: The timing is the design doc's approval, not "leaving DESIGN"
+
+- **WHEN** the "Eval strategy at DESIGN" section is read
+- **THEN** it contains "before the design doc is approved (no design doc: before building)"
+- **AND** it does not contain "before leaving DESIGN" in any letter case
 

@@ -1,6 +1,6 @@
 # openspec-ship — Step 7c: Divergences section
 
-Read at SKILL.md Step 7c before appending `## Divergences` to the archived design doc. Moved verbatim from SKILL.md.
+Read at SKILL.md Step 7c before appending `## Divergences` to the design doc, at the place `design-doc-outcomes.md` gives for it (the archived copy when the doc was recorded or came from the change folder; where it is when it was found by filename). The block below was moved verbatim from SKILL.md.
 
 ```markdown
 ## Divergences (auto-generated at ship time)

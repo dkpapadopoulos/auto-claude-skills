@@ -57,9 +57,9 @@ Run each check. Report pass/fail with evidence. Do not block on warnings — rep
    Check if `CHANGELOG.md`, `package.json`, or version file was modified in this branch.
    Gate: Soft — warn if no version change detected.
 
-4. **Design Intent Exists** (if DESIGN phase was executed)
-   Check session state for `design_path`. If set, verify the file exists at `docs/plans/`.
-   Gate: Soft — warn if design_path is set but file is missing.
+4. **Design Intent Exists**
+   Run `bash '<PLUGIN_ROOT>/scripts/resolve-design-doc.sh' --slug <change-slug>`, where the slug is the change's folder name under `openspec/changes/` or the name the user gave. If you have neither, omit `--slug`; do not make one up from the branch name. It prints `<outcome> <source> <path> <count>`, tab-separated.
+   Gate: Soft — warn on `stale` (a design doc was recorded and its file is gone). `resolved` passes. `absent` and `ambiguous` are informational: say which, without a warning, because most work has no design doc. Without `--slug`, `absent` means only that nothing was recorded; no file was searched for. On exit 3 report "could not check"; that is not a pass.
 
 ### Advisory Checks (warn only)
 

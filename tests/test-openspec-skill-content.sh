@@ -312,7 +312,9 @@ test_openspec_ship_references_index() {
         base="$(basename "$f")"
         assert_contains "ship: SKILL.md names references/${base}" "references/${base}" "$(cat "${SKILL_FILE}")"
     done
-    assert_equals "ship: references/ holds the four moved files" "4" "$n"
+    # Four files moved out of SKILL.md, plus design-doc-outcomes.md (Step 7c's per-outcome
+    # table, written there because SKILL.md sits at its re-attach budget).
+    assert_equals "ship: references/ holds the five reference files" "5" "$n"
     for named in $(grep -oE 'references/[A-Za-z0-9_-]+\.md' "${SKILL_FILE}" | sort -u); do
         assert_file_exists "ship: ${named} named in SKILL.md exists" "${PROJECT_ROOT}/skills/openspec-ship/${named}"
     done

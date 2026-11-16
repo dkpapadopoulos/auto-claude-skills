@@ -31,7 +31,7 @@ When the activation hook scores skills
 Then outcome-review is NOT selected
 
 ### Requirement: Composition Chain Integration
-The routing engine MUST wire `product-discovery.precedes = ["brainstorming"]` (DISCOVER → DESIGN) and `outcome-review.precedes = ["product-discovery"]` (LEARN → DISCOVER loop). The SHIP composition MUST include an advisory LEARN reminder hint.
+The routing engine MUST wire `product-discovery.precedes = ["brainstorming"]` (DISCOVER → DESIGN) and `outcome-review.precedes = ["product-discovery"]` (LEARN → DISCOVER loop). (The sentence requiring an advisory LEARN reminder hint in the SHIP composition was removed by the registered hint cut; `outcome-review` stays reachable by its triggers.)
 
 #### Scenario: DISCOVER precedes DESIGN
 - **WHEN** the composition chain is computed for a DISCOVER-then-DESIGN flow

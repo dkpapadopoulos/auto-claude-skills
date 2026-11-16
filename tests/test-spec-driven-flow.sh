@@ -33,7 +33,7 @@ assert_equals "openspec_first is true" "true" "$flag"
 # The preset used to rewrite three DESIGN/PLAN phase hints. The shipped phase hints
 # were removed (openspec/changes/registered-hint-cut), so the preset now announces the
 # mode once per session and rewrites nothing.
-_SD_NOTICE="spec-driven mode active: design intent persisted to openspec/changes/ (committed)"
+_SD_NOTICE="spec-driven preset active: design intent belongs in openspec/changes/<feature>/; not verified this session"
 _hint_shape() { jq -r --arg p "$2" '.phase_compositions[$p].hints | "\(type):\(length)"' "$1" 2>/dev/null; }
 
 echo "-- Phase 2: session-start announces spec-driven mode --"
@@ -47,6 +47,11 @@ sd_out="$(CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" _SKILL_TEST_MODE=1 \
 cache_file="${HOME}/.claude/.skill-registry-cache.json"
 assert_file_exists "cache file exists" "$cache_file"
 assert_contains "spec-driven: the mode is announced" "${_SD_NOTICE}" "$sd_out"
+# The notice used to state a completed fact ("design intent persisted ... (committed)")
+# that nothing had checked. It must not come back in that form.
+assert_not_contains "spec-driven: the notice claims no persistence it did not check" \
+    "design intent persisted to openspec/changes/" "$sd_out"
+assert_contains "spec-driven: the notice says persistence is not verified" "not verified this session" "$sd_out"
 assert_equals "spec-driven: no DESIGN hint is written" "array:0" "$(_hint_shape "$cache_file" DESIGN)"
 assert_equals "spec-driven: no PLAN hint is written" "array:0" "$(_hint_shape "$cache_file" PLAN)"
 
@@ -63,7 +68,8 @@ def_out="$(CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" _SKILL_TEST_MODE=1 \
 
 cache_file="${HOME}/.claude/.skill-registry-cache.json"
 assert_file_exists "cache file exists (default mode)" "$cache_file"
-assert_not_contains "default mode: spec-driven is not announced" "spec-driven mode active" "$def_out"
+assert_not_contains "default mode: spec-driven is not announced" "spec-driven preset active" "$def_out"
+assert_not_contains "default mode: no spec-driven warning is printed" "spec-driven mode active" "$def_out"
 assert_equals "default mode: no DESIGN hint is written" "array:0" "$(_hint_shape "$cache_file" DESIGN)"
 teardown_test_env
 

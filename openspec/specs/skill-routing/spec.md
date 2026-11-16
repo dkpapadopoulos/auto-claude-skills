@@ -39,14 +39,6 @@ Intent Truth retrieval MUST check sources in this order: OpenSpec active changes
 - **WHEN** both `docs/plans/*-design.md` and `openspec/specs/<cap>/spec.md` exist
 - **THEN** `docs/plans/` MUST be read first (Source 2 before Source 3)
 
-### Requirement: Preset-Gated OpenSpec-First Mode
-The plugin MUST support a `spec-driven` preset that redirects DESIGN and PLAN artifact creation from `docs/plans/` to `openspec/changes/<feature>/` when the preset's `openspec_first` flag is `true`.
-
-#### Scenario: spec-driven preset active redirects DESIGN hints
-- **GIVEN** `~/.claude/skill-config.json` contains `{"preset": "spec-driven"}`
-- **WHEN** session-start hook runs
-- **THEN** the cached registry's `phase_compositions.DESIGN.hints[].text` MUST contain `openspec/changes/`
-
 ### Requirement: openspec-ship Idempotent Pre-flight
 `openspec-ship` MUST detect whether `openspec/changes/<feature-name>/` already exists before creating it. If present, validate and sync; if absent, create retrospectively.
 
@@ -254,9 +246,9 @@ The committed `config/fallback-registry.json` served on the no-jq path MUST cont
 
 #### Scenario: preset activation does not leak
 
-- **GIVEN** `~/.claude/skill-config.json` sets `"preset": "spec-driven"` (rewrites `phase_compositions.DESIGN.hints`)
+- **GIVEN** `~/.claude/skill-config.json` sets `"preset": "spec-driven"`
 - **WHEN** the auto-regenerator writes the fallback
-- **THEN** `config/fallback-registry.json` `.phase_compositions.DESIGN.hints` MUST match the `default-triggers.json` default text, not the spec-driven preset rewrite
+- **THEN** `config/fallback-registry.json` `.phase_compositions` MUST equal the `default-triggers.json` `.phase_compositions`, with no preset effect
 
 #### Scenario: user-config override keys do not leak
 
@@ -1125,28 +1117,6 @@ When the PLAN-phase design-guard reads a readable design document, it MUST addit
 - WHEN the activation hook runs in PLAN phase
 - THEN the completeness verdict is unchanged, the worst-case effect is the advisory `[i]` line appearing, AND the hook exits 0
 
-### Requirement: Vertical-slice decomposition hint in PLAN-phase composition
-
-The PLAN-phase composition MUST emit an advisory hint steering work decomposition toward thin end-to-end vertical slices (each task touching all layers and independently testable) over file-disjoint horizontal layers, and SHOULD direct that tasks sized for `agent-team-execution` be sliced by behavior rather than by file. The hint MUST be present and byte-identical in both `config/default-triggers.json` and `config/fallback-registry.json` (fallback-drift gate). The hint MUST be advisory only: it MUST NOT alter the design-completeness verdict, role caps, composition state, or any push/transition gate. The hint MUST be independent of the spec-driven session-start rewrite — its text MUST NOT contain the `CARRY SCENARIOS` token that keys that transform — so it survives unchanged in both default and spec-driven presets.
-
-#### Scenario: PLAN-phase prompt receives the vertical-slice hint
-
-- GIVEN a session whose primary phase resolves to PLAN
-- WHEN the activation hook emits PLAN-phase composition hints
-- THEN a hint steering toward thin end-to-end vertical slices over file-disjoint horizontal layers is present in the output
-
-#### Scenario: Hint stays in sync across both registries
-
-- GIVEN the PLAN composition hints in `config/default-triggers.json`
-- WHEN compared against `config/fallback-registry.json`
-- THEN the vertical-slice hint text is present and identical in both files
-
-#### Scenario: Spec-driven rewrite leaves the hint untouched
-
-- GIVEN the repo preset is `spec-driven`
-- WHEN session-start rewrites the PLAN hint whose text matches `CARRY SCENARIOS`
-- THEN the vertical-slice hint is not matched by that transform and passes through unchanged
-
 ### Requirement: Hint-path triggers must self-anchor against substring mis-fires
 
 Triggers evaluated on the hint path (`hooks/skill-activation-hook.sh` raw `[[ "$P" =~ $htrigger ]]`) are NOT covered by the scorer's word-boundary post-filter and therefore MUST anchor their own alternations. Anchoring MUST use POSIX-ERE bracket-class boundaries `(^|[^a-z])…([^a-z]|$)` and MUST NOT use `\b`, `\d`, `(?:…)`, or other PCRE constructs, which silently fail to match under Bash 3.2. The `frontend-playwright` trigger specifically MUST NOT fire on backend prompts whose words merely contain a frontend fragment as a substring.
@@ -1240,118 +1210,6 @@ When the `atlassian` plugin is available AND the lowercased prompt contains a Ji
 - **GIVEN** the `atlassian` plugin is unavailable
 - **WHEN** a prompt contains a Jira-ID-shaped token
 - **THEN** the branch-naming advisory MUST NOT be emitted
-
-### Requirement: Jira PR-title advisory hint at SHIP
-
-When the `atlassian` plugin is available AND `PRIMARY_PHASE == SHIP`, the activation hook MUST emit an advisory hint instructing that the Jira ID be derived from the branch name and the PR be titled `<JIRA-ID>: <exact ticket subject>`, with the subject fetched via the Atlassian MCP, and that the step be skipped (no fabricated ID) when no Jira ID is present. The hint MUST be advisory (it MUST NOT block) and MUST be suppressed when the `atlassian` plugin is unavailable.
-
-#### Scenario: SHIP phase with Atlassian available
-- **GIVEN** the `atlassian` plugin is available
-- **WHEN** a prompt routes to `PRIMARY_PHASE == SHIP`
-- **THEN** the activation output MUST contain the PR-title advisory (text including `JIRA PR TITLE`)
-
-#### Scenario: Suppressed without Atlassian at SHIP
-- **GIVEN** the `atlassian` plugin is unavailable
-- **WHEN** a prompt routes to `PRIMARY_PHASE == SHIP`
-- **THEN** the PR-title advisory MUST NOT be emitted
-
-### Requirement: Phase-scoped lethal-trifecta surfacing
-
-The activation hook MUST surface `agent-safety-review` as a model-assessed candidate at
-the `DESIGN` phase independently of the user typing an autonomy/agent keyword, because
-the lethal trifecta (private_data × untrusted_input × outbound_action) is a semantic
-property of a design's data flow that the skill's lexical triggers cannot reliably match.
-
-The surfacing MUST be implemented through the existing `phase_compositions[PHASE].hints`
-mechanism (a single advisory line), NOT as an unconditional session banner and NOT by
-widening `agent-safety-review`'s regex triggers. The DESIGN hint MUST instruct the model
-to classify each trifecta field as Present/Absent/Unknown from the proposed data flow and
-to invoke `Skill(auto-claude-skills:agent-safety-review)` only if **2 or more fields are
-Present, or Unknowns could make the count reach 2 or more** — matching the skill's own
-Step 2 risk table (2-of-3 = Elevated, 3 = Lethal; 0-1 = Standard, no action). The hint
-MUST scope invocation to **after brainstorming has a candidate design and before
-transitioning to PLAN**, so it does not conflict with the brainstorming-first gate.
-
-The REVIEW `ADVERSARIAL REVIEW` hint MUST additionally route to
-`agent-safety-review` when the **resulting** change has ≥2 trifecta fields, or when the
-diff adds a missing leg to an existing ≥2-field flow — not only when a change weakens an
-existing safety gate.
-
-The hint text MUST contain the literal `Skill(auto-claude-skills:agent-safety-review)`
-invocation so the model can act on it. `config/fallback-registry.json` MUST stay in sync
-with `config/default-triggers.json` for these hints (enforced by the existing Fallback
-Registry Sync Gate). The pre-existing `agent-safety-review` keyword triggers MUST
-continue to work unchanged. The hints are advisory and MUST fail open (they never block
-the hook and never auto-invoke a skill or auto-write any artifact).
-
-#### Scenario: DESIGN phase surfaces the trifecta directive without keywords
-
-- **GIVEN** a registry whose `DESIGN` driver (`brainstorming`) is available
-- **WHEN** a prompt routes to `PRIMARY_PHASE == DESIGN` with no autonomy/agent keyword (e.g. "build something that reads customer support emails and posts replies to Slack")
-- **THEN** the activation context MUST contain a `TRIFECTA CHECK` hint carrying the literal `Skill(auto-claude-skills:agent-safety-review)`
-
-#### Scenario: Trifecta directive present even on a generic build prompt
-
-- **GIVEN** a registry whose `DESIGN` driver is available
-- **WHEN** any prompt routes to `PRIMARY_PHASE == DESIGN` (e.g. "let's add a new feature")
-- **THEN** the activation context MUST contain the `TRIFECTA CHECK` hint (always-on; the model decides whether to act on it)
-
-#### Scenario: Directive absent outside its gate phases
-
-- **WHEN** a prompt routes to `PRIMARY_PHASE == SHIP` (e.g. "ship the release and wrap up")
-- **THEN** the activation context MUST NOT contain the `TRIFECTA CHECK` hint
-
-#### Scenario: REVIEW adversarial hint covers trifecta introduction
-
-- **GIVEN** a registry whose `REVIEW` phase composition is available
-- **WHEN** a prompt routes to `PRIMARY_PHASE == REVIEW` (e.g. "review my changes before merge")
-- **THEN** the activation context's `ADVERSARIAL REVIEW` hint MUST reference `Skill(auto-claude-skills:agent-safety-review)` for resulting ≥2-field trifecta flows
-
-#### Scenario: agent-safety-review keyword fast-path still works
-
-- **WHEN** a prompt matches an existing `agent-safety-review` trigger token (e.g. "an overnight unattended email agent")
-- **THEN** `agent-safety-review` MUST still be selected by its regex triggers as before, independently of the DESIGN hint
-
-### Requirement: Phase-scoped capture-knowledge surfacing
-
-The activation hook MUST surface `capture-knowledge` as a model-assessed candidate at
-the SDLC phases where durable team learnings emerge — `LEARN`, `SHIP`, and `DEBUG` —
-independently of the user typing a capture keyword. The surfacing MUST be implemented
-through the existing `phase_compositions[PHASE].hints` mechanism (a single advisory
-line per phase), NOT as an unconditional session banner and NOT by widening the skill's
-regex triggers. Each hint MUST carry an explicit relevance gate that instructs the model
-to invoke `Skill(auto-claude-skills:capture-knowledge)` only if a durable, non-obvious,
-team-relevant learning emerged and to skip otherwise (routine or repo-derivable facts).
-The existing human approval at write time MUST remain the safety gate; this requirement
-adds a *when-to-consider* signal only and MUST NOT introduce any autonomous write. The
-hint text MUST contain the literal `Skill(auto-claude-skills:capture-knowledge)`
-invocation so the model can act on it. `config/fallback-registry.json` MUST stay in sync
-with `config/default-triggers.json` for these hints (enforced by the existing Fallback
-Registry Sync Gate). The pre-existing capture-keyword trigger MUST continue to work.
-
-#### Scenario: LEARN phase surfaces capture-knowledge without keywords
-
-- **GIVEN** a registry whose `LEARN` driver (`outcome-review`) is available
-- **WHEN** a prompt routes to `PRIMARY_PHASE == LEARN` with no capture/save/remember keyword (e.g. "how did the auth feature perform after launch")
-- **THEN** the activation context MUST contain `Skill(auto-claude-skills:capture-knowledge)` carried by a relevance-gated `CAPTURE KNOWLEDGE` hint
-
-#### Scenario: SHIP phase surfaces capture-knowledge without keywords
-
-- **GIVEN** a registry whose `SHIP` driver (`verification-before-completion`) is available
-- **WHEN** a prompt routes to `PRIMARY_PHASE == SHIP` with no capture keyword (e.g. "wrap up the auth module and ship the release")
-- **THEN** the activation context MUST contain `Skill(auto-claude-skills:capture-knowledge)`
-
-#### Scenario: DEBUG phase surfaces capture-knowledge without keywords
-
-- **GIVEN** a registry whose `DEBUG` driver (`systematic-debugging`) is available
-- **WHEN** a prompt routes to `PRIMARY_PHASE == DEBUG` with no capture keyword (e.g. "debug the broken auth login error")
-- **THEN** the activation context MUST contain `Skill(auto-claude-skills:capture-knowledge)` via a post-resolution `CAPTURE KNOWLEDGE` hint
-
-#### Scenario: Not an unconditional banner
-
-- **GIVEN** any phase other than LEARN, SHIP, or DEBUG (e.g. DESIGN, PLAN, IMPLEMENT, REVIEW)
-- **WHEN** a prompt routes to that phase with no capture keyword
-- **THEN** the `CAPTURE KNOWLEDGE` phase hint MUST NOT be emitted (surfacing is phase-scoped, not global)
 
 ### Requirement: Push-gate readiness survives composition chain re-anchors
 
@@ -2014,25 +1872,6 @@ The shipped `keywords` of `authorial-judgment` MUST NOT contain `less generic`, 
 - **WHEN** the prompt is "mine improvements"
 - **THEN** `improvement-miner` is selected
 
-### Requirement: Phase hints name the owning skill and stay short
-
-Each `phase_compositions.<PHASE>.hints[].text` SHALL be at most 480 bytes; a hint of 300 bytes or more SHALL name the `Skill(...)` or plugin script that owns the procedure it refers to, and SHALL state the condition under which it applies. The full procedure MUST live in the owning skill's `SKILL.md`. The per-phase byte totals (DESIGN, PLAN, REVIEW, SHIP, DISCOVER, DEBUG, LEARN) SHALL be pinned as ceilings in `tests/test-phase-hint-brevity.sh`: growth MUST fail, the constant MUST be raised only in the commit that grows the text and that commit MUST say why, and a reduction passes (the constant MAY be lowered later). The 480-byte figure is also a ceiling. (The first draft said 240 bytes; the spec-driven PERSIST DESIGN hint carries the three-file layout the model must reproduce, and that list is the content, so the ceiling is 480. The totals were equality ratchets from PR #349 until the ratchet-ceilings change.)
-
-#### Scenario: A DESIGN block is rendered
-
-- **WHEN** the activation hook renders the DESIGN phase hints
-- **THEN** every hint is at most 480 bytes, every hint of 300 bytes or more contains `Skill(` or a plugin script, and the EVAL STRATEGY, AUTONOMY CHECK and ADVERSARIAL REVIEW procedures are present in full in `skills/runtime-validation/SKILL.md`, `skills/agent-safety-review/SKILL.md` and `skills/agent-team-review/SKILL.md`
-
-#### Scenario: Hint content changes
-
-- **WHEN** only hint texts and the INTENT EXTRACTION directive change
-- **THEN** the composition-state file and the push gate's decision are byte-identical to the previous render for the same input
-
-#### Scenario: A phase total shrinks
-
-- **WHEN** a hint is shortened and the phase total falls below its ceiling
-- **THEN** `tests/test-phase-hint-brevity.sh` passes without the constant moving
-
 ### Requirement: An unmet gating milestone states its consequence
 
 When the composition chain renders `requesting-code-review` or `verification-before-completion` with any marker other than `[DONE]`, and the branch ledger does not already record that Skill as invoked on the current branch, the line SHALL state that `git push` is denied until that Skill has been invoked on this branch. The ledger SHALL be consulted at most once per render; if the ledger library cannot be loaded or the ledger directory cannot be read, the suffix SHALL still be rendered (the check fails open toward the warning). Non-gating steps MUST NOT carry the suffix. The suffix MUST NOT change any state file or any gate decision.
@@ -2081,13 +1920,14 @@ The session-start hook SHALL issue no more external-process forks for `jq`, `bas
 
 ### Requirement: Routing text does not contradict the superpowers backbone
 
-The text the activation hook renders, meaning registry descriptions and preconditions in both `config/default-triggers.json` and `config/fallback-registry.json`, the DESIGN `EVAL STRATEGY` hint in both configs, and the per-phase `RED_FLAGS`, MUST NOT instruct the model to do something the superpowers skill it routes to forbids. Specifically:
+The text the activation hook renders, meaning registry descriptions and preconditions in both `config/default-triggers.json` and `config/fallback-registry.json`, and the per-phase `RED_FLAGS`, MUST NOT instruct the model to do something the superpowers skill it routes to forbids. Specifically:
 
 - The brainstorming precondition MUST place the trifecta classification, and any `Skill(auto-claude-skills:agent-safety-review)` invocation it calls for, before the design doc is approved. When brainstorming ends without a design doc (the user opts out of the questions, or the task is quick and clear), it MUST place them before building, so the check does not lapse on that path. It MUST NOT direct an invocation after approval or "before leaving DESIGN", because brainstorming's exit after approval is writing-plans and no other skill.
-- The DESIGN `EVAL STRATEGY` hint, which names `Skill(auto-claude-skills:runtime-validation)`, MUST time the verification classification the same way: before the design doc is approved, or before building when there is no design doc. It MUST NOT say "before leaving DESIGN".
 - The PLAN red flags MUST NOT name a required plan directory.
 - The IMPLEMENT red flags MUST NOT require an execution method other than the one the user chose at the plan handoff.
 - The DESIGN red flags MUST contain the routing obligation "Editing implementation files before invoking Skill(superpowers:brainstorming)".
+
+The DESIGN `EVAL STRATEGY` hint this requirement used to time was removed by the registered hint cut. Its timing now lives in `skills/runtime-validation/SKILL.md` § Eval strategy at DESIGN, which MUST place the classification before the design doc is approved (no design doc: before building) and MUST NOT say "before leaving DESIGN".
 
 #### Scenario: DESIGN exit names no post-approval invocation
 
@@ -2098,10 +1938,9 @@ The text the activation hook renders, meaning registry descriptions and precondi
 
 #### Scenario: EVAL STRATEGY is timed like the trifecta check
 
-- **WHEN** the DESIGN `EVAL STRATEGY` hint is read from either config
-- **THEN** it says the verification classification happens before design-doc approval, or before building when there is no design doc
-- **AND** it does not contain "before leaving DESIGN"
-- **AND** both configs carry the same text
+- **WHEN** the "Eval strategy at DESIGN" section of `skills/runtime-validation/SKILL.md` is read
+- **THEN** it places the classification "before the design doc is approved (no design doc: before building)"
+- **AND** it does not contain "before leaving DESIGN" in any letter case
 
 #### Scenario: red flags defer to the backbone's choices
 
@@ -2129,4 +1968,72 @@ SHIP's `implementation-drift-check` SEQUENCE entry (the fallback for a drift che
 
 - **WHEN** the activation hook renders the SHIP phase for a project root that contains `docs/plans/x-plan.md`
 - **THEN** the output contains the `SEQUENCE: implementation-drift-check` fallback line
+
+### Requirement: Shipped phase compositions carry no hint prose
+
+Every `phase_compositions.<PHASE>.hints` in `config/default-triggers.json` and in `config/fallback-registry.json` SHALL be empty. The activation hook's hint renderer is unchanged and SHALL still render any hint a registry holds. The session-start hook MUST NOT rewrite or add phase hints for any preset. `tests/test-phase-hint-brevity.sh` SHALL pin the shipped per-phase hint count at zero for DISCOVER, DESIGN, PLAN, IMPLEMENT, REVIEW, SHIP, DEBUG and LEARN, and a count that cannot be read MUST fail, never pass as zero. This requirement carries out the "no evidence" arm registered in `tests/probes/compliance-census/README.md` (read 2026-11-15): it is a cost decision, and nothing in this spec asserts that the removed hints had no effect.
+
+#### Scenario: No phase renders a shipped hint
+
+- **GIVEN** a registry built from the shipped config with every plugin available
+- **WHEN** the activation hook renders a prompt in any of DISCOVER, DESIGN, PLAN, IMPLEMENT, REVIEW, SHIP, DEBUG or LEARN
+- **THEN** the output contains none of `PERSIST DESIGN`, `PERSIST DISCOVERY`, `EVAL STRATEGY`, `AUTONOMY CHECK`, `CARRY SCENARIOS`, `VERTICAL SLICES`, `SCOPE MANIFEST`, `ADVERSARIAL REVIEW`, `LEARN REMINDER`, `JIRA PR TITLE`, `CAPTURE KNOWLEDGE`, `DEBUG ESCALATION`
+- **AND** the mandate lines, the composition chain, the red flags and the driver precondition render as before
+
+#### Scenario: Removing hints changes no state and no gate decision
+
+- **GIVEN** a fixed set of prompts that covers every phase
+- **WHEN** each is rendered with the registry from before this change and with the registry after it
+- **THEN** the composition-state file is byte-identical between the two renders
+- **AND** the push gate's decision for the same branch state is identical
+
+#### Scenario: Both configs agree
+
+- **WHEN** `config/default-triggers.json` and `config/fallback-registry.json` are compared
+- **THEN** `.phase_compositions.<PHASE>.hints` is empty in both for every phase
+
+#### Scenario: The renderer still renders a hint it is given
+
+- **GIVEN** a test registry whose DESIGN composition holds one hint
+- **WHEN** the activation hook renders a DESIGN prompt
+- **THEN** that hint's text is present in the output
+
+### Requirement: Removing a phase hint leaves its skill reachable and its procedure in place
+
+The procedures the removed phase hints pointed at MUST stay in full in their owning skills: the autonomy levels in `skills/agent-safety-review/SKILL.md`, the adversarial governance lens in `skills/agent-team-review/SKILL.md`, and the eval strategy in `skills/runtime-validation/SKILL.md`. The pre-existing keyword triggers of `agent-safety-review` and `capture-knowledge` MUST continue to select those skills. The removed hints MUST NOT be replaced by an unconditional session banner or by a trigger that matches by phase or on every prompt. One scoped trigger is added to `agent-safety-review` and is the only trigger change this requirement permits: it selects the skill when an agent or bot is asked to auto-approve, or when a pull request, merge, review, permission or tool call is to be auto-approved, because the scenario "make the agent auto-approve all PRs without review" had been satisfied only by a removed hint's text. It MUST NOT match the bare word: a command-line flag (`terraform apply -auto-approve`), a screen about approval rules, or a product's own approval rule does not select the skill. (These are the obligations of the removed surfacing and brevity requirements that were not about the hint text itself.)
+
+#### Scenario: an agent asked to auto-approve selects agent-safety-review
+
+- **WHEN** the prompt is "make the agent auto-approve all PRs without review"
+- **THEN** `agent-safety-review` is selected by its regex triggers
+
+#### Scenario: the bare word does not select it
+
+- **WHEN** the prompt is "run terraform apply -auto-approve in the staging pipeline" or "build an expense feature where claims under 50 dollars are auto-approved"
+- **THEN** no `agent-safety-review` trigger matches
+
+#### Scenario: agent-safety-review keyword fast-path still works
+
+- **WHEN** a prompt matches an existing `agent-safety-review` trigger token (e.g. "an overnight unattended email agent")
+- **THEN** `agent-safety-review` is selected by its regex triggers
+
+#### Scenario: capture-knowledge keyword path still works
+
+- **WHEN** a prompt matches the existing capture-keyword trigger
+- **THEN** `capture-knowledge` is selected
+
+#### Scenario: Owning skills hold the procedures
+
+- **WHEN** the three skill files are read
+- **THEN** `skills/agent-safety-review/SKILL.md` contains "Autonomy levels", `skills/agent-team-review/SKILL.md` describes the adversarial-reviewer's governance lens, and `skills/runtime-validation/SKILL.md` contains "Eval strategy at DESIGN"
+
+### Requirement: Spec-driven preset is announced once per session and rewrites no hint
+
+The plugin MUST support a `spec-driven` preset whose `openspec_first` flag, when `true`, makes `openspec/changes/<feature>/` the place design intent is persisted instead of `docs/plans/`. The preset is carried by a once-per-session notice from the session-start hook and by the skills that read it (`design-debate` writes its output there; `openspec-ship` syncs an existing change instead of creating one). It MUST NOT be carried by rewriting phase composition hints, and no per-prompt text redirects an ordinary DESIGN or PLAN step.
+
+#### Scenario: spec-driven preset active announces the mode and rewrites no hint
+- **GIVEN** `~/.claude/skill-config.json` contains `{"preset": "spec-driven"}`
+- **WHEN** session-start hook runs
+- **THEN** its output MUST contain "spec-driven mode active: design intent persisted to openspec/changes/ (committed)"
+- **AND** the cached registry's `phase_compositions.DESIGN.hints` and `phase_compositions.PLAN.hints` MUST be empty
 

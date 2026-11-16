@@ -79,6 +79,7 @@ Situational detail lives in `references/` in this skill's base directory. Read e
 | `references/changelog-template.md` | Step 5, before creating a new `CHANGELOG.md` |
 | `references/hypotheses.md` | Step 7a-bis, when `discovery_path` is in session state and readable |
 | `references/divergences-template.md` | Step 7c, before appending `## Divergences` |
+| `references/design-doc-outcomes.md` | Step 7c, with Step 3's outcome |
 
 ## Steps
 
@@ -116,6 +117,8 @@ If the state file exists and has the relevant change entry, use those values. Sk
 - If not identifiable: ask the user. Do not guess.
 
 ### Step 3: Create OR Sync Change Folder
+
+**First, before anything is created or moved:** run `bash '<PLUGIN_ROOT>/scripts/resolve-design-doc.sh' --slug <feature-name>` and keep its output for Step 7c.
 
 **Pre-flight check:** Does `openspec/changes/<feature-name>/` already exist at the start of this SHIP phase?
 
@@ -274,15 +277,12 @@ If `discovery_path`, `design_path`, `plan_path`, or `spec_path` exist in session
 
 ### Step 7c: Generate Divergences Report
 
-If `design_path` exists in session state and the design file is readable:
+Take the outcome Step 3 kept (`resolved`, `stale`, `ambiguous`, `absent`, or exit 3), read `references/design-doc-outcomes.md` and do what it says. Never skip this step silently. With a design doc in hand:
 
-1. Read the design artifact's **Acceptance Scenarios** section
-2. Read the design artifact's **Capabilities Affected** and **Out-of-Scope** sections
+1. Read the doc's **Acceptance Scenarios** section
+2. Read its **Capabilities Affected** and **Out-of-Scope** sections
 3. Compare against what was actually built (from the OpenSpec change's `proposal.md` and `specs/`)
-4. Append a `## Divergences` section to the **archived** design doc:
-   Read `references/divergences-template.md` for that section's format.
-
-**Important:** Write divergences to the **archived copy** in `docs/plans/archive/`, not the live file. The archive is the historical record; the live file may still be in use if the feature spans multiple sessions.
+4. Append a `## Divergences` section in the format of `references/divergences-template.md`.
 
 ## Graceful Degradation Summary
 

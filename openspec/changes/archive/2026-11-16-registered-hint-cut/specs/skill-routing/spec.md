@@ -60,9 +60,8 @@ The procedures the removed phase hints pointed at MUST stay in full in their own
 - **WHEN** the three skill files are read
 - **THEN** `skills/agent-safety-review/SKILL.md` contains "Autonomy levels", `skills/agent-team-review/SKILL.md` describes the adversarial-reviewer's governance lens, and `skills/runtime-validation/SKILL.md` contains "Eval strategy at DESIGN"
 
-## MODIFIED Requirements
+### Requirement: Spec-driven preset is announced once per session and rewrites no hint
 
-### Requirement: Preset-Gated OpenSpec-First Mode
 The plugin MUST support a `spec-driven` preset whose `openspec_first` flag, when `true`, makes `openspec/changes/<feature>/` the place design intent is persisted instead of `docs/plans/`. The preset is carried by a once-per-session notice from the session-start hook and by the skills that read it (`design-debate` writes its output there; `openspec-ship` syncs an existing change instead of creating one). It MUST NOT be carried by rewriting phase composition hints, and no per-prompt text redirects an ordinary DESIGN or PLAN step.
 
 #### Scenario: spec-driven preset active announces the mode and rewrites no hint
@@ -70,6 +69,8 @@ The plugin MUST support a `spec-driven` preset whose `openspec_first` flag, when
 - **WHEN** session-start hook runs
 - **THEN** its output MUST contain "spec-driven mode active: design intent persisted to openspec/changes/ (committed)"
 - **AND** the cached registry's `phase_compositions.DESIGN.hints` and `phase_compositions.PLAN.hints` MUST be empty
+
+## MODIFIED Requirements
 
 ### Requirement: Canonical Fallback Registry Shape
 
@@ -109,7 +110,7 @@ The text the activation hook renders, meaning registry descriptions and precondi
 - The IMPLEMENT red flags MUST NOT require an execution method other than the one the user chose at the plan handoff.
 - The DESIGN red flags MUST contain the routing obligation "Editing implementation files before invoking Skill(superpowers:brainstorming)".
 
-(The DESIGN `EVAL STRATEGY` hint this requirement used to time was removed by the registered hint cut.)
+The DESIGN `EVAL STRATEGY` hint this requirement used to time was removed by the registered hint cut. Its timing now lives in `skills/runtime-validation/SKILL.md` § Eval strategy at DESIGN, which MUST place the classification before the design doc is approved (no design doc: before building) and MUST NOT say "before leaving DESIGN".
 
 #### Scenario: DESIGN exit names no post-approval invocation
 
@@ -117,6 +118,12 @@ The text the activation hook renders, meaning registry descriptions and precondi
 - **THEN** it says the trifecta classification and any `agent-safety-review` invocation happen before the design doc is approved
 - **AND** it says that, with no design doc, the classification and the invocation both happen before building
 - **AND** it does not contain "before leaving DESIGN"
+
+#### Scenario: EVAL STRATEGY is timed like the trifecta check
+
+- **WHEN** the "Eval strategy at DESIGN" section of `skills/runtime-validation/SKILL.md` is read
+- **THEN** it places the classification "before the design doc is approved (no design doc: before building)"
+- **AND** it does not contain "before leaving DESIGN" in any letter case
 
 #### Scenario: red flags defer to the backbone's choices
 
@@ -131,6 +138,12 @@ The text the activation hook renders, meaning registry descriptions and precondi
 - **THEN** they contain "Editing implementation files before invoking Skill(superpowers:brainstorming)"
 
 ## REMOVED Requirements
+
+### Requirement: Preset-Gated OpenSpec-First Mode
+
+**Reason**: Registered hint cut. Its only scenario requires the cached registry's DESIGN hint text to contain `openspec/changes/`, which was the spec-driven preset's rewrite of phase hints; the hints and the rewrite are removed.
+
+**Migration**: Replaced by "Spec-driven preset is announced once per session and rewrites no hint" in this delta. The preset still exists and `design-debate` and `openspec-ship` still read it.
 
 ### Requirement: Vertical-slice decomposition hint in PLAN-phase composition
 
