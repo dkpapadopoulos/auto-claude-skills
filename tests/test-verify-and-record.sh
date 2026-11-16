@@ -491,6 +491,22 @@ else
     done
 fi
 
+echo "== T28 (#430): a repo with no commits records sha 'unknown', never the word HEAD =="
+# `git rev-parse HEAD` prints the word HEAD on stdout before failing when HEAD
+# does not resolve, so `$(git rev-parse HEAD || echo unknown)` captured
+# "HEAD<newline>unknown". A sha field holding HEAD is a revision git resolves to
+# whatever is checked out (#428 is the same read in the branch ledger).
+R28="${TEST_HOME}/r28"
+mkdir -p "${R28}" && git -C "${R28}" init -q -b main .
+rm -f "${ARTIFACT}"
+( cd "${R28}" && /bin/bash "${VAR}" --name unit --run "true" ) >/dev/null 2>&1 < /dev/null
+assert_file_exists "unborn repo: a verdict is still written" "${ARTIFACT}"
+assert_equals "unborn repo: sha is exactly 'unknown'" "unknown" "$(jq -r '.sha' "${ARTIFACT}" 2>/dev/null)"
+assert_equals "unborn repo: the run is not called a straddle" "false" "$(jq -r '(.could_not_verify // []) | index("gate-run-straddled-commit") != null' "${ARTIFACT}" 2>/dev/null)"
+# Control: a repo with a commit still records that commit.
+assert_equals "control: a born repo records its HEAD" "$(git -C "${R27}" rev-parse HEAD)" \
+    "$( rm -f "${ARTIFACT}"; ( cd "${R27}" && /bin/bash "${VAR}" --name unit --run "true" ) >/dev/null 2>&1 < /dev/null; jq -r '.sha' "${ARTIFACT}" 2>/dev/null )"
+
 cd "${REPO_ROOT}" || true
 teardown_test_env
 print_summary
