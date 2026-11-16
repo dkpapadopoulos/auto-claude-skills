@@ -82,10 +82,23 @@ _run >/dev/null 2>&1;         assert_equals "missing op exits 2"  "2" "$?"
 # rewrite); it is deliberately excluded here, see the proposal.
 INCANT='resolve_own_session_token || cat'
 _persist_surfaces="config/default-triggers.json config/fallback-registry.json hooks/skill-activation-hook.sh hooks/session-start-hook.sh skills/product-discovery/SKILL.md"
+# The two configs and session-start-hook.sh called the script only from phase-hint
+# text (PERSIST DESIGN / PERSIST DISCOVERY and the spec-driven rewrite), which
+# openspec/changes/registered-hint-cut removed. They stay in the ABSENCE check, so a
+# returning hint cannot bring the retyped incantation back; only the surfaces that
+# still name the script are required to call it. A file that cannot be read fails
+# rather than passing the absence check on empty content.
+_persist_callers=" hooks/skill-activation-hook.sh skills/product-discovery/SKILL.md "
 for _s in ${_persist_surfaces}; do
     _c="$(cat "${PROJECT_ROOT}/${_s}" 2>/dev/null)"
+    if [ -z "${_c}" ]; then
+        _record_fail "${_s}: readable" "empty or unreadable; the absence check would pass on nothing"
+        continue
+    fi
     assert_not_contains "${_s}: incantation removed" "${INCANT}" "${_c}"
-    assert_contains     "${_s}: calls persist-state.sh" "persist-state.sh" "${_c}"
+    case "${_persist_callers}" in
+        *" ${_s} "*) assert_contains "${_s}: calls persist-state.sh" "persist-state.sh" "${_c}" ;;
+    esac
 done
 # agent-team-review: incantation gone, delegates token resolution to the script.
 _atr="$(cat "${PROJECT_ROOT}/skills/agent-team-review/SKILL.md" 2>/dev/null)"
