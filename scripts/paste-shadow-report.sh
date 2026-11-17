@@ -14,6 +14,8 @@
 #   process_kept    records with a pair whose process mandate R keeps
 #   drift           status ok, opener present, no pair: a wrapper the parser does not know
 #   capped, error   the parser's other two non-parsing outcomes
+#   skipped         a pair was found but the budget (over 16 KB of stripped text, or 3 s
+#                   already spent) stopped the second selection; R hides nothing there
 #   malformed       lines that are not a JSON object (counted, never dropped silently)
 #   first, last     the earliest and latest record timestamps
 # It decides nothing: the confirmation read is in docs/plans/2026-11-17-paste-scoring-409-prereg.md.
@@ -48,6 +50,7 @@ printf '%s\n' "${_all}" | jq -nrR '
     "drift: \([$r[] | select(.status == "ok" and (.pairs // 0) == 0)] | length)",
     "capped: \([$r[] | select(.status == "capped")] | length)",
     "error: \([$r[] | select(.status == "error")] | length)",
+    "skipped: \([$r[] | select(.status == "skipped")] | length)",
     "malformed: \(($all | length) - ($r | length))",
     "first: \([$r[].ts] | min // "-")",
     "last: \([$r[].ts] | max // "-")"

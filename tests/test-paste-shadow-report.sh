@@ -56,11 +56,20 @@ assert_equals "P2: wrapper opener but no pair (format drift)" "1" "$(val "${out}
 assert_equals "P2: malformed" "0" "$(val "${out}" malformed)"
 assert_equals "P2: sessions" "3" "$(val "${out}" sessions)"
 
+# --- P2b: a record whose second selection was skipped by the budget is counted as such --------
+LONG="${TEST_TMPDIR}/long.txt"   # DERIVED: AROUND's typed first line repeated past 16 KB, then its block
+jq -nj --rawfile a "${AROUND}" '($a | split("\n")[0] + " ") as $line | ($line * ((17000 / ($line | length)) + 1))
+    + ($a | .[(index("\n\n\n\n<pasted_content")):])' > "${LONG}"
+touch "${H}/d.jsonl"; hook "${LONG}" d
+out="$(report "${RD}")"
+assert_equals "P2b: records" "4" "$(val "${out}" records)"
+assert_equals "P2b: skipped" "1" "$(val "${out}" skipped)"
+
 # --- P3: a malformed file is counted, and the others still are ---------------------------------
 printf '{"schema_version":1, broken\n' > "${RD}/zz.bad.json"
 out="$(report "${RD}")"
 assert_equals "P3: malformed counted" "1" "$(val "${out}" malformed)"
-assert_equals "P3: the good records still counted" "3" "$(val "${out}" records)"
+assert_equals "P3: the good records still counted" "4" "$(val "${out}" records)"
 
 # --- P4: an unreadable directory is cannot-check (3), never "no records" -------------------------
 if [ "$(id -u)" != "0" ]; then
