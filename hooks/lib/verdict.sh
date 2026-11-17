@@ -222,21 +222,19 @@ verdict_gate_gaming_hits() {
     jq -r 'objects | (.gate_gaming_hits // []) | map(strings) | .[0:10][] | .[0:200]' "$f" 2>/dev/null | tr -d '\000-\010\013-\037'
 }
 
-# --- Measured provenance (#301) ---------------------------------------------
+# --- Recorded source (#301) ---------------------------------------------------
 # `discovery_source` says who decided what happened. scripts/verify-and-record.sh
 # stamps exactly two values (`verify-yml`, `explicit`) and in both cases the exit
 # codes in the record are ones it measured. Every other value comes from the
 # hand-authored last resort in project-verification, where the model writes the
-# JSON itself. These three are READERS over a field already present on every
-# artifact; nothing here changes the schema or the producer.
+# JSON itself. These two are READERS over a field already present on every
+# artifact, and their one consumer is scripts/verify-receipt.sh. No gate leg
+# reads them: the advisory leg they were written for was retired on 2026-11-17
+# (#343, docs/history/verify-measured-verdict-registration.md).
 #
-# ADVISORY inputs only. The VERIFY measured-verdict leg is warn-first and its
-# deny-flip is a separate change gated on the pre-registration in
-# openspec/changes/verify-measured-verdict/design.md.
-#
-# NOT a trust boundary, and it must not be described as one: `--name x --run
-# true` is a measured verdict that checked nothing. What this separates is the
-# ACCIDENTAL path (invoke the skill, execute nothing) from the deliberate ones.
+# NOT a trust boundary, and it must not be described as one: the field is a
+# string in a file the agent can write, and `--name x --run true` is a measured
+# verdict that checked nothing.
 
 # verdict_discovery_source <token> — echo .discovery_source when it is a
 # non-empty string. Non-zero when the artifact is absent, does not parse, is not
@@ -257,107 +255,6 @@ verdict_is_measured() {
         verify-yml|explicit) return 0 ;;
     esac
     return 1
-}
-
-# verdict_measured_class <token> <proj_root> [commit] — prints "<class> <reason>"
-# and always returns 0. Classes are the pre-registered vocabulary plus the one
-# silent state:
-#   measured         ok                    clean, covers the commit, measured
-#   explained_ladder hand-authored         clean, covers the commit, a ladder rung
-#   unexplained      absent | unbound | not-clean | unrecognised-source
-#   cannot_check     unparseable | no-discovery-source | no-token | no-jq
-#
-# ORDER IS LOAD-BEARING. "Could we read it" is decided BEFORE "does it cover the
-# commit", so an artifact that omits discovery_source is cannot_check whatever
-# its sha says — counting it `unexplained` would move the pre-registered count
-# on a record nobody could classify.
-verdict_measured_class() {
-    local token="${1:-}" proot="${2:-}" rev="${3:-HEAD}" f src
-    f="$(verdict_artifact_path "$token")" || { printf '%s' "cannot_check no-token"; return 0; }
-    [ -f "$f" ] || { printf '%s' "unexplained absent"; return 0; }
-    command -v jq >/dev/null 2>&1 || { printf '%s' "cannot_check no-jq"; return 0; }
-    # `jq -e` on an EMPTY file prints nothing and exits non-zero: zero documents
-    # is not a verdict, and must not fall through to a field read.
-    # Slurped, so a file holding TWO documents is not a verdict either: without
-    # -s, `jq -e` reports on the last value and every field reader downstream
-    # would see a stream.
-    jq -es 'length == 1 and (.[0] | type == "object")' "$f" >/dev/null 2>&1 || { printf '%s' "cannot_check unparseable"; return 0; }
-    src="$(verdict_discovery_source "$token")" || src=""
-    [ -n "$src" ] || { printf '%s' "cannot_check no-discovery-source"; return 0; }
-    verdict_covers_head "$token" "$proot" "$rev" || { printf '%s' "unexplained unbound"; return 0; }
-    verdict_is_clean "$token" || { printf '%s' "unexplained not-clean"; return 0; }
-    case "$src" in
-        verify-yml|explicit) printf '%s' "measured ok" ;;
-        claude-md-commands|contributing-md|heuristic:*) printf '%s' "explained_ladder hand-authored" ;;
-        *) printf '%s' "unexplained unrecognised-source" ;;
-    esac
-    return 0
-}
-
-# verdict_any_measured_at_head <proj_root> [commit] — 0 iff SOME artifact, under
-# any token, is clean, measured, and bound to the EXACT commit.
-#
-# Exists because verdict_resolve_token returns one token and does not rank by
-# provenance. Exact-commit only, the same binding its cross-token bridge uses:
-# ancestor acceptance stays scoped to the own token. Same `grep -lF` prefilter,
-# so the jq forks are bounded to the files naming the commit.
-verdict_any_measured_at_head() {
-    local proot="${1:-}" rev="${2:-HEAD}" head f tok
-    head="$(git -C "${proot:-.}" rev-parse "$rev" 2>/dev/null)" || return 1
-    [ -n "$head" ] || return 1
-    while IFS= read -r f; do
-        [ -n "$f" ] || continue
-        tok="${f##*/}"; tok="${tok#.skill-project-verified-}"
-        [ -n "$tok" ] || continue
-        # Exactly one document. The helpers below read UNSLURPED, where
-        # `jq -e` reports on the last value, so a failing verdict followed by
-        # `{"gate_gaming_status":"clean"}` would read as clean and measured.
-        jq -es 'length == 1 and (.[0] | type == "object")' "$f" >/dev/null 2>&1 || continue
-        verdict_sha_is_head "$tok" "$proot" "$rev" || continue
-        verdict_is_clean "$tok" || continue
-        verdict_is_measured "$tok" && return 0
-    done <<EOF
-$(grep -lF "$head" "${HOME}/.claude/.skill-project-verified-"* 2>/dev/null)
-EOF
-    return 1
-}
-
-# verdict_gate_declaration <proj_root> [commit] — what the repo DECLARES as its
-# gate at that commit: local | non-local | absent | unknown.
-#
-# This is reachability evidence, not a verdict. scripts/verify-and-record.sh
-# refuses any `.verify.yml` whose substrate is not exactly `local`, and refuses
-# explicit commands whenever a `.verify.yml` exists — so in a `non-local` repo
-# no route produces a measured verdict for that tree, and a leg that asks for
-# one would name a remedy that cannot be executed.
-#
-# The awk is the writer's own. The INPUT is not: the writer reads the working
-# tree when it runs, this reads the COMMIT being pushed. They agree whenever the
-# tree is clean at that commit, and can disagree otherwise (an uncommitted edit
-# to the declaration; a checkout filter or autocrlf rewriting the file). That
-# is deliberate — the question here is about what is pushed — and it is a
-# limit, not a guarantee of agreement. Measured in review on 24 repo states.
-#
-# A SYMLINKED `.verify.yml` is `unknown`: its blob holds the link target, not
-# the declaration, and parsing that as YAML called a local gate non-local.
-verdict_gate_declaration() {
-    local proot="${1:-}" rev="${2:-HEAD}" body sub
-    git -C "${proot:-.}" rev-parse --verify --quiet "${rev}^{commit}" >/dev/null 2>&1 \
-        || { printf '%s' "unknown"; return 0; }
-    if ! git -C "${proot:-.}" cat-file -e "${rev}:.verify.yml" 2>/dev/null; then
-        printf '%s' "absent"; return 0
-    fi
-    # --full-tree: without it the pathspec is relative to the working directory
-    # while `<rev>:.verify.yml` above is relative to the repo root, so a call
-    # from a subdirectory found the file one way and not the other.
-    case "$(git -C "${proot:-.}" ls-tree --full-tree "${rev}" -- .verify.yml 2>/dev/null)" in
-        100644*|100755*) : ;;
-        *) printf '%s' "unknown"; return 0 ;;   # symlink, submodule, tree
-    esac
-    body="$(git -C "${proot:-.}" show "${rev}:.verify.yml" 2>/dev/null)" || { printf '%s' "unknown"; return 0; }
-    sub="$(printf '%s\n' "${body}" | awk -F': *' '$1=="substrate"{print $2; exit}')"
-    if [ "${sub}" = "local" ]; then printf '%s' "local"; else printf '%s' "non-local"; fi
-    return 0
 }
 
 # verdict_test_delta <token> — echo the recorded test_delta (covered|missing|n/a|"").

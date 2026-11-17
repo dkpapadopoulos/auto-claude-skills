@@ -49,6 +49,11 @@ assert_not_contains "stale/cross-branch fail => no deny"     '"deny"' "${out:-}"
 rm -f "${ART}"
 out="$(run_in "${NR}")"
 assert_not_contains "absent verdict => no deny"             '"deny"' "${out:-}"
+# (3b) The measured-verdict advisory leg (#301) was retired by owner decision
+# (#343, docs/history/verify-measured-verdict-registration.md). With the
+# milestone credited and no verdict on disk, which is the state it fired on,
+# the guard says nothing about a measured verdict and records nothing.
+assert_not_contains "retired leg: no VERIFY VERDICT advisory (#343)" "VERIFY VERDICT" "${out:-}"
 
 # (4) clean verdict covering HEAD -> NO deny
 mkart "$(jq -nc --arg s "${NRHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
@@ -151,6 +156,11 @@ printf '%s' "$(jq -nc --arg s "${CVHEAD}" '{failed:[],could_not_verify:[],gate_g
   > "${HOME}/.claude/.skill-project-verified-session-EXACTFOREIGN"                                          # FOREIGN @ EXACT HEAD
 out="$(run_in "${CV}")"
 assert_not_contains "own ancestor must not shadow foreign exact-HEAD@HEAD (PR #121, #123)" '"deny"' "${out:-}"
+
+# Every case above ran with the milestone credited; several had no verdict or a
+# not-clean one. None may have written the retired leg's corpus.
+assert_equals "retired leg: no shadow record written by any case (#343)" "absent" \
+    "$([ -e "${HOME}/.claude/.push-verify-shadow.jsonl" ] && echo present || echo absent)"
 
 export HOME="${_OLDHOME}"
 rm -rf "${TMP}"

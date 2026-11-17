@@ -487,3 +487,112 @@ The classification vocabulary, the `unexplained`-only rule, the n>=5 floor, the
 positive-control clause, the 2-repo diversity requirement, and the backstop date. A
 change to the leg's fire condition requires a `predicate_version` bump and makes earlier
 records unpoolable.
+
+## Retirement (2026-11-17)
+
+The repository owner retired this leg on 2026-11-17 (issue #343). The advisory
+no longer renders and nothing records. This section is the disposition; it
+replaces the 2027-03-31 deadline read, which will not be made.
+
+**This is not the registered null result.** The registration defines a null
+result as a clause still unmet on 2027-03-31. The window was closed early, by
+an owner decision taken after looking at the corpus below. It says nothing
+about whether requiring a measured verdict would have produced acceptable
+blocks, in either direction. `predicate_version` 2 was never changed, and no
+record or label was edited.
+
+### The corpus on the day it closed
+
+`bash scripts/verify-shadow-adjudicate.sh --status`, 2026-11-17, verbatim:
+
+```
+=== VERIFY measured-verdict shadow corpus (leg: push, #301) ===
+corpus  : /Users/damian/.claude/.push-verify-shadow.jsonl
+sidecar : /Users/damian/.claude/.push-verify-adjudication.jsonl
+as of   : 2026-11-17T22:12:35Z
+adjudicable predicate_version: 2
+review  : repo owner, fortnightly from 2026-10-12
+records : 392 line(s), 392 parsed, 0 unparseable
+
+would-block episodes : n=307   (30-minute anchored window over repo, branch, session_token)
+  by class  : unexplained=307   explained_ladder=0
+  by label  : true_catch=0   false_block=0   unresolved=307
+  repos=0   (distinct repositories among human-confirmed true catches)
+not counted : cannot_check=0 episode(s) — the leg could not look; never evidence either way
+  accrual : 6.848 episodes/day over 44.8 day(s) since the first episode
+  band (human-labelled only, k=0 of 0) : INSUFFICIENT
+
+decision rule (ALL must hold to flip the leg to deny):
+  [MET] 1. n >= 29 would-block episodes
+  [MET] 2. zero false-block episodes
+  [UNMET] 3. zero unresolved episodes (every one human-labelled a true catch)
+  [UNMET] 4. true catches span >= 2 distinct repos
+
+starvation check : CLEARED — 307 episode(s) by 2026-12-31 (needed 3)
+final deadline   : 2027-03-31 — any unmet clause then closes the window as a null result
+
+verdict  : DECISION RULE NOT MET — the leg stays advisory.
+```
+
+Records by reason and by what the repository declared as its gate (383 records):
+
+| Records | Reason | Declared gate | Touches material source |
+|---|---|---|---|
+| 264 | absent (no verdict file) | none | yes |
+| 47 | absent | none | no |
+| 37 | absent | local | 12 yes, 25 no |
+| 15 | absent | unknown | no |
+| 11 | not-clean (`explicit` verdict) | none | 9 yes, 2 no |
+| 6 | not-clean (`verify-yml` verdict) | local | 3 yes, 3 no |
+| 4 | unbound (`verify-yml` verdict) | local | yes |
+
+There are no `explained_ladder` records: a clean, covering, hand-authored
+verdict did not occur once in the window. The records span eleven
+repositories, all on the owner's one machine.
+
+### Three statements, kept apart
+
+1. **Fact.** No label was ever collected. None of the fortnightly reads due on
+   2026-10-12, 2026-10-26 and 2026-11-09 was made, and the sidecar holds no
+   human label.
+2. **Fact.** 311 of the 383 records are pushes with no verdict file in a
+   repository that declares no gate.
+3. **The owner's interpretation, not something this registration says.** The
+   recorded fields cannot show whether such a push skipped verification that
+   should have run, or was verified some other way. "The agent could have run
+   `verify-and-record.sh --run …`" shows a remedy existed; it does not show a
+   catch. Labelling 299 episodes, and about 47 more each week, was judged not
+   worth the work. Clause 3 requires every episode labelled, so a sample
+   could not have met the rule.
+
+### What was removed, and how to read the corpus again
+
+Removed in the retirement commit: Check 2b in `hooks/openspec-guard.sh`,
+`hooks/lib/verify-shadow.sh` (writer), `scripts/verify-shadow-adjudicate.sh`
+(reader), `tests/test-verify-measured-verdict.sh`, and the readers
+`verdict_measured_class`, `verdict_any_measured_at_head` and
+`verdict_gate_declaration` in `hooks/lib/verdict.sh`. `verdict_is_measured` and
+`verdict_discovery_source` remain for `scripts/verify-receipt.sh`.
+
+The corpus `~/.claude/.push-verify-shadow.jsonl` and its sidecar
+`~/.claude/.push-verify-adjudication.jsonl` were left in place on every
+machine. Records are `schema_version` 2 or 3, `predicate_version` 2, one JSON
+object per line, with the fields listed under "Re-registration 2026-10-02"
+above.
+
+The last commit that carries the writer, the reader and their test is
+`520a856b30e81bc3db68725869828bd1e42aff9e`. To re-read the corpus exactly as
+this section did:
+
+```
+git worktree add /tmp/vmv-reader 520a856b30e81bc3db68725869828bd1e42aff9e
+bash /tmp/vmv-reader/scripts/verify-shadow-adjudicate.sh --status
+```
+
+### If this is ever tried again
+
+It needs a new registration, a new predicate version and prospective data;
+nothing here pools. Decide first who labels and how often, and run that
+process on the first ten episodes before trusting the rule: this one failed on
+labelling capacity, not on the reader. And decide what a `true_catch` is for a
+push in a repository with no declared gate before any record exists.

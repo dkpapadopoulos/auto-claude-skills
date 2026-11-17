@@ -108,7 +108,7 @@ and it is the direction that measures more.
 - The moved file gains a **Retirement** section holding: the `--status` output of 2026-11-17 verbatim;
   the record format, `schema_version` and `predicate_version`; the last commit carrying the reader and how
   to run it from there; and three statements kept apart. (1) Fact: no label was ever collected and no
-  fortnightly read was made. (2) Fact: 341 of 383 records are pushes with no verdict file in repositories
+  fortnightly read was made. (2) Fact: 311 of 383 records are pushes with no verdict file in repositories
   that declare no gate. (3) The owner's interpretation, not something the registration says: the recorded
   fields cannot show whether such a push skipped verification, so labelling them was judged not worth the
   work. It ends with: this is an owner decision informed by exposure data, it is not the registered null

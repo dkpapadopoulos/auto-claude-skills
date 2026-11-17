@@ -167,6 +167,53 @@ mkart_tok "session-own" "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verif
 mkart_tok "session-sib" "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
 assert_equals "resolve: own exact-HEAD clean still wins over sibling exact-HEAD clean" "session-own" "$(verdict_resolve_token "session-own" "${REPO}")"
 
+# ---- verdict_discovery_source / verdict_is_measured ----
+# Moved here from tests/test-verify-measured-verdict.sh when the advisory leg
+# they were written for was retired (#343). scripts/verify-receipt.sh still
+# reads both, so their contract stays pinned: an EXACT match on the two values
+# the deterministic writer stamps, taken from the REAL writer, never typed in.
+PRODUCER="${PROJECT_ROOT}/scripts/verify-and-record.sh"
+rm -f "${HOME}/.claude/.skill-project-verified-"*
+_mk_plain_repo() { # <dir> <with-verify-yml:yes|no>
+    mkdir -p "$1"
+    ( cd "$1"; git -c init.defaultBranch=main init -q; git config user.email t@t; git config user.name t
+      [ "$2" = "yes" ] && printf 'substrate: local\ncommands:\n  - name: tests\n    run: true\n' > .verify.yml
+      echo readme > README.md; git add -A; git commit -qm base ) >/dev/null 2>&1
+}
+_produce() { # <repo> [explicit args...] -- writes the verdict under ${TOKEN}
+    local _r="$1"; shift
+    ( cd "${_r}" && SKILL_SESSION_TOKEN="${TOKEN}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" \
+        /bin/bash "${PRODUCER}" "$@" < /dev/null ) >/dev/null 2>&1
+}
+PA="${TMP}/prod-declared"; PB="${TMP}/prod-explicit"
+_mk_plain_repo "${PA}" yes; _mk_plain_repo "${PB}" no
+
+rm -f "${ART}"
+assert_equals "absent artifact => not measured" "1" "$(_bool verdict_is_measured "${TOKEN}")"
+assert_equals "absent artifact => no discovery source" "1" "$(_bool verdict_discovery_source "${TOKEN}")"
+
+_produce "${PA}"
+assert_equals "real writer, declared gate => discovery_source verify-yml" "verify-yml" "$(verdict_discovery_source "${TOKEN}")"
+assert_equals "real writer, declared gate => measured" "0" "$(_bool verdict_is_measured "${TOKEN}")"
+rm -f "${ART}"
+_produce "${PB}" --name tests --run true
+assert_equals "real writer, explicit gate => discovery_source explicit" "explicit" "$(verdict_discovery_source "${TOKEN}")"
+assert_equals "real writer, explicit gate => measured" "0" "$(_bool verdict_is_measured "${TOKEN}")"
+cp "${ART}" "${TMP}/F1-real-writer.json"   # the real writer's clean record, reused below
+
+# Hand-authored rungs and near-misses of the accepted values are not measured.
+for _src in claude-md-commands contributing-md heuristic:package.json something-else verify-yml-ish not-explicit explicit2 EXPLICIT; do
+    mkart "$(jq -nc --arg s "${C1}" --arg d "${_src}" '{substrate:"local",discovery_source:$d,passed:["tests"],failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+    assert_equals "source '${_src}' => not measured" "1" "$(_bool verdict_is_measured "${TOKEN}")"
+done
+mkart "$(jq -nc --arg s "${C1}" '{discovery_source:7,passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
+assert_equals "non-string discovery_source => none" "1" "$(_bool verdict_discovery_source "${TOKEN}")"
+mkart 'not json at all'
+assert_equals "unparseable artifact => no discovery source" "1" "$(_bool verdict_discovery_source "${TOKEN}")"
+mkart '[]'
+assert_equals "non-object artifact => no discovery source" "1" "$(_bool verdict_discovery_source "${TOKEN}")"
+rm -f "${ART}"
+
 # ---- _routing_base: one base for both push spellings (#374) ----
 # A repo made with `git init` + `remote add` has no origin/HEAD, which is the
 # only state where the candidate order after it matters. _mk_base_repo <dir>
