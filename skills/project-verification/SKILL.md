@@ -193,7 +193,7 @@ deterministic writer owns that field and stamps `explicit` for any
 caller-supplied gate, so an explicitly supplied gate cannot claim to be a
 declared one.
 
-The example above is a **field-shape illustration**, not an accepted-evidence sample: because its `could_not_verify` is non-empty (the `types` gate could not run), `deploy-gate` correctly does **not** accept it as local verification of record. A fully-accepted evidence file has `failed` and `could_not_verify` both empty and `gate_gaming_status: "clean"`.
+The example above is a **field-shape illustration**, not an accepted-evidence sample: because its `could_not_verify` is non-empty (the `types` gate could not run), `deploy-gate` correctly does **not** accept it as local verification of record. A fully-accepted evidence file has `failed` and `could_not_verify` both empty, a named `passed` check and `gate_gaming_status: "clean"`.
 
 `sha` records the HEAD the gate actually **ran against** — the pre-gate value captured in Step 2, never a post-run `git rev-parse HEAD`; the push gate honors a verdict only when this `sha` covers the pushed HEAD (equal, or an ancestor on the branch), so a stale or cross-branch verdict is ignored rather than causing a false block.
 

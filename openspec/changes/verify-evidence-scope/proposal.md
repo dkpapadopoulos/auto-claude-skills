@@ -7,7 +7,7 @@ Three open issues describe the same component, the VERIFY evidence the push gate
 - **#295.** `verdict_is_clean` accepts `{"sha":"<HEAD>","gate_gaming_status":"clean"}`: a record that names
   no check. Three gate legs read that predicate.
 - **#343.** The measured-verdict advisory leg (#301) has rendered on every qualifying push for 44 days and
-  recorded 299 would-block episodes. None has been labelled, and its rule needs every one labelled by the
+  recorded 299 would-block episodes (307 by the final read that evening). None has been labelled, and its rule needs every one labelled by the
   owner. The owner retired it on 2026-11-17.
 - **#374.** `_routing_base` resolves a different diff base for the same push depending on how the push is
   spelled, when `origin/HEAD` is unset. With the `HEAD` spelling the base is the branch's own remote copy,

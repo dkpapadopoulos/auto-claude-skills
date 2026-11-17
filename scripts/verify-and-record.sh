@@ -58,13 +58,22 @@ _x_name=""
 # checked at all and its declared check silently vanished.
 _x_validate_name() {
     [ -n "$1" ] || { echo "verify-and-record: name may not be empty" >&2; return 1; }
+    # A name with no non-space character would be written as a passed entry the
+    # gate's reader refuses (verdict_is_clean wants a NAME, #295), and verifying
+    # again would write the same record.
+    case "$1" in
+        *[![:space:]]*) : ;;
+        *) echo "verify-and-record: name may not be blank" >&2; return 1 ;;
+    esac
     # A name is a KEY in the record: it is comma-split at serialization, and the
     # pair transport is read LINE-wise. A newline therefore splits one declared
     # check across two records, in one of two shapes — measured, and only the
     # second is a false clean: "a\nb" yields could_not_verify=[a] failed=[b] (a
     # CORRUPT record), while a BARE newline leaves both records nameless, so the
     # execution loop skips both, the command never runs, and the empty arrays
-    # satisfy verdict_is_clean. Refuse both; do not try to repair either.
+    # satisfied verdict_is_clean as it then was (since #295 an empty `passed` is
+    # not clean; the record would still be wrong). Refuse both; do not try to
+    # repair either.
     case "$1" in
         *,*|*$'\x1f'*|*$'\n'*)
             echo "verify-and-record: name may not contain ',', a newline, or US" >&2; return 1 ;;

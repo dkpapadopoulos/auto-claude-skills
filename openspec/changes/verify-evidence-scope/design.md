@@ -48,7 +48,7 @@ Codex (independent mode, 2026-11-17) recommended the same pair and the same orde
 "changes no decision for honest writers" must be tested. Measured: of 64 verdict files on the owner's
 machine, 58 are clean, and all 58 carry at least one `passed` entry and a 40-character sha.
 
-**For #343:** label all 299 episodes and about 47 a week after that, or retire. The owner chose retire.
+**For #343:** label all 299 episodes (15:08Z read; 307 by the final read) and about 47 a week after that, or retire. The owner chose retire.
 Sampling cannot satisfy clause 3 of the rule, and changing the rule to fit the data is not open.
 
 **For #374:** make the `refs/heads/<b>` spelling resolve the upstream as `HEAD` does (both spellings then
@@ -69,6 +69,12 @@ and it is the direction that measures more.
   diff against the mainline, so that push stops firing routing-governance. That is the chosen invariant,
   it matches every normal clone, and a test cell pins it so nobody later describes the reorder as
   "fires at least as often".
+- A LOCAL `main`/`master` that already contains the subject is not accepted as a base (the
+  merge-base would be the subject and the diff empty). It is held, the upstream is tried, and the held
+  one is used only if nothing else resolves. Added after the whole-branch review measured that, without
+  it, a trunk-based checkout whose remote is not named `origin` (or whose `main` tracks a differently
+  named branch) read as changing nothing: the first cut of this slice lost a routing-governance deny
+  there, and the sentence "it is the direction that measures more" above was wrong for that state.
 - Not settled here, and unchanged: detached HEAD, a stale local `main`, and `origin/HEAD` naming a branch
   other than `origin/main`. They behave as they do today.
 - Effect on `scripts/verify-and-record.sh`: the gate-gaming diff uses the same base, so the case listed
@@ -108,7 +114,7 @@ and it is the direction that measures more.
 - The moved file gains a **Retirement** section holding: the `--status` output of 2026-11-17 verbatim;
   the record format, `schema_version` and `predicate_version`; the last commit carrying the reader and how
   to run it from there; and three statements kept apart. (1) Fact: no label was ever collected and no
-  fortnightly read was made. (2) Fact: 311 of 383 records are pushes with no verdict file in repositories
+  fortnightly read was made. (2) Fact: 319 of 392 records (final read; 311 of 383 at the 15:08Z read) are pushes with no verdict file in repositories
   that declare no gate. (3) The owner's interpretation, not something the registration says: the recorded
   fields cannot show whether such a push skipped verification, so labelling them was judged not worth the
   work. It ends with: this is an owner decision informed by exposure data, it is not the registered null
@@ -181,6 +187,16 @@ branch before the push question.
 
 The exact wording of the retirement section and of the reworded deny note; whether the seed-line edits go
 through a shared helper or stay inline. One commit per slice.
+
+## Review record
+
+The whole-branch review (independent reviewer, 2026-11-17) found three Important issues, all fixed in
+the review commit: the contained-local-mainline state above; `skills/deploy-gate/SKILL.md` and one line
+of the project-verification skill still stating the old acceptance rule; and the retirement record
+mixing two reads of the corpus. Codex's review of the changed functions found no counterexample to the
+predicate and three records for which the remedy printed no specific sentence (the caller's generic
+text still applied); two of those now have one. Left open, pre-existing: `verdict_has_test_failure`
+reads unslurped, so verify-hardening misses a failing record that is followed by a second document.
 
 ## Critique record
 

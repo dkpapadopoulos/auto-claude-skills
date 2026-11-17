@@ -274,6 +274,28 @@ mkart "$(jq -nc --arg s "${C1}" '{failed:["tests"],could_not_verify:[],passed:[]
 _r4="$(verdict_unclean_remedy "${TOKEN}")"
 assert_contains "R4 failing verdict: names the failing gate" "failing gate(s): tests" "${_r4}"
 assert_not_contains "R4 failing verdict: is not told it reports no check" "reports no check" "${_r4}"
+# R5-R7 (review of #295): three more ways to be not-clean used to print no
+# sentence at all, leaving the caller's generic text.
+mkart "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[],passed:["t"],sha:$s}')"
+assert_equals   "R5 precondition: a record with no gate-gaming status is not clean" "1" "$(_bool verdict_is_clean "${TOKEN}")"
+assert_contains "R5 no gate-gaming status: the remedy says so" "gate-gaming status is missing or not a recognised value" "$(verdict_unclean_remedy "${TOKEN}")"
+mkart "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[],passed:["t"],gate_gaming_status:"CLEAN",sha:$s}')"
+assert_contains "R5 an unrecognised status: the remedy says so" "gate-gaming status is missing or not a recognised value" "$(verdict_unclean_remedy "${TOKEN}")"
+# The writer pairs `unverified` with a could_not_verify entry that has its own
+# sentence; the status sentence must not double up on it.
+mkart "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:["gate-gaming-check"],passed:["t"],gate_gaming_status:"unverified",sha:$s}')"
+_r5="$(verdict_unclean_remedy "${TOKEN}")"
+assert_contains     "R5 control: the writer's unverified pair keeps its own sentence" "gate-gaming check could not run" "${_r5}"
+assert_not_contains "R5 control: ...and is not also told its status is unrecognised" "missing or not a recognised value" "${_r5}"
+mkart "$(jq -nc --arg s "${C1}" '{failed:[1],could_not_verify:[],passed:["t"],gate_gaming_status:"clean",sha:$s}')"
+assert_equals   "R6 precondition: a non-string entry in failed is not clean" "1" "$(_bool verdict_is_clean "${TOKEN}")"
+assert_contains "R6 a non-string entry in failed: not one well-formed record" "not one well-formed record" "$(verdict_unclean_remedy "${TOKEN}")"
+mkart "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[{}],passed:[],gate_gaming_status:"clean",sha:$s}')"
+_r6="$(verdict_unclean_remedy "${TOKEN}")"
+assert_contains     "R6 a non-string entry in could_not_verify: not one well-formed record" "not one well-formed record" "${_r6}"
+assert_not_contains "R6 ...and the malformed entry is not passed off as 'reports no check'" "reports no check" "${_r6}"
+: > "${ART}"
+assert_contains "R7 an empty file: the sentence names that case" "no document" "$(verdict_unclean_remedy "${TOKEN}")"
 rm -f "${ART}"
 
 # ---- _routing_base: one base for both push spellings (#374) ----
@@ -333,6 +355,43 @@ _o_head="$(/bin/bash -c '. "$1"; _routing_base "$2" HEAD' _ "${_OLD_LIB}" "${BW}
 _o_ref="$(/bin/bash -c '. "$1"; _routing_base "$2" refs/heads/feat/x' _ "${_OLD_LIB}" "${BW}")"
 assert_not_empty "B5 the old order still resolves a base for HEAD" "${_o_head}"
 assert_equals "B5 the old order gives the two spellings different bases" "1" "$(_bool [ "${_o_head}" = "${_o_ref}" ])"
+
+# B6-B8 (whole-branch review): a LOCAL `main` that already CONTAINS the subject
+# is not a base for it. merge-base(subject, main) is then the subject itself and
+# the diff is empty, so putting `main` ahead of the upstream made a trunk-based
+# push in a repo whose remote is not called `origin` read as changing nothing.
+# _mk_trunk_repo <dir> <remote-name> <remote-branch>: local main tracks
+# <remote>/<remote-branch>, with one unpushed commit that changes hooks/.
+_mk_trunk_repo() {
+    local d="$1" r="$2" rb="$3"
+    mkdir -p "${d}/work"
+    git init -q --bare "${d}/remote.git"
+    ( cd "${d}/work"
+      git init -q; git config user.email t@t; git config user.name t
+      git checkout -q -b main
+      mkdir -p hooks config; echo '{}' > config/default-triggers.json; echo base > f
+      git add -A; git commit -qm base
+      git remote add "${r}" "${d}/remote.git"
+      git push -q -u "${r}" "main:${rb}"
+      echo new > hooks/b.sh; git add -A; git commit -qm unpushed-routing ) >/dev/null 2>&1
+}
+TG="${TMP}/trunk-github"; _mk_trunk_repo "${TG}" github main
+assert_contains "B6 trunk push, remote not named origin: the unpushed routing file is in the diff" "hooks/b.sh" "$(_branch_diff_names "${TG}/work" HEAD)"
+assert_equals   "B6 ...so routing-governance's predicate fires" "0" "$(_bool diff_touches_routing "${TG}/work" HEAD)"
+assert_equals   "B6 ...and the refs/heads spelling agrees" "$(_routing_base "${TG}/work" HEAD)" "$(_routing_base "${TG}/work" refs/heads/main)"
+TO="${TMP}/trunk-origin-othername"; _mk_trunk_repo "${TO}" origin trunk
+assert_contains "B7 local main tracking origin/trunk: the unpushed routing file is in the diff" "hooks/b.sh" "$(_branch_diff_names "${TO}/work" HEAD)"
+# B8: a feature branch already merged into local main, with one more unpushed commit.
+( cd "${TG}/work"
+  git checkout -q -b feat; echo f1 > hooks/c.sh; git add -A; git commit -qm feat1
+  git push -q -u github feat
+  echo f2 > hooks/d.sh; git add -A; git commit -qm feat2-unpushed
+  git checkout -q main; git merge -q --ff-only feat; git checkout -q feat ) >/dev/null 2>&1
+assert_contains "B8 branch contained in local main: its unpushed file is still in the diff" "hooks/d.sh" "$(_branch_diff_names "${TG}/work" HEAD)"
+# B9 control: a contained subject with NO upstream still resolves (to itself),
+# as before: the held candidate is the last resort, not a failure.
+( cd "${TG}/work"; git checkout -q -b lonely main ) >/dev/null 2>&1
+assert_equals "B9 control: contained and no upstream => the held local mainline base" "$(git -C "${TG}/work" rev-parse lonely)" "$(_routing_base "${TG}/work" HEAD)"
 
 export HOME="${_OLDHOME}"
 rm -rf "${TMP}"

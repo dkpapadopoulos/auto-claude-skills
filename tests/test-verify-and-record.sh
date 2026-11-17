@@ -446,6 +446,11 @@ _refuses "${R25}" "a second --name before the first has a --run is refused" --na
 # P2a: "" doubled as BOTH "no pending name" and "an explicitly empty name", so a
 # trailing --name "" passed the dangling check and its declared check vanished.
 _refuses "${R25}" "a trailing empty name is refused"                   --name unit --run "true" --name ""
+# #295 review: a blank name was written as passed:[" "], which verdict_is_clean
+# rejects as reporting no check, and whose remedy (verify again) reproduced the
+# same record. The writer must not write what the gate's reader refuses.
+_refuses "${R25}" "a whitespace-only name is refused" --name " " --run "true"
+_refuses "${R25}" "a tab-only name is refused"        --name "$(printf '\t')" --run "true"
 # Duplicate names produce a duplicated entry in passed[]/failed[] that no reader
 # can attribute back to a command.
 _refuses "${R25}" "a duplicate name is refused"                        --name a --run "true" --name a --run "true"

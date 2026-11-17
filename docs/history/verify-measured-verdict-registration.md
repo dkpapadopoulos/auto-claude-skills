@@ -1,5 +1,9 @@
 # Design: VERIFY requires a measured verdict
 
+> **RETIRED 2026-11-17 by owner decision (#343).** The leg this registers no longer exists.
+> The disposition is the last section, "Retirement (2026-11-17)". Everything above it is
+> kept as written.
+
 ## Architecture
 
 `verdict_is_measured` reads the verdict's existing `discovery_source` field. Nothing in
@@ -534,12 +538,13 @@ final deadline   : 2027-03-31 — any unmet clause then closes the window as a n
 verdict  : DECISION RULE NOT MET — the leg stays advisory.
 ```
 
-Records by reason and by what the repository declared as its gate (383 records):
+Records by reason and by what the repository declared as its gate, from the same
+read (the 392 records with `ts` at or before 2026-11-17T22:12:35Z):
 
 | Records | Reason | Declared gate | Touches material source |
 |---|---|---|---|
-| 264 | absent (no verdict file) | none | yes |
-| 47 | absent | none | no |
+| 269 | absent (no verdict file) | none | yes |
+| 50 | absent | none | no |
 | 37 | absent | local | 12 yes, 25 no |
 | 15 | absent | unknown | no |
 | 11 | not-clean (`explicit` verdict) | none | 9 yes, 2 no |
@@ -555,13 +560,13 @@ repositories, all on the owner's one machine.
 1. **Fact.** No label was ever collected. None of the fortnightly reads due on
    2026-10-12, 2026-10-26 and 2026-11-09 was made, and the sidecar holds no
    human label.
-2. **Fact.** 311 of the 383 records are pushes with no verdict file in a
+2. **Fact.** 319 of the 392 records are pushes with no verdict file in a
    repository that declares no gate.
 3. **The owner's interpretation, not something this registration says.** The
    recorded fields cannot show whether such a push skipped verification that
    should have run, or was verified some other way. "The agent could have run
    `verify-and-record.sh --run …`" shows a remedy existed; it does not show a
-   catch. Labelling 299 episodes, and about 47 more each week, was judged not
+   catch. Labelling 307 episodes, and about 48 more each week, was judged not
    worth the work. Clause 3 requires every episode labelled, so a sample
    could not have met the rule.
 
@@ -573,6 +578,12 @@ Removed in the retirement commit: Check 2b in `hooks/openspec-guard.sh`,
 `verdict_measured_class`, `verdict_any_measured_at_head` and
 `verdict_gate_declaration` in `hooks/lib/verdict.sh`. `verdict_is_measured` and
 `verdict_discovery_source` remain for `scripts/verify-receipt.sh`.
+
+The decision was taken on an earlier read the same day (15:08Z: 383 records,
+299 episodes, 311 of them no-verdict pushes with no declared gate); the commit
+that removed the leg quotes those figures. An installed plugin older than the
+retirement keeps appending until it updates, so the file on disk can hold
+records later than this read.
 
 The corpus `~/.claude/.push-verify-shadow.jsonl` and its sidecar
 `~/.claude/.push-verify-adjudication.jsonl` were left in place on every

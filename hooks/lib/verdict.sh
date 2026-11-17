@@ -207,7 +207,7 @@ verdict_unclean_remedy() {
       # field is reported as a malformed record below, never iterated.
       def arr(f): if (f | type) == "array" then f else [] end;
       def odd(f): (f != null) and ((f | type) != "array");
-      "The recorded verdict is not one well-formed record (more than one document, not an object, or a result field of the wrong type). Re-run Skill(auto-claude-skills:project-verification) to replace it." as $malformed
+      "The recorded verdict is not one well-formed record (no document, more than one document, not an object, or a result field or entry of the wrong type). Re-run Skill(auto-claude-skills:project-verification) to replace it." as $malformed
       | if length != 1 or (.[0] | type) != "object" then $malformed
         else .[0]
       | (arr(.failed) | map(strings)) as $f
@@ -215,7 +215,7 @@ verdict_unclean_remedy() {
       | ($c | map(select(. != "gate-run-straddled-commit" and . != "gate-gaming-check"))) as $cg
       | (arr(.gate_gaming_hits) | map(strings) | length) as $h
       | (odd(.failed) or odd(.could_not_verify) or odd(.passed)
-         or (arr(.passed) | any(.[]; type != "string"))) as $bad
+         or ((arr(.failed) + arr(.could_not_verify) + arr(.passed)) | any(.[]; type != "string"))) as $bad
       | (arr(.passed) | map(strings) | any(.[]; test("[^[:space:]]"))) as $reported
       | [ (if $bad then $malformed else empty end),
           (if ($f | length) > 0 then
@@ -232,6 +232,13 @@ verdict_unclean_remedy() {
            else empty end),
           (if ($c | index("gate-gaming-check")) != null then
              "The gate-gaming check could not run (no mainline base to diff against, or a gate_gaming_paths declaration on the mainline that cannot be applied). Re-running prints the reason; a declaration has to be fixed on the mainline, not on this branch."
+           else empty end),
+          # A status that is neither clean nor suspect, and that the
+          # could-not-run entry above does not already explain. (No apostrophe
+          # in this program: it sits inside a single-quoted shell string.)
+          (if ((.gate_gaming_status // "") as $g | $g != "clean" and $g != "suspect")
+              and (($c | index("gate-gaming-check")) == null) then
+             "Its gate-gaming status is missing or not a recognised value, so that check did not complete. Re-run Skill(auto-claude-skills:project-verification)."
            else empty end),
           (if ($cg | length) > 0 then
              "Gate(s) that could not be run (missing tool or runner error): \(named($cg)). Make them runnable and re-run Skill(auto-claude-skills:project-verification)."
@@ -380,11 +387,23 @@ is_routing_repo() {
 # to win over `main` whenever origin/HEAD was unset. The upstream is the last
 # resort, for a repo whose mainline has none of these names.
 #
+# EXCEPT that a LOCAL `main`/`master` which already CONTAINS the subject is not
+# a base for it: the merge-base is then the subject itself and the diff is
+# empty. That is the state of a trunk-based checkout (the subject IS local
+# main, with unpushed commits) in a repo whose remote is not called `origin`,
+# or whose local main tracks a differently named remote branch; with `main`
+# ahead of the upstream, such a push read as changing nothing (found in the
+# whole-branch review of #374). Such a candidate is HELD, the upstream is
+# tried, and the held one is returned only if nothing else resolves. The
+# remote-tracking names are not treated this way: a subject contained in
+# origin/main has nothing unpushed, and an empty diff is the right answer.
+#
 # Not monotonic, and not meant to be: a file changed and pushed, then restored
 # to the mainline's content, is in the diff against the upstream and not in the
 # net diff.
 _routing_base() {
-    local proot="${1:-.}" rev="${2:-HEAD}" ref b up
+    local proot="${1:-.}" rev="${2:-HEAD}" ref b up subj held=""
+    subj="$(git -C "$proot" rev-parse --verify --quiet "${rev}^{commit}" 2>/dev/null)" || subj=""
     # `@{upstream}` with no left-hand side means the CHECKED-OUT branch's
     # upstream, which is the wrong branch as soon as the subject is another one.
     # Ask for the subject's own upstream instead; a sha (or a branch with no
@@ -392,9 +411,19 @@ _routing_base() {
     # `refs/heads/<b>@{upstream}`, so the prefix comes off first.
     up="${rev#refs/heads/}@{upstream}"
     for ref in origin/HEAD origin/main main origin/master master "$up"; do
-        b="$(git -C "$proot" merge-base "$rev" "$ref" 2>/dev/null)" && [ -n "$b" ] && { printf '%s' "$b"; return 0; }
+        b="$(git -C "$proot" merge-base "$rev" "$ref" 2>/dev/null)" || continue
+        [ -n "$b" ] || continue
+        case "$ref" in
+            main|master)
+                if [ -n "$subj" ] && [ "$b" = "$subj" ]; then
+                    [ -n "$held" ] || held="$b"
+                    continue
+                fi ;;
+        esac
+        printf '%s' "$b"; return 0
     done
-    return 1
+    [ -n "$held" ] || return 1
+    printf '%s' "$held"
 }
 
 # verdict_routing_delta <token> <proj_root> — 0 iff routing paths changed between
