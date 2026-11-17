@@ -1,0 +1,27 @@
+
+
+<pasted_content id="4bf8">
+Work on issue #409 in auto-claude-skills: strip <\pasted_content> blocks from trigger,
+keyword and name-boost scoring in hooks/skill-activation-hook.sh.
+
+Read first: `gh issue view 409`, the memory files frontend-hint-exposure-412-state,
+authorial-judgment-and-frontend-design-usage-2026-10-27, frontier-value-audit-outcome,
+routing-suppression-must-be-display-only and fixing-a-false-block-can-be-a-bypass, and
+.claude/rules/routing-state.md.
+
+Constraints:
+- Scoring only. Stripping must not skip the chain-state write or change what is displayed
+  for text the user typed.
+- Preserve a boundary where a block is removed so adjacent user words do not fuse.
+- Before any code: build the replay corpus from REAL wrappers in my transcripts (attribute
+  forms, several blocks, malformed and unterminated blocks) plus the negative corpus.
+  No invented inputs.
+- Measure both arms: mandates removed that were wrong, and mandates removed that were
+  right. An unterminated block must not be able to swallow user text.
+- Work in a worktree, TDD, one fresh whole-branch reviewer at the end. No push, PR or
+  other GitHub write without my explicit yes. Never amend commits.
+
+Start by showing me the corpus and the both-arms numbers for the current hook, then
+propose the design. Use Codex as a sparring partner through scripts/consult-dispatch.sh
+if the design has a real fork.
+</pasted_content id="4bf8">

@@ -1,0 +1,38 @@
+check the below review on PR406:
+
+
+
+<pasted_content id="0c34">
+Blocking issues 🚫
+1. push-gate-enforcement.md — re-adds a fallback claim that was deliberately removed
+
+The change replaces:
+
+"The reader now DERIVES the version from the producer lib, refusing (exit 2) when it cannot rather than guessing (#383)"
+
+with:
+
+"The reader now DERIVES the version from the producer lib (the literal is only a no-lib fallback)"
+
+This directly contradicts commit ff8ddf5 ("docs: push-gate-enforcement no longer claims a shadow-adjudicate fallback"), which was written specifically to record that #383 (4a91394) removed the fallback literal from scripts/shadow-adjudicate.sh and replaced it with exit 2. The most recent code commit, ed3f929 ("fix: shadow-adjudicate clears an inherited predicate version before deriving"), does not re-add a literal fallback — its commit message explicitly states the new cell "refuses with exit 2 and reports no corpus." The code still exits 2 on failed derivation; the fallback claim has no basis in the current source.
+
+A maintainer reading the rule will believe there is a graceful no-lib fallback. There is not. The original text is correct; this hunk should be reverted.
+
+2. push-gate-telemetry.md — removes the advisory_emitted membership requirement without a code change
+
+Rule (5) currently (post-2459214) states the rate population is would_block == true AND advisory_emitted non-false, citing scripts/shadow-adjudicate.sh:229 (cmd_next) and :336-362 (_episode_wb). The change simplifies it to would_block == true ONLY, removing the advisory_emitted filter and all associated text.
+
+No code change has removed this filter. 2459214 added the rule to document existing code at those two sites. 76570a6 ("test: pin --next keeping a non-boolean advisory_emitted record") added a mutation-verified test specifically for the advisory_emitted disjunct at :229. ed3f929 touched scripts/shadow-adjudicate.sh but only added 4 lines to the predicate-version unset fix; the advisory_emitted filter was not removed.
+
+The consequence: the rule now says "would_block only" while the code continues to filter on advisory_emitted. Future commits targeting the rule will remove the filter from the code on the (false) assumption it has already been removed. That weakens the rate population in the unsafe direction — the very direction the old rule called out: "dilution here biases toward CLEARING the deny-flip."
+
+The simplified text also orphans the "dilution biases toward clearing the deny-flip — the unsafe direction" rationale: the rationale is preserved, but the mechanism that prevented that dilution is gone. The rule is self-contradictory.
+
+This hunk should be reverted. If the intent is to remove the advisory_emitted filter from the code, that code change (with its tests updated to match) should come first, then the docs follow.
+
+Recommendations 💡
+The .claude-pr/ untracked directory contains only a copy of CLAUDE.md. It will not be committed in its current state, so it is not a blocker, but if it is a staging artefact it should be cleaned up or gitignored to avoid confusion in future git status output.
+</pasted_content id="0c34">
+
+
+keep going with the remaining tasks

@@ -1,0 +1,8 @@
+Follow-up 2 from `openspec/changes/archive/2026-10-27-authorial-judgment-correspondence/design.md` (PR #400).
+
+Two of the three wrong `frontend-design` mandates found in the 2026-10-27 usage review were caused by text inside producer-identified `<pasted_content>` blocks (a pasted article or a generated prompt) scoring as if the user had written it. The ai-daily-brief mandates are a sibling case: a 38 KB generated prompt.
+
+Proposed: strip `<pasted_content ...>...</pasted_content>` regions from trigger, keyword and name-boost scoring in `hooks/skill-activation-hook.sh`, preserving a boundary so adjacent user words do not fuse.
+
+Before shipping: replay the real wrappers (attribute forms, multiple blocks, malformed or unterminated blocks) and the negative corpus, so stripping cannot remove user text or be defeated by a block that never closes. Measure both arms (`fixing-a-false-block-can-be-a-bypass`).
+
