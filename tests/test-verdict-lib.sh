@@ -38,7 +38,7 @@ ART="${HOME}/.claude/.skill-project-verified-${TOKEN}"
 mkart() { printf '%s' "$1" > "${ART}"; }
 
 # clean verdict at C1
-mkart "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+mkart "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
 assert_equals "clean verdict detected"        "0" "$(_bool verdict_is_clean "${TOKEN}")"
 assert_equals "sha_is_head at C1"             "0" "$(_bool verdict_sha_is_head "${TOKEN}" "${REPO}")"
 assert_equals "covers_head at C1"             "0" "$(_bool verdict_covers_head "${TOKEN}" "${REPO}")"
@@ -53,12 +53,12 @@ assert_equals "failing => not clean"          "1" "$(_bool verdict_is_clean "${T
 
 # ancestor sha: add C2, artifact still references C1
 ( cd "${REPO}"; echo x >> config/default-triggers.json; git commit -qam c2 )
-mkart "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+mkart "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
 assert_equals "ancestor covers_head"          "0" "$(_bool verdict_covers_head "${TOKEN}" "${REPO}")"
 assert_equals "ancestor is not head"          "1" "$(_bool verdict_sha_is_head "${TOKEN}" "${REPO}")"
 
 # unrelated sha (cross-branch) MUST NOT cover HEAD -- false-block guard
-mkart "$(jq -nc '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:"0000000000000000000000000000000000000000"}')"
+mkart "$(jq -nc '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:"0000000000000000000000000000000000000000"}')"
 assert_equals "unrelated sha !covers (false-block guard)" "1" "$(_bool verdict_covers_head "${TOKEN}" "${REPO}")"
 
 # no-sha artifact MUST NOT cover HEAD
@@ -70,7 +70,7 @@ assert_equals "missing sha !covers"           "1" "$(_bool verdict_covers_head "
 # it" for every commit. The ancestor cell above is the control that a real
 # object name still covers.
 for _bad in "HEAD" "HEAD~1" "master" "main" "@" "${C1:0:12}"; do
-    mkart "$(jq -nc --arg s "${_bad}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+    mkart "$(jq -nc --arg s "${_bad}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
     assert_equals "non-sha '${_bad}' !covers"  "1" "$(_bool verdict_covers_head "${TOKEN}" "${REPO}")"
 done
 
@@ -95,10 +95,10 @@ assert_equals "diff touches routing (hooks/)" "0" "$(_bool diff_touches_routing 
 
 # verdict_routing_delta: routing files changed AFTER the verdict's sha => 0 (delta)
 FHEAD="$(git -C "${REPO}" rev-parse HEAD)"
-mkart "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+mkart "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
 assert_equals "routing delta since old sha" "0" "$(_bool verdict_routing_delta "${TOKEN}" "${REPO}")"
 # verdict at HEAD => no routing delta since => 1
-mkart "$(jq -nc --arg s "${FHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+mkart "$(jq -nc --arg s "${FHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
 assert_equals "no routing delta at HEAD" "1" "$(_bool verdict_routing_delta "${TOKEN}" "${REPO}")"
 
 # ---- verdict_resolve_token: bind verdict to COMMIT (sha), not session token ----
@@ -112,31 +112,31 @@ RHEAD="$(git -C "${REPO}" rev-parse HEAD)"
 mkart_tok() { printf '%s' "$2" > "${HOME}/.claude/.skill-project-verified-$1"; }
 
 # (a) session token's own verdict covers HEAD -> returned verbatim (no sibling scan)
-mkart_tok "session-self" "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
-mkart_tok "session-sib"  "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+mkart_tok "session-self" "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
+mkart_tok "session-sib"  "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
 assert_equals "resolve: own covering token wins" "session-self" "$(verdict_resolve_token "session-self" "${REPO}")"
 
 # (b) session token absent, a SIBLING verdict covers HEAD -> sibling bridges the deadlock
 rm -f "${HOME}/.claude/.skill-project-verified-"*
-mkart_tok "session-sib" "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+mkart_tok "session-sib" "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
 assert_equals "resolve: sibling covering verdict bridges deadlock" "session-sib" "$(verdict_resolve_token "session-absent" "${REPO}")"
 
 # (c) deny-bias: a sibling FAILED@HEAD outranks a sibling CLEAN@HEAD
 rm -f "${HOME}/.claude/.skill-project-verified-"*
-mkart_tok "session-clean"  "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+mkart_tok "session-clean"  "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
 mkart_tok "session-failed" "$(jq -nc --arg s "${RHEAD}" '{failed:["tests"],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
 RT="$(verdict_resolve_token "session-absent" "${REPO}")"
 assert_equals "resolve: failed@HEAD sibling wins (deny-bias)" "0" "$(_bool verdict_has_test_failure "${RT}")"
 
 # (d) nothing covers HEAD anywhere -> session token returned UNCHANGED (absent semantics kept)
 rm -f "${HOME}/.claude/.skill-project-verified-"*
-mkart_tok "session-stale" "$(jq -nc '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:"0000000000000000000000000000000000000000"}')"
+mkart_tok "session-stale" "$(jq -nc '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:"0000000000000000000000000000000000000000"}')"
 assert_equals "resolve: no covering verdict => session token unchanged" "session-absent" "$(verdict_resolve_token "session-absent" "${REPO}")"
 
 # (e) cross-token bridging is EXACT-HEAD only: a FOREIGN clean verdict at an ANCESTOR
 # must NOT bridge (ancestor acceptance is scoped to the session's OWN token, step 1).
 rm -f "${HOME}/.claude/.skill-project-verified-"*
-mkart_tok "session-anc" "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+mkart_tok "session-anc" "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
 assert_equals "resolve: foreign ancestor-clean does NOT bridge (exact-HEAD only)" "session-absent" "$(verdict_resolve_token "session-absent" "${REPO}")"
 # but the SAME artifact under the session's OWN token DOES cover (ancestor, step 1)
 mv "${HOME}/.claude/.skill-project-verified-session-anc" "${HOME}/.claude/.skill-project-verified-session-own"
@@ -147,14 +147,14 @@ assert_equals "resolve: own ancestor-clean still covers (step 1)" "session-own" 
 # routing-governance needs a verdict AT HEAD, so an own-ancestor short-circuit that hides
 # a genuine sibling exact-HEAD verdict is a false-block.
 rm -f "${HOME}/.claude/.skill-project-verified-"*
-mkart_tok "session-own" "$(jq -nc --arg s "${C1}"    '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
-mkart_tok "session-sib" "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+mkart_tok "session-own" "$(jq -nc --arg s "${C1}"    '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
+mkart_tok "session-sib" "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
 assert_equals "resolve: sibling exact-HEAD outranks own ancestor-clean (#123)" "session-sib" "$(verdict_resolve_token "session-own" "${REPO}")"
 
 # (g) deny-bias preserved across the widened bridge: own ancestor-clean + sibling
 # exact-HEAD FAILED => the sibling failure wins (a failure at HEAD outranks a clean ancestor).
 rm -f "${HOME}/.claude/.skill-project-verified-"*
-mkart_tok "session-own" "$(jq -nc --arg s "${C1}"    '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+mkart_tok "session-own" "$(jq -nc --arg s "${C1}"    '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
 mkart_tok "session-sib" "$(jq -nc --arg s "${RHEAD}" '{failed:["tests"],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
 RT3="$(verdict_resolve_token "session-own" "${REPO}")"
 assert_equals "resolve: own ancestor yields to sibling FAILED@HEAD (deny-bias, #123)" "session-sib" "${RT3}"
@@ -163,8 +163,8 @@ assert_equals "resolve: the resolved token carries the failure" "0" "$(_bool ver
 # (h) #123 regression guard: own EXACT-HEAD clean is still preferred over a sibling
 # EXACT-HEAD clean (own fast path preserved — byte-identical to case (a)).
 rm -f "${HOME}/.claude/.skill-project-verified-"*
-mkart_tok "session-own" "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
-mkart_tok "session-sib" "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+mkart_tok "session-own" "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
+mkart_tok "session-sib" "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
 assert_equals "resolve: own exact-HEAD clean still wins over sibling exact-HEAD clean" "session-own" "$(verdict_resolve_token "session-own" "${REPO}")"
 
 # ---- verdict_discovery_source / verdict_is_measured ----
@@ -212,6 +212,68 @@ mkart 'not json at all'
 assert_equals "unparseable artifact => no discovery source" "1" "$(_bool verdict_discovery_source "${TOKEN}")"
 mkart '[]'
 assert_equals "non-object artifact => no discovery source" "1" "$(_bool verdict_discovery_source "${TOKEN}")"
+rm -f "${ART}"
+
+# ---- verdict_is_clean: a clean verdict REPORTS at least one check (#295) ----
+# Accepted fixtures come from the two supported writers, never from a record
+# typed here: F1 is the real deterministic writer's output (captured above), F2
+# is the hand-authored shape lifted out of the project-verification skill with
+# the one thing that makes its example not-clean removed.
+cp "${TMP}/F1-real-writer.json" "${ART}"
+assert_equals "C2 the real writer's passing record is clean" "0" "$(_bool verdict_is_clean "${TOKEN}")"
+_F2="$(awk '/^```json$/{f=1;next} f&&/^```$/{exit} f' "${SKILL}" | jq -c --arg s "${C1}" '.could_not_verify = [] | .sha = $s' 2>/dev/null)"
+assert_contains "F2 was lifted from the skill (it carries the skill's own check names)" '"passed":["lint","tests"]' "${_F2:-<empty>}"
+mkart "${_F2}"
+assert_equals "C3 the skill's hand-authored shape is clean" "0" "$(_bool verdict_is_clean "${TOKEN}")"
+
+mkart "$(jq -nc --arg s "${C1}" '{sha:$s,gate_gaming_status:"clean"}')"
+assert_equals "C1 a two-field record that reports no check is NOT clean" "1" "$(_bool verdict_is_clean "${TOKEN}")"
+assert_contains "R2 two-field record: remedy says it reports no check" "reports no check" "$(verdict_unclean_remedy "${TOKEN}")"
+assert_contains "R2 ...and names the skill that records one" "Skill(auto-claude-skills:project-verification)" "$(verdict_unclean_remedy "${TOKEN}")"
+
+_notclean() { # <label> <json>
+    mkart "$2"
+    assert_equals "$1" "1" "$(_bool verdict_is_clean "${TOKEN}")"
+}
+_notclean "C4 a string-typed failed is NOT clean, whatever passed says" \
+    "$(jq -nc --arg s "${C1}" '{failed:"x",could_not_verify:[],passed:["t"],gate_gaming_status:"clean",sha:$s}')"
+assert_contains "R1 wrong-typed field: remedy says it is not one well-formed record" "not one well-formed record" "$(verdict_unclean_remedy "${TOKEN}")"
+_notclean "C5 a non-string entry in passed is NOT clean" \
+    "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[],passed:["t",null],gate_gaming_status:"clean",sha:$s}')"
+_notclean "C6 a whitespace-only check name is NOT clean" \
+    "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[],passed:["  "],gate_gaming_status:"clean",sha:$s}')"
+_notclean "C7 an empty passed is NOT clean" \
+    "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[],passed:[],gate_gaming_status:"clean",sha:$s}')"
+assert_contains "R2 empty passed: remedy says it reports no check" "reports no check" "$(verdict_unclean_remedy "${TOKEN}")"
+_notclean "C9 a string-typed passed is NOT clean" \
+    "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[],passed:"t",gate_gaming_status:"clean",sha:$s}')"
+_notclean "C10 a non-array could_not_verify is NOT clean" \
+    "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:{},passed:["t"],gate_gaming_status:"clean",sha:$s}')"
+# C8: two documents, each of them a clean record. Unslurped, jq reports on the
+# last value, so this used to read as clean.
+_one="$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[],passed:["t"],gate_gaming_status:"clean",sha:$s}')"
+printf '%s\n%s\n' "${_one}" "${_one}" > "${ART}"
+assert_equals "C8 two concatenated clean documents are NOT clean" "1" "$(_bool verdict_is_clean "${TOKEN}")"
+assert_contains "R1 two documents: remedy says it is not one well-formed record" "not one well-formed record" "$(verdict_unclean_remedy "${TOKEN}")"
+mkart '[]'
+assert_equals "C11 a non-object document is NOT clean" "1" "$(_bool verdict_is_clean "${TOKEN}")"
+assert_contains "R1 non-object: remedy says it is not one well-formed record" "not one well-formed record" "$(verdict_unclean_remedy "${TOKEN}")"
+# Control for the whole block: the same record the C-cells mutate IS clean.
+mkart "${_one}"
+assert_equals "C0 control: the unmutated record is clean" "0" "$(_bool verdict_is_clean "${TOKEN}")"
+assert_equals "R0 control: a clean record has no remedy" "" "$(verdict_unclean_remedy "${TOKEN}")"
+
+# R3: every blocker that applies to one record is named, old and new together.
+mkart "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[],gate_gaming_status:"suspect",sha:$s}')"
+_r3="$(verdict_unclean_remedy "${TOKEN}")"
+assert_contains "R3 suspect AND no check: the suspect sentence" "gate-gaming check is suspect" "${_r3}"
+assert_contains "R3 suspect AND no check: the no-check sentence" "reports no check" "${_r3}"
+# A failing verdict keeps its own remedy and gains no "reports no check": a
+# failed run reported a check, it just did not pass.
+mkart "$(jq -nc --arg s "${C1}" '{failed:["tests"],could_not_verify:[],passed:[],gate_gaming_status:"clean",sha:$s}')"
+_r4="$(verdict_unclean_remedy "${TOKEN}")"
+assert_contains "R4 failing verdict: names the failing gate" "failing gate(s): tests" "${_r4}"
+assert_not_contains "R4 failing verdict: is not told it reports no check" "reports no check" "${_r4}"
 rm -f "${ART}"
 
 # ---- _routing_base: one base for both push spellings (#374) ----

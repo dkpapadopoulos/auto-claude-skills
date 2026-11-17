@@ -56,7 +56,7 @@ assert_not_contains "absent verdict => no deny"             '"deny"' "${out:-}"
 assert_not_contains "retired leg: no VERIFY VERDICT advisory (#343)" "VERIFY VERDICT" "${out:-}"
 
 # (4) clean verdict covering HEAD -> NO deny
-mkart "$(jq -nc --arg s "${NRHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+mkart "$(jq -nc --arg s "${NRHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
 out="$(run_in "${NR}")"
 assert_not_contains "clean verdict => no deny"             '"deny"' "${out:-}"
 
@@ -86,18 +86,18 @@ assert_contains     "routing change, no verdict => deny"    '"deny"'            
 assert_contains     "routing deny names project-verification" "project-verification" "${out:-<empty>}"
 
 # (6) routing diff + clean verdict AT HEAD -> NO deny
-mkart "$(jq -nc --arg s "${RRHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+mkart "$(jq -nc --arg s "${RRHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
 out="$(run_in "${RR}")"
 assert_not_contains "routing + clean@HEAD => no deny"       '"deny"' "${out:-}"
 
 # (7a) clean verdict at BASE, routing files CHANGED after it -> DENY [Finding B: unverified routing delta]
-mkart "$(jq -nc --arg s "${RRBASE}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+mkart "$(jq -nc --arg s "${RRBASE}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
 out="$(run_in "${RR}")"
 assert_contains     "routing changed since verdict => deny" '"deny"' "${out:-<empty>}"
 
 # (7b) clean verdict AT the routing commit, only a docs commit after -> NO deny (advisory;
 # routing unchanged since the verdict, so the benign follow-up is not re-blocked)
-mkart "$(jq -nc --arg s "${RRC2}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
+mkart "$(jq -nc --arg s "${RRC2}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"
 out="$(run_in "${RR}")"
 assert_not_contains "routing verified, docs-only follow-up => no deny" '"deny"' "${out:-}"
 
@@ -122,7 +122,7 @@ CVHEAD="$(git -C "${CV}" rev-parse HEAD)"
 
 # (9) routing diff, clean verdict AT HEAD but under a FOREIGN token (not session-t) -> NO deny
 rm -f "${HOME}/.claude/.skill-project-verified-"*
-printf '%s' "$(jq -nc --arg s "${CVHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')" \
+printf '%s' "$(jq -nc --arg s "${CVHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')" \
   > "${HOME}/.claude/.skill-project-verified-session-FOREIGN"
 out="$(run_in "${CV}")"
 assert_not_contains "foreign-token clean verdict @HEAD bridges deadlock" '"deny"' "${out:-}"
@@ -131,7 +131,7 @@ assert_not_contains "foreign-token clean verdict @HEAD bridges deadlock" '"deny"
 #      Verify is in the chain (status completed), so verify-hardening must still deny,
 #      naming the failing gate (deny-bias in token resolution).
 rm -f "${HOME}/.claude/.skill-project-verified-"*
-printf '%s' "$(jq -nc --arg s "${CVHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')" \
+printf '%s' "$(jq -nc --arg s "${CVHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')" \
   > "${HOME}/.claude/.skill-project-verified-session-CLEANFOREIGN"
 printf '%s' "$(jq -nc --arg s "${CVHEAD}" '{failed:["tests"],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')" \
   > "${HOME}/.claude/.skill-project-verified-session-FAILEDFOREIGN"
@@ -141,7 +141,7 @@ assert_contains "deny names the failing gate (deny-bias)"        "tests"  "${out
 
 # (11) foreign token but sha is NOT HEAD (stale) -> still deny (no covering verdict) [no over-bridging]
 rm -f "${HOME}/.claude/.skill-project-verified-"*
-printf '%s' "$(jq -nc '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:"0000000000000000000000000000000000000000"}')" \
+printf '%s' "$(jq -nc '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:"0000000000000000000000000000000000000000"}')" \
   > "${HOME}/.claude/.skill-project-verified-session-STALEFOREIGN"
 out="$(run_in "${CV}")"
 assert_contains "foreign verdict not@HEAD => still deny (sha binding intact)" '"deny"' "${out:-<empty>}"
@@ -151,8 +151,8 @@ assert_contains "foreign verdict not@HEAD => still deny (sha binding intact)" '"
 # own ANCESTOR verdict (routing delta since it) => false DENY, shadowing the genuine exact-HEAD
 # verdict on disk. Post-fix, the exact-HEAD foreign verdict OUTRANKS the own ancestor => NO deny.
 rm -f "${HOME}/.claude/.skill-project-verified-"*
-mkart "$(jq -nc --arg s "${CVBASE}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"   # OWN token @ ANCESTOR
-printf '%s' "$(jq -nc --arg s "${CVHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')" \
+mkart "$(jq -nc --arg s "${CVBASE}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')"   # OWN token @ ANCESTOR
+printf '%s' "$(jq -nc --arg s "${CVHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}')" \
   > "${HOME}/.claude/.skill-project-verified-session-EXACTFOREIGN"                                          # FOREIGN @ EXACT HEAD
 out="$(run_in "${CV}")"
 assert_not_contains "own ancestor must not shadow foreign exact-HEAD@HEAD (PR #121, #123)" '"deny"' "${out:-}"
@@ -161,6 +161,48 @@ assert_not_contains "own ancestor must not shadow foreign exact-HEAD@HEAD (PR #1
 # not-clean one. None may have written the retired leg's corpus.
 assert_equals "retired leg: no shadow record written by any case (#343)" "absent" \
     "$([ -e "${HOME}/.claude/.push-verify-shadow.jsonl" ] && echo present || echo absent)"
+
+# ============ A verdict must REPORT a check (#295) ============
+# The record below names no check. Before #295 it satisfied VERIFY wherever a
+# gate read the verdict. Each flip is paired with a control that differs by
+# the one field, and each deny is asserted BY GATE: "deny" alone would be
+# satisfied by a different leg denying for a different reason.
+_two_field() { jq -nc --arg s "$1" '{sha:$s,gate_gaming_status:"clean"}'; }
+_with_check() { jq -nc --arg s "$1" '{sha:$s,gate_gaming_status:"clean",passed:["tests"]}'; }
+rm -f "${HOME}/.claude/.skill-project-verified-"*
+
+# E3 routing-governance (chain state present and complete, routing repo).
+mkart "$(_two_field "${RRHEAD}")"
+out="$(run_in "${RR}")"
+assert_contains "E3 routing push + record with no check => deny"            '"deny"'              "${out:-<empty>}"
+assert_contains "E3 ...the deny says the verdict reports no check"          "reports no check"    "${out:-<empty>}"
+assert_contains "E3 ...and names the skill that records one"                "project-verification" "${out:-<empty>}"
+assert_equals   "E3 ...and the model is sent the same text as the user"     \
+    "$(printf '%s' "${out}" | jq -r '.systemMessage')" "$(printf '%s' "${out}" | jq -r '.hookSpecificOutput.permissionDecisionReason')"
+mkart "$(_with_check "${RRHEAD}")"
+out="$(run_in "${RR}")"
+assert_not_contains "E3 control: the same record plus one reported check => no deny" '"deny"' "${out:-}"
+
+# E1/E2 the global fail-closed leg (no chain state; REVIEW from the ledger, so
+# VERIFY is the only thing in question). A non-routing repo, so
+# routing-governance cannot be the gate that answers.
+rm -f "${COMP}"
+# shellcheck disable=SC1090
+. "${PROJECT_ROOT}/hooks/lib/branch-ledger.sh"
+( cd "${NR}" && branch_ledger_record "requesting-code-review" "${NR}" )
+NRNOW="$(git -C "${NR}" rev-parse HEAD)"
+rm -f "${ART}"
+out="$(run_in "${NR}")"
+assert_contains "E0 precondition: with no verdict the fail-closed leg denies for VERIFY alone" "verification-before-completion" "${out:-<empty>}"
+assert_not_contains "E0 ...and REVIEW is not what is missing" "requires requesting-code-review" "${out:-}"
+mkart "$(_two_field "${NRNOW}")"
+out="$(run_in "${NR}")"
+assert_contains "E1 fail-closed leg + record with no check => deny"        '"deny"'                          "${out:-<empty>}"
+assert_contains "E1 ...by the fail-closed gate"                            "PUSH GATE (fail-closed)"         "${out:-<empty>}"
+assert_contains "E1 ...for the VERIFY milestone"                           "verification-before-completion"  "${out:-<empty>}"
+mkart "$(_with_check "${NRNOW}")"
+out="$(run_in "${NR}")"
+assert_not_contains "E2 control: the same record plus one reported check => no deny" '"deny"' "${out:-}"
 
 export HOME="${_OLDHOME}"
 rm -rf "${TMP}"

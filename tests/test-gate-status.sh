@@ -107,11 +107,21 @@ assert_contains "no verdict => routing gate would deny" "WOULD DENY at 6 routing
 # Clean verdict at HEAD under the singleton token => routing gate passes.
 printf 'session-testtoken' > "${TEST_HOME}/.claude/.skill-session-token"
 FIX_HEAD="$(cd "${FIX}" && git rev-parse HEAD)"
-printf '{"sha":"%s","failed":[],"could_not_verify":[],"gate_gaming_status":"clean"}\n' "${FIX_HEAD}" \
+printf '{"sha":"%s","failed":[],"could_not_verify":[],"passed":["tests"],"gate_gaming_status":"clean"}\n' "${FIX_HEAD}" \
     > "${TEST_HOME}/.claude/.skill-project-verified-session-testtoken"
 out="$(cd "${FIX}" && /bin/bash "${GATE_STATUS}")"
 assert_contains "clean verdict at HEAD passes routing gate" "pass (clean verdict at HEAD)" "${out}"
 assert_contains "all gates pass with ledger + clean verdict" "=> git push NOW: WOULD ALLOW" "${out}"
+
+# G1 (#295): the same record with no reported check is not clean, and the
+# replay prints the remedy the guard's deny carries. The cell above is the
+# control: it differs by the `passed` field alone.
+printf '{"sha":"%s","gate_gaming_status":"clean"}\n' "${FIX_HEAD}" \
+    > "${TEST_HOME}/.claude/.skill-project-verified-session-testtoken"
+out="$(cd "${FIX}" && /bin/bash "${GATE_STATUS}")"
+assert_contains "G1 a verdict with no reported check: routing gate would deny" "WOULD DENY (the verdict at HEAD is not clean)" "${out}"
+assert_contains "G1 ...and the replay says why" "reports no check" "${out}"
+assert_contains "G1 ...and the evidence line names that state" "no reported check" "${out}"
 
 # Failing verdict at HEAD + verify in an active chain => gate 4 denies first.
 printf '{"sha":"%s","failed":["tests/run-tests.sh"],"could_not_verify":[],"gate_gaming_status":"clean"}\n' "${FIX_HEAD}" \

@@ -292,7 +292,7 @@ assert_not_contains "gh-merge outside SHIP flushes nothing"       "additionalCon
 # VERIFY leg, ledger records satisfy REVIEW, so the push is ALLOWED and the
 # advisory must emit on that genuine allow, not only under ACSM_SKIP.
 _PVHEAD="$(git -C "${REPO}" rev-parse HEAD)"
-jq -nc --arg s "${_PVHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' \
+jq -nc --arg s "${_PVHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}' \
     > "$HOME/.claude/.skill-project-verified-${_TOK}"
 out="$( ( cd "${REPO}" && \
       _mkinput "git push origin HEAD" | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null ) )"
@@ -310,7 +310,7 @@ assert_contains     "advisory emits on the genuine allow path"    "EVALUATOR SUR
 branch_ledger_record "requesting-code-review"         "${REPO}"
 branch_ledger_record "verification-before-completion" "${REPO}"
 _PVHEAD3="$(git -C "${REPO}" rev-parse HEAD)"
-jq -nc --arg s "${_PVHEAD3}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' \
+jq -nc --arg s "${_PVHEAD3}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}' \
     > "$HOME/.claude/.skill-project-verified-${_TOK}"
 out="$( ( cd "${REPO}" && \
       _mkinput "git push origin HEAD" | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null ) )"

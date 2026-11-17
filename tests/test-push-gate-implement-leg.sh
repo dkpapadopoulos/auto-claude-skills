@@ -184,7 +184,7 @@ _REPO="$(cd "$(mktemp -d /tmp/pg-impl-repo-XXXXXX)" && pwd -P)"
 # (no routing paths in the diff, no config/default-triggers.json in the repo),
 # so only the IMPLEMENT leg's behavior is under test.
 _PVHEAD="$(git -C "${_REPO}" rev-parse HEAD 2>/dev/null)"
-jq -nc --arg s "${_PVHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' \
+jq -nc --arg s "${_PVHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}' \
     > "$HOME/.claude/.skill-project-verified-${_TOK}"
 
 # shellcheck disable=SC1090

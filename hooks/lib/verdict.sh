@@ -136,16 +136,36 @@ verdict_has_test_failure() {
     jq -e '((.failed // []) | length) > 0' "$f" >/dev/null 2>&1
 }
 
-# verdict_is_clean <token> — 0 iff present+parseable AND fully clean (same
-# predicate deploy-gate uses for local verification of record).
+# verdict_is_clean <token> — 0 iff the artifact is ONE well-formed record that
+# is fully clean and REPORTS at least one check (#295):
+#   - exactly one JSON document, and it is an object (slurped: unslurped, `jq -e`
+#     reports on the last value, so a failing record followed by a clean one
+#     read as clean);
+#   - `failed` and `could_not_verify` are absent or empty ARRAYS;
+#   - `passed` is an array of strings, at least one with a non-space character;
+#   - `gate_gaming_status` is "clean".
+# Before #295 a record holding only `sha` and `gate_gaming_status` was clean.
+#
+# This asks that a check was REPORTED. It does not show the check ran, and it
+# does not say who wrote the record: the artifact is workflow evidence an agent
+# can write. The gate defends against a skipped step, not against forged
+# evidence. Do not describe this predicate as provenance or as a boundary.
+#
+# Absent file, no jq and an unparseable file all return non-zero, as before;
+# what that means is the caller's decision.
 verdict_is_clean() {
     local token="${1:-}" f
     f="$(verdict_artifact_path "$token")" || return 1
     [ -f "$f" ] || return 1
     command -v jq >/dev/null 2>&1 || return 1
-    jq -e '((.failed // []) | length == 0)
-       and ((.could_not_verify // []) | length == 0)
-       and ((.gate_gaming_status // "") == "clean")' "$f" >/dev/null 2>&1
+    jq -es '
+      def none(f): (f == null) or ((f | type) == "array" and (f | length) == 0);
+      length == 1 and (.[0] | type) == "object" and (.[0]
+        | none(.failed) and none(.could_not_verify)
+          and ((.passed | type) == "array")
+          and (.passed | all(.[]; type == "string"))
+          and (.passed | any(.[]; test("[^[:space:]]")))
+          and ((.gate_gaming_status // "") == "clean"))' "$f" >/dev/null 2>&1
 }
 
 # verdict_unclean_remedy <token> — for a verdict that is NOT clean, print what would make
@@ -178,17 +198,27 @@ verdict_unclean_remedy() {
     f="$(verdict_artifact_path "$token")" || return 1
     [ -f "$f" ] || return 1
     command -v jq >/dev/null 2>&1 || return 1
-    jq -er '
+    jq -ers '
       def plain: test("^[A-Za-z0-9._ -]{1,60}$");
       def named($all): ($all | map(select(plain))) as $ok | ($all | length) - ($ok | length) as $odd
         | ($ok | join(", "))
           + (if $odd > 0 then (if ($ok | length) > 0 then ", and " else "" end) + "\($odd) with a name that is not a plain label (see .verify.yml)" else "" end);
-      objects
-      | ((.failed // []) | map(strings)) as $f
-      | ((.could_not_verify // []) | map(strings)) as $c
+      # A result field is read as a list only when it IS one. A wrong-typed
+      # field is reported as a malformed record below, never iterated.
+      def arr(f): if (f | type) == "array" then f else [] end;
+      def odd(f): (f != null) and ((f | type) != "array");
+      "The recorded verdict is not one well-formed record (more than one document, not an object, or a result field of the wrong type). Re-run Skill(auto-claude-skills:project-verification) to replace it." as $malformed
+      | if length != 1 or (.[0] | type) != "object" then $malformed
+        else .[0]
+      | (arr(.failed) | map(strings)) as $f
+      | (arr(.could_not_verify) | map(strings)) as $c
       | ($c | map(select(. != "gate-run-straddled-commit" and . != "gate-gaming-check"))) as $cg
-      | ((.gate_gaming_hits // []) | map(strings) | length) as $h
-      | [ (if ($f | length) > 0 then
+      | (arr(.gate_gaming_hits) | map(strings) | length) as $h
+      | (odd(.failed) or odd(.could_not_verify) or odd(.passed)
+         or (arr(.passed) | any(.[]; type != "string"))) as $bad
+      | (arr(.passed) | map(strings) | any(.[]; test("[^[:space:]]"))) as $reported
+      | [ (if $bad then $malformed else empty end),
+          (if ($f | length) > 0 then
              "It reports failing gate(s): \(named($f)). Fix them and re-run Skill(auto-claude-skills:project-verification)."
            else empty end),
           (if (.gate_gaming_status // "") == "suspect" then
@@ -205,9 +235,15 @@ verdict_unclean_remedy() {
            else empty end),
           (if ($cg | length) > 0 then
              "Gate(s) that could not be run (missing tool or runner error): \(named($cg)). Make them runnable and re-run Skill(auto-claude-skills:project-verification)."
+           else empty end),
+          # Only when nothing above explains the missing check: a failed or
+          # unrunnable gate was reported, it just did not pass.
+          (if ($bad | not) and ($reported | not) and ($f | length) == 0 and ($c | length) == 0 then
+             "The recorded verdict reports no check. Re-run Skill(auto-claude-skills:project-verification) so at least one gate is run and recorded."
            else empty end)
         ]
       | if length == 0 then empty else join(" ") end
+        end
     ' "$f" 2>/dev/null
 }
 

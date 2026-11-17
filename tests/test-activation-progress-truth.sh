@@ -160,7 +160,7 @@ gate() {
     ( cd "${PROJECT_ROOT}" && jq -nc --arg tp "${TP}" '{transcript_path:$tp, tool_input:{command:"git push origin HEAD"}}' \
         | env HOME="${H}" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" BRANCH_LEDGER_DIR="${H}/ledger" /bin/bash "${GUARD}" 2>/dev/null )
 }
-seed_verdict() { jq -nc --arg s "$(git -C "${PROJECT_ROOT}" rev-parse HEAD)" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' > "${H}/.claude/.skill-project-verified-${TOK}"; }
+seed_verdict() { jq -nc --arg s "$(git -C "${PROJECT_ROOT}" rev-parse HEAD)" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}' > "${H}/.claude/.skill-project-verified-${TOK}"; }
 new_session g1; seed_verdict
 say "${BUILD}"; say ok; say ok; say ok; say ok; say ok; say ok; say ok
 out="$(gate)"

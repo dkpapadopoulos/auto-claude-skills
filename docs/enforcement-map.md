@@ -154,3 +154,8 @@ cannot set either. That variable does nothing for the three hooks below.
 - `max_iterations` caps only `domain`/`required` roles (hardcoded allowlist).
 - Evidence artifacts live in `~/.claude/` and are NOT CI-visible; CI's
   backstop is the test suite, not milestone artifacts.
+- The verification verdict is workflow evidence an agent can write. The gate
+  checks that it reports a check and binds to the commit; it does not show
+  that the check ran. It defends against a skipped step, not against forged
+  evidence (#295). The same holds for every other VERIFY and REVIEW source:
+  all are plain files under `~/.claude/`.

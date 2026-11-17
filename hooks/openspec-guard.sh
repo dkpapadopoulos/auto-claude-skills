@@ -1435,11 +1435,14 @@ EOF
                 # The widening was pre-registered and REFUSED on measurement
                 # (openspec/changes/chain-verify-verdict-acceptance). A clean
                 # covering verdict is NOT stronger evidence in the sense that
-                # matters here: the artifact is model-authored by design, and
-                # `{"sha":"<HEAD>","gate_gaming_status":"clean"}` — two fields,
-                # no run — satisfies verdict_is_clean + verdict_covers_head and
-                # turns this deny into a guard-level allow. Adding an explicit
-                # worktree_dirty:false defeats the sha-exact tightening too.
+                # matters here: the artifact is model-authored by design. When
+                # this was measured, `{"sha":"<HEAD>","gate_gaming_status":"clean"}`
+                # — two fields, no run — satisfied verdict_is_clean +
+                # verdict_covers_head and turned this deny into a guard-level
+                # allow, and an explicit worktree_dirty:false defeated the
+                # sha-exact tightening too. Since #295 the record must also
+                # report a check (`passed`), which is one more field to type,
+                # not a boundary: the refusal stands on the same ground.
                 # What is different about the verdict is NOT that this leg's
                 # evidence is unforgeable. Measured 2026-09-24: all four of this
                 # leg's sources are plain files under ~/.claude/ and each one,
@@ -1458,7 +1461,7 @@ EOF
                    && command -v verdict_is_clean >/dev/null 2>&1 \
                    && verdict_is_clean "${_VERDICT_TOKEN}" \
                    && verdict_covers_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
-                    _MSG="${_MSG} NOTE: a CLEAN verification verdict covering this commit does exist, and this leg deliberately does not accept it (issue #254, measured 2026-09-24). That artifact is authored by the model itself — project-verification Step 3 instructs it — so it arrives without any deliberate act, and a two-field file satisfies the predicate. This leg's sources are normally written only by hooks. None of them is forgery-proof either (issue #295); the difference is that the verdict is supplied by default. Invoke the Skill and let it complete."
+                    _MSG="${_MSG} NOTE: a CLEAN verification verdict covering this commit does exist, and this leg deliberately does not accept it (issue #254, measured 2026-09-24). That artifact is authored by the model itself — project-verification Step 3 instructs it, or the model runs the script that writes it — so it arrives without any deliberate act, and the gate checks only that it reports a check and names this commit, not that the check ran. This leg's sources are normally written only by hooks. None of them is forgery-proof either (issue #295); the difference is that the verdict is supplied by default. Invoke the Skill and let it complete."
                 fi
                 _skill_available "verification-before-completion" || _MSG="${_MSG} ${_SETUP_HINT}"
                 _emit_deny "${_MSG}"
@@ -1777,10 +1780,12 @@ EOF
             [ "${_g_verify}" = "false" ] && _bridge_has "verification-before-completion" && _g_verify=true
             # A clean verification verdict covering HEAD is SHA-bound, so it also
             # satisfies the verify leg. NOTE (#295): "stronger" is the wrong word
-            # and used to appear here — the artifact is model-authored by design
-            # and a two-field file satisfies it, measured 2026-09-24. It is
-            # sha-bound, not harder to forge. Narrowing this leg is a live
-            # question; it is a deny-side change and wants its own registration.
+            # and used to appear here — the artifact is model-authored by design.
+            # It must report a check and name the commit (#295); that it does
+            # not show the check ran is the stated scope, not an oversight:
+            # this gate defends against a skipped step, not forged evidence.
+            # It is sha-bound, not harder to forge. Narrowing this leg is a
+            # deny-side change and wants its own registration.
             if [ "${_g_verify}" = "false" ] && [ "${_VERDICT_OK}" = "true" ] \
                && verdict_is_clean "${_VERDICT_TOKEN}" && verdict_covers_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
                 _g_verify=true
