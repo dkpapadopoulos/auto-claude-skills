@@ -8,10 +8,11 @@ Whether hiding paste-only mandates helps is not yet shown on data gathered after
 
 ## What Changes
 
-- **A parser** (`hooks/lib/pasted-content.sh`): finds the harness wrapper (an opener with a 4-hex `id`, lazily up to the first closer with the SAME id) and replaces each pair with one newline. An opener without its closer strips nothing, so an unterminated block cannot remove typed text. More than 16 openers: nothing is parsed. A regex failure: nothing is stripped.
-- **A shadow record** in `hooks/skill-activation-hook.sh`, written after every print and state write, for each prompt containing the wrapper opener: what rule R (pre-registered, predicate_version 1) would keep and hide. R keeps a selected skill when the hook's own scorer and role caps still select it for the stripped text, or when sticky composition injected it; R never adds or substitutes a skill. Records go to `~/.claude/.paste-shadow.d/`, one new file each, with no prompt text.
+- **A parser** (`hooks/lib/pasted-content.sh`): finds the harness wrapper (an opener with a 4-hex `id`, lazily up to the first closer with the SAME id, with no opener of that id in between) and replaces each pair with one newline. An opener without its closer strips nothing, so an unterminated block cannot remove typed text. More than 16 openers: the regex does not run. A regex failure: nothing is stripped.
+- **A shadow record** in `hooks/skill-activation-hook.sh`, written after every print and state write, for each prompt containing the wrapper opener: what rule R (pre-registration draft, predicate_version 1) would keep and hide. R keeps a selected skill when the hook's own scorer, sticky composition and role caps still select it for the stripped text, or when sticky composition injected it for the full prompt; R never adds or substitutes a skill. Over 16 KB of stripped text, or 3 s already spent, the record says `skipped`. Records go to `~/.claude/.paste-shadow.d/`, one new file each, with no prompt text.
 - **`ACS_PASTE_SHADOW=off`** (any letter case) disables the record. Anything else is shadow.
-- **The selection's tentative phase** is computed by a function both passes call, instead of inline code (no behaviour change).
+- **Shared functions, no behaviour change**: the selection's tentative phase (`_compute_tentative_phase`), sticky composition's cancel test (`_is_pure_cancel`) and its injection (`_inject_sticky_step`) move verbatim out of inline code so both selections call them.
+- **A reader** (`scripts/paste-shadow-report.sh`) that counts the records, shipped with the writer.
 
 ## Capabilities
 

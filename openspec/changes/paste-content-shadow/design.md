@@ -27,10 +27,12 @@ Multi-turn (dev replay to paste turn + 10): 14 of the 65 hidden mandates are sho
 
 ## Decisions
 
-- Strict wrapper: 4 lowercase hex, same id both ends, lazy body. A changed format strips nothing (today's behaviour) and leaves a record with `pairs: 0`, the drift signal.
-- Cost: each unmatched opener scans the rest of the prompt (measured 1,000 openers 0.5 s, 4,000 openers 3.3 s). Above 16 openers nothing is parsed (`capped`). The real maximum is 2.
-- Ordering: the parse and the second selection run after the print and after every state write (`_paste_shadow` is the hook's last call), in a subshell, so no global the hook already used can change and a slow parse cannot cost a state write.
-- The second selection uses the hook's own `_score_skills` and `_select_by_role_caps` on the stripped, lowercased text, with no context bonus and no sticky injection; the tentative phase is a function shared with the main flow.
+- Strict wrapper: 4 lowercase hex, same id both ends, lazy body, and no opener of the same id inside the body (otherwise a stray opener borrows a later block's closer and the typed text between them is stripped; found in review). A changed format strips nothing (today's behaviour) and leaves a record with `pairs: 0`, the drift signal. A body the regex engine gives up on (measured: 4 MB parses, 8 MB raises) is `error`, nothing stripped.
+- Cost: each unmatched opener scans the rest of the prompt (measured 1,000 openers 0.5 s, 4,000 openers 3.3 s). Above 16 openers the regex does not run (`capped`). The real maximum is 2.
+- Budget: scoring cost grows faster than the text, so re-scoring long typed text doubled the hook's time (review: 6.5 s -> 12.7 s at 39 KB, past the 10 s kill, which would change what is displayed). Over 16 KB of stripped text, or 3 s already spent, the second selection does not run and the record says `skipped` (after the fix: 6.53 s vs 6.58 s at 39 KB).
+- Ordering: the parse and the second selection run after the print and after every state write (`_paste_shadow || true` is the hook's last call; as the last command its status is the hook's exit status), in a subshell, so no global the hook already used can change and a slow parse cannot cost a state write.
+- The second selection uses the hook's own `_score_skills`, sticky injection (`_inject_sticky_step`, with the chain's step from before this turn's writes, and `_is_pure_cancel`) and `_select_by_role_caps` on the stripped, lowercased text. Without sticky, R hid the chain's step on "go + paste" turns that the hook answers with that step (found in review). The context bonus (+20 for successors of the last-invoked step) is not applied, so a role-cap pick can differ when that signal exists. The tentative phase is a function shared with the main flow.
+- Blind spot of the confirmation replay: it runs each prompt in a fresh HOME, with no chain and no last-invoked signal, so it cannot see the chain-context cases; the production records can.
 - Records follow the sticky-repeat precedent: `~/.claude/.paste-shadow.d/<token>.<prompt_count>.<random>.json`, exclusive create, no prompt text, not pruned (about 12 a week).
 
 ## Verified on the whole corpus
