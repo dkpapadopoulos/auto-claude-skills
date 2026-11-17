@@ -84,6 +84,19 @@ r="$(strip "${D4}")"
 assert_equals "L4: unterminated: no pair" "0" "$(field "$r" .pairs)"
 assert_equals "L4: unterminated: text byte-identical to input" "$(jq -nr --rawfile t "${D4}" '$t')" "$(field "$r" .text)"
 
+# --- L4b: an unterminated opener cannot borrow a LATER block's closer of the same id ----------
+# (DERIVED: AROUND with a copy of its own opener inserted before its typed text, i.e. an
+# unterminated opener whose id a later real block reuses.) Found in review: the lazy body ran
+# from the first opener to the later closer and removed the typed text between them.
+D4B="${TEST_TMPDIR}/same-id-unterminated.txt"
+derive "${AROUND}" "${D4B}" '$t | (match("<pasted_content id=\"[0-9a-f]{4}\">").string) as $op | $op + $t'
+r="$(strip "${D4B}")"
+assert_equals "L4b: control: two openers with one id, one closer" "2 1" \
+    "$(jq -nr --rawfile t "${D4B}" '$t | [(indices("<pasted_content id=") | length), (indices("</pasted_content id=") | length)] | "\(.[0]) \(.[1])"')"
+assert_equals "L4b: the later real block is still one pair" "1" "$(field "$r" .pairs)"
+assert_equals "L4b: the typed text between the stray opener and the block survives" "true" \
+    "$(field "$r" '.text | contains("check the below review on PR406:")')"
+
 # --- L5: closer with a different id matches nothing (DERIVED) -------------------------------
 D5="${TEST_TMPDIR}/mismatched.txt"
 derive "${AROUND}" "${D5}" '$t | sub("</pasted_content id=\"[0-9a-f]{4}\">"; "</pasted_content id=\"ffff\">")'
@@ -161,6 +174,24 @@ fi
 # failure (a retry limit) takes the same branch.
 assert_equals "L12: a raising match yields status error, nothing stripped" "error 0" \
     "$(jq -nrc "${PASTED_CONTENT_JQ_DEF} [\"<pasted_content id=\\\"\"] | paste_strip | \"\(.status) \(.pairs)\"" 2>/dev/null)"
+
+# --- L13: a body the regex engine gives up on fails safe (DERIVED: the real wrapper of ONLY
+#     around an 8 MB body; measured with jq 1.8.2: 4 MB parses, 8 MB raises) -----------------
+D13="${TEST_TMPDIR}/huge.txt"
+jq -nj --rawfile o "${ONLY}" '($o | match("<pasted_content id=\"[0-9a-f]{4}\">").string) as $op
+    | ($o | match("</pasted_content id=\"[0-9a-f]{4}\">").string) as $cl
+    | "typed\n\n" + $op + "\n" + ("pasted words here " * 466000) + "\n" + $cl + "\n"' > "${D13}"
+r="$(strip "${D13}")"
+st="$(field "$r" .status)"
+if [ "${st}" = "error" ]; then
+    assert_equals "L13: 8 MB body: engine gave up, nothing stripped" "0 true" \
+        "$(printf '%s' "$r" | jq -r --rawfile in "${D13}" '"\(.pairs) \(.text == $in)"')"
+elif [ "${st}" = "ok" ]; then
+    # Another jq build may not give up; then the pair must simply be found.
+    assert_equals "L13: 8 MB body parsed by this jq: one pair" "1" "$(field "$r" .pairs)"
+else
+    _record_fail "L13: 8 MB body: status error or ok" "got '${st}'"
+fi
 
 teardown_test_env
 print_summary
