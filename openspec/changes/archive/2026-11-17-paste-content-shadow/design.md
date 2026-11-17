@@ -55,3 +55,27 @@ In `specs/skill-routing/spec.md`; pinned by `tests/test-pasted-content-lib.sh` a
 
 - This design was written after the whole-branch review, so the review's fixes (the budget, sticky in the second selection, the same-id lookahead) are already described above; no further deviation.
 - The pre-registration was frozen on 2026-11-17 with its drafted harm bar (G2), not Codex's < 5% bound with N >= 300.
+
+## Divergences (auto-generated at ship time)
+
+The design doc was found in the change folder, not recorded in session state. Its Acceptance Scenarios section points to `specs/skill-routing/spec.md`, so the scenarios below are that spec's.
+
+**Acceptance Scenarios:**
+- [x] The default changes nothing that is displayed — implemented as designed (SH1, and the whole-corpus replay)
+- [x] Typed words still select — implemented as designed
+- [x] A block that never closes — implemented as designed (strips nothing)
+- [x] A sticky step — implemented as designed (R3)
+- [~] A short reply with a paste inside a chain — implemented with modification: added after the whole-branch review; the second selection now applies sticky composition (R6)
+- [~] A stray opener before a block with the same id — implemented with modification: added after the review; the parser's negative lookahead, which errors on bodies of about 8 MB (L4b, L13)
+- [~] Long typed text — implemented with modification: added after the review; a 16 KB / 3 s budget records `skipped` (B0, B1)
+- [x] State is identical turn by turn — implemented as designed (SH1)
+- [x] Stripping before scoring would not be — implemented as designed (SH3 mutant control)
+- [x] A pasted review — implemented as designed (T1, no prompt text)
+
+**Scope changes:**
+- Added: `scripts/paste-shadow-report.sh`, a reader for the records (not in the first plan).
+- Removed: none.
+- Modified: none.
+
+**Design decision changes:**
+- Rule R was amended before the freeze to keep the step sticky composition gives the stripped prompt; the pre-registration states the amendment and the blind spot it leaves in the fresh-HOME replay.
