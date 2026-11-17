@@ -63,8 +63,15 @@ turn() {
 txt() { local f; f="$(mktemp "${TEST_TMPDIR}/p.XXXXXX")"; printf '%s' "$1" > "${f}"; printf '%s' "${f}"; }
 # names <block> : the skill names on the block's Evaluate line ("**Phase: [X]** | a TAG, b TAG"),
 # sorted and comma-joined. Every displayed skill is on that line whatever its role or layout.
-names() { printf '%s\n' "$1" | grep -m1 -F '**Phase: [' | sed 's/^.*\*\* | //' | tr ',' '\n' \
-    | awk 'NF {print $1}' | LC_ALL=C sort | paste -sd, -; }
+# Only registry names are kept: an "INVOKE WHEN: <condition>" tag can itself hold commas
+# (agent-team-review's does), and its words would otherwise read as skills (measured in the
+# corpus replay).
+SKILL_NAMES=",$(jq -r '[.skills[].name] | join(",")' "${REG}"),"
+names() { local t out=""
+    for t in $(printf '%s\n' "$1" | grep -m1 -F '**Phase: [' | sed 's/^.*\*\* | //' | tr ',' '\n' | awk 'NF {print $1}'); do
+        case "${SKILL_NAMES}" in *",${t},"*) out="${out}${t}"$'\n' ;; esac
+    done
+    printf '%s' "${out}" | awk 'NF' | LC_ALL=C sort | paste -sd, -; }
 # srt <list> : a comma list sorted the same way.
 srt() { printf '%s' "$1" | tr ',' '\n' | awk 'NF' | LC_ALL=C sort | paste -sd, -; }
 # -A: a record written with an empty token would be a dotfile (".1.<n>.json").
@@ -99,6 +106,8 @@ c1="$(turn off "${ONLY}")"
 [ -n "$(names "${c1}")" ] && _record_pass "C1: the real paste-only prompt is routed today ($(names "${c1}"))" \
     || _record_fail "C1: the real paste-only prompt is routed today" "nothing displayed"
 assert_equals "C2: SHORT is six words (sticky-eligible)" "6" "$(wc -w < "${SHORT}" | tr -d ' ')"
+assert_equals "C3: names() ignores the words of an INVOKE WHEN condition" "agent-team-review,requesting-code-review" \
+    "$(names 'Evaluate: **Phase: [REVIEW]** | requesting-code-review MUST INVOKE, agent-team-review INVOKE WHEN: diff touches 5+ files, or crosses a boundary')"
 
 # --- SH: nothing displayed or written changes ----------------------------------------------
 echo "== SH: display and state identical to off, turn by turn =="
