@@ -37,7 +37,7 @@ Multi-turn (dev replay to paste turn + 10): 14 of the 65 hidden mandates are sho
 
 ## Verified on the whole corpus
 
-All 3,001 dev prompts replayed through the base commit and this change, each in a fresh HOME with a session token and production's 10 s limit: 0 display differences (after normalising each tree's plugin root, which preconditions render) and 0 differences in any `.skill-*` file over the 2,958 that finished; 43 hit the limit in both arms and none in only one. Controls: base against itself, 0 of 382; the strip-before-scoring mutant, 74 of 82 pasted prompts with different state. The records for the 79 wrapped prompts equal R computed independently from the dev runs' rendered blocks, 79 of 79.
+All 3,001 dev prompts replayed through the base commit and this change, each in a fresh HOME with a session token and production's 10 s limit: 0 display differences (after normalising each tree's plugin root, which preconditions render) and 0 differences in any `.skill-*` file over the 2,937 that finished; 64 hit the limit, the same 64 in both arms. Controls: base against itself, 0 of 382; the strip-before-scoring mutant, 74 of 82 pasted prompts with different state. Of the records for the 79 wrapped prompts, 78 equal R computed independently from the dev runs' rendered blocks; the 79th was `skipped` by the budget under the replay's load and keeps every skill, as R's step 3 says. (These figures are from the run after the review fixes; the run before them finished 2,958, with 43 timeouts in both arms, and its records matched 79 of 79.)
 
 Correction to the dev numbers: the dev replay's line parser missed `Required when …:` lines and the role-less layout used when no process skill is selected, so its domain/workflow counts are incomplete. The process-mandate counts (every `MUST INVOKE` renders a `Process:` line) are unaffected.
 
@@ -50,3 +50,8 @@ Correction to the dev numbers: the dev replay's line parser missed `Required whe
 ## Acceptance Scenarios
 
 In `specs/skill-routing/spec.md`; pinned by `tests/test-pasted-content-lib.sh` and `tests/test-activation-paste-shadow.sh`.
+
+## Implementation Notes (synced at ship time)
+
+- This design was written after the whole-branch review, so the review's fixes (the budget, sticky in the second selection, the same-id lookahead) are already described above; no further deviation.
+- The pre-registration was frozen on 2026-11-17 with its drafted harm bar (G2), not Codex's < 5% bound with N >= 300.
