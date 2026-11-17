@@ -1005,6 +1005,34 @@ EOF
   SORTED="$(printf '%s\n%s' "$_new_line" "$SORTED" | grep -v '^$' | sort -s -t'|' -k1 -rn)"
 }
 
+# --- _compute_tentative_phase -------------------------------------
+# Tentative phase for required-role pass 0.
+# Priority: process > workflow > domain > first required skill.
+# Required skills are only used as last resort (when all scored skills are required).
+# Input globals: SORTED
+# Output globals: _TENTATIVE_PHASE, _TENTATIVE_PHASE_REQUIRED
+_compute_tentative_phase() {
+  _TENTATIVE_PHASE=""
+  _TENTATIVE_PHASE_REQUIRED=""
+  while IFS='|' read -r _tp_score _tp_name _tp_role _tp_invoke _tp_phase; do
+    [[ -z "$_tp_name" ]] && continue
+    if [[ "$_tp_role" == "process" ]]; then
+      _TENTATIVE_PHASE="$_tp_phase"
+      break
+    fi
+    if [[ "$_tp_role" == "required" ]]; then
+      # Track first required phase as last-resort fallback
+      [[ -z "$_TENTATIVE_PHASE_REQUIRED" ]] && _TENTATIVE_PHASE_REQUIRED="$_tp_phase"
+      continue
+    fi
+    [[ -z "$_TENTATIVE_PHASE" ]] && _TENTATIVE_PHASE="$_tp_phase"
+  done <<EOF
+${SORTED}
+EOF
+  # Last resort: if only required skills scored, use their phase
+  [[ -z "$_TENTATIVE_PHASE" ]] && _TENTATIVE_PHASE="$_TENTATIVE_PHASE_REQUIRED"
+}
+
 # --- _select_by_role_caps -----------------------------------------
 # Input globals: SORTED, MAX_SUGGESTIONS
 # Output globals: SELECTED, OVERFLOW_DOMAIN, OVERFLOW_WORKFLOW, PROCESS_COUNT, DOMAIN_COUNT, WORKFLOW_COUNT, TOTAL_COUNT
@@ -2146,6 +2174,106 @@ ${HINTS}${COMPOSITION_HINTS}"
   fi
 }
 
+# --- _paste_shadow ------------------------------------------------
+# PASTED CONTENT (#409, stage 1). Text the user pastes arrives inside a harness wrapper
+# (hooks/lib/pasted-content.sh) and scores as if they had typed it. Measured over 79 real
+# wrapped prompts: the mandates that came only from pasted text were 56 WRONG to 2 RIGHT by two
+# blind labellers. Stripping the paste BEFORE scoring was measured and rejected: it deleted the
+# composition-chain state on 50 of the 79, and the push gate runs its chain checks only when
+# that state exists (the bypass the DISPLAY SUPPRESSION comment above describes).
+#
+# So this only RECORDS what rule R would do, and changes nothing displayed or written. R keeps
+# a selected skill when this hook's own scorer and role caps still select it for the prompt
+# with every wrapped paste removed, or when sticky composition injected it (the chain, not the
+# paste, put it there); it hides the rest. It never adds or substitutes a skill. Whether R is
+# worth displaying is decided by the pre-registered read in
+# docs/plans/2026-11-17-paste-scoring-409-prereg.md (predicate_version 1), not here.
+#
+# It is the LAST call of the hook: after the print and after every state write. The second
+# selection runs in a subshell, so no global the hook has used can change. At most 16 openers
+# are parsed (the lib's cap), so a hostile prompt cannot make it slow. A record goes to
+# ~/.claude/.paste-shadow.d/ as one new exclusively created file, outside the `.skill-` family,
+# holding registry skill names, counts and status words only: no prompt text.
+# ACS_PASTE_SHADOW=off (any letter case) turns it off. No session token, no record.
+# Regression: tests/test-activation-paste-shadow.sh.
+_paste_shadow() {
+  case "${ACS_PASTE_SHADOW:-shadow}" in [Oo][Ff][Ff]) return ;; esac
+  [[ -n "${_SESSION_TOKEN:-}" ]] || return
+  [[ "${PROMPT}" == *'<pasted_content id="'* ]] || return
+  [[ -w "${HOME}/.claude" ]] || return
+  if [[ -z "${PASTED_CONTENT_JQ_DEF:-}" ]]; then
+    [[ -f "${PLUGIN_ROOT}/hooks/lib/pasted-content.sh" ]] || return
+    # shellcheck source=lib/pasted-content.sh
+    . "${PLUGIN_ROOT}/hooks/lib/pasted-content.sh" 2>/dev/null || return
+    [[ -n "${PASTED_CONTENT_JQ_DEF:-}" ]] || return
+  fi
+
+  # One jq call: a header line "status openers pairs", then the stripped text.
+  local _ps_out _ps_text="" _ps_status="" _ps_openers="" _ps_pairs=""
+  _ps_out="$(printf '%s' "${PROMPT}" | jq -Rrs "${PASTED_CONTENT_JQ_DEF}"' paste_strip | "\(.status) \(.openers) \(.pairs)\n\(.text)"' 2>/dev/null)" || return
+  [[ "${_ps_out}" == *$'\n'* ]] && _ps_text="${_ps_out#*$'\n'}"
+  read -r _ps_status _ps_openers _ps_pairs <<< "${_ps_out%%$'\n'*}"
+  case "${_ps_status}" in none|capped|error|ok) ;; *) return ;; esac
+  [[ "${_ps_openers}" =~ ^[0-9]{1,6}$ ]] && [[ "${_ps_pairs}" =~ ^[0-9]{1,6}$ ]] || return
+
+  # The selection R reads from: the hook's own scorer and role caps on the stripped text,
+  # lowercased as the main flow does, without the context bonus or sticky injection.
+  local _ps_strip=""
+  if [[ "${_ps_status}" == "ok" ]] && [[ "${_ps_pairs}" -gt 0 ]]; then
+    _ps_strip="$(
+      exec 2>/dev/null
+      P="$(printf '%s' "${_ps_text}" | tr '[:upper:]' '[:lower:]')"
+      SKILL_EXPLAIN=""
+      _score_skills
+      _compute_tentative_phase
+      _select_by_role_caps
+      printf '%s' "${SELECTED}"
+    )"
+  fi
+  local _ps_snames="," _s _n _r _i _p
+  while IFS='|' read -r _s _n _r _i _p; do
+    [[ -n "${_n}" ]] && _ps_snames="${_ps_snames}${_n},"
+  done <<EOF
+${_ps_strip}
+EOF
+
+  local _ps_sel="" _ps_kept="" _ps_hidden="" _ps_keep_all=1
+  [[ "${_ps_status}" == "ok" ]] && [[ "${_ps_pairs}" -gt 0 ]] && _ps_keep_all=0
+  while IFS='|' read -r _s _n _r _i _p; do
+    [[ -n "${_n}" ]] || continue
+    _ps_sel="${_ps_sel:+${_ps_sel},}${_n}"
+    if [[ "${_ps_keep_all}" -eq 1 ]] || [[ "${_ps_snames}" == *",${_n},"* ]] || [[ "${_n}" == "${_STICKY_SKILL:-}" ]]; then
+      _ps_kept="${_ps_kept:+${_ps_kept},}${_n}"
+    else
+      _ps_hidden="${_ps_hidden:+${_ps_hidden},}${_n}"
+    fi
+  done <<EOF
+${SELECTED:-}
+EOF
+
+  local _ps_pk=false _ps_disp=false _ps_chars=0 _ps_pc="${_PROMPT_COUNT:-0}"
+  [[ -n "${PROCESS_SKILL:-}" ]] && [[ ",${_ps_kept}," == *",${PROCESS_SKILL},"* ]] && _ps_pk=true
+  if [[ -z "${_DISPLAY_SUPPRESS:-}" ]] && [[ "${TOTAL_COUNT:-0}" -gt 0 ]]; then
+    _ps_disp=true; _ps_chars="${#OUT}"
+  fi
+  [[ "${_ps_pc}" =~ ^[1-9][0-9]{0,8}$ ]] || _ps_pc=0
+  local _ps_tok="${_SESSION_TOKEN//[^A-Za-z0-9._-]/}" _ps_dir="${HOME}/.claude/.paste-shadow.d"
+  # No value below is taken from the prompt: registry skill names, the token, the kind and
+  # status words are cut down to [A-Za-z0-9._,-] and counts are checked numbers, so the line
+  # is valid JSON without a jq fork. One record, one NEW file (noclobber), as sticky-repeat.
+  {
+    [[ -d "${_ps_dir}" ]] || mkdir -p "${_ps_dir}"
+    set -C
+    printf '{"schema_version":1,"predicate_version":1,"ts":"%s","session":"%s","prompt_count":%s,"kind":"%s","mode":"shadow","status":"%s","openers":%s,"pairs":%s,"process":"%s","process_kept":%s,"selected":"%s","kept":"%s","hidden":"%s","sticky":"%s","displayed":%s,"block_chars":%s}\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${_ps_tok}" "${_ps_pc}" "${_PROMPT_KIND//[^A-Za-z0-9._-]/}" \
+      "${_ps_status}" "${_ps_openers}" "${_ps_pairs}" "${PROCESS_SKILL//[^A-Za-z0-9._-]/}" "${_ps_pk}" \
+      "${_ps_sel//[^A-Za-z0-9._,-]/}" "${_ps_kept//[^A-Za-z0-9._,-]/}" "${_ps_hidden//[^A-Za-z0-9._,-]/}" \
+      "${_STICKY_SKILL//[^A-Za-z0-9._-]/}" "${_ps_disp}" "${_ps_chars}" \
+      > "${_ps_dir}/${_ps_tok}.${_ps_pc}.${RANDOM}${RANDOM}.json"
+  } 2>/dev/null || true
+  set +C
+}
+
 # --- _emit_explain ------------------------------------------------
 # Emits structured routing explanation to stderr when SKILL_EXPLAIN=1.
 # Input globals: PROMPT, _EXPLAIN_SCORING, _EXPLAIN_CAPS, TOTAL_COUNT, PLABEL, PRIMARY_PHASE
@@ -2229,29 +2357,7 @@ _score_skills
 _apply_context_bonus
 _apply_sticky_composition
 
-# --- Compute tentative phase for required-role pass 0 ---
-# Priority: process > workflow > domain > first required skill.
-# Required skills are only used as last resort (when all scored skills are required).
-_TENTATIVE_PHASE=""
-_TENTATIVE_PHASE_REQUIRED=""
-while IFS='|' read -r _tp_score _tp_name _tp_role _tp_invoke _tp_phase; do
-  [[ -z "$_tp_name" ]] && continue
-  if [[ "$_tp_role" == "process" ]]; then
-    _TENTATIVE_PHASE="$_tp_phase"
-    break
-  fi
-  if [[ "$_tp_role" == "required" ]]; then
-    # Track first required phase as last-resort fallback
-    [[ -z "$_TENTATIVE_PHASE_REQUIRED" ]] && _TENTATIVE_PHASE_REQUIRED="$_tp_phase"
-    continue
-  fi
-  [[ -z "$_TENTATIVE_PHASE" ]] && _TENTATIVE_PHASE="$_tp_phase"
-done <<EOF
-${SORTED}
-EOF
-# Last resort: if only required skills scored, use their phase
-[[ -z "$_TENTATIVE_PHASE" ]] && _TENTATIVE_PHASE="$_TENTATIVE_PHASE_REQUIRED"
-
+_compute_tentative_phase
 _select_by_role_caps
 _determine_label_phase
 
@@ -2884,3 +2990,9 @@ _format_output
 
 # --- Emit SKILL_EXPLAIN diagnostic output (stderr) ---
 _emit_explain
+
+# --- Pasted-content shadow record (#409): LAST, after the print and every state write ---
+# `|| true`: as the last command its status is the hook's exit status, and each of its early
+# returns (no token, no wrapper, ...) is a non-zero test. Measured: without this, every
+# ordinary prompt made the hook exit 1.
+_paste_shadow || true
