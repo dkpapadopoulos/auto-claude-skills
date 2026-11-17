@@ -580,7 +580,7 @@ Removed in the retirement commit: Check 2b in `hooks/openspec-guard.sh`,
 `verdict_discovery_source` remain for `scripts/verify-receipt.sh`.
 
 The decision was taken on an earlier read the same day (15:08Z: 383 records,
-299 episodes, 311 of them no-verdict pushes with no declared gate); the commit
+299 episodes; 311 of the records were no-verdict pushes with no declared gate); the commit
 that removed the leg quotes those figures. An installed plugin older than the
 retirement keeps appending until it updates, so the file on disk can hold
 records later than this read.

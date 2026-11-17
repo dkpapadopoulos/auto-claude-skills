@@ -278,15 +278,15 @@ assert_not_contains "R4 failing verdict: is not told it reports no check" "repor
 # sentence at all, leaving the caller's generic text.
 mkart "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[],passed:["t"],sha:$s}')"
 assert_equals   "R5 precondition: a record with no gate-gaming status is not clean" "1" "$(_bool verdict_is_clean "${TOKEN}")"
-assert_contains "R5 no gate-gaming status: the remedy says so" "gate-gaming status is missing or not a recognised value" "$(verdict_unclean_remedy "${TOKEN}")"
+assert_contains "R5 no gate-gaming status: the remedy says so" "gate-gaming status is missing or is not clean" "$(verdict_unclean_remedy "${TOKEN}")"
 mkart "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:[],passed:["t"],gate_gaming_status:"CLEAN",sha:$s}')"
-assert_contains "R5 an unrecognised status: the remedy says so" "gate-gaming status is missing or not a recognised value" "$(verdict_unclean_remedy "${TOKEN}")"
+assert_contains "R5 an unrecognised status: the remedy says so" "gate-gaming status is missing or is not clean" "$(verdict_unclean_remedy "${TOKEN}")"
 # The writer pairs `unverified` with a could_not_verify entry that has its own
 # sentence; the status sentence must not double up on it.
 mkart "$(jq -nc --arg s "${C1}" '{failed:[],could_not_verify:["gate-gaming-check"],passed:["t"],gate_gaming_status:"unverified",sha:$s}')"
 _r5="$(verdict_unclean_remedy "${TOKEN}")"
 assert_contains     "R5 control: the writer's unverified pair keeps its own sentence" "gate-gaming check could not run" "${_r5}"
-assert_not_contains "R5 control: ...and is not also told its status is unrecognised" "missing or not a recognised value" "${_r5}"
+assert_not_contains "R5 control: ...and is not also told its status is unrecognised" "gate-gaming status is missing or is not clean" "${_r5}"
 mkart "$(jq -nc --arg s "${C1}" '{failed:[1],could_not_verify:[],passed:["t"],gate_gaming_status:"clean",sha:$s}')"
 assert_equals   "R6 precondition: a non-string entry in failed is not clean" "1" "$(_bool verdict_is_clean "${TOKEN}")"
 assert_contains "R6 a non-string entry in failed: not one well-formed record" "not one well-formed record" "$(verdict_unclean_remedy "${TOKEN}")"

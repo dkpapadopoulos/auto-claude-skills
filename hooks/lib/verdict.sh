@@ -238,7 +238,7 @@ verdict_unclean_remedy() {
           # in this program: it sits inside a single-quoted shell string.)
           (if ((.gate_gaming_status // "") as $g | $g != "clean" and $g != "suspect")
               and (($c | index("gate-gaming-check")) == null) then
-             "Its gate-gaming status is missing or not a recognised value, so that check did not complete. Re-run Skill(auto-claude-skills:project-verification)."
+             "Its gate-gaming status is missing or is not clean, and nothing recorded says why, so that check did not complete. Re-run Skill(auto-claude-skills:project-verification)."
            else empty end),
           (if ($cg | length) > 0 then
              "Gate(s) that could not be run (missing tool or runner error): \(named($cg)). Make them runnable and re-run Skill(auto-claude-skills:project-verification)."
