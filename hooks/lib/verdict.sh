@@ -437,15 +437,28 @@ is_routing_repo() {
 }
 
 # _routing_base <proj_root> [commit] — best-available mainline merge-base for the
-# subject commit (HEAD when none is given).
+# subject commit (HEAD when none is given). The branch diff built on it is the
+# subject's NET change against the mainline.
+#
+# The first candidate that yields a merge-base wins; one that does not resolve,
+# or shares no history with the subject, is skipped. The mainline names come
+# BEFORE the subject's own upstream (#374): a feature branch's upstream is its
+# own remote copy, so as a base it shows only the unpushed commits, and it used
+# to win over `main` whenever origin/HEAD was unset. The upstream is the last
+# resort, for a repo whose mainline has none of these names.
+#
+# Not monotonic, and not meant to be: a file changed and pushed, then restored
+# to the mainline's content, is in the diff against the upstream and not in the
+# net diff.
 _routing_base() {
     local proot="${1:-.}" rev="${2:-HEAD}" ref b up
     # `@{upstream}` with no left-hand side means the CHECKED-OUT branch's
     # upstream, which is the wrong branch as soon as the subject is another one.
     # Ask for the subject's own upstream instead; a sha (or a branch with no
-    # upstream) simply fails to resolve and the loop falls through.
-    up="${rev}@{upstream}"
-    for ref in origin/HEAD "$up" origin/main main origin/master master; do
+    # upstream) simply fails to resolve and the loop falls through. git refuses
+    # `refs/heads/<b>@{upstream}`, so the prefix comes off first.
+    up="${rev#refs/heads/}@{upstream}"
+    for ref in origin/HEAD origin/main main origin/master master "$up"; do
         b="$(git -C "$proot" merge-base "$rev" "$ref" 2>/dev/null)" && [ -n "$b" ] && { printf '%s' "$b"; return 0; }
     done
     return 1

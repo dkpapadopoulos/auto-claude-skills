@@ -297,7 +297,10 @@ EOF
 # don't vendor it); diff base resolved via the guard's own _routing_base
 # (verdict.sh) — MAINLINE-first, never the branch's own upstream first (an
 # @{u}-first base collapses to ~HEAD on a pushed branch and under-scopes the
-# check). Anything unresolvable — lib missing, no mainline ref, git diff
+# check). Until #374 that was true only where origin/HEAD was set: without it
+# the upstream outranked `main`. Now the upstream is the last candidate, so the
+# collapse remains only in a repo with none of the mainline names (#295 F16,
+# open for that case). Anything unresolvable — lib missing, no mainline ref, git diff
 # itself failing — is unverified, never assumed clean; only a diff that was
 # actually COMPUTED (even if empty) reaches the checker.
 GG_STATUS="unverified"

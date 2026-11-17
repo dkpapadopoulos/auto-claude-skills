@@ -167,6 +167,64 @@ mkart_tok "session-own" "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verif
 mkart_tok "session-sib" "$(jq -nc --arg s "${RHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}')"
 assert_equals "resolve: own exact-HEAD clean still wins over sibling exact-HEAD clean" "session-own" "$(verdict_resolve_token "session-own" "${REPO}")"
 
+# ---- _routing_base: one base for both push spellings (#374) ----
+# A repo made with `git init` + `remote add` has no origin/HEAD, which is the
+# only state where the candidate order after it matters. _mk_base_repo <dir>
+# <mainline-name>: mainline pushed, feat/x pushed with an upstream, then one
+# unpushed commit on feat/x.
+_mk_base_repo() {
+    local d="$1" m="$2"
+    mkdir -p "${d}/work"
+    git init -q --bare "${d}/origin.git"
+    ( cd "${d}/work"
+      git init -q; git config user.email t@t; git config user.name t
+      git checkout -q -b "${m}"
+      mkdir -p hooks; echo base > hooks/a.sh; echo base > f
+      git add -A; git commit -qm base
+      git remote add origin "${d}/origin.git"
+      git push -q origin "${m}"
+      git checkout -q -b feat/x
+      echo pushed > g; git add -A; git commit -qm pushed
+      git push -q -u origin feat/x
+      echo local > h; git add -A; git commit -qm unpushed ) >/dev/null 2>&1
+}
+BR="${TMP}/base-main"; _mk_base_repo "${BR}" main
+BW="${BR}/work"
+assert_equals "base repo has no origin/HEAD (precondition)" "1" "$(_bool git -C "${BW}" rev-parse --verify -q origin/HEAD)"
+_b_head="$(_routing_base "${BW}" HEAD)"
+_b_ref="$(_routing_base "${BW}" refs/heads/feat/x)"
+assert_equals "B1 both spellings resolve one base" "${_b_head}" "${_b_ref}"
+assert_equals "B2 that base is the mainline merge-base" "$(git -C "${BW}" merge-base feat/x main)" "${_b_head}"
+
+# B3: no mainline name at all, so both spellings fall back to the branch's own upstream.
+BT="${TMP}/base-trunk"; _mk_base_repo "${BT}" trunk
+_t_up="$(git -C "${BT}/work" rev-parse origin/feat/x)"
+assert_equals "B3 no mainline name: HEAD falls back to the upstream" "${_t_up}" "$(_routing_base "${BT}/work" HEAD)"
+assert_equals "B3 no mainline name: refs/heads spelling does too"    "${_t_up}" "$(_routing_base "${BT}/work" refs/heads/feat/x)"
+
+# B4: the invariant is the NET change against the mainline. A routing file
+# changed and pushed, then restored to the mainline's content, is in the diff
+# against the branch's remote copy and not in the net diff. Chosen, not an
+# accident: this is what a clone with origin/HEAD set has always measured.
+( cd "${BW}"
+  echo changed > hooks/a.sh; git commit -qam change-routing; git push -q origin feat/x
+  echo base > hooks/a.sh; git commit -qam restore-routing ) >/dev/null 2>&1
+assert_not_contains "B4 a file restored to mainline content is not in the branch diff" "hooks/a.sh" "$(_branch_diff_names "${BW}" HEAD)"
+assert_contains "B4 control: the branch's other change is in it" "g" "$(_branch_diff_names "${BW}" HEAD)"
+
+# B5 red control: the pre-#374 candidate order, restored in a copy of the REAL
+# lib, splits the two spellings. Without it B1 could pass on a repo where the
+# order never mattered.
+_OLD_LIB="${TMP}/verdict-old-order.sh"
+sed -e 's|^    up="\${rev#refs/heads/}@{upstream}"$|    up="${rev}@{upstream}"|' \
+    -e 's|^    for ref in origin/HEAD origin/main main origin/master master "\$up"; do$|    for ref in origin/HEAD "$up" origin/main main origin/master master; do|' \
+    "${LIB}" > "${_OLD_LIB}"
+assert_equals "B5 mutation applied (the copy differs from the lib)" "1" "$(_bool cmp -s "${LIB}" "${_OLD_LIB}")"
+_o_head="$(/bin/bash -c '. "$1"; _routing_base "$2" HEAD' _ "${_OLD_LIB}" "${BW}")"
+_o_ref="$(/bin/bash -c '. "$1"; _routing_base "$2" refs/heads/feat/x' _ "${_OLD_LIB}" "${BW}")"
+assert_not_empty "B5 the old order still resolves a base for HEAD" "${_o_head}"
+assert_equals "B5 the old order gives the two spellings different bases" "1" "$(_bool [ "${_o_head}" = "${_o_ref}" ])"
+
 export HOME="${_OLDHOME}"
 rm -rf "${TMP}"
 print_summary
