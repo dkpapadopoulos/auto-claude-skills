@@ -2215,6 +2215,14 @@ _paste_shadow() {
   read -r _ps_status _ps_openers _ps_pairs <<< "${_ps_out%%$'\n'*}"
   case "${_ps_status}" in none|capped|error|ok) ;; *) return ;; esac
   [[ "${_ps_openers}" =~ ^[0-9]{1,6}$ ]] && [[ "${_ps_pairs}" =~ ^[0-9]{1,6}$ ]] || return
+  # BUDGET. Scoring cost grows faster than the text, so re-scoring long typed text doubled the
+  # hook's time (measured in review: 6.5 s -> 12.7 s at 39 KB, against the 10 s kill, which
+  # would change what is displayed). Over 16 KB of stripped text, or 3 s already spent by the
+  # hook, nothing is re-scored and the record says `skipped`.
+  if [[ "${_ps_status}" == "ok" ]] && [[ "${_ps_pairs}" -gt 0 ]] \
+     && { [[ "${#_ps_text}" -gt 16384 ]] || [[ "${SECONDS}" -ge 3 ]]; }; then
+    _ps_status="skipped"
+  fi
 
   # The selection R reads from: the hook's own scorer and role caps on the stripped text,
   # lowercased as the main flow does, without the context bonus or sticky injection.

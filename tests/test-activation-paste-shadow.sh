@@ -183,6 +183,23 @@ new_session r5
 turn - "${CAP}" >/dev/null
 assert_equals "R5: 17 openers: status capped, nothing hidden" "capped 17 " "$(last '"\(.status) \(.openers) \(.hidden)"')"
 
+# --- B: the budget — a long typed prompt is not scored twice ---------------------------------
+# Found in review: the second selection re-scores all typed text, and scoring cost grows faster
+# than the text, so long typed text plus a paste doubled the hook's time (6.5 s -> 12.7 s at
+# 39 KB, against the 10 s kill). Over 16 KB of stripped text, or 3 s already spent, the record
+# says `skipped` and nothing is re-scored. DERIVED input: AROUND's typed first line repeated
+# past 16 KB, then AROUND's real block.
+LONG="${TEST_TMPDIR}/long.txt"
+jq -nj --rawfile a "${AROUND}" '($a | split("\n")[0] + " ") as $line | ($line * ((17000 / ($line | length)) + 1))
+    + ($a | .[(index("\n\n\n\n<pasted_content")):])' > "${LONG}"
+assert_equals "B0: control: the derived prompt has over 16 KB of typed text and one real block" "true 1" \
+    "$(jq -nr --rawfile t "${LONG}" '$t | "\((index("<pasted_content") > 16384)) \(indices("</pasted_content id=") | length)"')"
+# The pin is the status, not a wall-clock bound: on this input the second pass is cheap (few
+# trigger hits), so a timing cell passed before the budget existed and would only add flake.
+new_session b1; turn - "${LONG}" >/dev/null
+assert_equals "B1: the record says skipped and hides nothing" "skipped " "$(last '"\(.status) \(.hidden)"')"
+assert_equals "B1: and keeps every selected skill" "$(srt "$(last .selected)")" "$(srt "$(last .kept)")"
+
 # --- N: when there is no record ------------------------------------------------------------
 echo "== N: no record =="
 new_session n1; turn off "${ONLY}" >/dev/null
