@@ -2201,15 +2201,16 @@ ${HINTS}${COMPOSITION_HINTS}"
 # that state exists (the bypass the DISPLAY SUPPRESSION comment above describes).
 #
 # So this only RECORDS what rule R would do, and changes nothing displayed or written. R keeps
-# a selected skill when this hook's own scorer and role caps still select it for the prompt
-# with every wrapped paste removed, or when sticky composition injected it (the chain, not the
-# paste, put it there); it hides the rest. It never adds or substitutes a skill. Whether R is
-# worth displaying is decided by the pre-registered read in
-# docs/plans/2026-11-17-paste-scoring-409-prereg.md (predicate_version 1), not here.
+# a selected skill when this hook's own scorer, sticky composition and role caps still select
+# it for the prompt with every wrapped paste removed, or when sticky composition injected it
+# for the full prompt (the chain, not the paste, put it there); it hides the rest. It never
+# adds or substitutes a skill. Whether R is worth displaying is decided by the pre-registered
+# read in docs/plans/2026-11-17-paste-scoring-409-prereg.md (predicate_version 1), not here.
 #
 # It is the LAST call of the hook: after the print and after every state write. The second
-# selection runs in a subshell, so no global the hook has used can change. At most 16 openers
-# are parsed (the lib's cap), so a hostile prompt cannot make it slow. A record goes to
+# selection runs in a subshell, so no global the hook has used can change. The parser's regex
+# skips a prompt with more than 16 openers, and the BUDGET below skips the second selection on
+# long text, so neither can push the hook into its 10 s kill. A record goes to
 # ~/.claude/.paste-shadow.d/ as one new exclusively created file, outside the `.skill-` family,
 # holding registry skill names, counts and status words only: no prompt text.
 # ACS_PASTE_SHADOW=off (any letter case) turns it off. No session token, no record.
