@@ -387,6 +387,7 @@ fi
 #    a directory planted at an output name can stall or misplace a write; both come after
 #    the state writes). Such a process can already rewrite the state files directly.
 _STICKY_SKILL=""
+_STICKY_CURRENT=""   # the chain's current step before this turn's writes (_apply_sticky_composition)
 case "${ACS_STICKY_REPEAT:-shadow}" in
   [Tt][Rr][Ii][Aa][Ll])             _STICKY_REPEAT_MODE="trial" ;;
   [Ss][Uu][Pp][Pp][Rr][Ee][Ss][Ss]) _STICKY_REPEAT_MODE="suppress" ;;
@@ -934,11 +935,7 @@ _apply_sticky_composition() {
   [[ -f "$_comp_file" ]] || return
 
   # Pure-cancel prompts clear the chain and suppress sticky for this turn.
-  # Anchored to whole-prompt match so mixed prompts (e.g., "never mind,
-  # different plan" — where "plan" naturally matches writing-plans) do not
-  # pass through here; those go to the hijack guard below or normal routing.
-  # Trailing punctuation class covers . , ! ? ; : and trailing whitespace.
-  if [[ "$P" =~ ^[[:space:]]*(stop|cancel|abort|nevermind|never.mind|forget.it|scrap.that|drop.it|no.thanks|nope|nah)[[:space:]!.,?:\;]*$ ]]; then
+  if _is_pure_cancel; then
     rm -f "$_comp_file" 2>/dev/null
     # The cancelled task's POSITION goes with its chain. The last-invoked signal is that
     # position: left behind, the next task's first prompt credited every step up to it,
@@ -967,6 +964,27 @@ _apply_sticky_composition() {
     end
   ' "$_comp_file" 2>/dev/null)"
   [[ -z "$_current_name" ]] && return
+  # The chain's current step BEFORE this turn's writes, for the pasted-content shadow (#409),
+  # which asks what sticky composition would inject for the prompt without its pastes.
+  _STICKY_CURRENT="${_current_name}"
+  _inject_sticky_step "${_current_name}"
+}
+
+# --- _is_pure_cancel ----------------------------------------------
+# True when $P is only a cancel word. Anchored to whole-prompt match so mixed prompts (e.g.,
+# "never mind, different plan" — where "plan" naturally matches writing-plans) do not pass
+# through here; those go to the hijack guard or normal routing. Trailing punctuation class
+# covers . , ! ? ; : and trailing whitespace.
+_is_pure_cancel() {
+  [[ "$P" =~ ^[[:space:]]*(stop|cancel|abort|nevermind|never.mind|forget.it|scrap.that|drop.it|no.thanks|nope|nah)[[:space:]!.,?:\;]*$ ]]
+}
+
+# --- _inject_sticky_step <step> -----------------------------------
+# Sticky composition's injection: when $P is short and selected no process skill of its own,
+# put the chain's current <step> into $SORTED at a process-tier score and set _STICKY_SKILL.
+# Input globals: $P, $SORTED, $REGISTRY. Output: $SORTED, _STICKY_SKILL.
+_inject_sticky_step() {
+  local _current_name="$1"
 
   # Eligibility: only fire on short prompts (the "yes"/"ok"/"do it" case).
   # Longer prompts route via normal triggers.
@@ -2224,8 +2242,12 @@ _paste_shadow() {
     _ps_status="skipped"
   fi
 
-  # The selection R reads from: the hook's own scorer and role caps on the stripped text,
-  # lowercased as the main flow does, without the context bonus or sticky injection.
+  # The selection R reads from: the hook's own scorer, sticky injection and role caps on the
+  # stripped text, lowercased as the main flow does. Sticky uses the chain's step from BEFORE
+  # this turn's writes (_STICKY_CURRENT), as the real hook would for the stripped prompt: "go"
+  # plus a paste inside a chain strips to "go", which the hook answers with the chain's step
+  # (found in review: without this, R hid that step). The context bonus (+20 for successors of
+  # the last-invoked step) is NOT applied, so a role-cap pick can differ when that signal exists.
   local _ps_strip=""
   if [[ "${_ps_status}" == "ok" ]] && [[ "${_ps_pairs}" -gt 0 ]]; then
     _ps_strip="$(
@@ -2233,6 +2255,9 @@ _paste_shadow() {
       P="$(printf '%s' "${_ps_text}" | tr '[:upper:]' '[:lower:]')"
       SKILL_EXPLAIN=""
       _score_skills
+      if [[ -n "${_STICKY_CURRENT:-}" ]] && ! _is_pure_cancel; then
+        _inject_sticky_step "${_STICKY_CURRENT}"
+      fi
       _compute_tentative_phase
       _select_by_role_caps
       printf '%s' "${SELECTED}"

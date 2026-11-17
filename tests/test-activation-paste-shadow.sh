@@ -175,6 +175,26 @@ assert_equals "R3: the sticky step is kept although the stripped text selects no
     "$(last --arg s "${st}" '(.kept | split(",") | index($s)) != null')"
 assert_equals "R3: and the process skill counts as kept" "true" "$(last .process_kept)"
 
+# R6, found in review: inside a live chain, "go" plus a paste. The stripped prompt is "go",
+# which the real hook answers with the chain's current step (sticky composition fires on six
+# words or fewer); the full prompt is too long for sticky. R must keep that step.
+# DERIVED input: "go", then the real wrapper of ONLY around this file's ARM text.
+GOPASTE="${TEST_TMPDIR}/gopaste.txt"
+jq -nj --rawfile o "${ONLY}" --rawfile a "${ARM}" '($o | match("<pasted_content id=\"[0-9a-f]{4}\">").string) as $op
+    | ($o | match("</pasted_content id=\"[0-9a-f]{4}\">").string) as $cl
+    | "go\n\n" + $op + "\n" + $a + "\n" + $cl + "\n"' > "${GOPASTE}"
+new_session r6o; turn off "${ARM}" >/dev/null; orc="$(names "$(turn off "$(stripped "${GOPASTE}")")")"
+new_session r6;  turn - "${ARM}" >/dev/null; b="$(turn - "${GOPASTE}")"
+[ -n "${orc}" ] && _record_pass "R6: control: in the same chain the stripped prompt alone is routed (${orc})" \
+    || _record_fail "R6: control: in the same chain the stripped prompt alone is routed" "nothing displayed"
+# inlist <name> <comma-list> : a function, because a case pattern's ")" inside $( ) ends the
+# command substitution early under bash 3.2.
+inlist() { case ",$2," in *",$1,"*) echo true ;; *) echo false ;; esac; }
+assert_equals "R6: control: the full prompt displays that step too" "true" "$(inlist "${orc%%,*}" "$(names "${b}")")"
+assert_equals "R6: kept = selected ∩ the hook's own selection for the stripped prompt in this chain" \
+    "$(keep "$(names "${b}")" "${orc}")" "$(srt "$(last .kept)")"
+assert_equals "R6: the process mandate counts as kept" "true" "$(last .process_kept)"
+
 new_session r4
 turn - "${UPPER}" >/dev/null
 assert_equals "R4: an id the harness never wrote: status ok, pairs 0, nothing hidden (format-drift record)" "ok 0 " \
