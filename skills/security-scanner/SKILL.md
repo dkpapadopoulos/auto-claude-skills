@@ -63,23 +63,25 @@ If a SAST binary is available, scan for code vulnerabilities. The `$SAST_BIN` va
 ```bash
 SAST_BIN="$(command -v opengrep || command -v semgrep || true)"
 [ -z "$SAST_BIN" ] && { echo "no SAST binary installed"; exit 0; }
-git diff --name-only -z "$(git merge-base HEAD main)..HEAD" | xargs -0 "$SAST_BIN" scan --json --config auto --severity WARNING 2>/dev/null | jq '{count: (.results | length), results: [.results[] | {rule: .check_id, severity: .extra.severity, file: .path, line: .start.line, message: .extra.message}]}'
+git diff --name-only -z --diff-filter=d "$(git merge-base HEAD main)..HEAD" | xargs -0 "$SAST_BIN" scan --json --config auto --severity WARNING 2>/dev/null | jq '{count: (.results | length), scanned: (.paths.scanned | length), errors: [.errors[]? | .message], results: [.results[] | {rule: .check_id, severity: .extra.severity, file: .path, line: .start.line, message: .extra.message}]}'
 ```
 
-Note: If `merge-base` fails (no main branch), fall back to `git diff --name-only -z HEAD~1 | xargs -0 ...` for the last commit only.
+`--diff-filter=d` leaves out files the branch deleted: one path that no longer exists makes the scanner scan nothing (`File not found` in `errors`, `scanned: 0`), so without it any branch that deletes a file reads as clean. `count: 0` is a pass only when `errors` is empty and `scanned` is above 0; empty output, an error or `scanned: 0` means "could not check", never clean. (Measured on opengrep 1.26.0; not re-measured on semgrep.)
+
+Note: If `merge-base` fails (no main branch), fall back to `git diff --name-only -z --diff-filter=d HEAD~1 | xargs -0 ...` for the last commit only.
 
 **Full project scan (use for thorough reviews or when explicitly asked):**
 ```bash
 SAST_BIN="$(command -v opengrep || command -v semgrep || true)"
 [ -z "$SAST_BIN" ] && { echo "no SAST binary installed"; exit 0; }
-"$SAST_BIN" scan --json --config auto --severity WARNING . 2>/dev/null | jq '{count: (.results | length), results: [.results[] | {rule: .check_id, severity: .extra.severity, file: .path, line: .start.line, message: .extra.message}]}'
+"$SAST_BIN" scan --json --config auto --severity WARNING . 2>/dev/null | jq '{count: (.results | length), scanned: (.paths.scanned | length), errors: [.errors[]? | .message], results: [.results[] | {rule: .check_id, severity: .extra.severity, file: .path, line: .start.line, message: .extra.message}]}'
 ```
 
 **If output is large (count > 20), filter by severity first:**
 ```bash
 SAST_BIN="$(command -v opengrep || command -v semgrep || true)"
 [ -z "$SAST_BIN" ] && { echo "no SAST binary installed"; exit 0; }
-"$SAST_BIN" scan --json --config auto --severity ERROR . 2>/dev/null | jq '.results[:20]'
+"$SAST_BIN" scan --json --config auto --severity ERROR . 2>/dev/null | jq '{scanned: (.paths.scanned | length), errors: [.errors[]? | .message], results: .results[:20]}'
 ```
 
 ## Step 3: Run Trivy (Dependency/CVE Scanning)
