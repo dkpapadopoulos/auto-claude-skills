@@ -248,6 +248,28 @@ test_write_provenance_surface_is_measured() {
     openspec_write_provenance "$archive_dir" "$token" "my-feature"
     assert_equals "mark_verified does not overwrite the filler, so the registry still wins" "openspec-core" "$(jq -r '.openspec_surface' "$src" 2>/dev/null)"
 
+    # An empty state value is not a measurement either.
+    local sf="${HOME}/.claude/.skill-openspec-state-${token}" tmp
+    tmp="$(jq '.openspec_surface = ""' "$sf")" && printf '%s\n' "$tmp" > "$sf"
+    openspec_write_provenance "$archive_dir" "$token" "my-feature"
+    assert_equals "an empty state value: surface comes from the registry cache" "openspec-core" "$(jq -r '.openspec_surface' "$src" 2>/dev/null)"
+
+    # A cache holding two JSON documents yields the first one's surface, as one
+    # line (it used to be both, joined by a newline).
+    printf '%s\n' '{"openspec_capabilities":{"surface":"first-doc"}}' '{"openspec_capabilities":{"surface":"second-doc"}}' > "$cache"
+    openspec_write_provenance "$archive_dir" "no-such-token-$$" "my-feature"
+    assert_equals "a two-document cache: the first document's surface" "first-doc" "$(jq -r '.openspec_surface' "$src" 2>/dev/null)"
+
+    # base_commit in a repository with no commits is the one word "unknown".
+    # The bare rev-parse printed HEAD there and `|| echo` appended a second line.
+    local unborn="${HOME}/unborn-repo" full
+    git init -q "$unborn" 2>/dev/null
+    ( cd "$unborn" && openspec_write_provenance "$archive_dir" "no-such-token-$$" "my-feature" )
+    assert_equals "no commits: base_commit is unknown, on one line" "unknown" "$(jq -r '.base_commit' "$src" 2>/dev/null)"
+    openspec_write_provenance "$archive_dir" "no-such-token-$$" "my-feature"
+    full="$(jq -r '.base_commit' "$src" 2>/dev/null)"
+    assert_equals "CONTROL: in this repository base_commit is a full sha" "$(git rev-parse HEAD 2>/dev/null)" "$full"
+
     teardown_test_env
 }
 test_write_provenance_surface_is_measured

@@ -1028,8 +1028,11 @@ fi
 # Both current-predicate records must reach the rate population whatever their
 # schema, and the base records must be excluded as other-predicate, never pooled.
 _SV="$( ( . "${WRITER}" 2>/dev/null; printf '%s' "${REVIEW_SHADOW_SCHEMA_VERSION:-}" ) )"
-if [ -s "${_BASE_WRITER}" ] && grep -q '^REVIEW_SHADOW_PREDICATE_VERSION=2$' "${_BASE_WRITER}" \
-   && [ -n "${_SV}" ]; then
+if [ -z "${_SV}" ]; then
+    # A writer without its schema constant is broken in any checkout, so this is
+    # never the "base producer unavailable" skip below.
+    _record_fail "MX the current writer declares REVIEW_SHADOW_SCHEMA_VERSION" "empty after sourcing ${WRITER}"
+elif [ -s "${_BASE_WRITER}" ] && grep -q '^REVIEW_SHADOW_PREDICATE_VERSION=2$' "${_BASE_WRITER}"; then
     _MX="${TMP}/mx.jsonl"; _MXA="${TMP}/mx-adj.jsonl"; rm -f "${_MX}" "${_MXA}"
     # The del() list below is the set of fields schema 3 added, so it models
     # schema 2 only while the producer is at 3 (#416). After a schema bump this
@@ -1069,7 +1072,7 @@ ${_mx_base_ids}
 EOF
     assert_equals "MX no base record is pooled into the rate population" "0" "${_mx_pooled}"
 elif _full_clone; then
-    _record_fail "MX base producer and writer schema are available in an established full clone" "base blob or REVIEW_SHADOW_SCHEMA_VERSION missing (schema='${_SV}')"
+    _record_fail "MX base producer is available in an established full clone" "base blob ${_BASE_BLOB} missing or not predicate 2"
 else
     echo "  NOTE: base producer unavailable and this is not an established full clone -- MX not run"
 fi
