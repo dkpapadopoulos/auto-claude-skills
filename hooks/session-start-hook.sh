@@ -770,15 +770,31 @@ fi
 # -----------------------------------------------------------------
 # Step 6: Three-tier merge — frontmatter > default-triggers > generic
 # -----------------------------------------------------------------
-# Build invoke map from ALL_DISCOVERED as a JSON object {"name":"invoke_path",...}
+# Build the invoke map from the discoveries, in two tiers like the frontmatter
+# (#354): {"loc": {name: invoke}, "ext": {name: [invoke, ...]}}. One object,
+# last-wins in directory order, let an external plugin whose marketplace sorted
+# after the config's own provider rename a config-owned step. The local tier
+# (bundled, then user) stays last-wins; the external tier keeps every claimant
+# so the merge below can choose by provider instead of by order.
 # Single jq call instead of per-skill lookups
+_INVOKE_MAP_EMPTY='{"loc":{},"ext":{}}'
 if [ -n "${ALL_DISCOVERED}" ]; then
-    INVOKE_MAP="$(printf '%s' "${ALL_DISCOVERED}" | while IFS='|' read -r _n _p; do
-        [ -z "${_n}" ] && continue
-        printf '%s\n%s\n' "${_n}" "${_p}"
-    done | jq -Rn '[inputs] | [range(0; length; 2) as $i | {(.[($i)]): .[($i)+1]}] | add // {}')"
+    INVOKE_MAP="$({
+        printf '%s' "${EXTERNAL_DISCOVERED}" | while IFS='|' read -r _n _p; do
+            [ -z "${_n}" ] && continue
+            printf 'ext\n%s\n%s\n' "${_n}" "${_p}"
+        done
+        printf '%s' "${PLUGIN_DISCOVERED}${USER_DISCOVERED}" | while IFS='|' read -r _n _p; do
+            [ -z "${_n}" ] && continue
+            printf 'loc\n%s\n%s\n' "${_n}" "${_p}"
+        done
+    } | jq -Rnc '[inputs] as $l |
+        reduce range(0; ($l | length); 3) as $i ({loc: {}, ext: {}};
+            if $l[$i] == "loc" then .loc[$l[$i + 1]] = $l[$i + 2]
+            else .ext[$l[$i + 1]] += [$l[$i + 2]] end)' 2>/dev/null)"
+    [ -z "${INVOKE_MAP}" ] && INVOKE_MAP="${_INVOKE_MAP_EMPTY}"
 else
-    INVOKE_MAP="{}"
+    INVOKE_MAP="${_INVOKE_MAP_EMPTY}"
 fi
 
 # Three-tier merge: frontmatter overrides > default-triggers > generic defaults
@@ -788,6 +804,11 @@ if [ -n "${DEFAULT_JSON}" ]; then
     # triggers and priority only: role, phase, precedes and requires drive the
     # composition chain the push gate reads, and an external SKILL.md named
     # after a config skill must not rewrite it (#304).
+    # invoke/available (#354): a local-tier provider wins; else the provider
+    # the config itself names, if an external plugin discovered it; else the
+    # last other external claimant, which is then the only way to reach the
+    # step (the completion hook credits a returned Skill by its bare name in
+    # any namespace, so refusing that claimant would hide the step, not gate it).
     SKILLS_JSON="$(printf '%s' "${DEFAULT_JSON}" | jq \
         --argjson imap "${INVOKE_MAP}" \
         --argjson fmloc "${FRONTMATTER_MAP_LOCAL}" \
@@ -801,9 +822,12 @@ if [ -n "${DEFAULT_JSON}" ]; then
             (if ($fm.priority // null) then {priority: ($fm.priority | tonumber)} else {} end) as $fpri |
             (if ($fm.precedes // null) then {precedes: $fm.precedes} else {} end) as $fprec |
             (if ($fm.requires // null) then {requires: $fm.requires} else {} end) as $freq |
+            ($imap.loc[$skill.name]
+             // (($imap.ext[$skill.name] // []) as $claims |
+                 if any($claims[]; . == $skill.invoke) then $skill.invoke else $claims[-1] end)) as $inv |
             . + $ft + $fr + $fp + $fpri + $fprec + $freq + (
-                if $imap[$skill.name] then
-                    {invoke: $imap[$skill.name], available: true, enabled: true}
+                if $inv then
+                    {invoke: $inv, available: true, enabled: true}
                 else
                     {available: false, enabled: true} + (if .invoke then {invoke: .invoke} else {} end)
                 end

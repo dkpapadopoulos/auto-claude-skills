@@ -123,4 +123,69 @@ fi
 assert_equals "hub plant: phase stays the config value" "$(_cfg_field verification-before-completion phase)" "$(_reg_field verification-before-completion phase)"
 teardown_test_env
 
+# --- 6. invoke/available for a config-owned name do not depend on directory order (#354)
+# The invoke map was one last-wins object over external, bundled and user
+# discoveries, so an external plugin whose marketplace directory sorted after
+# the config's own provider renamed the step: the chain and its remedy lines
+# then named Skill(<that-plugin>:<name>). Precedence is now: local tiers
+# (bundled, user), then the provider the config itself names, then any other
+# external plugin. The last rung is kept on purpose: where the config's provider
+# is not installed, another plugin shipping the skill is the only way to reach
+# the step, and the completion hook credits a returned Skill by its bare name
+# whatever the namespace, so refusing it would hide the step and block nothing.
+_V=verification-before-completion
+_plant_bare() {   # dir name
+    mkdir -p "$1"
+    printf '%s\n' '---' "name: $2" 'description: planted' '---' '# p' > "$1/SKILL.md"
+}
+_cfg_invoke="$(_cfg_field "${_V}" invoke)"
+assert_equals "invoke fixture: the config names superpowers as the provider" '"Skill(superpowers:verification-before-completion)"' "${_cfg_invoke}"
+
+# Both directory orders: the marketplace holding the other plugin sorts before,
+# then after, the one holding the config's provider. Before the fix only the
+# "after" cell failed, which is why both are here.
+for _mkt in aaa-mkt zzz-mkt; do
+    setup_test_env
+    _plant_bare "${HOME}/.claude/plugins/cache/mmm-mkt/superpowers/1.0.0/skills/${_V}" "${_V}"
+    _plant_bare "${HOME}/.claude/plugins/cache/${_mkt}/otherplug/1.0.0/skills/${_V}" "${_V}"
+    _build
+    assert_equals "invoke, other plugin in ${_mkt}: the config's provider keeps the step" "${_cfg_invoke}" "$(_reg_field "${_V}" invoke)"
+    assert_equals "invoke, other plugin in ${_mkt}: available" "true" "$(_reg_field "${_V}" available)"
+    teardown_test_env
+done
+
+# The config's provider is absent: the other plugin is the only provider and
+# keeps the step reachable.
+setup_test_env
+_plant_bare "${HOME}/.claude/plugins/cache/zzz-mkt/otherplug/1.0.0/skills/${_V}" "${_V}"
+_build
+assert_equals "invoke, sole external provider: it provides the step" '"Skill(otherplug:verification-before-completion)"' "$(_reg_field "${_V}" invoke)"
+assert_equals "invoke, sole external provider: available" "true" "$(_reg_field "${_V}" available)"
+teardown_test_env
+
+# Nobody provides it: the config's invoke is kept and the step is unavailable.
+setup_test_env
+_build
+assert_equals "invoke, no provider: the config value" "${_cfg_invoke}" "$(_reg_field "${_V}" invoke)"
+assert_equals "invoke, no provider: unavailable" "false" "$(_reg_field "${_V}" available)"
+teardown_test_env
+
+# Local tiers win over every external plugin, the config's provider included.
+setup_test_env
+_plant_bare "${HOME}/.claude/plugins/cache/mmm-mkt/superpowers/1.0.0/skills/${_V}" "${_V}"
+_plant_bare "${HOME}/.claude/plugins/cache/zzz-mkt/otherplug/1.0.0/skills/${_V}" "${_V}"
+_plant_bare "${HOME}/.claude/skills/${_V}" "${_V}"
+_plant_bare "${HOME}/.claude/plugins/cache/zzz-mkt/otherplug/1.0.0/skills/project-verification" project-verification
+_build
+assert_equals "invoke, user tier: the user's own skill wins" '"Skill(verification-before-completion)"' "$(_reg_field "${_V}" invoke)"
+assert_equals "invoke, bundled tier: an external plugin cannot rename a bundled skill" '"Skill(auto-claude-skills:project-verification)"' "$(_reg_field project-verification invoke)"
+teardown_test_env
+
+# A name the config does not own is untouched by any of this.
+setup_test_env
+_plant_bare "${HOME}/.claude/plugins/cache/okmkt/okplug/1.0.0/skills/acs-tt-probe" acs-tt-probe
+_build
+assert_equals "invoke, non-config external skill: its own namespace" '"Skill(okplug:acs-tt-probe)"' "$(_reg_field acs-tt-probe invoke)"
+teardown_test_env
+
 print_summary
