@@ -63,16 +63,16 @@ If a SAST binary is available, scan for code vulnerabilities. The `$SAST_BIN` va
 ```bash
 SAST_BIN="$(command -v opengrep || command -v semgrep || true)"
 [ -z "$SAST_BIN" ] && { echo "no SAST binary installed"; exit 0; }
-BASE="$(git merge-base HEAD main)" || { echo "no main branch: could not check; use the HEAD~1 fallback below"; exit 1; }
+BASE="$(git merge-base HEAD main)" || { echo "no merge base with main: could not check; use the HEAD~1 fallback below"; exit 1; }
 [ -n "$(git diff --name-only --diff-filter=d "$BASE..HEAD")" ] || { echo "no changed files left to scan"; exit 0; }
 git diff --name-only -z --diff-filter=d "$BASE..HEAD" | xargs -0 "$SAST_BIN" scan --json --config auto --severity WARNING 2>/dev/null | jq '{count: (.results | length), scanned: (.paths.scanned | length), errors: [.errors[]? | select(.level == "error") | .message], not_fully_parsed: ([.errors[]? | select(.level != "error") | .path // "?"] | unique), results: [.results[] | {rule: .check_id, severity: .extra.severity, file: .path, line: .start.line, message: .extra.message}]}'
 ```
 
 `--diff-filter=d` leaves out files the branch deleted: one path the scanner cannot open makes it scan nothing (`File not found` in `errors`, `scanned: 0`), so without it any branch that deletes a file reads as clean. A symlink in the list, or a file deleted since its last commit, does the same; that reads as "could not check", so scan the remaining files by name. The guard line stops a branch that only deletes files: with an empty list, BSD xargs runs nothing and GNU xargs scans the whole directory.
 
-`count: 0` is a pass only when `errors` is empty and `scanned` is above 0; empty output, an error or `scanned: 0` means "could not check", never clean. `errors` holds the `level: error` entries, which stop the whole scan. Files with a `level: warn` entry (a syntax error, a partial parse, a timeout) are listed in `not_fully_parsed`: the scanner did not analyse all of each, and a parse failure can hide a finding anywhere after it (measured: a bad `case` line hid an `rm -rf` on the next line). The pass covers the other scanned files only; read each listed file yourself and report it as not checked by the scanner. (Measured on opengrep 1.26.0, where a scan of this repo's own hooks lists several; not re-measured on semgrep.)
+`count: 0` is a pass only when `errors` is empty and `scanned` is above 0; empty output, an error or `scanned: 0` means "could not check", never clean. `errors` holds the `level: error` entries, which stop the whole scan. Files with a `level: warn` entry (a syntax error, a partial parse, a timeout) are listed in `not_fully_parsed`: the scanner did not analyse all of each, and a parse failure can hide a finding anywhere after it (measured: a bad `case` line hid an `rm -rf` on the next line). The pass covers the other scanned files only, so it covers nothing when every scanned file is listed; read each listed file yourself and report it as not checked by the scanner. (Measured on opengrep 1.26.0, where a scan of this repo's own hooks lists several; not re-measured on semgrep.)
 
-Note: If there is no `main` branch, the fast scan stops with "no main branch"; fall back to `git diff --name-only -z --diff-filter=d HEAD~1 | xargs -0 ...` for the last commit only.
+Note: If there is no `main` branch, or no merge base with it (unrelated history, a shallow clone), the fast scan stops with "no merge base with main"; fall back to `git diff --name-only -z --diff-filter=d HEAD~1 | xargs -0 ...` for the last commit only.
 
 **Full project scan (use for thorough reviews or when explicitly asked):**
 ```bash

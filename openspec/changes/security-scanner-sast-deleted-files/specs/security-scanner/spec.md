@@ -9,7 +9,7 @@ The security-scanner skill MUST orchestrate CLI tools (Semgrep, Trivy, Gitleaks)
 Given semgrep is installed
 When the agent invokes the security-scanner skill during REVIEW
 Then it runs semgrep with `--json --config auto` on the files the branch changed and did not delete, via `git diff --name-only -z --diff-filter=d` from a merge base resolved once, and stops with a message when no such file is left
-And with no `main` branch it reports "could not check", never that nothing was left to scan
+And with no `main` branch, or no merge base with it, it reports "could not check", never that nothing was left to scan
 And on a branch that deletes one file and adds a detectable finding, the parsed count is greater than zero
 And the parsed output includes the number of files scanned, the messages of `level: error` entries as errors, and the files with any other entry (syntax error, partial parse, timeout) as not fully parsed
 And `count: 0` is read as a pass only when there are no errors and at least one file was scanned; empty output, an error or zero files scanned is "could not check"

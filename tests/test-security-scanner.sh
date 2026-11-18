@@ -302,7 +302,7 @@ test_sast_fast_scan_survives_a_deleted_file() {
   # rather than read as clean.
   assert_contains "a scan of nothing shows its error, not just count: 0" \
     "File not found" "$(printf '%s' "${out#*@@MUTANT@@}" | jq -r '.errors[]?' 2>/dev/null)"
-  assert_contains "no main branch reads as could not check" "no main branch: could not check" "$main_out"
+  assert_contains "no main branch reads as could not check" "no merge base with main: could not check" "$main_out"
   assert_not_contains "no main branch never reads as nothing to scan" "no changed files left" "$main_out"
 }
 
