@@ -223,7 +223,7 @@ test_sast_fast_scan_survives_a_deleted_file() {
   # Every documented SAST scan shows its errors and how many files it scanned;
   # a projection of .results alone turns a scan of nothing into count: 0.
   scans="$(grep -cF '"$SAST_BIN" scan' skills/security-scanner/SKILL.md)"
-  with_errors="$(grep -F '"$SAST_BIN" scan' skills/security-scanner/SKILL.md | grep -F '.errors' | grep -cF '.paths.scanned')"
+  with_errors="$(grep -F '"$SAST_BIN" scan' skills/security-scanner/SKILL.md | grep -F 'select(.level == "error")' | grep -cF '.paths.scanned')"
   assert_contains "every SAST scan command reports errors and files scanned" \
     "scans=${scans};" "scans=${with_errors};"
   assert_contains "SKILL.md gives the SAST pass rule" \
@@ -237,7 +237,10 @@ test_sast_fast_scan_survives_a_deleted_file() {
   fi
   local tmp out count mutant
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/acs-sast.XXXXXX")" || return 1
-  printf 'rules:\n  - id: acs-probe-eval\n    pattern: eval(...)\n    message: eval call\n    languages: [python]\n    severity: WARNING\n' \
+  # The bash rule makes the scanner parse partial.sh, whose one line (taken from
+  # hooks/skill-gate.sh) parses only partly: a level "warn" entry in .errors on a
+  # scan that covered every file. It must not read as could-not-check.
+  printf 'rules:\n  - id: acs-probe-eval\n    pattern: eval(...)\n    message: eval call\n    languages: [python]\n    severity: WARNING\n  - id: acs-probe-rm\n    pattern: rm -rf $X\n    message: rm call\n    languages: [bash]\n    severity: WARNING\n' \
     > "${tmp}/rule.yml"
   cmd="${cmd//--config auto/--config ${tmp}/rule.yml}"
   # The branch's own deletion, not a dropped finding, is what must not empty the scan.
@@ -251,7 +254,9 @@ test_sast_fast_scan_survives_a_deleted_file() {
     git init -q -b main repo && cd repo \
       && printf 'x = 1\n' > gone.py && git add gone.py && g commit -q --no-verify -m base \
       && git checkout -q -b feature && git rm -q gone.py \
-      && printf 'x = eval(input())\n' > hit.py && git add hit.py && g commit -q --no-verify -m change \
+      && printf 'x = eval(input())\n' > hit.py \
+      && printf '%s\n' 'case "$m" in a) ;; *) m=""; [ -f "${r}/p.json" ] && \' > partial.sh \
+      && git add hit.py partial.sh && g commit -q --no-verify -m change \
       || { echo "FIXTURE-NOT-BUILT"; exit 0; }
     SAST_BIN="$bin"
     eval "$cmd"
@@ -272,6 +277,10 @@ test_sast_fast_scan_survives_a_deleted_file() {
       ERRORS="${ERRORS}\n  FAIL: documented SAST fast scan reports the finding on a branch that deletes a file\n    got count: '${count}' output: $(printf '%s' "$out" | head -c 300)" ;;
     *) PASS=$((PASS + 1)) ;;
   esac
+  # A partial parse is a warning, not an error: the scan still reads as complete.
+  assert_contains "a partial parse is counted as a warning, not an error" \
+    "errors=0;warned=yes;" \
+    "$(printf '%s' "${out%%@@MUTANT@@*}" | jq -r '"errors=\(.errors | length);warned=\(if .warnings > 0 then "yes" else "no" end);"' 2>/dev/null)"
   # Without the filter the scan covers nothing; the projection must say so
   # rather than read as clean.
   assert_contains "a scan of nothing shows its error, not just count: 0" \
