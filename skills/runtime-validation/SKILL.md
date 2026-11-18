@@ -39,25 +39,18 @@ if [ -f package.json ]; then
 fi
 
 # axe-core (a11y overlay)
+# Detect only what the overlay runs: a global axe or the project's installed one.
 command -v axe && echo "axe: available" || {
-  if [ -f package.json ]; then
-    jq -e '.dependencies["@axe-core/cli"] // .devDependencies["@axe-core/cli"]' package.json >/dev/null 2>&1 && echo "axe: available via npx" || echo "axe: not detected"
-  else
-    echo "axe: not detected"
-  fi
+  [ -x node_modules/.bin/axe ] && echo "axe: available (node_modules)" || echo "axe: not detected"
 }
 
 # Lighthouse (perf overlay) — self-gating: only runs if already present.
 # Detect ONLY the `lighthouse` CLI (what the overlay actually invokes) so detection
 # matches execution. @lhci/cli and unlighthouse have different invocations and are
 # NOT run by this overlay — reporting them "available" would announce-then-skip.
+# A package.json entry alone is not enough: the overlay's self-gate needs it installed.
 command -v lighthouse >/dev/null 2>&1 && echo "lighthouse: available" || {
-  if [ -f package.json ]; then
-    jq -e '.dependencies.lighthouse // .devDependencies.lighthouse' package.json >/dev/null 2>&1 \
-      && echo "lighthouse: available via npx" || echo "lighthouse: not detected"
-  else
-    echo "lighthouse: not detected"
-  fi
+  [ -x node_modules/.bin/lighthouse ] && echo "lighthouse: available (node_modules)" || echo "lighthouse: not detected"
 }
 
 # webapp-testing companion skill — check cached skill registry (NOT session flags)
@@ -174,8 +167,17 @@ npx playwright test "${VALIDATION_TMPDIR}/smoke.spec.ts" --reporter=json
 **axe-core a11y overlay** (runs alongside browser path when axe is detected):
 
 ```bash
-# Via Playwright axe integration
-npx @axe-core/cli http://localhost:${PORT}/ --exit --reporter json 2>/dev/null | jq '{violations: [.violations[] | {id, impact, description, nodes: [.nodes[] | .target]}]}'
+# Self-gate: a global axe or node_modules/.bin/axe, run directly, never npx,
+# which would download whatever version npm serves when it is not installed.
+# The -x check drops a shell alias, which zsh's `command -v` prints instead of a path.
+AXE_BIN="$(command -v axe 2>/dev/null)"; [ -x "$AXE_BIN" ] || AXE_BIN=""
+[ -n "$AXE_BIN" ] || { [ -x node_modules/.bin/axe ] && AXE_BIN=node_modules/.bin/axe; }
+if [ -n "$AXE_BIN" ]; then
+  # --stdout prints the results as a JSON array, one entry per URL; errors go to stderr.
+  "$AXE_BIN" --stdout "http://localhost:${PORT}/" | jq '{violations: [.[0].violations[] | {id, impact, description, nodes: [.nodes[] | .target]}]}'
+else
+  echo "axe: not installed; a11y overlay skipped"
+fi
 
 # Capture screenshots with a11y annotations
 npx playwright screenshot --full-page "http://localhost:${PORT}/" "tests/artifacts/validation/a11y-screenshot.png" 2>/dev/null
