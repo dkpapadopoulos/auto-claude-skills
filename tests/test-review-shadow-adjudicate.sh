@@ -974,6 +974,20 @@ assert_equals "E3 reviewer-returned/uncovered: 0 of 1" "0/1" "$(_em_rate "${_o3}
 # review_coverage, which a predicate-3 lib with its constants moved back cannot
 # produce (it writes "none").
 _BASE_BLOB=d71dcd0c773721d4af8e404e5f5098bc62df0bda
+# _full_clone — 0 only when a full clone is positively established: this
+# checkout is its own git work tree, git says it is not shallow, and no
+# partial-clone filter is configured. Anything else is "cannot tell", which
+# must stay a NOTE: a missing blob there is expected, not a broken pin.
+_full_clone() {
+    local _top
+    _top="$(git -C "${PROJECT_ROOT}" rev-parse --show-toplevel 2>/dev/null)" || return 1
+    [ -n "${_top}" ] && [ "$(cd "${_top}" 2>/dev/null && pwd -P)" = "$(cd "${PROJECT_ROOT}" && pwd -P)" ] || return 1
+    [ "$(git -C "${PROJECT_ROOT}" rev-parse --is-shallow-repository 2>/dev/null)" = "false" ] || return 1
+    if git -C "${PROJECT_ROOT}" config --get-regexp '^(remote\..*\.promisor|extensions\.partialclone)$' >/dev/null 2>&1; then
+        return 1
+    fi
+    return 0
+}
 _BASE_WRITER="${TMP}/review-shadow-base.sh"
 if git -C "${PROJECT_ROOT}" cat-file blob "${_BASE_BLOB}" > "${_BASE_WRITER}" 2>/dev/null \
    && grep -q '^REVIEW_SHADOW_PREDICATE_VERSION=2$' "${_BASE_WRITER}"; then
@@ -994,14 +1008,15 @@ if git -C "${PROJECT_ROOT}" cat-file blob "${_BASE_BLOB}" > "${_BASE_WRITER}" 2>
         *) _record_fail "E4 base-producer records are excluded as other-predicate, with a count" "got: ${_o4}" ;;
     esac
     assert_equals "E4 rate stays 1/1 with the base records present" "1/1" "$(_em_rate "${_o4}")"
-elif [ "$(git -C "${PROJECT_ROOT}" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
-    # A shallow clone lacks the blob. Not recorded as a pass, and not a red cell
-    # (one red cell blocks every routing push).
-    echo "  NOTE: base producer blob ${_BASE_BLOB} unavailable in this shallow clone -- E4 not run"
-else
+elif _full_clone; then
     # A full clone holds the blob, so its absence there is a broken pin, not a
     # skip (#416): the block used to print a NOTE and stay green either way.
-    _record_fail "E4 base producer blob ${_BASE_BLOB} is readable in a full clone" "cat-file failed or the blob is not predicate 2"
+    _record_fail "E4 base producer blob ${_BASE_BLOB} is readable in an established full clone" "cat-file failed or the blob is not predicate 2"
+else
+    # A shallow or partial clone, or a copy that is not a clone at all (a
+    # tarball, `git archive`), lacks the blob. Not recorded as a pass, and not
+    # a red cell (one red cell blocks every routing push).
+    echo "  NOTE: base producer blob ${_BASE_BLOB} unavailable and this is not an established full clone -- E4 not run"
 fi
 
 # MX (#382) a corpus mixing schema versions. Every record comes from a REAL
@@ -1053,10 +1068,10 @@ if [ -s "${_BASE_WRITER}" ] && grep -q '^REVIEW_SHADOW_PREDICATE_VERSION=2$' "${
 ${_mx_base_ids}
 EOF
     assert_equals "MX no base record is pooled into the rate population" "0" "${_mx_pooled}"
-elif [ "$(git -C "${PROJECT_ROOT}" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
-    echo "  NOTE: base producer unavailable in this shallow clone -- MX not run"
+elif _full_clone; then
+    _record_fail "MX base producer and writer schema are available in an established full clone" "base blob or REVIEW_SHADOW_SCHEMA_VERSION missing (schema='${_SV}')"
 else
-    _record_fail "MX base producer and writer schema are available in a full clone" "base blob or REVIEW_SHADOW_SCHEMA_VERSION missing (schema='${_SV}')"
+    echo "  NOTE: base producer unavailable and this is not an established full clone -- MX not run"
 fi
 
 # E5 a predicate-3 record without the fields, and ones carrying "invalid", are

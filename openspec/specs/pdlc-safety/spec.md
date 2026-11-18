@@ -573,6 +573,13 @@ The push guard (`_HEAD_SHA`, `_subj_head`), `scripts/gate-status.sh` and `review
 - **THEN** the push gate denies it
 - **AND** no message names the word `HEAD` as a commit
 
+#### Scenario: Ledger milestones recorded in a repository with no commits
+
+- **GIVEN** a repository with no commits whose branch ledger holds REVIEW and VERIFY milestones, recorded with no sha
+- **WHEN** the agent runs `git push`
+- **THEN** the push gate's decision is what it was before this requirement (no deny)
+- **AND** it does not print the advisory that the milestone is stale because "HEAD is HEAD"
+
 ### Requirement: The capture replay writes no shadow record
 
 When the push guard runs as the diagnostic capture's replay (`PUSH_GATE_CAPTURE_REPLAY=1`), it MUST NOT append a REVIEW or an IMPLEMENT shadow record. A live evaluation of the same state MUST still append one.

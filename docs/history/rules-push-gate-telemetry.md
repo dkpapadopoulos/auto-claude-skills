@@ -219,12 +219,21 @@ Original text:
 
 ## #435 item 3: no predicate bump for #432 (2026-11-18)
 
-Before #432 (plugin 3.104.0) the ledger bridge credited a milestone recorded as the word `HEAD`, written only in a repository with no commits, to any branch. For REVIEW that made `_review_completed` true, so the leg wrote a record for a push the chain gate now denies first. For IMPLEMENT it satisfied the leg, so a would-block record was not written. Only a machine holding such ledger entries is affected; the owner's held 13.
+#432's rule first shipped in plugin 3.103.1 (the merge commit itself still carried 3.103.0, so that version is ambiguous for a plugin run from a checkout). Before it, the ledger bridge credited a milestone recorded as the word `HEAD`, written only in a repository with no commits, to any branch with a commit of its own and a resolvable mainline base.
 
-Measured 2026-11-18 on the owner's corpora: REVIEW predicate 3 held 149 records written before 3.104.0 and 53 after; IMPLEMENT predicate 6 held 14 and 23. `--evidence-miss` is unaffected, since it counts only `reviewer-returned` with `covered`. No registered REVIEW window is open.
+Two effects, in opposite directions, neither identifiable from a record:
+
+- Credit for `requesting-code-review` or `verification-before-completion` let a push past the chain's REVIEW and VERIFY denies. The REVIEW leg then wrote a record (it fires when review counts as completed and no clean bound verdict exists), and the push went on to the IMPLEMENT leg, which could write one too. Such pushes are now denied first and write neither.
+- Credit for an implementation-slot milestone satisfied the IMPLEMENT leg, so a would-block record was not written.
+
+The owner's machine held 13 such ledger entries on 2026-11-18, none for an implementation-slot skill, so only the first effect was possible there.
+
+Measured the same day on the owner's corpora: REVIEW predicate 3 held 149 records written before 3.103.1 and 53 after; IMPLEMENT predicate 6 held 14 and 23; no record carried a 3.103.x stamp. `--evidence-miss` is unaffected, since it counts only `reviewer-returned` with `covered`. No registered REVIEW window is open.
+
+The decision was not to bump: a bump made now would put the boundary at the wrong version and discard the records written since the fix. The cost is that the separator is prose. Neither `scripts/review-shadow-adjudicate.sh` nor `scripts/shadow-adjudicate.sh` reads `acs_version`, so `--status` pools across it.
 
 Three changes shipped with this decision move no episode and no label:
 
 - `review_sha_covers` and `review_reviewer_returned_sha` refuse an abbreviated sha (#435 item 1). Every producer writes `git rev-parse HEAD`, so no record's coverage changes.
-- The reading side resolves HEAD with `rev-parse --verify --quiet` (#435 item 2). The guard's output in a repository with no commits was byte-identical before and after in four evidence states.
+- Four reading-side sites resolve HEAD with `rev-parse --verify --quiet` (#435 item 2). In a repository with no commits the guard's decision is unchanged; the advisory "stale: recorded at unknown, HEAD is HEAD", printed when ledger milestones had been recorded there, no longer appears.
 - The capture replay no longer appends a duplicate shadow record (#381). 4 of 202 REVIEW predicate-3 records and 0 of 37 IMPLEMENT predicate-6 records were such duplicates, each in the same episode as its original.
