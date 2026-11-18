@@ -416,15 +416,6 @@ fi
 # across concurrent sessions (last-writer-wins) and may name ANOTHER session.
 _PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 
-# verify-shadow.sh (#301) — diagnostic corpus for the VERIFY measured-verdict
-# leg. Diagnostic-only, so deliberately NOT in _GATE_ENFORCE_LIBS. The call
-# site is `command -v`-guarded, so an absent lib records nothing and the gate's
-# output is byte-identical. Loaded HERE rather than beside review-shadow.sh
-# because a committed knowledge fact cites the _PLUGIN_ROOT line above by
-# number, and tests/test-knowledge.sh fails when that line moves.
-[ -f "${_GC_ROOT}/hooks/lib/verify-shadow.sh" ] && \
-    _guard_load "${_GC_ROOT}/hooks/lib/verify-shadow.sh" || true
-
 # credited-skills.sh (review-credit-from-evidence, decisions 2, 3 and 6) — the
 # ONE list of REVIEW names the invocation-evidence leg credits, and the reader
 # behind the reviewer leg (_rr_ok). A gate-enforcement lib, so it is in
@@ -1444,11 +1435,14 @@ EOF
                 # The widening was pre-registered and REFUSED on measurement
                 # (openspec/changes/chain-verify-verdict-acceptance). A clean
                 # covering verdict is NOT stronger evidence in the sense that
-                # matters here: the artifact is model-authored by design, and
-                # `{"sha":"<HEAD>","gate_gaming_status":"clean"}` — two fields,
-                # no run — satisfies verdict_is_clean + verdict_covers_head and
-                # turns this deny into a guard-level allow. Adding an explicit
-                # worktree_dirty:false defeats the sha-exact tightening too.
+                # matters here: the artifact is model-authored by design. When
+                # this was measured, `{"sha":"<HEAD>","gate_gaming_status":"clean"}`
+                # — two fields, no run — satisfied verdict_is_clean +
+                # verdict_covers_head and turned this deny into a guard-level
+                # allow, and an explicit worktree_dirty:false defeated the
+                # sha-exact tightening too. Since #295 the record must also
+                # report a check (`passed`), which is one more field to type,
+                # not a boundary: the refusal stands on the same ground.
                 # What is different about the verdict is NOT that this leg's
                 # evidence is unforgeable. Measured 2026-09-24: all four of this
                 # leg's sources are plain files under ~/.claude/ and each one,
@@ -1467,7 +1461,7 @@ EOF
                    && command -v verdict_is_clean >/dev/null 2>&1 \
                    && verdict_is_clean "${_VERDICT_TOKEN}" \
                    && verdict_covers_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
-                    _MSG="${_MSG} NOTE: a CLEAN verification verdict covering this commit does exist, and this leg deliberately does not accept it (issue #254, measured 2026-09-24). That artifact is authored by the model itself — project-verification Step 3 instructs it — so it arrives without any deliberate act, and a two-field file satisfies the predicate. This leg's sources are normally written only by hooks. None of them is forgery-proof either (issue #295); the difference is that the verdict is supplied by default. Invoke the Skill and let it complete."
+                    _MSG="${_MSG} NOTE: a CLEAN verification verdict covering this commit does exist, and this leg deliberately does not accept it (issue #254, measured 2026-09-24). That artifact is authored by the model itself — project-verification Step 3 instructs it, or the model runs the script that writes it — so it arrives without any deliberate act, and the gate checks only that it reports a check and names this commit, not that the check ran. This leg's sources are normally written only by hooks. None of them is forgery-proof either (issue #295); the difference is that the verdict is supplied by default. Invoke the Skill and let it complete."
                 fi
                 _skill_available "verification-before-completion" || _MSG="${_MSG} ${_SETUP_HINT}"
                 _emit_deny "${_MSG}"
@@ -1475,110 +1469,10 @@ EOF
                 exit 0
             fi
 
-            # Check 2b (VERIFY MEASURED VERDICT, WARN-FIRST) — issue #301.
-            # STATUS above answers "did verification-before-completion return";
-            # it cannot answer "did anything run", because Skill(...) returns
-            # the instruction body. This leg asks whether a verdict MEASURED by
-            # scripts/verify-and-record.sh covers the pushed commit. ADVISORY
-            # ONLY: appends to _STALE_MSG, sets no permissionDecision and no
-            # _DECISION, and never exits — so it cannot bypass or weaken any
-            # deny above or below it. The deny-flip is a separate change gated
-            # on the pre-registered rule in
-            # openspec/changes/verify-measured-verdict/design.md.
-            #
-            # Population (predicate_version 2): the milestone is in the chain,
-            # STATUS is already satisfied (a session that never got past STATUS
-            # is the deny above, a different failure), the command is a push,
-            # and it ships content. A merge is excluded because the verdict
-            # binds a branch-local commit and a merge's subject is the PR; a
-            # pure ref deletion is excluded because there is nothing to have
-            # verified. material_source is RECORDED, not a fire condition: the
-            # STATUS gate above demands the milestone for a docs-only push too,
-            # so this leg asks the same question of the same population.
-            #
-            # Without verdict.sh there is nothing to read with, and that state
-            # is already announced by the degradation note above. It is still
-            # recorded, as cannot_check: "could not look" must be visible in the
-            # corpus and must never be counted as unexplained.
-            #
-            # `_verif_completed = true` is unreachable-as-false here today: the
-            # deny above exits first. It is kept because that is what makes it
-            # true, and this leg must not start firing on unsatisfied STATUS if
-            # that deny is ever restructured. No cell can fail on its removal.
-            #
-            # OUT OF SCOPE (predicate_version 2): a repo whose `.verify.yml`
-            # declares a non-local substrate. The deterministic writer refuses
-            # to run there by ANY route, so no measured verdict can exist and
-            # the remedy this leg names could not be executed. A check that can
-            # only ever fire and never be satisfied measures the repo's
-            # configuration, not the agent's behaviour, so it does not fire.
-            _vm_gate="unknown"
-            if [ "${_VERDICT_OK}" = "true" ] && command -v verdict_gate_declaration >/dev/null 2>&1; then
-                _vm_gate="$(verdict_gate_declaration "${_SUBJ_ROOT}" "${_SUBJ_REV}" 2>/dev/null)" || _vm_gate="unknown"
-            fi
-            if [ "${_verif_in_chain}" = "true" ] && [ "${_verif_completed}" = "true" ] && \
-               [ "${_gc_is_push}" = "true" ] && [ "${_SUBJ_DELETION_ONLY:-false}" != "true" ] && \
-               [ "${_vm_gate}" != "non-local" ]; then
-                _vm_class="cannot_check"; _vm_reason="lib-unavailable"; _vm_src=""
-                # verdict.sh loaded but predates this reader: no degradation
-                # note covers that, so it must not take the silent arm below.
-                if [ "${_VERDICT_OK}" = "true" ]; then _vm_reason="reader-unavailable"; fi
-                if [ "${_VERDICT_OK}" = "true" ] && command -v verdict_measured_class >/dev/null 2>&1; then
-                    _vm_out="$(verdict_measured_class "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}" 2>/dev/null)" || _vm_out=""
-                    case "${_vm_out}" in
-                        *" "*) _vm_class="${_vm_out%% *}"; _vm_reason="${_vm_out#* }" ;;
-                        *)     _vm_class="cannot_check"; _vm_reason="no-result" ;;
-                    esac
-                    _vm_src="$(verdict_discovery_source "${_VERDICT_TOKEN}" 2>/dev/null)" || _vm_src=""
-                    # verdict_resolve_token picks ONE artifact, and it does not
-                    # rank by provenance: an own hand-authored verdict at HEAD
-                    # wins over a sibling session's MEASURED one at the same
-                    # commit. The question here is whether a measured verdict
-                    # covers this commit at all, so ask that before recording a
-                    # would-block that a measurement on disk contradicts.
-                    #
-                    # NOT when the resolved verdict is not-clean. That resolver
-                    # is deny-biased — a failure at the commit outranks a clean
-                    # verdict elsewhere — and this leg follows it rather than
-                    # letting a sibling's clean run erase a recorded failure.
-                    if [ "${_vm_class}" != "measured" ] && [ "${_vm_reason}" != "not-clean" ] \
-                       && command -v verdict_any_measured_at_head >/dev/null 2>&1; then
-                        if verdict_any_measured_at_head "${_SUBJ_ROOT}" "${_SUBJ_REV}" 2>/dev/null; then
-                            _vm_class="measured"; _vm_reason="ok"
-                        fi
-                    fi
-                fi
-                # "Could not measure" is not "false": with verdict.sh absent
-                # the material-source predicate has nothing to diff with.
-                _vm_material="${_rv_material:-}"
-                if [ "${_VERDICT_OK}" != "true" ]; then _vm_material=""; fi
-                if [ "${_vm_class}" != "measured" ]; then
-                    case "${_vm_class}:${_vm_reason}" in
-                        cannot_check:lib-unavailable)
-                            : ;;  # the verdict.sh degradation note already says the reader did not load
-                        cannot_check:*)
-                            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }VERIFY VERDICT: could not check whether a measured verification verdict covers this commit (${_vm_reason}), so no claim is made about whether the gate ran." ;;
-                        explained_ladder:*)
-                            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }VERIFY VERDICT: the clean verdict covering this commit was hand-authored, not measured — its exit codes are what the model wrote down, not what a run returned (#301). Re-run Skill(auto-claude-skills:project-verification), which hands the same commands to the deterministic writer. Advisory only." ;;
-                        unexplained:unbound)
-                            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }VERIFY VERDICT: verification-before-completion was credited, but the recorded verification verdict does not cover this commit (#301). Re-run Skill(auto-claude-skills:project-verification) at this HEAD. Advisory only." ;;
-                        unexplained:not-clean)
-                            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }VERIFY VERDICT: verification-before-completion was credited, but the verification verdict covering this commit is not clean (#301). Fix what it reports and re-run Skill(auto-claude-skills:project-verification). Advisory only." ;;
-                        unexplained:unrecognised-source)
-                            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }VERIFY VERDICT: the verdict covering this commit names a discovery source the deterministic writer does not emit, so it was not measured (#301). Re-run Skill(auto-claude-skills:project-verification). Advisory only." ;;
-                        *)
-                            _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }VERIFY VERDICT: verification-before-completion was credited, but no verification verdict covers this commit — a Skill return is not evidence that any gate ran (#301). Run Skill(auto-claude-skills:project-verification), which executes the gate and records measured exit codes. Advisory only." ;;
-                    esac
-                    # Not under the capture replay: the EXIT trap re-runs this
-                    # guard on a deny, and recording there writes every denied
-                    # event twice.
-                    if [ "${PUSH_GATE_CAPTURE_REPLAY:-}" != "1" ] && command -v verify_shadow_record >/dev/null 2>&1; then
-                        _shadow_stamp_prepare || true
-                        verify_shadow_record "${_SESSION_TOKEN}" "${_SUBJ_ROOT}" "${_vm_class}" "${_vm_reason}" \
-                            "push" "${_SUBJ_REV}" "${_TRANSCRIPT:-}" "${_vm_material}" "${_vm_src}" "${_vm_gate}" 2>/dev/null || true
-                    fi
-                fi
-            fi
+            # The VERIFY measured-verdict advisory leg (#301, "Check 2b") stood here.
+            # Retired by owner decision on 2026-11-17 (#343): it rendered and recorded,
+            # never denied, and nothing below read its state. The record is
+            # docs/history/verify-measured-verdict-registration.md.
 
             # Check 0 (IMPLEMENT, WARN-FIRST): an implementation-slot skill is in
             # the chain but has no evidence, and the diff touches material source.
@@ -1886,10 +1780,12 @@ EOF
             [ "${_g_verify}" = "false" ] && _bridge_has "verification-before-completion" && _g_verify=true
             # A clean verification verdict covering HEAD is SHA-bound, so it also
             # satisfies the verify leg. NOTE (#295): "stronger" is the wrong word
-            # and used to appear here — the artifact is model-authored by design
-            # and a two-field file satisfies it, measured 2026-09-24. It is
-            # sha-bound, not harder to forge. Narrowing this leg is a live
-            # question; it is a deny-side change and wants its own registration.
+            # and used to appear here — the artifact is model-authored by design.
+            # It must report a check and name the commit (#295); that it does
+            # not show the check ran is the stated scope, not an oversight:
+            # this gate defends against a skipped step, not forged evidence.
+            # It is sha-bound, not harder to forge. Narrowing this leg is a
+            # deny-side change and wants its own registration.
             if [ "${_g_verify}" = "false" ] && [ "${_VERDICT_OK}" = "true" ] \
                && verdict_is_clean "${_VERDICT_TOKEN}" && verdict_covers_head "${_VERDICT_TOKEN}" "${_SUBJ_ROOT}" "${_SUBJ_REV}"; then
                 _g_verify=true

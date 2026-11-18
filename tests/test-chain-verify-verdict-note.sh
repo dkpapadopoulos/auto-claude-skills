@@ -13,9 +13,11 @@
 #
 #   {"sha":"<HEAD>","gate_gaming_status":"clean"}
 #
-# Two fields, no run, written by the agent — that satisfies verdict_is_clean +
-# verdict_covers_head and converts this deny into a guard-level ALLOW. Adding an
-# explicit worktree_dirty:false defeats the sha-exact tightening as well. The
+# Two fields, no run, written by the agent — when measured, that satisfied
+# verdict_is_clean + verdict_covers_head and converted this deny into a
+# guard-level ALLOW, and an explicit worktree_dirty:false defeated the sha-exact
+# tightening as well. Since #295 the record must also report a check (`passed`):
+# one more field to type, so the refusal stands on the same ground. The
 # artifact is model-authored BY DESIGN (project-verification Step 3 instructs
 # it; verify-and-record.sh calls itself not a trust boundary), so it is
 # sha-bound, NOT harder to forge.

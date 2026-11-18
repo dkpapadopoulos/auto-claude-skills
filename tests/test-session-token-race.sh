@@ -116,7 +116,7 @@ printf '%s' "session-conv-B" > "${HOME}/.claude/.skill-session-token"
 # the payload token so the routing-governance gate does not independently deny —
 # this test isolates payload-vs-singleton token keying, not verdict behavior.
 jq -nc --arg s "$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null)" \
-    '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' \
+    '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}' \
     > "${HOME}/.claude/.skill-project-verified-session-conv-A"
 G2_OUT="$(run_guard_with "${PUSH_A}")"
 if printf '%s' "${G2_OUT}" | grep -q '"permissionDecision": "deny"'; then

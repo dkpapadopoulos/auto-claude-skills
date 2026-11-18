@@ -59,7 +59,7 @@ mkinput() { jq -n --arg tp "${_TPATH}" --arg c "$1" --arg cw "$2" \
 # run <process-cwd> <command> [payload-cwd]
 run() { ( cd "$1" && mkinput "$2" "${3:-$1}" | CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null ); }
 mkart() { printf '%s' "$1" > "${ART}"; }
-clean_at() { jq -nc --arg s "$1" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}'; }
+clean_at() { jq -nc --arg s "$1" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}'; }
 
 # ================= The two live #219 flips =================
 # A clean verdict exists, measured against MY worktree HEAD — exactly what

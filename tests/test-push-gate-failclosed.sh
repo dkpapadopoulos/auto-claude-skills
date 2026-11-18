@@ -42,7 +42,7 @@ _COMP="$HOME/.claude/.skill-composition-state-${_TOK}"
 # VERIFY leg is met — isolating the REVIEW leg as the sole reason for any denial.
 _PVHEAD="$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null)"
 _VERDICT="$HOME/.claude/.skill-project-verified-${_TOK}"
-_write_verdict() { jq -nc --arg s "${_PVHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' > "${_VERDICT}"; }
+_write_verdict() { jq -nc --arg s "${_PVHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}' > "${_VERDICT}"; }
 _write_verdict
 
 _mkinput() {

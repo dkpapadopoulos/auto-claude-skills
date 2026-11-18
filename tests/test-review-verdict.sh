@@ -224,7 +224,7 @@ _seed_allow() {
              completed:["requesting-code-review","verification-before-completion"]}' \
         > "$HOME/.claude/.skill-composition-state-${_TOK}"
     jq -nc --arg s "$(git -C "${REPO}" rev-parse HEAD)" \
-        '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' \
+        '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}' \
         > "$HOME/.claude/.skill-project-verified-${_TOK}"
 }
 _run_guard() {

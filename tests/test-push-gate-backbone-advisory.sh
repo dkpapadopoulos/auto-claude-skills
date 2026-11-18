@@ -28,7 +28,7 @@ _TOK="session-t"
 _PLUGINS="$HOME/.claude/plugins/cache/mkt/superpowers/6.3.0/skills"
 _PVHEAD="$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null)"
 
-_write_verdict() { jq -nc --arg s "${_PVHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' > "$HOME/.claude/.skill-project-verified-${_TOK}"; }
+_write_verdict() { jq -nc --arg s "${_PVHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}' > "$HOME/.claude/.skill-project-verified-${_TOK}"; }
 _rm_verdict()    { rm -f "$HOME/.claude/.skill-project-verified-${_TOK}"; }
 _install()       { local n; for n in "$@"; do mkdir -p "${_PLUGINS}/${n}"; printf -- '---\n' > "${_PLUGINS}/${n}/SKILL.md"; done; }
 _uninstall_all() { rm -rf "$HOME/.claude/plugins"; }

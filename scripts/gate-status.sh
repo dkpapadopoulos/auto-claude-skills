@@ -195,7 +195,7 @@ if command -v verdict_is_clean >/dev/null 2>&1 && [ -n "${_vtoken}" ]; then
     if [ -n "${_v_sha}" ]; then
         if verdict_is_clean "${_vtoken}"; then _v_state="clean"
         elif verdict_has_test_failure "${_vtoken}"; then _v_state="FAILED (gates: $(verdict_failing_gates "${_vtoken}" | _scrub))"
-        else _v_state="not clean (could_not_verify or gate-gaming suspect: denies a push that touches routing files, advisory elsewhere)"
+        else _v_state="not clean (could_not_verify, gate-gaming suspect, no reported check, or not one well-formed record: denies a push that touches routing files and does not satisfy VERIFY elsewhere)"
         fi
         if verdict_sha_is_head "${_vtoken}" "${_proot}"; then _v_pos="= HEAD"
         elif verdict_covers_head "${_vtoken}" "${_proot}"; then _v_pos="ancestor of HEAD"

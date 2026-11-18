@@ -130,7 +130,10 @@ RENDER='
   | (if ($f | length) > 0 then "fail"
      elif ($c | length) > 0 then "could-not-verify"
      elif $gg == "suspect" then "suspect"
-     elif $gg == "clean" and ($p | length) > 0 then "pass"
+     # The same rule as verdict_is_clean (#295): every entry a string, one of
+     # them a name. A receipt may be stricter than that reader, never wider;
+     # ["unit", null] and ["  "] used to read PASS here.
+     elif $gg == "clean" and ($p | all(.[]; type == "string")) and ($p | any(.[]; test("[^[:space:]]"))) then "pass"
      else "could-not-verify" end) as $result
   | (if .discovery_source == "verify-yml" then "verify-yml" else "explicit" end) as $src
   | ({"pass":"PASS","fail":"FAIL","could-not-verify":"COULD NOT VERIFY","suspect":"SUSPECT"}[$result]) as $head

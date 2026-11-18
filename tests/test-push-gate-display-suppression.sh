@@ -64,7 +64,7 @@ _new_session() {
         "${PROJECT_ROOT}/config/default-triggers.json" > "${HOME}/.claude/.skill-registry-cache.json"
     local _head; _head="$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null)"
     jq -nc --arg s "${_head}" \
-        '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' \
+        '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}' \
         > "${HOME}/.claude/.skill-project-verified-${_TOK}"
     jq -nc '["requesting-code-review"]' \
         > "${HOME}/.claude/.skill-invocation-evidence-${_TOK}"

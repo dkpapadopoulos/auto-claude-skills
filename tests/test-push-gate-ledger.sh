@@ -36,7 +36,7 @@ printf '%s' '{"chain":["requesting-code-review","verification-before-completion"
 # lacks a clean verdict. Provide one covering HEAD so these assertions isolate the
 # STATUS-layer ledger behavior (the routing gate is exercised in test-push-gate-verdict.sh).
 _PVHEAD="$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null)"
-jq -nc --arg s "${_PVHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' \
+jq -nc --arg s "${_PVHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}' \
     > "$HOME/.claude/.skill-project-verified-${_TOK}"
 
 _mkinput() {

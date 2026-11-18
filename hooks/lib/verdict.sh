@@ -136,16 +136,36 @@ verdict_has_test_failure() {
     jq -e '((.failed // []) | length) > 0' "$f" >/dev/null 2>&1
 }
 
-# verdict_is_clean <token> — 0 iff present+parseable AND fully clean (same
-# predicate deploy-gate uses for local verification of record).
+# verdict_is_clean <token> — 0 iff the artifact is ONE well-formed record that
+# is fully clean and REPORTS at least one check (#295):
+#   - exactly one JSON document, and it is an object (slurped: unslurped, `jq -e`
+#     reports on the last value, so a failing record followed by a clean one
+#     read as clean);
+#   - `failed` and `could_not_verify` are absent or empty ARRAYS;
+#   - `passed` is an array of strings, at least one with a non-space character;
+#   - `gate_gaming_status` is "clean".
+# Before #295 a record holding only `sha` and `gate_gaming_status` was clean.
+#
+# This asks that a check was REPORTED. It does not show the check ran, and it
+# does not say who wrote the record: the artifact is workflow evidence an agent
+# can write. The gate defends against a skipped step, not against forged
+# evidence. Do not describe this predicate as provenance or as a boundary.
+#
+# Absent file, no jq and an unparseable file all return non-zero, as before;
+# what that means is the caller's decision.
 verdict_is_clean() {
     local token="${1:-}" f
     f="$(verdict_artifact_path "$token")" || return 1
     [ -f "$f" ] || return 1
     command -v jq >/dev/null 2>&1 || return 1
-    jq -e '((.failed // []) | length == 0)
-       and ((.could_not_verify // []) | length == 0)
-       and ((.gate_gaming_status // "") == "clean")' "$f" >/dev/null 2>&1
+    jq -es '
+      def none(f): (f == null) or ((f | type) == "array" and (f | length) == 0);
+      length == 1 and (.[0] | type) == "object" and (.[0]
+        | none(.failed) and none(.could_not_verify)
+          and ((.passed | type) == "array")
+          and (.passed | all(.[]; type == "string"))
+          and (.passed | any(.[]; test("[^[:space:]]")))
+          and ((.gate_gaming_status // "") == "clean"))' "$f" >/dev/null 2>&1
 }
 
 # verdict_unclean_remedy <token> — for a verdict that is NOT clean, print what would make
@@ -178,17 +198,27 @@ verdict_unclean_remedy() {
     f="$(verdict_artifact_path "$token")" || return 1
     [ -f "$f" ] || return 1
     command -v jq >/dev/null 2>&1 || return 1
-    jq -er '
+    jq -ers '
       def plain: test("^[A-Za-z0-9._ -]{1,60}$");
       def named($all): ($all | map(select(plain))) as $ok | ($all | length) - ($ok | length) as $odd
         | ($ok | join(", "))
           + (if $odd > 0 then (if ($ok | length) > 0 then ", and " else "" end) + "\($odd) with a name that is not a plain label (see .verify.yml)" else "" end);
-      objects
-      | ((.failed // []) | map(strings)) as $f
-      | ((.could_not_verify // []) | map(strings)) as $c
+      # A result field is read as a list only when it IS one. A wrong-typed
+      # field is reported as a malformed record below, never iterated.
+      def arr(f): if (f | type) == "array" then f else [] end;
+      def odd(f): (f != null) and ((f | type) != "array");
+      "The recorded verdict is not one well-formed record (no document, more than one document, not an object, or a result field or entry of the wrong type). Re-run Skill(auto-claude-skills:project-verification) to replace it." as $malformed
+      | if length != 1 or (.[0] | type) != "object" then $malformed
+        else .[0]
+      | (arr(.failed) | map(strings)) as $f
+      | (arr(.could_not_verify) | map(strings)) as $c
       | ($c | map(select(. != "gate-run-straddled-commit" and . != "gate-gaming-check"))) as $cg
-      | ((.gate_gaming_hits // []) | map(strings) | length) as $h
-      | [ (if ($f | length) > 0 then
+      | (arr(.gate_gaming_hits) | map(strings) | length) as $h
+      | (odd(.failed) or odd(.could_not_verify) or odd(.passed)
+         or ((arr(.failed) + arr(.could_not_verify) + arr(.passed)) | any(.[]; type != "string"))) as $bad
+      | (arr(.passed) | map(strings) | any(.[]; test("[^[:space:]]"))) as $reported
+      | [ (if $bad then $malformed else empty end),
+          (if ($f | length) > 0 then
              "It reports failing gate(s): \(named($f)). Fix them and re-run Skill(auto-claude-skills:project-verification)."
            else empty end),
           (if (.gate_gaming_status // "") == "suspect" then
@@ -203,11 +233,24 @@ verdict_unclean_remedy() {
           (if ($c | index("gate-gaming-check")) != null then
              "The gate-gaming check could not run (no mainline base to diff against, or a gate_gaming_paths declaration on the mainline that cannot be applied). Re-running prints the reason; a declaration has to be fixed on the mainline, not on this branch."
            else empty end),
+          # A status that is neither clean nor suspect, and that the
+          # could-not-run entry above does not already explain. (No apostrophe
+          # in this program: it sits inside a single-quoted shell string.)
+          (if ((.gate_gaming_status // "") as $g | $g != "clean" and $g != "suspect")
+              and (($c | index("gate-gaming-check")) == null) then
+             "Its gate-gaming status is missing or is not clean, and nothing recorded says why, so that check did not complete. Re-run Skill(auto-claude-skills:project-verification)."
+           else empty end),
           (if ($cg | length) > 0 then
              "Gate(s) that could not be run (missing tool or runner error): \(named($cg)). Make them runnable and re-run Skill(auto-claude-skills:project-verification)."
+           else empty end),
+          # Only when nothing above explains the missing check: a failed or
+          # unrunnable gate was reported, it just did not pass.
+          (if ($bad | not) and ($reported | not) and ($f | length) == 0 and ($c | length) == 0 then
+             "The recorded verdict reports no check. Re-run Skill(auto-claude-skills:project-verification) so at least one gate is run and recorded."
            else empty end)
         ]
       | if length == 0 then empty else join(" ") end
+        end
     ' "$f" 2>/dev/null
 }
 
@@ -222,21 +265,19 @@ verdict_gate_gaming_hits() {
     jq -r 'objects | (.gate_gaming_hits // []) | map(strings) | .[0:10][] | .[0:200]' "$f" 2>/dev/null | tr -d '\000-\010\013-\037'
 }
 
-# --- Measured provenance (#301) ---------------------------------------------
+# --- Recorded source (#301) ---------------------------------------------------
 # `discovery_source` says who decided what happened. scripts/verify-and-record.sh
 # stamps exactly two values (`verify-yml`, `explicit`) and in both cases the exit
 # codes in the record are ones it measured. Every other value comes from the
 # hand-authored last resort in project-verification, where the model writes the
-# JSON itself. These three are READERS over a field already present on every
-# artifact; nothing here changes the schema or the producer.
+# JSON itself. These two are READERS over a field already present on every
+# artifact, and their one consumer is scripts/verify-receipt.sh. No gate leg
+# reads them: the advisory leg they were written for was retired on 2026-11-17
+# (#343, docs/history/verify-measured-verdict-registration.md).
 #
-# ADVISORY inputs only. The VERIFY measured-verdict leg is warn-first and its
-# deny-flip is a separate change gated on the pre-registration in
-# openspec/changes/verify-measured-verdict/design.md.
-#
-# NOT a trust boundary, and it must not be described as one: `--name x --run
-# true` is a measured verdict that checked nothing. What this separates is the
-# ACCIDENTAL path (invoke the skill, execute nothing) from the deliberate ones.
+# NOT a trust boundary, and it must not be described as one: the field is a
+# string in a file the agent can write, and `--name x --run true` is a measured
+# verdict that checked nothing.
 
 # verdict_discovery_source <token> — echo .discovery_source when it is a
 # non-empty string. Non-zero when the artifact is absent, does not parse, is not
@@ -257,107 +298,6 @@ verdict_is_measured() {
         verify-yml|explicit) return 0 ;;
     esac
     return 1
-}
-
-# verdict_measured_class <token> <proj_root> [commit] — prints "<class> <reason>"
-# and always returns 0. Classes are the pre-registered vocabulary plus the one
-# silent state:
-#   measured         ok                    clean, covers the commit, measured
-#   explained_ladder hand-authored         clean, covers the commit, a ladder rung
-#   unexplained      absent | unbound | not-clean | unrecognised-source
-#   cannot_check     unparseable | no-discovery-source | no-token | no-jq
-#
-# ORDER IS LOAD-BEARING. "Could we read it" is decided BEFORE "does it cover the
-# commit", so an artifact that omits discovery_source is cannot_check whatever
-# its sha says — counting it `unexplained` would move the pre-registered count
-# on a record nobody could classify.
-verdict_measured_class() {
-    local token="${1:-}" proot="${2:-}" rev="${3:-HEAD}" f src
-    f="$(verdict_artifact_path "$token")" || { printf '%s' "cannot_check no-token"; return 0; }
-    [ -f "$f" ] || { printf '%s' "unexplained absent"; return 0; }
-    command -v jq >/dev/null 2>&1 || { printf '%s' "cannot_check no-jq"; return 0; }
-    # `jq -e` on an EMPTY file prints nothing and exits non-zero: zero documents
-    # is not a verdict, and must not fall through to a field read.
-    # Slurped, so a file holding TWO documents is not a verdict either: without
-    # -s, `jq -e` reports on the last value and every field reader downstream
-    # would see a stream.
-    jq -es 'length == 1 and (.[0] | type == "object")' "$f" >/dev/null 2>&1 || { printf '%s' "cannot_check unparseable"; return 0; }
-    src="$(verdict_discovery_source "$token")" || src=""
-    [ -n "$src" ] || { printf '%s' "cannot_check no-discovery-source"; return 0; }
-    verdict_covers_head "$token" "$proot" "$rev" || { printf '%s' "unexplained unbound"; return 0; }
-    verdict_is_clean "$token" || { printf '%s' "unexplained not-clean"; return 0; }
-    case "$src" in
-        verify-yml|explicit) printf '%s' "measured ok" ;;
-        claude-md-commands|contributing-md|heuristic:*) printf '%s' "explained_ladder hand-authored" ;;
-        *) printf '%s' "unexplained unrecognised-source" ;;
-    esac
-    return 0
-}
-
-# verdict_any_measured_at_head <proj_root> [commit] — 0 iff SOME artifact, under
-# any token, is clean, measured, and bound to the EXACT commit.
-#
-# Exists because verdict_resolve_token returns one token and does not rank by
-# provenance. Exact-commit only, the same binding its cross-token bridge uses:
-# ancestor acceptance stays scoped to the own token. Same `grep -lF` prefilter,
-# so the jq forks are bounded to the files naming the commit.
-verdict_any_measured_at_head() {
-    local proot="${1:-}" rev="${2:-HEAD}" head f tok
-    head="$(git -C "${proot:-.}" rev-parse "$rev" 2>/dev/null)" || return 1
-    [ -n "$head" ] || return 1
-    while IFS= read -r f; do
-        [ -n "$f" ] || continue
-        tok="${f##*/}"; tok="${tok#.skill-project-verified-}"
-        [ -n "$tok" ] || continue
-        # Exactly one document. The helpers below read UNSLURPED, where
-        # `jq -e` reports on the last value, so a failing verdict followed by
-        # `{"gate_gaming_status":"clean"}` would read as clean and measured.
-        jq -es 'length == 1 and (.[0] | type == "object")' "$f" >/dev/null 2>&1 || continue
-        verdict_sha_is_head "$tok" "$proot" "$rev" || continue
-        verdict_is_clean "$tok" || continue
-        verdict_is_measured "$tok" && return 0
-    done <<EOF
-$(grep -lF "$head" "${HOME}/.claude/.skill-project-verified-"* 2>/dev/null)
-EOF
-    return 1
-}
-
-# verdict_gate_declaration <proj_root> [commit] — what the repo DECLARES as its
-# gate at that commit: local | non-local | absent | unknown.
-#
-# This is reachability evidence, not a verdict. scripts/verify-and-record.sh
-# refuses any `.verify.yml` whose substrate is not exactly `local`, and refuses
-# explicit commands whenever a `.verify.yml` exists — so in a `non-local` repo
-# no route produces a measured verdict for that tree, and a leg that asks for
-# one would name a remedy that cannot be executed.
-#
-# The awk is the writer's own. The INPUT is not: the writer reads the working
-# tree when it runs, this reads the COMMIT being pushed. They agree whenever the
-# tree is clean at that commit, and can disagree otherwise (an uncommitted edit
-# to the declaration; a checkout filter or autocrlf rewriting the file). That
-# is deliberate — the question here is about what is pushed — and it is a
-# limit, not a guarantee of agreement. Measured in review on 24 repo states.
-#
-# A SYMLINKED `.verify.yml` is `unknown`: its blob holds the link target, not
-# the declaration, and parsing that as YAML called a local gate non-local.
-verdict_gate_declaration() {
-    local proot="${1:-}" rev="${2:-HEAD}" body sub
-    git -C "${proot:-.}" rev-parse --verify --quiet "${rev}^{commit}" >/dev/null 2>&1 \
-        || { printf '%s' "unknown"; return 0; }
-    if ! git -C "${proot:-.}" cat-file -e "${rev}:.verify.yml" 2>/dev/null; then
-        printf '%s' "absent"; return 0
-    fi
-    # --full-tree: without it the pathspec is relative to the working directory
-    # while `<rev>:.verify.yml` above is relative to the repo root, so a call
-    # from a subdirectory found the file one way and not the other.
-    case "$(git -C "${proot:-.}" ls-tree --full-tree "${rev}" -- .verify.yml 2>/dev/null)" in
-        100644*|100755*) : ;;
-        *) printf '%s' "unknown"; return 0 ;;   # symlink, submodule, tree
-    esac
-    body="$(git -C "${proot:-.}" show "${rev}:.verify.yml" 2>/dev/null)" || { printf '%s' "unknown"; return 0; }
-    sub="$(printf '%s\n' "${body}" | awk -F': *' '$1=="substrate"{print $2; exit}')"
-    if [ "${sub}" = "local" ]; then printf '%s' "local"; else printf '%s' "non-local"; fi
-    return 0
 }
 
 # verdict_test_delta <token> — echo the recorded test_delta (covered|missing|n/a|"").
@@ -437,18 +377,53 @@ is_routing_repo() {
 }
 
 # _routing_base <proj_root> [commit] — best-available mainline merge-base for the
-# subject commit (HEAD when none is given).
+# subject commit (HEAD when none is given). The branch diff built on it is the
+# subject's NET change against the mainline.
+#
+# The first candidate that yields a merge-base wins; one that does not resolve,
+# or shares no history with the subject, is skipped. The mainline names come
+# BEFORE the subject's own upstream (#374): a feature branch's upstream is its
+# own remote copy, so as a base it shows only the unpushed commits, and it used
+# to win over `main` whenever origin/HEAD was unset. The upstream is the last
+# resort, for a repo whose mainline has none of these names.
+#
+# EXCEPT that a LOCAL `main`/`master` which already CONTAINS the subject is not
+# a base for it: the merge-base is then the subject itself and the diff is
+# empty. That is the state of a trunk-based checkout (the subject IS local
+# main, with unpushed commits) in a repo whose remote is not called `origin`,
+# or whose local main tracks a differently named remote branch; with `main`
+# ahead of the upstream, such a push read as changing nothing (found in the
+# whole-branch review of #374). Such a candidate is HELD, the upstream is
+# tried, and the held one is returned only if nothing else resolves. The
+# remote-tracking names are not treated this way: a subject contained in
+# origin/main has nothing unpushed, and an empty diff is the right answer.
+#
+# Not monotonic, and not meant to be: a file changed and pushed, then restored
+# to the mainline's content, is in the diff against the upstream and not in the
+# net diff.
 _routing_base() {
-    local proot="${1:-.}" rev="${2:-HEAD}" ref b up
+    local proot="${1:-.}" rev="${2:-HEAD}" ref b up subj held=""
+    subj="$(git -C "$proot" rev-parse --verify --quiet "${rev}^{commit}" 2>/dev/null)" || subj=""
     # `@{upstream}` with no left-hand side means the CHECKED-OUT branch's
     # upstream, which is the wrong branch as soon as the subject is another one.
     # Ask for the subject's own upstream instead; a sha (or a branch with no
-    # upstream) simply fails to resolve and the loop falls through.
-    up="${rev}@{upstream}"
-    for ref in origin/HEAD "$up" origin/main main origin/master master; do
-        b="$(git -C "$proot" merge-base "$rev" "$ref" 2>/dev/null)" && [ -n "$b" ] && { printf '%s' "$b"; return 0; }
+    # upstream) simply fails to resolve and the loop falls through. git refuses
+    # `refs/heads/<b>@{upstream}`, so the prefix comes off first.
+    up="${rev#refs/heads/}@{upstream}"
+    for ref in origin/HEAD origin/main main origin/master master "$up"; do
+        b="$(git -C "$proot" merge-base "$rev" "$ref" 2>/dev/null)" || continue
+        [ -n "$b" ] || continue
+        case "$ref" in
+            main|master)
+                if [ -n "$subj" ] && [ "$b" = "$subj" ]; then
+                    [ -n "$held" ] || held="$b"
+                    continue
+                fi ;;
+        esac
+        printf '%s' "$b"; return 0
     done
-    return 1
+    [ -n "$held" ] || return 1
+    printf '%s' "$held"
 }
 
 # verdict_routing_delta <token> <proj_root> — 0 iff routing paths changed between

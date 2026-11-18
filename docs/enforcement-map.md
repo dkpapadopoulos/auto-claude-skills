@@ -103,16 +103,10 @@ cannot set either. That variable does nothing for the three hooks below.
   None of `dispatch_attempted`, `dispatch_succeeded`, or `dispatch_evidence`
   may act as a deny predicate, alone or collapsed (#197's spec). Regression:
   `tests/test-review-verdict.sh`, `tests/test-reviewer-evidence-hook.sh`.
-- VERIFY measured verdict (#301) — `verification-before-completion` is
-  credited, but no verdict MEASURED by `scripts/verify-and-record.sh`
-  (`discovery_source` `verify-yml` or `explicit`) covers the pushed commit.
-  Push only, chain leg only, and not in a repo whose `.verify.yml` declares a
-  non-local substrate. Each event is recorded to
-  `~/.claude/.push-verify-shadow.jsonl`; `scripts/verify-shadow-adjudicate.sh`
-  (`--status`, `--next`, `--adjudicate`) takes a human label per would-block
-  episode and reads the corpus against the decision rule registered in
-  `openspec/changes/verify-measured-verdict/design.md`. The deny-flip is a
-  separate change. Regression: `tests/test-verify-measured-verdict.sh`.
+- The VERIFY measured-verdict advisory (#301) was RETIRED on 2026-11-17 by
+  owner decision (#343) and no longer renders or records. The registration and
+  its retirement record are in
+  `docs/history/verify-measured-verdict-registration.md`.
 - SHIP-phase guards: openspec-ship not run, memory consolidation missing,
   archived delta specs unsynced, REVIEW-in-chain-not-completed.
 - Verdict states `could_not_verify` / gate-gaming `suspect` (never hard-block).
@@ -160,3 +154,8 @@ cannot set either. That variable does nothing for the three hooks below.
 - `max_iterations` caps only `domain`/`required` roles (hardcoded allowlist).
 - Evidence artifacts live in `~/.claude/` and are NOT CI-visible; CI's
   backstop is the test suite, not milestone artifacts.
+- The verification verdict is workflow evidence an agent can write. The gate
+  checks that it reports a check and binds to the commit; it does not show
+  that the check ran. It defends against a skipped step, not against forged
+  evidence (#295). The same holds for every other VERIFY and REVIEW source:
+  all are plain files under `~/.claude/`.

@@ -113,7 +113,15 @@ _run() {
         env AI_AGENT="${_AGENT}" REVIEW_SHADOW_LOG="${RSLOG}" \
         CLAUDE_PLUGIN_ROOT="${1:-${PROJECT_ROOT}}" /bin/bash "${GUARD}" 2>/dev/null )
 }
-_decision() { printf '%s' "$1" | jq -r '.hookSpecificOutput.permissionDecision // "none"' 2>/dev/null; }
+# Empty stdout is "no decision": the guard prints nothing when it neither
+# denies nor has an advisory. jq prints nothing for empty input, so without the
+# first test an allow with no advisory read as '' and not as "none". W0a only
+# ever passed because the since-retired VERIFY measured-verdict advisory (#343)
+# gave the guard something to print there.
+_decision() {
+    [ -n "$1" ] || { echo "none"; return 0; }
+    printf '%s' "$1" | jq -r '.hookSpecificOutput.permissionDecision // "none"' 2>/dev/null
+}
 _nrec() { if [ -f "${RSLOG}" ]; then wc -l < "${RSLOG}" | tr -d ' '; else echo 0; fi; }
 # _wc — "<witness>/<coverage>" of the LAST record, or a marker when none.
 _wc() {

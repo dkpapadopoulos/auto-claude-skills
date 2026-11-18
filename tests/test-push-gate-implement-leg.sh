@@ -184,7 +184,7 @@ _REPO="$(cd "$(mktemp -d /tmp/pg-impl-repo-XXXXXX)" && pwd -P)"
 # (no routing paths in the diff, no config/default-triggers.json in the repo),
 # so only the IMPLEMENT leg's behavior is under test.
 _PVHEAD="$(git -C "${_REPO}" rev-parse HEAD 2>/dev/null)"
-jq -nc --arg s "${_PVHEAD}" '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' \
+jq -nc --arg s "${_PVHEAD}" '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}' \
     > "$HOME/.claude/.skill-project-verified-${_TOK}"
 
 # shellcheck disable=SC1090
@@ -751,28 +751,29 @@ _stamp_guard() { # <payload> <AI_AGENT value | -unset-> [plugin_root]
     local _root="${3:-${PROJECT_ROOT}}"
     if [ "$2" = "-unset-" ]; then
         ( cd "${_REPO}" && printf '%s' "$1" | env -u AI_AGENT CLAUDE_PLUGIN_ROOT="${_root}" \
-            VERIFY_SHADOW_LOG="$HOME/stamp-vs.jsonl" REVIEW_SHADOW_LOG="$HOME/stamp-rs.jsonl" \
+            REVIEW_SHADOW_LOG="$HOME/stamp-rs.jsonl" \
             bash "${_root}/hooks/openspec-guard.sh" 2>/dev/null )
     else
         ( cd "${_REPO}" && printf '%s' "$1" | env AI_AGENT="$2" CLAUDE_PLUGIN_ROOT="${_root}" \
-            VERIFY_SHADOW_LOG="$HOME/stamp-vs.jsonl" REVIEW_SHADOW_LOG="$HOME/stamp-rs.jsonl" \
+            REVIEW_SHADOW_LOG="$HOME/stamp-rs.jsonl" \
             bash "${_root}/hooks/openspec-guard.sh" 2>/dev/null )
     fi
 }
 _sf() { jq -r "$1" "$IMPLEMENT_SHADOW_LOG" 2>/dev/null | head -1; }   # field of record 1
 _IDS='{"session_id":"sess-1","tool_use_id":"toolu_01AbC"}'
-# A chain holding ONLY the implementation slot: the REVIEW and VERIFY verdict
-# legs then record nothing, so no other recorder's call site computes the
-# stamps first and each IMPLEMENT call site is tested on its own (measured: with
-# the full chain, deleting the attested site's stamp call stayed green because
-# the VERIFY site, which runs earlier, had already filled the globals).
+# A chain holding ONLY the implementation slot: the REVIEW verdict leg then
+# records nothing, so no other recorder's call site computes the stamps first
+# and each IMPLEMENT call site is tested on its own (measured, when the since
+# retired VERIFY measured-verdict leg still recorded: with the full chain,
+# deleting the attested site's stamp call stayed green because that site, which
+# ran earlier, had already filled the globals).
 printf '%s' '{"chain":["executing-plans"],"current_index":0,"completed":[]}' > "${_COMP}"
 
-: > "$IMPLEMENT_SHADOW_LOG"; rm -f "$HOME/stamp-vs.jsonl" "$HOME/stamp-rs.jsonl"
+: > "$IMPLEMENT_SHADOW_LOG"; rm -f "$HOME/stamp-rs.jsonl"
 out="$(_stamp_guard "$(_mkpayload "${_IDS}")" "claude-code_2-1-308_harness")"
 assert_contains "stamps: fixture still raises the advisory (non-vacuous)" "IMPLEMENT:" "${out:-<empty>}"
-assert_equals "stamps: no other leg recorded, so no other site stamped first" "absent absent" \
-    "$([ -s "$HOME/stamp-vs.jsonl" ] && echo present || echo absent) $([ -s "$HOME/stamp-rs.jsonl" ] && echo present || echo absent)"
+assert_equals "stamps: no other leg recorded, so no other site stamped first" "absent" \
+    "$([ -s "$HOME/stamp-rs.jsonl" ] && echo present || echo absent)"
 assert_equals "stamps: exactly one record" "1" "$(wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' ')"
 assert_equals "stamps: schema_version is 5" "5" "$(_sf .schema_version)"
 assert_equals "stamps: predicate_version is 6" "6" "$(_sf .predicate_version)"
@@ -847,10 +848,10 @@ assert_equals "stamps: a separator-bearing id cannot forge acs_version" "${_STAM
 # The attestation-resolved record (#169) is written by the second call site and
 # carries the same stamps.
 phase_attest "executing-plans" "stamp test" >/dev/null 2>&1
-: > "$IMPLEMENT_SHADOW_LOG"; rm -f "$HOME/stamp-vs.jsonl" "$HOME/stamp-rs.jsonl"
+: > "$IMPLEMENT_SHADOW_LOG"; rm -f "$HOME/stamp-rs.jsonl"
 _stamp_guard "$(_mkpayload "${_IDS}")" "claude-code_2-1-308_harness" >/dev/null
-assert_equals "stamps: attested run recorded no other leg (isolates this site)" "absent absent" \
-    "$([ -s "$HOME/stamp-vs.jsonl" ] && echo present || echo absent) $([ -s "$HOME/stamp-rs.jsonl" ] && echo present || echo absent)"
+assert_equals "stamps: attested run recorded no other leg (isolates this site)" "absent" \
+    "$([ -s "$HOME/stamp-rs.jsonl" ] && echo present || echo absent)"
 assert_equals "stamps: attested record is the would_block:false one" "false" "$(_sf .would_block)"
 assert_equals "stamps: attested record carries session_id" "sess-1" "$(_sf .session_id)"
 assert_equals "stamps: attested record carries tool_use_id" "toolu_01AbC" "$(_sf .tool_use_id)"
@@ -890,7 +891,7 @@ not json|
 MANIFESTS
 rm -rf "${_SROOT}"
 
-rm -f "$HOME/stamp-vs.jsonl" "$HOME/stamp-rs.jsonl"
+rm -f "$HOME/stamp-rs.jsonl"
 printf '%s' '{"chain":["requesting-code-review","verification-before-completion","executing-plans"],"current_index":0,"completed":[]}' \
     > "${_COMP}"
 
@@ -909,32 +910,32 @@ chmod +x "${_JQSHIM}/jq"
 _stamp_jq_calls() { grep -F -- '--rawfile' "${_JQSHIM}/calls" 2>/dev/null | grep -c 'claude-plugin/plugin.json' | tr -d ' '; }
 _shim_guard() { # <AI_AGENT>
     ( cd "${_REPO}" && _mkpayload "${_IDS}" | env PATH="${_JQSHIM}:${PATH}" AI_AGENT="$1" \
-        VERIFY_SHADOW_LOG="${_JQSHIM}/vs.jsonl" REVIEW_SHADOW_LOG="${_JQSHIM}/rs.jsonl" \
+        REVIEW_SHADOW_LOG="${_JQSHIM}/rs.jsonl" \
         CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}" bash "${GUARD}" 2>/dev/null )
 }
 _nlines() { if [ -f "$1" ]; then grep -c . "$1" | tr -d ' '; else echo 0; fi; }
-# This run writes TWO records (IMPLEMENT, and VERIFY on the fixture's unmeasured
-# verdict), so "one jq" also pins that the stamps are computed once per run.
-: > "$IMPLEMENT_SHADOW_LOG"; : > "${_JQSHIM}/calls"; rm -f "${_JQSHIM}/vs.jsonl"
+# This run writes TWO records (IMPLEMENT, and REVIEW on the fixture's unreviewed
+# state), so "one jq" also pins that the stamps are computed once per run.
+: > "$IMPLEMENT_SHADOW_LOG"; : > "${_JQSHIM}/calls"; rm -f "${_JQSHIM}/rs.jsonl"
 _shim_guard "claude-code_2-1-308_harness" >/dev/null
-assert_equals "F5: the run wrote an IMPLEMENT and a VERIFY record (precondition)" "1 1" \
-    "$(_nlines "$IMPLEMENT_SHADOW_LOG") $(_nlines "${_JQSHIM}/vs.jsonl")"
+assert_equals "F5: the run wrote an IMPLEMENT and a REVIEW record (precondition)" "1 1" \
+    "$(_nlines "$IMPLEMENT_SHADOW_LOG") $(_nlines "${_JQSHIM}/rs.jsonl")"
 assert_equals "F5: two records in one run read the stamps with exactly one jq" "1" "$(_stamp_jq_calls)"
 assert_equals "F5: the second record carries the same stamps" "sess-1 2.1.308" \
-    "$(jq -r '"\(.session_id) \(.cc_version)"' "${_JQSHIM}/vs.jsonl" 2>/dev/null)"
+    "$(jq -r '"\(.session_id) \(.cc_version)"' "${_JQSHIM}/rs.jsonl" 2>/dev/null)"
 assert_equals "F5: the shim saw the record being written (positive control)" "sess-1" "$(_sf .session_id)"
 # A passing path that writes no record of ANY leg: real invocation evidence
 # satisfies IMPLEMENT, and a chain holding only the implementation slot keeps
-# the REVIEW and VERIFY verdict legs (which this fixture's unreviewed,
-# unmeasured state would otherwise feed) from recording. All three corpora must
-# stay empty, or the cell would be measuring a recorded path.
+# the REVIEW verdict leg (which this fixture's unreviewed state would
+# otherwise feed) from recording. Both corpora must stay empty, or the cell
+# would be measuring a recorded path.
 printf '%s' '{"chain":["executing-plans"],"current_index":0,"completed":[]}' > "${_COMP}"
 printf '%s\n' '["executing-plans"]' > "$HOME/.claude/.skill-invocation-evidence-${_TOK}"
-: > "$IMPLEMENT_SHADOW_LOG"; : > "${_JQSHIM}/calls"; rm -f "${_JQSHIM}/vs.jsonl" "${_JQSHIM}/rs.jsonl"
+: > "$IMPLEMENT_SHADOW_LOG"; : > "${_JQSHIM}/calls"; rm -f "${_JQSHIM}/rs.jsonl"
 out="$(_shim_guard "claude-code_2-1-308_harness")"
 assert_not_contains "F5: the no-record path passes (no deny)" '"deny"' "${out:-}"
-assert_equals "F5: the no-record path writes no record in any corpus (precondition)" "0 0 0" \
-    "$(_nlines "$IMPLEMENT_SHADOW_LOG") $(_nlines "${_JQSHIM}/vs.jsonl") $(_nlines "${_JQSHIM}/rs.jsonl")"
+assert_equals "F5: the no-record path writes no record in any corpus (precondition)" "0 0" \
+    "$(_nlines "$IMPLEMENT_SHADOW_LOG") $(_nlines "${_JQSHIM}/rs.jsonl")"
 assert_not_empty "F5: the shim intercepted the guard's other jq calls (positive control)" \
     "$(cat "${_JQSHIM}/calls" 2>/dev/null)"
 assert_equals "F5: a path writing no record adds no stamp jq" "0" "$(_stamp_jq_calls)"

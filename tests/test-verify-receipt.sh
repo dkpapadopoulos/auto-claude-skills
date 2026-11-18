@@ -376,6 +376,37 @@ render "${RF}"
 assert_contains "zero checks is not a pass" " result=could-not-verify -->" "$(printf '%s\n' "${OUT}" | head -1)"
 assert_contains "zero checks says so" "| (no checks recorded) | - |" "${OUT}"
 
+echo "== #295: a receipt that reads PASS implies the gate's reader calls the verdict clean =="
+# One direction only. The receipt may be stricter than verdict_is_clean (it
+# also wants the writer, an exact sha, a clean tree); it may never be wider.
+# _implies <label>: with the artifact as it now stands, NOT (receipt says pass
+# AND verdict_is_clean says no).
+_rcpt_pass()  { render "${RF}"; [ "${RC}" = "0" ] && printf '%s\n' "${OUT}" | head -1 | grep -qF ' result=pass -->'; }
+_gate_clean() { ( . "${REPO_ROOT}/hooks/lib/verdict.sh" && verdict_is_clean "session-rcpt" ) >/dev/null 2>&1; }
+_implies() {
+    local p=no c=no
+    _rcpt_pass && p=yes; _gate_clean && c=yes
+    if [ "${p}" = "yes" ] && [ "${c}" = "no" ]; then
+        _record_fail "$1" "the receipt reads PASS over a record verdict_is_clean rejects"
+    else
+        _record_pass "$1 (receipt pass=${p}, gate clean=${c})"
+    fi
+}
+# Control first: on the real writer's record BOTH say yes, so the matrix below
+# is not satisfied by a receipt or a reader that refuses everything.
+fresh
+_rcpt_pass && _mp=yes || _mp=no; _gate_clean && _mc=yes || _mc=no
+assert_equals "M0 control: the real writer's record is a receipt PASS and gate-clean" "yes yes" "${_mp} ${_mc}"
+fresh; edit_artifact '.passed = ["unit", null]';        _implies "M1 mixed entry types in passed"
+fresh; edit_artifact '.passed = ["  "]';                _implies "M2 a whitespace-only check name"
+fresh; cat "${ARTIFACT}" > "${ARTIFACT}.d"; cat "${ARTIFACT}.d" >> "${ARTIFACT}"; rm -f "${ARTIFACT}.d"
+                                                        _implies "M3 two documents"
+fresh; edit_artifact 'del(.passed)';                    _implies "M4 no passed field"
+fresh; edit_artifact '.failed = ["unit"] | .passed = []'; _implies "M5 a reported failure"
+fresh; edit_artifact '.gate_gaming_status = "suspect"'; _implies "M6 a suspect gate-gaming status"
+fresh; edit_artifact '.failed = "unit"';                _implies "M7 a string-typed failed"
+fresh
+
 echo "== F2: a record whose fields are the wrong type is not rendered =="
 # verdict_has_test_failure reads a string or object in .failed as a failure, so
 # rendering these as an empty list printed PASS over a verdict the push gate

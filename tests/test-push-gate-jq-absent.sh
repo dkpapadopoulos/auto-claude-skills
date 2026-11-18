@@ -105,7 +105,7 @@ fi
 _HEAD="$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null)"
 _seed_verdict() {   # a clean verdict so routing-governance is not what denies
     jq -nc --arg s "${_HEAD}" \
-        '{failed:[],could_not_verify:[],gate_gaming_status:"clean",sha:$s}' \
+        '{failed:[],could_not_verify:[],passed:["tests"],gate_gaming_status:"clean",sha:$s}' \
         > "${HOME}/.claude/.skill-project-verified-$1"
 }
 _seed_verdict "session-t"
