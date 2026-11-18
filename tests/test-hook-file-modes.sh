@@ -84,4 +84,11 @@ else
     _record_fail "hooks.json yielded enough script paths" "only ${count}"
 fi
 
+# The plugin root is quoted in every command: unquoted, a plugin path with a space
+# splits at the space, the shell runs a path that does not exist, and the hook never
+# runs (shown both with the root expanded from the environment and substituted as text).
+unquoted="$(jq -r '.. | objects | .command? // empty | strings' "${PROJECT_ROOT}/hooks/hooks.json" \
+    | grep -v '^"\${CLAUDE_PLUGIN_ROOT}/[^"]*"\( .*\)\{0,1\}$' || true)"
+assert_equals "every hooks.json command quotes its \${CLAUDE_PLUGIN_ROOT} path" "" "${unquoted}"
+
 print_summary

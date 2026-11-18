@@ -170,12 +170,12 @@ fi
 # Verify cozempic wrapper hooks are present
 assert_contains \
     "hooks.json uses cozempic-wrapper.sh for checkpoint" \
-    "cozempic-wrapper.sh checkpoint" \
+    'cozempic-wrapper.sh\" checkpoint' \
     "${HOOKS_CONTENT}"
 
 assert_contains \
     "hooks.json uses cozempic-wrapper.sh for guard" \
-    "cozempic-wrapper.sh guard" \
+    'cozempic-wrapper.sh\" guard' \
     "${HOOKS_CONTENT}"
 
 # Test: cozempic-wrapper.sh exists and is executable

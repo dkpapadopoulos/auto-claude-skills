@@ -70,7 +70,7 @@ test_hook_exists() {
 test_registered_on_bash() {
     local n
     n="$(jq '[.hooks.PreToolUse[] | select(.matcher=="Bash") | .hooks[].command
-              | select(test("push-resurrect-advisory\\.sh$"))] | length' "${PROJECT_ROOT}/hooks/hooks.json" 2>/dev/null)"
+              | select(test("push-resurrect-advisory\\.sh\"$"))] | length' "${PROJECT_ROOT}/hooks/hooks.json" 2>/dev/null)"
     assert_equals "registered once as a PreToolUse Bash hook" "1" "${n}"
 }
 

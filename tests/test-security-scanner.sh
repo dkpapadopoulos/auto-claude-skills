@@ -200,6 +200,117 @@ test_gitleaks_command_reports_planted_secret() {
   assert_not_contains "parsed gitleaks output carries no secret value" "$secret" "$out"
 }
 
+# ── Test: the SAST fast scan still scans when the branch deletes a file ──
+# `git diff --name-only` lists deleted files too, and one missing path makes
+# opengrep scan nothing: count 0, "File not found" in .errors, paths.scanned
+# empty (measured on opengrep 1.26.0). The old command dropped stderr and read
+# only .results, so a branch that deleted any file got a clean SAST result.
+# Runs the documented fast-scan block, guards included, against a scratch repo
+# whose branch deletes one file and adds one finding, and against one with no
+# main branch. `--config auto` is swapped for a local rule so the check needs
+# no network: the file list is under test, not the rule source.
+test_sast_fast_scan_survives_a_deleted_file() {
+  echo "--- test_sast_fast_scan_survives_a_deleted_file ---"
+  local block n skill_md scans with_errors
+  skill_md="$(cat skills/security-scanner/SKILL.md)"
+  # The fenced block after the "Fast scan" heading, without its fences.
+  block="$(sed -n '/^\*\*Fast scan/,/^```$/p' skills/security-scanner/SKILL.md | sed '1,2d;$d')"
+  n="$(printf '%s\n' "$block" | grep -cE '^git diff --name-only -z --diff-filter=d "\$BASE\.\.HEAD" \| xargs -0 ')"
+  assert_contains "fast-scan block has exactly one filtered scan of the branch" "count=1;" "count=${n};"
+  assert_contains "fast-scan block resolves the base once and stops without main" \
+    'BASE="$(git merge-base HEAD main)" ||' "$block"
+  assert_contains "fast-scan block uses --config auto, which the test swaps out" "--config auto" "$block"
+  assert_contains "SKILL.md's last-commit fallback leaves deleted files out too" \
+    'git diff --name-only -z --diff-filter=d HEAD~1' "$skill_md"
+  # Every documented SAST scan shows its errors, how many files it scanned, and
+  # which files it did not fully parse; a projection of .results alone turns a
+  # scan of nothing into count: 0.
+  scans="$(grep -cF '"$SAST_BIN" scan' skills/security-scanner/SKILL.md)"
+  with_errors="$(grep -F '"$SAST_BIN" scan' skills/security-scanner/SKILL.md | grep -F 'select(.level == "error")' \
+    | grep -F 'not_fully_parsed' | grep -cF '.paths.scanned')"
+  assert_contains "every SAST scan command reports errors, files scanned and unparsed files" \
+    "scans=${scans};" "scans=${with_errors};"
+  assert_contains "SKILL.md gives the SAST pass rule" \
+    '`count: 0` is a pass only when `errors` is empty and `scanned` is above 0' "$skill_md"
+
+  local bin
+  bin="$(command -v opengrep || command -v semgrep || true)"
+  if [ -z "$bin" ] || ! command -v jq >/dev/null 2>&1; then
+    echo "  SKIP: no SAST binary or jq installed; behavioural check not run"
+    return 0
+  fi
+  local tmp out count mutant main_out
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/acs-sast.XXXXXX")" || return 1
+  # The bash rule makes the scanner parse partial.sh, whose one line (taken from
+  # hooks/skill-gate.sh) parses only partly: a level "warn" entry. That file is
+  # named as not fully parsed; the scan of the rest still stands.
+  printf 'rules:\n  - id: acs-probe-eval\n    pattern: eval(...)\n    message: eval call\n    languages: [python]\n    severity: WARNING\n  - id: acs-probe-rm\n    pattern: rm -rf $X\n    message: rm call\n    languages: [bash]\n    severity: WARNING\n' \
+    > "${tmp}/rule.yml"
+  block="${block//--config auto/--config ${tmp}/rule.yml}"
+  # The branch's own deletion, not a dropped finding, is what must not empty the scan.
+  mutant="${block//--diff-filter=d /}"
+  # The user's git config stays out, as in the gitleaks fixture above. Each
+  # block runs in its own bash, because it ends with exit on its guards.
+  # opengrep writes ~/.opengrep/semgrep.log, ~/.cache/opengrep and
+  # semgrep-*.rules in TMPDIR, so the scans get a HOME and TMPDIR inside $tmp.
+  mkdir -p "${tmp}/home" "${tmp}/tmp" || return 1
+  out="$(
+    unset GIT_DIR GIT_WORK_TREE
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+    export HOME="${tmp}/home" TMPDIR="${tmp}/tmp" XDG_CACHE_HOME="${tmp}/home/.cache"
+    g() { git -c user.email=t@t -c user.name=t -c commit.gpgsign=false "$@"; }
+    cd "$tmp" || exit 1
+    git init -q -b main repo && cd repo \
+      && printf 'x = 1\n' > gone.py && git add gone.py && g commit -q --no-verify -m base \
+      && git checkout -q -b feature && git rm -q gone.py \
+      && printf 'x = eval(input())\n' > hit.py \
+      && printf '%s\n' 'case "$m" in a) ;; *) m=""; [ -f "${r}/p.json" ] && \' > partial.sh \
+      && git add hit.py partial.sh && g commit -q --no-verify -m change \
+      || { echo "FIXTURE-NOT-BUILT"; exit 0; }
+    bash -c "$block" 2>/dev/null
+    echo "@@MUTANT@@"
+    bash -c "$mutant" 2>/dev/null
+  )" || true
+  # A repo whose default branch is not main: the block must say it could not
+  # check, never that nothing was left to scan.
+  main_out="$(
+    unset GIT_DIR GIT_WORK_TREE
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+    export HOME="${tmp}/home" TMPDIR="${tmp}/tmp" XDG_CACHE_HOME="${tmp}/home/.cache"
+    g() { git -c user.email=t@t -c user.name=t -c commit.gpgsign=false "$@"; }
+    cd "$tmp" || exit 1
+    git init -q -b master nomain && cd nomain \
+      && printf 'x = 1\n' > a.py && git add a.py && g commit -q --no-verify -m base \
+      && git checkout -q -b feature && printf 'x = eval(input())\n' > hit.py \
+      && git add hit.py && g commit -q --no-verify -m change \
+      || { echo "FIXTURE-NOT-BUILT"; exit 0; }
+    bash -c "$block" 2>/dev/null
+  )" || true
+  rm -rf "$tmp"
+  case "${out}${main_out}" in
+    *FIXTURE-NOT-BUILT*)
+      FAIL=$((FAIL + 1))
+      ERRORS="${ERRORS}\n  FAIL: could not build the SAST fixture repos (git init/commit failed); the skill was not tested"
+      return 0 ;;
+  esac
+  count="$(printf '%s' "${out%%@@MUTANT@@*}" | jq -r '.count' 2>/dev/null)"
+  case "$count" in
+    ''|null|0|*[!0-9]*)
+      FAIL=$((FAIL + 1))
+      ERRORS="${ERRORS}\n  FAIL: documented SAST fast scan reports the finding on a branch that deletes a file\n    got count: '${count}' output: $(printf '%s' "$out" | head -c 300)" ;;
+    *) PASS=$((PASS + 1)) ;;
+  esac
+  assert_contains "a partly parsed file is named, and is not a scan error" \
+    'errors=0;unparsed=["partial.sh"];' \
+    "$(printf '%s' "${out%%@@MUTANT@@*}" | jq -r '"errors=\(.errors | length);unparsed=\(.not_fully_parsed | tojson);"' 2>/dev/null)"
+  # Without the filter the scan covers nothing; the projection must say so
+  # rather than read as clean.
+  assert_contains "a scan of nothing shows its error, not just count: 0" \
+    "File not found" "$(printf '%s' "${out#*@@MUTANT@@}" | jq -r '.errors[]?' 2>/dev/null)"
+  assert_contains "no main branch reads as could not check" "no merge base with main: could not check" "$main_out"
+  assert_not_contains "no main branch never reads as nothing to scan" "no changed files left" "$main_out"
+}
+
 # ══════════════════════════════════════════════════════════════════
 # Run tests
 # ══════════════════════════════════════════════════════════════════
@@ -213,6 +324,7 @@ test_skill_md_documents_osv_scanner_step
 test_skill_md_documents_dependency_provenance
 test_review_security_lens_checks_provenance
 test_gitleaks_command_reports_planted_secret
+test_sast_fast_scan_survives_a_deleted_file
 
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"
