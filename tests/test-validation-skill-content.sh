@@ -37,6 +37,11 @@ assert_contains "rv: playwright detection" "playwright" "$RV_CONTENT"
 
 # axe-core / a11y
 assert_contains "rv: a11y checks documented" "axe" "$RV_CONTENT"
+# `npx @axe-core/cli` downloads whatever npm serves when the package is not
+# installed; the overlay runs only an installed axe, as Lighthouse's does.
+assert_not_contains "rv: axe never runs through an npx download" "npx @axe-core" "$RV_ALL_CONTENT"
+assert_contains "rv: axe overlay runs a global or project-installed axe" \
+    'node_modules/.bin/axe' "$RV_CONTENT"
 
 # Graceful degradation
 assert_contains "rv: graceful degradation documented" "no interactive validation tools" "$RV_CONTENT"
