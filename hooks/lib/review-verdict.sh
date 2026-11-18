@@ -121,7 +121,9 @@ review_verdict_delta_files() {
     [ -n "$sha" ] || return 1
     [ -z "$proot" ] && proot="$(git rev-parse --show-toplevel 2>/dev/null)"
     [ -n "$proot" ] || return 1
-    head="$(git -C "$proot" rev-parse HEAD 2>/dev/null)" || return 1
+    # --verify --quiet (#435): a bare `rev-parse HEAD` prints the word HEAD in a
+    # repo with no commits.
+    head="$(git -C "$proot" rev-parse --verify --quiet HEAD 2>/dev/null)" || return 1
     [ "$sha" = "$head" ] && { printf '0'; return 0; }
     n="$(git -C "$proot" diff --name-only "$sha" "$head" 2>/dev/null | grep -c . 2>/dev/null)" || return 1
     printf '%s' "${n:-0}"

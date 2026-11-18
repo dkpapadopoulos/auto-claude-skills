@@ -85,7 +85,9 @@ _HAS_JQ=true; command -v jq >/dev/null 2>&1 || _HAS_JQ=false
 
 _proot="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 _branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || echo 'DETACHED')"
-_head="$(git rev-parse HEAD 2>/dev/null || true)"
+# --verify --quiet (#435): a bare `rev-parse HEAD` prints the word HEAD in a
+# repo with no commits.
+_head="$(git rev-parse --verify --quiet HEAD 2>/dev/null || true)"
 _short="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
 
 echo "PUSH GATE STATUS — branch ${_branch} @ ${_short}"

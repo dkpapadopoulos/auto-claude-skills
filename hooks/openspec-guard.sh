@@ -863,7 +863,9 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
         # BOTH modes because "warn" is the default: in warn mode losing the leg
         # costs telemetry, in deny mode it costs a block.
         command -v phase_step_satisfied >/dev/null 2>&1 || _degraded_note "phase-evidence.sh did not load from ${_PLUGIN_ROOT}, so the DESIGN/PLAN phase-evidence leg did NOT run — telemetry only where phase_enforcement.outbound is \"warn\" (the default), but a skipped BLOCKING gate where it is set to \"deny\"."
-        _HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+        # --verify --quiet (#435): a bare `rev-parse HEAD` prints the word HEAD
+        # in a repo with no commits. Empty there, as for any other failure.
+        _HEAD_SHA="$(git rev-parse --verify --quiet HEAD 2>/dev/null || true)"
         # Bind the verdict to the COMMIT, not the session. The payload-less
         # project-verification SKILL writes under the shared singleton's token while
         # this hook resolves payload-first (issue #51); concurrent sessions clobber the
@@ -969,7 +971,7 @@ if [ "${_gc_is_push}" = "true" ] || [ "${_gc_is_ghmerge}" = "true" ]; then
                     if [ -n "${_subj_sha}" ]; then _SUBJ_REV="${_subj_sha}"; fi
                 fi
                 if [ "${_SUBJ_REV}" != "HEAD" ]; then
-                    _subj_head="$(git -C "${_SUBJ_ROOT}" rev-parse HEAD 2>/dev/null || true)"
+                    _subj_head="$(git -C "${_SUBJ_ROOT}" rev-parse --verify --quiet HEAD 2>/dev/null || true)"
                     _subj_tip="$(git -C "${_SUBJ_ROOT}" rev-parse "${_SUBJ_REV}" 2>/dev/null || true)"
                     if [ -n "${_subj_head}" ] && [ -n "${_subj_tip}" ] && [ "${_subj_head}" != "${_subj_tip}" ]; then
                         _SUBJ_NOTE="${_SUBJ_NOTE}${_SUBJ_NOTE:+ }SUBJECT: this push names ${_subj_ref}, which is not what ${_SUBJ_ROOT} has checked out — the checks below measured ${_subj_ref}."
@@ -1406,7 +1408,10 @@ EOF
                         *)
                             _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }REVIEW VERDICT: requesting-code-review was credited, but no review verdict covers this HEAD -- a Skill return is not evidence a review ran (#197). Record one with scripts/record-review-verdict.sh, or import a GitHub review with --from-github <pr>." ;;
                     esac
-                    if command -v review_shadow_record >/dev/null 2>&1; then
+                    # Not under the capture replay (#381): the replay re-runs this
+                    # guard on the same push, and its record would be a duplicate
+                    # of the live one (same tool_use_id, same episode).
+                    if [ "${PUSH_GATE_CAPTURE_REPLAY:-}" != "1" ] && command -v review_shadow_record >/dev/null 2>&1; then
                         _shadow_stamp_prepare || true
                         _review_witness || true
                         review_shadow_record "${_SESSION_TOKEN}" "${_SUBJ_ROOT}" "${_rv_reason}" \
@@ -1676,7 +1681,9 @@ EOF
                         _IMPL_MSG="${_IMPL_MSG}${_IMPL_MSG:+; }${_IMPL_TEXT}"
                         command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "${_pe_action}" "executing-plans"
                     fi
-                    if command -v implement_shadow_record >/dev/null 2>&1; then
+                    if [ "${PUSH_GATE_CAPTURE_REPLAY:-}" != "1" ] && command -v implement_shadow_record >/dev/null 2>&1; then
+                        # Skipped under the capture replay (#381), as the REVIEW
+                        # record is: the live run already wrote this push's record.
                         # `advisory_emitted` mirrors the branch above: an event the
                         # leg said nothing about is recorded, but is not part of the
                         # population a false-block rate is computed over.
@@ -1695,7 +1702,7 @@ EOF
                 # (_impl_db/_impl_material are already computed above).
                 if [ "${_impl_ev}" = "attested" ] && \
                    { [ "${_impl_material}" = "true" ] || [ "${_pe_action}" = "gh-merge" ]; }; then
-                    if command -v implement_shadow_record >/dev/null 2>&1; then
+                    if [ "${PUSH_GATE_CAPTURE_REPLAY:-}" != "1" ] && command -v implement_shadow_record >/dev/null 2>&1; then
                         # An attested episode emits no advisory either; it is already
                         # outside the rate via would_block:false, and recording the
                         # field honestly keeps the two membership signals consistent.

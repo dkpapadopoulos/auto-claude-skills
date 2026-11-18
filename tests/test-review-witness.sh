@@ -160,6 +160,28 @@ assert_equals "W0b no verdict: one record" "1" "$(_nrec)"
 teardown_test_env
 
 # ---------------------------------------------------------------------------
+# W0c (#381): one denied push writes ONE record. The record is written at
+# Check 1b; VERIFY then denies, and the diagnostic capture replays the guard on
+# the same payload. The replay used to append a second, identical record. The
+# capture log is the control that the replay ran and reached the same deny.
+# ---------------------------------------------------------------------------
+echo "--- W0c: the capture replay writes no second record ---"
+setup_test_env
+mkdir -p "${HOME}/.claude"
+_mk_repo
+_chain
+RSLOG="${TEST_TMPDIR}/rs.jsonl"; rm -f "${RSLOG}"
+_ledger requesting-code-review ""
+_out="$(_run)"
+assert_equals "W0c VERIFY missing: the push is denied" "deny" "$(_decision "${_out}")"
+assert_equals "W0c CONTROL: the capture replay ran and denied too" "deny" \
+    "$(tail -1 "${HOME}/.claude/.push-gate-invocation-log" 2>/dev/null | jq -r '.ondisk_replay_decision // "<absent>"' 2>/dev/null)"
+assert_equals "W0c one denied push: exactly one REVIEW record" "1" "$(_nrec)"
+assert_equals "W0c the record carries the push's tool_use_id" "toolu_01Wit" \
+    "$(tail -1 "${RSLOG}" 2>/dev/null | jq -r '.tool_use_id // "<absent>"' 2>/dev/null)"
+teardown_test_env
+
+# ---------------------------------------------------------------------------
 # W1-W6: the witness rule.
 # ---------------------------------------------------------------------------
 echo "--- W1: only an allowlisted reviewer at HEAD ---"

@@ -63,7 +63,10 @@ acs_cc_version() {
 #   0 covered   — <sha> is an ancestor of <subj_rev> and no material source
 #                 file differs between them
 #   1 uncovered — not an ancestor, or a material source file changed
-#   2 cannot check — malformed sha, unknown commit, bad root or any git failure
+#   2 cannot check — a sha that is not a full object name (40 or 64 lowercase
+#                 hex, the rule the ledger and verdict readers follow since
+#                 #432; an abbreviation is refused, #435), unknown commit, bad
+#                 root or any git failure
 # Prints nothing. The docs exclusion is identical to _names_touch_material_source
 # (openspec-guard.sh) and staleness_delta_is_docs: docs/*, openspec/*, *.md.
 review_sha_covers() {
@@ -71,7 +74,7 @@ review_sha_covers() {
     case "${_sha}" in
         ''|*[!0-9a-f]*) return 2 ;;
     esac
-    [ "${#_sha}" -ge 7 ] && [ "${#_sha}" -le 40 ] || return 2
+    case "${#_sha}" in 40|64) ;; *) return 2 ;; esac
     [ -n "${_root}" ] && [ -n "${_rev}" ] || return 2
     git -C "${_root}" merge-base --is-ancestor "${_sha}" "${_rev}" >/dev/null 2>&1
     _rc=$?
@@ -90,7 +93,8 @@ EOF
 #   Prints the reviewed sha and returns 0 iff the branch ledger keyed from
 #   <ledger_root> holds a `reviewer-returned` milestone tagged `arm=allowlist`
 #   (the reviewer was matched by the allowlisted subagent_type arm, not the
-#   description word) whose sha is 7-40 lowercase hex. Returns 1 and prints
+#   description word) whose sha is a full object name (40 or 64 lowercase
+#   hex; every producer writes `git rev-parse HEAD`). Returns 1 and prints
 #   nothing otherwise: an empty root, branch-ledger.sh not loaded
 #   (branch_ledger_sha_tag undefined — this lib sources nothing), no milestone,
 #   an untagged pre-arm milestone, `arm=description`, or a sha of `unknown` or
@@ -110,7 +114,7 @@ review_reviewer_returned_sha() {
     case "${_sha}" in
         ''|*[!0-9a-f]*) return 1 ;;
     esac
-    [ "${#_sha}" -ge 7 ] && [ "${#_sha}" -le 40 ] || return 1
+    case "${#_sha}" in 40|64) ;; *) return 1 ;; esac
     printf '%s' "${_sha}"
 }
 

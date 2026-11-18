@@ -99,7 +99,23 @@ test_c4_coverage() {
     review_sha_covers "abcdef0" "$R" "$B" 2>/dev/null; assert_equals "C4 unknown short sha cannot-check" "2" "$?"
     review_sha_covers "$A" "$R" "no-such-rev" 2>/dev/null; assert_equals "C4 invalid non-empty rev cannot-check" "2" "$?"
     review_sha_covers "$A" "$R" "--output=/tmp/x" 2>/dev/null; assert_equals "C4 option-shaped rev cannot-check" "2" "$?"
-    review_sha_covers "${A%"${A#???????}"}" "$R" "$B" 2>/dev/null; assert_equals "C4 unambiguous 7-char sha covered" "0" "$?"
+    # #435: only a full object name is evidence, as for the ledger and verdict
+    # readers since #432. These resolve unambiguously and covered before.
+    review_sha_covers "${A%"${A#???????}"}" "$R" "$B" 2>/dev/null; assert_equals "C4 unambiguous 7-char sha cannot-check" "2" "$?"
+    review_sha_covers "${A%?}" "$R" "$B" 2>/dev/null; assert_equals "C4 39-char sha cannot-check" "2" "$?"
+    # A 64-hex name is a full one in a sha256 repository (refused by length before).
+    local S SA SB
+    S="${TEST_TMPDIR}/repo256"
+    if git init -q --object-format=sha256 "$S" 2>/dev/null; then
+        ( cd "$S" && git config user.email t@t && git config user.name t \
+          && echo a > src.sh && git add src.sh && git commit -q -m A \
+          && echo d > README.md && git add README.md && git commit -q -m B ) >/dev/null 2>&1
+        SA="$(git -C "$S" rev-parse 'HEAD~1' 2>/dev/null)"; SB="$(git -C "$S" rev-parse HEAD 2>/dev/null)"
+        assert_equals "C4 fixture: the sha256 repo names commits with 64 hex" "64" "${#SA}"
+        review_sha_covers "$SA" "$S" "$SB" 2>/dev/null; assert_equals "C4 64-hex sha covered in a sha256 repo" "0" "$?"
+    else
+        _record_pass "SKIPPED: this git cannot create a sha256 repository — 64-hex cell not applicable"
+    fi
     rc="$(review_sha_covers "$A" "$R" "$B" 2>&1)"
     assert_equals "C4 prints nothing" "" "$rc"
 }
