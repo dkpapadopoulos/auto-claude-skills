@@ -17,8 +17,9 @@ line 140   SHA="$(git rev-parse HEAD)"        # HEAD read here
 ```
 
 A commit landing between those points is adopted by the verdict. Downstream,
-`verdict_covers_head` accepts `sha == HEAD` or a branch-local ancestor, so the
-push gate treats an untested commit as covered.
+`verdict_covers_head` accepts `sha == HEAD` or a branch-local ancestor (since
+#432 only when the recorded sha is a full object name), so the push gate treats
+an untested commit as covered.
 
 ## Decisions
 

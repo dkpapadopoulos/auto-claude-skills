@@ -133,7 +133,7 @@ read.
 | `shell-portability.md` | every `*.sh` under `hooks/`, `scripts/`, `tests/`, `skills/` | writing shell that a hook or a test will run under bash 3.2, or changing what a shared shell function promises |
 | `routing-state.md` | `skill-activation-hook.sh`, `session-start-hook.sh`, `config/*.json`, `persist-state.sh` | changing routing, scoring, session tokens, or composition state |
 
-`docs/enforcement-map.md` is the one-page map of everything that can block, in
+`docs/enforcement-map.md` is the one-page map of what can block (it says what its own list cannot see), in
 check order; `bash scripts/gate-status.sh` replays those checks against the
 current branch. Start there for "why was this denied", not with the rule files.
 

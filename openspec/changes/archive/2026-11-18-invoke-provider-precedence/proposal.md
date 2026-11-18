@@ -33,4 +33,4 @@ One credit path does read `invoke`, so it moves with the second row: a typed `/<
 
 - Affected spec: `skill-routing`.
 - Affected code: `hooks/session-start-hook.sh` (Step 6), `tests/test-frontmatter-topology-tier.sh`.
-- Fork count unchanged (one jq for the map, as before).
+- jq fork count unchanged (one jq for the map, as before); the pipeline that feeds it adds shell subshells only.

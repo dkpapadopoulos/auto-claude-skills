@@ -8,7 +8,7 @@
 #
 # ORDER MATTERS: logging + marker MUST precede the cozempic dependency
 # check — auto-compaction recovery rides the marker (prompt-carrier; see
-# openspec/changes/compact-recovery-prompt-carrier) and must work on
+# openspec/changes/archive/2026-07-16-compact-recovery-prompt-carrier) and must work on
 # machines without cozempic.
 
 set -o pipefail

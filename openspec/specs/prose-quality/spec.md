@@ -44,7 +44,7 @@ not), not a refusal and not the full persuasive-prose pass.
 - **GIVEN** a prompt "run these release notes through the authorial-judgment skill"
 - **WHEN** the skill is applied
 - **THEN** the guidance SHALL keep the notes complete, linear and literal, apply only
-  precision about uncertainty, and say which moves were withheld and why
+  precision about uncertainty
 
 ### Requirement: Real-texture gate in applied guidance
 
@@ -75,7 +75,7 @@ piece; and the response SHALL list the largest edits made, or say that none were
   that states a consequence of its own argument
 - **WHEN** the authorial-judgment pass runs with no further request
 - **THEN** the returned text SHALL keep every fact and the close, and the response SHALL
-  say which edits were considered and declined
+  list the largest edits made, or say that none were
 
 #### Scenario: Correct plain close is kept
 - **GIVEN** a post whose last paragraph gives an instruction and its consequence
