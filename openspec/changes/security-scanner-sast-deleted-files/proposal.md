@@ -26,13 +26,18 @@ each reproduced before the fix:
 
 - The fast scan and its last-commit fallback pass `--diff-filter=d`. Every
   documented SAST command's jq now also prints `scanned` (`.paths.scanned |
-  length`), `errors` (messages of `level: error` entries) and `warnings` (a count
-  of the rest), and SKILL.md states the pass rule: `count: 0` is a pass only when
-  `errors` is empty and `scanned` is above 0. Warnings stay out of the rule
-  because a complete scan of this repo's own hooks reports `warn` partial
-  parses. A guard line stops a branch with no changed file left, where BSD xargs
-  would run nothing and GNU xargs would scan the whole directory. Measured on
-  opengrep 1.26.0 only; semgrep's output was not re-measured.
+  length`), `errors` (messages of `level: error` entries, which void the scan)
+  and `not_fully_parsed` (the files with any `level: warn` entry: syntax error,
+  partial parse, timeout). SKILL.md states the pass rule: `count: 0` is a pass
+  only when `errors` is empty and `scanned` is above 0, and it covers only the
+  files not listed, which the agent reads itself. A parse failure can hide a
+  finding (a bad `case` line hid an `rm -rf` on the next line), so a listed file
+  is never called clean; and warnings cannot void the whole scan, because a scan
+  of this repo's own hooks always lists some. The block resolves the merge base
+  once and reports "could not check" without a `main` branch; a guard line stops
+  a branch with no changed file left, where BSD xargs would run nothing and GNU
+  xargs would scan the whole directory. Measured on opengrep 1.26.0 only;
+  semgrep's output was not re-measured.
 - The axe overlay runs a global `axe` or `node_modules/.bin/axe` directly and
   otherwise prints that it skipped; detection reports only those two. It now
   uses `--stdout` and reads `.[0].violations`, the form the @axe-core/cli README
