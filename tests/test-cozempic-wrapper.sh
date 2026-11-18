@@ -114,7 +114,7 @@ assert_equals "absent cozempic degrades silently with exit 0" "rc=0" "${_out2}"
 if command -v jq >/dev/null 2>&1; then
     _verbs="$(jq -r '.hooks | to_entries[] | .value[]? | .hooks[]? | .command
                      | select(test("cozempic-wrapper\\.sh"))
-                     | sub("^.*cozempic-wrapper\\.sh +"; "")' \
+                     | sub("^.*cozempic-wrapper\\.sh\"? +"; "")' \
               "${PROJECT_ROOT}/hooks/hooks.json" 2>/dev/null | sort -u | tr '\n' ',')"
     assert_equals "hooks.json invokes only the verbs this test covers" \
         "checkpoint,guard --daemon," "${_verbs}"

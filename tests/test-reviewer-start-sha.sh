@@ -251,7 +251,7 @@ assert_equals "H6 start on another branch: not used, milestone sha is -" "-" "$(
 
 # ---------------------------------------------------------------------------
 # R: registration and housekeeping.
-if jq -e '.hooks.SubagentStart[]?.hooks[]? | select(.command | endswith("/hooks/reviewer-start-hook.sh"))' \
+if jq -e '.hooks.SubagentStart[]?.hooks[]? | select(.command | endswith("/hooks/reviewer-start-hook.sh\""))' \
      "${PROJECT_ROOT}/hooks/hooks.json" >/dev/null 2>&1; then
     _record_pass "R1 reviewer-start-hook.sh registered on SubagentStart"
 else
