@@ -5,12 +5,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start-hook.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-hook.sh\"",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/cozempic-wrapper.sh guard --daemon"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/cozempic-wrapper.sh\" guard --daemon"
           }
         ]
       },
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/compact-recovery-hook.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/compact-recovery-hook.sh\""
           }
         ]
       }
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/skill-activation-hook.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/skill-activation-hook.sh\"",
             "timeout": 10
           }
         ]
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/compact-recovery-prompt-hook.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/compact-recovery-prompt-hook.sh\"",
             "timeout": 5
           }
         ]
@@ -47,7 +47,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-turn-hook.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-turn-hook.sh\"",
             "timeout": 5
           }
         ]
@@ -59,7 +59,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/openspec-guard.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/openspec-guard.sh\""
           }
         ]
       },
@@ -68,7 +68,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/publish-guard.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/publish-guard.sh\""
           }
         ]
       },
@@ -77,7 +77,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/push-resurrect-advisory.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/push-resurrect-advisory.sh\"",
             "timeout": 10
           }
         ]
@@ -87,7 +87,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/skill-gate.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/skill-gate.sh\"",
             "timeout": 5
           }
         ]
@@ -97,7 +97,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/serena-nudge.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/serena-nudge.sh\""
           }
         ]
       },
@@ -106,7 +106,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/serena-nudge.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/serena-nudge.sh\""
           }
         ]
       },
@@ -115,7 +115,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lsp-nudge.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/lsp-nudge.sh\""
           }
         ]
       },
@@ -124,7 +124,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/serena-observer.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/serena-observer.sh\""
           }
         ]
       },
@@ -133,7 +133,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/serena-observer.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/serena-observer.sh\""
           }
         ]
       },
@@ -142,7 +142,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/serena-observer.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/serena-observer.sh\""
           }
         ]
       },
@@ -151,7 +151,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/outbound-consent-hook.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/outbound-consent-hook.sh\""
           }
         ]
       },
@@ -160,7 +160,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/outbound-consent-hook.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/outbound-consent-hook.sh\""
           }
         ]
       },
@@ -169,7 +169,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-ask-hook.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-ask-hook.sh\""
           }
         ]
       }
@@ -180,7 +180,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/cozempic-wrapper.sh checkpoint",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/cozempic-wrapper.sh\" checkpoint",
             "timeout": 5
           }
         ]
@@ -190,7 +190,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/reviewer-evidence-hook.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/reviewer-evidence-hook.sh\"",
             "timeout": 5
           }
         ]
@@ -200,7 +200,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/cozempic-wrapper.sh checkpoint"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/cozempic-wrapper.sh\" checkpoint"
           }
         ]
       },
@@ -209,7 +209,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/skill-completion-hook.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/skill-completion-hook.sh\"",
             "timeout": 5
           }
         ]
@@ -219,7 +219,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/serena-followthrough.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/serena-followthrough.sh\""
           }
         ]
       },
@@ -228,7 +228,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-receipt-hook.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-receipt-hook.sh\""
           }
         ]
       }
@@ -238,7 +238,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-compact-hook.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/pre-compact-hook.sh\""
           }
         ]
       }
@@ -248,11 +248,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/cozempic-wrapper.sh checkpoint"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/cozempic-wrapper.sh\" checkpoint"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/consolidation-stop.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/consolidation-stop.sh\""
           }
         ]
       }
@@ -262,7 +262,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/reviewer-start-hook.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/reviewer-start-hook.sh\"",
             "timeout": 5
           }
         ]
@@ -273,7 +273,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/reviewer-completion-hook.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/reviewer-completion-hook.sh\"",
             "timeout": 5
           }
         ]
@@ -284,7 +284,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/teammate-idle-guard.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/teammate-idle-guard.sh\""
           }
         ]
       }

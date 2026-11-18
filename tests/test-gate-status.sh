@@ -180,6 +180,8 @@ fi
 while IFS= read -r reg; do
     [ -n "${reg}" ] || continue
     reg_file="${reg%% *}"
+    # Commands quote the plugin-root path (tests/test-hook-file-modes.sh).
+    reg_file="${reg_file#\"}"; reg_file="${reg_file%\"}"
     case "${reg_file}" in
         '${CLAUDE_PLUGIN_ROOT}/hooks/'*/*|'${CLAUDE_PLUGIN_ROOT}/hooks/'*[!h]|'${CLAUDE_PLUGIN_ROOT}/hooks/'*[!s]h)
             _record_fail "registered hook is a top-level hooks/*.sh: ${reg_file}" \

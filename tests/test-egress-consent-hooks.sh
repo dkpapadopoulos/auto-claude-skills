@@ -426,11 +426,11 @@ fi
 echo "-- wiring and retirement --"
 HJ="${PROJECT_ROOT}/hooks/hooks.json"
 assert_equals "PreToolUse(AskUserQuestion) runs the ask hook" "1" \
-    "$(jq '[.hooks.PreToolUse[] | select(.matcher == "AskUserQuestion") | .hooks[] | select(.command == "${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-ask-hook.sh")] | length' "${HJ}")"
+    "$(jq '[.hooks.PreToolUse[] | select(.matcher == "AskUserQuestion") | .hooks[] | select(.command == "\"${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-ask-hook.sh\"")] | length' "${HJ}")"
 assert_equals "PostToolUse(AskUserQuestion) runs the receipt hook" "1" \
-    "$(jq '[.hooks.PostToolUse[] | select(.matcher == "AskUserQuestion") | .hooks[] | select(.command == "${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-receipt-hook.sh")] | length' "${HJ}")"
+    "$(jq '[.hooks.PostToolUse[] | select(.matcher == "AskUserQuestion") | .hooks[] | select(.command == "\"${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-receipt-hook.sh\"")] | length' "${HJ}")"
 assert_equals "UserPromptSubmit runs the turn hook" "1" \
-    "$(jq '[.hooks.UserPromptSubmit[] | .hooks[] | select(.command == "${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-turn-hook.sh")] | length' "${HJ}")"
+    "$(jq '[.hooks.UserPromptSubmit[] | .hooks[] | select(.command == "\"${CLAUDE_PLUGIN_ROOT}/hooks/egress-consent-turn-hook.sh\"")] | length' "${HJ}")"
 assert_equals "all three new hooks are executable" "yes" \
     "$([ -x "${ASK_HOOK}" ] && [ -x "${RCPT_HOOK}" ] && [ -x "${PROJECT_ROOT}/hooks/egress-consent-turn-hook.sh" ] && echo yes || echo no)"
 assert_equals "the model-run consent recorder is retired" "false" \
