@@ -251,9 +251,13 @@ test_sast_fast_scan_survives_a_deleted_file() {
   mutant="${block//--diff-filter=d /}"
   # The user's git config stays out, as in the gitleaks fixture above. Each
   # block runs in its own bash, because it ends with exit on its guards.
+  # opengrep writes ~/.opengrep/semgrep.log, ~/.cache/opengrep and
+  # semgrep-*.rules in TMPDIR, so the scans get a HOME and TMPDIR inside $tmp.
+  mkdir -p "${tmp}/home" "${tmp}/tmp" || return 1
   out="$(
     unset GIT_DIR GIT_WORK_TREE
     export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+    export HOME="${tmp}/home" TMPDIR="${tmp}/tmp" XDG_CACHE_HOME="${tmp}/home/.cache"
     g() { git -c user.email=t@t -c user.name=t -c commit.gpgsign=false "$@"; }
     cd "$tmp" || exit 1
     git init -q -b main repo && cd repo \
@@ -272,6 +276,7 @@ test_sast_fast_scan_survives_a_deleted_file() {
   main_out="$(
     unset GIT_DIR GIT_WORK_TREE
     export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+    export HOME="${tmp}/home" TMPDIR="${tmp}/tmp" XDG_CACHE_HOME="${tmp}/home/.cache"
     g() { git -c user.email=t@t -c user.name=t -c commit.gpgsign=false "$@"; }
     cd "$tmp" || exit 1
     git init -q -b master nomain && cd nomain \
