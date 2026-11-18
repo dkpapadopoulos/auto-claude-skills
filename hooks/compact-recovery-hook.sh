@@ -45,7 +45,7 @@ if [ -n "$_SESSION_TOKEN" ]; then
 fi
 
 # --- Consume the pending marker (prompt-carrier coordination; see
-# openspec/changes/compact-recovery-prompt-carrier) ---
+# openspec/changes/archive/2026-07-16-compact-recovery-prompt-carrier) ---
 _TRIGGER=""
 if [ -n "$_SESSION_TOKEN" ]; then
     _MARKER="${HOME}/.claude/.skill-compact-pending-${_SESSION_TOKEN}"

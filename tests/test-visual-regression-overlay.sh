@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test-visual-regression-overlay.sh — Guards the runtime-validation visual-regression
-# overlay content against the openspec/changes/frontend-testing-improvements spec
+# overlay content against the openspec/changes/archive/2026-07-02-frontend-testing-improvements spec
 # (specs/runtime-validation) MUST statements. Mirrors test-perf-overlay.sh.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
