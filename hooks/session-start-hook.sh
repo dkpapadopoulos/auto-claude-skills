@@ -773,11 +773,11 @@ fi
 # Build the invoke map from the discoveries, in two tiers like the frontmatter
 # (#354): {"loc": {name: invoke}, "ext": {name: [invoke, ...]}}. One object,
 # last-wins in directory order, let an external plugin whose marketplace sorted
-# after the config's own provider rename a config-owned step. The local tier
-# (bundled, then user) stays last-wins; the external tier keeps every claimant
-# so the merge below can choose by provider instead of by order.
+# after the config's own provider rename a config-owned step. The local tier is
+# bundled plus user (Step 5 skips a user skill that shares a bundled name, so
+# the two never collide); the external tier keeps every claimant so the merge
+# below can choose by provider instead of by order.
 # Single jq call instead of per-skill lookups
-_INVOKE_MAP_EMPTY='{"loc":{},"ext":{}}'
 if [ -n "${ALL_DISCOVERED}" ]; then
     INVOKE_MAP="$({
         printf '%s' "${EXTERNAL_DISCOVERED}" | while IFS='|' read -r _n _p; do
@@ -791,10 +791,9 @@ if [ -n "${ALL_DISCOVERED}" ]; then
     } | jq -Rnc '[inputs] as $l |
         reduce range(0; ($l | length); 3) as $i ({loc: {}, ext: {}};
             if $l[$i] == "loc" then .loc[$l[$i + 1]] = $l[$i + 2]
-            else .ext[$l[$i + 1]] += [$l[$i + 2]] end)' 2>/dev/null)"
-    [ -z "${INVOKE_MAP}" ] && INVOKE_MAP="${_INVOKE_MAP_EMPTY}"
+            else .ext[$l[$i + 1]] += [$l[$i + 2]] end)')"
 else
-    INVOKE_MAP="${_INVOKE_MAP_EMPTY}"
+    INVOKE_MAP='{"loc":{},"ext":{}}'
 fi
 
 # Three-tier merge: frontmatter overrides > default-triggers > generic defaults
@@ -809,6 +808,8 @@ if [ -n "${DEFAULT_JSON}" ]; then
     # last other external claimant, which is then the only way to reach the
     # step (the completion hook credits a returned Skill by its bare name in
     # any namespace, so refusing that claimant would hide the step, not gate it).
+    # One credit path does read this value: a typed /<prefix>:<name> is credited
+    # only when invoke is exactly Skill(<prefix>:<name>) (typed-slash-credit.sh).
     SKILLS_JSON="$(printf '%s' "${DEFAULT_JSON}" | jq \
         --argjson imap "${INVOKE_MAP}" \
         --argjson fmloc "${FRONTMATTER_MAP_LOCAL}" \

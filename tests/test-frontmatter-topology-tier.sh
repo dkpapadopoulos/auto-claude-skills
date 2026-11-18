@@ -163,6 +163,38 @@ assert_equals "invoke, sole external provider: it provides the step" '"Skill(oth
 assert_equals "invoke, sole external provider: available" "true" "$(_reg_field "${_V}" available)"
 teardown_test_env
 
+# Two other plugins and no config provider: the last in directory order, as
+# before the change (pinned so the rule cannot drift unnoticed).
+setup_test_env
+_plant_bare "${HOME}/.claude/plugins/cache/aaa-mkt/firstplug/1.0.0/skills/${_V}" "${_V}"
+_plant_bare "${HOME}/.claude/plugins/cache/zzz-mkt/lastplug/1.0.0/skills/${_V}" "${_V}"
+_build
+assert_equals "invoke, two other providers: the last in directory order" '"Skill(lastplug:verification-before-completion)"' "$(_reg_field "${_V}" invoke)"
+teardown_test_env
+
+# The one credit path that reads invoke: a typed /<prefix>:<name> is installed
+# only when the registry's invoke is exactly Skill(<prefix>:<name>). With both
+# plugins present the config's provider is the typed prefix that counts,
+# whichever directory sorts last. Driven through the real predicate on the
+# registry the real hook built.
+. "${PROJECT_ROOT}/hooks/lib/typed-slash-credit.sh"
+_R=requesting-code-review
+setup_test_env
+_plant_bare "${HOME}/.claude/plugins/cache/mmm-mkt/superpowers/1.0.0/skills/${_R}" "${_R}"
+_plant_bare "${HOME}/.claude/plugins/cache/zzz-mkt/otherplug/1.0.0/skills/${_R}" "${_R}"
+_build
+if _typed_slash_installed "superpowers:${_R}" "${HOME}/.claude/.skill-registry-cache.json"; then
+    _record_pass "typed prefix: /superpowers:${_R} is installed beside a later-sorting plugin"
+else
+    _record_fail "typed prefix: /superpowers:${_R}" "not installed -- the registry invoke names the other plugin"
+fi
+if _typed_slash_installed "otherplug:${_R}" "${HOME}/.claude/.skill-registry-cache.json"; then
+    _record_fail "typed prefix: /otherplug:${_R}" "installed -- the registry invoke names the other plugin"
+else
+    _record_pass "typed prefix: /otherplug:${_R} is not installed while the config's provider is present"
+fi
+teardown_test_env
+
 # Nobody provides it: the config's invoke is kept and the step is unavailable.
 setup_test_env
 _build

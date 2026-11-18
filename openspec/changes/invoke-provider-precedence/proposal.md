@@ -13,7 +13,9 @@ Reproduced before the change in an isolated HOME with `verification-before-compl
 | superpowers absent, other plugin only | `Skill(otherplug:…)`, available |
 | other plugin names a bundled skill | `Skill(auto-claude-skills:…)` |
 
-Only the second row was wrong. It was never a push bypass, and this change does not alter what the gate credits: `hooks/skill-completion-hook.sh` records a returned Skill by its bare name in any namespace.
+Only the second row was wrong. It was never a push bypass, and this change does not alter what a returned Skill credits: `hooks/skill-completion-hook.sh` records it by its bare name in any namespace.
+
+One credit path does read `invoke`, so it moves with the second row: a typed `/<prefix>:<name>` REVIEW command is credited only when the registry's `invoke` is exactly `Skill(<prefix>:<name>)` (`hooks/lib/typed-slash-credit.sh`). In that layout `/superpowers:requesting-code-review` is now the credited prefix and `/otherplug:requesting-code-review` is not; before, it was the reverse. The bare typed form is unaffected.
 
 ## What Changes
 
@@ -25,7 +27,7 @@ Only the second row was wrong. It was never a push bypass, and this change does 
 ## Out of scope
 
 - Which namespaces the completion hook credits for a gating milestone. That is a separate decision about the gate, not about the registry.
-- Two external plugins claiming a config-owned name when neither is the config's provider: still the last in directory order.
+- Changing the rule for two external plugins claiming a config-owned name when neither is the config's provider: still the last in directory order, now pinned by a test.
 
 ## Impact
 
