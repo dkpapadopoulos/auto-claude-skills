@@ -27,3 +27,7 @@ NO_MATCH: write the changelog entry for the release
 NO_MATCH: write a test for the parser
 NO_MATCH: open a PR to bump the helm chart version
 NO_MATCH: write the postmortem for yesterdays incident
+# A question that mentions a newsletter is not a writing task (#410, observed 2026-10-27).
+NO_MATCH: what other improvements did we gather from the ai newsletter emails?
+# Recall given up with the keyword, on record: editing verbs are not trigger verbs.
+NO_MATCH: edit my newsletter
