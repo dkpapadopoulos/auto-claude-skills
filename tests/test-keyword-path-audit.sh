@@ -194,6 +194,27 @@ assert_contains "B4 and the keyword is reported as admitting on its own, undecid
     "FINDING${TAB}unrecorded${TAB}authorial-judgment${TAB}less generic${TAB}measured keyword-only" "${OUT}"
 assert_equals "B4 one fault, two findings" "2" "$(_findings)"
 
+# B4b. "newsletter" (#410). Every trigger that names a newsletter requires a writing
+# verb or a topic marker beside it; the keyword admitted any prompt holding the word.
+# Observed 2026-10-27: a question about a digest of newsletter emails selected the prose
+# skill. The keyword is deleted from both configs; put it back and the audit has to
+# report the observed prompt, which the skill's fixture now lists as NO_MATCH.
+_decoy="what other improvements did we gather from the ai newsletter emails?"
+for _f in "${CONFIG}" "${FALLBACK}"; do
+    assert_equals "B4b ${_f##*/}: authorial-judgment ships no \"newsletter\" keyword" "0" \
+        "$(jq '[.skills[] | select(.name == "authorial-judgment") | .keywords[]? | select(. == "newsletter")] | length' "${_f}")"
+done
+_m="${TEST_TMPDIR}/b4b.json"
+jq '(.skills[] | select(.name == "authorial-judgment") | .keywords) += ["newsletter"]' "${CONFIG}" > "${_m}"
+_changed "B4b the keyword was added to the copy" "${CONFIG}" "${_m}"
+_audit --skill authorial-judgment --config "${_m}"
+assert_equals "B4b the audit fails" "1" "${RC}"
+assert_contains "B4b the observed prompt is reported as a selected decoy" \
+    "FINDING${TAB}decoy-selected${TAB}authorial-judgment${TAB}${_decoy}${TAB}a NO_MATCH line of its own fixture is selected (via keywords)" "${OUT}"
+assert_contains "B4b and the keyword is reported as admitting on its own, undecided" \
+    "FINDING${TAB}unrecorded${TAB}authorial-judgment${TAB}newsletter${TAB}measured keyword-only" "${OUT}"
+assert_equals "B4b one fault, two findings" "2" "$(_findings)"
+
 # B5. The same through a missing word boundary. "mine improvements" measured alone is
 # covered, so the class check has nothing to say about it. Only the fixture line shows
 # that it matches inside "determine improvements", which the trigger's left boundary
