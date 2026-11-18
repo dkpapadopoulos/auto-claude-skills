@@ -22,7 +22,8 @@ which the broken command satisfied.
   commit scanned and no `ERR` line, because outside a usable repo gitleaks scans
   zero commits, exits 0 and writes `[]`. That scan covers committed history only;
   uncommitted work is scanned with `gitleaks protect --staged` and `gitleaks
-  protect`, never by committing it first.
+  protect`, never by committing it first. `protect` always logs `0 commits
+  scanned`, so its own pass rule is `count: 0` with no `ERR` line.
 - `tests/test-security-scanner.sh` runs the command exactly as SKILL.md documents
   it against a scratch repo with a planted key, and asserts a non-zero count and
   that neither the key nor the secret value is in the parsed output. Seen red on

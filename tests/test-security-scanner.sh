@@ -153,6 +153,9 @@ test_gitleaks_command_reports_planted_secret() {
   # unfound secret into history.
   assert_contains "SKILL.md scans uncommitted changes with gitleaks protect" "gitleaks protect --staged" "$skill_md"
   assert_not_contains "SKILL.md never says to commit before scanning" "commit before this step" "$skill_md"
+  # protect logs "0 commits scanned" on every run, so detect's pass rule would
+  # make every clean uncommitted-work scan read as could-not-check.
+  assert_contains "SKILL.md gives protect its own pass rule" "For \`protect\`, which always logs \`0 commits scanned\`" "$skill_md"
 
   if ! command -v gitleaks >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
     echo "  SKIP: gitleaks or jq not installed; behavioural check not run"

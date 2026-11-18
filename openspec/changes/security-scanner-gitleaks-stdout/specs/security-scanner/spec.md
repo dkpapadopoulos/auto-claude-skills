@@ -25,3 +25,4 @@ And on a repository holding a detectable secret in committed history the parsed 
 And output includes RuleID, File, StartLine, and Description but NOT the Match content
 And `count: 0` is read as a pass only when gitleaks logged at least one commit scanned and no error; an empty result, zero commits scanned or an error is "could not check"
 And that scan covers committed history only; uncommitted changes are scanned with `gitleaks protect` (staged and unstaged), never by committing them first
+And because `protect` always logs zero commits scanned, its `count: 0` is a pass when it logged no error
