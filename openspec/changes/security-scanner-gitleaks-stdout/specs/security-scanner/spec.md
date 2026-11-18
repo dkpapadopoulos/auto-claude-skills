@@ -20,7 +20,7 @@ And presents vulnerabilities with package name, installed version, fixed version
 #### Scenario: Gitleaks secret detection without leaking secrets
 Given gitleaks is installed
 When the agent invokes the security-scanner skill
-Then it runs gitleaks detect with `--report-format json --report-path - --redact`, so the JSON report is written to stdout and secret values are redacted
-And on a repository holding a detectable secret the parsed count is greater than zero
+Then it runs gitleaks detect with `--report-format json --report-path <temp file> --redact` and parses that file, a form that works on every gitleaks v8 release
+And on a repository holding a detectable secret in committed history the parsed count is greater than zero
 And output includes RuleID, File, StartLine, and Description but NOT the Match content
-And an empty result is not read as a pass; only an explicit `count: 0` is
+And an empty result is not read as a pass; only an explicit `count: 0` is, and it covers committed history only

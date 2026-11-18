@@ -159,10 +159,10 @@ Report results under a **Dependency provenance** subsection (see Step 5). If no 
 If gitleaks is available, scan for hardcoded secrets.
 
 ```bash
-gitleaks detect --source . --no-banner --report-format json --report-path - --redact 2>/dev/null | jq '{count: (. | length), results: [.[] | {rule: .RuleID, file: .File, line: .StartLine, description: .Description}]}'
+GL_REPORT="$(mktemp)"; gitleaks detect --source . --no-banner --report-format json --report-path "$GL_REPORT" --redact 2>/dev/null; jq '{count: (. | length), results: [.[] | {rule: .RuleID, file: .File, line: .StartLine, description: .Description}]}' "$GL_REPORT"; rm -f "$GL_REPORT"
 ```
 
-`--report-path -` is required: without it gitleaks writes no JSON to stdout, jq prints nothing, and the step reads as clean whatever the repo holds. `--redact` keeps secret values out of the session. An empty result is not a pass: `count: 0` is.
+gitleaks writes its JSON only to `--report-path`; piped without one, jq prints nothing and the step reads as clean whatever the repo holds. A temp file works on every gitleaks v8 (`--report-path -` means stdout only from 8.22). `--redact` keeps secret values out of the session. An empty result is not a pass: rerun without `2>/dev/null` and check `gitleaks version`. `count: 0` means no secrets in committed history; uncommitted changes are not scanned, so commit before this step.
 
 ## Step 5: Triage and Fix
 

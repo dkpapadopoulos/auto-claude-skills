@@ -131,31 +131,50 @@ test_review_security_lens_checks_provenance() {
 # ── Test: the documented gitleaks command reports a planted secret ──
 # Without --report-path, gitleaks v8 writes no JSON to stdout, so the jq in
 # Step 4 got no input and printed nothing: a repo full of secrets read as
-# clean. Runs the command exactly as SKILL.md documents it, against a scratch
-# repo, so the assertion is on the real producer's bytes.
+# clean. `--report-path -` means stdout only from gitleaks 8.22, so the skill
+# writes the report to a temp file it then reads. Runs the command exactly as
+# SKILL.md documents it, against a scratch repo, so the assertion is on the
+# real producer's bytes.
 test_gitleaks_command_reports_planted_secret() {
   echo "--- test_gitleaks_command_reports_planted_secret ---"
-  local cmd
-  cmd="$(grep -E '^gitleaks detect ' skills/security-scanner/SKILL.md | head -1)"
-  assert_contains "SKILL.md documents a gitleaks detect command" "gitleaks detect" "$cmd"
-  assert_contains "gitleaks command writes its report to stdout" "--report-path -" "$cmd"
+  local cmd n
+  n="$(grep -cE 'gitleaks detect --source' skills/security-scanner/SKILL.md)"
+  assert_contains "SKILL.md documents exactly one gitleaks detect command" "count=1" "count=${n}"
+  cmd="$(grep -E 'gitleaks detect --source' skills/security-scanner/SKILL.md | head -1)"
+  assert_contains "gitleaks command writes its report to a file it reads" '--report-path "$GL_REPORT"' "$cmd"
+  assert_contains "gitleaks command reads that report" 'jq' "$cmd"
   assert_contains "gitleaks command redacts secret values" "--redact" "$cmd"
 
   if ! command -v gitleaks >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
     echo "  SKIP: gitleaks or jq not installed; behavioural check not run"
     return 0
   fi
-  local tmp out count key secret
+  local tmp out count key secret built
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/acs-gitleaks.XXXXXX")" || return 1
   # Assembled at runtime so this file carries no key-shaped literal.
   key="AKIA""Z4XQ7NWPR2BTK5MD"
   secret="wJalrXUtnFEMI/K7MDENG/""bPxRfiCYzQ8vN2kLp4"
   printf 'aws_access_key_id = %s\naws_secret_access_key = %s\n' "$key" "$secret" > "${tmp}/creds.txt"
-  git -C "$tmp" init -q
-  git -C "$tmp" add creds.txt
-  git -C "$tmp" -c user.email=t@t -c user.name=t commit -qm planted
-  out="$(cd "$tmp" && eval "$cmd")" || true
+  # The user's git and gitleaks config stay out: a global pre-commit hook (a
+  # secret scanner, likely where gitleaks is installed), commit signing, an
+  # inherited GIT_DIR, or a GITLEAKS_CONFIG without the AWS rules would
+  # otherwise turn a fixture failure into a false skill defect.
+  out="$(
+    unset GIT_DIR GIT_WORK_TREE GITLEAKS_CONFIG GITLEAKS_CONFIG_TOML
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+    cd "$tmp" || exit 1
+    git init -q && git add creds.txt \
+      && git -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q --no-verify -m planted \
+      || { echo "FIXTURE-NOT-BUILT"; exit 0; }
+    eval "$cmd"
+  )" || true
   rm -rf "$tmp"
+  case "$out" in
+    FIXTURE-NOT-BUILT*)
+      FAIL=$((FAIL + 1))
+      ERRORS="${ERRORS}\n  FAIL: could not build the gitleaks fixture repo (git init/add/commit failed); the skill was not tested"
+      return 0 ;;
+  esac
   count="$(printf '%s' "$out" | jq -r '.count' 2>/dev/null)"
   case "$count" in
     ''|null|0|*[!0-9]*)
@@ -163,7 +182,10 @@ test_gitleaks_command_reports_planted_secret() {
       ERRORS="${ERRORS}\n  FAIL: documented gitleaks command reports the planted secret\n    got count: '${count}' output: $(printf '%s' "$out" | head -c 200)" ;;
     *) PASS=$((PASS + 1)) ;;
   esac
-  assert_not_contains "gitleaks output does not echo the secret value" "$secret" "$out"
+  # The jq projection, not --redact, is what keeps these out of the parsed
+  # output; --redact is pinned by the flag assertion above.
+  assert_not_contains "parsed gitleaks output carries no key value" "$key" "$out"
+  assert_not_contains "parsed gitleaks output carries no secret value" "$secret" "$out"
 }
 
 # ══════════════════════════════════════════════════════════════════
