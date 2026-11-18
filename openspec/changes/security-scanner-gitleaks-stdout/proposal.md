@@ -17,9 +17,12 @@ which the broken command satisfied.
   "$GL_REPORT"`) and runs jq on that file, then removes it. `--report-path -`
   means stdout only from gitleaks 8.22 (older releases write a file named `-`
   into the repo), and distributions still ship older v8 builds. `--redact` keeps
-  secret values out of the session. The text under the command says an empty
-  result is not a pass (rerun without `2>/dev/null`, check `gitleaks version`)
-  and that `count: 0` covers committed history only.
+  secret values out of the session. gitleaks' stderr (counts, never secrets) is
+  no longer discarded: `count: 0` is a pass only when it logged at least one
+  commit scanned and no `ERR` line, because outside a usable repo gitleaks scans
+  zero commits, exits 0 and writes `[]`. That scan covers committed history only;
+  uncommitted work is scanned with `gitleaks protect --staged` and `gitleaks
+  protect`, never by committing it first.
 - `tests/test-security-scanner.sh` runs the command exactly as SKILL.md documents
   it against a scratch repo with a planted key, and asserts a non-zero count and
   that neither the key nor the secret value is in the parsed output. Seen red on

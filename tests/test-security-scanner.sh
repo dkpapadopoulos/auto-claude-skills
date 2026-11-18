@@ -137,13 +137,22 @@ test_review_security_lens_checks_provenance() {
 # real producer's bytes.
 test_gitleaks_command_reports_planted_secret() {
   echo "--- test_gitleaks_command_reports_planted_secret ---"
-  local cmd n
-  n="$(grep -cE 'gitleaks detect --source' skills/security-scanner/SKILL.md)"
-  assert_contains "SKILL.md documents exactly one gitleaks detect command" "count=1" "count=${n}"
-  cmd="$(grep -E 'gitleaks detect --source' skills/security-scanner/SKILL.md | head -1)"
+  local cmd n skill_md
+  skill_md="$(cat skills/security-scanner/SKILL.md)"
+  # The command line, not prose that names it, starts with the report variable.
+  n="$(grep -cE '^GL_REPORT=.*gitleaks detect --source' skills/security-scanner/SKILL.md)"
+  assert_contains "SKILL.md documents exactly one gitleaks detect command" "count=1;" "count=${n};"
+  cmd="$(grep -E '^GL_REPORT=.*gitleaks detect --source' skills/security-scanner/SKILL.md | head -1)"
   assert_contains "gitleaks command writes its report to a file it reads" '--report-path "$GL_REPORT"' "$cmd"
   assert_contains "gitleaks command reads that report" 'jq' "$cmd"
   assert_contains "gitleaks command redacts secret values" "--redact" "$cmd"
+  # gitleaks' stderr is its "N commits scanned" and ERR lines and never a
+  # secret; discarding it turns a scan of zero commits into a clean count: 0.
+  assert_not_contains "gitleaks command keeps its scan summary visible" "2>/dev/null" "$cmd"
+  # Uncommitted work is scanned with protect; committing first would put an
+  # unfound secret into history.
+  assert_contains "SKILL.md scans uncommitted changes with gitleaks protect" "gitleaks protect --staged" "$skill_md"
+  assert_not_contains "SKILL.md never says to commit before scanning" "commit before this step" "$skill_md"
 
   if ! command -v gitleaks >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
     echo "  SKIP: gitleaks or jq not installed; behavioural check not run"
@@ -166,11 +175,11 @@ test_gitleaks_command_reports_planted_secret() {
     git init -q && git add creds.txt \
       && git -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q --no-verify -m planted \
       || { echo "FIXTURE-NOT-BUILT"; exit 0; }
-    eval "$cmd"
+    eval "$cmd" 2>/dev/null
   )" || true
   rm -rf "$tmp"
   case "$out" in
-    FIXTURE-NOT-BUILT*)
+    *FIXTURE-NOT-BUILT*)
       FAIL=$((FAIL + 1))
       ERRORS="${ERRORS}\n  FAIL: could not build the gitleaks fixture repo (git init/add/commit failed); the skill was not tested"
       return 0 ;;
