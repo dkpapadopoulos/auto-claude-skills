@@ -48,13 +48,9 @@ command -v axe && echo "axe: available" || {
 # Detect ONLY the `lighthouse` CLI (what the overlay actually invokes) so detection
 # matches execution. @lhci/cli and unlighthouse have different invocations and are
 # NOT run by this overlay — reporting them "available" would announce-then-skip.
+# A package.json entry alone is not enough: the overlay's self-gate needs it installed.
 command -v lighthouse >/dev/null 2>&1 && echo "lighthouse: available" || {
-  if [ -f package.json ]; then
-    jq -e '.dependencies.lighthouse // .devDependencies.lighthouse' package.json >/dev/null 2>&1 \
-      && echo "lighthouse: available via npx" || echo "lighthouse: not detected"
-  else
-    echo "lighthouse: not detected"
-  fi
+  [ -x node_modules/.bin/lighthouse ] && echo "lighthouse: available (node_modules)" || echo "lighthouse: not detected"
 }
 
 # webapp-testing companion skill — check cached skill registry (NOT session flags)
@@ -173,9 +169,12 @@ npx playwright test "${VALIDATION_TMPDIR}/smoke.spec.ts" --reporter=json
 ```bash
 # Self-gate: a global axe or node_modules/.bin/axe, run directly, never npx,
 # which would download whatever version npm serves when it is not installed.
-AXE_BIN="$(command -v axe || { [ -x node_modules/.bin/axe ] && echo node_modules/.bin/axe; } || true)"
+# The -x check drops a shell alias, which zsh's `command -v` prints instead of a path.
+AXE_BIN="$(command -v axe 2>/dev/null)"; [ -x "$AXE_BIN" ] || AXE_BIN=""
+[ -n "$AXE_BIN" ] || { [ -x node_modules/.bin/axe ] && AXE_BIN=node_modules/.bin/axe; }
 if [ -n "$AXE_BIN" ]; then
-  "$AXE_BIN" http://localhost:${PORT}/ --exit --reporter json 2>/dev/null | jq '{violations: [.violations[] | {id, impact, description, nodes: [.nodes[] | .target]}]}'
+  # --stdout prints the results as a JSON array, one entry per URL; errors go to stderr.
+  "$AXE_BIN" --stdout "http://localhost:${PORT}/" | jq '{violations: [.[0].violations[] | {id, impact, description, nodes: [.nodes[] | .target]}]}'
 else
   echo "axe: not installed; a11y overlay skipped"
 fi
