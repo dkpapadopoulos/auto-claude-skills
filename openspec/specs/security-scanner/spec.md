@@ -22,8 +22,12 @@ And presents vulnerabilities with package name, installed version, fixed version
 #### Scenario: Gitleaks secret detection without leaking secrets
 Given gitleaks is installed
 When the agent invokes the security-scanner skill
-Then it runs gitleaks detect with `--report-format json`
+Then it runs gitleaks detect with `--report-format json --report-path <temp file> --redact` and parses that file, a form that works on every gitleaks v8 release
+And on a repository holding a detectable secret in committed history the parsed count is greater than zero
 And output includes RuleID, File, StartLine, and Description but NOT the Match content
+And `count: 0` is read as a pass only when gitleaks logged at least one commit scanned and no error; an empty result, zero commits scanned or an error is "could not check"
+And that scan covers committed history only; uncommitted changes are scanned with `gitleaks protect` (staged and unstaged), never by committing them first
+And because `protect` always logs zero commits scanned, its `count: 0` is a pass when it logged no error
 
 ### Requirement: Graceful degradation
 The skill MUST adapt to available tools without failing.
