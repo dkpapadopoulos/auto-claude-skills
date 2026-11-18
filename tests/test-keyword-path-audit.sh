@@ -194,8 +194,8 @@ assert_contains "B4 and the keyword is reported as admitting on its own, undecid
     "FINDING${TAB}unrecorded${TAB}authorial-judgment${TAB}less generic${TAB}measured keyword-only" "${OUT}"
 assert_equals "B4 one fault, two findings" "2" "$(_findings)"
 
-# B4b. "newsletter" (#410). Every trigger that names a newsletter requires a writing
-# verb or a topic marker beside it; the keyword admitted any prompt holding the word.
+# B4b. "newsletter" (#410). No trigger admits the bare word (each needs a verb it
+# lists, a topic marker or a quality phrase); the keyword admitted any prompt holding it.
 # Observed 2026-10-27: a question about a digest of newsletter emails selected the prose
 # skill. The keyword is deleted from both configs; put it back and the audit has to
 # report the observed prompt, which the skill's fixture now lists as NO_MATCH.
@@ -213,7 +213,11 @@ assert_contains "B4b the observed prompt is reported as a selected decoy" \
     "FINDING${TAB}decoy-selected${TAB}authorial-judgment${TAB}${_decoy}${TAB}a NO_MATCH line of its own fixture is selected (via keywords)" "${OUT}"
 assert_contains "B4b and the keyword is reported as admitting on its own, undecided" \
     "FINDING${TAB}unrecorded${TAB}authorial-judgment${TAB}newsletter${TAB}measured keyword-only" "${OUT}"
-assert_equals "B4b one fault, two findings" "2" "$(_findings)"
+# The fixture also lists "edit my newsletter" as NO_MATCH (recall given up with the
+# keyword), so the mutant selects two decoys: three findings for the one fault.
+assert_contains "B4b the editing-verb decoy is reported too" \
+    "FINDING${TAB}decoy-selected${TAB}authorial-judgment${TAB}edit my newsletter${TAB}a NO_MATCH line of its own fixture is selected (via keywords)" "${OUT}"
+assert_equals "B4b one fault, three findings" "3" "$(_findings)"
 
 # B5. The same through a missing word boundary. "mine improvements" measured alone is
 # covered, so the class check has nothing to say about it. Only the fixture line shows
