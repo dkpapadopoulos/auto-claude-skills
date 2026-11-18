@@ -159,8 +159,12 @@ Report results under a **Dependency provenance** subsection (see Step 5). If no 
 If gitleaks is available, scan for hardcoded secrets.
 
 ```bash
-gitleaks detect --source . --no-banner --report-format json 2>/dev/null | jq '{count: (. | length), results: [.[] | {rule: .RuleID, file: .File, line: .StartLine, description: .Description}]}'
+GL_REPORT="$(mktemp)"; gitleaks detect --source . --no-banner --report-format json --report-path "$GL_REPORT" --redact; jq '{count: (. | length), results: [.[] | {rule: .RuleID, file: .File, line: .StartLine, description: .Description}]}' "$GL_REPORT"; rm -f "$GL_REPORT"
 ```
+
+gitleaks writes its JSON only to `--report-path`; piped without one, jq prints nothing and the step reads as clean whatever the repo holds. A temp file works on every gitleaks v8 (`--report-path -` means stdout only from 8.22). `--redact` keeps secret values out of the session; without `--verbose`, gitleaks' own log lines carry counts and git errors, not findings. `count: 0` is a pass only when gitleaks logged at least one commit scanned and no `ERR` line; an empty result, `0 commits scanned` or an `ERR` line is "could not check" (look at `gitleaks version` and the error). Any git warning also arrives as an `ERR` line, so a healthy repo can read "could not check"; that errs safe and is never a pass.
+
+That covers committed history only. Scan uncommitted work without committing it (a commit would put any secret it holds into history): run the same command with `gitleaks protect --staged --source .` for staged changes and `gitleaks protect --source .` for unstaged changes to tracked files, in place of `gitleaks detect --source .`. For `protect`, which always logs `0 commits scanned`, `count: 0` is a pass when there is no `ERR` line; its `scanned ~N bytes` line shows what was covered (0 bytes after `--staged` means nothing is staged). Untracked files are not covered until staged.
 
 ## Step 5: Triage and Fix
 
