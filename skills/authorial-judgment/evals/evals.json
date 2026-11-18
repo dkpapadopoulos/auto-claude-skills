@@ -21,7 +21,7 @@
   {"query": "rewrite the readme intro so it is clearer", "should_trigger": false},
   {"query": "run this cover letter through the authorial-judgment skill", "should_trigger": true},
   {"query": "run this letter of recommendation through the authorial judgement skill, make it warmer", "should_trigger": true},
-  {"query": "run the below reference letters through the skill before I send them", "should_trigger": true},
+  {"query": "run the below reference letters through the authorial-judgment skill before I send them", "should_trigger": true},
   {"query": "this customer email sounds like a bot wrote it, make it sound like me", "should_trigger": true},
   {"query": "use authorial judgment on the website copy for the pricing and about pages", "should_trigger": true},
   {"query": "my outreach email reads generic, give it an editorial pass", "should_trigger": true},

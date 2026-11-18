@@ -29,7 +29,8 @@
 # label a prompt's origin (2026-09-05 to 2026-10-07). 9 contained any keyword. Removing
 # every keyword changed the selection on 2, both through `health check`: on one the
 # keyword alone selected incident-analysis, on the other its 20 points decided which
-# domain skill was kept. No other row below has a field observation for or against it.
+# domain skill was kept. No other row below has a field
+# observation for or against it, except where the row itself records one.
 systematic-debugging	something is off	keyword-only	recall	symptom wording; the trigger is a flat word list and encodes no constraint this goes around
 systematic-debugging	not right	keyword-only	open	symptom wording, but it also sits inside "not right now"; a match is a process mandate
 systematic-debugging	doesn't make sense	keyword-only	recall	symptom wording; the trigger is a flat word list and encodes no constraint this goes around
@@ -65,7 +66,7 @@ supply-chain-investigation	supply chain attack	keyword-only	recall	attack wordin
 supply-chain-investigation	dependency compromise	keyword-only	recall	the reverse order of the trigger's compromised.*dependency
 supply-chain-investigation	typosquat	keyword-only	recall	the bare word; every trigger wants a second term with it. (#310's example "our dependency was typosquatted" is admitted by the fifth trigger without this keyword; the issue read only the first)
 authorial-judgment	blog post	keyword-only	gap	every trigger requires a writing verb or a topic marker around it; alone it admits any prompt about a blog feature. No field observation
-authorial-judgment	newsletter	keyword-only	gap	every trigger requires a writing verb or a topic marker around it; alone it admits any prompt about a newsletter feature. No field observation
+authorial-judgment	newsletter	keyword-only	gap	every trigger requires a writing verb or a topic marker around it; alone it admits any prompt about a newsletter feature. Field observation 2026-10-27 (#410): a prompt ending "what other improvements did we gather from the AI newsletter emails?" selected authorial-judgment through this keyword alone, a wrong selection (a question about a digest, not a writing task)
 authorial-judgment	more human	keyword-only	gap	the trigger requires a piece of writing before it, as it did for "less generic", a keyword removed for selecting a fixture decoy. No fixture line and no field observation
 authorial-judgment	authorial voice	keyword-only	recall	the skill's own term; no trigger carries it
 authorial-judgment	essay	inert	open	5 characters, and no trigger admits the bare word: made to fire, it would be keyword-only

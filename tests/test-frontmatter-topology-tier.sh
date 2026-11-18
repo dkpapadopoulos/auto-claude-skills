@@ -172,8 +172,11 @@ _build
 assert_equals "invoke, two other providers: the last in directory order" '"Skill(lastplug:verification-before-completion)"' "$(_reg_field "${_V}" invoke)"
 teardown_test_env
 
-# The one credit path that reads invoke: a typed /<prefix>:<name> is installed
-# only when the registry's invoke is exactly Skill(<prefix>:<name>). With both
+# The one credit path that reads invoke: a typed /<prefix>:<name> matches a
+# registry skill only when its invoke is exactly Skill(<prefix>:<name>) (the
+# predicate's other branch, a plugin <prefix> providing /<name>, is not planted
+# here). Both calls below carry a prefix, so the bare-name built-in branch,
+# which needs credited-skills.sh, is never reached. With both
 # plugins present the config's provider is the typed prefix that counts,
 # whichever directory sorts last. Driven through the real predicate on the
 # registry the real hook built.

@@ -7,7 +7,7 @@
 # sub-render degrades independently; never exits the caller.
 # Advisory-only output (NOT gate enforcement) — deliberately excluded from
 # the _GATE_ENFORCE_LIBS canary list, like consol-marker.sh.
-# Spec: openspec/changes/compact-recovery-prompt-carrier.
+# Spec: openspec/changes/archive/2026-07-16-compact-recovery-prompt-carrier.
 
 render_compact_recovery() {
     local _token="${1:-}"

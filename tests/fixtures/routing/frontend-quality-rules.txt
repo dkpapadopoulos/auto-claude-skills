@@ -14,7 +14,7 @@ NO_MATCH: run the session-start hook
 NO_MATCH: fix the skill-activation-hook
 # 'interaction' must be UI-scoped — a backend 'interaction' must NOT route here.
 NO_MATCH: refactor the database interaction layer
-# General frontend prompts (web-interface-guidelines territory)
+# General frontend prompts (web-design-guidelines territory)
 MATCH: fix the form accessibility
 MATCH: improve the responsive layout
 MATCH: a ui change to the sidebar

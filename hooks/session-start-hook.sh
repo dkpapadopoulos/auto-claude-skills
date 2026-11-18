@@ -808,8 +808,9 @@ if [ -n "${DEFAULT_JSON}" ]; then
     # last other external claimant, which is then the only way to reach the
     # step (the completion hook credits a returned Skill by its bare name in
     # any namespace, so refusing that claimant would hide the step, not gate it).
-    # One credit path does read this value: a typed /<prefix>:<name> is credited
-    # only when invoke is exactly Skill(<prefix>:<name>) (typed-slash-credit.sh).
+    # One credit path does read this value: a typed /<prefix>:<name> matches a
+    # registry SKILL only when invoke is exactly Skill(<prefix>:<name>); its other
+    # branch is an available plugin <prefix> providing /<name> (typed-slash-credit.sh).
     SKILLS_JSON="$(printf '%s' "${DEFAULT_JSON}" | jq \
         --argjson imap "${INVOKE_MAP}" \
         --argjson fmloc "${FRONTMATTER_MAP_LOCAL}" \

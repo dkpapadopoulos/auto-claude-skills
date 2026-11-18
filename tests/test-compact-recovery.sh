@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test-compact-recovery.sh — compact-recovery prompt-carrier suite.
-# Spec: openspec/changes/compact-recovery-prompt-carrier/specs/compact-recovery/spec.md
+# Spec: openspec/changes/archive/2026-07-16-compact-recovery-prompt-carrier/specs/compact-recovery/spec.md
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
