@@ -159,8 +159,10 @@ Report results under a **Dependency provenance** subsection (see Step 5). If no 
 If gitleaks is available, scan for hardcoded secrets.
 
 ```bash
-gitleaks detect --source . --no-banner --report-format json 2>/dev/null | jq '{count: (. | length), results: [.[] | {rule: .RuleID, file: .File, line: .StartLine, description: .Description}]}'
+gitleaks detect --source . --no-banner --report-format json --report-path - --redact 2>/dev/null | jq '{count: (. | length), results: [.[] | {rule: .RuleID, file: .File, line: .StartLine, description: .Description}]}'
 ```
+
+`--report-path -` is required: without it gitleaks writes no JSON to stdout, jq prints nothing, and the step reads as clean whatever the repo holds. `--redact` keeps secret values out of the session. An empty result is not a pass: `count: 0` is.
 
 ## Step 5: Triage and Fix
 

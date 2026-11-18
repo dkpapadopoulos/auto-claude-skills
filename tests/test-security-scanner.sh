@@ -128,6 +128,44 @@ test_review_security_lens_checks_provenance() {
   assert_contains "security lens names slopsquatting" "slopsquatting" "$review_md"
 }
 
+# ── Test: the documented gitleaks command reports a planted secret ──
+# Without --report-path, gitleaks v8 writes no JSON to stdout, so the jq in
+# Step 4 got no input and printed nothing: a repo full of secrets read as
+# clean. Runs the command exactly as SKILL.md documents it, against a scratch
+# repo, so the assertion is on the real producer's bytes.
+test_gitleaks_command_reports_planted_secret() {
+  echo "--- test_gitleaks_command_reports_planted_secret ---"
+  local cmd
+  cmd="$(grep -E '^gitleaks detect ' skills/security-scanner/SKILL.md | head -1)"
+  assert_contains "SKILL.md documents a gitleaks detect command" "gitleaks detect" "$cmd"
+  assert_contains "gitleaks command writes its report to stdout" "--report-path -" "$cmd"
+  assert_contains "gitleaks command redacts secret values" "--redact" "$cmd"
+
+  if ! command -v gitleaks >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+    echo "  SKIP: gitleaks or jq not installed; behavioural check not run"
+    return 0
+  fi
+  local tmp out count key secret
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/acs-gitleaks.XXXXXX")" || return 1
+  # Assembled at runtime so this file carries no key-shaped literal.
+  key="AKIA""Z4XQ7NWPR2BTK5MD"
+  secret="wJalrXUtnFEMI/K7MDENG/""bPxRfiCYzQ8vN2kLp4"
+  printf 'aws_access_key_id = %s\naws_secret_access_key = %s\n' "$key" "$secret" > "${tmp}/creds.txt"
+  git -C "$tmp" init -q
+  git -C "$tmp" add creds.txt
+  git -C "$tmp" -c user.email=t@t -c user.name=t commit -qm planted
+  out="$(cd "$tmp" && eval "$cmd")" || true
+  rm -rf "$tmp"
+  count="$(printf '%s' "$out" | jq -r '.count' 2>/dev/null)"
+  case "$count" in
+    ''|null|0|*[!0-9]*)
+      FAIL=$((FAIL + 1))
+      ERRORS="${ERRORS}\n  FAIL: documented gitleaks command reports the planted secret\n    got count: '${count}' output: $(printf '%s' "$out" | head -c 200)" ;;
+    *) PASS=$((PASS + 1)) ;;
+  esac
+  assert_not_contains "gitleaks output does not echo the secret value" "$secret" "$out"
+}
+
 # ══════════════════════════════════════════════════════════════════
 # Run tests
 # ══════════════════════════════════════════════════════════════════
@@ -140,6 +178,7 @@ test_fallback_registry_parity
 test_skill_md_documents_osv_scanner_step
 test_skill_md_documents_dependency_provenance
 test_review_security_lens_checks_provenance
+test_gitleaks_command_reports_planted_secret
 
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"
