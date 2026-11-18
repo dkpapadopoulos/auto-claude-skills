@@ -8,10 +8,10 @@ The security-scanner skill MUST orchestrate CLI tools (Semgrep, Trivy, Gitleaks)
 #### Scenario: Semgrep SAST scan on changed files
 Given semgrep is installed
 When the agent invokes the security-scanner skill during REVIEW
-Then it runs semgrep with `--json --config auto` on branch-changed files that still exist, via `git diff --name-only -z --diff-filter=d`
+Then it runs semgrep with `--json --config auto` on the files the branch changed and did not delete, via `git diff --name-only -z --diff-filter=d`, and stops with a message when no such file is left
 And on a branch that deletes one file and adds a detectable finding, the parsed count is greater than zero
-And the parsed output includes the number of files scanned and the scanner's error messages
-And `count: 0` is read as a pass only when there are no errors and at least one file was scanned; empty output, an error or zero files scanned is "could not check"
+And the parsed output includes the number of files scanned, the messages of `level: error` entries as errors, and the number of other entries (partial parses, timeouts) as warnings
+And `count: 0` is read as a pass only when there are no errors and at least one file was scanned; empty output, an error or zero files scanned is "could not check", while warnings alone are reported but do not make a scan "could not check"
 And presents findings as a structured table with severity, file, line, rule, and message
 
 #### Scenario: Trivy dependency scan

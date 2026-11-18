@@ -26,11 +26,20 @@ each reproduced before the fix:
 
 - The fast scan and its last-commit fallback pass `--diff-filter=d`. Every
   documented SAST command's jq now also prints `scanned` (`.paths.scanned |
-  length`) and `errors` (`.errors[].message`), and SKILL.md states the pass rule:
-  `count: 0` is a pass only when `errors` is empty and `scanned` is above 0.
-  Measured on opengrep 1.26.0 only; semgrep's output was not re-measured.
+  length`), `errors` (messages of `level: error` entries) and `warnings` (a count
+  of the rest), and SKILL.md states the pass rule: `count: 0` is a pass only when
+  `errors` is empty and `scanned` is above 0. Warnings stay out of the rule
+  because a complete scan of this repo's own hooks reports `warn` partial
+  parses. A guard line stops a branch with no changed file left, where BSD xargs
+  would run nothing and GNU xargs would scan the whole directory. Measured on
+  opengrep 1.26.0 only; semgrep's output was not re-measured.
 - The axe overlay runs a global `axe` or `node_modules/.bin/axe` directly and
-  otherwise prints that it skipped; detection reports only those two.
+  otherwise prints that it skipped; detection reports only those two. It now
+  uses `--stdout` and reads `.[0].violations`, the form the @axe-core/cli README
+  documents; the old `--reporter json` is not a documented flag, so the overlay
+  most likely parsed nothing even where axe was installed. Not run against a real
+  axe here. Lighthouse detection likewise stops reporting a package that is
+  only listed in `package.json`.
 - Every `hooks.json` command quotes its plugin-root path
   (`"${CLAUDE_PLUGIN_ROOT}/hooks/x.sh" args`), the form other installed plugins
   already use. Six tests that matched the unquoted string were updated, and

@@ -10,7 +10,7 @@ The runtime-validation skill MUST run the axe a11y overlay only through an axe C
 
 - **GIVEN** `node_modules/.bin/axe` is executable and no global `axe` is on PATH
 - **WHEN** runtime-validation reaches the a11y overlay
-- **THEN** it SHALL run `node_modules/.bin/axe` against the dev-server URL and parse its JSON violations
+- **THEN** it SHALL run `node_modules/.bin/axe --stdout` against the dev-server URL and read the violations from the first entry of the JSON array it prints
 
 #### Scenario: axe not installed
 
