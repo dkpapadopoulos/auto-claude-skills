@@ -337,6 +337,12 @@ openspec_state_read() {
 # --- openspec_write_provenance <archive_path> <session_token> <slug> ---
 # Write source.json to <archive_path>/superpowers/source.json.
 # Creates the superpowers/ directory if needed.
+#
+# openspec_surface (#355) is the session state's value when a caller set one
+# (openspec_state_mark_verified), else the surface session-start detected and
+# stored in the registry cache, else "unknown". The state file's "none" is the
+# filler the other writers create the file with, not a measurement, so it does
+# not win over the registry; "none" is recorded only when the registry says so.
 openspec_write_provenance() {
     local archive_path="${1:-}"
     local token="${2:-}"
@@ -351,11 +357,15 @@ openspec_write_provenance() {
     commit="$(git rev-parse HEAD 2>/dev/null || echo 'unknown')"
     local now
     now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    local surface=""
+    surface="$(jq -r '.openspec_capabilities.surface | strings' \
+        "${HOME}/.claude/.skill-registry-cache.json" 2>/dev/null)" || surface=""
+    [ -n "$surface" ] || surface="unknown"
 
     mkdir -p "${archive_path}/superpowers"
 
     if [ -f "$state_file" ] && [ -n "$slug" ]; then
-        jq --arg slug "$slug" --arg branch "$branch" --arg commit "$commit" --arg now "$now" '
+        jq --arg slug "$slug" --arg branch "$branch" --arg commit "$commit" --arg now "$now" --arg surface "$surface" '
             {
                 schema_version: 1,
                 discovery_path: (.changes[$slug].discovery_path // null),
@@ -369,7 +379,8 @@ openspec_write_provenance() {
                 capability_slug: (.changes[$slug].capability_slug // null),
                 source_branch: $branch,
                 base_commit: $commit,
-                openspec_surface: (.openspec_surface // "none"),
+                openspec_surface: (if (.openspec_surface | type) == "string" and .openspec_surface != "none"
+                                   then .openspec_surface else $surface end),
                 archived_at: $now
             }
         ' "$state_file" > "${archive_path}/superpowers/source.json" 2>/dev/null || {
@@ -378,7 +389,7 @@ openspec_write_provenance() {
         }
     else
         # No state file — write minimal provenance
-        jq -n --arg slug "$slug" --arg branch "$branch" --arg commit "$commit" --arg now "$now" '{
+        jq -n --arg slug "$slug" --arg branch "$branch" --arg commit "$commit" --arg now "$now" --arg surface "$surface" '{
             schema_version: 1,
             discovery_path: null,
             design_path: null,
@@ -390,7 +401,7 @@ openspec_write_provenance() {
             capability_slug: null,
             source_branch: $branch,
             base_commit: $commit,
-            openspec_surface: "none",
+            openspec_surface: $surface,
             archived_at: $now
         }' > "${archive_path}/superpowers/source.json" 2>/dev/null || {
             echo "[openspec-state] WARN: provenance write failed" >&2

@@ -994,10 +994,14 @@ if git -C "${PROJECT_ROOT}" cat-file blob "${_BASE_BLOB}" > "${_BASE_WRITER}" 2>
         *) _record_fail "E4 base-producer records are excluded as other-predicate, with a count" "got: ${_o4}" ;;
     esac
     assert_equals "E4 rate stays 1/1 with the base records present" "1/1" "$(_em_rate "${_o4}")"
+elif [ "$(git -C "${PROJECT_ROOT}" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+    # A shallow clone lacks the blob. Not recorded as a pass, and not a red cell
+    # (one red cell blocks every routing push).
+    echo "  NOTE: base producer blob ${_BASE_BLOB} unavailable in this shallow clone -- E4 not run"
 else
-    # Visible, not silent: a shallow clone lacks the blob. Not recorded as a
-    # pass, and not a red cell (one red cell blocks every routing push).
-    echo "  NOTE: base producer blob ${_BASE_BLOB} unavailable (shallow clone?) -- E4 not run"
+    # A full clone holds the blob, so its absence there is a broken pin, not a
+    # skip (#416): the block used to print a NOTE and stay green either way.
+    _record_fail "E4 base producer blob ${_BASE_BLOB} is readable in a full clone" "cat-file failed or the blob is not predicate 2"
 fi
 
 # MX (#382) a corpus mixing schema versions. Every record comes from a REAL
@@ -1012,6 +1016,10 @@ _SV="$( ( . "${WRITER}" 2>/dev/null; printf '%s' "${REVIEW_SHADOW_SCHEMA_VERSION
 if [ -s "${_BASE_WRITER}" ] && grep -q '^REVIEW_SHADOW_PREDICATE_VERSION=2$' "${_BASE_WRITER}" \
    && [ -n "${_SV}" ]; then
     _MX="${TMP}/mx.jsonl"; _MXA="${TMP}/mx-adj.jsonl"; rm -f "${_MX}" "${_MXA}"
+    # The del() list below is the set of fields schema 3 added, so it models
+    # schema 2 only while the producer is at 3 (#416). After a schema bump this
+    # cell fails until the list is rewritten for the new previous schema.
+    assert_equals "MX the hand-typed field list models the schema before 3" "3" "${_SV}"
     _em_rec "${_MX}" tok-mx1
     _em_rec "${TMP}/mx-old.jsonl" tok-mx2
     jq -c --argjson sv "$(( _SV - 1 ))" \
@@ -1045,8 +1053,10 @@ if [ -s "${_BASE_WRITER}" ] && grep -q '^REVIEW_SHADOW_PREDICATE_VERSION=2$' "${
 ${_mx_base_ids}
 EOF
     assert_equals "MX no base record is pooled into the rate population" "0" "${_mx_pooled}"
+elif [ "$(git -C "${PROJECT_ROOT}" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+    echo "  NOTE: base producer unavailable in this shallow clone -- MX not run"
 else
-    echo "  NOTE: base producer or writer schema unavailable -- MX not run"
+    _record_fail "MX base producer and writer schema are available in a full clone" "base blob or REVIEW_SHADOW_SCHEMA_VERSION missing (schema='${_SV}')"
 fi
 
 # E5 a predicate-3 record without the fields, and ones carrying "invalid", are
@@ -1348,6 +1358,48 @@ case "${_os7}" in
     *"records : 2 line(s), 1 parsed, 1 unparseable"*) _record_pass "F7 ...and by --status, which shares the precheck" ;;
     *) _record_fail "F7 ...and by --status, which shares the precheck" "got: ${_os7}" ;;
 esac
+
+# F8b (#416) non-object sidecar lines are not parsed label lines, and an
+# unreadable sidecar is announced. The control is the same corpus with an
+# intact one-label sidecar.
+_F8L="${TMP}/f8b.jsonl"; _F8A="${TMP}/f8b-adj.jsonl"; : > "${_F8L}"
+_rec "${_F8L}" f8a "2026-09-10T10:00:00Z" /repo/x main tokf8 absent
+printf '%s\n' '{"record_id":"f8a","verdict":"true_catch","claimant":"human"}' > "${_F8A}"
+_of8c="$(_run "${_F8L}" "${_F8A}" --status)"
+case "${_of8c}" in
+    *"SIDECAR — unparseable"*|*"NOT READABLE"*) _record_fail "F8b CONTROL: an intact sidecar announces nothing" "got: ${_of8c}" ;;
+    *) _record_pass "F8b CONTROL: an intact sidecar announces nothing" ;;
+esac
+printf '%s\n' '[1]' '"x"' >> "${_F8A}"
+_of8n="$(_run "${_F8L}" "${_F8A}" --status)"
+if printf '%s\n' "${_of8n}" | grep -qxF "SIDECAR — unparseable label line(s) : 2"; then
+    _record_pass "F8b two non-object sidecar lines are counted unparseable"
+else
+    _record_fail "F8b two non-object sidecar lines are counted unparseable" "got: ${_of8n}"
+fi
+chmod 000 "${_F8A}" 2>/dev/null
+if [ -r "${_F8A}" ]; then
+    _record_pass "SKIPPED: chmod 000 still readable (running as root?) — unreadable sidecar cell not applicable"
+else
+    _of8u="$(_run "${_F8L}" "${_F8A}" --status)"
+    case "${_of8u}" in
+        *"ERROR: the label sidecar ${_F8A} exists but is NOT READABLE."*"UNCOUNTABLE : 1 "*)
+            _record_pass "F8b an unreadable sidecar is announced and counted uncountable" ;;
+        *) _record_fail "F8b an unreadable sidecar is announced and counted uncountable" "got: ${_of8u}" ;;
+    esac
+fi
+chmod 600 "${_F8A}" 2>/dev/null
+
+# F8c (#416) --help is reachable when the producer lib is missing; any other
+# command still refuses there. Driven on a copy of the script with no hooks/lib.
+_F8D="${TMP}/f8c"; mkdir -p "${_F8D}/scripts"; cp "${SUT}" "${_F8D}/scripts/"
+_f8sut="${_F8D}/scripts/$(basename "${SUT}")"
+/bin/bash "${_f8sut}" --help > "${TMP}/f8c.out" 2>&1 < /dev/null; _f8rc=$?
+assert_equals "F8c --help exits 0 without the producer lib" "0" "${_f8rc}"
+if grep -q -- '--evidence-miss' "${TMP}/f8c.out"; then _record_pass "F8c --help prints the usage without the producer lib"
+else _record_fail "F8c --help prints the usage without the producer lib" "got: $(cat "${TMP}/f8c.out")"; fi
+/bin/bash "${_f8sut}" --status > /dev/null 2>&1 < /dev/null; _f8rc=$?
+assert_equals "F8c CONTROL: --status still refuses (exit 2) without the producer lib" "2" "${_f8rc}"
 
 # F9 (final review M4) the SIDECAR's unparseable count, `_adj_unparsed`, takes the
 # same LC_ALL=C: under a UTF-8 locale `grep -c .` skipped an invalid-UTF-8 line,

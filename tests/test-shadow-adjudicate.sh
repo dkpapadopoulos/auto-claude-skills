@@ -751,6 +751,11 @@ eq "the attested and silent episodes are absent" "0" \
 # predicate was bumped after the schema), so they pin only that the reader never
 # filters on schema; the moved-predicate record is the mix a real corpus holds.
 _SV="${IMPLEMENT_SHADOW_SCHEMA_VERSION:-}"
+# The two del() lists below are the fields schema 5 added (the stamps) and the
+# one schema 4 added (advisory_emitted), so they model schemas 4 and 3 only
+# while the producer is at 5 (#416). After a schema bump this cell fails until
+# the lists are rewritten for the new previous schemas.
+assert_equals "MX the hand-typed field lists model the two schemas before 5" "5" "${_SV}"
 : > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
 for _t in tokMX5 tokMX4 tokMX3 tokMXP; do
   ( unset SHADOW_STAMP_SESSION_ID SHADOW_STAMP_TOOL_USE_ID SHADOW_STAMP_CC_VERSION SHADOW_STAMP_ACS_VERSION

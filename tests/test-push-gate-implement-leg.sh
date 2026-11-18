@@ -254,6 +254,25 @@ _pglog_after="$(wc -l < "${HOME}/.claude/.phase-gate-events.log" 2>/dev/null | t
 assert_equals "attested episode writes no push-implement warn line" \
     "${_pglog_before:-0}" "${_pglog_after:-0}"
 
+# (b1) #381: the diagnostic capture replays the guard on the same push with
+# these two variables set, and that replay must not append a duplicate record.
+# Both record sites are driven: attested (state as above), then would-block
+# (attestation moved aside). Each replay is followed by a live run that DOES
+# append, so a count that stood still is the flag's doing, not a dead fixture.
+_n381() { wc -l < "$IMPLEMENT_SHADOW_LOG" | tr -d ' '; }
+PUSH_GATE_CAPTURE_REPLAY=1 PUSH_GATE_CAPTURE_DISABLE=1 run_guard >/dev/null
+assert_equals "#381 a capture replay writes no attested record" "1" "$(_n381)"
+run_guard >/dev/null
+assert_equals "#381 CONTROL: a second live evaluation writes an attested record" "2" "$(_n381)"
+mv "$HOME/.claude/.skill-phase-attest-${_TOK}" "$HOME/.claude/.skill-phase-attest-${_TOK}.aside"
+PUSH_GATE_CAPTURE_REPLAY=1 PUSH_GATE_CAPTURE_DISABLE=1 run_guard >/dev/null
+assert_equals "#381 a capture replay writes no would-block record" "2" "$(_n381)"
+run_guard >/dev/null
+assert_equals "#381 CONTROL: the live evaluation writes the would-block record" "3" "$(_n381)"
+assert_equals "#381 CONTROL: that record is a would-block" "true" \
+    "$(tail -1 "$IMPLEMENT_SHADOW_LOG" | jq -r '.would_block' 2>/dev/null)"
+mv "$HOME/.claude/.skill-phase-attest-${_TOK}.aside" "$HOME/.claude/.skill-phase-attest-${_TOK}"
+
 # (b2) Real invocation evidence must still record NOTHING — the shipped
 # implement-shadow-event scenario "satisfied IMPLEMENT evidence emits nothing"
 # is deliberately preserved for the non-attested classes (#169 design, Unit E).

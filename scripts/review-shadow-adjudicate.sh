@@ -30,6 +30,29 @@ ADJ_LOG="${REVIEW_ADJUDICATION_LOG:-$HOME/.claude/.push-review-adjudication.json
 
 _ROOT="$(cd "$(dirname "${BASH_SOURCE:-$0}")/.." 2>/dev/null && pwd)"
 
+_usage() {
+    cat <<USAGE
+usage: $0 <command>
+
+  --status                      episode-level readout and the pre-registered band
+  --rate-episodes               TSV of the episodes the rate is computed over
+  --next                        oldest unadjudicated record, with how to label it
+  --adjudicate <record_id> --verdict true_catch|false_block|unknown [--reason <text>]
+  --evidence-miss               would-block episodes in which an allowlisted reviewer
+                                returned on a commit covering the push (a lower bound
+                                on one kind of false block, not the registered rate)
+
+Diagnostic only. Writes to a sidecar; the shadow log is never mutated.
+The pre-registration in openspec/changes/review-verdict/design.md is the
+authority for the bands, the floor and the definition of false_block.
+USAGE
+}
+
+# --help is answered before the refusals below (#416): how to call the script
+# does not depend on the producer lib being loadable. Only as the first
+# argument, so `--reason --help` stays a reason.
+case "${1:-}" in -h|--help) _usage; exit 0 ;; esac
+
 # Adjudicable predicate version, DERIVED FROM THE PRODUCER. Pinning it
 # independently is a silent corpus blackout: when #219 bumped the IMPLEMENT
 # producer while its reader stayed behind, `--status` reported 0 episodes with
@@ -223,7 +246,9 @@ _adj_unparsed() {
     # invalid byte, so a corrupt line was counted neither as a line nor as
     # unparseable.
     _t="$(LC_ALL=C grep -c . "${ADJ_LOG}" 2>/dev/null | tr -d '[:space:]')"
-    _p="$(jq -R -r 'fromjson? // empty | 1' "${ADJ_LOG}" 2>/dev/null | grep -c . | tr -d '[:space:]')"
+    # `objects` (#416): a line that parses to a non-object (`[1]`, `"x"`) holds
+    # no label, so it is not a parsed label line.
+    _p="$(jq -R -r 'fromjson? | objects | 1' "${ADJ_LOG}" 2>/dev/null | grep -c . | tr -d '[:space:]')"
     printf '%s' "$(( ${_t:-0} - ${_p:-0} ))"
 }
 
@@ -560,6 +585,16 @@ EOF
     # nothing said -- the direction that clears the flip. Announced in the
     # VERIFY reader's words, and counted as UNCOUNTABLE below, which blocks the
     # floor as it blocks the VERIFY decision rule.
+    # An unreadable sidecar (#416) is said to be unreadable: `-f` is not `-r`,
+    # and both counts in _adj_unparsed read empty for it, so it printed nothing
+    # and every episode read "unlabeled". Counted UNCOUNTABLE below.
+    _adjunread=0
+    if [ -f "${ADJ_LOG}" ] && [ ! -r "${ADJ_LOG}" ]; then
+        echo
+        echo "ERROR: the label sidecar ${ADJ_LOG} exists but is NOT READABLE."
+        echo "  No label in it was read. This is not an unlabeled corpus."
+        _adjunread=1
+    fi
     _adjbad="$(_adj_unparsed)"
     case "${_adjbad}" in ''|*[!0-9]*) _adjbad=1 ;; esac
     if [ "${_adjbad}" -gt 0 ]; then
@@ -572,7 +607,7 @@ EOF
     # WARNING above (an alternate corpus is a supported use).
     case "${_unparsed}" in ''|*[!0-9]*) _unparsed=1 ;; esac
     case "${_badts}" in ''|*[!0-9]*) _badts=1 ;; esac
-    _uncount=$(( _adjbad + _unparsed + _badts ))
+    _uncount=$(( _adjbad + _unparsed + _badts + _adjunread ))
 
     # k/n: ONLY human-confirmed episodes count. Zero adjudications is NOT zero
     # false blocks -- it is no measurement, and reporting it as 0/0 clean is the
@@ -743,24 +778,6 @@ EOF
     echo "  review_witness cannot tell \"no reviewer\" from \"a reviewer whose dispatch commit was unknown\":"
     echo "  the guard records the latter under the verdict, invocation or none witness, so it is never counted here."
     return 0
-}
-
-_usage() {
-    cat <<USAGE
-usage: $0 <command>
-
-  --status                      episode-level readout and the pre-registered band
-  --rate-episodes               TSV of the episodes the rate is computed over
-  --next                        oldest unadjudicated record, with how to label it
-  --adjudicate <record_id> --verdict true_catch|false_block|unknown [--reason <text>]
-  --evidence-miss               would-block episodes in which an allowlisted reviewer
-                                returned on a commit covering the push (a lower bound
-                                on one kind of false block, not the registered rate)
-
-Diagnostic only. Writes to a sidecar; the shadow log is never mutated.
-The pre-registration in openspec/changes/review-verdict/design.md is the
-authority for the bands, the floor and the definition of false_block.
-USAGE
 }
 
 _CMD=""; _RID=""; _VERDICT=""; _REASON=""

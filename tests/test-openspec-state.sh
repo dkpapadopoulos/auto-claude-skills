@@ -213,6 +213,46 @@ test_write_provenance_produces_source_json() {
 test_write_provenance_produces_source_json
 
 # ---------------------------------------------------------------------------
+# 4b. write_provenance measures openspec_surface (#355). The ship path never
+#     calls mark_verified, so the state file holds the filler "none" that
+#     upsert_change creates it with, and every archive recorded that constant.
+# ---------------------------------------------------------------------------
+test_write_provenance_surface_is_measured() {
+    echo "-- test: write_provenance takes the surface from the registry cache --"
+    setup_test_env
+
+    local token="test-$$" archive_dir="${HOME}/test-archive-surface" cache="${HOME}/.claude/.skill-registry-cache.json"
+    local src="${archive_dir}/superpowers/source.json"
+    mkdir -p "$archive_dir" "${HOME}/.claude"
+    openspec_state_upsert_change "$token" "my-feature" "plans/my.md" "specs/my.md" "my-cap"
+    assert_equals "fixture: the ship path leaves the state filler" "none" \
+        "$(jq -r '.openspec_surface' "${HOME}/.claude/.skill-openspec-state-${token}" 2>/dev/null)"
+
+    rm -f "$cache"
+    openspec_write_provenance "$archive_dir" "$token" "my-feature"
+    assert_equals "no registry cache: surface is unknown, not none" "unknown" "$(jq -r '.openspec_surface' "$src" 2>/dev/null)"
+
+    jq -n '{openspec_capabilities:{surface:"openspec-core"}}' > "$cache"
+    openspec_write_provenance "$archive_dir" "$token" "my-feature"
+    assert_equals "state filler: surface comes from the registry cache" "openspec-core" "$(jq -r '.openspec_surface' "$src" 2>/dev/null)"
+
+    openspec_write_provenance "$archive_dir" "no-such-token-$$" "my-feature"
+    assert_equals "no state file: surface comes from the registry cache" "openspec-core" "$(jq -r '.openspec_surface' "$src" 2>/dev/null)"
+
+    jq -n '{openspec_capabilities:{surface:"none"}}' > "$cache"
+    openspec_write_provenance "$archive_dir" "$token" "my-feature"
+    assert_equals "a registry that says none is recorded as none" "none" "$(jq -r '.openspec_surface' "$src" 2>/dev/null)"
+
+    jq -n '{openspec_capabilities:{surface:"openspec-core"}}' > "$cache"
+    openspec_state_mark_verified "$token" "opsx-core"
+    openspec_write_provenance "$archive_dir" "$token" "my-feature"
+    assert_equals "mark_verified does not overwrite the filler, so the registry still wins" "openspec-core" "$(jq -r '.openspec_surface' "$src" 2>/dev/null)"
+
+    teardown_test_env
+}
+test_write_provenance_surface_is_measured
+
+# ---------------------------------------------------------------------------
 # REVIEW-before-SHIP guard tests
 # ---------------------------------------------------------------------------
 
