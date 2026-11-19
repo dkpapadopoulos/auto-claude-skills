@@ -1089,6 +1089,53 @@ eq "#454 ...with its label" "1" "$(printf '%s\n' "${_ml_st}" | awk '$1=="true_ca
 eq "#454 CONTROL: the truncated corpus line is still reported" "1" \
    "$(printf '%s\n' "${_ml_st}" | awk '$1=="unparseable" && $2=="lines" {print $3; exit}')"
 
+# A sidecar line that PARSES but holds no label (no string record_id, or a
+# verdict outside the three values) is a lost label too. Measured before the
+# fix: appended after a human false_block for the same record, each shape below
+# erased it through latest-wins (1/30 became 0/29, band DENY) and counted 0.
+# The reader validates the verdict it writes, so these come from a hand edit or
+# another writer.
+for _ml_shape in '{"schema_version":1,"record_id":"fb0"}' \
+                 '{"record_id":"fb0","verdict":null,"claimant":"human"}' \
+                 '{"record_id":"fb0","verdict":"flase_block","claimant":"human"}' \
+                 '{"verdict":"true_catch","claimant":"human"}' \
+                 '{}'; do
+  build_floor 29 1 0
+  printf '%s\n' "${_ml_shape}" >> "$IMPLEMENT_ADJUDICATION_LOG"
+  _ml_st="$(status)"
+  eq "#454 a label-less sidecar object does not erase the earlier false_block: ${_ml_shape}" "1" \
+     "$(printf '%s\n' "${_ml_st}" | awk '$1=="false_block" {print $2; exit}')"
+  eq "#454 ...is counted as an unparseable label" "1" \
+     "$(printf '%s\n' "${_ml_st}" | awk '$1=="unparseable" && $2=="labels" {print $3; exit}')"
+  eq "#454 ...and withholds the rate" "1 0" \
+     "$(printf '%s\n' "${_ml_st}" | grep -c '^  rate  *cannot check') $(printf '%s\n' "${_ml_st}" | grep -c '^  band ')"
+done
+# A line of bytes that are not UTF-8: in a UTF-8 locale `.` does not match it,
+# so without LC_ALL=C it is neither a line nor a parsed label and counts 0.
+build_floor 29 1 0
+printf '\377\376\n' >> "$IMPLEMENT_ADJUDICATION_LOG"
+eq "#454 a sidecar line of invalid bytes is counted" "1" \
+   "$(LANG=en_US.UTF-8 LC_ALL= "$SCRIPT" --status 2>/dev/null | awk '$1=="unparseable" && $2=="labels" {print $3; exit}')"
+# The corpus side loses a false_block the same way: the record leaves the
+# denominator, its label stays behind unseen, and k falls. Measured before the
+# fix: 1/31 became 0/30, band DENY, beside an "unparseable lines 1" row.
+build_floor 30 1 0
+eq "#454 CONTROL: intact corpus, the rate is 1/31" "1/31" "$(status | grep -E '^  rate ' | awk '{print $2}')"
+cp "$IMPLEMENT_SHADOW_LOG" "$TMP/ml.corpus"
+awk '/"record_id":"fb0"/ { print substr($0, 1, length($0) - 40); next } { print }' "$TMP/ml.corpus" > "$IMPLEMENT_SHADOW_LOG"
+_ml_st="$(status)"
+eq "#454 fixture: the truncated corpus line is the false_block's record" "1 0" \
+   "$(printf '%s\n' "${_ml_st}" | awk '$1=="unparseable" && $2=="lines" {print $3; exit}') $(printf '%s\n' "${_ml_st}" | awk '$1=="false_block" {print $2; exit}')"
+eq "#454 no rate is printed over a corpus with an unparseable line" "1 0" \
+   "$(printf '%s\n' "${_ml_st}" | grep -c '^  rate  *cannot check') $(printf '%s\n' "${_ml_st}" | grep -c '^  band ')"
+jq -c 'if .record_id == "fb0" then .ts = "garbage" else . end' "$TMP/ml.corpus" > "$IMPLEMENT_SHADOW_LOG"
+_ml_st="$(status)"
+eq "#454 ...nor over a record whose ts cannot be placed" "1 1 0" \
+   "$(printf '%s\n' "${_ml_st}" | awk '$1=="malformed" && $2=="ts" {print $3; exit}') $(printf '%s\n' "${_ml_st}" | grep -c '^  rate  *cannot check') $(printf '%s\n' "${_ml_st}" | grep -c '^  band ')"
+cp "$TMP/ml.corpus" "$IMPLEMENT_SHADOW_LOG"
+eq "#454 CONTROL: restored, the rate and band print again" "1/31 1" \
+   "$(status | grep -E '^  rate ' | awk '{print $2}') $(status | grep -c '^  band ')"
+
 echo
 echo "Tests run: $(( PASS + FAIL ))  passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

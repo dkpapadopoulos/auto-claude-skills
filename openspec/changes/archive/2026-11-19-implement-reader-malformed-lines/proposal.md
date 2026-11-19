@@ -10,9 +10,14 @@ Four reads in `scripts/shadow-adjudicate.sh` used plain `jq`, which stops at the
 ## What changes
 
 - All four reads use `-R` with `fromjson?` and keep objects only.
-- `--status` prints `unparseable labels N` for sidecar lines that are unparseable or parse to a non-object, and prints `rate cannot check` in place of a rate, band and worst case while N is above zero. A lost line may have been a `false_block`, and the REVIEW reader blocks its floor on the same count (#386).
+- `--status` prints `unparseable labels N` for sidecar lines that hold no label: unparseable, not an object, or an object without a string `record_id` and one of the three verdicts. Such a line no longer supersedes an earlier label for its record. Measured before: an object with no verdict, appended after a human `false_block`, turned 1/30 into 0/29, band DENY, and counted 0.
+- `--status` prints `rate cannot check` in place of a rate, band and worst case while any of three counts is above zero: unparseable labels, unparseable corpus lines, adjudicable records with a malformed `ts`. A corpus record that cannot be placed leaves the denominator while its label stays behind unseen (measured: 1/31 became 0/30, band DENY). The REVIEW reader blocks its floor on the same three counts (#386).
+
+## Consequence
+
+The corpus is append-only and this reader never rewrites it, so one truncated corpus line withholds the rate until someone removes or repairs that line by hand. That is the REVIEW reader's existing behaviour, taken here for the same reason.
 
 ## Not changed
 
 - No predicate or schema version, no writer, no band rule.
-- The corpus-side `unparseable lines` row, which already existed and does not withhold the rate.
+- A corpus record that parses but makes a jq filter fail (a numeric `ts`, an object in `branch`) is still dropped with no row. No writer produces one.

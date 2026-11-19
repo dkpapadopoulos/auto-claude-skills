@@ -321,15 +321,23 @@ _adjudicated_ids() {
     jq -R -r 'fromjson? // empty | objects | .record_id // empty' "${ADJ_LOG}" 2>/dev/null | sort -u
 }
 
-# _adj_unparsed -> sidecar lines that hold no label: unparseable, or parsing to
-# a non-object. Counted so a lost label is ANNOUNCED (#454); the REVIEW reader's
-# function of the same name (#386). LC_ALL=C because in a UTF-8 locale `.` does
-# not match an invalid byte.
+# What a sidecar line must hold to be a label: a string record_id and one of
+# the three verdicts. One definition, because the count of lines that are not
+# labels and the rows the verdict is resolved from must not disagree (#454): an
+# object with no verdict used to count as a label and, through latest-wins,
+# erase an earlier false_block for its record.
+_ADJ_LABEL_JQ='objects | select((.record_id | type) == "string")
+               | select(.verdict == "true_catch" or .verdict == "false_block" or .verdict == "unknown")'
+
+# _adj_unparsed -> sidecar lines that hold no label: unparseable, not an object,
+# or an object that is not a label as defined above. Counted so a lost label is
+# ANNOUNCED (#454); the REVIEW reader's function of the same name (#386).
+# LC_ALL=C because in a UTF-8 locale `.` does not match an invalid byte.
 _adj_unparsed() {
     [ -f "${ADJ_LOG}" ] || { printf '0'; return 0; }
     local _t _p
     _t="$(LC_ALL=C grep -c . "${ADJ_LOG}" 2>/dev/null | tr -d '[:space:]')"
-    _p="$(jq -R -r 'fromjson? | objects | 1' "${ADJ_LOG}" 2>/dev/null | grep -c . | tr -d '[:space:]')"
+    _p="$(jq -R -r "fromjson? | ${_ADJ_LABEL_JQ} | 1" "${ADJ_LOG}" 2>/dev/null | grep -c . | tr -d '[:space:]')"
     printf '%s' "$(( ${_t:-0} - ${_p:-0} ))"
 }
 
@@ -590,7 +598,7 @@ _episode_verdict() {
     local _ids="${1:-}" _v="unlabeled" _claim="agent" _has_human=0 _id _rows
     local _latest _rv _rc
     if [ ! -f "${ADJ_LOG}" ]; then printf 'unlabeled\nagent\n'; return; fi
-    _rows="$(jq -R -r 'fromjson? // empty | objects | [.record_id,.verdict,.claimant] | @tsv' "${ADJ_LOG}" 2>/dev/null)"
+    _rows="$(jq -R -r "fromjson? // empty | ${_ADJ_LABEL_JQ} | [.record_id,.verdict,.claimant] | @tsv" "${ADJ_LOG}" 2>/dev/null)"
     for _id in $(printf '%s' "${_ids}" | tr ',' ' '); do
         # LATEST adjudication per record wins. The sidecar is append-only, so the
         # last matching row is the most recent one. Folding over ALL rows instead
@@ -749,12 +757,15 @@ EOF
     # over — not to _lab. `unknown` episodes are adjudicated but excluded from
     # the headline rate, so gating on _lab would let 29 labeled episodes of which
     # 15 were unknown print a band over n=14, below the pre-registered floor.
-    # A lost sidecar line may have been a false_block, and one fewer lowers the
-    # rate toward clearing the flip, so no rate is printed over one (#454). The
-    # REVIEW reader blocks its floor on the same count.
-    if [ "${_adjbad}" -gt 0 ]; then
-        printf '  rate              cannot check — %s sidecar line(s) could not be read as a label\n' "${_adjbad}"
-        echo "  need              the sidecar repaired, or the lost label(s) recorded again"
+    # A lost sidecar line may have been a false_block, and a corpus record that
+    # cannot be placed leaves the denominator while its label stays behind
+    # unseen. Either lowers the rate toward clearing the flip, so no rate is
+    # printed over one (#454). The REVIEW reader blocks its floor on the same
+    # three counts.
+    if [ $(( _adjbad + _unparsed + _badts )) -gt 0 ]; then
+        printf '  rate              cannot check — %s line(s) or record(s) above could not be placed (unparseable labels %s, unparseable lines %s, malformed ts %s)\n' \
+               "$(( _adjbad + _unparsed + _badts ))" "${_adjbad}" "${_unparsed}" "${_badts}"
+        echo "  need              each one accounted for: any of them may be a lost false_block"
     elif [ "${_den}" -lt "${FLOOR_EPISODES}" ] || [ "${_nrepos}" -lt "${FLOOR_REPOS}" ]; then
         echo "  rate              insufficient data"
         printf '  need              %s adjudicated episodes (have %s) across >=%s repos (have %s)\n' \
