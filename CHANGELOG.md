@@ -95,6 +95,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The `phase-enforcement` methodology hint** ("Small changes still require the full flow"). Not part of the registered cut and not supported by the census: it stated a rule no gate enforces and contradicted superpowers 7.0.2's quick-task path. `methodology_hints` goes from 20 entries to 19.
 
 ### Fixed
+- **The IMPLEMENT shadow reader reads past a malformed line (#454)** (`scripts/shadow-adjudicate.sh`; `tests/test-shadow-adjudicate.sh`; openspec `implement-reader-malformed-lines`).
+  - **What was wrong:** four reads used plain `jq`, which stops at the first line it cannot parse. One truncated sidecar line hid every label after it: on a 30-episode test corpus with the line ahead of the only `false_block`, the rate read 0/29, band DENY, instead of 1/30. A truncated corpus line made the label command answer "no record" for a record `--next` had just offered.
+  - **Now:** every read skips the bad line and continues. `--status` prints `unparseable labels N` for sidecar lines holding no readable label.
+  - **Behaviour change:** while N is above zero, `--status` prints `rate cannot check` in place of the rate, band and worst case, because a lost line may have been a `false_block`. Repair the sidecar or record the lost label again.
 - **The IMPLEMENT shadow reader reports unreadable files and counts only what it offers (#453, items 1 and 2)** (`scripts/shadow-adjudicate.sh`; `tests/test-shadow-adjudicate.sh`; openspec `implement-reader-unreadable-and-next-count`).
   - **Unreadable files:** a corpus or label sidecar that exists but cannot be read used to read as empty. With an unreadable sidecar, `--status` showed a labelled `false_block` as unadjudicated and `--next` offered the record again. `--status` and `--next` now name the unreadable file and report nothing derived from it; a label is refused with that cause.
   - **Exit code change:** `--rate-episodes` exits 2, with the cause on stderr, when the corpus is unreadable. It exited 0 with no rows.

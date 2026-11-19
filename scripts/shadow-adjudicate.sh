@@ -253,9 +253,13 @@ _claimant() {
     echo human
 }
 
+# Every read of the corpus and the sidecar is `-R` + `fromjson?` (#454), as in
+# _shadow_tsv: a plain `jq` read stops at the first malformed line, so --next
+# offered a record the label command then could not find, and a truncated
+# sidecar line hid every label after it.
 _record_field() { # _record_field <record_id> <field>
-    jq -r --arg id "${1:-}" --arg f "${2:-}" \
-       'select(.record_id == $id) | .[$f] // empty' "${SHADOW_LOG}" 2>/dev/null | head -1
+    jq -R -r --arg id "${1:-}" --arg f "${2:-}" \
+       'fromjson? // empty | objects | select(.record_id == $id) | .[$f] // empty' "${SHADOW_LOG}" 2>/dev/null | head -1
 }
 
 cmd_adjudicate() {
@@ -314,7 +318,19 @@ cmd_adjudicate() {
 
 _adjudicated_ids() {
     [ -f "${ADJ_LOG}" ] || return 0
-    jq -r '.record_id // empty' "${ADJ_LOG}" 2>/dev/null | sort -u
+    jq -R -r 'fromjson? // empty | objects | .record_id // empty' "${ADJ_LOG}" 2>/dev/null | sort -u
+}
+
+# _adj_unparsed -> sidecar lines that hold no label: unparseable, or parsing to
+# a non-object. Counted so a lost label is ANNOUNCED (#454); the REVIEW reader's
+# function of the same name (#386). LC_ALL=C because in a UTF-8 locale `.` does
+# not match an invalid byte.
+_adj_unparsed() {
+    [ -f "${ADJ_LOG}" ] || { printf '0'; return 0; }
+    local _t _p
+    _t="$(LC_ALL=C grep -c . "${ADJ_LOG}" 2>/dev/null | tr -d '[:space:]')"
+    _p="$(jq -R -r 'fromjson? | objects | 1' "${ADJ_LOG}" 2>/dev/null | grep -c . | tr -d '[:space:]')"
+    printf '%s' "$(( ${_t:-0} - ${_p:-0} ))"
 }
 
 # cmd_next — oldest v2 record with no adjudication, plus how to label it.
@@ -541,8 +557,8 @@ _episode_wb() {
         # event nobody could have been blocked by. Reported separately rather
         # than folded into `false`, which means "attestation satisfied the leg" —
         # a different state that #169 records deliberately.
-        _v="$(jq -r --arg id "${_id}" \
-             'select(.record_id == $id)
+        _v="$(jq -R -r --arg id "${_id}" \
+             'fromjson? // empty | objects | select(.record_id == $id)
               | if (has("would_block") and ((.would_block|type) == "boolean")) | not
                 then "MALFORMED"
                 elif (.would_block == false) then "false"
@@ -574,7 +590,7 @@ _episode_verdict() {
     local _ids="${1:-}" _v="unlabeled" _claim="agent" _has_human=0 _id _rows
     local _latest _rv _rc
     if [ ! -f "${ADJ_LOG}" ]; then printf 'unlabeled\nagent\n'; return; fi
-    _rows="$(jq -r '[.record_id,.verdict,.claimant] | @tsv' "${ADJ_LOG}" 2>/dev/null)"
+    _rows="$(jq -R -r 'fromjson? // empty | objects | [.record_id,.verdict,.claimant] | @tsv' "${ADJ_LOG}" 2>/dev/null)"
     for _id in $(printf '%s' "${_ids}" | tr ',' ' '); do
         # LATEST adjudication per record wins. The sidecar is append-only, so the
         # last matching row is the most recent one. Folding over ALL rows instead
@@ -610,7 +626,7 @@ cmd_status() {
     local _wbep=0 _attep=0 _malwb=0 _silep=0 _wb
     local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
     local _den _wc_k _wc_n _band_hdl _band_wc
-    local _badts=0 _unparsed=0 _lines=0 _parsed=0 _ps _psb=0 _psu=0 _psl=0
+    local _badts=0 _unparsed=0 _lines=0 _parsed=0 _ps _psb=0 _psu=0 _psl=0 _adjbad=0
     # Before any count (#453). The sidecar too: every row below the episode
     # total is read from labels, and with none read a labelled false_block
     # printed as unadjudicated.
@@ -717,6 +733,11 @@ EOF
         printf '  malformed ts      %s   <- excluded: unparseable timestamp, cannot be placed in an episode\n' "${_badts}"
     [ "${_unparsed}" -gt 0 ] && \
         printf '  unparseable lines %s   <- excluded: not valid JSON\n' "${_unparsed}"
+    # A count that cannot be read is treated as a lost line, never as none.
+    _adjbad="$(_adj_unparsed)"
+    case "${_adjbad}" in ''|*[!0-9]*) _adjbad=1 ;; esac
+    [ "${_adjbad}" -gt 0 ] && \
+        printf '  unparseable labels %s   <- sidecar line(s) holding no readable label; what they said is lost\n' "${_adjbad}"
     printf '  true_catch        %s\n' "${_tc}"
     printf '  false_block       %s\n' "${_fb}"
     printf '  unknown           %s   <- excluded from the headline rate\n' "${_unk}"
@@ -728,7 +749,13 @@ EOF
     # over — not to _lab. `unknown` episodes are adjudicated but excluded from
     # the headline rate, so gating on _lab would let 29 labeled episodes of which
     # 15 were unknown print a band over n=14, below the pre-registered floor.
-    if [ "${_den}" -lt "${FLOOR_EPISODES}" ] || [ "${_nrepos}" -lt "${FLOOR_REPOS}" ]; then
+    # A lost sidecar line may have been a false_block, and one fewer lowers the
+    # rate toward clearing the flip, so no rate is printed over one (#454). The
+    # REVIEW reader blocks its floor on the same count.
+    if [ "${_adjbad}" -gt 0 ]; then
+        printf '  rate              cannot check — %s sidecar line(s) could not be read as a label\n' "${_adjbad}"
+        echo "  need              the sidecar repaired, or the lost label(s) recorded again"
+    elif [ "${_den}" -lt "${FLOOR_EPISODES}" ] || [ "${_nrepos}" -lt "${FLOOR_REPOS}" ]; then
         echo "  rate              insufficient data"
         printf '  need              %s adjudicated episodes (have %s) across >=%s repos (have %s)\n' \
                "${FLOOR_EPISODES}" "${_den}" "${FLOOR_REPOS}" "${_nrepos}"

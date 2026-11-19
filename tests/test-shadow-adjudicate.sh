@@ -1042,6 +1042,53 @@ chmod 600 "$IMPLEMENT_ADJUDICATION_LOG" 2>/dev/null
 eq "#453 CONTROL: readable again, the label is counted and nothing is outstanding" "1 1" \
    "$(status | awk '$1=="false_block" {print $2; exit}') $("$SCRIPT" --next 2>/dev/null | grep -c '^nothing outstanding — all 1 offerable')"
 
+# --- #454: a malformed line must not hide the lines after it -----------------
+# jq ABORTS at the first line it cannot parse and returns what came before, so
+# every plain `jq` read of the sidecar or the corpus drops the rest of the file.
+# Measured before the fix, on the corpus built here: one truncated sidecar line
+# ahead of the only false_block turned "1/30" into "0/29", band DENY. That is a
+# lost false block clearing the flip.
+build_floor 29 1 0
+eq "#454 CONTROL: intact sidecar, the rate is 1/30" "1/30" "$(status | grep -E '^  rate ' | awk '{print $2}')"
+eq "#454 CONTROL: intact sidecar, nothing is announced" "0" "$(status | grep -c 'unparseable labels')"
+# The false_block label is the last line (build_floor labels it last): put the
+# truncated line immediately before it.
+_ml_n="$(grep -c . "$IMPLEMENT_ADJUDICATION_LOG")"
+{ sed -n "1,$(( _ml_n - 1 ))p" "$IMPLEMENT_ADJUDICATION_LOG"; printf '{"schema_version":1,"record_id":"tr\n'
+  sed -n "${_ml_n}p" "$IMPLEMENT_ADJUDICATION_LOG"; } > "$TMP/ml.adj" && mv "$TMP/ml.adj" "$IMPLEMENT_ADJUDICATION_LOG"
+eq "#454 fixture: the label after the truncated line is the false_block" "false_block" \
+   "$(tail -1 "$IMPLEMENT_ADJUDICATION_LOG" | jq -r .verdict)"
+_ml_st="$(status)"
+eq "#454 a label after a truncated sidecar line is still read" "1" \
+   "$(printf '%s\n' "${_ml_st}" | awk '$1=="false_block" {print $2; exit}')"
+eq "#454 ...and the episode is not unadjudicated" "0" \
+   "$(printf '%s\n' "${_ml_st}" | awk '$1=="unadjudicated" {print $2; exit}')"
+eq "#454 the truncated line is announced with its count" "1" \
+   "$(printf '%s\n' "${_ml_st}" | awk '$1=="unparseable" && $2=="labels" {print $3; exit}')"
+eq "#454 no rate or band is printed over a sidecar with a lost line" "0" \
+   "$(printf '%s\n' "${_ml_st}" | grep -cE '^  (band|worst case) |^  rate  *[0-9]')"
+eq "#454 ...the rate row says cannot check instead" "1" \
+   "$(printf '%s\n' "${_ml_st}" | grep -c '^  rate  *cannot check')"
+eq "#454 --next does not offer the labelled record again" "1" \
+   "$("$SCRIPT" --next 2>/dev/null | grep -c '^nothing outstanding — all 30 offerable')"
+# A line that parses to a non-object holds no label either.
+printf '[1]\n"x"\n' >> "$IMPLEMENT_ADJUDICATION_LOG"
+eq "#454 non-object sidecar lines are counted as unparseable labels" "3" \
+   "$(status | awk '$1=="unparseable" && $2=="labels" {print $3; exit}')"
+# The corpus side: --next read past a truncated line, the label command did not.
+seed
+printf '{"record_id":"tr\n' > "$IMPLEMENT_SHADOW_LOG"
+recwb mc1 "2026-08-01T10:00:00Z" "/repo/A" "feat/a" "tokM1" true
+eq "#454 CONTROL: --next offers the record after a truncated corpus line" "mc1" \
+   "$("$SCRIPT" --next 2>/dev/null | awk 'NR==1 {print $1}')"
+eq "#454 ...and the label command finds that record" "0" "$(adj mc1 true_catch "454")"
+_ml_st="$(status)"
+eq "#454 ...and --status places it in the rate population, not under malformed would_block" "1 0" \
+   "$(printf '%s\n' "${_ml_st}" | awk '$1=="would-block" {print $2; exit}') $(printf '%s\n' "${_ml_st}" | grep -c 'malformed would_block')"
+eq "#454 ...with its label" "1" "$(printf '%s\n' "${_ml_st}" | awk '$1=="true_catch" {print $2; exit}')"
+eq "#454 CONTROL: the truncated corpus line is still reported" "1" \
+   "$(printf '%s\n' "${_ml_st}" | awk '$1=="unparseable" && $2=="lines" {print $3; exit}')"
+
 echo
 echo "Tests run: $(( PASS + FAIL ))  passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
