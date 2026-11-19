@@ -833,9 +833,11 @@ sep_rec ok0 '"3.103.1"'      # the boundary itself: in
 sep_rec ok1 '"3.104.0"'
 sep_rec ok2 '"4.0.0"'
 sep_rec ok3 '"3.1000.0"'
+sep_rec ok4 '"3.104.0-dev"'  # a suffix the guard's stamp validation stores
 sep_rec lo0 '"3.103.0"'      # one below
 sep_rec lo1 '"3.99.9"'       # sorts AFTER 3.103.1 as text
 sep_rec lo2 '"2.200.200"'
+sep_rec lo3 '"3.103.0+x"'
 sep_rec un0 ABSENT
 sep_rec un1 '""'             # what the writer stores when its stamp fails validation
 sep_rec un2 '"3.103"'
@@ -844,33 +846,51 @@ sep_rec un4 '3'              # not a string
 sep_rec un5 '"3.104.0\n"'    # jq's `$` would match before the newline
 _sep_st="$(status)"
 _sep_re="$("$SCRIPT" --rate-episodes 2>/dev/null)"
-eq "SEP --rate-episodes holds exactly the records at or after the separator" "ok0 ok1 ok2 ok3" \
+eq "SEP --rate-episodes holds exactly the records at or after the separator" "ok0 ok1 ok2 ok3 ok4" \
    "$(printf '%s\n' "${_sep_re}" | cut -f5 | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
-eq "SEP --status counts the same episodes" "4" \
+eq "SEP --status counts the same episodes" "5" \
    "$(printf '%s\n' "${_sep_st}" | awk '$1=="episodes" {print $2; exit}')"
-eq "SEP --status reports the excluded records" "9" \
+eq "SEP --status reports the excluded records" "10" \
    "$(printf '%s\n' "${_sep_st}" | awk '$1=="pre-separator" {print $2; exit}')"
-eq "SEP ...split by cause: 3 below the separator, 6 with no usable stamp" "1" \
-   "$(printf '%s\n' "${_sep_st}" | grep -c "acs_version below ${_ACS} (3) or no usable acs_version (6)")"
+eq "SEP ...split by cause: 4 below the separator, 6 with no usable stamp" "1" \
+   "$(printf '%s\n' "${_sep_st}" | grep -c "acs_version below ${_ACS} (4) or no usable acs_version (6)")"
+eq "SEP with no label on an excluded record, no label row is printed" "0" \
+   "$(printf '%s\n' "${_sep_st}" | grep -c 'pre-separator labels')"
 eq "SEP ...and they are not other-predicate records" "0" \
    "$(printf '%s\n' "${_sep_st}" | awk '$1=="other-predicate" {print $2; exit}')"
-# --next walks the four countable records and then says the rest are excluded.
+# --next walks the five countable records and then says the rest are excluded.
 _sep_seen=""
-for _i in 1 2 3 4; do
+for _i in 1 2 3 4 5; do
   _sep_id="$("$SCRIPT" --next 2>/dev/null | awk 'NR==1 {print $1}')"
   _sep_seen="${_sep_seen}${_sep_id} "
   adj "${_sep_id:-none}" true_catch "sep" >/dev/null
 done
-eq "SEP --next offers only the records at or after the separator" "ok0 ok1 ok2 ok3" \
+eq "SEP --next offers only the records at or after the separator" "ok0 ok1 ok2 ok3 ok4" \
    "$(printf '%s\n' ${_sep_seen} | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
-eq "SEP --next then reports nothing outstanding over those 4" "1" \
-   "$("$SCRIPT" --next 2>/dev/null | grep -c '^nothing outstanding — all 4 ')"
+eq "SEP --next then reports nothing outstanding over those 5" "1" \
+   "$("$SCRIPT" --next 2>/dev/null | grep -c '^nothing outstanding — all 5 ')"
 eq "SEP a label on a pre-separator record is refused" "1" "$(adj lo1 false_block "sep")"
 eq "SEP ...with the cause" "1" \
    "$( ( unset CLAUDECODE CLAUDE_CODE_SESSION_ID; "$SCRIPT" un0 --verdict false_block --reason sep 2>&1 ) | grep -c "acs_version below ${_ACS}, or none")"
 eq "SEP ...and nothing was written for it" "0" "$(grep -c '"lo1"\|"un0"' "$IMPLEMENT_ADJUDICATION_LOG")"
+# A label recorded BEFORE the reader applied the separator is still in the
+# sidecar. It stops counting, and a human false_block that stops counting lowers
+# k, so --status says how many there are. Written by hand: the reader refuses.
+for _lid in lo1 un0 lo1; do
+  jq -cn --arg id "${_lid}" '{schema_version:1,record_id:$id,ts:"2026-11-18T11:00:00Z",verdict:"false_block",reason:"old",claimant:"human"}' \
+    >> "$IMPLEMENT_ADJUDICATION_LOG"
+done
+_sep_st2="$(status)"
+eq "SEP labels held for excluded records are announced, each record once" "2" \
+   "$(printf '%s\n' "${_sep_st2}" | awk '$1=="pre-separator" && $2=="labels" {print $3; exit}')"
+eq "SEP ...and none of them reaches the rate" "0" \
+   "$(printf '%s\n' "${_sep_st2}" | awk '$1=="false_block" {print $2; exit}')"
+eq "SEP CONTROL: the five labels on countable records still do" "5" \
+   "$(printf '%s\n' "${_sep_st2}" | awk '$1=="true_catch" {print $2; exit}')"
 # A corpus holding ONLY excluded records is not an empty corpus.
 seed; sep_rec lo9 '"3.102.0"'
+eq "SEP --next does not call that corpus empty" "1" \
+   "$("$SCRIPT" --next 2>/dev/null | grep -c "^no v${_PV} records at or after the acs_version separator")"
 eq "SEP --next names the excluded records when nothing else exists" "1" \
    "$("$SCRIPT" --next 2>/dev/null | grep -c "1 v${_PV} record(s) present, excluded: acs_version below ${_ACS} or absent")"
 # The rule is tied to ONE predicate version. Under a moved producer (the #383
@@ -882,11 +902,29 @@ _sep_mv="$(/bin/bash "${_NV}/scripts/shadow-adjudicate.sh" --status 2>/dev/null)
 eq "SEP at another predicate version the separator excludes nothing" "3" \
    "$(printf '%s\n' "${_sep_mv}" | awk '$1=="would-block" {print $2; exit}')"
 eq "SEP ...and prints no pre-separator row" "0" "$(printf '%s\n' "${_sep_mv}" | grep -c 'pre-separator')"
-# A lib without the rule must stop the reader, never let it pool.
-sed '/^SHADOW_JQ_ACS=/,$d' "${ROOT}/hooks/lib/shadow-corpus.sh" > "${_NV}/hooks/lib/shadow-corpus.sh"
-_sep_nl="$(/bin/bash "${_NV}/scripts/shadow-adjudicate.sh" --status 2>&1; echo "rc=$?")"
-eq "SEP a lib with no separator rule: the reader refuses with exit 2" "rc=2" "$(printf '%s\n' "${_sep_nl}" | tail -1)"
-eq "SEP ...and reports no corpus" "0" "$(printf '%s\n' "${_sep_nl}" | grep -c 'predicate_version')"
+# A lib that does not supply the WHOLE rule must stop the reader, never let it
+# pool. Each mutation below pooled silently, or read the corpus as empty, when
+# only the jq prelude and the function were checked. At the real predicate, with
+# one record on each side, so a reader that ran would have something to pool.
+printf 'IMPLEMENT_SHADOW_PREDICATE_VERSION=%s\n' "${_PV}" > "${_NV}/hooks/lib/implement-shadow.sh"
+seed; sep_rec mu0 '"3.104.0"'; sep_rec mu1 '"3.99.9"'
+cp "${ROOT}/hooks/lib/shadow-corpus.sh" "${_NV}/hooks/lib/shadow-corpus.sh"
+eq "SEP CONTROL: the unmutated copy runs and excludes one record" "1" \
+   "$(/bin/bash "${_NV}/scripts/shadow-adjudicate.sh" --status 2>/dev/null | awk '$1=="pre-separator" {print $2; exit}')"
+_sep_mut() { # <label> <sed program>
+  sed "$2" "${ROOT}/hooks/lib/shadow-corpus.sh" > "${_NV}/hooks/lib/shadow-corpus.sh"
+  if cmp -s "${ROOT}/hooks/lib/shadow-corpus.sh" "${_NV}/hooks/lib/shadow-corpus.sh"; then
+    bad "SEP mutation applied: $1" "a changed lib" "sed changed nothing"; return
+  fi
+  local _o; _o="$(/bin/bash "${_NV}/scripts/shadow-adjudicate.sh" --status 2>&1; echo "rc=$?")"
+  eq "SEP $1: the reader refuses with exit 2" "rc=2" "$(printf '%s\n' "${_o}" | tail -1)"
+  eq "SEP $1: it reports no corpus" "0" "$(printf '%s\n' "${_o}" | grep -c 'predicate_version')"
+}
+_sep_mut "no jq prelude"            '/^SHADOW_JQ_ACS=/,$d'
+_sep_mut "no leg predicate constant" '/^SHADOW_ACS_SEPARATOR_IMPLEMENT_PREDICATE=/d'
+_sep_mut "an empty separator"        's/^SHADOW_ACS_SEPARATOR=.*/SHADOW_ACS_SEPARATOR=""/'
+_sep_mut "a non-numeric separator"   's/^SHADOW_ACS_SEPARATOR=.*/SHADOW_ACS_SEPARATOR="3.x.1"/'
+_sep_mut "a two-part separator"      's/^SHADOW_ACS_SEPARATOR=.*/SHADOW_ACS_SEPARATOR="3.103"/'
 # --help needs neither lib (the REVIEW reader's #416 rule).
 rm -f "${_NV}/hooks/lib/implement-shadow.sh" "${_NV}/hooks/lib/shadow-corpus.sh"
 eq "--help works with both libs absent" "rc=0" \

@@ -7,7 +7,7 @@
 ## What changes
 
 - `hooks/lib/shadow-corpus.sh` holds the rule once: the separator version, the predicate version of each leg it applies to, and a jq classifier (`acs_class`) that compares versions per component as numbers.
-- `scripts/review-shadow-adjudicate.sh` and `scripts/shadow-adjudicate.sh` leave a record out of every population when its predicate is the one the separator names for that leg and its `acs_version` is below 3.103.1 or is not a `<n>.<n>.<n>` string. They report those records as pre-separator, with a count per cause, and refuse a label for one. Each refuses to run when the lib does not supply the rule.
+- `scripts/review-shadow-adjudicate.sh` and `scripts/shadow-adjudicate.sh` leave a record out of every population when its predicate is the one the separator names for that leg and its `acs_version` is below 3.103.1 or is not of the shape the guard stores (`<n>.<n>.<n>`, optionally suffixed; the three numbers are compared). They report those records as pre-separator, with a count per cause, refuse a label for one, and say how many of them the sidecar already holds a label for. Each refuses to run when the lib does not supply the whole rule.
 - Two leftovers from #449: the guard no longer writes the `push-implement` phase-gate log line under the capture replay, and `scripts/shadow-adjudicate.sh --help` is answered before the producer-lib refusal.
 
 ## Decision recorded

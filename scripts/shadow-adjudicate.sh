@@ -94,10 +94,14 @@ if [ -z "${SHADOW_JQ_ACS:-}" ] || ! command -v shadow_acs_sep_json >/dev/null 2>
     echo "       Refusing to report a rate pooled across it." >&2
     exit 2
 fi
-ACS_SEP_JSON="$(shadow_acs_sep_json "${REQUIRED_PREDICATE_VERSION}" "${SHADOW_ACS_SEPARATOR_IMPLEMENT_PREDICATE:-}")"
+# The lib validates the separator and the leg's predicate constant and returns
+# non-zero on either, so the only values accepted here are `null` and an array.
+ACS_SEP_JSON="$(shadow_acs_sep_json "${REQUIRED_PREDICATE_VERSION}" "${SHADOW_ACS_SEPARATOR_IMPLEMENT_PREDICATE:-}")" || ACS_SEP_JSON=""
 case "${ACS_SEP_JSON}" in
-    null|\[*\]) ;;
-    *) echo "error: cannot check: the acs_version separator did not resolve (got '${ACS_SEP_JSON}')." >&2; exit 2 ;;
+    null|\[[0-9]*,[0-9]*,[0-9]*\]) ;;
+    *) echo "error: cannot check: the acs_version separator did not resolve (separator '${SHADOW_ACS_SEPARATOR:-}', leg predicate '${SHADOW_ACS_SEPARATOR_IMPLEMENT_PREDICATE:-}')." >&2
+       echo "       Refusing to report a rate pooled across it." >&2
+       exit 2 ;;
 esac
 
 FLOOR_EPISODES=29
@@ -139,11 +143,35 @@ _shadow_tsv() {
 # _presep_counts -> "<before> <unstamped>": records of the adjudicable predicate
 # that the acs_version separator excludes, by cause.
 _presep_counts() {
-    [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1 || { printf '0 0'; return 0; }
+    [ -f "${SHADOW_LOG}" ] && [ -r "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1 || { printf '0 0'; return 0; }
     jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" --argjson sep "${ACS_SEP_JSON}" \
        "${SHADOW_JQ_ACS} fromjson? // empty | select(.predicate_version == \$pv) | acs_class(\$sep)" \
        "${SHADOW_LOG}" 2>/dev/null \
     | awk '$0 == "before" { b++ } $0 == "unstamped" { u++ } END { printf "%d %d", b+0, u+0 }'
+}
+
+# _presep_total -> their sum, always a number.
+_presep_total() {
+    local _c _b _u
+    _c="$(_presep_counts)"; _b="${_c% *}"; _u="${_c#* }"
+    case "${_b}" in ''|*[!0-9]*) _b=0 ;; esac
+    case "${_u}" in ''|*[!0-9]*) _u=0 ;; esac
+    printf '%s' "$(( _b + _u ))"
+}
+
+# _presep_labelled -> how many of those records the sidecar holds a label for.
+# Such a label can no longer reach the rate, and a human false_block that stops
+# counting lowers k, so it is announced by --status and never dropped silently.
+# The orphan check cannot see it: the record is still in the corpus.
+_presep_labelled() {
+    [ -f "${ADJ_LOG}" ] && [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1 || { printf '0'; return 0; }
+    { jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" --argjson sep "${ACS_SEP_JSON}" \
+         "${SHADOW_JQ_ACS} fromjson? // empty | select(type == \"object\") | select(.predicate_version == \$pv)
+          | select(acs_class(\$sep) != \"ok\") | .record_id | strings | \"X\t\" + ." \
+         "${SHADOW_LOG}" 2>/dev/null
+      jq -R -r 'fromjson? // empty | select(type == "object") | .record_id | strings | "A\t" + .' \
+         "${ADJ_LOG}" 2>/dev/null | LC_ALL=C sort -u
+    } | awk -F'\t' '$1 == "X" { x[$2] = 1; next } $1 == "A" && x[$2] { n++ } END { printf "%d", n+0 }'
 }
 
 # _episodes — group v2 shadow records into independent episodes.
@@ -321,12 +349,16 @@ cmd_next() {
         # reports an empty corpus as complete.
         local _n_v2 _n_v1 _n_ps
         _n_v2="$(_shadow_tsv '[.record_id]' | grep -c . )"
-        _n_ps="$(_presep_counts)"; _n_ps=$(( ${_n_ps% *} + ${_n_ps#* } ))
+        _n_ps="$(_presep_total)"
         _n_v1="$(jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
                    'fromjson? // empty | select(.predicate_version != $pv) | .record_id' \
                    "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
         if [ "${_n_v2}" -eq 0 ]; then
-            printf 'no v%s records yet — nothing is adjudicable.\n' "${REQUIRED_PREDICATE_VERSION}"
+            if [ "${_n_ps}" -gt 0 ]; then
+                printf 'no v%s records at or after the acs_version separator — nothing is adjudicable.\n' "${REQUIRED_PREDICATE_VERSION}"
+            else
+                printf 'no v%s records yet — nothing is adjudicable.\n' "${REQUIRED_PREDICATE_VERSION}"
+            fi
             [ "${_n_v1}" -gt 0 ] && \
                 printf '  %s record(s) of another predicate version present, excluded: they measured a different subject and are unpoolable.\n' "${_n_v1}"
             [ "${_n_ps}" -gt 0 ] && \
@@ -524,7 +556,7 @@ cmd_status() {
     local _wbep=0 _attep=0 _malwb=0 _silep=0 _wb
     local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
     local _den _wc_k _wc_n _band_hdl _band_wc
-    local _badts=0 _unparsed=0 _lines=0 _parsed=0 _ps _psb=0 _psu=0
+    local _badts=0 _unparsed=0 _lines=0 _parsed=0 _ps _psb=0 _psu=0 _psl=0
     _ps="$(_presep_counts)"; _psb="${_ps% *}"; _psu="${_ps#* }"
     case "${_psb}" in ''|*[!0-9]*) _psb=0 ;; esac
     case "${_psu}" in ''|*[!0-9]*) _psu=0 ;; esac
@@ -612,6 +644,10 @@ EOF
     if [ $(( _psb + _psu )) -gt 0 ]; then
         printf '  pre-separator     %s   <- excluded, in none of the counts above: acs_version below %s (%s) or no usable acs_version (%s); #432 changed this population at that plugin version (#435)\n' \
                "$(( _psb + _psu ))" "${SHADOW_ACS_SEPARATOR}" "${_psb}" "${_psu}"
+        _psl="$(_presep_labelled)"
+        case "${_psl}" in ''|*[!0-9]*) _psl=0 ;; esac
+        [ "${_psl}" -gt 0 ] && \
+            printf '  pre-separator labels %s   <- NOT counted: the sidecar holds a label for that many of those records\n' "${_psl}"
     fi
     [ "${_badts}" -gt 0 ] && \
         printf '  malformed ts      %s   <- excluded: unparseable timestamp, cannot be placed in an episode\n' "${_badts}"

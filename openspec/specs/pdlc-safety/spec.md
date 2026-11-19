@@ -620,7 +620,7 @@ When the push guard runs as the diagnostic capture's replay (`PUSH_GATE_CAPTURE_
 
 ### Requirement: The shadow readers do not pool across the plugin-version separator
 
-`scripts/review-shadow-adjudicate.sh` (at REVIEW predicate version 3) and `scripts/shadow-adjudicate.sh` (at IMPLEMENT predicate version 6) MUST leave out of every population they report a record of that predicate version whose `acs_version` is below 3.103.1, or is absent or not a `<n>.<n>.<n>` string. The populations are `--status`, `--rate-episodes`, `--next` and, for the REVIEW reader, `--evidence-miss`. Versions MUST be compared per component as numbers. Each reader MUST report the excluded records with their cause and a count, MUST refuse to record a label for one, and MUST refuse to run when `hooks/lib/shadow-corpus.sh` does not supply the rule. At any other adjudicable predicate version the separator MUST exclude nothing.
+`scripts/review-shadow-adjudicate.sh` (at REVIEW predicate version 3) and `scripts/shadow-adjudicate.sh` (at IMPLEMENT predicate version 6) MUST leave out of every population they report a record of that predicate version whose `acs_version` is below 3.103.1, or is absent or not of the shape the guard stores (`<n>.<n>.<n>` with an optional suffix, of which only the three numbers are compared). The populations are `--status`, `--rate-episodes`, `--next` and, for the REVIEW reader, `--evidence-miss`. Versions MUST be compared per component as numbers. Each reader MUST report the excluded records with their cause and a count, MUST refuse to record a label for one, MUST say in `--status` how many of them the sidecar already holds a label for, and MUST refuse to run when `hooks/lib/shadow-corpus.sh` does not supply the whole rule (the classifier, a three-number separator and the leg's predicate version). At any other adjudicable predicate version the separator MUST exclude nothing.
 
 #### Scenario: Records on both sides of the separator
 
@@ -634,6 +634,19 @@ When the push guard runs as the diagnostic capture's replay (`PUSH_GATE_CAPTURE_
 - **GIVEN** a record at the separator predicate stamped 3.99.9
 - **WHEN** a label is recorded for it
 - **THEN** the reader exits non-zero, names the separator as the cause, and writes nothing to the sidecar
+
+#### Scenario: A label recorded before the separator was applied
+
+- **GIVEN** a sidecar holding a human `false_block` for a record at the separator predicate stamped 3.99.9
+- **WHEN** the reader runs `--status`
+- **THEN** the label is not counted in the rate
+- **AND** the pre-separator report says one excluded record carries a label
+
+#### Scenario: A lib that supplies part of the rule
+
+- **GIVEN** a copy of `hooks/lib/shadow-corpus.sh` without the leg's predicate constant, or with an empty, non-numeric or two-part separator
+- **WHEN** the reader runs `--status` on a corpus with a record on each side of the separator
+- **THEN** it exits 2 and reports no corpus
 
 #### Scenario: A corpus holding only excluded records
 

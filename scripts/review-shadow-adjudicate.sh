@@ -104,10 +104,14 @@ if [ -z "${SHADOW_JQ_ACS:-}" ] || ! command -v shadow_acs_sep_json >/dev/null 2>
     echo "       Refusing to report a rate pooled across it." >&2
     exit 2
 fi
-ACS_SEP_JSON="$(shadow_acs_sep_json "${REQUIRED_PREDICATE_VERSION}" "${SHADOW_ACS_SEPARATOR_REVIEW_PREDICATE:-}")"
+# The lib validates the separator and the leg's predicate constant and returns
+# non-zero on either, so the only values accepted here are `null` and an array.
+ACS_SEP_JSON="$(shadow_acs_sep_json "${REQUIRED_PREDICATE_VERSION}" "${SHADOW_ACS_SEPARATOR_REVIEW_PREDICATE:-}")" || ACS_SEP_JSON=""
 case "${ACS_SEP_JSON}" in
-    null|\[*\]) ;;
-    *) echo "error: cannot check: the acs_version separator did not resolve (got '${ACS_SEP_JSON}')." >&2; exit 2 ;;
+    null|\[[0-9]*,[0-9]*,[0-9]*\]) ;;
+    *) echo "error: cannot check: the acs_version separator did not resolve (separator '${SHADOW_ACS_SEPARATOR:-}', leg predicate '${SHADOW_ACS_SEPARATOR_REVIEW_PREDICATE:-}')." >&2
+       echo "       Refusing to report a rate pooled across it." >&2
+       exit 2 ;;
 esac
 
 # _tsv <jq-projection> — records of the ADJUDICABLE predicate version only.
@@ -133,6 +137,30 @@ _presep_counts() {
        "${SHADOW_JQ_ACS} fromjson? // empty | select(.predicate_version == \$pv) | acs_class(\$sep)" \
        "${SHADOW_LOG}" 2>/dev/null \
     | awk '$0 == "before" { b++ } $0 == "unstamped" { u++ } END { printf "%d %d", b+0, u+0 }'
+}
+
+# _presep_total -> their sum, always a number.
+_presep_total() {
+    local _c _b _u
+    _c="$(_presep_counts)"; _b="${_c% *}"; _u="${_c#* }"
+    case "${_b}" in ''|*[!0-9]*) _b=0 ;; esac
+    case "${_u}" in ''|*[!0-9]*) _u=0 ;; esac
+    printf '%s' "$(( _b + _u ))"
+}
+
+# _presep_labelled -> how many of those records the sidecar holds a label for.
+# Such a label can no longer reach the rate, and a human false_block that stops
+# counting lowers k, so it is announced by --status and never dropped silently.
+# The orphan check cannot see it: the record is still in the corpus.
+_presep_labelled() {
+    [ -f "${ADJ_LOG}" ] && [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1 || { printf '0'; return 0; }
+    { jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" --argjson sep "${ACS_SEP_JSON}" \
+         "${SHADOW_JQ_ACS} fromjson? // empty | select(type == \"object\") | select(.predicate_version == \$pv)
+          | select(acs_class(\$sep) != \"ok\") | .record_id | strings | \"X\t\" + ." \
+         "${SHADOW_LOG}" 2>/dev/null
+      jq -R -r 'fromjson? // empty | select(type == "object") | .record_id | strings | "A\t" + .' \
+         "${ADJ_LOG}" 2>/dev/null | LC_ALL=C sort -u
+    } | awk -F'\t' '$1 == "X" { x[$2] = 1; next } $1 == "A" && x[$2] { n++ } END { printf "%d", n+0 }'
 }
 
 # _legacy_count — records of ANY OTHER predicate version.
@@ -368,8 +396,11 @@ cmd_next() {
                   | [.record_id]' | grep -c . | tr -d '[:space:]')"
         _n_all="$(_tsv '[.record_id]' | grep -c . | tr -d '[:space:]')"
         _n_legacy="$(_legacy_count)"
+        _n_ps="$(_presep_total)"
         if [ "${_n_ok:-0}" -eq 0 ]; then
-            if [ "${_n_all:-0}" -gt 0 ]; then
+            if [ "${_n_all:-0}" -eq 0 ] && [ "${_n_ps}" -gt 0 ]; then
+                echo "no predicate_version ${REQUIRED_PREDICATE_VERSION} records at or after the acs_version separator — nothing is countable."
+            elif [ "${_n_all:-0}" -gt 0 ]; then
                 echo "no OFFERABLE predicate_version ${REQUIRED_PREDICATE_VERSION} records — nothing is countable."
                 echo "  ${_n_all} record(s) of this version exist but are excluded from the"
                 echo "  population: a malformed ts, or would_block not boolean-true."
@@ -380,7 +411,6 @@ cmd_next() {
                 echo "  ${_n_legacy} record(s) of another predicate version are present and are NOT"
                 echo "  adjudicable: they were written by a different fire condition. See --status."
             fi
-            _n_ps="$(_presep_counts)"; _n_ps=$(( ${_n_ps% *} + ${_n_ps#* } ))
             if [ "${_n_ps}" -gt 0 ]; then
                 echo "  ${_n_ps} record(s) of this version are present and are NOT adjudicable:"
                 echo "  acs_version below ${SHADOW_ACS_SEPARATOR} or absent (#435). See --status."
@@ -497,7 +527,7 @@ cmd_status() {
     local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
     local _lines=0 _parsed=0 _unparsed=0 _legacy=0 _orphan=0 _rkey=""
     local _leg_eps=0 _leg_repos=0 _leg_span=0 _badts=0
-    local _band_hdl _den _adjbad=0 _uncount=0 _ps _psb=0 _psu=0
+    local _band_hdl _den _adjbad=0 _uncount=0 _ps _psb=0 _psu=0 _psl=0
 
     echo "=== REVIEW shadow corpus (leg: push/merge REVIEW verdict) ==="
     echo "corpus  : ${SHADOW_LOG}"
@@ -542,6 +572,11 @@ cmd_status() {
         echo "  #432 changed which pushes reach this leg at that plugin version, with no"
         echo "  predicate bump (#435), so they are NOT poolable into the rate and are in"
         echo "  none of the counts below."
+        _psl="$(_presep_labelled)"
+        case "${_psl}" in ''|*[!0-9]*) _psl=0 ;; esac
+        if [ "${_psl}" -gt 0 ]; then
+            echo "  ${_psl} of them carry a label in the sidecar. Those labels are NOT counted."
+        fi
     fi
 
     # The legacy band is REPORTED, with its cause, never silently folded in or
