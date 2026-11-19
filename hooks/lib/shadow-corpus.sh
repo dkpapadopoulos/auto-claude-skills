@@ -156,3 +156,64 @@ shadow_group_episodes() {
         }
         END { if (NR > 0) print eid "\t" erepo "\t" ebranch "\t" etok "\t" ids }'
 }
+
+# The plugin-version separator (#450, decided for #435 in #449).
+#
+# #432's full-object-name rule changed what a REVIEW predicate-3 and an
+# IMPLEMENT predicate-6 record means at plugin 3.103.1, and no predicate version
+# was bumped for it (a bump made afterwards would have marked the wrong
+# version). So within those two predicate versions a record's `acs_version` is
+# the only thing that says which side of the change wrote it, and a record from
+# before it must not be pooled with one from after. Single-sourced here because
+# both readers apply the same rule to the same field.
+#
+# A reader applies it ONLY at the predicate version named for its leg: the next
+# predicate bump separates the populations by itself, and from then on a record
+# whose stamp failed validation (the writers store "" and keep the record) must
+# not be excluded by a rule that no longer has anything to separate.
+SHADOW_ACS_SEPARATOR="3.103.1"
+SHADOW_ACS_SEPARATOR_REVIEW_PREDICATE=3
+SHADOW_ACS_SEPARATOR_IMPLEMENT_PREDICATE=6
+
+# shadow_acs_sep_json <reader's adjudicable predicate> <the leg's separator predicate>
+#   -> the separator as a JSON array of numbers ([3,103,1]) when the two match,
+#      else `null` (the separator does not apply).
+# Prints nothing and returns 1 when either predicate is not a number or the
+# separator is not <n>.<n>.<n>: a missing leg constant would otherwise read as
+# "does not apply" and an empty separator as `[]`, which nothing is below, and
+# both pool silently. The caller refuses on that status.
+shadow_acs_sep_json() {
+    case "${1:-}" in ''|*[!0-9]*) return 1 ;; esac
+    case "${2:-}" in ''|*[!0-9]*) return 1 ;; esac
+    # No leading zero: jq versions differ on whether 03 is a number.
+    if [[ ! "${SHADOW_ACS_SEPARATOR:-}" =~ ^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$ ]]; then return 1; fi
+    if [ "$1" = "$2" ]; then
+        printf '[%s]' "$(printf '%s' "${SHADOW_ACS_SEPARATOR}" | tr '.' ',')"
+    else
+        printf 'null'
+    fi
+    return 0
+}
+
+# SHADOW_JQ_ACS — jq prelude. `acs_class($sep)` classifies ONE record:
+#   "ok"        $sep is null, or the stamp is at or after the separator
+#   "before"    a well-formed stamp below the separator
+#   "unstamped" no acs_version, or one of another shape
+# The shape is the one the guard's _shadow_stamp_prepare stores: <n>.<n>.<n>
+# with an optional suffix (3.104.0-dev, 3.104.0+x), any number of digits. Only
+# the three numbers are compared, so a suffixed version sits with its release. They are compared per
+# component as NUMBERS (jq orders arrays element-wise): as text 3.99.1 sorts
+# after 3.103.1. An unstamped record is not known to be from after the change,
+# so a caller excludes it with "before" and says which was which.
+# Anchored with \A and \z: jq's `$` also matches before a trailing newline.
+SHADOW_JQ_ACS='
+    def acs_class($sep):
+        if $sep == null then "ok"
+        else (.acs_version) as $v
+        | (if ($v | type) == "string"
+           then ($v | capture("\\A(?<a>[0-9]+)\\.(?<b>[0-9]+)\\.(?<c>[0-9]+)([.+-][A-Za-z0-9.]+)?\\z")? // null)
+           else null end) as $m
+        | if $m == null then "unstamped"
+          elif [($m.a | tonumber), ($m.b | tonumber), ($m.c | tonumber)] < $sep then "before"
+          else "ok" end
+        end;'

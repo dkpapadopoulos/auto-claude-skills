@@ -40,12 +40,23 @@ PV="$( ( . "${WRITER}" 2>/dev/null; printf '%s' "${REVIEW_SHADOW_PREDICATE_VERSI
 if [ -z "${PV}" ]; then
     echo "error: could not read REVIEW_SHADOW_PREDICATE_VERSION from the writer" >&2; exit 2
 fi
+# Fixture records carry the plugin version the acs_version separator names
+# (#450), read from the lib the reader takes it from: at the predicate the
+# separator applies to, a record stamped earlier or not stamped is excluded, so
+# an unstamped fixture would test nothing but that exclusion. Exported so the
+# REAL writer stamps its records the way the guard's _shadow_stamp_prepare does.
+ACS="$( ( . "${PROJECT_ROOT}/hooks/lib/shadow-corpus.sh" 2>/dev/null; printf '%s' "${SHADOW_ACS_SEPARATOR:-}" ) )"
+case "${ACS}" in
+    [0-9]*.[0-9]*.[0-9]*) ;;
+    *) echo "error: could not read SHADOW_ACS_SEPARATOR from hooks/lib/shadow-corpus.sh" >&2; exit 2 ;;
+esac
+SHADOW_STAMP_ACS_VERSION="${ACS}"; export SHADOW_STAMP_ACS_VERSION
 
 # _rec <log> <id> <ts> <repo> <branch> <token> <reason> [pv]
 _rec() {
     jq -cn --arg id "$2" --arg ts "$3" --arg repo "$4" --arg br "$5" \
-           --arg tok "$6" --arg rs "$7" --argjson pv "${8:-${PV}}" \
-      '{schema_version:2,predicate_version:$pv,record_id:$id,ts:$ts,
+           --arg tok "$6" --arg rs "$7" --argjson pv "${8:-${PV}}" --arg acs "${ACS}" \
+      '{schema_version:2,predicate_version:$pv,acs_version:$acs,record_id:$id,ts:$ts,
         repo:$repo,branch:$br,head_sha:"deadbeef",session_token:$tok,
         action:"push",would_block:true,reason:$rs,transcript_path:""}' >> "$1"
 }
@@ -690,10 +701,10 @@ esac
 #     from fixtures -- review-shadow.sh emits it whenever `date` fails.
 # ---------------------------------------------------------------------------
 _LN="${TMP}/nooffer.jsonl"; _AN="${TMP}/nooffer-adj.jsonl"; : > "${_LN}"; : > "${_AN}"
-jq -cn --argjson pv "${PV}" '{schema_version:2,predicate_version:$pv,record_id:"n1",ts:"",
+jq -cn --argjson pv "${PV}" --arg acs "${ACS}" '{schema_version:2,predicate_version:$pv,acs_version:$acs,record_id:"n1",ts:"",
    repo:"/repo/x",branch:"main",head_sha:"d",session_token:"t",action:"push",
    would_block:true,reason:"absent",transcript_path:""}' >> "${_LN}"
-jq -cn --argjson pv "${PV}" '{schema_version:2,predicate_version:$pv,record_id:"n2",
+jq -cn --argjson pv "${PV}" --arg acs "${ACS}" '{schema_version:2,predicate_version:$pv,acs_version:$acs,record_id:"n2",
    ts:"2026-09-10T10:00:00Z",repo:"/repo/x",branch:"main",head_sha:"d",session_token:"t",
    action:"push",would_block:false,reason:"absent",transcript_path:""}' >> "${_LN}"
 _outn2="$(_run "${_LN}" "${_AN}" --next)"
@@ -812,7 +823,7 @@ fi
 # ---------------------------------------------------------------------------
 _LT="${TMP}/badts.jsonl"; _AT="${TMP}/badts-adj.jsonl"; : > "${_LT}"; : > "${_AT}"
 _rec "${_LT}" t1 "2026-09-20T10:00:00Z" /repo/x main tokt-1 absent
-jq -cn --argjson pv "${PV}" '{schema_version:2,predicate_version:$pv,record_id:"t2",
+jq -cn --argjson pv "${PV}" --arg acs "${ACS}" '{schema_version:2,predicate_version:$pv,acs_version:$acs,record_id:"t2",
    ts:"not-a-timestamp",repo:"/repo/x",branch:"main",head_sha:"d",session_token:"tokt-2",
    action:"push",would_block:true,reason:"absent",transcript_path:""}' >> "${_LT}"
 _outt="$(_run "${_LT}" "${_AT}" --status)"
@@ -1023,7 +1034,9 @@ fi
 # producer: two from the current one (one of them rewritten to the previous
 # schema, stamps and witness fields removed -- a pair no producer wrote, since
 # schema 3 and predicate 3 were bumped together, so it pins only that the reader
-# never filters on schema), and two from the base producer, whose records carry
+# never filters on schema; it KEEPS acs_version, which schema 2 did not have,
+# because at this predicate the reader excludes an unstamped record (#450, the
+# SEP cells) and this cell is about schema_version), and two from the base producer, whose records carry
 # the previous predicate AND the previous schema: the mix a real corpus holds.
 # Both current-predicate records must reach the rate population whatever their
 # schema, and the base records must be excluded as other-predicate, never pooled.
@@ -1041,7 +1054,7 @@ elif [ -s "${_BASE_WRITER}" ] && grep -q '^REVIEW_SHADOW_PREDICATE_VERSION=2$' "
     _em_rec "${_MX}" tok-mx1
     _em_rec "${TMP}/mx-old.jsonl" tok-mx2
     jq -c --argjson sv "$(( _SV - 1 ))" \
-        'del(.session_id,.tool_use_id,.cc_version,.acs_version,.review_witness,.review_coverage)
+        'del(.session_id,.tool_use_id,.cc_version,.review_witness,.review_coverage)
          | .schema_version = $sv' "${TMP}/mx-old.jsonl" >> "${_MX}" 2>/dev/null
     for _t in tok-mx3 tok-mx4; do
         ( . "${_BASE_WRITER}" 2>/dev/null
@@ -1441,5 +1454,185 @@ if printf '%s\n' "${_of9s}" | grep -qxF "SIDECAR — unparseable label line(s) :
 else
     _record_fail "F9 --status announces the invalid-UTF-8 sidecar line (${_U8:-C})" "got: ${_of9s}"
 fi
+
+# ---------------------------------------------------------------------------
+# SEP (#450) the acs_version separator. #432 changed which pushes reach this
+# leg at plugin 3.103.1 with no predicate bump (#435), so at the predicate the
+# separator names a record stamped earlier, or not stamped, is excluded from
+# every population and REPORTED. One record per stamp, one episode each.
+# ---------------------------------------------------------------------------
+_sep_rec() { # <log> <id> <acs_version as a JSON value, or ABSENT> [pv]
+    jq -cn --arg id "$2" --argjson pv "${4:-${PV}}" \
+      '{schema_version:3,predicate_version:$pv,record_id:$id,ts:"2026-11-18T10:00:00Z",
+        repo:"/repo/x",branch:("br-"+$id),head_sha:"deadbeef",session_token:("tok-"+$id),
+        action:"push",would_block:true,reason:"absent",transcript_path:"",
+        review_witness:"reviewer-returned",review_coverage:"covered"}' \
+    | if [ "$3" = "ABSENT" ]; then cat; else jq -c --argjson v "$3" '.acs_version = $v'; fi >> "$1"
+}
+assert_equals "SEP the separator is the version #435 decided on" "3.103.1" "${ACS}"
+assert_equals "SEP it is declared for the predicate the producer writes today" "${PV}" \
+    "$( ( . "${PROJECT_ROOT}/hooks/lib/shadow-corpus.sh" 2>/dev/null; printf '%s' "${SHADOW_ACS_SEPARATOR_REVIEW_PREDICATE:-}" ) )"
+_SP="${TMP}/sep.jsonl"; _SPA="${TMP}/sep-adj.jsonl"; : > "${_SP}"; : > "${_SPA}"
+_sep_rec "${_SP}" aa00 '"3.103.1"'      # the boundary itself: in
+_sep_rec "${_SP}" aa01 '"3.104.0"'
+_sep_rec "${_SP}" aa02 '"4.0.0"'
+_sep_rec "${_SP}" aa03 '"3.1000.0"'
+_sep_rec "${_SP}" aa04 '"3.104.0-dev"'  # a suffix the guard's stamp validation stores
+_sep_rec "${_SP}" bb00 '"3.103.0"'      # one below
+_sep_rec "${_SP}" bb01 '"3.99.9"'       # sorts AFTER 3.103.1 as text
+_sep_rec "${_SP}" bb02 '"2.200.200"'
+_sep_rec "${_SP}" bb03 '"3.103.0+x"'
+_sep_rec "${_SP}" cc00 ABSENT
+_sep_rec "${_SP}" cc01 '""'             # what the writer stores when its stamp fails validation
+_sep_rec "${_SP}" cc02 '"3.103"'
+_sep_rec "${_SP}" cc03 '"v3.104.0"'
+_sep_rec "${_SP}" cc04 '3'              # not a string
+_sep_rec "${_SP}" cc05 '"3.104.0\n"'    # jq's `$` would match before the newline
+assert_equals "SEP --rate-episodes holds exactly the records at or after the separator" "aa00 aa01 aa02 aa03 aa04" \
+    "$(_run "${_SP}" "${_SPA}" --rate-episodes | cut -f5 | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+_osp="$(_run "${_SP}" "${_SPA}" --status)"
+case "${_osp}" in
+    *"episodes (adjudicable) : 5 "*) _record_pass "SEP --status counts the same 5 episodes" ;;
+    *) _record_fail "SEP --status counts the same 5 episodes" "got: ${_osp}" ;;
+esac
+if printf '%s\n' "${_osp}" | grep -qxF "EXCLUDED — pre-separator : 10 record(s) of the adjudicable version" \
+   && printf '%s\n' "${_osp}" | grep -qxF "  4 carry an acs_version below ${ACS}; 6 carry no usable acs_version."; then
+    _record_pass "SEP --status reports the 10 excluded records, split by cause"
+else
+    _record_fail "SEP --status reports the 10 excluded records, split by cause" "got: ${_osp}"
+fi
+assert_not_contains "SEP with no label on an excluded record, no label line is printed" "carry a label in the sidecar" "${_osp}"
+case "${_osp}" in
+    *"EXCLUDED — other-predicate"*) _record_fail "SEP ...and they are not other-predicate records" "got: ${_osp}" ;;
+    *) _record_pass "SEP ...and they are not other-predicate records" ;;
+esac
+# --evidence-miss: every record carries the miss pair, so only the separator
+# decides which of them count.
+_oem="$(_em "${_SP}")"
+assert_equals "SEP --evidence-miss counts only the records at or after the separator: 5/5" "5/5" "$(_em_rate "${_oem}")"
+if printf '%s\n' "${_oem}" | grep -qxF "  excluded: 10 record(s) at version ${PV} with an acs_version below ${ACS} or none (#435)"; then
+    _record_pass "SEP ...and reports the 10 others as excluded with the cause"
+else
+    _record_fail "SEP ...and reports the 10 others as excluded with the cause" "got: ${_oem}"
+fi
+case "${_oem}" in
+    *"ERROR: record accounting is inconsistent"*) _record_fail "SEP ...with consistent record accounting" "got: ${_oem}" ;;
+    *"; 0 unparseable line(s)"*) _record_pass "SEP ...with consistent record accounting" ;;
+    *) _record_fail "SEP ...with consistent record accounting" "got: ${_oem}" ;;
+esac
+# --next walks the five countable records only; a label on an excluded one is refused.
+_sep_seen=""
+for _i in 1 2 3 4 5; do
+    _sid="$(_run "${_SP}" "${_SPA}" --next | sed -n 's/^record_id : //p')"
+    _sep_seen="${_sep_seen}${_sid} "
+    ( unset CLAUDECODE CLAUDE_CODE_SESSION_ID
+      _run "${_SP}" "${_SPA}" --adjudicate "${_sid:-none}" --verdict true_catch ) >/dev/null 2>&1
+done
+assert_equals "SEP --next offers only the records at or after the separator" "aa00 aa01 aa02 aa03 aa04" \
+    "$(printf '%s\n' ${_sep_seen} | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+_osnx="$(_run "${_SP}" "${_SPA}" --next)"
+assert_equals "SEP --next then says all 5 are labelled" "all 5 adjudicable record(s) are labelled." \
+    "$(printf '%s\n' "${_osnx}" | sed -n 1p)"
+assert_contains "SEP ...and says 10 more were excluded and never offered" \
+    "10 more record(s) of this version are excluded and were never offered" "${_osnx}"
+_osr="$( ( unset CLAUDECODE CLAUDE_CODE_SESSION_ID
+           _run "${_SP}" "${_SPA}" --adjudicate bb01 --verdict false_block; echo "rc=$?" ) )"
+assert_equals "SEP a label on a pre-separator record is refused" "rc=1" "$(printf '%s\n' "${_osr}" | tail -1)"
+assert_contains "SEP ...with the cause" "acs_version below ${ACS}, or none" "${_osr}"
+assert_equals "SEP ...and nothing was written for it" "0" "$(grep -c '"bb01"' "${_SPA}")"
+# A label recorded BEFORE the reader applied the separator is still in the
+# sidecar. It stops counting, and a human false_block that stops counting lowers
+# k, so --status says how many there are. The orphan warning cannot: the record
+# is still in the corpus. Written by hand, because the reader refuses.
+# The label for "x3" is for no record here: the excluded record's id holds a tab
+# after "x3", and the two must not be matched. (Its id is not of the producer's
+# shape, so it is added after the --evidence-miss cells above.)
+jq -cn --arg id "$(printf 'x3\tz')" --argjson pv "${PV}" \
+    '{schema_version:3,predicate_version:$pv,record_id:$id,ts:"2026-11-18T10:00:00Z",repo:"/repo/x",
+      branch:"br-x3",head_sha:"deadbeef",session_token:"tok-x3",action:"push",would_block:true,
+      reason:"absent",transcript_path:"",acs_version:"3.99.9"}' >> "${_SP}"
+for _lid in bb01 cc00 bb01 x3; do
+    jq -cn --arg id "${_lid}" '{schema_version:1,leg:"review",record_id:$id,ts:"2026-11-18T11:00:00Z",verdict:"false_block",reason:"old",claimant:"human"}' \
+        >> "${_SPA}"
+done
+_osp2="$(_run "${_SP}" "${_SPA}" --status)"
+if printf '%s\n' "${_osp2}" | grep -qxF "  2 of them carry a label in the sidecar. Those labels are NOT counted."; then
+    _record_pass "SEP labels held for excluded records are announced, each record once"
+else
+    _record_fail "SEP labels held for excluded records are announced, each record once" "got: ${_osp2}"
+fi
+if printf '%s\n' "${_osp2}" | grep -qF "human-confirmed      : false_block=0  true_catch=5  unknown=0"; then
+    _record_pass "SEP ...none of them reaches the rate, and the five countable labels still do"
+else
+    _record_fail "SEP ...none of them reaches the rate, and the five countable labels still do" "got: ${_osp2}"
+fi
+# The x3 label is the one orphan; the two labels on excluded records are not.
+assert_contains "SEP ...and they are not reported as orphans (only the x3 label is)" \
+    "WARNING: 1 adjudication(s) name a record_id absent from this corpus." "${_osp2}"
+# The REAL writer with no stamp, which is what it stores when the guard's
+# validation of the plugin version fails: excluded as unstamped, and said.
+_SPW="${TMP}/sepw.jsonl"; rm -f "${_SPW}"
+( unset SHADOW_STAMP_ACS_VERSION; _em_rec "${_SPW}" tok-sepw reviewer-returned covered )
+assert_equals "SEP fixture: the real writer stored an empty acs_version" '""' \
+    "$(jq -c '.acs_version' "${_SPW}" 2>/dev/null)"
+_ospw="$(_run "${_SPW}" "${TMP}/sepw-adj.jsonl" --status)"
+if printf '%s\n' "${_ospw}" | grep -qxF "  0 carry an acs_version below ${ACS}; 1 carry no usable acs_version."; then
+    _record_pass "SEP the real writer's unstamped record is excluded and reported as unstamped"
+else
+    _record_fail "SEP the real writer's unstamped record is excluded and reported as unstamped" "got: ${_ospw}"
+fi
+# A corpus holding ONLY excluded records is not an empty corpus.
+_SP1="${TMP}/sep1.jsonl"; : > "${_SP1}"
+_sep_rec "${_SP1}" dd00 '"3.102.0"'
+assert_contains "SEP --next does not call that corpus empty" \
+    "no predicate_version ${PV} records at or after the acs_version separator" "$(_run "${_SP1}" "${TMP}/sep1-adj.jsonl" --next)"
+assert_contains "SEP --next names the excluded records when nothing else exists" \
+    "acs_version below ${ACS} or absent (#435)" "$(_run "${_SP1}" "${TMP}/sep1-adj.jsonl" --next)"
+# The rule is tied to ONE predicate version. Under a moved producer the same
+# unstamped and early records are ordinary records: the predicate bump is then
+# the separator, and a failed stamp must not cost a record.
+_SF="${TMP}/sepfake"; mkdir -p "${_SF}/scripts" "${_SF}/hooks/lib"
+cp "${SUT}" "${_SF}/scripts/"; cp "${PROJECT_ROOT}/hooks/lib/shadow-corpus.sh" "${_SF}/hooks/lib/"
+_SBUMP=$(( PV + 7 ))
+printf 'REVIEW_SHADOW_PREDICATE_VERSION=%s\n' "${_SBUMP}" > "${_SF}/hooks/lib/review-shadow.sh"
+_SP2="${TMP}/sep2.jsonl"; : > "${_SP2}"
+_sep_rec "${_SP2}" ee00 ABSENT "${_SBUMP}"; _sep_rec "${_SP2}" ee01 '"3.99.9"' "${_SBUMP}"; _sep_rec "${_SP2}" ee02 '"3.104.0"' "${_SBUMP}"
+_osf="$(REVIEW_SHADOW_LOG="${_SP2}" REVIEW_ADJUDICATION_LOG="${TMP}/sep2-adj.jsonl" /bin/bash "${_SF}/scripts/review-shadow-adjudicate.sh" --status 2>&1)"
+case "${_osf}" in
+    *"episodes (adjudicable) : 3 "*) _record_pass "SEP at another predicate version the separator excludes nothing" ;;
+    *) _record_fail "SEP at another predicate version the separator excludes nothing" "got: ${_osf}" ;;
+esac
+case "${_osf}" in
+    *"pre-separator"*) _record_fail "SEP ...and prints no pre-separator block" "got: ${_osf}" ;;
+    *) _record_pass "SEP ...and prints no pre-separator block" ;;
+esac
+# A lib that does not supply the WHOLE rule must stop the reader, never let it
+# pool. Each mutation below pooled silently, or read the corpus as empty, when
+# only the jq prelude and the function were checked. At the real predicate, with
+# one record on each side, so a reader that ran would have something to pool.
+printf 'REVIEW_SHADOW_PREDICATE_VERSION=%s\n' "${PV}" > "${_SF}/hooks/lib/review-shadow.sh"
+_SP3="${TMP}/sep3.jsonl"; : > "${_SP3}"
+_sep_rec "${_SP3}" ff00 '"3.104.0"'; _sep_rec "${_SP3}" ff01 '"3.99.9"'
+_sep_fake() { REVIEW_SHADOW_LOG="${_SP3}" REVIEW_ADJUDICATION_LOG="${TMP}/sep3-adj.jsonl" /bin/bash "${_SF}/scripts/review-shadow-adjudicate.sh" --status 2>&1; echo "rc=$?"; }
+cp "${PROJECT_ROOT}/hooks/lib/shadow-corpus.sh" "${_SF}/hooks/lib/shadow-corpus.sh"
+assert_contains "SEP CONTROL: the unmutated copy runs and excludes one record" \
+    "EXCLUDED — pre-separator : 1 record(s)" "$(_sep_fake)"
+_sep_mut() { # <label> <sed program>
+    sed "$2" "${PROJECT_ROOT}/hooks/lib/shadow-corpus.sh" > "${_SF}/hooks/lib/shadow-corpus.sh"
+    if cmp -s "${PROJECT_ROOT}/hooks/lib/shadow-corpus.sh" "${_SF}/hooks/lib/shadow-corpus.sh"; then
+        _record_fail "SEP mutation applied: $1" "sed changed nothing"; return
+    fi
+    local _o; _o="$(_sep_fake)"
+    assert_equals "SEP $1: the reader refuses with exit 2" "rc=2" "$(printf '%s\n' "${_o}" | tail -1)"
+    assert_equals "SEP $1: it reports no corpus" "0" "$(printf '%s\n' "${_o}" | grep -c 'adjudicable predicate_version')"
+}
+_sep_mut "no jq prelude"             '/^SHADOW_JQ_ACS=/,$d'
+_sep_mut "no leg predicate constant" '/^SHADOW_ACS_SEPARATOR_REVIEW_PREDICATE=/d'
+_sep_mut "an empty separator"        's/^SHADOW_ACS_SEPARATOR=.*/SHADOW_ACS_SEPARATOR=""/'
+_sep_mut "a non-numeric separator"   's/^SHADOW_ACS_SEPARATOR=.*/SHADOW_ACS_SEPARATOR="3.x.1"/'
+_sep_mut "a two-part separator"      's/^SHADOW_ACS_SEPARATOR=.*/SHADOW_ACS_SEPARATOR="3.103"/'
+# Only the lib's own validation stops these two: the reader's glob passes them.
+_sep_mut "a four-part separator"     's/^SHADOW_ACS_SEPARATOR=.*/SHADOW_ACS_SEPARATOR="3.103.1.0"/'
+_sep_mut "a leading-zero separator"  's/^SHADOW_ACS_SEPARATOR=.*/SHADOW_ACS_SEPARATOR="03.103.1"/'
 
 print_summary

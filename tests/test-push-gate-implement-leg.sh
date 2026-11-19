@@ -265,10 +265,18 @@ assert_equals "#381 a capture replay writes no attested record" "1" "$(_n381)"
 run_guard >/dev/null
 assert_equals "#381 CONTROL: a second live evaluation writes an attested record" "2" "$(_n381)"
 mv "$HOME/.claude/.skill-phase-attest-${_TOK}" "$HOME/.claude/.skill-phase-attest-${_TOK}.aside"
+# The push-implement warn line in the phase-gate log follows the same rule: the
+# replay must not log the push a second time, and the live run after it must.
+_npg() { grep -c 'push-implement' "${HOME}/.claude/.phase-gate-events.log" 2>/dev/null | tr -d ' '; }
+_pg0="$(_npg)"; _pg0="${_pg0:-0}"
 PUSH_GATE_CAPTURE_REPLAY=1 PUSH_GATE_CAPTURE_DISABLE=1 run_guard >/dev/null
 assert_equals "#381 a capture replay writes no would-block record" "2" "$(_n381)"
+_pg1="$(_npg)"; _pg1="${_pg1:-0}"
+assert_equals "a capture replay writes no push-implement warn line" "${_pg0}" "${_pg1}"
 run_guard >/dev/null
 assert_equals "#381 CONTROL: the live evaluation writes the would-block record" "3" "$(_n381)"
+_pg2="$(_npg)"; _pg2="${_pg2:-0}"
+assert_equals "CONTROL: the live evaluation writes one push-implement warn line" "$(( _pg1 + 1 ))" "${_pg2}"
 assert_equals "#381 CONTROL: that record is a would-block" "true" \
     "$(tail -1 "$IMPLEMENT_SHADOW_LOG" | jq -r '.would_block' 2>/dev/null)"
 mv "$HOME/.claude/.skill-phase-attest-${_TOK}.aside" "$HOME/.claude/.skill-phase-attest-${_TOK}"
@@ -965,8 +973,10 @@ rm -rf "${_JQSHIM}"
 
 # Real producer -> real reader, both schemas. The guard writes a schema-5
 # record; scripts/shadow-adjudicate.sh must offer it, and must still offer the
-# SAME record rewritten to schema 4 (the four stamps removed) — readers keep
-# parsing older schemas.
+# SAME record rewritten to schema 4 — readers keep parsing older schemas. The
+# rewrite removes three of the four stamps and KEEPS acs_version: at this
+# predicate the reader excludes a record with no acs_version (#450), which the
+# last cell pins against the guard's own record.
 _ADJR="${PROJECT_ROOT}/scripts/shadow-adjudicate.sh"
 _adj_next() { # <log>
     env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_ENTRYPOINT \
@@ -978,11 +988,15 @@ _stamp_guard "$(_mkpayload "${_IDS}")" "claude-code_2-1-308_harness" >/dev/null
 _s5id="$(_sf .record_id)"
 assert_not_empty "round trip: the guard wrote a schema-5 record_id" "${_s5id}"
 assert_contains "round trip: the reader offers a schema-5 record" "${_s5id}" "$(_adj_next "$IMPLEMENT_SHADOW_LOG")"
-jq -c 'del(.session_id,.tool_use_id,.cc_version,.acs_version) | .schema_version = 4' \
+jq -c 'del(.session_id,.tool_use_id,.cc_version) | .schema_version = 4' \
     "$IMPLEMENT_SHADOW_LOG" > "$HOME/s4.jsonl"
 assert_equals "round trip: the downgraded record really is schema 4 without stamps" "4 false" \
     "$(jq -r '"\(.schema_version) \(has("session_id"))"' "$HOME/s4.jsonl")"
 assert_contains "round trip: the reader still offers a schema-4 record" "${_s5id}" "$(_adj_next "$HOME/s4.jsonl")"
+jq -c 'del(.acs_version)' "$IMPLEMENT_SHADOW_LOG" > "$HOME/s4.jsonl"
+_s4nx="$(_adj_next "$HOME/s4.jsonl")"
+assert_not_contains "round trip: the guard's record without its acs_version is not offered (#450)" "${_s5id}" "${_s4nx}"
+assert_contains "round trip: ...and is named as excluded, not as an empty corpus" "excluded: acs_version below" "${_s4nx}"
 rm -f "$HOME/s4.jsonl" "$HOME/adj-$$.jsonl"
 export HOME="$_OLDHOME"
 rm -rf "${_REPO}" "${_THOME}" 2>/dev/null

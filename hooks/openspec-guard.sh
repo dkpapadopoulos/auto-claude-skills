@@ -1679,7 +1679,9 @@ EOF
                         _IMPL_TEXT="IMPLEMENT: this push edits source but no implementation-slot skill (executing-plans / subagent-driven-development / agent-team-execution) has invocation evidence on this chain. Invoke it, or record a deliberate skip: $(_attest_remedy executing-plans) (advisory; will become a deny after backtest)"
                         _STALE_MSG="${_STALE_MSG}${_STALE_MSG:+; }${_IMPL_TEXT}"
                         _IMPL_MSG="${_IMPL_MSG}${_IMPL_MSG:+; }${_IMPL_TEXT}"
-                        command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "${_pe_action}" "executing-plans"
+                        # Not under the capture replay, as the outbound line
+                        # below: the live run already logged this push.
+                        [ "${PUSH_GATE_CAPTURE_REPLAY:-}" != "1" ] && command -v phase_gate_log >/dev/null 2>&1 && phase_gate_log "push-implement" "warn" "${_pe_action}" "executing-plans"
                     fi
                     if [ "${PUSH_GATE_CAPTURE_REPLAY:-}" != "1" ] && command -v implement_shadow_record >/dev/null 2>&1; then
                         # Skipped under the capture replay (#381), as the REVIEW
