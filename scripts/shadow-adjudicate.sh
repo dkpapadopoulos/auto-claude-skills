@@ -24,7 +24,9 @@ shadow-adjudicate.sh — label IMPLEMENT-leg shadow records and report the rate.
   --status                     episodes, exclusions, rate, band, distance to floor
   --rate-episodes              TSV of the would-block episodes --status rates over
 
-Diagnostic only. Exits 0 for observational commands. Never wire the output of
+Diagnostic only. Exits 0 for observational commands, except that
+--rate-episodes exits 2 when the corpus exists but cannot be read: its stdout is
+parsed, and no rows would read as no episodes. Never wire the output of
 --status into an enforcement decision: the push gate is the only decider.
 HELP
 }
@@ -114,6 +116,20 @@ ADVISORY_P=0.20
 
 SHADOW_LOG="${IMPLEMENT_SHADOW_LOG:-$HOME/.claude/.push-implement-shadow.jsonl}"
 ADJ_LOG="${IMPLEMENT_ADJUDICATION_LOG:-$HOME/.claude/.push-implement-adjudication.jsonl}"
+
+# "Exists but cannot be read" is its own state (#453), as in the REVIEW reader
+# (#416): `-f` says nothing about readability, and every read below discards
+# jq's error, so an unreadable corpus read as an empty one and an unreadable
+# sidecar as "no labels".
+_unreadable() { [ -f "${1:-}" ] && [ ! -r "${1:-}" ]; }
+_say_corpus_unreadable() {
+    echo "ERROR: ${SHADOW_LOG} exists but is NOT READABLE."
+    echo "  No claim is made about its contents. This is not an empty corpus."
+}
+_say_sidecar_unreadable() {
+    echo "ERROR: the label sidecar ${ADJ_LOG} exists but is NOT READABLE."
+    echo "  No label in it was read. This is not an unlabeled corpus."
+}
 
 # _band <k> <n> -> DENY | ADVISORY-ONLY | NARROWED | INSUFFICIENT
 #
@@ -249,6 +265,8 @@ cmd_adjudicate() {
         *) echo "error: --verdict must be true_catch, false_block, or unknown" >&2; return 1;;
     esac
     [ -f "${SHADOW_LOG}" ] || { echo "error: no shadow log at ${SHADOW_LOG}" >&2; return 1; }
+    # Otherwise the lookup below finds nothing and blames the record id.
+    if _unreadable "${SHADOW_LOG}"; then _say_corpus_unreadable >&2; return 1; fi
     command -v jq >/dev/null 2>&1 || { echo "error: jq required" >&2; return 1; }
     _pv="$(_record_field "${_rid}" predicate_version)"
     [ -z "${_pv}" ] && { echo "error: no record '${_rid}' in ${SHADOW_LOG}" >&2; return 1; }
@@ -304,7 +322,15 @@ _adjudicated_ids() {
 cmd_next() {
     local _seen _line
     [ -f "${SHADOW_LOG}" ] || { echo "no shadow log at ${SHADOW_LOG} — nothing outstanding."; return 0; }
+    if _unreadable "${SHADOW_LOG}"; then _say_corpus_unreadable; return 0; fi
     command -v jq >/dev/null 2>&1 || { echo "jq required — cannot read the corpus."; return 0; }
+    # With no labels read, the oldest record would be offered again whether or
+    # not it is already labelled.
+    if _unreadable "${ADJ_LOG}"; then
+        _say_sidecar_unreadable
+        echo "  Nothing is offered: which records are already labelled is not known."
+        return 0
+    fi
     _seen="$(_adjudicated_ids)"
     # Records whose ts is unparseable are skipped here too — --status can never
     # count them, so offering one for adjudication wastes the operator's time.
@@ -316,19 +342,23 @@ cmd_next() {
     # Adjudicating an attested record is meaningless work — a verdict on it can
     # never inform a false-block rate — so it is never offered. Type-checked for
     # the same reason as _episode_wb: a JSON string "true" must not qualify.
-    _line="$(_shadow_tsv 'select((.ts // "") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
+    # An ADVISORY-SILENT record must not be queued either: the leg said nothing
+    # about it, so it cannot contain a false block, and offering it spends
+    # operator time on the one population that provably cannot inform the
+    # measurement. Same reason attested records are not offered. The field
+    # arrives in SCHEMA 4; predicate_version 5 is the separate thing that
+    # excludes the older firing population. Conflating the two version counters
+    # is how a later reader talks itself into the wrong exclusion, so they are
+    # named apart here. Records written before schema 4 carry no such field and
+    # fall through this filter unchanged.
+    #
+    # One filter, held in a variable, because the end-of-queue message below
+    # counts the same population it was offered from (#453).
+    local _offerable
+    _offerable='select((.ts // "") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
               | select(has("would_block") and ((.would_block|type) == "boolean") and .would_block == true)
-              # An ADVISORY-SILENT record must not be queued either: the leg said
-              # nothing about it, so it cannot contain a false block, and offering
-              # it spends operator time on the one population that provably
-              # cannot inform the measurement. Same reason attested records are
-              # not offered. The field arrives in SCHEMA 4; predicate_version 5
-              # is the separate thing that excludes the older firing population.
-              # Conflating the two version counters is how a later reader talks
-              # itself into the wrong exclusion, so they are named apart here.
-              # Records written before schema 4 carry no such field and fall
-              # through this filter unchanged.
-              | select((has("advisory_emitted") | not) or ((.advisory_emitted|type) != "boolean") or .advisory_emitted == true)
+              | select((has("advisory_emitted") | not) or ((.advisory_emitted|type) != "boolean") or .advisory_emitted == true)'
+    _line="$(_shadow_tsv "${_offerable}"'
               | [.record_id,.ts,.repo,.branch,.action,.diff_base,
                  (.impl_in_chain|tostring),(.material_source|tostring),
                  .impl_evidence_kind,.transcript_path,
@@ -350,8 +380,16 @@ cmd_next() {
         # states and must not share a message: the first means nothing is
         # countable yet, the second means the work is done. Conflating them
         # reports an empty corpus as complete.
-        local _n_v2 _n_v1 _n_ps
+        local _n_v2 _n_v1 _n_ps _n_off _n_not
         _n_v2="$(_shadow_tsv '[.record_id]' | grep -c . )"
+        # What --next offers from, which is not every record (#453): "all N
+        # adjudicated" over _n_v2 claimed attested, advisory-silent and
+        # unplaceable records nobody was ever shown.
+        _n_off="$(_shadow_tsv "${_offerable} | [.record_id]" | grep -c . )"
+        case "${_n_v2}"  in ''|*[!0-9]*) _n_v2=0 ;; esac
+        case "${_n_off}" in ''|*[!0-9]*) _n_off=0 ;; esac
+        _n_not=$(( _n_v2 - _n_off ))
+        [ "${_n_not}" -lt 0 ] && _n_not=0
         _n_ps="$(_presep_total)"
         _n_v1="$(jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
                    'fromjson? // empty | select(.predicate_version != $pv) | .record_id' \
@@ -370,8 +408,18 @@ cmd_next() {
             printf '  The corpus grows as the IMPLEMENT leg fires; see --status for the floor.\n'
             return 0
         fi
-        printf 'nothing outstanding — all %s v%s record(s) are adjudicated.\n' \
-               "${_n_v2}" "${REQUIRED_PREDICATE_VERSION}"
+        if [ "${_n_off}" -eq 0 ]; then
+            printf 'nothing to adjudicate — none of the %s v%s record(s) is offerable.\n' \
+                   "${_n_v2}" "${REQUIRED_PREDICATE_VERSION}"
+        else
+            printf 'nothing outstanding — all %s offerable v%s record(s) are adjudicated.\n' \
+                   "${_n_off}" "${REQUIRED_PREDICATE_VERSION}"
+        fi
+        [ "${_n_not}" -gt 0 ] && [ "${_n_off}" -gt 0 ] && \
+            printf '  %s more v%s record(s) were never offered: would_block is not true, the leg emitted no advisory, or the ts is unparseable. See --status.\n' \
+                   "${_n_not}" "${REQUIRED_PREDICATE_VERSION}"
+        [ "${_n_not}" -gt 0 ] && [ "${_n_off}" -eq 0 ] && \
+            printf '  They are never offered: would_block is not true, the leg emitted no advisory, or the ts is unparseable. See --status.\n'
         [ "${_n_ps}" -gt 0 ] && \
             printf '  %s more v%s record(s) are excluded and were never offered: acs_version below %s or absent (#435). See --status.\n' \
                    "${_n_ps}" "${REQUIRED_PREDICATE_VERSION}" "${SHADOW_ACS_SEPARATOR}"
@@ -563,6 +611,16 @@ cmd_status() {
     local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
     local _den _wc_k _wc_n _band_hdl _band_wc
     local _badts=0 _unparsed=0 _lines=0 _parsed=0 _ps _psb=0 _psu=0 _psl=0
+    # Before any count (#453). The sidecar too: every row below the episode
+    # total is read from labels, and with none read a labelled false_block
+    # printed as unadjudicated.
+    if _unreadable "${SHADOW_LOG}" || _unreadable "${ADJ_LOG}"; then
+        echo "IMPLEMENT shadow corpus — predicate_version ${REQUIRED_PREDICATE_VERSION}"
+        if _unreadable "${SHADOW_LOG}"; then _say_corpus_unreadable; fi
+        if _unreadable "${ADJ_LOG}"; then _say_sidecar_unreadable; fi
+        echo "  No counts and no rate are reported."
+        return 0
+    fi
     _ps="$(_presep_counts)"; _psb="${_ps% *}"; _psu="${_ps#* }"
     case "${_psb}" in ''|*[!0-9]*) _psb=0 ;; esac
     case "${_psu}" in ''|*[!0-9]*) _psu=0 ;; esac
@@ -697,6 +755,9 @@ EOF
 # empty branch.
 cmd_rate_episodes() {
     local _eid _repo _branch _tok _ids _row
+    # No rows would read as no episodes to whatever parses this (#453), so the
+    # one command with a parsed stdout says it on stderr and exits non-zero.
+    if _unreadable "${SHADOW_LOG}"; then _say_corpus_unreadable >&2; return 2; fi
     while IFS="$(printf '\037')" read -r _eid _repo _branch _tok _ids; do
         [ -z "${_eid:-}" ] && continue
         [ "$(_episode_wb "${_ids}")" = "yes" ] || continue

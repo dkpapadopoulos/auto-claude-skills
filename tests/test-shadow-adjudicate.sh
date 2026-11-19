@@ -941,11 +941,97 @@ rm -f "${_NV}/hooks/lib/implement-shadow.sh" "${_NV}/hooks/lib/shadow-corpus.sh"
 eq "--help works with both libs absent" "rc=0" \
    "$(/bin/bash "${_NV}/scripts/shadow-adjudicate.sh" --help >/dev/null 2>&1; echo "rc=$?")"
 eq "...and prints the usage" "1" \
-   "$(/bin/bash "${_NV}/scripts/shadow-adjudicate.sh" --help 2>/dev/null | grep -c -- '--rate-episodes')"
+   "$(/bin/bash "${_NV}/scripts/shadow-adjudicate.sh" --help 2>/dev/null | grep -c -- '^  --rate-episodes')"
 eq "CONTROL: every other command still refuses there" "rc=2" \
    "$(/bin/bash "${_NV}/scripts/shadow-adjudicate.sh" --status >/dev/null 2>&1; echo "rc=$?")"
 eq "CONTROL: --help in a later position is not answered early" "rc=2" \
    "$(/bin/bash "${_NV}/scripts/shadow-adjudicate.sh" someid --help >/dev/null 2>&1; echo "rc=$?")"
+
+# --- #453: --next counts only the records it offers --------------------------
+# "all N adjudicated" used to count every current-predicate record, so a corpus
+# of one labelled would-block record and three records --next never offers read
+# "all 4 ... adjudicated": three of them nobody had looked at, or could.
+seed
+recwb nx1 "2026-08-01T10:00:00Z" "/repo/A" "feat/a" "tokN1" true
+recwb nx2 "2026-08-01T11:00:00Z" "/repo/A" "feat/b" "tokN2" false       # attested
+recae nx3 "2026-08-01T12:00:00Z" "/repo/A" "feat/c" "tokN3" true false  # advisory-silent
+rec   nx4 "garbage"              "/repo/A" "feat/d" "tokN4"             # unplaceable ts
+eq "#453 CONTROL: the one offerable record is offered first" "nx1" \
+   "$("$SCRIPT" --next 2>/dev/null | awk 'NR==1 {print $1}')"
+adj nx1 true_catch "453" >/dev/null
+_nx_out="$("$SCRIPT" --next 2>/dev/null)"
+eq "#453 --next counts the offerable records it finished, not the corpus" "1" \
+   "$(printf '%s\n' "${_nx_out}" | grep -c "^nothing outstanding — all 1 offerable v${_PV} record(s) are adjudicated\.$")"
+eq "#453 ...and never claims the 3 it does not offer" "0" \
+   "$(printf '%s\n' "${_nx_out}" | grep -c 'all 4 ')"
+eq "#453 ...which it names, with the count" "1" \
+   "$(printf '%s\n' "${_nx_out}" | grep -c "^  3 more v${_PV} record(s) were never offered")"
+# A corpus with records but none offerable is neither empty nor done.
+seed
+recwb nx5 "2026-08-01T10:00:00Z" "/repo/A" "feat/a" "tokN5" false
+_nx_out="$("$SCRIPT" --next 2>/dev/null)"
+eq "#453 a corpus with no offerable record says so" "1" \
+   "$(printf '%s\n' "${_nx_out}" | grep -c "^nothing to adjudicate — none of the 1 v${_PV} record(s) is offerable\.$")"
+eq "#453 ...and does not call it adjudicated or empty" "0" \
+   "$(printf '%s\n' "${_nx_out}" | grep -c 'are adjudicated\|records yet')"
+# CONTROL: when every record is offerable, no "never offered" line is printed.
+seed
+recwb nx6 "2026-08-01T10:00:00Z" "/repo/A" "feat/a" "tokN6" true
+adj nx6 true_catch "453" >/dev/null
+eq "#453 CONTROL: a fully offerable corpus prints no never-offered line" "1 0" \
+   "$("$SCRIPT" --next 2>/dev/null | grep -c '^nothing outstanding — all 1 offerable') $("$SCRIPT" --next 2>/dev/null | grep -c 'never offered')"
+
+# --- #453: an unreadable corpus or sidecar is said to be unreadable ----------
+# `-f` is not `-r`. A chmod 000 corpus read as an empty one in every command,
+# and a chmod 000 sidecar read as "no labels": --status showed a labelled
+# false_block as unadjudicated and --next offered the record again. The REVIEW
+# reader already reports both (#416). Skipped as root, where 000 denies nothing.
+seed
+recwb ur1 "2026-08-01T10:00:00Z" "/repo/A" "feat/a" "tokU1" true
+adj ur1 false_block "453" >/dev/null
+eq "#453 CONTROL: readable, --status counts the labelled false_block" "1" \
+   "$(status | awk '$1=="false_block" {print $2; exit}')"
+eq "#453 CONTROL: readable, --rate-episodes exits 0 with the episode" "rc=0 1" \
+   "$(_o="$("$SCRIPT" --rate-episodes 2>/dev/null)"; echo "rc=$? $(printf '%s\n' "${_o}" | grep -c .)")"
+chmod 000 "$IMPLEMENT_SHADOW_LOG" 2>/dev/null
+if cat "$IMPLEMENT_SHADOW_LOG" >/dev/null 2>&1; then
+  ok "SKIPPED: chmod 000 still readable (running as root?) — unreadable corpus cells not applicable"
+else
+  _ur_st="$("$SCRIPT" --status 2>&1)"
+  eq "#453 --status says the corpus is unreadable" "1" \
+     "$(printf '%s\n' "${_ur_st}" | grep -c "ERROR: ${IMPLEMENT_SHADOW_LOG} exists but is NOT READABLE")"
+  eq "#453 ...and prints no episode count or rate for it" "0" \
+     "$(printf '%s\n' "${_ur_st}" | grep -c '^  episodes \|^  rate ')"
+  _ur_nx="$("$SCRIPT" --next 2>&1)"
+  eq "#453 --next says the corpus is unreadable" "1" "$(printf '%s\n' "${_ur_nx}" | grep -c 'NOT READABLE')"
+  eq "#453 ...and does not call it empty or done" "0" \
+     "$(printf '%s\n' "${_ur_nx}" | grep -c 'nothing outstanding\|records yet\|nothing is adjudicable')"
+  eq "#453 --rate-episodes exits 2 with no rows on an unreadable corpus" "rc=2 0" \
+     "$(_o="$("$SCRIPT" --rate-episodes 2>/dev/null)"; echo "rc=$? $(printf '%s\n' "${_o}" | grep -c .)")"
+  eq "#453 ...and says why on stderr" "1" \
+     "$("$SCRIPT" --rate-episodes 2>&1 >/dev/null | grep -c 'NOT READABLE')"
+  _ur_adj="$( ( unset CLAUDECODE CLAUDE_CODE_SESSION_ID; "$SCRIPT" ur1 --verdict true_catch --reason 453 2>&1; echo "rc=$?" ) )"
+  eq "#453 a label is refused with the real cause, not 'no record'" "rc=1 1 0" \
+     "$(printf '%s\n' "${_ur_adj}" | tail -1) $(printf '%s\n' "${_ur_adj}" | grep -c 'NOT READABLE') $(printf '%s\n' "${_ur_adj}" | grep -c 'no record')"
+fi
+chmod 600 "$IMPLEMENT_SHADOW_LOG" 2>/dev/null
+chmod 000 "$IMPLEMENT_ADJUDICATION_LOG" 2>/dev/null
+if cat "$IMPLEMENT_ADJUDICATION_LOG" >/dev/null 2>&1; then
+  ok "SKIPPED: chmod 000 still readable (running as root?) — unreadable sidecar cells not applicable"
+else
+  _ur_st="$("$SCRIPT" --status 2>&1)"
+  eq "#453 --status says the sidecar is unreadable" "1" \
+     "$(printf '%s\n' "${_ur_st}" | grep -c "ERROR: the label sidecar ${IMPLEMENT_ADJUDICATION_LOG} exists but is NOT READABLE")"
+  eq "#453 ...and reports no label count or rate read from nothing" "0" \
+     "$(printf '%s\n' "${_ur_st}" | grep -c '^  unadjudicated \|^  false_block \|^  rate ')"
+  _ur_nx="$("$SCRIPT" --next 2>&1)"
+  eq "#453 --next says the sidecar is unreadable" "1" "$(printf '%s\n' "${_ur_nx}" | grep -c 'NOT READABLE')"
+  eq "#453 ...and does not offer the already-labelled record again" "0" \
+     "$(printf '%s\n' "${_ur_nx}" | grep -c '^ur1 \|to label:')"
+fi
+chmod 600 "$IMPLEMENT_ADJUDICATION_LOG" 2>/dev/null
+eq "#453 CONTROL: readable again, the label is counted and nothing is outstanding" "1 1" \
+   "$(status | awk '$1=="false_block" {print $2; exit}') $("$SCRIPT" --next 2>/dev/null | grep -c '^nothing outstanding — all 1 offerable')"
 
 echo
 echo "Tests run: $(( PASS + FAIL ))  passed: $PASS  failed: $FAIL"
