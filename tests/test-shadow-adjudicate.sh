@@ -655,7 +655,7 @@ eq "mixed episode (attested FIRST) counts as would-block too" "1" \
 : > "$IMPLEMENT_SHADOW_LOG"
 recnowb x1 "2026-08-01T10:00:00Z" "/repo/A" "feat/x" "tokX"
 eq "a record with no would_block field is reported as excluded" "1" \
-   "$(status | grep -c 'malformed would_block')"
+   "$(status | grep -c '^  malformed would_block ')"
 
 # ---------------------------------------------------------------------------
 # advisory_emitted: the SECOND membership field (schema 4, #245).
@@ -1084,7 +1084,7 @@ eq "#454 CONTROL: --next offers the record after a truncated corpus line" "mc1" 
 eq "#454 ...and the label command finds that record" "0" "$(adj mc1 true_catch "454")"
 _ml_st="$(status)"
 eq "#454 ...and --status places it in the rate population, not under malformed would_block" "1 0" \
-   "$(printf '%s\n' "${_ml_st}" | awk '$1=="would-block" {print $2; exit}') $(printf '%s\n' "${_ml_st}" | grep -c 'malformed would_block')"
+   "$(printf '%s\n' "${_ml_st}" | awk '$1=="would-block" {print $2; exit}') $(printf '%s\n' "${_ml_st}" | grep -c '^  malformed would_block ')"
 eq "#454 ...with its label" "1" "$(printf '%s\n' "${_ml_st}" | awk '$1=="true_catch" {print $2; exit}')"
 eq "#454 CONTROL: the truncated corpus line is still reported" "1" \
    "$(printf '%s\n' "${_ml_st}" | awk '$1=="unparseable" && $2=="lines" {print $3; exit}')"
@@ -1135,6 +1135,54 @@ eq "#454 ...nor over a record whose ts cannot be placed" "1 1 0" \
 cp "$TMP/ml.corpus" "$IMPLEMENT_SHADOW_LOG"
 eq "#454 CONTROL: restored, the rate and band print again" "1/31 1" \
    "$(status | grep -E '^  rate ' | awk '{print $2}') $(status | grep -c '^  band ')"
+
+# Four more ways the false_block's record or label left the count with a band
+# still printed, each reproduced by the review of ad01b502 as "0/30 ... DENY".
+_ml_withheld() { # <label> — the current corpus must withhold the rate
+  local _o; _o="$(LANG=en_US.UTF-8 LC_ALL= "$SCRIPT" --status 2>/dev/null)"
+  eq "#454 $1: the rate is withheld" "1 0" \
+     "$(printf '%s\n' "${_o}" | grep -c '^  rate  *cannot check') $(printf '%s\n' "${_o}" | grep -c '^  band ')"
+}
+# (a) A corpus line of bytes that are not UTF-8, in a UTF-8 locale.
+build_floor 30 1 0; cp "$IMPLEMENT_SHADOW_LOG" "$TMP/ml.corpus"
+awk '/"record_id":"fb0"/ { printf "\377\376\n"; next } { print }' "$TMP/ml.corpus" > "$IMPLEMENT_SHADOW_LOG"
+eq "#454 a corpus line of invalid bytes is counted in a UTF-8 locale" "1" \
+   "$(LANG=en_US.UTF-8 LC_ALL= "$SCRIPT" --status 2>/dev/null | awk '$1=="unparseable" && $2=="lines" {print $3; exit}')"
+_ml_withheld "a corpus line of invalid bytes"
+# (b) The record is gone from the corpus and its label is left behind.
+grep -v '"record_id":"fb0"' "$TMP/ml.corpus" > "$IMPLEMENT_SHADOW_LOG"
+eq "#454 a label for a record the corpus does not hold is announced" "1" \
+   "$(status | awk '$1=="orphan" && $2=="labels" {print $3; exit}')"
+_ml_withheld "a label whose record is gone"
+# (c) would_block is no longer a boolean, so the episode leaves the rate.
+jq -c 'if .record_id == "fb0" then .would_block = "true" else . end' "$TMP/ml.corpus" > "$IMPLEMENT_SHADOW_LOG"
+eq "#454 fixture: the false_block's episode is under malformed would_block" "1" \
+   "$(status | awk '$1=="malformed" && $2=="would_block" {print $3; exit}')"
+_ml_withheld "a malformed would_block"
+# (d) One unparseable line masked by a record whose id prints as two lines: the
+# count was lines minus printed ids, so the two cancelled.
+{ awk '/"record_id":"fb0"/ { print substr($0, 1, length($0) - 40); next } { print }' "$TMP/ml.corpus"
+  jq -cn --argjson pv "${_PV}" '{record_id:"two\nlines",ts:"2026-07-28T10:00:00Z",repo:"/repo/A",branch:"b",session_token:"t",
+    predicate_version:$pv,acs_version:"'"${_ACS}"'",would_block:false,schema_version:1}'; } > "$IMPLEMENT_SHADOW_LOG"
+eq "#454 an id holding a newline does not mask an unparseable corpus line" "1" \
+   "$(status | awk '$1=="unparseable" && $2=="lines" {print $3; exit}')"
+_ml_withheld "a masked unparseable line"
+# CONTROL: the same 31 episodes intact print the rate, with none of those rows.
+cp "$TMP/ml.corpus" "$IMPLEMENT_SHADOW_LOG"
+eq "#454 CONTROL: intact, 1/31 with a band and no orphan row" "1/31 1 0" \
+   "$(status | grep -E '^  rate ' | awk '{print $2}') $(status | grep -c '^  band ') $(status | grep -c 'orphan labels')"
+# A label with a non-string claimant is a label to the counter, so the resolver
+# must read it too: as agent-claimed, never as no label at all.
+build_floor 29 0 0; jrec2 fbx /repo/A
+printf '{"schema_version":1,"record_id":"fbx","verdict":"false_block","claimant":["human"]}\n' >> "$IMPLEMENT_ADJUDICATION_LOG"
+_ml_st="$(status)"
+eq "#454 a label with a non-string claimant is read, as agent-claimed" "0 1 0" \
+   "$(printf '%s\n' "${_ml_st}" | grep -c 'unparseable labels') $(printf '%s\n' "${_ml_st}" | awk '$1=="agent-claimed" {print $2; exit}') $(printf '%s\n' "${_ml_st}" | awk '$1=="unadjudicated" {print $2; exit}')"
+# The reader's own writer, with an awkward reason, must never count as a lost label.
+seed; jrec2 wr1 /repo/A
+( unset CLAUDECODE CLAUDE_CODE_SESSION_ID; "$SCRIPT" wr1 --verdict false_block --reason "$(printf 'a "q" \\ back\ttab\nnl é')" >/dev/null 2>&1 )
+eq "#454 the real writer's label, awkward reason and all, is a label" "1 0" \
+   "$(status | awk '$1=="false_block" {print $2; exit}') $(status | grep -c 'unparseable labels\|orphan labels')"
 
 echo
 echo "Tests run: $(( PASS + FAIL ))  passed: $PASS  failed: $FAIL"

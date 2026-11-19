@@ -11,11 +11,13 @@ Four reads in `scripts/shadow-adjudicate.sh` used plain `jq`, which stops at the
 
 - All four reads use `-R` with `fromjson?` and keep objects only.
 - `--status` prints `unparseable labels N` for sidecar lines that hold no label: unparseable, not an object, or an object without a string `record_id` and one of the three verdicts. Such a line no longer supersedes an earlier label for its record. Measured before: an object with no verdict, appended after a human `false_block`, turned 1/30 into 0/29, band DENY, and counted 0.
-- `--status` prints `rate cannot check` in place of a rate, band and worst case while any of three counts is above zero: unparseable labels, unparseable corpus lines, adjudicable records with a malformed `ts`. A corpus record that cannot be placed leaves the denominator while its label stays behind unseen (measured: 1/31 became 0/30, band DENY). The REVIEW reader blocks its floor on the same three counts (#386).
+- `--status` prints `rate cannot check` in place of a rate, band and worst case while any of five counts is above zero: unparseable labels, orphan labels (a label naming a record the corpus does not hold; new row), unparseable corpus lines, adjudicable records with a malformed `ts`, and episodes excluded for a malformed `would_block`. In each case a record can leave the denominator while its label stays behind unseen (measured for each: 1/31 became 0/30, band DENY). The REVIEW reader blocks its floor on the first, third and fourth (#386) and only warns about orphans; here an orphan withholds as well.
+- The corpus line count is bytewise (`LC_ALL=C`) and counts objects, not printed ids, so a line of invalid bytes is counted and an id holding a newline cannot cancel an unparseable line.
+- A label whose `claimant` is not a string is read as agent-claimed instead of vanishing.
 
 ## Consequence
 
-The corpus is append-only and this reader never rewrites it, so one truncated corpus line withholds the rate until someone removes or repairs that line by hand. That is the REVIEW reader's existing behaviour, taken here for the same reason.
+The corpus is append-only and this reader never rewrites it, so one truncated corpus line withholds the rate for good unless the line is repaired by hand. Removing the line does not help when the record was labelled: the label becomes an orphan and the rate stays withheld. That is deliberate. The reader cannot tell a lost `false_block` from a lost `true_catch`.
 
 ## Not changed
 

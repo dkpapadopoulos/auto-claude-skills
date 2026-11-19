@@ -341,6 +341,18 @@ _adj_unparsed() {
     printf '%s' "$(( ${_t:-0} - ${_p:-0} ))"
 }
 
+# _adj_orphans -> labels naming a record_id this corpus does not hold, at any
+# predicate version. The label command refuses an unknown id, so one appears
+# only when the record was removed or edited after it was labelled, or the
+# sidecar belongs to another corpus. Either way a labelled false_block may have
+# left the count (#454). Ids travel as JSON text, as in _presep_labelled.
+_adj_orphans() {
+    [ -f "${ADJ_LOG}" ] && [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1 || { printf '0'; return 0; }
+    { jq -R -r 'fromjson? | objects | .record_id | strings | "X\t" + @json' "${SHADOW_LOG}" 2>/dev/null
+      jq -R -r "fromjson? | ${_ADJ_LABEL_JQ} | \"A\t\" + (.record_id | @json)" "${ADJ_LOG}" 2>/dev/null | LC_ALL=C sort -u
+    } | awk -F'\t' '$1 == "X" { x[$2] = 1; next } $1 == "A" && !x[$2] { n++ } END { printf "%d", n+0 }'
+}
+
 # cmd_next — oldest v2 record with no adjudication, plus how to label it.
 # Read-only: never touches the sidecar. Always exits 0 (observational).
 cmd_next() {
@@ -598,7 +610,11 @@ _episode_verdict() {
     local _ids="${1:-}" _v="unlabeled" _claim="agent" _has_human=0 _id _rows
     local _latest _rv _rc
     if [ ! -f "${ADJ_LOG}" ]; then printf 'unlabeled\nagent\n'; return; fi
-    _rows="$(jq -R -r "fromjson? // empty | ${_ADJ_LABEL_JQ} | [.record_id,.verdict,.claimant] | @tsv" "${ADJ_LOG}" 2>/dev/null)"
+    # A claimant that is not a string is no human claim. Left as it was, @tsv
+    # failed on an array or object and the whole label vanished from here while
+    # _adj_unparsed still counted it as one.
+    _rows="$(jq -R -r "fromjson? // empty | ${_ADJ_LABEL_JQ}
+                       | [.record_id,.verdict,(.claimant | if type == \"string\" then . else \"\" end)] | @tsv" "${ADJ_LOG}" 2>/dev/null)"
     for _id in $(printf '%s' "${_ids}" | tr ',' ' '); do
         # LATEST adjudication per record wins. The sidecar is append-only, so the
         # last matching row is the most recent one. Folding over ALL rows instead
@@ -634,7 +650,7 @@ cmd_status() {
     local _wbep=0 _attep=0 _malwb=0 _silep=0 _wb
     local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
     local _den _wc_k _wc_n _band_hdl _band_wc
-    local _badts=0 _unparsed=0 _lines=0 _parsed=0 _ps _psb=0 _psu=0 _psl=0 _adjbad=0
+    local _badts=0 _unparsed=0 _lines=0 _parsed=0 _ps _psb=0 _psu=0 _psl=0 _adjbad=0 _orph=0 _uncount=0
     # Before any count (#453). The sidecar too: every row below the episode
     # total is read from labels, and with none read a labelled false_block
     # printed as unadjudicated.
@@ -662,11 +678,18 @@ cmd_status() {
         # Lines jq could not parse at all. Reported rather than swallowed: a
         # single truncated line used to abort the whole read and silently
         # truncate the corpus.
-        _lines="$(grep -c . "${SHADOW_LOG}" 2>/dev/null)"; [ -n "${_lines}" ] || _lines=0
-        _parsed="$(jq -R -r 'fromjson? // empty | .record_id // "?"' "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
+        # LC_ALL=C: in a UTF-8 locale `.` does not match an invalid byte, so a
+        # line of corrupt bytes was not a line at all. One `1` per object, never
+        # the id: an id holding a newline printed as two lines and cancelled an
+        # unparseable one, and an empty id printed as none (#454).
+        _lines="$(LC_ALL=C grep -c . "${SHADOW_LOG}" 2>/dev/null)"; [ -n "${_lines}" ] || _lines=0
+        _parsed="$(jq -R -r 'fromjson? | objects | 1' "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
         [ -n "${_parsed}" ] || _parsed=0
-        _unparsed=$(( _lines - _parsed ))
+        # These two feed the decision to print a rate, so a count that is not
+        # a number is read as one lost record, never as none.
+        case "${_lines}${_parsed}" in *[!0-9]*) _unparsed=1 ;; *) _unparsed=$(( _lines - _parsed )) ;; esac
         [ "${_unparsed}" -lt 0 ] && _unparsed=0
+        case "${_badts}" in ''|*[!0-9]*) _badts=1 ;; esac
     fi
     # Re-split on \x1f (US), NOT tab. Tab is an IFS *whitespace* character, so
     # `IFS=$'\t' read` collapses consecutive tabs: an empty `branch` shifted
@@ -746,6 +769,10 @@ EOF
     case "${_adjbad}" in ''|*[!0-9]*) _adjbad=1 ;; esac
     [ "${_adjbad}" -gt 0 ] && \
         printf '  unparseable labels %s   <- sidecar line(s) holding no readable label; what they said is lost\n' "${_adjbad}"
+    _orph="$(_adj_orphans)"
+    case "${_orph}" in ''|*[!0-9]*) _orph=1 ;; esac
+    [ "${_orph}" -gt 0 ] && \
+        printf '  orphan labels     %s   <- the sidecar labels that many record(s) this corpus does not hold\n' "${_orph}"
     printf '  true_catch        %s\n' "${_tc}"
     printf '  false_block       %s\n' "${_fb}"
     printf '  unknown           %s   <- excluded from the headline rate\n' "${_unk}"
@@ -758,13 +785,16 @@ EOF
     # the headline rate, so gating on _lab would let 29 labeled episodes of which
     # 15 were unknown print a band over n=14, below the pre-registered floor.
     # A lost sidecar line may have been a false_block, and a corpus record that
-    # cannot be placed leaves the denominator while its label stays behind
-    # unseen. Either lowers the rate toward clearing the flip, so no rate is
-    # printed over one (#454). The REVIEW reader blocks its floor on the same
-    # three counts.
-    if [ $(( _adjbad + _unparsed + _badts )) -gt 0 ]; then
-        printf '  rate              cannot check — %s line(s) or record(s) above could not be placed (unparseable labels %s, unparseable lines %s, malformed ts %s)\n' \
-               "$(( _adjbad + _unparsed + _badts ))" "${_adjbad}" "${_unparsed}" "${_badts}"
+    # cannot be placed (or whose episode left the rate on a malformed
+    # would_block, or that is gone while its label remains) leaves the
+    # denominator with its label unseen. Each lowers the rate toward clearing
+    # the flip, so no rate is printed over one (#454). The REVIEW reader blocks
+    # its floor on the first three counts and only warns about orphans; here an
+    # orphan withholds too, because this reader has one corpus per sidecar.
+    _uncount=$(( _adjbad + _orph + _unparsed + _badts + _malwb ))
+    if [ "${_uncount}" -gt 0 ]; then
+        printf '  rate              cannot check — %s label(s), line(s) or record(s) above could not be placed (unparseable labels %s, orphan labels %s, unparseable lines %s, malformed ts %s, malformed would_block %s)\n' \
+               "${_uncount}" "${_adjbad}" "${_orph}" "${_unparsed}" "${_badts}" "${_malwb}"
         echo "  need              each one accounted for: any of them may be a lost false_block"
     elif [ "${_den}" -lt "${FLOOR_EPISODES}" ] || [ "${_nrepos}" -lt "${FLOOR_REPOS}" ]; then
         echo "  rate              insufficient data"
