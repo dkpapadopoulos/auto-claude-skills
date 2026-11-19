@@ -156,3 +156,50 @@ shadow_group_episodes() {
         }
         END { if (NR > 0) print eid "\t" erepo "\t" ebranch "\t" etok "\t" ids }'
 }
+
+# The plugin-version separator (#450, decided for #435 in #449).
+#
+# #432's full-object-name rule changed what a REVIEW predicate-3 and an
+# IMPLEMENT predicate-6 record means at plugin 3.103.1, and no predicate version
+# was bumped for it (a bump made afterwards would have marked the wrong
+# version). So within those two predicate versions a record's `acs_version` is
+# the only thing that says which side of the change wrote it, and a record from
+# before it must not be pooled with one from after. Single-sourced here because
+# both readers apply the same rule to the same field.
+#
+# A reader applies it ONLY at the predicate version named for its leg: the next
+# predicate bump separates the populations by itself, and from then on a record
+# whose stamp failed validation (the writers store "" and keep the record) must
+# not be excluded by a rule that no longer has anything to separate.
+SHADOW_ACS_SEPARATOR="3.103.1"
+SHADOW_ACS_SEPARATOR_REVIEW_PREDICATE=3
+SHADOW_ACS_SEPARATOR_IMPLEMENT_PREDICATE=6
+
+# shadow_acs_sep_json <reader's adjudicable predicate> <the leg's separator predicate>
+#   -> the separator as a JSON array of numbers ([3,103,1]) when the two match,
+#      else `null` (the separator does not apply).
+shadow_acs_sep_json() {
+    if [ -n "${1:-}" ] && [ "${1:-}" = "${2:-}" ]; then
+        printf '[%s]' "$(printf '%s' "${SHADOW_ACS_SEPARATOR}" | tr '.' ',')"
+    else
+        printf 'null'
+    fi
+}
+
+# SHADOW_JQ_ACS — jq prelude. `acs_class($sep)` classifies ONE record:
+#   "ok"        $sep is null, or the stamp is at or after the separator
+#   "before"    a well-formed stamp below the separator
+#   "unstamped" no acs_version, or one that is not <n>.<n>.<n>
+# Compared per component as NUMBERS (jq orders arrays element-wise): as text
+# 3.99.1 sorts after 3.103.1. An unstamped record is not known to be from after
+# the change, so a caller excludes it with "before" and says which was which.
+# Anchored with \A and \z: jq's `$` also matches before a trailing newline.
+SHADOW_JQ_ACS='
+    def acs_class($sep):
+        if $sep == null then "ok"
+        else (.acs_version) as $v
+        | if (($v | type) != "string") or (($v | test("\\A[0-9]{1,9}\\.[0-9]{1,9}\\.[0-9]{1,9}\\z")) | not)
+          then "unstamped"
+          elif ($v | split(".") | map(tonumber)) < $sep then "before"
+          else "ok" end
+        end;'

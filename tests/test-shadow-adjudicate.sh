@@ -26,6 +26,18 @@ case "${_PV}" in
         echo "  FATAL: could not derive IMPLEMENT_SHADOW_PREDICATE_VERSION from hooks/lib/implement-shadow.sh" >&2
         exit 1 ;;
 esac
+# Fixture records carry the plugin version the acs_version separator names
+# (#450), derived from the lib the reader takes it from: a record with no stamp,
+# or an earlier one, is excluded at the predicate the separator applies to, so
+# an unstamped fixture would test nothing but that exclusion.
+# shellcheck disable=SC1090
+. "${ROOT}/hooks/lib/shadow-corpus.sh" 2>/dev/null || true
+_ACS="${SHADOW_ACS_SEPARATOR:-}"
+case "${_ACS}" in
+    [0-9]*.[0-9]*.[0-9]*) ;;
+    *) echo "  FATAL: could not derive SHADOW_ACS_SEPARATOR from hooks/lib/shadow-corpus.sh" >&2
+       exit 1 ;;
+esac
 
 # --- Task 1: band arithmetic (exact Clopper-Pearson) ---
 band() { ( . "$SCRIPT" --source-only; _band "$1" "$2" ); }
@@ -44,8 +56,8 @@ export IMPLEMENT_SHADOW_LOG="$TMP/shadow.jsonl"
 export IMPLEMENT_ADJUDICATION_LOG="$TMP/adj.jsonl"
 
 rec() { # rec <id> <ts> <repo> <branch> <token> [pv]
-  printf '{"record_id":"%s","ts":"%s","repo":"%s","branch":"%s","session_token":"%s","predicate_version":%s,"action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"none","transcript_path":"/tmp/t.jsonl","gate":"push-implement","would_block":true,"schema_version":1}\n' \
-    "$1" "$2" "$3" "$4" "$5" "${6:-${_PV}}" >> "$IMPLEMENT_SHADOW_LOG"
+  printf '{"record_id":"%s","ts":"%s","repo":"%s","branch":"%s","session_token":"%s","predicate_version":%s,"acs_version":"%s","action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"none","transcript_path":"/tmp/t.jsonl","gate":"push-implement","would_block":true,"schema_version":1}\n' \
+    "$1" "$2" "$3" "$4" "$5" "${6:-${_PV}}" "${_ACS}" >> "$IMPLEMENT_SHADOW_LOG"
 }
 episodes() { ( . "$SCRIPT" --source-only; _episodes ); }
 
@@ -113,7 +125,7 @@ eq "and the episode contains ONLY the valid record" "v9" "$(episodes | cut -f5)"
 jrecf() { # jrecf <id> <branch> <token>
   jq -cn --arg id "$1" --arg br "$2" --arg tok "$3" \
     '{record_id:$id,ts:"2026-07-28T10:00:00Z",repo:"/repo/A",branch:$br,
-      session_token:$tok,predicate_version:'"${_PV}"',action:"push",diff_base:"branch-local",
+      session_token:$tok,predicate_version:'"${_PV}"',acs_version:"'"${_ACS}"'",action:"push",diff_base:"branch-local",
       impl_in_chain:true,material_source:true,impl_evidence_kind:"none",
       transcript_path:"/tmp/t.jsonl",gate:"push-implement",would_block:true,
       schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"
@@ -141,7 +153,7 @@ eq "and unparseable lines are reported"          "1" \
 # record was excluded from episodes AND contributed 0 to the malformed count.
 : > "$IMPLEMENT_SHADOW_LOG"; jrecf q1 b1 t1
 jq -cn '{record_id:"nots",repo:"/repo/A",branch:"b",session_token:"t2",
-         predicate_version:'"${_PV}"',action:"push",diff_base:"branch-local",
+         predicate_version:'"${_PV}"',acs_version:"'"${_ACS}"'",action:"push",diff_base:"branch-local",
          impl_in_chain:true,material_source:true,impl_evidence_kind:"none",
          transcript_path:"/tmp/t",gate:"push-implement",would_block:true,
          schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"
@@ -159,7 +171,7 @@ eq "and is reported as malformed"           "1" \
 jrec() { # jrec <id> <ts> <repo> <branch> <token>
   jq -cn --arg id "$1" --arg ts "$2" --arg repo "$3" --arg br "$4" --arg tok "$5" \
     '{record_id:$id,ts:$ts,repo:$repo,branch:$br,session_token:$tok,
-      predicate_version:'"${_PV}"',action:"push",diff_base:"branch-local",
+      predicate_version:'"${_PV}"',acs_version:"'"${_ACS}"'",action:"push",diff_base:"branch-local",
       impl_in_chain:true,material_source:true,impl_evidence_kind:"none",
       transcript_path:"/tmp/t.jsonl",gate:"push-implement",would_block:true,
       schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"
@@ -274,7 +286,7 @@ eq "empty-v2 --next still exits 0"           "0" "$("$SCRIPT" --next >/dev/null 
 # not check" WITHOUT re-deriving it from ~/.claude state that session-start GC
 # deletes at 7 days. If --next does not surface it, recording it is pointless.
 rec3() { # rec3 <id> <ts> <detail-json>
-  printf '{"record_id":"%s","ts":"%s","repo":"/repo/A","branch":"feat/x","session_token":"tok1","predicate_version":'"${_PV}"',"action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"none","impl_evidence_detail":%s,"transcript_path":"/tmp/t.jsonl","gate":"push-implement","would_block":true,"schema_version":3}\n' \
+  printf '{"record_id":"%s","ts":"%s","repo":"/repo/A","branch":"feat/x","session_token":"tok1","predicate_version":'"${_PV}"',"acs_version":"'"${_ACS}"'","action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"none","impl_evidence_detail":%s,"transcript_path":"/tmp/t.jsonl","gate":"push-implement","would_block":true,"schema_version":3}\n' \
     "$1" "$2" "$3" >> "$IMPLEMENT_SHADOW_LOG"
 }
 
@@ -486,7 +498,7 @@ build_floor() { # build_floor <n_true_catch> <n_false_block> <n_unknown>
 jrec2() { # jrec2 <id> <repo> — unique branch+token so each record is its own episode
   jq -cn --arg id "$1" --arg repo "$2" \
     '{record_id:$id,ts:"2026-07-28T10:00:00Z",repo:$repo,branch:("br-"+$id),
-      session_token:("tok-"+$id),predicate_version:'"${_PV}"',action:"push",
+      session_token:("tok-"+$id),predicate_version:'"${_PV}"',acs_version:"'"${_ACS}"'",action:"push",
       diff_base:"branch-local",impl_in_chain:true,material_source:true,
       impl_evidence_kind:"none",transcript_path:"/tmp/t.jsonl",
       gate:"push-implement",would_block:true,schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"
@@ -522,7 +534,7 @@ eq "34 labelled but only 14 rate-bearing stays below the floor" "1" \
 seed
 jrecf2() { jq -cn --arg id "$1" --arg br "$2" --arg tok "$3" \
   '{record_id:$id,ts:"2026-07-28T10:00:00Z",repo:"/repo/A",branch:$br,
-    session_token:$tok,predicate_version:'"${_PV}"',action:"push",diff_base:"branch-local",
+    session_token:$tok,predicate_version:'"${_PV}"',acs_version:"'"${_ACS}"'",action:"push",diff_base:"branch-local",
     impl_in_chain:true,material_source:true,impl_evidence_kind:"none",
     transcript_path:"/tmp/t.jsonl",gate:"push-implement",would_block:true,
     schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"; }
@@ -584,11 +596,11 @@ eq "a missing --reason value exits non-zero"  "1" \
 # is not inside _episodes(): it is shared, and filtering there would erase them.
 # ---------------------------------------------------------------------------
 recwb() { # recwb <id> <ts> <repo> <branch> <token> <would_block-json>
-  printf '{"record_id":"%s","ts":"%s","repo":"%s","branch":"%s","session_token":"%s","predicate_version":'"${_PV}"',"action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"attested","transcript_path":"/tmp/t.jsonl","gate":"push-implement","would_block":%s,"schema_version":3}\n' \
+  printf '{"record_id":"%s","ts":"%s","repo":"%s","branch":"%s","session_token":"%s","predicate_version":'"${_PV}"',"acs_version":"'"${_ACS}"'","action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"attested","transcript_path":"/tmp/t.jsonl","gate":"push-implement","would_block":%s,"schema_version":3}\n' \
     "$1" "$2" "$3" "$4" "$5" "$6" >> "$IMPLEMENT_SHADOW_LOG"
 }
 recnowb() { # a record with NO would_block field at all
-  printf '{"record_id":"%s","ts":"%s","repo":"%s","branch":"%s","session_token":"%s","predicate_version":'"${_PV}"',"action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"none","transcript_path":"/tmp/t.jsonl","gate":"push-implement","schema_version":3}\n' \
+  printf '{"record_id":"%s","ts":"%s","repo":"%s","branch":"%s","session_token":"%s","predicate_version":'"${_PV}"',"acs_version":"'"${_ACS}"'","action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"none","transcript_path":"/tmp/t.jsonl","gate":"push-implement","schema_version":3}\n' \
     "$1" "$2" "$3" "$4" "$5" >> "$IMPLEMENT_SHADOW_LOG"
 }
 status() { "$SCRIPT" --status 2>/dev/null; }
@@ -657,7 +669,7 @@ eq "a record with no would_block field is reported as excluded" "1" \
 # the predicate under test.
 # ---------------------------------------------------------------------------
 recae() { # recae <id> <ts> <repo> <branch> <token> <would_block> <advisory_emitted>
-  printf '{"record_id":"%s","ts":"%s","repo":"%s","branch":"%s","session_token":"%s","predicate_version":'"${_PV}"',"action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"none","transcript_path":"/tmp/t.jsonl","gate":"push-implement","would_block":%s,"advisory_emitted":%s,"schema_version":4}\n' \
+  printf '{"record_id":"%s","ts":"%s","repo":"%s","branch":"%s","session_token":"%s","predicate_version":'"${_PV}"',"acs_version":"'"${_ACS}"'","action":"push","diff_base":"branch-local","impl_in_chain":true,"material_source":true,"impl_evidence_kind":"none","transcript_path":"/tmp/t.jsonl","gate":"push-implement","would_block":%s,"advisory_emitted":%s,"schema_version":4}\n' \
     "$1" "$2" "$3" "$4" "$5" "$6" "$7" >> "$IMPLEMENT_SHADOW_LOG"
 }
 
@@ -750,6 +762,9 @@ eq "the attested and silent episodes are absent" "0" \
 # The older-schema records at the current predicate were never written (the
 # predicate was bumped after the schema), so they pin only that the reader never
 # filters on schema; the moved-predicate record is the mix a real corpus holds.
+# The two older-schema models KEEP acs_version, which their schemas did not
+# have: at this predicate the reader excludes an unstamped record (#450, the SEP
+# cells below), and this cell is about schema_version, not about that rule.
 _SV="${IMPLEMENT_SHADOW_SCHEMA_VERSION:-}"
 # The two del() lists below are the fields schema 5 added (the stamps) and the
 # one schema 4 added (advisory_emitted), so they model schemas 4 and 3 only
@@ -758,12 +773,13 @@ _SV="${IMPLEMENT_SHADOW_SCHEMA_VERSION:-}"
 assert_equals "MX the hand-typed field lists model the two schemas before 5" "5" "${_SV}"
 : > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
 for _t in tokMX5 tokMX4 tokMX3 tokMXP; do
-  ( unset SHADOW_STAMP_SESSION_ID SHADOW_STAMP_TOOL_USE_ID SHADOW_STAMP_CC_VERSION SHADOW_STAMP_ACS_VERSION
+  ( unset SHADOW_STAMP_SESSION_ID SHADOW_STAMP_TOOL_USE_ID SHADOW_STAMP_CC_VERSION
+    SHADOW_STAMP_ACS_VERSION="${_ACS}"
     implement_shadow_record push "${ROOT}" "${_t}" /tmp/t.jsonl none branch-local true ) >/dev/null 2>&1
 done
 jq -c --argjson s1 "$(( _SV - 1 ))" --argjson s2 "$(( _SV - 2 ))" --argjson pv "$(( _PV - 1 ))" '
-    if .session_token == "tokMX4" then del(.session_id,.tool_use_id,.cc_version,.acs_version) | .schema_version = $s1
-    elif .session_token == "tokMX3" then del(.session_id,.tool_use_id,.cc_version,.acs_version,.advisory_emitted) | .schema_version = $s2
+    if .session_token == "tokMX4" then del(.session_id,.tool_use_id,.cc_version) | .schema_version = $s1
+    elif .session_token == "tokMX3" then del(.session_id,.tool_use_id,.cc_version,.advisory_emitted) | .schema_version = $s2
     elif .session_token == "tokMXP" then .predicate_version = $pv
     else . end' "$IMPLEMENT_SHADOW_LOG" > "$TMP/mx.t" && mv "$TMP/mx.t" "$IMPLEMENT_SHADOW_LOG"
 eq "mixed-schema fixture: (predicate, schema) per record" \
@@ -793,6 +809,94 @@ eq "mixed-schema: --next reads each schema's null detail as 'not recorded at wri
    "$(printf '%s\n' ${_mx_legs} | LC_ALL=C sort -n | tr '\n' ' ' | sed 's/ $//')"
 eq "mixed-schema: --next never offers the other-predicate record" "1" \
    "$("$SCRIPT" --next 2>/dev/null | grep -c '^nothing outstanding — all 3 ')"
+
+# --- SEP: the acs_version separator (#450) ---------------------------------
+# #432 changed this leg's population at plugin 3.103.1 with no predicate bump
+# (#435), so at the predicate the separator names a record stamped earlier, or
+# not stamped, is excluded from every population and REPORTED. One record per
+# stamp, one episode each; every record would block.
+sep_rec() { # sep_rec <id> <acs_version as a JSON value, or ABSENT> [pv]
+  jq -cn --arg id "$1" --argjson pv "${3:-${_PV}}" \
+    '{record_id:$id,ts:"2026-11-18T10:00:00Z",repo:"/repo/A",branch:("br-"+$id),
+      session_token:("tok-"+$id),predicate_version:$pv,action:"push",
+      diff_base:"branch-local",impl_in_chain:true,material_source:true,
+      impl_evidence_kind:"none",transcript_path:"/tmp/t.jsonl",
+      gate:"push-implement",would_block:true,advisory_emitted:true,schema_version:5}' \
+  | if [ "$2" = "ABSENT" ]; then cat; else jq -c --argjson v "$2" '.acs_version = $v'; fi \
+  >> "$IMPLEMENT_SHADOW_LOG"
+}
+eq "SEP the separator is the version #435 decided on" "3.103.1" "${_ACS}"
+eq "SEP it is declared for the predicate the producer writes today" "${_PV}" \
+   "${SHADOW_ACS_SEPARATOR_IMPLEMENT_PREDICATE:-}"
+seed
+sep_rec ok0 '"3.103.1"'      # the boundary itself: in
+sep_rec ok1 '"3.104.0"'
+sep_rec ok2 '"4.0.0"'
+sep_rec ok3 '"3.1000.0"'
+sep_rec lo0 '"3.103.0"'      # one below
+sep_rec lo1 '"3.99.9"'       # sorts AFTER 3.103.1 as text
+sep_rec lo2 '"2.200.200"'
+sep_rec un0 ABSENT
+sep_rec un1 '""'             # what the writer stores when its stamp fails validation
+sep_rec un2 '"3.103"'
+sep_rec un3 '"v3.104.0"'
+sep_rec un4 '3'              # not a string
+sep_rec un5 '"3.104.0\n"'    # jq's `$` would match before the newline
+_sep_st="$(status)"
+_sep_re="$("$SCRIPT" --rate-episodes 2>/dev/null)"
+eq "SEP --rate-episodes holds exactly the records at or after the separator" "ok0 ok1 ok2 ok3" \
+   "$(printf '%s\n' "${_sep_re}" | cut -f5 | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+eq "SEP --status counts the same episodes" "4" \
+   "$(printf '%s\n' "${_sep_st}" | awk '$1=="episodes" {print $2; exit}')"
+eq "SEP --status reports the excluded records" "9" \
+   "$(printf '%s\n' "${_sep_st}" | awk '$1=="pre-separator" {print $2; exit}')"
+eq "SEP ...split by cause: 3 below the separator, 6 with no usable stamp" "1" \
+   "$(printf '%s\n' "${_sep_st}" | grep -c "acs_version below ${_ACS} (3) or no usable acs_version (6)")"
+eq "SEP ...and they are not other-predicate records" "0" \
+   "$(printf '%s\n' "${_sep_st}" | awk '$1=="other-predicate" {print $2; exit}')"
+# --next walks the four countable records and then says the rest are excluded.
+_sep_seen=""
+for _i in 1 2 3 4; do
+  _sep_id="$("$SCRIPT" --next 2>/dev/null | awk 'NR==1 {print $1}')"
+  _sep_seen="${_sep_seen}${_sep_id} "
+  adj "${_sep_id:-none}" true_catch "sep" >/dev/null
+done
+eq "SEP --next offers only the records at or after the separator" "ok0 ok1 ok2 ok3" \
+   "$(printf '%s\n' ${_sep_seen} | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+eq "SEP --next then reports nothing outstanding over those 4" "1" \
+   "$("$SCRIPT" --next 2>/dev/null | grep -c '^nothing outstanding — all 4 ')"
+eq "SEP a label on a pre-separator record is refused" "1" "$(adj lo1 false_block "sep")"
+eq "SEP ...with the cause" "1" \
+   "$( ( unset CLAUDECODE CLAUDE_CODE_SESSION_ID; "$SCRIPT" un0 --verdict false_block --reason sep 2>&1 ) | grep -c "acs_version below ${_ACS}, or none")"
+eq "SEP ...and nothing was written for it" "0" "$(grep -c '"lo1"\|"un0"' "$IMPLEMENT_ADJUDICATION_LOG")"
+# A corpus holding ONLY excluded records is not an empty corpus.
+seed; sep_rec lo9 '"3.102.0"'
+eq "SEP --next names the excluded records when nothing else exists" "1" \
+   "$("$SCRIPT" --next 2>/dev/null | grep -c "1 v${_PV} record(s) present, excluded: acs_version below ${_ACS} or absent")"
+# The rule is tied to ONE predicate version. Under a moved producer (the #383
+# harness) the same unstamped and early records are ordinary records: the
+# predicate bump is then the separator, and a failed stamp must not cost a record.
+printf 'IMPLEMENT_SHADOW_PREDICATE_VERSION=97\n' > "${_NV}/hooks/lib/implement-shadow.sh"
+seed; sep_rec mv0 ABSENT 97; sep_rec mv1 '"3.99.9"' 97; sep_rec mv2 '"3.104.0"' 97
+_sep_mv="$(/bin/bash "${_NV}/scripts/shadow-adjudicate.sh" --status 2>/dev/null)"
+eq "SEP at another predicate version the separator excludes nothing" "3" \
+   "$(printf '%s\n' "${_sep_mv}" | awk '$1=="would-block" {print $2; exit}')"
+eq "SEP ...and prints no pre-separator row" "0" "$(printf '%s\n' "${_sep_mv}" | grep -c 'pre-separator')"
+# A lib without the rule must stop the reader, never let it pool.
+sed '/^SHADOW_JQ_ACS=/,$d' "${ROOT}/hooks/lib/shadow-corpus.sh" > "${_NV}/hooks/lib/shadow-corpus.sh"
+_sep_nl="$(/bin/bash "${_NV}/scripts/shadow-adjudicate.sh" --status 2>&1; echo "rc=$?")"
+eq "SEP a lib with no separator rule: the reader refuses with exit 2" "rc=2" "$(printf '%s\n' "${_sep_nl}" | tail -1)"
+eq "SEP ...and reports no corpus" "0" "$(printf '%s\n' "${_sep_nl}" | grep -c 'predicate_version')"
+# --help needs neither lib (the REVIEW reader's #416 rule).
+rm -f "${_NV}/hooks/lib/implement-shadow.sh" "${_NV}/hooks/lib/shadow-corpus.sh"
+eq "--help works with both libs absent" "rc=0" \
+   "$(/bin/bash "${_NV}/scripts/shadow-adjudicate.sh" --help >/dev/null 2>&1; echo "rc=$?")"
+eq "...and prints the usage" "1" \
+   "$(/bin/bash "${_NV}/scripts/shadow-adjudicate.sh" --help 2>/dev/null | grep -c -- '--rate-episodes')"
+eq "CONTROL: every other command still refuses there" "rc=2" \
+   "$(/bin/bash "${_NV}/scripts/shadow-adjudicate.sh" --status >/dev/null 2>&1; echo "rc=$?")"
+eq "CONTROL: --help in a later position is not answered early" "rc=2" \
+   "$(/bin/bash "${_NV}/scripts/shadow-adjudicate.sh" someid --help >/dev/null 2>&1; echo "rc=$?")"
 
 echo
 echo "Tests run: $(( PASS + FAIL ))  passed: $PASS  failed: $FAIL"

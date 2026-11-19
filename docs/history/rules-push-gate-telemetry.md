@@ -231,7 +231,9 @@ The owner's machine held 13 such ledger entries on 2026-11-18, none for an imple
 
 Measured the same day on the owner's corpora: REVIEW predicate 3 held 149 records written before 3.103.1 and 53 after; IMPLEMENT predicate 6 held 14 and 23; no record carried a 3.103.x stamp. `--evidence-miss` is unaffected, since it counts only `reviewer-returned` with `covered`. No registered REVIEW window is open.
 
-The decision was not to bump: a bump made now would put the boundary at the wrong version and discard the records written since the fix. The cost is that the separator is prose. Neither `scripts/review-shadow-adjudicate.sh` nor `scripts/shadow-adjudicate.sh` reads `acs_version`, so `--status` pools across it (#450).
+The decision was not to bump: a bump made now would put the boundary at the wrong version and discard the records written since the fix. The cost was that the separator was prose: neither `scripts/review-shadow-adjudicate.sh` nor `scripts/shadow-adjudicate.sh` read `acs_version`, so `--status` pooled across it (#450).
+
+Fixed 2026-11-19 (#450). Both readers now exclude, at REVIEW predicate 3 and IMPLEMENT predicate 6, a record whose `acs_version` is below 3.103.1 or is not a `<n>.<n>.<n>` string, from `--status`, `--rate-episodes`, `--next` and `--evidence-miss`, refuse a label for it, and report it as pre-separator with a count per cause. Of the two options the issue left open, exclusion was taken over report-only because this section already says such records must not be pooled. Read the same day on the owner's corpora: REVIEW 149 excluded, leaving 44 would-block episodes; IMPLEMENT 14 excluded, leaving 22 episodes of which 13 would block; no record of either predicate lacked a stamp. Neither corpus held a label, so no adjudication was lost. The rule applies only at those two predicate versions: a later bump separates the populations by itself, and a record whose stamp failed validation (stored as `""`) must not be excluded by a rule with nothing left to separate.
 
 Three changes shipped with this decision move no episode and no label:
 

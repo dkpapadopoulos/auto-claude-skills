@@ -14,6 +14,26 @@
 # Bash 3.2. Never `set -e`. Never reads stdin.
 set -u
 
+_usage() {
+    cat <<'HELP'
+shadow-adjudicate.sh — label IMPLEMENT-leg shadow records and report the rate.
+
+  --next                       show the oldest unadjudicated record + how to label it
+  <record_id> --verdict <v> --reason "<why>"
+                               record a verdict: true_catch | false_block | unknown
+  --status                     episodes, exclusions, rate, band, distance to floor
+  --rate-episodes              TSV of the would-block episodes --status rates over
+
+Diagnostic only. Exits 0 for observational commands. Never wire the output of
+--status into an enforcement decision: the push gate is the only decider.
+HELP
+}
+
+# --help is answered before the refusals below, as in the REVIEW reader (#416):
+# how to call the script does not depend on the producer lib being loadable.
+# Only as the first argument, so `--reason --help` stays a reason.
+case "${1:-}" in -h|--help) _usage; exit 0 ;; esac
+
 # Adjudicable predicate version. DERIVED FROM THE PRODUCER, not hardcoded: this
 # constant and hooks/lib/implement-shadow.sh's IMPLEMENT_SHADOW_PREDICATE_VERSION
 # are the two halves of one contract, and pinning them independently is a silent
@@ -65,6 +85,20 @@ if ! command -v shadow_band >/dev/null 2>&1 || ! command -v shadow_group_episode
     echo "       Refusing to report a rate computed by a local fallback." >&2
     exit 2
 fi
+# The plugin-version separator (#450; the rule and its reason are in
+# shadow-corpus.sh). Refused, not skipped, when the lib does not supply it: a
+# reader that silently pools across the separator is the state #450 was filed
+# for. `null` when this reader's predicate is not the one the separator names.
+if [ -z "${SHADOW_JQ_ACS:-}" ] || ! command -v shadow_acs_sep_json >/dev/null 2>&1; then
+    echo "error: hooks/lib/shadow-corpus.sh supplies no acs_version separator (looked at ${_sc_lib})." >&2
+    echo "       Refusing to report a rate pooled across it." >&2
+    exit 2
+fi
+ACS_SEP_JSON="$(shadow_acs_sep_json "${REQUIRED_PREDICATE_VERSION}" "${SHADOW_ACS_SEPARATOR_IMPLEMENT_PREDICATE:-}")"
+case "${ACS_SEP_JSON}" in
+    null|\[*\]) ;;
+    *) echo "error: cannot check: the acs_version separator did not resolve (got '${ACS_SEP_JSON}')." >&2; exit 2 ;;
+esac
 
 FLOOR_EPISODES=29
 FLOOR_REPOS=2
@@ -91,10 +125,25 @@ _band() { shadow_band "${1:-0}" "${2:-0}"; }
 # lines. `jq` ABORTS on the first parse error, so a single truncated line would
 # silently truncate the whole corpus (and `2>/dev/null` hid it). `-R` + `fromjson?`
 # skips only the bad line. Unparseable lines are counted and reported by --status.
+#
+# Records the acs_version separator excludes (#450) are not in this population:
+# every consumer below — episodes, --next, the ts count — reads through here.
+# They are counted by _presep_counts and reported by --status.
 _shadow_tsv() {
-    jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
-       "fromjson? // empty | select(.predicate_version == \$pv) | ${1} | @tsv" \
+    jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" --argjson sep "${ACS_SEP_JSON}" \
+       "${SHADOW_JQ_ACS} fromjson? // empty | select(.predicate_version == \$pv)
+        | select(acs_class(\$sep) == \"ok\") | ${1} | @tsv" \
        "${SHADOW_LOG}" 2>/dev/null
+}
+
+# _presep_counts -> "<before> <unstamped>": records of the adjudicable predicate
+# that the acs_version separator excludes, by cause.
+_presep_counts() {
+    [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1 || { printf '0 0'; return 0; }
+    jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" --argjson sep "${ACS_SEP_JSON}" \
+       "${SHADOW_JQ_ACS} fromjson? // empty | select(.predicate_version == \$pv) | acs_class(\$sep)" \
+       "${SHADOW_LOG}" 2>/dev/null \
+    | awk '$0 == "before" { b++ } $0 == "unstamped" { u++ } END { printf "%d %d", b+0, u+0 }'
 }
 
 # _episodes — group v2 shadow records into independent episodes.
@@ -175,6 +224,15 @@ cmd_adjudicate() {
     if [ "${_pv}" != "${REQUIRED_PREDICATE_VERSION}" ]; then
         echo "error: record '${_rid}' is predicate_version ${_pv}; only v${REQUIRED_PREDICATE_VERSION} is adjudicable." >&2
         echo "       Records of another predicate version measured a different subject and MUST NOT be pooled." >&2
+        return 1
+    fi
+    # A record the separator excludes can never reach the rate, so a label on
+    # it would be work the readout then ignores without saying why.
+    if [ "$(jq -R -r --arg id "${_rid}" --argjson sep "${ACS_SEP_JSON}" \
+               "${SHADOW_JQ_ACS} fromjson? // empty | select(.record_id == \$id) | acs_class(\$sep)" \
+               "${SHADOW_LOG}" 2>/dev/null | head -1)" != "ok" ]; then
+        echo "error: record '${_rid}' carries an acs_version below ${SHADOW_ACS_SEPARATOR}, or none; it is not adjudicable." >&2
+        echo "       #432 changed this leg's population at that plugin version (#435); earlier records MUST NOT be pooled." >&2
         return 1
     fi
     if [ ! -f "${ADJ_LOG}" ]; then
@@ -261,8 +319,9 @@ cmd_next() {
         # states and must not share a message: the first means nothing is
         # countable yet, the second means the work is done. Conflating them
         # reports an empty corpus as complete.
-        local _n_v2 _n_v1
+        local _n_v2 _n_v1 _n_ps
         _n_v2="$(_shadow_tsv '[.record_id]' | grep -c . )"
+        _n_ps="$(_presep_counts)"; _n_ps=$(( ${_n_ps% *} + ${_n_ps#* } ))
         _n_v1="$(jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
                    'fromjson? // empty | select(.predicate_version != $pv) | .record_id' \
                    "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
@@ -270,6 +329,9 @@ cmd_next() {
             printf 'no v%s records yet — nothing is adjudicable.\n' "${REQUIRED_PREDICATE_VERSION}"
             [ "${_n_v1}" -gt 0 ] && \
                 printf '  %s record(s) of another predicate version present, excluded: they measured a different subject and are unpoolable.\n' "${_n_v1}"
+            [ "${_n_ps}" -gt 0 ] && \
+                printf '  %s v%s record(s) present, excluded: acs_version below %s or absent (#435). See --status.\n' \
+                       "${_n_ps}" "${REQUIRED_PREDICATE_VERSION}" "${SHADOW_ACS_SEPARATOR}"
             printf '  The corpus grows as the IMPLEMENT leg fires; see --status for the floor.\n'
             return 0
         fi
@@ -462,7 +524,10 @@ cmd_status() {
     local _wbep=0 _attep=0 _malwb=0 _silep=0 _wb
     local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
     local _den _wc_k _wc_n _band_hdl _band_wc
-    local _badts=0 _unparsed=0 _lines=0 _parsed=0
+    local _badts=0 _unparsed=0 _lines=0 _parsed=0 _ps _psb=0 _psu=0
+    _ps="$(_presep_counts)"; _psb="${_ps% *}"; _psu="${_ps#* }"
+    case "${_psb}" in ''|*[!0-9]*) _psb=0 ;; esac
+    case "${_psu}" in ''|*[!0-9]*) _psu=0 ;; esac
     if [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1; then
         _v1="$(jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
                  'fromjson? // empty | select(.predicate_version != $pv) | .record_id' \
@@ -542,6 +607,12 @@ EOF
     printf '  agent-claimed     %s   <- excluded until a human re-confirms\n' "${_agent}"
     printf '  unadjudicated     %s\n' "${_unlab}"
     printf '  other-predicate   %s   <- unpoolable, excluded\n' "${_v1}"
+    # Never silent (#450): these are v-current records, so without this row a
+    # corpus that is mostly pre-separator reads as a nearly empty one.
+    if [ $(( _psb + _psu )) -gt 0 ]; then
+        printf '  pre-separator     %s   <- excluded, in none of the counts above: acs_version below %s (%s) or no usable acs_version (%s); #432 changed this population at that plugin version (#435)\n' \
+               "$(( _psb + _psu ))" "${SHADOW_ACS_SEPARATOR}" "${_psb}" "${_psu}"
+    fi
     [ "${_badts}" -gt 0 ] && \
         printf '  malformed ts      %s   <- excluded: unparseable timestamp, cannot be placed in an episode\n' "${_badts}"
     [ "${_unparsed}" -gt 0 ] && \
@@ -592,21 +663,6 @@ cmd_rate_episodes() {
 $(_episodes | tr '\t' '\037')
 EOF_EPS
     return 0
-}
-
-_usage() {
-    cat <<'HELP'
-shadow-adjudicate.sh — label IMPLEMENT-leg shadow records and report the rate.
-
-  --next                       show the oldest unadjudicated record + how to label it
-  <record_id> --verdict <v> --reason "<why>"
-                               record a verdict: true_catch | false_block | unknown
-  --status                     episodes, exclusions, rate, band, distance to floor
-  --rate-episodes              TSV of the would-block episodes --status rates over
-
-Diagnostic only. Exits 0 for observational commands. Never wire the output of
---status into an enforcement decision: the push gate is the only decider.
-HELP
 }
 
 # Allow tests to source the helpers without executing a command. `return` is
