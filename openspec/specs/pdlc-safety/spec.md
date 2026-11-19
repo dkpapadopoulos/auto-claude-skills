@@ -652,7 +652,7 @@ When the push guard runs as the diagnostic capture's replay (`PUSH_GATE_CAPTURE_
 
 - **GIVEN** a corpus whose only record of the adjudicable predicate is stamped below the separator
 - **WHEN** the reader runs `--next`
-- **THEN** it says nothing is adjudicable and names the excluded record and its cause
+- **THEN** it does not say there are no records yet, and it names the excluded record and its cause
 
 #### Scenario: Another predicate version
 

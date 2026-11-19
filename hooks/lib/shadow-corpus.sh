@@ -185,7 +185,8 @@ SHADOW_ACS_SEPARATOR_IMPLEMENT_PREDICATE=6
 shadow_acs_sep_json() {
     case "${1:-}" in ''|*[!0-9]*) return 1 ;; esac
     case "${2:-}" in ''|*[!0-9]*) return 1 ;; esac
-    if [[ ! "${SHADOW_ACS_SEPARATOR:-}" =~ ^[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}$ ]]; then return 1; fi
+    # No leading zero: jq versions differ on whether 03 is a number.
+    if [[ ! "${SHADOW_ACS_SEPARATOR:-}" =~ ^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$ ]]; then return 1; fi
     if [ "$1" = "$2" ]; then
         printf '[%s]' "$(printf '%s' "${SHADOW_ACS_SEPARATOR}" | tr '.' ',')"
     else
@@ -199,8 +200,8 @@ shadow_acs_sep_json() {
 #   "before"    a well-formed stamp below the separator
 #   "unstamped" no acs_version, or one of another shape
 # The shape is the one the guard's _shadow_stamp_prepare stores: <n>.<n>.<n>
-# with an optional suffix (3.104.0-dev, 3.104.0+x). Only the three numbers are
-# compared, so a suffixed version sits with its release. They are compared per
+# with an optional suffix (3.104.0-dev, 3.104.0+x), any number of digits. Only
+# the three numbers are compared, so a suffixed version sits with its release. They are compared per
 # component as NUMBERS (jq orders arrays element-wise): as text 3.99.1 sorts
 # after 3.103.1. An unstamped record is not known to be from after the change,
 # so a caller excludes it with "before" and says which was which.
@@ -210,7 +211,7 @@ SHADOW_JQ_ACS='
         if $sep == null then "ok"
         else (.acs_version) as $v
         | (if ($v | type) == "string"
-           then ($v | capture("\\A(?<a>[0-9]{1,9})\\.(?<b>[0-9]{1,9})\\.(?<c>[0-9]{1,9})([.+-][A-Za-z0-9.]+)?\\z")? // null)
+           then ($v | capture("\\A(?<a>[0-9]+)\\.(?<b>[0-9]+)\\.(?<c>[0-9]+)([.+-][A-Za-z0-9.]+)?\\z")? // null)
            else null end) as $m
         | if $m == null then "unstamped"
           elif [($m.a | tonumber), ($m.b | tonumber), ($m.c | tonumber)] < $sep then "before"

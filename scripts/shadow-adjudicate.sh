@@ -95,7 +95,8 @@ if [ -z "${SHADOW_JQ_ACS:-}" ] || ! command -v shadow_acs_sep_json >/dev/null 2>
     exit 2
 fi
 # The lib validates the separator and the leg's predicate constant and returns
-# non-zero on either, so the only values accepted here are `null` and an array.
+# non-zero on either; this glob is a second, looser check (it would pass a
+# four-number array, which the lib cannot emit).
 ACS_SEP_JSON="$(shadow_acs_sep_json "${REQUIRED_PREDICATE_VERSION}" "${SHADOW_ACS_SEPARATOR_IMPLEMENT_PREDICATE:-}")" || ACS_SEP_JSON=""
 case "${ACS_SEP_JSON}" in
     null|\[[0-9]*,[0-9]*,[0-9]*\]) ;;
@@ -167,11 +168,13 @@ _presep_labelled() {
     [ -f "${ADJ_LOG}" ] && [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1 || { printf '0'; return 0; }
     { jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" --argjson sep "${ACS_SEP_JSON}" \
          "${SHADOW_JQ_ACS} fromjson? // empty | select(type == \"object\") | select(.predicate_version == \$pv)
-          | select(acs_class(\$sep) != \"ok\") | .record_id | strings | \"X\t\" + ." \
+          | select(acs_class(\$sep) != \"ok\") | .record_id | strings | \"X\t\" + @json" \
          "${SHADOW_LOG}" 2>/dev/null
-      jq -R -r 'fromjson? // empty | select(type == "object") | .record_id | strings | "A\t" + .' \
+      jq -R -r 'fromjson? // empty | select(type == "object") | .record_id | strings | "A\t" + @json' \
          "${ADJ_LOG}" 2>/dev/null | LC_ALL=C sort -u
     } | awk -F'\t' '$1 == "X" { x[$2] = 1; next } $1 == "A" && x[$2] { n++ } END { printf "%d", n+0 }'
+    # Ids travel as JSON text (@json), so a tab or newline inside one cannot
+    # split a row or forge one.
 }
 
 # _episodes — group v2 shadow records into independent episodes.
@@ -369,6 +372,9 @@ cmd_next() {
         fi
         printf 'nothing outstanding — all %s v%s record(s) are adjudicated.\n' \
                "${_n_v2}" "${REQUIRED_PREDICATE_VERSION}"
+        [ "${_n_ps}" -gt 0 ] && \
+            printf '  %s more v%s record(s) are excluded and were never offered: acs_version below %s or absent (#435). See --status.\n' \
+                   "${_n_ps}" "${REQUIRED_PREDICATE_VERSION}" "${SHADOW_ACS_SEPARATOR}"
         return 0
     fi
     # Rendered by awk, not `IFS=$'\t' read`: tab is IFS whitespace, so an empty

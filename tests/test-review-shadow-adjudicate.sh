@@ -1530,8 +1530,11 @@ for _i in 1 2 3 4 5; do
 done
 assert_equals "SEP --next offers only the records at or after the separator" "aa00 aa01 aa02 aa03 aa04" \
     "$(printf '%s\n' ${_sep_seen} | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+_osnx="$(_run "${_SP}" "${_SPA}" --next)"
 assert_equals "SEP --next then says all 5 are labelled" "all 5 adjudicable record(s) are labelled." \
-    "$(_run "${_SP}" "${_SPA}" --next)"
+    "$(printf '%s\n' "${_osnx}" | sed -n 1p)"
+assert_contains "SEP ...and says 10 more were excluded and never offered" \
+    "10 more record(s) of this version are excluded and were never offered" "${_osnx}"
 _osr="$( ( unset CLAUDECODE CLAUDE_CODE_SESSION_ID
            _run "${_SP}" "${_SPA}" --adjudicate bb01 --verdict false_block; echo "rc=$?" ) )"
 assert_equals "SEP a label on a pre-separator record is refused" "rc=1" "$(printf '%s\n' "${_osr}" | tail -1)"
@@ -1541,7 +1544,14 @@ assert_equals "SEP ...and nothing was written for it" "0" "$(grep -c '"bb01"' "$
 # sidecar. It stops counting, and a human false_block that stops counting lowers
 # k, so --status says how many there are. The orphan warning cannot: the record
 # is still in the corpus. Written by hand, because the reader refuses.
-for _lid in bb01 cc00 bb01; do
+# The label for "x3" is for no record here: the excluded record's id holds a tab
+# after "x3", and the two must not be matched. (Its id is not of the producer's
+# shape, so it is added after the --evidence-miss cells above.)
+jq -cn --arg id "$(printf 'x3\tz')" --argjson pv "${PV}" \
+    '{schema_version:3,predicate_version:$pv,record_id:$id,ts:"2026-11-18T10:00:00Z",repo:"/repo/x",
+      branch:"br-x3",head_sha:"deadbeef",session_token:"tok-x3",action:"push",would_block:true,
+      reason:"absent",transcript_path:"",acs_version:"3.99.9"}' >> "${_SP}"
+for _lid in bb01 cc00 bb01 x3; do
     jq -cn --arg id "${_lid}" '{schema_version:1,leg:"review",record_id:$id,ts:"2026-11-18T11:00:00Z",verdict:"false_block",reason:"old",claimant:"human"}' \
         >> "${_SPA}"
 done
@@ -1556,7 +1566,9 @@ if printf '%s\n' "${_osp2}" | grep -qF "human-confirmed      : false_block=0  tr
 else
     _record_fail "SEP ...none of them reaches the rate, and the five countable labels still do" "got: ${_osp2}"
 fi
-assert_not_contains "SEP ...and they are not reported as orphans" "name a record_id absent from this corpus" "${_osp2}"
+# The x3 label is the one orphan; the two labels on excluded records are not.
+assert_contains "SEP ...and they are not reported as orphans (only the x3 label is)" \
+    "WARNING: 1 adjudication(s) name a record_id absent from this corpus." "${_osp2}"
 # The REAL writer with no stamp, which is what it stores when the guard's
 # validation of the plugin version fails: excluded as unstamped, and said.
 _SPW="${TMP}/sepw.jsonl"; rm -f "${_SPW}"
@@ -1619,5 +1631,8 @@ _sep_mut "no leg predicate constant" '/^SHADOW_ACS_SEPARATOR_REVIEW_PREDICATE=/d
 _sep_mut "an empty separator"        's/^SHADOW_ACS_SEPARATOR=.*/SHADOW_ACS_SEPARATOR=""/'
 _sep_mut "a non-numeric separator"   's/^SHADOW_ACS_SEPARATOR=.*/SHADOW_ACS_SEPARATOR="3.x.1"/'
 _sep_mut "a two-part separator"      's/^SHADOW_ACS_SEPARATOR=.*/SHADOW_ACS_SEPARATOR="3.103"/'
+# Only the lib's own validation stops these two: the reader's glob passes them.
+_sep_mut "a four-part separator"     's/^SHADOW_ACS_SEPARATOR=.*/SHADOW_ACS_SEPARATOR="3.103.1.0"/'
+_sep_mut "a leading-zero separator"  's/^SHADOW_ACS_SEPARATOR=.*/SHADOW_ACS_SEPARATOR="03.103.1"/'
 
 print_summary

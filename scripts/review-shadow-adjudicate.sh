@@ -105,7 +105,8 @@ if [ -z "${SHADOW_JQ_ACS:-}" ] || ! command -v shadow_acs_sep_json >/dev/null 2>
     exit 2
 fi
 # The lib validates the separator and the leg's predicate constant and returns
-# non-zero on either, so the only values accepted here are `null` and an array.
+# non-zero on either; this glob is a second, looser check (it would pass a
+# four-number array, which the lib cannot emit).
 ACS_SEP_JSON="$(shadow_acs_sep_json "${REQUIRED_PREDICATE_VERSION}" "${SHADOW_ACS_SEPARATOR_REVIEW_PREDICATE:-}")" || ACS_SEP_JSON=""
 case "${ACS_SEP_JSON}" in
     null|\[[0-9]*,[0-9]*,[0-9]*\]) ;;
@@ -156,11 +157,13 @@ _presep_labelled() {
     [ -f "${ADJ_LOG}" ] && [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1 || { printf '0'; return 0; }
     { jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" --argjson sep "${ACS_SEP_JSON}" \
          "${SHADOW_JQ_ACS} fromjson? // empty | select(type == \"object\") | select(.predicate_version == \$pv)
-          | select(acs_class(\$sep) != \"ok\") | .record_id | strings | \"X\t\" + ." \
+          | select(acs_class(\$sep) != \"ok\") | .record_id | strings | \"X\t\" + @json" \
          "${SHADOW_LOG}" 2>/dev/null
-      jq -R -r 'fromjson? // empty | select(type == "object") | .record_id | strings | "A\t" + .' \
+      jq -R -r 'fromjson? // empty | select(type == "object") | .record_id | strings | "A\t" + @json' \
          "${ADJ_LOG}" 2>/dev/null | LC_ALL=C sort -u
     } | awk -F'\t' '$1 == "X" { x[$2] = 1; next } $1 == "A" && x[$2] { n++ } END { printf "%d", n+0 }'
+    # Ids travel as JSON text (@json), so a tab or newline inside one cannot
+    # split a row or forge one.
 }
 
 # _legacy_count — records of ANY OTHER predicate version.
@@ -417,6 +420,10 @@ cmd_next() {
             fi
         else
             echo "all ${_n_ok} adjudicable record(s) are labelled."
+            if [ "${_n_ps}" -gt 0 ]; then
+                echo "  ${_n_ps} more record(s) of this version are excluded and were never offered:"
+                echo "  acs_version below ${SHADOW_ACS_SEPARATOR} or absent (#435). See --status."
+            fi
         fi
         return 0
     fi
