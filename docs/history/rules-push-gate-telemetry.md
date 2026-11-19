@@ -221,16 +221,17 @@ Original text:
 
 #432's rule first shipped in plugin 3.103.1 (the merge commit itself still carried 3.103.0, so that version is ambiguous for a plugin run from a checkout). Before it, the ledger bridge credited a milestone recorded as the word `HEAD`, written only in a repository with no commits, to any branch with a commit of its own and a resolvable mainline base.
 
-Two effects, in opposite directions, neither identifiable from a record:
+Three effects, the last in the opposite direction, none identifiable from a record:
 
-- Credit for `requesting-code-review` or `verification-before-completion` let a push past the chain's REVIEW and VERIFY denies. The REVIEW leg then wrote a record (it fires when review counts as completed and no clean bound verdict exists), and the push went on to the IMPLEMENT leg, which could write one too. Such pushes are now denied first and write neither.
+- Credit for `requesting-code-review` let a push past the chain's REVIEW deny. The REVIEW leg then wrote a record (it fires when review counts as completed and no clean bound verdict exists), and the push went on to the IMPLEMENT leg, which could write one too. Such a push is now denied first and writes neither.
+- Credit for `verification-before-completion` let a push past the VERIFY deny only. The guard checks in the order REVIEW deny, REVIEW record, VERIFY deny, IMPLEMENT leg, so the REVIEW record is written either way and only the IMPLEMENT record is gone now.
 - Credit for an implementation-slot milestone satisfied the IMPLEMENT leg, so a would-block record was not written.
 
-The owner's machine held 13 such ledger entries on 2026-11-18, none for an implementation-slot skill, so only the first effect was possible there.
+The owner's machine held 13 such ledger entries on 2026-11-18, none for an implementation-slot skill, so only the first two effects were possible there.
 
 Measured the same day on the owner's corpora: REVIEW predicate 3 held 149 records written before 3.103.1 and 53 after; IMPLEMENT predicate 6 held 14 and 23; no record carried a 3.103.x stamp. `--evidence-miss` is unaffected, since it counts only `reviewer-returned` with `covered`. No registered REVIEW window is open.
 
-The decision was not to bump: a bump made now would put the boundary at the wrong version and discard the records written since the fix. The cost is that the separator is prose. Neither `scripts/review-shadow-adjudicate.sh` nor `scripts/shadow-adjudicate.sh` reads `acs_version`, so `--status` pools across it.
+The decision was not to bump: a bump made now would put the boundary at the wrong version and discard the records written since the fix. The cost is that the separator is prose. Neither `scripts/review-shadow-adjudicate.sh` nor `scripts/shadow-adjudicate.sh` reads `acs_version`, so `--status` pools across it (#450).
 
 Three changes shipped with this decision move no episode and no label:
 
