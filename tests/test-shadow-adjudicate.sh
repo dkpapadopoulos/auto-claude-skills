@@ -956,6 +956,7 @@ recwb nx1 "2026-08-01T10:00:00Z" "/repo/A" "feat/a" "tokN1" true
 recwb nx2 "2026-08-01T11:00:00Z" "/repo/A" "feat/b" "tokN2" false       # attested
 recae nx3 "2026-08-01T12:00:00Z" "/repo/A" "feat/c" "tokN3" true false  # advisory-silent
 rec   nx4 "garbage"              "/repo/A" "feat/d" "tokN4"             # unplaceable ts
+sep_rec nx7 '"3.99.9"'                                                  # pre-separator: a different exclusion
 eq "#453 CONTROL: the one offerable record is offered first" "nx1" \
    "$("$SCRIPT" --next 2>/dev/null | awk 'NR==1 {print $1}')"
 adj nx1 true_catch "453" >/dev/null
@@ -966,6 +967,8 @@ eq "#453 ...and never claims the 3 it does not offer" "0" \
    "$(printf '%s\n' "${_nx_out}" | grep -c 'all 4 ')"
 eq "#453 ...which it names, with the count" "1" \
    "$(printf '%s\n' "${_nx_out}" | grep -c "^  3 more v${_PV} record(s) were never offered")"
+eq "#453 ...apart from the pre-separator record, which keeps its own line" "1" \
+   "$(printf '%s\n' "${_nx_out}" | grep -c "^  1 more v${_PV} record(s) are excluded and were never offered")"
 # A corpus with records but none offerable is neither empty nor done.
 seed
 recwb nx5 "2026-08-01T10:00:00Z" "/repo/A" "feat/a" "tokN5" false
@@ -974,6 +977,8 @@ eq "#453 a corpus with no offerable record says so" "1" \
    "$(printf '%s\n' "${_nx_out}" | grep -c "^nothing to adjudicate — none of the 1 v${_PV} record(s) is offerable\.$")"
 eq "#453 ...and does not call it adjudicated or empty" "0" \
    "$(printf '%s\n' "${_nx_out}" | grep -c 'are adjudicated\|records yet')"
+eq "#453 ...and says why none is offered" "1" \
+   "$(printf '%s\n' "${_nx_out}" | grep -c '^  They are never offered: would_block is not true')"
 # CONTROL: when every record is offerable, no "never offered" line is printed.
 seed
 recwb nx6 "2026-08-01T10:00:00Z" "/repo/A" "feat/a" "tokN6" true
@@ -998,6 +1003,8 @@ if cat "$IMPLEMENT_SHADOW_LOG" >/dev/null 2>&1; then
   ok "SKIPPED: chmod 000 still readable (running as root?) — unreadable corpus cells not applicable"
 else
   _ur_st="$("$SCRIPT" --status 2>&1)"
+  eq "#453 --status and --next stay observational (exit 0) on an unreadable corpus" "rc=0 rc=0" \
+     "$("$SCRIPT" --status >/dev/null 2>&1; echo "rc=$?") $("$SCRIPT" --next >/dev/null 2>&1; echo "rc=$?")"
   eq "#453 --status says the corpus is unreadable" "1" \
      "$(printf '%s\n' "${_ur_st}" | grep -c "ERROR: ${IMPLEMENT_SHADOW_LOG} exists but is NOT READABLE")"
   eq "#453 ...and prints no episode count or rate for it" "0" \
@@ -1020,6 +1027,8 @@ if cat "$IMPLEMENT_ADJUDICATION_LOG" >/dev/null 2>&1; then
   ok "SKIPPED: chmod 000 still readable (running as root?) — unreadable sidecar cells not applicable"
 else
   _ur_st="$("$SCRIPT" --status 2>&1)"
+  eq "#453 --status and --next stay observational (exit 0) on an unreadable sidecar" "rc=0 rc=0" \
+     "$("$SCRIPT" --status >/dev/null 2>&1; echo "rc=$?") $("$SCRIPT" --next >/dev/null 2>&1; echo "rc=$?")"
   eq "#453 --status says the sidecar is unreadable" "1" \
      "$(printf '%s\n' "${_ur_st}" | grep -c "ERROR: the label sidecar ${IMPLEMENT_ADJUDICATION_LOG} exists but is NOT READABLE")"
   eq "#453 ...and reports no label count or rate read from nothing" "0" \
