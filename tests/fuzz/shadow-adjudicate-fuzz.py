@@ -112,12 +112,12 @@ def oracle(corpus_raw, adj_raw):
     recs, _ = parse_lines(corpus_raw)
     adjs, _ = parse_lines(adj_raw)
     labels = [a for a in adjs if valid_label(a)]
-    first = {}
-    for r in recs:
+    pop = [r for r in recs if cls(r) == "cur"]
+    first = {}      # among the countable records only: an excluded twin decides nothing
+    for r in pop:
         rid = r.get("record_id")
         if isinstance(rid, str) and rid not in first:
             first[rid] = r
-    pop = [r for r in recs if cls(r) == "cur"]
     groups = {}
     dropped = False
     for r in pop:
