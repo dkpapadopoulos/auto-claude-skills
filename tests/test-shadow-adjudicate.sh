@@ -770,7 +770,7 @@ _SV="${IMPLEMENT_SHADOW_SCHEMA_VERSION:-}"
 # one schema 4 added (advisory_emitted), so they model schemas 4 and 3 only
 # while the producer is at 5 (#416). After a schema bump this cell fails until
 # the lists are rewritten for the new previous schemas.
-assert_equals "MX the hand-typed field lists model the two schemas before 5" "5" "${_SV}"
+eq "MX the hand-typed field lists model the two schemas before 5" "5" "${_SV}"
 : > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
 for _t in tokMX5 tokMX4 tokMX3 tokMXP; do
   ( unset SHADOW_STAMP_SESSION_ID SHADOW_STAMP_TOOL_USE_ID SHADOW_STAMP_CC_VERSION
@@ -1183,6 +1183,203 @@ seed; jrec2 wr1 /repo/A
 ( unset CLAUDECODE CLAUDE_CODE_SESSION_ID; "$SCRIPT" wr1 --verdict false_block --reason "$(printf 'a "q" \\ back\ttab\nnl é')" >/dev/null 2>&1 )
 eq "#454 the real writer's label, awkward reason and all, is a label" "1 0" \
    "$(status | awk '$1=="false_block" {print $2; exit}') $(status | grep -c 'unparseable labels\|orphan labels')"
+
+# --- #454 rework: one rule instead of a list of damage ------------------------
+# Four review rounds each found another input that took a labelled false_block
+# out of the count with a band still printed. --status now withholds on two
+# subtractions instead of on named causes: a human-labelled record that is in no
+# episode the rate counted and that no row explains ("labels outside the rate"),
+# and a record with an id and a parseable ts that no episode holds ("unplaced
+# records"). The cells below are the inputs the fourth review listed; none has a
+# check of its own in the reader. tests/fuzz/shadow-adjudicate-fuzz.py checks
+# the same rule against an independent oracle over generated corpora.
+_rw_row() { printf '%s\n' "$1" | awk -v a="$2" -v b="$3" '$1==a && $2==b {print $3; exit}'; }
+hlabel() { # hlabel <id> <verdict> [claimant] — a sidecar line written by hand
+  jq -cn --arg id "$1" --arg v "$2" --arg c "${3:-human}" \
+    '{schema_version:1,record_id:$id,ts:"2026-11-19T10:00:00Z",verdict:$v,reason:"hand",claimant:$c}' >> "$IMPLEMENT_ADJUDICATION_LOG"
+}
+build_floor 30 1 0; cp "$IMPLEMENT_SHADOW_LOG" "$TMP/rw.corpus"
+eq "#454r CONTROL: intact, 1/31 and neither new row" "1/31 0" \
+   "$(status | grep -E '^  rate ' | awk '{print $2}') $(status | grep -c 'labels outside the rate\|unplaced records\|other-predicate labels\|no record_id')"
+# (a) would_block edited true -> false: the episode becomes attestation-only, a
+# class with a row of its own, and the false_block left with no row at all.
+jq -c 'if .record_id == "fb0" then .would_block = false else . end' "$TMP/rw.corpus" > "$IMPLEMENT_SHADOW_LOG"
+_rw_st="$(status)"
+eq "#454r a label whose record no longer would-block is announced" "1 1" \
+   "$(printf '%s\n' "${_rw_st}" | awk '$1=="labels" && $2=="outside" {print $5; exit}') $(printf '%s\n' "${_rw_st}" | awk '$1=="attestation-only" {print $2; exit}')"
+_ml_withheld "would_block edited to false under a label"
+eq "#454r ...and it is not an orphan: the record is still there" "0" "$(printf '%s\n' "${_rw_st}" | grep -c '^  orphan labels')"
+# (b) advisory_emitted edited to false: the same, through the silent class.
+jq -c 'if .record_id == "fb0" then .advisory_emitted = false else . end' "$TMP/rw.corpus" > "$IMPLEMENT_SHADOW_LOG"
+_ml_withheld "advisory_emitted edited to false under a label"
+# (c) A ts with a trailing newline. jq's `$` matched before the newline, awk's
+# did not, so the record was in no episode and in no malformed-ts count.
+jq -c 'if .record_id == "fb0" then .ts = (.ts + "\n") else . end' "$TMP/rw.corpus" > "$IMPLEMENT_SHADOW_LOG"
+eq "#454r a ts with a trailing newline is a malformed ts" "1" "$(_rw_row "$(status)" malformed ts)"
+_ml_withheld "a ts with a trailing newline"
+# Alone in the corpus, so --next has nothing else to print first.
+seed; jq -cn --argjson pv "${_PV}" '{record_id:"nlts",ts:"2026-07-28T10:00:00Z\n",repo:"/repo/A",branch:"b",session_token:"t",
+  predicate_version:$pv,acs_version:"'"${_ACS}"'",would_block:true,schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"
+eq "#454r ...and --next does not offer that record" "0 1" \
+   "$("$SCRIPT" --next 2>/dev/null | grep -c '^nlts') $("$SCRIPT" --next 2>/dev/null | grep -c '^nothing to adjudicate — none of the 1 ')"
+build_floor 30 1 0
+# (d) A ts that is a number raised a jq error in the count itself, so the
+# record was dropped from the episodes and from the malformed-ts row.
+jq -c 'if .record_id == "tc0" then .ts = 5 else . end' "$TMP/rw.corpus" > "$IMPLEMENT_SHADOW_LOG"
+eq "#454r a numeric ts is counted as a malformed ts" "1" "$(_rw_row "$(status)" malformed ts)"
+# (e) predicate_version edited. A label on a record of another predicate is what
+# a predicate bump leaves behind, so it has a row and does NOT withhold.
+jq -c --argjson o "$(( _PV - 1 ))" 'if .record_id == "fb0" then .predicate_version = $o else . end' "$TMP/rw.corpus" > "$IMPLEMENT_SHADOW_LOG"
+_rw_st="$(status)"
+eq "#454r a human label on an other-predicate record has its own row" "1" \
+   "$(printf '%s\n' "${_rw_st}" | awk '$1=="other-predicate" && $2=="labels" {print $3; exit}')"
+eq "#454r ...is not called an orphan or outside the rate, and the rate prints" "0 0/30" \
+   "$(printf '%s\n' "${_rw_st}" | grep -c 'orphan labels\|labels outside the rate') $(printf '%s\n' "${_rw_st}" | grep -E '^  rate ' | awk '{print $2}')"
+# The JSON string "6" is another predicate to every read; the label command
+# compared shell strings and accepted a label for it.
+jq -c --arg o "${_PV}" 'if .record_id == "fb0" then .predicate_version = $o else . end' "$TMP/rw.corpus" > "$IMPLEMENT_SHADOW_LOG"
+eq "#454r a string predicate_version is another predicate to --status" "1" \
+   "$(status | awk '$1=="other-predicate" && $2=="labels" {print $3; exit}')"
+eq "#454r ...and to the label command, which refuses it" "1" "$(adj fb0 true_catch "454r")"
+eq "#454r CONTROL: the same command on the intact record is accepted" "0" \
+   "$(cp "$TMP/rw.corpus" "$IMPLEMENT_SHADOW_LOG"; adj fb0 false_block "454r")"
+# (f) Ids that look like numbers. awk compared them as numbers, so the label
+# for "1e2" answered for the record "100" as well.
+build_floor 29 0 0; jrec2 100 /repo/A; jrec2 1e2 /repo/B
+label 100 true_catch; label 1e2 false_block
+eq "#454r labels are matched to records as strings: 100 is not 1e2" "1/31" \
+   "$(status | grep -E '^  rate ' | awk '{print $2}')"
+# (g) An id holding a space was split into two lookups; an id of `*` globbed.
+build_floor 29 0 0; jrec2 "sp ace" /repo/A; jrec2 '*' /repo/B
+label "sp ace" false_block; label '*' false_block
+eq "#454r an id with a space, and an id of *, keep their labels" "2/31" \
+   "$(status | grep -E '^  rate ' | awk '{print $2}')"
+# (h) An id holding a comma cannot travel in the comma-joined episode list. No
+# check knows that; the record subtraction and the label subtraction both do.
+build_floor 30 0 0; jrec2 "a,b" /repo/A; hlabel "a,b" false_block
+_rw_st="$(status)"
+# 3: the record "a,b" is in no episode, and the members "a" and "b" are no record.
+eq "#454r an id the episode list cannot carry is unplaced, and its label outside the rate" "3 1" \
+   "$(_rw_row "${_rw_st}" unplaced records) $(printf '%s\n' "${_rw_st}" | awk '$1=="labels" && $2=="outside" {print $5; exit}')"
+_ml_withheld "an id holding a comma"
+# (i) A record @tsv cannot print (an object where a string belongs) was dropped
+# by jq with no row. Unlabelled, so only the record subtraction can see it.
+build_floor 30 0 0
+jq -cn --argjson pv "${_PV}" '{record_id:"objbr",ts:"2026-07-28T10:00:00Z",repo:"/repo/A",branch:{"a":1},session_token:"t",
+  predicate_version:$pv,acs_version:"'"${_ACS}"'",would_block:true,schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"
+eq "#454r a record no episode holds and no row explains is counted" "1" "$(_rw_row "$(status)" unplaced records)"
+_ml_withheld "a record dropped by a jq error"
+# (j) The unparseable-line term on its own: the truncated line is an UNLABELLED
+# record's, so no label is orphaned and nothing else withholds.
+build_floor 30 0 0; printf '{"record_id":"cut","ts":"2026-07-2\n' >> "$IMPLEMENT_SHADOW_LOG"
+_rw_st="$(status)"
+eq "#454r an unparseable corpus line withholds by itself, every other count 0" "1" \
+   "$(printf '%s\n' "${_rw_st}" | grep -c '(unparseable labels 0, orphan labels 0, unparseable lines 1, malformed ts 0, malformed would_block 0, labels outside the rate 0, unplaced records 0, superseded human labels 0)$')"
+# A corpus line that is valid JSON but not an object is no record either.
+build_floor 30 0 0; printf '[1]\n"x"\n7\n' >> "$IMPLEMENT_SHADOW_LOG"
+eq "#454r non-object corpus lines are unparseable lines" "3" "$(_rw_row "$(status)" unparseable lines)"
+# (k) Blank and whitespace-only lines lost nothing and must not withhold.
+build_floor 29 1 0
+printf '\n   \n\t\n' >> "$IMPLEMENT_SHADOW_LOG"; printf '\n  \t \n' >> "$IMPLEMENT_ADJUDICATION_LOG"
+_rw_st="$(status)"
+eq "#454r whitespace-only lines are not unparseable, and the rate prints" "0 1/30" \
+   "$(printf '%s\n' "${_rw_st}" | grep -c 'unparseable') $(printf '%s\n' "${_rw_st}" | grep -E '^  rate ' | awk '{print $2}')"
+# (l) Labels that ARE explained must not withhold: one on a pre-separator
+# record, and one on the attested member of an episode the rate counts.
+build_floor 30 0 0; sep_rec oldrec '"3.99.9"'; hlabel oldrec false_block
+recwb mixa "2026-08-01T10:00:00Z" /repo/A feat/mix tokMix true
+recwb mixb "2026-08-01T10:05:00Z" /repo/A feat/mix tokMix false
+label mixa true_catch; hlabel mixb true_catch
+_rw_st="$(status)"
+eq "#454r a pre-separator label and a label on an attested member of a counted episode withhold nothing" "1 0 0/31" \
+   "$(_rw_row "${_rw_st}" pre-separator labels) $(printf '%s\n' "${_rw_st}" | grep -c 'orphan labels\|labels outside the rate') $(printf '%s\n' "${_rw_st}" | grep -E '^  rate ' | awk '{print $2}')"
+# ...while a human label on a record in an attestation-only episode does. The
+# label command refuses to write one (below), so this is a hand edit, or the
+# record changed after it was labelled, which is case (a).
+recwb lone "2026-08-01T12:00:00Z" /repo/A feat/lone tokLone false; hlabel lone true_catch
+eq "#454r a human label on an attestation-only record is outside the rate" "1" \
+   "$(status | awk '$1=="labels" && $2=="outside" {print $5; exit}')"
+_ml_withheld "a human label on an attestation-only record"
+# An agent's label there claims nothing a human said, and does not withhold.
+build_floor 30 0 0; recwb lone2 "2026-08-01T12:00:00Z" /repo/A feat/lone tokLone false; hlabel lone2 false_block agent
+eq "#454r an agent-claimed label outside the rate does not withhold" "0 0/30" \
+   "$(status | grep -c 'labels outside the rate') $(status | grep -E '^  rate ' | awk '{print $2}')"
+# (m) The label command refuses what --next never offers, with the cause.
+seed
+recwb na1 "2026-08-01T10:00:00Z" /repo/A feat/a tokA1 false
+recae na2 "2026-08-01T11:00:00Z" /repo/A feat/b tokA2 true false
+rec   na3 "garbage"              /repo/A feat/c tokA3
+recwb na4 "2026-08-01T13:00:00Z" /repo/A feat/d tokA4 true
+eq "#454r a label on an attested, a silent or an unplaceable record is refused" "1 1 1" \
+   "$(adj na1 true_catch x) $(adj na2 true_catch x) $(adj na3 true_catch x)"
+eq "#454r ...with the cause, and nothing written" "1 0" \
+   "$( ( unset CLAUDECODE CLAUDE_CODE_SESSION_ID; "$SCRIPT" na1 --verdict true_catch --reason x 2>&1 ) | grep -c 'is not adjudicable: would_block is not true') $(grep -c . "$IMPLEMENT_ADJUDICATION_LOG")"
+eq "#454r CONTROL: the offerable record beside them is accepted" "0" "$(adj na4 true_catch x)"
+# (n) A record with no id cannot be labelled: reported, and nothing is lost.
+build_floor 30 0 0
+jq -cn --argjson pv "${_PV}" '{record_id:"",ts:"2026-07-28T10:00:00Z",repo:"/repo/A",branch:"b",session_token:"t",
+  predicate_version:$pv,acs_version:"'"${_ACS}"'",would_block:true,schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"
+_rw_st="$(status)"
+eq "#454r a record with no id is reported and does not withhold" "1 0/30" \
+   "$(_rw_row "${_rw_st}" no record_id) $(printf '%s\n' "${_rw_st}" | grep -E '^  rate ' | awk '{print $2}')"
+# (o) --next and --status agree on what a label is: a sidecar object with no
+# verdict marks nothing adjudicated.
+seed; recwb nl1 "2026-08-01T10:00:00Z" /repo/A feat/a tokNL true
+printf '{"schema_version":1,"record_id":"nl1"}\n' >> "$IMPLEMENT_ADJUDICATION_LOG"
+eq "#454r --next still offers a record whose only sidecar line holds no label" "nl1" \
+   "$("$SCRIPT" --next 2>/dev/null | awk 'NR==1 {print $1}')"
+
+# (p) An agent's later line must not take a human false_block out of k. The
+# verdict is the latest line per record, so with the record alone in its episode
+# the episode became agent-claimed (0/29), and beside a human-labelled sibling
+# the agent's true_catch was counted as a human's. Found by the review of this
+# change with the real writer and the real label command; both read 1 less
+# false_block with a band printed and no row moved.
+build_floor 29 1 0
+CLAUDECODE=1 "$SCRIPT" fb0 --verdict true_catch --reason "agent" >/dev/null 2>&1
+_rw_st="$(status)"
+eq "#454r a human false_block an agent relabelled is announced" "1" \
+   "$(printf '%s\n' "${_rw_st}" | awk '$1=="superseded" && $2=="human" {print $4; exit}')"
+_ml_withheld "a human label superseded by an agent line"
+label fb0 false_block
+eq "#454r ...and a human re-confirmation restores the rate" "1/30 0" \
+   "$(status | grep -E '^  rate ' | awk '{print $2}') $(status | grep -c 'superseded human labels')"
+build_floor 29 0 0
+rec sib1 "2026-07-28T10:00:00Z" /repo/A feat/sib tokSib; rec sib2 "2026-07-28T10:05:00Z" /repo/A feat/sib tokSib
+label sib1 false_block; label sib2 true_catch
+eq "#454r CONTROL: a two-record episode with a human false_block is 1/30" "1/30" \
+   "$(status | grep -E '^  rate ' | awk '{print $2}')"
+hlabel sib1 true_catch agent
+eq "#454r an agent line beside a human-labelled sibling does not print 0/30" "1 0" \
+   "$(status | grep -c '^  rate  *cannot check') $(status | grep -c '^  band ')"
+# Any claimant that is not the string "human" is not a human's line.
+build_floor 29 1 0; hlabel fb0 true_catch Human
+_ml_withheld "a human label superseded by a line claiming 'Human'"
+# CONTROL: agent first, human second is a re-confirmation and withholds nothing.
+build_floor 29 0 0; jrec2 reconf /repo/A; hlabel reconf true_catch agent; label reconf false_block
+eq "#454r CONTROL: a human line after an agent line is counted" "1/30" \
+   "$(status | grep -E '^  rate ' | awk '{print $2}')"
+# (q) The record check is id by id. As two totals, a dropped record and an id
+# the list split in two cancelled: 3 records, 3 episode members, and the dropped
+# record's false_block was read through the fragment "d" of the split id.
+build_floor 29 0 0; jrec2 d /repo/A; label d true_catch
+jq -cn --argjson pv "${_PV}" '{record_id:"d,zz",ts:"2026-07-28T10:00:00Z",repo:"/repo/B",branch:"b",session_token:"t9",
+  predicate_version:$pv,acs_version:"'"${_ACS}"'",would_block:true,schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"
+jq -cn --argjson pv "${_PV}" '{record_id:"gone",ts:"2026-07-28T10:00:00Z",repo:{"a":1},branch:"b",session_token:"t8",
+  predicate_version:$pv,acs_version:"'"${_ACS}"'",would_block:true,schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"
+# 4: "gone" and "d,zz" are in no episode; the members "zz" and a second "d" are no record.
+eq "#454r a dropped record and a split id do not cancel" "4" "$(_rw_row "$(status)" unplaced records)"
+_ml_withheld "a dropped record beside a split id"
+# (r) A repo whose name starts with a dash was read by grep as an option, so
+# every episode counted as a new repository and one repo met the 2-repo floor.
+seed; i=0
+while [ "$i" -lt 30 ]; do
+  jq -cn --arg id "dr$i" --argjson pv "${_PV}" '{record_id:$id,ts:"2026-07-28T10:00:00Z",repo:"-e",branch:("b"+$id),session_token:$id,
+    predicate_version:$pv,acs_version:"'"${_ACS}"'",would_block:true,schema_version:1}' >> "$IMPLEMENT_SHADOW_LOG"
+  label "dr$i" true_catch; i=$(( i + 1 ))
+done
+eq "#454r 30 episodes in one repo named -e are one repo" "1 1" \
+   "$(status | awk '$1=="repos" {print $2; exit}') $(status | grep -c 'insufficient data')"
 
 echo
 echo "Tests run: $(( PASS + FAIL ))  passed: $PASS  failed: $FAIL"
