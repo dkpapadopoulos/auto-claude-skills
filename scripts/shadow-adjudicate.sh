@@ -710,8 +710,14 @@ _episode_wb() {
         # event nobody could have been blocked by. Reported separately rather
         # than folded into `false`, which means "attestation satisfied the leg" —
         # a different state that #169 records deliberately.
-        _v="$(jq -R -r --arg id "${_id}" \
-             'fromjson? // empty | objects | select(.record_id == $id)
+        # Looked up among the records the episodes are built from, and no
+        # others: by id alone, a pre-separator or other-predicate record that
+        # shared the id and came first in the file lent ITS would_block to the
+        # episode, so an excluded record could put a non-blocking episode into
+        # the rate (#453).
+        _v="$(jq -R -r --arg id "${_id}" --argjson pv "${REQUIRED_PREDICATE_VERSION}" --argjson sep "${ACS_SEP_JSON}" \
+             "${SHADOW_JQ_ACS}"' fromjson? // empty | objects | select(.record_id == $id)
+              | select(.predicate_version == $pv) | select(acs_class($sep) == "ok")
               | if (has("would_block") and ((.would_block|type) == "boolean")) | not
                 then "MALFORMED"
                 elif (.would_block == false) then "false"
@@ -935,7 +941,7 @@ EOF
         [ "${_psl}" -gt 0 ] && \
             printf '  pre-separator labels %s   <- NOT counted: the sidecar holds a label for that many of those records\n' "${_psl}"
         [ "${_pss}" -gt 0 ] && \
-            printf '  shared-id labels  %s   <- a label for an id that a pre-separator record and a later record both carry; it is read against the later record\n' "${_pss}"
+            printf '  shared-id labels  %s   <- a label for an id that a pre-separator record and a record at or after the separator both carry; only the latter can place it in the rate\n' "${_pss}"
     fi
     [ "${_badts}" -gt 0 ] && \
         printf '  malformed ts      %s   <- excluded: unparseable timestamp, cannot be placed in an episode\n' "${_badts}"

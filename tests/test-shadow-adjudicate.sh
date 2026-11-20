@@ -1428,6 +1428,20 @@ for _sh_order in "ok first" "excluded first"; do
   eq "#453 CONTROL: a label on an id that is only pre-separator is still announced (${_sh_order})" "1" \
      "$(_rw_row "$(status)" pre-separator labels)"
 done
+# The later record decides rate membership, in both orders. Looked up by id
+# alone, an excluded record that came first lent its would_block:true to the
+# episode of a later record that would NOT block: a non-blocking episode in n,
+# and its false_block in k (review of ddd988b7).
+for _sh_order in "excluded first" "later first"; do
+  seed
+  if [ "${_sh_order}" = "excluded first" ]; then sep_rec twin '"3.99.9"'; sep_rec twin '"3.104.0"'
+  else sep_rec twin '"3.104.0"'; sep_rec twin '"3.99.9"'; fi
+  jq -c 'if .acs_version == "3.104.0" then .would_block = false else . end' "$IMPLEMENT_SHADOW_LOG" > "$TMP/twin.t" && mv "$TMP/twin.t" "$IMPLEMENT_SHADOW_LOG"
+  hlabel twin false_block
+  _sh_st="$(status)"
+  eq "#453 an excluded record does not lend its would_block to a later record's episode (${_sh_order})" "0 1 0 1 1" \
+     "$(printf '%s\n' "${_sh_st}" | awk '$1=="would-block" {print $2; exit}') $(printf '%s\n' "${_sh_st}" | awk '$1=="attestation-only" {print $2; exit}') $(printf '%s\n' "${_sh_st}" | awk '$1=="false_block" {print $2; exit}') $(printf '%s\n' "${_sh_st}" | awk '$1=="labels" && $2=="outside" {print $5; exit}') $(_rw_row "${_sh_st}" shared-id labels)"
+done
 
 # --- #453 item 4: the separator is validated in every shell ------------------
 # shadow_acs_sep_json checked the separator with `[[ =~ ]]`, which held in bash
@@ -1439,10 +1453,12 @@ _sh_lib="${ROOT}/hooks/lib/shadow-corpus.sh"
 _sh_probe() { # <shell> <separator> -> "<stdout> rc=<status>"
   "$1" -c '. "$1" 2>/dev/null; SHADOW_ACS_SEPARATOR="$2"; o="$(shadow_acs_sep_json 6 6)"; printf "%s rc=%s" "$o" "$?"' x "${_sh_lib}" "$2" 2>/dev/null
 }
-_sh_ran=0
+_sh_ran=0; _sh_other=0
 for _sh in /bin/bash /bin/dash /bin/zsh /bin/sh; do
   [ -x "${_sh}" ] || { ok "SKIPPED: ${_sh} not present — separator validation not probed there"; continue; }
   _sh_ran=$(( _sh_ran + 1 ))
+  # Asked of the shell itself: /bin/sh is bash on macOS and dash on Debian.
+  [ -n "$("${_sh}" -c 'printf %s "${BASH_VERSION:-}"' 2>/dev/null)" ] || _sh_other=$(( _sh_other + 1 ))
   eq "#453 ${_sh}: a well-formed separator resolves" "[3,103,1] rc=0 [0,0,0] rc=0 [3,123456789,1] rc=0" \
      "$(_sh_probe "${_sh}" 3.103.1) $(_sh_probe "${_sh}" 0.0.0) $(_sh_probe "${_sh}" 3.123456789.1)"
   _sh_bad=""
@@ -1454,13 +1470,13 @@ for _sh in /bin/bash /bin/dash /bin/zsh /bin/sh; do
   eq "#453 ${_sh}: another predicate still resolves to null" "null rc=0" \
      "$("${_sh}" -c '. "$1" 2>/dev/null; o="$(shadow_acs_sep_json 7 6)"; printf "%s rc=%s" "$o" "$?"' x "${_sh_lib}" 2>/dev/null)"
 done
-# /bin/sh is bash on macOS, so it does not count as another shell. Where there
-# is neither dash nor zsh this block proves nothing beyond bash, and says so
-# instead of failing a machine for what it has installed.
-if [ -x /bin/dash ] || [ -x /bin/zsh ]; then
-  ok "#453 the separator validation was probed in a shell that is not bash"
+# Not an assertion: it records what the cells above covered. Where every path
+# is bash they prove nothing about another shell, and this line says so instead
+# of failing a machine for what it has installed.
+if [ "${_sh_other}" -gt 0 ]; then
+  echo "  NOTE: separator validation probed in ${_sh_ran} shell path(s), ${_sh_other} of them not bash"
 else
-  ok "SKIPPED: neither /bin/dash nor /bin/zsh — separator validation probed in bash only (${_sh_ran} shell path(s))"
+  echo "  NOTE: SKIPPED — every shell path probed is bash (${_sh_ran}); separator validation not shown for another shell"
 fi
 
 echo
