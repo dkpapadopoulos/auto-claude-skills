@@ -978,7 +978,11 @@ EOF
         echo "  rate              insufficient data"
         printf '  need              %s adjudicated episodes (have %s) across >=%s repos (have %s)\n' \
                "${FLOOR_EPISODES}" "${_den}" "${FLOOR_REPOS}" "${_nrepos}"
-        echo "  horizon           ~2026-09-08 (pre-registered 2026-07-28)"
+        # The registration's own words. The 2026-09-08 date printed here until
+        # 2026-11-20 was withdrawn by the re-registration of 2026-08-29 ("No new
+        # horizon date is committed"), so the readout was quoting a deadline
+        # the window does not have.
+        echo "  horizon           unknown, pending re-estimate (re-registered 2026-08-29; no date is committed)"
     else
         _wc_k=$(( _fb + _unk )); _wc_n=$(( _den + _unk ))
         _band_hdl="$(_band "${_fb}" "${_den}")"
