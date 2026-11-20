@@ -680,3 +680,81 @@ When the push guard runs as the diagnostic capture's replay (`PUSH_GATE_CAPTURE_
 - **WHEN** it is run with `--help`, and then with `--status`
 - **THEN** the first prints the usage and exits 0, and the second exits 2
 
+### Requirement: The IMPLEMENT shadow reader never reads an unreadable file as an empty one
+
+When the IMPLEMENT shadow corpus or its label sidecar exists but cannot be read, `scripts/shadow-adjudicate.sh` MUST say which file is unreadable and MUST NOT report a count, a rate or a record derived from it. `--status` and `--next` MUST exit 0 with that message. `--rate-episodes` MUST print no rows, name the cause on stderr and exit 2 when the corpus is unreadable. A request to record a label MUST be refused with that cause when the corpus is unreadable.
+
+#### Scenario: The label sidecar is unreadable
+
+- **GIVEN** a corpus with one would-block record that the sidecar labels `false_block`, and the sidecar's mode denies reading
+- **WHEN** the reader runs `--status` and `--next`
+- **THEN** each says the sidecar exists but is not readable
+- **AND** `--status` prints no unadjudicated count, no verdict count and no rate
+- **AND** `--next` does not offer the labelled record
+
+#### Scenario: The corpus is unreadable
+
+- **GIVEN** a corpus whose mode denies reading
+- **WHEN** the reader runs `--status`, `--next`, `--rate-episodes` and a label command
+- **THEN** each says the corpus exists but is not readable
+- **AND** `--rate-episodes` prints no rows and exits 2
+- **AND** the label is refused without saying that the record does not exist
+
+### Requirement: The IMPLEMENT reader's --next counts only the records it offers
+
+When no record is outstanding, `scripts/shadow-adjudicate.sh --next` MUST state the number of adjudicated records as the number of records it offers from: those of the adjudicable population that would block, are not advisory-silent and carry a parseable `ts`. It MUST state separately how many other records of that population were never offered. When the population holds records and none is offerable, it MUST say so and MUST NOT describe the corpus as adjudicated or as having no records.
+
+#### Scenario: One labelled record among records that are never offered
+
+- **GIVEN** a corpus with one labelled would-block record, one attested record, one advisory-silent record and one record with an unparseable `ts`
+- **WHEN** the reader runs `--next`
+- **THEN** it reports that all 1 offerable record is adjudicated
+- **AND** it reports that 3 more records were never offered
+
+#### Scenario: No record is offerable
+
+- **GIVEN** a corpus holding only an attested record
+- **WHEN** the reader runs `--next`
+- **THEN** it reports that none of the 1 record is offerable
+- **AND** it does not say the records are adjudicated or that there are none yet
+
+### Requirement: The IMPLEMENT shadow reader reads past a malformed line and withholds the rate over a damaged sidecar or corpus
+
+Every read of the IMPLEMENT shadow corpus and of its label sidecar in `scripts/shadow-adjudicate.sh` MUST skip a line that is not a JSON object and continue with the lines after it. `--status` MUST report the number of sidecar lines that hold no label, where a label is a JSON object with a string `record_id` and a `verdict` of `true_catch`, `false_block` or `unknown`; such a line MUST NOT supersede an earlier label for the same record. `--status` MUST also report the number of labels naming a `record_id` the corpus does not hold. While any of these is above zero, `--status` MUST NOT print a rate, a band or a worst case, and MUST say that the rate cannot be checked: sidecar lines that hold no label, labels naming an absent record, unparseable corpus lines (counted bytewise, so a line of invalid bytes is a line), adjudicable records whose `ts` cannot be placed, and episodes excluded for a malformed `would_block`.
+
+#### Scenario: A truncated sidecar line ahead of a false_block label
+
+- **GIVEN** 30 labelled would-block episodes across two repositories, one of them `false_block`, and a truncated line in the sidecar immediately before the `false_block` label
+- **WHEN** the reader runs `--status` and `--next`
+- **THEN** `--status` counts 1 `false_block` and 0 unadjudicated episodes
+- **AND** it reports 1 unparseable label and prints `cannot check` in place of the rate and band
+- **AND** `--next` offers no record
+
+#### Scenario: A sidecar object with no verdict after a false_block label
+
+- **GIVEN** 30 labelled would-block episodes, one of them `false_block`, and a later sidecar line for the same record that is an object with no `verdict`
+- **WHEN** the reader runs `--status`
+- **THEN** it still counts 1 `false_block`
+- **AND** it reports 1 unparseable label and prints `cannot check` in place of the rate and band
+
+#### Scenario: The false_block's corpus record cannot be placed
+
+- **GIVEN** 31 labelled would-block episodes, one of them `false_block`, whose corpus line is truncated or whose `ts` is not a timestamp
+- **WHEN** the reader runs `--status`
+- **THEN** it reports the unparseable line or the malformed `ts`
+- **AND** it prints `cannot check` in place of the rate and band
+
+#### Scenario: The false_block's record is gone or its would_block is malformed
+
+- **GIVEN** 31 labelled would-block episodes, one of them `false_block`, whose corpus line has been removed, or whose `would_block` is no longer a boolean
+- **WHEN** the reader runs `--status`
+- **THEN** it reports 1 orphan label, or 1 malformed `would_block`
+- **AND** it prints `cannot check` in place of the rate and band
+
+#### Scenario: A truncated corpus line ahead of a record
+
+- **GIVEN** a corpus whose first line is truncated and whose second line is a would-block record
+- **WHEN** `--next` offers that record and a label is recorded for it
+- **THEN** the label is accepted
+- **AND** `--status` counts the episode as would-block with its label
+

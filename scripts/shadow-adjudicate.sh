@@ -24,7 +24,9 @@ shadow-adjudicate.sh — label IMPLEMENT-leg shadow records and report the rate.
   --status                     episodes, exclusions, rate, band, distance to floor
   --rate-episodes              TSV of the would-block episodes --status rates over
 
-Diagnostic only. Exits 0 for observational commands. Never wire the output of
+Diagnostic only. Exits 0 for observational commands, except that
+--rate-episodes exits 2 when the corpus exists but cannot be read: its stdout is
+parsed, and no rows would read as no episodes. Never wire the output of
 --status into an enforcement decision: the push gate is the only decider.
 HELP
 }
@@ -114,6 +116,20 @@ ADVISORY_P=0.20
 
 SHADOW_LOG="${IMPLEMENT_SHADOW_LOG:-$HOME/.claude/.push-implement-shadow.jsonl}"
 ADJ_LOG="${IMPLEMENT_ADJUDICATION_LOG:-$HOME/.claude/.push-implement-adjudication.jsonl}"
+
+# "Exists but cannot be read" is its own state (#453), as in the REVIEW reader
+# (#416): `-f` says nothing about readability, and every read below discards
+# jq's error, so an unreadable corpus read as an empty one and an unreadable
+# sidecar as "no labels".
+_unreadable() { [ -f "${1:-}" ] && [ ! -r "${1:-}" ]; }
+_say_corpus_unreadable() {
+    echo "ERROR: ${SHADOW_LOG} exists but is NOT READABLE."
+    echo "  No claim is made about its contents. This is not an empty corpus."
+}
+_say_sidecar_unreadable() {
+    echo "ERROR: the label sidecar ${ADJ_LOG} exists but is NOT READABLE."
+    echo "  No label in it was read. This is not an unlabeled corpus."
+}
 
 # _band <k> <n> -> DENY | ADVISORY-ONLY | NARROWED | INSUFFICIENT
 #
@@ -237,9 +253,13 @@ _claimant() {
     echo human
 }
 
+# Every read of the corpus and the sidecar is `-R` + `fromjson?` (#454), as in
+# _shadow_tsv: a plain `jq` read stops at the first malformed line, so --next
+# offered a record the label command then could not find, and a truncated
+# sidecar line hid every label after it.
 _record_field() { # _record_field <record_id> <field>
-    jq -r --arg id "${1:-}" --arg f "${2:-}" \
-       'select(.record_id == $id) | .[$f] // empty' "${SHADOW_LOG}" 2>/dev/null | head -1
+    jq -R -r --arg id "${1:-}" --arg f "${2:-}" \
+       'fromjson? // empty | objects | select(.record_id == $id) | .[$f] // empty' "${SHADOW_LOG}" 2>/dev/null | head -1
 }
 
 cmd_adjudicate() {
@@ -249,6 +269,8 @@ cmd_adjudicate() {
         *) echo "error: --verdict must be true_catch, false_block, or unknown" >&2; return 1;;
     esac
     [ -f "${SHADOW_LOG}" ] || { echo "error: no shadow log at ${SHADOW_LOG}" >&2; return 1; }
+    # Otherwise the lookup below finds nothing and blames the record id.
+    if _unreadable "${SHADOW_LOG}"; then _say_corpus_unreadable >&2; return 1; fi
     command -v jq >/dev/null 2>&1 || { echo "error: jq required" >&2; return 1; }
     _pv="$(_record_field "${_rid}" predicate_version)"
     [ -z "${_pv}" ] && { echo "error: no record '${_rid}' in ${SHADOW_LOG}" >&2; return 1; }
@@ -296,7 +318,39 @@ cmd_adjudicate() {
 
 _adjudicated_ids() {
     [ -f "${ADJ_LOG}" ] || return 0
-    jq -r '.record_id // empty' "${ADJ_LOG}" 2>/dev/null | sort -u
+    jq -R -r 'fromjson? // empty | objects | .record_id // empty' "${ADJ_LOG}" 2>/dev/null | sort -u
+}
+
+# What a sidecar line must hold to be a label: a string record_id and one of
+# the three verdicts. One definition, because the count of lines that are not
+# labels and the rows the verdict is resolved from must not disagree (#454): an
+# object with no verdict used to count as a label and, through latest-wins,
+# erase an earlier false_block for its record.
+_ADJ_LABEL_JQ='objects | select((.record_id | type) == "string")
+               | select(.verdict == "true_catch" or .verdict == "false_block" or .verdict == "unknown")'
+
+# _adj_unparsed -> sidecar lines that hold no label: unparseable, not an object,
+# or an object that is not a label as defined above. Counted so a lost label is
+# ANNOUNCED (#454); the REVIEW reader's function of the same name (#386).
+# LC_ALL=C because in a UTF-8 locale `.` does not match an invalid byte.
+_adj_unparsed() {
+    [ -f "${ADJ_LOG}" ] || { printf '0'; return 0; }
+    local _t _p
+    _t="$(LC_ALL=C grep -c . "${ADJ_LOG}" 2>/dev/null | tr -d '[:space:]')"
+    _p="$(jq -R -r "fromjson? | ${_ADJ_LABEL_JQ} | 1" "${ADJ_LOG}" 2>/dev/null | grep -c . | tr -d '[:space:]')"
+    printf '%s' "$(( ${_t:-0} - ${_p:-0} ))"
+}
+
+# _adj_orphans -> labels naming a record_id this corpus does not hold, at any
+# predicate version. The label command refuses an unknown id, so one appears
+# only when the record was removed or edited after it was labelled, or the
+# sidecar belongs to another corpus. Either way a labelled false_block may have
+# left the count (#454). Ids travel as JSON text, as in _presep_labelled.
+_adj_orphans() {
+    [ -f "${ADJ_LOG}" ] && [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1 || { printf '0'; return 0; }
+    { jq -R -r 'fromjson? | objects | .record_id | strings | "X\t" + @json' "${SHADOW_LOG}" 2>/dev/null
+      jq -R -r "fromjson? | ${_ADJ_LABEL_JQ} | \"A\t\" + (.record_id | @json)" "${ADJ_LOG}" 2>/dev/null | LC_ALL=C sort -u
+    } | awk -F'\t' '$1 == "X" { x[$2] = 1; next } $1 == "A" && !x[$2] { n++ } END { printf "%d", n+0 }'
 }
 
 # cmd_next — oldest v2 record with no adjudication, plus how to label it.
@@ -304,7 +358,15 @@ _adjudicated_ids() {
 cmd_next() {
     local _seen _line
     [ -f "${SHADOW_LOG}" ] || { echo "no shadow log at ${SHADOW_LOG} — nothing outstanding."; return 0; }
+    if _unreadable "${SHADOW_LOG}"; then _say_corpus_unreadable; return 0; fi
     command -v jq >/dev/null 2>&1 || { echo "jq required — cannot read the corpus."; return 0; }
+    # With no labels read, the oldest record would be offered again whether or
+    # not it is already labelled.
+    if _unreadable "${ADJ_LOG}"; then
+        _say_sidecar_unreadable
+        echo "  Nothing is offered: which records are already labelled is not known."
+        return 0
+    fi
     _seen="$(_adjudicated_ids)"
     # Records whose ts is unparseable are skipped here too — --status can never
     # count them, so offering one for adjudication wastes the operator's time.
@@ -316,19 +378,23 @@ cmd_next() {
     # Adjudicating an attested record is meaningless work — a verdict on it can
     # never inform a false-block rate — so it is never offered. Type-checked for
     # the same reason as _episode_wb: a JSON string "true" must not qualify.
-    _line="$(_shadow_tsv 'select((.ts // "") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
+    # An ADVISORY-SILENT record must not be queued either: the leg said nothing
+    # about it, so it cannot contain a false block, and offering it spends
+    # operator time on the one population that provably cannot inform the
+    # measurement. Same reason attested records are not offered. The field
+    # arrives in SCHEMA 4; predicate_version 5 is the separate thing that
+    # excludes the older firing population. Conflating the two version counters
+    # is how a later reader talks itself into the wrong exclusion, so they are
+    # named apart here. Records written before schema 4 carry no such field and
+    # fall through this filter unchanged.
+    #
+    # One filter, held in a variable, because the end-of-queue message below
+    # counts the same population it was offered from (#453).
+    local _offerable
+    _offerable='select((.ts // "") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
               | select(has("would_block") and ((.would_block|type) == "boolean") and .would_block == true)
-              # An ADVISORY-SILENT record must not be queued either: the leg said
-              # nothing about it, so it cannot contain a false block, and offering
-              # it spends operator time on the one population that provably
-              # cannot inform the measurement. Same reason attested records are
-              # not offered. The field arrives in SCHEMA 4; predicate_version 5
-              # is the separate thing that excludes the older firing population.
-              # Conflating the two version counters is how a later reader talks
-              # itself into the wrong exclusion, so they are named apart here.
-              # Records written before schema 4 carry no such field and fall
-              # through this filter unchanged.
-              | select((has("advisory_emitted") | not) or ((.advisory_emitted|type) != "boolean") or .advisory_emitted == true)
+              | select((has("advisory_emitted") | not) or ((.advisory_emitted|type) != "boolean") or .advisory_emitted == true)'
+    _line="$(_shadow_tsv "${_offerable}"'
               | [.record_id,.ts,.repo,.branch,.action,.diff_base,
                  (.impl_in_chain|tostring),(.material_source|tostring),
                  .impl_evidence_kind,.transcript_path,
@@ -350,8 +416,16 @@ cmd_next() {
         # states and must not share a message: the first means nothing is
         # countable yet, the second means the work is done. Conflating them
         # reports an empty corpus as complete.
-        local _n_v2 _n_v1 _n_ps
+        local _n_v2 _n_v1 _n_ps _n_off _n_not
         _n_v2="$(_shadow_tsv '[.record_id]' | grep -c . )"
+        # What --next offers from, which is not every record (#453): "all N
+        # adjudicated" over _n_v2 claimed attested, advisory-silent and
+        # unplaceable records nobody was ever shown.
+        _n_off="$(_shadow_tsv "${_offerable} | [.record_id]" | grep -c . )"
+        case "${_n_v2}"  in ''|*[!0-9]*) _n_v2=0 ;; esac
+        case "${_n_off}" in ''|*[!0-9]*) _n_off=0 ;; esac
+        _n_not=$(( _n_v2 - _n_off ))
+        [ "${_n_not}" -lt 0 ] && _n_not=0
         _n_ps="$(_presep_total)"
         _n_v1="$(jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
                    'fromjson? // empty | select(.predicate_version != $pv) | .record_id' \
@@ -370,8 +444,18 @@ cmd_next() {
             printf '  The corpus grows as the IMPLEMENT leg fires; see --status for the floor.\n'
             return 0
         fi
-        printf 'nothing outstanding — all %s v%s record(s) are adjudicated.\n' \
-               "${_n_v2}" "${REQUIRED_PREDICATE_VERSION}"
+        if [ "${_n_off}" -eq 0 ]; then
+            printf 'nothing to adjudicate — none of the %s v%s record(s) is offerable.\n' \
+                   "${_n_v2}" "${REQUIRED_PREDICATE_VERSION}"
+        else
+            printf 'nothing outstanding — all %s offerable v%s record(s) are adjudicated.\n' \
+                   "${_n_off}" "${REQUIRED_PREDICATE_VERSION}"
+        fi
+        [ "${_n_not}" -gt 0 ] && [ "${_n_off}" -gt 0 ] && \
+            printf '  %s more v%s record(s) were never offered: would_block is not true, the leg emitted no advisory, or the ts is unparseable. See --status.\n' \
+                   "${_n_not}" "${REQUIRED_PREDICATE_VERSION}"
+        [ "${_n_not}" -gt 0 ] && [ "${_n_off}" -eq 0 ] && \
+            printf '  They are never offered: would_block is not true, the leg emitted no advisory, or the ts is unparseable. See --status.\n'
         [ "${_n_ps}" -gt 0 ] && \
             printf '  %s more v%s record(s) are excluded and were never offered: acs_version below %s or absent (#435). See --status.\n' \
                    "${_n_ps}" "${REQUIRED_PREDICATE_VERSION}" "${SHADOW_ACS_SEPARATOR}"
@@ -493,8 +577,8 @@ _episode_wb() {
         # event nobody could have been blocked by. Reported separately rather
         # than folded into `false`, which means "attestation satisfied the leg" —
         # a different state that #169 records deliberately.
-        _v="$(jq -r --arg id "${_id}" \
-             'select(.record_id == $id)
+        _v="$(jq -R -r --arg id "${_id}" \
+             'fromjson? // empty | objects | select(.record_id == $id)
               | if (has("would_block") and ((.would_block|type) == "boolean")) | not
                 then "MALFORMED"
                 elif (.would_block == false) then "false"
@@ -526,7 +610,11 @@ _episode_verdict() {
     local _ids="${1:-}" _v="unlabeled" _claim="agent" _has_human=0 _id _rows
     local _latest _rv _rc
     if [ ! -f "${ADJ_LOG}" ]; then printf 'unlabeled\nagent\n'; return; fi
-    _rows="$(jq -r '[.record_id,.verdict,.claimant] | @tsv' "${ADJ_LOG}" 2>/dev/null)"
+    # A claimant that is not a string is no human claim. Left as it was, @tsv
+    # failed on an array or object and the whole label vanished from here while
+    # _adj_unparsed still counted it as one.
+    _rows="$(jq -R -r "fromjson? // empty | ${_ADJ_LABEL_JQ}
+                       | [.record_id,.verdict,(.claimant | if type == \"string\" then . else \"\" end)] | @tsv" "${ADJ_LOG}" 2>/dev/null)"
     for _id in $(printf '%s' "${_ids}" | tr ',' ' '); do
         # LATEST adjudication per record wins. The sidecar is append-only, so the
         # last matching row is the most recent one. Folding over ALL rows instead
@@ -562,7 +650,17 @@ cmd_status() {
     local _wbep=0 _attep=0 _malwb=0 _silep=0 _wb
     local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
     local _den _wc_k _wc_n _band_hdl _band_wc
-    local _badts=0 _unparsed=0 _lines=0 _parsed=0 _ps _psb=0 _psu=0 _psl=0
+    local _badts=0 _unparsed=0 _lines=0 _parsed=0 _ps _psb=0 _psu=0 _psl=0 _adjbad=0 _orph=0 _uncount=0
+    # Before any count (#453). The sidecar too: every row below the episode
+    # total is read from labels, and with none read a labelled false_block
+    # printed as unadjudicated.
+    if _unreadable "${SHADOW_LOG}" || _unreadable "${ADJ_LOG}"; then
+        echo "IMPLEMENT shadow corpus — predicate_version ${REQUIRED_PREDICATE_VERSION}"
+        if _unreadable "${SHADOW_LOG}"; then _say_corpus_unreadable; fi
+        if _unreadable "${ADJ_LOG}"; then _say_sidecar_unreadable; fi
+        echo "  No counts and no rate are reported."
+        return 0
+    fi
     _ps="$(_presep_counts)"; _psb="${_ps% *}"; _psu="${_ps#* }"
     case "${_psb}" in ''|*[!0-9]*) _psb=0 ;; esac
     case "${_psu}" in ''|*[!0-9]*) _psu=0 ;; esac
@@ -580,11 +678,18 @@ cmd_status() {
         # Lines jq could not parse at all. Reported rather than swallowed: a
         # single truncated line used to abort the whole read and silently
         # truncate the corpus.
-        _lines="$(grep -c . "${SHADOW_LOG}" 2>/dev/null)"; [ -n "${_lines}" ] || _lines=0
-        _parsed="$(jq -R -r 'fromjson? // empty | .record_id // "?"' "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
+        # LC_ALL=C: in a UTF-8 locale `.` does not match an invalid byte, so a
+        # line of corrupt bytes was not a line at all. One `1` per object, never
+        # the id: an id holding a newline printed as two lines and cancelled an
+        # unparseable one, and an empty id printed as none (#454).
+        _lines="$(LC_ALL=C grep -c . "${SHADOW_LOG}" 2>/dev/null)"; [ -n "${_lines}" ] || _lines=0
+        _parsed="$(jq -R -r 'fromjson? | objects | 1' "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
         [ -n "${_parsed}" ] || _parsed=0
-        _unparsed=$(( _lines - _parsed ))
+        # These two feed the decision to print a rate, so a count that is not
+        # a number is read as one lost record, never as none.
+        case "${_lines}${_parsed}" in *[!0-9]*) _unparsed=1 ;; *) _unparsed=$(( _lines - _parsed )) ;; esac
         [ "${_unparsed}" -lt 0 ] && _unparsed=0
+        case "${_badts}" in ''|*[!0-9]*) _badts=1 ;; esac
     fi
     # Re-split on \x1f (US), NOT tab. Tab is an IFS *whitespace* character, so
     # `IFS=$'\t' read` collapses consecutive tabs: an empty `branch` shifted
@@ -659,6 +764,15 @@ EOF
         printf '  malformed ts      %s   <- excluded: unparseable timestamp, cannot be placed in an episode\n' "${_badts}"
     [ "${_unparsed}" -gt 0 ] && \
         printf '  unparseable lines %s   <- excluded: not valid JSON\n' "${_unparsed}"
+    # A count that cannot be read is treated as a lost line, never as none.
+    _adjbad="$(_adj_unparsed)"
+    case "${_adjbad}" in ''|*[!0-9]*) _adjbad=1 ;; esac
+    [ "${_adjbad}" -gt 0 ] && \
+        printf '  unparseable labels %s   <- sidecar line(s) holding no readable label; what they said is lost\n' "${_adjbad}"
+    _orph="$(_adj_orphans)"
+    case "${_orph}" in ''|*[!0-9]*) _orph=1 ;; esac
+    [ "${_orph}" -gt 0 ] && \
+        printf '  orphan labels     %s   <- the sidecar labels that many record(s) this corpus does not hold\n' "${_orph}"
     printf '  true_catch        %s\n' "${_tc}"
     printf '  false_block       %s\n' "${_fb}"
     printf '  unknown           %s   <- excluded from the headline rate\n' "${_unk}"
@@ -670,7 +784,19 @@ EOF
     # over — not to _lab. `unknown` episodes are adjudicated but excluded from
     # the headline rate, so gating on _lab would let 29 labeled episodes of which
     # 15 were unknown print a band over n=14, below the pre-registered floor.
-    if [ "${_den}" -lt "${FLOOR_EPISODES}" ] || [ "${_nrepos}" -lt "${FLOOR_REPOS}" ]; then
+    # A lost sidecar line may have been a false_block, and a corpus record that
+    # cannot be placed (or whose episode left the rate on a malformed
+    # would_block, or that is gone while its label remains) leaves the
+    # denominator with its label unseen. Each lowers the rate toward clearing
+    # the flip, so no rate is printed over one (#454). The REVIEW reader blocks
+    # its floor on the first three counts and only warns about orphans; here an
+    # orphan withholds too, because this reader has one corpus per sidecar.
+    _uncount=$(( _adjbad + _orph + _unparsed + _badts + _malwb ))
+    if [ "${_uncount}" -gt 0 ]; then
+        printf '  rate              cannot check — %s label(s), line(s) or record(s) above could not be placed (unparseable labels %s, orphan labels %s, unparseable lines %s, malformed ts %s, malformed would_block %s)\n' \
+               "${_uncount}" "${_adjbad}" "${_orph}" "${_unparsed}" "${_badts}" "${_malwb}"
+        echo "  need              each one accounted for: any of them may be a lost false_block"
+    elif [ "${_den}" -lt "${FLOOR_EPISODES}" ] || [ "${_nrepos}" -lt "${FLOOR_REPOS}" ]; then
         echo "  rate              insufficient data"
         printf '  need              %s adjudicated episodes (have %s) across >=%s repos (have %s)\n' \
                "${FLOOR_EPISODES}" "${_den}" "${FLOOR_REPOS}" "${_nrepos}"
@@ -697,6 +823,9 @@ EOF
 # empty branch.
 cmd_rate_episodes() {
     local _eid _repo _branch _tok _ids _row
+    # No rows would read as no episodes to whatever parses this (#453), so the
+    # one command with a parsed stdout says it on stderr and exits non-zero.
+    if _unreadable "${SHADOW_LOG}"; then _say_corpus_unreadable >&2; return 2; fi
     while IFS="$(printf '\037')" read -r _eid _repo _branch _tok _ids; do
         [ -z "${_eid:-}" ] && continue
         [ "$(_episode_wb "${_ids}")" = "yes" ] || continue
