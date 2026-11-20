@@ -6,7 +6,7 @@ Below the floor, `scripts/shadow-adjudicate.sh --status` printed "horizon ~2026-
 
 ## What changes
 
-The row reads "unknown, pending re-estimate (re-registered 2026-08-29; no date is committed)". A test ties it to the design's sentence, so registering a horizon without updating the row fails.
+The row reads "unknown, pending re-estimate (re-registered 2026-08-29; no date is committed)". A test fails when the design's "No new horizon date is committed" sentence is changed or removed. It does not catch a horizon registered in a new section that leaves that sentence in place, which is how this design has been amended so far; #457 lists updating the row as a step of the re-estimate.
 
 ## Not changed
 
