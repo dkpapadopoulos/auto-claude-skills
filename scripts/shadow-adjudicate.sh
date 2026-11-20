@@ -190,12 +190,13 @@ _presep_total() {
     printf '%s' "$(( _b + _u ))"
 }
 
-# _presep_labelled -> how many of those records the sidecar holds a label for.
+# _presep_labelled -> "<only> <shared>": how many of those records the sidecar
+# holds a label for, split as described at the end of the function.
 # Such a label can no longer reach the rate, and a human false_block that stops
 # counting lowers k, so it is announced by --status and never dropped silently.
 # The orphan check cannot see it: the record is still in the corpus.
 _presep_labelled() {
-    [ -f "${ADJ_LOG}" ] && [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1 || { printf '0'; return 0; }
+    [ -f "${ADJ_LOG}" ] && [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1 || { printf '0 0'; return 0; }
     { jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" --argjson sep "${ACS_SEP_JSON}" \
          "${SHADOW_JQ_ACS} fromjson? // empty | select(type == \"object\") | select(.predicate_version == \$pv)
           | (if acs_class(\$sep) != \"ok\" then \"X\" else \"K\" end) as \$side
@@ -204,13 +205,16 @@ _presep_labelled() {
       jq -R -r 'fromjson? // empty | select(type == "object") | .record_id | strings | "A\t" + @json' \
          "${ADJ_LOG}" 2>/dev/null | LC_ALL=C sort -u
     } | awk -F'\t' '$1 == "X" { x[$2] = 1; next } $1 == "K" { k[$2] = 1; next }
-                    $1 == "A" && x[$2] && !k[$2] { n++ } END { printf "%d", n+0 }'
+                    $1 == "A" && x[$2] { if (k[$2]) s++; else n++ }
+                    END { printf "%d %d", n+0, s+0 }'
     # Ids travel as JSON text (@json), so a tab or newline inside one cannot
     # split a row or forge one.
-    # K rows are the countable records. An id on both sides of the separator
-    # has its label counted with the countable record, so reporting it here
-    # as well counted one label twice and called a counted label NOT counted
-    # (#453). No producer writes such a pair.
+    # Two numbers: labels on ids that only excluded records carry, then labels
+    # on ids a record at or after the separator (a K row) carries too. The
+    # second kind was counted with the first and called NOT counted, while the
+    # rate read the same label against the other record (#453). It is reported
+    # apart and never dropped: whether the rate counts it depends on that other
+    # record, which may itself be outside the rate. No producer writes the pair.
 }
 
 # _episodes — group v2 shadow records into independent episodes.
@@ -789,7 +793,7 @@ cmd_status() {
     local _wbep=0 _attep=0 _malwb=0 _silep=0 _wb
     local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
     local _den _wc_k _wc_n _band_hdl _band_wc
-    local _badts=0 _unparsed=0 _lines=0 _parsed=0 _ps _psb=0 _psu=0 _psl=0 _adjbad=0 _orph=0 _uncount=0
+    local _badts=0 _unparsed=0 _lines=0 _parsed=0 _ps _psb=0 _psu=0 _psl=0 _pss=0 _adjbad=0 _orph=0 _uncount=0
     local _eps="" _placed="" _rc _noid=0 _epids="" _unplaced=0 _lu _lout=0 _loth=0 _sup=0
     # Before any count (#453). The sidecar too: every row below the episode
     # total is read from labels, and with none read a labelled false_block
@@ -925,10 +929,13 @@ EOF
     if [ $(( _psb + _psu )) -gt 0 ]; then
         printf '  pre-separator     %s   <- excluded, in none of the counts above: acs_version below %s (%s) or no usable acs_version (%s); #432 changed this population at that plugin version (#435)\n' \
                "$(( _psb + _psu ))" "${SHADOW_ACS_SEPARATOR}" "${_psb}" "${_psu}"
-        _psl="$(_presep_labelled)"
+        _psl="$(_presep_labelled)"; _pss="${_psl#* }"; _psl="${_psl% *}"
         case "${_psl}" in ''|*[!0-9]*) _psl=0 ;; esac
+        case "${_pss}" in ''|*[!0-9]*) _pss=0 ;; esac
         [ "${_psl}" -gt 0 ] && \
             printf '  pre-separator labels %s   <- NOT counted: the sidecar holds a label for that many of those records\n' "${_psl}"
+        [ "${_pss}" -gt 0 ] && \
+            printf '  shared-id labels  %s   <- a label for an id that a pre-separator record and a later record both carry; it is read against the later record\n' "${_pss}"
     fi
     [ "${_badts}" -gt 0 ] && \
         printf '  malformed ts      %s   <- excluded: unparseable timestamp, cannot be placed in an episode\n' "${_badts}"

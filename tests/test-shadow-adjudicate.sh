@@ -1410,9 +1410,11 @@ eq "#454r a labelled record with a dash or backslash id is not offered again" "0
    "$("$SCRIPT" --next 2>/dev/null | grep -c '^to label:') $("$SCRIPT" --next 2>&1 | grep -c '^nothing outstanding — all 2 offerable')"
 
 # --- #453 item 3: an id on both sides of the separator -----------------------
-# A label for it is counted with the countable record. The pre-separator label
-# row counted it a second time and called it NOT counted. Both orders, because
-# the lookups take the first record with an id. No producer writes such a pair.
+# The label is read against the record at or after the separator. The
+# pre-separator label row counted it as well and called it NOT counted. It now
+# has a row of its own, and is never dropped: the later record may itself be
+# outside the rate. Both orders, because the lookups take the first record with
+# an id. No producer writes such a pair.
 for _sh_order in "ok first" "excluded first"; do
   seed
   if [ "${_sh_order}" = "ok first" ]; then sep_rec shared '"3.104.0"'; sep_rec shared '"3.99.9"'
@@ -1420,8 +1422,8 @@ for _sh_order in "ok first" "excluded first"; do
   sep_rec only_old '"3.99.9"'
   hlabel shared false_block
   _sh_st="$(status)"
-  eq "#453 a label on an id shared across the separator is counted once (${_sh_order})" "1 0" \
-     "$(printf '%s\n' "${_sh_st}" | awk '$1=="false_block" {print $2; exit}') $(printf '%s\n' "${_sh_st}" | grep -c '^  pre-separator labels')"
+  eq "#453 a label on an id shared across the separator is counted once, and named (${_sh_order})" "1 0 1" \
+     "$(printf '%s\n' "${_sh_st}" | awk '$1=="false_block" {print $2; exit}') $(printf '%s\n' "${_sh_st}" | grep -c '^  pre-separator labels') $(_rw_row "${_sh_st}" shared-id labels)"
   hlabel only_old false_block
   eq "#453 CONTROL: a label on an id that is only pre-separator is still announced (${_sh_order})" "1" \
      "$(_rw_row "$(status)" pre-separator labels)"
@@ -1452,7 +1454,14 @@ for _sh in /bin/bash /bin/dash /bin/zsh /bin/sh; do
   eq "#453 ${_sh}: another predicate still resolves to null" "null rc=0" \
      "$("${_sh}" -c '. "$1" 2>/dev/null; o="$(shadow_acs_sep_json 7 6)"; printf "%s rc=%s" "$o" "$?"' x "${_sh_lib}" 2>/dev/null)"
 done
-eq "#453 the separator validation was probed in bash and at least one other shell" "1" "$([ "${_sh_ran}" -ge 2 ] && echo 1 || echo 0)"
+# /bin/sh is bash on macOS, so it does not count as another shell. Where there
+# is neither dash nor zsh this block proves nothing beyond bash, and says so
+# instead of failing a machine for what it has installed.
+if [ -x /bin/dash ] || [ -x /bin/zsh ]; then
+  ok "#453 the separator validation was probed in a shell that is not bash"
+else
+  ok "SKIPPED: neither /bin/dash nor /bin/zsh — separator validation probed in bash only (${_sh_ran} shell path(s))"
+fi
 
 echo
 echo "Tests run: $(( PASS + FAIL ))  passed: $PASS  failed: $FAIL"

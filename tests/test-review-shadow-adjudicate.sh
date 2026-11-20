@@ -1566,17 +1566,37 @@ if printf '%s\n' "${_osp2}" | grep -qF "human-confirmed      : false_block=0  tr
 else
     _record_fail "SEP ...none of them reaches the rate, and the five countable labels still do" "got: ${_osp2}"
 fi
-# An id on BOTH sides of the separator (#453): its label is counted with the
-# countable record, so it is not also one of the labels reported as NOT counted.
-_SP5="${TMP}/sep5.jsonl"; _SP5A="${TMP}/sep5-adj.jsonl"; : > "${_SP5}"; : > "${_SP5A}"
-_sep_rec "${_SP5}" dd00 '"3.99.9"'; _sep_rec "${_SP5}" dd00 '"3.104.0"'; _sep_rec "${_SP5}" dd01 '"3.99.9"'
-jq -cn '{schema_version:1,leg:"review",record_id:"dd00",ts:"2026-11-18T11:00:00Z",verdict:"false_block",reason:"shared",claimant:"human"}' >> "${_SP5A}"
+# An id on BOTH sides of the separator (#453): its label is read against the
+# record at or after it, so it is not one of the labels reported as NOT counted.
+# It gets a line of its own and is never dropped. Both orders.
+_SP5="${TMP}/sep5.jsonl"; _SP5A="${TMP}/sep5-adj.jsonl"
+for _sp5_order in "excluded first" "ok first"; do
+    : > "${_SP5}"; : > "${_SP5A}"
+    if [ "${_sp5_order}" = "ok first" ]; then _sep_rec "${_SP5}" dd00 '"3.104.0"'; _sep_rec "${_SP5}" dd00 '"3.99.9"'
+    else _sep_rec "${_SP5}" dd00 '"3.99.9"'; _sep_rec "${_SP5}" dd00 '"3.104.0"'; fi
+    _sep_rec "${_SP5}" dd01 '"3.99.9"'
+    jq -cn '{schema_version:1,leg:"review",record_id:"dd00",ts:"2026-11-18T11:00:00Z",verdict:"false_block",reason:"shared",claimant:"human"}' >> "${_SP5A}"
+    _osp5="$(_run "${_SP5}" "${_SP5A}" --status)"
+    assert_contains "SEP a label on an id shared across the separator reaches the rate (${_sp5_order})" "false_block=1" "${_osp5}"
+    assert_not_contains "SEP ...and is not reported as a label that is NOT counted (${_sp5_order})" "carry a label in the sidecar" "${_osp5}"
+    assert_contains "SEP ...and is named as a shared-id label (${_sp5_order})" \
+        "  1 label(s) name an id that one of them shares with a record at or after" "${_osp5}"
+    jq -cn '{schema_version:1,leg:"review",record_id:"dd01",ts:"2026-11-18T11:00:00Z",verdict:"false_block",reason:"old",claimant:"human"}' >> "${_SP5A}"
+    assert_contains "SEP CONTROL: a label on an id that is only pre-separator is still announced (${_sp5_order})" \
+        "  1 of them carry a label in the sidecar. Those labels are NOT counted." "$(_run "${_SP5}" "${_SP5A}" --status)"
+done
+# The later record may itself be outside the rate (here it would not block).
+# The label is then in no number, so the shared-id line is the only thing that
+# says it exists: found by the review of the first version of this fix, which
+# left such a label out of every line.
+: > "${_SP5}"; : > "${_SP5A}"
+_sep_rec "${_SP5}" dd02 '"3.99.9"'; _sep_rec "${_SP5}" dd02 '"3.104.0"'
+jq -c 'if .acs_version == "3.104.0" then .would_block = false else . end' "${_SP5}" > "${_SP5}.t" && mv "${_SP5}.t" "${_SP5}"
+jq -cn '{schema_version:1,leg:"review",record_id:"dd02",ts:"2026-11-18T11:00:00Z",verdict:"false_block",reason:"shared",claimant:"human"}' >> "${_SP5A}"
 _osp5="$(_run "${_SP5}" "${_SP5A}" --status)"
-assert_contains "SEP a label on an id shared across the separator reaches the rate" "false_block=1" "${_osp5}"
-assert_not_contains "SEP ...and is not also reported as a label that is NOT counted" "carry a label in the sidecar" "${_osp5}"
-jq -cn '{schema_version:1,leg:"review",record_id:"dd01",ts:"2026-11-18T11:00:00Z",verdict:"false_block",reason:"old",claimant:"human"}' >> "${_SP5A}"
-assert_contains "SEP CONTROL: a label on an id that is only pre-separator is still announced" \
-    "  1 of them carry a label in the sidecar. Those labels are NOT counted." "$(_run "${_SP5}" "${_SP5A}" --status)"
+assert_contains "SEP fixture: the later record is outside the rate, so the label is in no count" "false_block=0" "${_osp5}"
+assert_contains "SEP ...and the shared-id line still announces that label" \
+    "  1 label(s) name an id that one of them shares with a record at or after" "${_osp5}"
 # The x3 label is the one orphan; the two labels on excluded records are not.
 assert_contains "SEP ...and they are not reported as orphans (only the x3 label is)" \
     "WARNING: 1 adjudication(s) name a record_id absent from this corpus." "${_osp2}"

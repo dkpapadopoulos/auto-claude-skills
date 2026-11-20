@@ -9,7 +9,7 @@ Issue #453 listed four items. Items 1 and 2 were fixed in PR #455, and the issue
 
 ## What changes
 
-- `_presep_labelled` in both readers leaves out an id that a countable record also carries.
+- `_presep_labelled` in both readers returns two numbers: labels on ids that only excluded records carry, reported as before, and labels on ids that a record at or after the separator carries too, reported on a new line. The second kind is not dropped: the later record may be attested or unplaceable, and then the label is in no count and that line is the only place it appears.
 - The separator is validated with `case` and parameter expansion: three components, each `0` or up to nine digits with no leading zero. The file now loads under dash.
 
 ## Not changed
