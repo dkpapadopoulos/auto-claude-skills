@@ -7,6 +7,9 @@ PASS=0; FAIL=0
 ok()   { PASS=$(( PASS + 1 )); echo "  PASS: $1"; }
 bad()  { FAIL=$(( FAIL + 1 )); echo "  FAIL: $1"; echo "        expected: $2"; echo "        actual:   $3"; }
 eq()   { [ "$2" = "$3" ] && ok "$1" || bad "$1" "$2" "$3"; }
+# The MX cell below calls this name, which this file never defined: it printed
+# "command not found" and never ran.
+assert_equals() { eq "$@"; }
 
 echo "=== test-shadow-adjudicate.sh ==="
 
@@ -770,7 +773,7 @@ _SV="${IMPLEMENT_SHADOW_SCHEMA_VERSION:-}"
 # one schema 4 added (advisory_emitted), so they model schemas 4 and 3 only
 # while the producer is at 5 (#416). After a schema bump this cell fails until
 # the lists are rewritten for the new previous schemas.
-eq "MX the hand-typed field lists model the two schemas before 5" "5" "${_SV}"
+assert_equals "MX the hand-typed field lists model the two schemas before 5" "5" "${_SV}"
 : > "$IMPLEMENT_SHADOW_LOG"; : > "$IMPLEMENT_ADJUDICATION_LOG"
 for _t in tokMX5 tokMX4 tokMX3 tokMXP; do
   ( unset SHADOW_STAMP_SESSION_ID SHADOW_STAMP_TOOL_USE_ID SHADOW_STAMP_CC_VERSION
