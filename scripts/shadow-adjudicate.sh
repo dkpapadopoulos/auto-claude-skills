@@ -131,6 +131,20 @@ _say_sidecar_unreadable() {
     echo "  No label in it was read. This is not an unlabeled corpus."
 }
 
+# A ts the episode grouping can place. One definition for every jq read: the
+# string check keeps a numeric ts from raising a jq error, which drops the
+# record from whatever was counting it, and \A..\z because jq's `$` also
+# matches before a trailing newline, which awk's does not.
+_TS_OK_JQ='((.ts | type) == "string" and (.ts | test("\\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\\z")))'
+
+# What --next offers and the label command accepts: a placeable ts, a boolean
+# would_block that is true, and no explicit advisory_emitted:false. The reasons
+# are at cmd_next. One filter, because --next's closing count, its offer and
+# the label command's refusal must describe the same records (#453, #454).
+_OFFERABLE_JQ='select('"${_TS_OK_JQ}"')
+              | select(has("would_block") and ((.would_block|type) == "boolean") and .would_block == true)
+              | select((has("advisory_emitted") | not) or ((.advisory_emitted|type) != "boolean") or .advisory_emitted == true)'
+
 # _band <k> <n> -> DENY | ADVISORY-ONLY | NARROWED | INSUFFICIENT
 #
 # Exact Clopper-Pearson, stated as a direct CDF comparison so no interval
@@ -263,7 +277,7 @@ _record_field() { # _record_field <record_id> <field>
 }
 
 cmd_adjudicate() {
-    local _rid="${1:-}" _verdict="${2:-}" _reason="${3:-}" _pv _ts _claim
+    local _rid="${1:-}" _verdict="${2:-}" _reason="${3:-}" _pv _ts _claim _cls
     case "${_verdict}" in
         true_catch|false_block|unknown) ;;
         *) echo "error: --verdict must be true_catch, false_block, or unknown" >&2; return 1;;
@@ -272,20 +286,37 @@ cmd_adjudicate() {
     # Otherwise the lookup below finds nothing and blames the record id.
     if _unreadable "${SHADOW_LOG}"; then _say_corpus_unreadable >&2; return 1; fi
     command -v jq >/dev/null 2>&1 || { echo "error: jq required" >&2; return 1; }
-    _pv="$(_record_field "${_rid}" predicate_version)"
-    [ -z "${_pv}" ] && { echo "error: no record '${_rid}' in ${SHADOW_LOG}" >&2; return 1; }
-    if [ "${_pv}" != "${REQUIRED_PREDICATE_VERSION}" ]; then
+    # Classified by jq, on the record's own types. Comparing the printed
+    # predicate_version as a shell string accepted the JSON string "6", which
+    # every other read here treats as another predicate (#454).
+    _cls="$(jq -R -r --arg id "${_rid}" --argjson pv "${REQUIRED_PREDICATE_VERSION}" --argjson sep "${ACS_SEP_JSON}" \
+               "${SHADOW_JQ_ACS} fromjson? // empty | objects | select(.record_id == \$id)
+                | if .predicate_version != \$pv then \"pv\"
+                  elif acs_class(\$sep) != \"ok\" then \"presep\"
+                  elif ([${_OFFERABLE_JQ}] | length) == 0 then \"notoffer\"
+                  else \"ok\" end" \
+               "${SHADOW_LOG}" 2>/dev/null | head -1)"
+    [ -z "${_cls}" ] && { echo "error: no record '${_rid}' in ${SHADOW_LOG}" >&2; return 1; }
+    if [ "${_cls}" = "pv" ]; then
+        _pv="$(jq -R -r --arg id "${_rid}" 'fromjson? // empty | objects | select(.record_id == $id) | .predicate_version | tojson' \
+                  "${SHADOW_LOG}" 2>/dev/null | head -1)"
         echo "error: record '${_rid}' is predicate_version ${_pv}; only v${REQUIRED_PREDICATE_VERSION} is adjudicable." >&2
         echo "       Records of another predicate version measured a different subject and MUST NOT be pooled." >&2
         return 1
     fi
     # A record the separator excludes can never reach the rate, so a label on
     # it would be work the readout then ignores without saying why.
-    if [ "$(jq -R -r --arg id "${_rid}" --argjson sep "${ACS_SEP_JSON}" \
-               "${SHADOW_JQ_ACS} fromjson? // empty | select(.record_id == \$id) | acs_class(\$sep)" \
-               "${SHADOW_LOG}" 2>/dev/null | head -1)" != "ok" ]; then
+    if [ "${_cls}" = "presep" ]; then
         echo "error: record '${_rid}' carries an acs_version below ${SHADOW_ACS_SEPARATOR}, or none; it is not adjudicable." >&2
         echo "       #432 changed this leg's population at that plugin version (#435); earlier records MUST NOT be pooled." >&2
+        return 1
+    fi
+    # The same records --next never offers. A label on one reaches no rate
+    # episode, and --status withholds the rate over a human label it cannot
+    # place, so accepting it here would let one mistyped id stop the readout.
+    if [ "${_cls}" != "ok" ]; then
+        echo "error: record '${_rid}' is not adjudicable: would_block is not true, the leg emitted no advisory, or its ts is unparseable." >&2
+        echo "       --next never offers it, and a label on it could not reach the rate." >&2
         return 1
     fi
     if [ ! -f "${ADJ_LOG}" ]; then
@@ -316,11 +347,6 @@ cmd_adjudicate() {
     return 0
 }
 
-_adjudicated_ids() {
-    [ -f "${ADJ_LOG}" ] || return 0
-    jq -R -r 'fromjson? // empty | objects | .record_id // empty' "${ADJ_LOG}" 2>/dev/null | sort -u
-}
-
 # What a sidecar line must hold to be a label: a string record_id and one of
 # the three verdicts. One definition, because the count of lines that are not
 # labels and the rows the verdict is resolved from must not disagree (#454): an
@@ -329,14 +355,25 @@ _adjudicated_ids() {
 _ADJ_LABEL_JQ='objects | select((.record_id | type) == "string")
                | select(.verdict == "true_catch" or .verdict == "false_block" or .verdict == "unknown")'
 
+# A line that is not a label marks nothing adjudicated: --status does not count
+# it, so --next must not stop offering the record over it.
+_adjudicated_ids() {
+    [ -f "${ADJ_LOG}" ] || return 0
+    # As @tsv text, because cmd_next compares them with ids cut from @tsv
+    # rows: printed raw, an id holding a backslash never matched and its
+    # record was offered again after it was labelled.
+    jq -R -r "fromjson? // empty | ${_ADJ_LABEL_JQ} | [.record_id] | @tsv" "${ADJ_LOG}" 2>/dev/null | sort -u
+}
+
 # _adj_unparsed -> sidecar lines that hold no label: unparseable, not an object,
 # or an object that is not a label as defined above. Counted so a lost label is
 # ANNOUNCED (#454); the REVIEW reader's function of the same name (#386).
-# LC_ALL=C because in a UTF-8 locale `.` does not match an invalid byte.
+# LC_ALL=C because in a UTF-8 locale a pattern does not match an invalid byte.
+# A line of whitespace only is not a line: it lost nothing.
 _adj_unparsed() {
     [ -f "${ADJ_LOG}" ] || { printf '0'; return 0; }
     local _t _p
-    _t="$(LC_ALL=C grep -c . "${ADJ_LOG}" 2>/dev/null | tr -d '[:space:]')"
+    _t="$(LC_ALL=C grep -c '[^[:space:]]' "${ADJ_LOG}" 2>/dev/null | tr -d '[:space:]')"
     _p="$(jq -R -r "fromjson? | ${_ADJ_LABEL_JQ} | 1" "${ADJ_LOG}" 2>/dev/null | grep -c . | tr -d '[:space:]')"
     printf '%s' "$(( ${_t:-0} - ${_p:-0} ))"
 }
@@ -351,6 +388,93 @@ _adj_orphans() {
     { jq -R -r 'fromjson? | objects | .record_id | strings | "X\t" + @json' "${SHADOW_LOG}" 2>/dev/null
       jq -R -r "fromjson? | ${_ADJ_LABEL_JQ} | \"A\t\" + (.record_id | @json)" "${ADJ_LOG}" 2>/dev/null | LC_ALL=C sort -u
     } | awk -F'\t' '$1 == "X" { x[$2] = 1; next } $1 == "A" && !x[$2] { n++ } END { printf "%d", n+0 }'
+}
+
+# _labels_unplaced <placed ids, one per line> -> "<outside> <other-predicate>"
+#
+# The label half of the one rule --status withholds on (#454): every record a
+# human has labelled is in an episode the rate counted, or a named row says why
+# it is not, or no rate is printed. <placed ids> are the members of the
+# would-block episodes --status found a label for, as _episodes printed them.
+# A human-labelled record that is not among them is then one of:
+#   absent from the corpus        -> the orphan row (_adj_orphans), withholds
+#   of another predicate version  -> <other-predicate>, a row; the labels of a
+#                                    retired predicate are expected, so no withhold
+#   pre-separator                 -> the pre-separator labels row, no withhold
+#   anything else                 -> <outside>, withholds
+# <outside> is found by subtraction and names no cause, on purpose: an edited
+# would_block, a ts that stopped parsing, an id the episode list cannot carry
+# and whatever is found next all land there without a check written for each.
+# "Human-labelled" is any valid label line claiming human, not only the latest;
+# a human label that a later agent line replaced is _adj_superseded's.
+# Ids are compared as the @tsv text _episodes carries, and as strings.
+_labels_unplaced() {
+    [ -f "${ADJ_LOG}" ] && [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1 || { printf '0 0'; return 0; }
+    { printf '%s\n' "${1:-}" | awk 'length($0) > 0 { print "P\t" $0 }'
+      jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" --argjson sep "${ACS_SEP_JSON}" \
+         "${SHADOW_JQ_ACS} fromjson? // empty | objects | select((.record_id | type) == \"string\")
+          | [\"X\", .record_id,
+             (if .predicate_version != \$pv then \"other\" elif acs_class(\$sep) != \"ok\" then \"presep\" else \"cur\" end)] | @tsv" \
+         "${SHADOW_LOG}" 2>/dev/null
+      jq -R -r "fromjson? // empty | ${_ADJ_LABEL_JQ} | select(.claimant == \"human\") | [\"H\", .record_id] | @tsv" \
+         "${ADJ_LOG}" 2>/dev/null | LC_ALL=C sort -u
+    } | awk -F'\t' '
+        $1 == "P" { p[$2 ""] = 1; next }
+        $1 == "X" { x[$2 ""] = 1; c[($2 "") SUBSEP $3] = 1; next }
+        $1 == "H" {
+            id = $2 ""
+            if (id in p) next
+            if (!(id in x)) next
+            if ((id SUBSEP "cur") in c)    { out++; next }
+            if ((id SUBSEP "presep") in c) next
+            oth++
+        }
+        END { printf "%d %d", out + 0, oth + 0 }'
+}
+
+# _record_classes -> one line per record of the adjudicable population, by
+# what the episode grouping does with it, read without the grouping's @tsv so
+# a record that cannot print is still listed:
+#   N           no id; the grouping skips it
+#   B           an id, and a ts that does not parse
+#   K<TAB><id>  an id and a placeable ts, so it belongs in an episode. The id
+#               is written as the grouping carries it; one @tsv cannot print
+#               (an array, an object) is written as a byte no id can equal.
+_record_classes() {
+    [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1 || return 0
+    jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" --argjson sep "${ACS_SEP_JSON}" \
+       "${SHADOW_JQ_ACS} fromjson? // empty | objects | select(.predicate_version == \$pv)
+        | select(acs_class(\$sep) == \"ok\")
+        | if (.record_id == null or .record_id == \"\") then \"N\"
+          elif (${_TS_OK_JQ} | not) then \"B\"
+          else \"K\\t\" + (.record_id | if (type == \"array\" or type == \"object\") then \"\\u0001\" else ([.] | @tsv) end) end" \
+       "${SHADOW_LOG}" 2>/dev/null
+}
+
+# _adj_superseded -> records whose latest label is not human-claimed while an
+# earlier one was. The episode verdict takes the latest line per record, so
+# that line replaced what the human said: alone in its episode the record
+# moves to agent-claimed, and beside a human-labelled sibling the agent's
+# verdict is counted as if a human gave it. Either way a human false_block can
+# leave k on one agent command, so --status withholds until a human
+# re-confirms the record.
+#
+# Only for a record of the adjudicable population. One of another predicate
+# version or before the separator is in no rate episode, so nothing left k,
+# its label already has a row that does not withhold, and the label command
+# refuses it: counting it here withheld the rate with no way to clear it. A
+# record the corpus does not hold is the orphan row's.
+_adj_superseded() {
+    [ -f "${ADJ_LOG}" ] && [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1 || { printf '0'; return 0; }
+    { jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" --argjson sep "${ACS_SEP_JSON}" \
+         "${SHADOW_JQ_ACS} fromjson? // empty | objects | select((.record_id | type) == \"string\")
+          | select(.predicate_version == \$pv) | select(acs_class(\$sep) == \"ok\") | [\"X\", .record_id] | @tsv" \
+         "${SHADOW_LOG}" 2>/dev/null
+      jq -R -r "fromjson? // empty | ${_ADJ_LABEL_JQ} | [\"L\", .record_id, (if .claimant == \"human\" then \"h\" else \"a\" end)] | @tsv" \
+         "${ADJ_LOG}" 2>/dev/null
+    } | awk -F'\t' '$1 == "X" { x[$2 ""] = 1; next }
+                    $1 == "L" { id = $2 ""; if ($3 == "h") h[id] = 1; last[id] = $3 }
+                    END { for (id in last) if (last[id] != "h" && (id in h) && (id in x)) n++; printf "%d", n + 0 }'
 }
 
 # cmd_next — oldest v2 record with no adjudication, plus how to label it.
@@ -390,10 +514,7 @@ cmd_next() {
     #
     # One filter, held in a variable, because the end-of-queue message below
     # counts the same population it was offered from (#453).
-    local _offerable
-    _offerable='select((.ts // "") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
-              | select(has("would_block") and ((.would_block|type) == "boolean") and .would_block == true)
-              | select((has("advisory_emitted") | not) or ((.advisory_emitted|type) != "boolean") or .advisory_emitted == true)'
+    local _offerable="${_OFFERABLE_JQ}"
     _line="$(_shadow_tsv "${_offerable}"'
               | [.record_id,.ts,.repo,.branch,.action,.diff_base,
                  (.impl_in_chain|tostring),(.material_source|tostring),
@@ -406,7 +527,7 @@ cmd_next() {
             | while IFS= read -r _row; do
                   _id="$(printf '%s' "${_row}" | cut -f1)"
                   [ -z "${_id}" ] && continue
-                  if [ -n "${_seen}" ] && printf '%s\n' "${_seen}" | grep -qxF "${_id}"; then
+                  if [ -n "${_seen}" ] && printf '%s\n' "${_seen}" | grep -qxF -e "${_id}"; then
                       continue
                   fi
                   printf '%s\n' "${_row}"; break
@@ -428,7 +549,7 @@ cmd_next() {
         [ "${_n_not}" -lt 0 ] && _n_not=0
         _n_ps="$(_presep_total)"
         _n_v1="$(jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
-                   'fromjson? // empty | select(.predicate_version != $pv) | .record_id' \
+                   'fromjson? // empty | objects | select(.predicate_version != $pv) | 1' \
                    "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
         if [ "${_n_v2}" -eq 0 ]; then
             if [ "${_n_ps}" -gt 0 ]; then
@@ -564,11 +685,13 @@ cmd_next() {
 # A missing or non-boolean value is "malformed", never silently "no": folding an
 # unknown into the population that looks safe is the same bias in miniature.
 _episode_wb() {
-    local _ids="${1:-}" _id _v _sawtrue=false _sawbad=false _sawsilent=false _oifs
+    local _ids="${1:-}" _id _v _sawtrue=false _sawbad=false _sawsilent=false
     [ -n "${_ids}" ] && [ -f "${SHADOW_LOG}" ] || { echo malformed; return 0; }
     command -v jq >/dev/null 2>&1 || { echo malformed; return 0; }
-    _oifs="$IFS"; IFS=,
-    for _id in ${_ids}; do
+    # A here-document, not `for _id in ${_ids}`: an unquoted expansion globs,
+    # so an id of `*` became the file names in the working directory.
+    while IFS= read -r _id; do
+        [ -n "${_id}" ] || continue
         # Type-checked, not `tostring`: a JSON *string* "true" would otherwise be
         # indistinguishable from the boolean and would silently join the rate
         # population.
@@ -592,8 +715,9 @@ _episode_wb() {
             SILENT) _sawsilent=true ;;
             *)      _sawbad=true ;;
         esac
-    done
-    IFS="$_oifs"
+    done <<EOF_WB
+$(printf '%s' "${_ids}" | tr ',' '\n')
+EOF_WB
     # Order is UNCHANGED from before the silent arm existed: any would-block wins
     # (the anchor-independent ANY rule), then malformed. `silent` is appended
     # LAST so an episode holding both a real would-block and a silent record
@@ -615,16 +739,23 @@ _episode_verdict() {
     # _adj_unparsed still counted it as one.
     _rows="$(jq -R -r "fromjson? // empty | ${_ADJ_LABEL_JQ}
                        | [.record_id,.verdict,(.claimant | if type == \"string\" then . else \"\" end)] | @tsv" "${ADJ_LOG}" 2>/dev/null)"
-    for _id in $(printf '%s' "${_ids}" | tr ',' ' '); do
+    # Split on the comma only (an id may hold a space), with no globbing.
+    while IFS= read -r _id; do
+        [ -n "${_id}" ] || continue
         # LATEST adjudication per record wins. The sidecar is append-only, so the
         # last matching row is the most recent one. Folding over ALL rows instead
         # makes a correction a silent no-op: re-adjudicating a fat-fingered
         # false_block to true_catch would print success while the earlier verdict
         # continued to win, permanently poisoning a rate that gates a deny-flip.
         # Claimant comes from the same latest row, so an agent overwriting a
-        # human's label correctly reverts the episode to excluded.
+        # human's label reverts a one-record episode to excluded. In a larger
+        # episode a sibling's human label keeps it counted with the agent's
+        # verdict in it, which is why --status withholds on _adj_superseded.
+        # Compared as STRINGS, and the id passed through ENVIRON: awk compares
+        # two numeric-looking values as numbers (a label for "1e2" answered for
+        # the record "100"), and -v processes backslash escapes.
         _latest="$(printf '%s\n' "${_rows}" \
-                   | awk -F'\t' -v id="${_id}" '$1 == id { v = $2; c = $3 }
+                   | _SA_ID="${_id}" awk -F'\t' '($1 "") == (ENVIRON["_SA_ID"] "") { v = $2; c = $3 }
                                                 END { if (v != "") print v "\t" c }')"
         [ -z "${_latest}" ] && continue
         _rv="$(printf '%s' "${_latest}" | cut -f1)"
@@ -639,7 +770,9 @@ _episode_verdict() {
             unknown)     if [ "${_v}" != "false_block" ]; then _v="unknown"; fi ;;
             true_catch)  if [ "${_v}" = "unlabeled" ];    then _v="true_catch"; fi ;;
         esac
-    done
+    done <<EOF_EV
+$(printf '%s' "${_ids}" | tr ',' '\n')
+EOF_EV
     [ "${_has_human}" -eq 1 ] && _claim="human"
     printf '%s\n%s\n' "${_v}" "${_claim}"
 }
@@ -651,6 +784,7 @@ cmd_status() {
     local _repos="" _eid _repo _branch _tok _ids _vc _v _c _nrepos
     local _den _wc_k _wc_n _band_hdl _band_wc
     local _badts=0 _unparsed=0 _lines=0 _parsed=0 _ps _psb=0 _psu=0 _psl=0 _adjbad=0 _orph=0 _uncount=0
+    local _eps="" _placed="" _rc _noid=0 _epids="" _unplaced=0 _lu _lout=0 _loth=0 _sup=0
     # Before any count (#453). The sidecar too: every row below the episode
     # total is read from labels, and with none read a labelled false_block
     # printed as unadjudicated.
@@ -666,23 +800,24 @@ cmd_status() {
     case "${_psu}" in ''|*[!0-9]*) _psu=0 ;; esac
     if [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1; then
         _v1="$(jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" \
-                 'fromjson? // empty | select(.predicate_version != $pv) | .record_id' \
+                 'fromjson? // empty | objects | select(.predicate_version != $pv) | 1' \
                  "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
         # v2 records whose ts cannot be parsed are dropped by _episodes; report
         # the count so the exclusion is visible rather than a silent shortfall.
-        # `.ts // ""` is required: `null | test(...)` is a jq RUNTIME error, and
-        # jq then skips that input entirely — so a record with a missing ts was
-        # excluded from episodes AND counted zero here, silently.
-        _badts="$(_shadow_tsv 'select(((.ts // "") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) | not) | [.record_id]' \
-                  | grep -c . )"
+        # The type check in _TS_OK_JQ is required: `test` on a ts that is not
+        # a string is a jq RUNTIME error, and jq then skips that input entirely
+        # — so a record with a missing or numeric ts was excluded from episodes
+        # AND counted zero here, silently. `[1]`, never the id: see below.
+        _badts="$(_shadow_tsv "select(${_TS_OK_JQ} | not) | [1]" | grep -c . )"
         # Lines jq could not parse at all. Reported rather than swallowed: a
         # single truncated line used to abort the whole read and silently
         # truncate the corpus.
-        # LC_ALL=C: in a UTF-8 locale `.` does not match an invalid byte, so a
-        # line of corrupt bytes was not a line at all. One `1` per object, never
+        # LC_ALL=C: in a UTF-8 locale a pattern does not match an invalid byte,
+        # so a line of corrupt bytes was not a line at all. A whitespace-only
+        # line is not counted: nothing was on it. One `1` per object, never
         # the id: an id holding a newline printed as two lines and cancelled an
         # unparseable one, and an empty id printed as none (#454).
-        _lines="$(LC_ALL=C grep -c . "${SHADOW_LOG}" 2>/dev/null)"; [ -n "${_lines}" ] || _lines=0
+        _lines="$(LC_ALL=C grep -c '[^[:space:]]' "${SHADOW_LOG}" 2>/dev/null)"; [ -n "${_lines}" ] || _lines=0
         _parsed="$(jq -R -r 'fromjson? | objects | 1' "${SHADOW_LOG}" 2>/dev/null | grep -c . )"
         [ -n "${_parsed}" ] || _parsed=0
         # These two feed the decision to print a rate, so a count that is not
@@ -699,6 +834,7 @@ cmd_status() {
     # whitespace, so empty fields survive. (This is the repo's declared field
     # separator; _episodes still emits tab for its own consumers.)
     # The heredoc keeps the loop in THIS shell so the counters survive.
+    _eps="$(_episodes)"
     while IFS="$(printf '\037')" read -r _eid _repo _branch _tok _ids; do
         [ -z "${_eid:-}" ] && continue
         _tot=$(( _tot + 1 ))
@@ -708,6 +844,8 @@ cmd_status() {
         # attestation episodes could satisfy >=2 repos, the corpus would clear
         # the diversity requirement with zero false-block evidence spanning
         # repos, which is the same dilution one level up.
+        _epids="${_epids}$(printf '%s' "${_ids}" | tr ',' '\n')
+"
         _wb="$(_episode_wb "${_ids}")"
         case "${_wb}" in
             yes)    _wbep=$(( _wbep + 1 )) ;;
@@ -719,13 +857,17 @@ cmd_status() {
         _v="$(printf '%s' "${_vc}" | sed -n 1p)"
         _c="$(printf '%s' "${_vc}" | sed -n 2p)"
         if [ "${_v}" = "unlabeled" ]; then _unlab=$(( _unlab + 1 )); continue; fi
+        # The records a label was looked up for and found, human or agent:
+        # what _labels_unplaced checks the sidecar against.
+        _placed="${_placed}$(printf '%s' "${_ids}" | tr ',' '\n')
+"
         if [ "${_c}" = "agent" ];    then _agent=$(( _agent + 1 )); continue; fi
         _lab=$(( _lab + 1 ))
         # Newline-separated with an exact whole-line match. An ad-hoc "|"
         # delimiter false-matches any repo path containing a literal "|"
         # (filesystem-legal), undercounting _nrepos and so weakening the
         # diversity floor. Same delimiter-collision class as the episode key.
-        if [ -z "${_repos}" ] || ! printf '%s\n' "${_repos}" | grep -qxF "${_repo}"; then
+        if [ -z "${_repos}" ] || ! printf '%s\n' "${_repos}" | grep -qxF -e "${_repo}"; then
             _repos="${_repos}${_repo}
 "
         fi
@@ -735,8 +877,28 @@ cmd_status() {
             true_catch)  _tc=$((  _tc  + 1 )) ;;
         esac
     done <<EOF
-$(_episodes | tr '\t' '\037')
+$(printf '%s\n' "${_eps}" | tr '\t' '\037')
 EOF
+    # The record half of the rule: the records with an id and a placeable ts
+    # are exactly the records the episodes hold. Compared id by id, both ways,
+    # because two totals can agree by accident: one record dropped (an object
+    # where a string belongs fails @tsv) beside one id the comma-joined list
+    # split in two. Anything on one side only has no row of its own.
+    _rc="$(_record_classes)"
+    _noid="$(printf '%s\n' "${_rc}" | grep -c '^N$')"
+    case "${_noid}" in ''|*[!0-9]*) _noid=0 ;; esac
+    _unplaced="$( { printf '%s\n' "${_rc}" | awk -F'\t' '$1 == "K" { print "K\t" substr($0, 3) }'
+                    printf '%s' "${_epids}" | awk 'length($0) > 0 { print "E\t" $0 }'
+                  } | awk -F'\t' '{ id = substr($0, 3); if ($1 == "K") k[id]++; else e[id]++ }
+                                  END { for (id in k) { d = k[id] - e[id]; n += (d < 0 ? -d : d) }
+                                        for (id in e) if (!(id in k)) n += e[id]
+                                        printf "%d", n + 0 }')"
+    case "${_unplaced}" in ''|*[!0-9]*) _unplaced=1 ;; esac
+    _sup="$(_adj_superseded)"
+    case "${_sup}" in ''|*[!0-9]*) _sup=1 ;; esac
+    _lu="$(_labels_unplaced "${_placed}")"; _lout="${_lu% *}"; _loth="${_lu#* }"
+    case "${_lout}" in ''|*[!0-9]*) _lout=1 ;; esac
+    case "${_loth}" in ''|*[!0-9]*) _loth=0 ;; esac
     _nrepos="$(printf '%s' "${_repos}" | grep -c . )"
     echo "IMPLEMENT shadow corpus — predicate_version ${REQUIRED_PREDICATE_VERSION}"
     printf '  episodes          %s\n' "${_tot}"
@@ -750,6 +912,8 @@ EOF
     printf '  agent-claimed     %s   <- excluded until a human re-confirms\n' "${_agent}"
     printf '  unadjudicated     %s\n' "${_unlab}"
     printf '  other-predicate   %s   <- unpoolable, excluded\n' "${_v1}"
+    [ "${_loth}" -gt 0 ] && \
+        printf '  other-predicate labels %s   <- NOT counted: that many of those records carry a human label\n' "${_loth}"
     # Never silent (#450): these are v-current records, so without this row a
     # corpus that is mostly pre-separator reads as a nearly empty one.
     if [ $(( _psb + _psu )) -gt 0 ]; then
@@ -764,6 +928,10 @@ EOF
         printf '  malformed ts      %s   <- excluded: unparseable timestamp, cannot be placed in an episode\n' "${_badts}"
     [ "${_unparsed}" -gt 0 ] && \
         printf '  unparseable lines %s   <- excluded: not valid JSON\n' "${_unparsed}"
+    [ "${_noid}" -gt 0 ] && \
+        printf '  no record_id      %s   <- excluded: cannot be addressed, so cannot be labelled\n' "${_noid}"
+    [ "${_unplaced}" -gt 0 ] && \
+        printf '  unplaced records  %s   <- that many record(s) with an id and a parseable ts are in no episode, or episode members match no such record; no row above says why\n' "${_unplaced}"
     # A count that cannot be read is treated as a lost line, never as none.
     _adjbad="$(_adj_unparsed)"
     case "${_adjbad}" in ''|*[!0-9]*) _adjbad=1 ;; esac
@@ -773,6 +941,10 @@ EOF
     case "${_orph}" in ''|*[!0-9]*) _orph=1 ;; esac
     [ "${_orph}" -gt 0 ] && \
         printf '  orphan labels     %s   <- the sidecar labels that many record(s) this corpus does not hold\n' "${_orph}"
+    [ "${_sup}" -gt 0 ] && \
+        printf '  superseded human labels %s   <- a later line that is not human-claimed replaced a human label for that many record(s); withheld until a human labels each again\n' "${_sup}"
+    [ "${_lout}" -gt 0 ] && \
+        printf '  labels outside the rate %s   <- that many human-labelled record(s) are in no episode the rate counted, and no row above says why\n' "${_lout}"
     printf '  true_catch        %s\n' "${_tc}"
     printf '  false_block       %s\n' "${_fb}"
     printf '  unknown           %s   <- excluded from the headline rate\n' "${_unk}"
@@ -791,10 +963,16 @@ EOF
     # the flip, so no rate is printed over one (#454). The REVIEW reader blocks
     # its floor on the first three counts and only warns about orphans; here an
     # orphan withholds too, because this reader has one corpus per sidecar.
-    _uncount=$(( _adjbad + _orph + _unparsed + _badts + _malwb ))
+    #
+    # The last two terms are the rule the first five are instances of: a record
+    # a human labelled that the rate did not count and no row explains, and a
+    # record no episode and no row accounts for. They are found by subtraction,
+    # so an input nobody listed withholds the rate as well. The last term is
+    # a human label an agent's later line replaced (_adj_superseded).
+    _uncount=$(( _adjbad + _orph + _unparsed + _badts + _malwb + _lout + _unplaced + _sup ))
     if [ "${_uncount}" -gt 0 ]; then
-        printf '  rate              cannot check — %s label(s), line(s) or record(s) above could not be placed (unparseable labels %s, orphan labels %s, unparseable lines %s, malformed ts %s, malformed would_block %s)\n' \
-               "${_uncount}" "${_adjbad}" "${_orph}" "${_unparsed}" "${_badts}" "${_malwb}"
+        printf '  rate              cannot check — %s label(s), line(s) or record(s) above could not be placed (unparseable labels %s, orphan labels %s, unparseable lines %s, malformed ts %s, malformed would_block %s, labels outside the rate %s, unplaced records %s, superseded human labels %s)\n' \
+               "${_uncount}" "${_adjbad}" "${_orph}" "${_unparsed}" "${_badts}" "${_malwb}" "${_lout}" "${_unplaced}" "${_sup}"
         echo "  need              each one accounted for: any of them may be a lost false_block"
     elif [ "${_den}" -lt "${FLOOR_EPISODES}" ] || [ "${_nrepos}" -lt "${FLOOR_REPOS}" ]; then
         echo "  rate              insufficient data"
