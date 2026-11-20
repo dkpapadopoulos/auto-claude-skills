@@ -182,11 +182,33 @@ SHADOW_ACS_SEPARATOR_IMPLEMENT_PREDICATE=6
 # separator is not <n>.<n>.<n>: a missing leg constant would otherwise read as
 # "does not apply" and an empty separator as `[]`, which nothing is below, and
 # both pool silently. The caller refuses on that status.
+#
+# The separator is checked with `case` and parameter expansion only (#453). It
+# was a `[[ =~ ]]` test, which held in bash alone. Measured on the old line:
+# dash stops at its `(` with a syntax error, so the file did not load there at
+# all, and zsh drops the backslash of an unquoted `\.`, so the dots matched
+# any character and the two-part "3.103" resolved to [3,103]. Only bash
+# sources this file today.
+_shadow_acs_component_ok() { # 0, or up to nine digits with no leading zero
+    case "${1:-}" in
+        0) return 0 ;;
+        ''|0*|*[!0-9]*) return 1 ;;
+    esac
+    [ "${#1}" -le 9 ]
+}
 shadow_acs_sep_json() {
+    local _sas_v _sas_a _sas_r _sas_b _sas_c
     case "${1:-}" in ''|*[!0-9]*) return 1 ;; esac
     case "${2:-}" in ''|*[!0-9]*) return 1 ;; esac
     # No leading zero: jq versions differ on whether 03 is a number.
-    if [[ ! "${SHADOW_ACS_SEPARATOR:-}" =~ ^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$ ]]; then return 1; fi
+    _sas_v="${SHADOW_ACS_SEPARATOR:-}"
+    case "${_sas_v}" in *.*.*) ;; *) return 1 ;; esac
+    _sas_a="${_sas_v%%.*}"; _sas_r="${_sas_v#*.}"
+    _sas_b="${_sas_r%%.*}"; _sas_c="${_sas_r#*.}"
+    # A fourth component leaves a dot in the third, which is not a digit.
+    _shadow_acs_component_ok "${_sas_a}" || return 1
+    _shadow_acs_component_ok "${_sas_b}" || return 1
+    _shadow_acs_component_ok "${_sas_c}" || return 1
     if [ "$1" = "$2" ]; then
         printf '[%s]' "$(printf '%s' "${SHADOW_ACS_SEPARATOR}" | tr '.' ',')"
     else

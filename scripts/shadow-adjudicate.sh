@@ -198,13 +198,19 @@ _presep_labelled() {
     [ -f "${ADJ_LOG}" ] && [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1 || { printf '0'; return 0; }
     { jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" --argjson sep "${ACS_SEP_JSON}" \
          "${SHADOW_JQ_ACS} fromjson? // empty | select(type == \"object\") | select(.predicate_version == \$pv)
-          | select(acs_class(\$sep) != \"ok\") | .record_id | strings | \"X\t\" + @json" \
+          | (if acs_class(\$sep) != \"ok\" then \"X\" else \"K\" end) as \$side
+          | .record_id | strings | \$side + \"\t\" + @json" \
          "${SHADOW_LOG}" 2>/dev/null
       jq -R -r 'fromjson? // empty | select(type == "object") | .record_id | strings | "A\t" + @json' \
          "${ADJ_LOG}" 2>/dev/null | LC_ALL=C sort -u
-    } | awk -F'\t' '$1 == "X" { x[$2] = 1; next } $1 == "A" && x[$2] { n++ } END { printf "%d", n+0 }'
+    } | awk -F'\t' '$1 == "X" { x[$2] = 1; next } $1 == "K" { k[$2] = 1; next }
+                    $1 == "A" && x[$2] && !k[$2] { n++ } END { printf "%d", n+0 }'
     # Ids travel as JSON text (@json), so a tab or newline inside one cannot
     # split a row or forge one.
+    # K rows are the countable records. An id on both sides of the separator
+    # has its label counted with the countable record, so reporting it here
+    # as well counted one label twice and called a counted label NOT counted
+    # (#453). No producer writes such a pair.
 }
 
 # _episodes — group v2 shadow records into independent episodes.

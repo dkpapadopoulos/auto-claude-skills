@@ -1566,6 +1566,17 @@ if printf '%s\n' "${_osp2}" | grep -qF "human-confirmed      : false_block=0  tr
 else
     _record_fail "SEP ...none of them reaches the rate, and the five countable labels still do" "got: ${_osp2}"
 fi
+# An id on BOTH sides of the separator (#453): its label is counted with the
+# countable record, so it is not also one of the labels reported as NOT counted.
+_SP5="${TMP}/sep5.jsonl"; _SP5A="${TMP}/sep5-adj.jsonl"; : > "${_SP5}"; : > "${_SP5A}"
+_sep_rec "${_SP5}" dd00 '"3.99.9"'; _sep_rec "${_SP5}" dd00 '"3.104.0"'; _sep_rec "${_SP5}" dd01 '"3.99.9"'
+jq -cn '{schema_version:1,leg:"review",record_id:"dd00",ts:"2026-11-18T11:00:00Z",verdict:"false_block",reason:"shared",claimant:"human"}' >> "${_SP5A}"
+_osp5="$(_run "${_SP5}" "${_SP5A}" --status)"
+assert_contains "SEP a label on an id shared across the separator reaches the rate" "false_block=1" "${_osp5}"
+assert_not_contains "SEP ...and is not also reported as a label that is NOT counted" "carry a label in the sidecar" "${_osp5}"
+jq -cn '{schema_version:1,leg:"review",record_id:"dd01",ts:"2026-11-18T11:00:00Z",verdict:"false_block",reason:"old",claimant:"human"}' >> "${_SP5A}"
+assert_contains "SEP CONTROL: a label on an id that is only pre-separator is still announced" \
+    "  1 of them carry a label in the sidecar. Those labels are NOT counted." "$(_run "${_SP5}" "${_SP5A}" --status)"
 # The x3 label is the one orphan; the two labels on excluded records are not.
 assert_contains "SEP ...and they are not reported as orphans (only the x3 label is)" \
     "WARNING: 1 adjudication(s) name a record_id absent from this corpus." "${_osp2}"
