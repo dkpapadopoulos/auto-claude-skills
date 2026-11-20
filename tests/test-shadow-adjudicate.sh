@@ -432,6 +432,15 @@ eq "and prints no band line"                  "0" "$(status | grep -cE '^  band 
 # FLOOR_EPISODES were mistyped to 129, 290 or 2900.
 eq "and names the exact 29-episode floor"     "29" "$(status | grep -E '^  need ' | awk '{print $2}')"
 eq "and names the exact 2-repo requirement"   ">=2" "$(status | grep -E '^  need ' | awk '{print $8}')"
+# The horizon row quotes the registration, which is the authority for it: the
+# re-registration of 2026-08-29 committed no date, and the row printed the
+# withdrawn 2026-09-08 for eleven weeks after. If the design's sentence goes,
+# a horizon was registered or the section was reworded: update the row with it.
+_HZ_DESIGN="${ROOT}/openspec/changes/implement-shadow-event/design.md"
+eq "the registration still commits no horizon date" "1" \
+   "$(grep -c '^2\. \*\*No new horizon date is committed\.\*\*' "${_HZ_DESIGN}")"
+eq "and --status reports the horizon as unknown, with no date of its own" "1 0" \
+   "$(status | grep -c '^  horizon  *unknown, pending re-estimate (re-registered 2026-08-29; no date is committed)$') $(status | grep -c '2026-09-08\|2026-07-28')"
 
 # worst-verdict-wins within one episode
 seed
