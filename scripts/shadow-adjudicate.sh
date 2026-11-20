@@ -359,7 +359,10 @@ _ADJ_LABEL_JQ='objects | select((.record_id | type) == "string")
 # it, so --next must not stop offering the record over it.
 _adjudicated_ids() {
     [ -f "${ADJ_LOG}" ] || return 0
-    jq -R -r "fromjson? // empty | ${_ADJ_LABEL_JQ} | .record_id" "${ADJ_LOG}" 2>/dev/null | sort -u
+    # As @tsv text, because cmd_next compares them with ids cut from @tsv
+    # rows: printed raw, an id holding a backslash never matched and its
+    # record was offered again after it was labelled.
+    jq -R -r "fromjson? // empty | ${_ADJ_LABEL_JQ} | [.record_id] | @tsv" "${ADJ_LOG}" 2>/dev/null | sort -u
 }
 
 # _adj_unparsed -> sidecar lines that hold no label: unparseable, not an object,
@@ -455,12 +458,23 @@ _record_classes() {
 # verdict is counted as if a human gave it. Either way a human false_block can
 # leave k on one agent command, so --status withholds until a human
 # re-confirms the record.
+#
+# Only for a record of the adjudicable population. One of another predicate
+# version or before the separator is in no rate episode, so nothing left k,
+# its label already has a row that does not withhold, and the label command
+# refuses it: counting it here withheld the rate with no way to clear it. A
+# record the corpus does not hold is the orphan row's.
 _adj_superseded() {
-    [ -f "${ADJ_LOG}" ] && command -v jq >/dev/null 2>&1 || { printf '0'; return 0; }
-    jq -R -r "fromjson? // empty | ${_ADJ_LABEL_JQ} | [.record_id, (if .claimant == \"human\" then \"h\" else \"a\" end)] | @tsv" \
-       "${ADJ_LOG}" 2>/dev/null \
-    | awk -F'\t' '{ id = $1 ""; if ($2 == "h") h[id] = 1; last[id] = $2 }
-                  END { for (id in last) if (last[id] != "h" && (id in h)) n++; printf "%d", n + 0 }'
+    [ -f "${ADJ_LOG}" ] && [ -f "${SHADOW_LOG}" ] && command -v jq >/dev/null 2>&1 || { printf '0'; return 0; }
+    { jq -R -r --argjson pv "${REQUIRED_PREDICATE_VERSION}" --argjson sep "${ACS_SEP_JSON}" \
+         "${SHADOW_JQ_ACS} fromjson? // empty | objects | select((.record_id | type) == \"string\")
+          | select(.predicate_version == \$pv) | select(acs_class(\$sep) == \"ok\") | [\"X\", .record_id] | @tsv" \
+         "${SHADOW_LOG}" 2>/dev/null
+      jq -R -r "fromjson? // empty | ${_ADJ_LABEL_JQ} | [\"L\", .record_id, (if .claimant == \"human\" then \"h\" else \"a\" end)] | @tsv" \
+         "${ADJ_LOG}" 2>/dev/null
+    } | awk -F'\t' '$1 == "X" { x[$2 ""] = 1; next }
+                    $1 == "L" { id = $2 ""; if ($3 == "h") h[id] = 1; last[id] = $3 }
+                    END { for (id in last) if (last[id] != "h" && (id in h) && (id in x)) n++; printf "%d", n + 0 }'
 }
 
 # cmd_next — oldest v2 record with no adjudication, plus how to label it.
@@ -928,7 +942,7 @@ EOF
     [ "${_orph}" -gt 0 ] && \
         printf '  orphan labels     %s   <- the sidecar labels that many record(s) this corpus does not hold\n' "${_orph}"
     [ "${_sup}" -gt 0 ] && \
-        printf '  superseded human labels %s   <- a later line that is not human-claimed replaced a human label for that many record(s); a human must re-confirm each\n' "${_sup}"
+        printf '  superseded human labels %s   <- a later line that is not human-claimed replaced a human label for that many record(s); withheld until a human labels each again\n' "${_sup}"
     [ "${_lout}" -gt 0 ] && \
         printf '  labels outside the rate %s   <- that many human-labelled record(s) are in no episode the rate counted, and no row above says why\n' "${_lout}"
     printf '  true_catch        %s\n' "${_tc}"

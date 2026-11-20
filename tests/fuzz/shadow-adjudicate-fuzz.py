@@ -28,7 +28,7 @@ a duplicated record_id resolves to its first record, an empty `repo` counts as
 no repository, and a null key field groups with an empty one. It never runs
 --next, the label command or --rate-episodes, never uses the real floors, and
 compares the rate and worst-case fractions only. Why this exists: four review rounds of the #454 fix each found
-another input, and 1,000 cases against that reader failed 211 times.
+another input, and 2,000 cases against that reader failed 238 times.
 """
 import json, os, random, re, subprocess, sys
 
@@ -188,8 +188,8 @@ def oracle(corpus_raw, adj_raw):
     result = "insufficient" if (den < 1 or len(repos) < 1) else "%d/%d %d/%d" % (fb, den, fb + unk, den + unk)
     must = dropped
     humans = {a["record_id"] for a in labels if a.get("claimant") == "human"}
-    if any(not latest[rid][1] for rid in humans):
-        must = True     # an agent's later line replaced what a human said
+    if any(not latest[rid][1] and any(cls(r) == "cur" for r in recs if r.get("record_id") == rid) for rid in humans):
+        must = True     # an agent's later line replaced what a human said about an adjudicable record
     for rid in humans:
         if rid in rate_members:
             continue
@@ -386,8 +386,10 @@ for i in range(CASES):
             stats["withheld"] += 1
             if clean and not must:   # an agent relabelling a human's record is a clean sequence that withholds
                 kind = "LIVENESS"
-        elif must:
+        elif must and got != "insufficient":   # "insufficient data" prints no rate either
             kind = "SAFETY"
+        elif must:
+            stats["insufficient"] += 1
         elif got != want:
             kind = "EQUALITY"
         else:

@@ -1362,6 +1362,14 @@ _ml_withheld "a human label superseded by a line claiming 'Human'"
 build_floor 29 0 0; jrec2 reconf /repo/A; hlabel reconf true_catch agent; label reconf false_block
 eq "#454r CONTROL: a human line after an agent line is counted" "1/30" \
    "$(status | grep -E '^  rate ' | awk '{print $2}')"
+# A superseded label on a record of another predicate, or before the separator,
+# took nothing out of k, and the label command refuses that record, so counting
+# it withheld the rate with no way to clear it (review of cd7aadc3).
+build_floor 30 0 0; sep_rec supold '"3.99.9"'; sep_rec suppv '"3.104.0"' "$(( _PV - 1 ))"
+for _sid in supold suppv; do hlabel "${_sid}" false_block; hlabel "${_sid}" true_catch agent; done
+_rw_st="$(status)"
+eq "#454r a superseded label on an excluded record does not withhold" "0 0/30 1 1" \
+   "$(printf '%s\n' "${_rw_st}" | grep -c 'superseded human labels') $(printf '%s\n' "${_rw_st}" | grep -E '^  rate ' | awk '{print $2}') $(_rw_row "${_rw_st}" pre-separator labels) $(printf '%s\n' "${_rw_st}" | awk '$1=="other-predicate" && $2=="labels" {print $3; exit}')"
 # (q) The record check is id by id. As two totals, a dropped record and an id
 # the list split in two cancelled: 3 records, 3 episode members, and the dropped
 # record's false_block was read through the fragment "d" of the split id.
@@ -1383,6 +1391,14 @@ while [ "$i" -lt 30 ]; do
 done
 eq "#454r 30 episodes in one repo named -e are one repo" "1 1" \
    "$(status | awk '$1=="repos" {print $2; exit}') $(status | grep -c 'insufficient data')"
+# ...and the same grep in --next: a labelled record whose id starts with a dash,
+# or holds a backslash, must not be offered again.
+seed; jrec2 "-e" /repo/A; jrec2 'a\b' /repo/A
+eq "#454r CONTROL: both odd-id records are offered before they are labelled" "1" \
+   "$("$SCRIPT" --next 2>/dev/null | grep -c '^to label:')"
+label "-e" true_catch; label 'a\b' true_catch
+eq "#454r a labelled record with a dash or backslash id is not offered again" "0 1" \
+   "$("$SCRIPT" --next 2>/dev/null | grep -c '^to label:') $("$SCRIPT" --next 2>&1 | grep -c '^nothing outstanding — all 2 offerable')"
 
 echo
 echo "Tests run: $(( PASS + FAIL ))  passed: $PASS  failed: $FAIL"
